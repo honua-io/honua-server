@@ -47,12 +47,13 @@ Legend:
 | `$select` | Implemented | Field selection for Layers and Features; `*` returns all fields. |
 | `$orderby` | Partial | Simple field names with optional `asc`/`desc`; no expressions or functions. |
 | `$top` / `$skip` | Implemented | Validated and normalized by server limits. |
-| `$skiptoken` | Implemented | Cursor-based pagination; mutually exclusive with `$skip`. |
+| `$skiptoken` | Implemented | Opaque cursor-based pagination using Base64Url-encoded tokens with query fingerprinting; mutually exclusive with `$skip`. Legacy integer tokens are supported for backward compatibility. |
 | `$count` | Implemented | `@odata.count` in payload; `/.../$count` endpoints return text. |
-| `$expand` | Partial | Supports comma-separated relationship names only; no nested expand options. |
-| `$compute` | Partial | Arithmetic expressions (`field mul 2 as Alias`); cannot be combined with `$apply` or `$search`. |
-| `$search` | Partial | Full-text search across string fields; supports AND/OR/NOT and quoted phrases. |
-| `$apply` | Partial | `aggregate`, `groupby`, `filter`, and `compute` (simple arithmetic) are supported. |
+| `$expand` | Implemented | Comma-separated relationship names; nested expand paths are not supported. |
+| `$compute` | Implemented | Arithmetic expressions (`field mul 2 as Alias`); cannot be combined with `$apply` or `$search`. |
+| `$search` | Implemented | Full-text search across string fields; supports AND/OR/NOT and quoted phrases. |
+| `$apply` | Implemented | `aggregate`, `groupby`, `filter`, and `compute` transformations. |
+| `$deltatoken` | Implemented | Timestamp-based change tracking. A `@odata.deltaLink` is emitted on the final page of results; subsequent requests with `$deltatoken` retrieve features modified since the encoded timestamp. |
 | `$format` | Partial | Only `json` and `application/json` are accepted. |
 
 ## $filter operator coverage
@@ -114,7 +115,7 @@ geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000
 
 ## Unsupported or not implemented
 
-- `$deltatoken` and delta tracking are not supported.
+- Delta tracking (`$deltatoken`) supports timestamp-based change detection; row-level change types (created/updated/deleted annotations) are not yet included in delta responses.
 - `PUT` updates are not supported (PATCH only).
 - `$levels` recursive expansion is not supported.
 - `has`, `in`, `any`, `all` filter operators are not supported.

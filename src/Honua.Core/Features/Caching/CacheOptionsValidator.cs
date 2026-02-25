@@ -66,6 +66,8 @@ public sealed class CacheOptionsValidator : OptionsValidator<CacheOptions>
             ValidateRange(options.FallbackMaxEntries, 1, 100000, "FallbackMaxEntries", failures);
             ValidateRange(options.RetryIntervalSeconds, 5, 300, "RetryIntervalSeconds", failures);
         }
+
+        ValidateRange(options.ResponseCacheMaxEntries, 100, 500000, "ResponseCacheMaxEntries", failures);
     }
 
     /// <summary>

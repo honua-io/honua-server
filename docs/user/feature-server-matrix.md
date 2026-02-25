@@ -25,20 +25,20 @@ MapServer coverage is tracked separately:
 | --- | --- | --- | --- | --- | --- |
 | Service metadata | `/rest/services/{serviceId}/FeatureServer` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer` | Service metadata + layer list. Dynamic capabilities string (Query, Create, Update, Delete, Editing, Extract, Uploads). Includes `allowGeometryUpdates`, `supportsStatistics`, `supportsAdvancedQueries`. |
 | Apply Edits | `/rest/services/{serviceName}/FeatureServer/applyEdits` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/applyEdits` | Multi-layer batch edits. Request body is a JSON array of per-layer edits (`[{id, adds, updates, deletes}]`). Response aggregates per-layer results. |
+| Append | `/rest/services/{serviceName}/FeatureServer/append` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/append` | Bulk append features to a target layer. Parses `edits` as a JSON array of GeoServices features; delegates to `applyEdits` internally. Returns `numFeaturesAppended` / `numFeaturesFailed`. |
+| Query | `/rest/services/{serviceName}/FeatureServer/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/query` | Service-level query that delegates to a target layer provided by `layerId` or `layers`. |
+| Query Domains | `/rest/services/{serviceName}/FeatureServer/queryDomains` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/queryDomains` | Returns coded-value domain definitions by sampling feature values from the database. Supports `layers` parameter. |
+| Relationships | `/rest/services/{serviceName}/FeatureServer/relationships` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/relationships` | Returns relationship definitions aggregated across service layers. |
+| Create Replica | `/rest/services/{serviceName}/FeatureServer/createReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/createReplica` | Creates a replica for offline synchronization. Parameters: `replicaName`, `layers`, `syncModel`. Distributed cache-backed replica registration with in-memory fallback. |
+| Extract Changes | `/rest/services/{serviceName}/FeatureServer/extractChanges` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/extractChanges` | Returns changes since last synchronization. First sync reports all features as adds (real DB count); subsequent syncs report zero changes (no change tracking tables). |
+| Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica` | Synchronizes a replica. Supports `download`, `upload`, and `bidirectional` sync directions. Incoming edits on upload/bidirectional syncs are applied via `applyEdits`. |
+| Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica` | Removes a registered replica. |
 
 ### Not implemented
 
 | Esri operation | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
-| Append | `/rest/services/{serviceName}/FeatureServer/append` | POST | Not implemented | |
-| Create Replica | `/rest/services/{serviceName}/FeatureServer/createReplica` | POST | Not implemented | Replication APIs not present. |
-| Extract Changes | `/rest/services/{serviceName}/FeatureServer/extractChanges` | POST | Not implemented | Replication APIs not present. |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Not implemented | |
-| Query | `/rest/services/{serviceName}/FeatureServer/query` | GET | Not implemented | Only layer-level query exists. |
-| Query Domains | `/rest/services/{serviceName}/FeatureServer/queryDomains` | GET | Not implemented | |
-| Relationships | `/rest/services/{serviceName}/FeatureServer/relationships` | GET | Not implemented | |
-| Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Not implemented | |
-| Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Not implemented | |
 
 ## Feature Layer (resource + operations)
 
@@ -54,6 +54,9 @@ MapServer coverage is tracked separately:
 | Delete Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures` | Supports `objectIds`, `where` clause, and `geometry`/`geometryType`/`spatialRel`/`inSR` for spatial deletes. rollbackOnFailure defaults to `true`. |
 | Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports objectIds, relationshipId, where, outFields, returnGeometry, resultRecordCount. |
 | Generate Renderer | `/rest/services/{serviceName}/FeatureServer/{layerId}/generateRenderer` | GET | Partial | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer` | Returns a simple renderer. `classificationDef` is rejected with 400 (classification-based renderers not yet supported). |
+| Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/append` | Bulk append features. Parses `edits` as a JSON array of GeoServices features; delegates to `applyEdits` internally. Returns `numFeaturesAppended` / `numFeaturesFailed`. |
+| Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate` | Calculates field values using expressions. Supports `where` filter, `calcExpression` as JSON array of `{field, sqlExpression}`. Applies string literals, numeric literals, NULL, and field references. |
+| Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL` | Validates a SQL WHERE clause against the layer schema. Returns `isValidSQL` and `validationError`. |
 
 ### Partial
 
@@ -65,8 +68,6 @@ MapServer coverage is tracked separately:
 
 | Esri operation | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
-| Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Not implemented | |
-| Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Not implemented | |
 | Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Not implemented | |
 | Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Not implemented | |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/{layerId}/getEstimates` | GET | Not implemented | |
@@ -78,7 +79,6 @@ MapServer coverage is tracked separately:
 | Query Top Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryTopFeatures` | GET | Not implemented | |
 | Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Not implemented | |
 | Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Not implemented | |
-| Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Not implemented | |
 
 ## Attachments
 

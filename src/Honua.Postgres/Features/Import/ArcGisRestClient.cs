@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -18,13 +20,33 @@ namespace Honua.Postgres.Features.Import;
 /// </summary>
 internal sealed partial class ArcGisRestClient
 {
+    private const string DisallowedNetworkAddressMessage = "ArcGIS service URL resolves to a disallowed network address.";
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<ArcGisRestClient> _logger;
+    private readonly Func<string, CancellationToken, Task<IPAddress[]>> _hostAddressResolver;
 
-    public ArcGisRestClient(HttpClient httpClient, ILogger<ArcGisRestClient> logger)
+    public ArcGisRestClient(
+        HttpClient httpClient,
+        ILogger<ArcGisRestClient> logger,
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+    }
+
+    internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
+    {
+        var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+
+        return new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectCallback = (context, cancellationToken) =>
+                ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
+        };
     }
 
     /// <summary>
@@ -209,6 +231,8 @@ internal sealed partial class ArcGisRestClient
         int timeoutSeconds,
         CancellationToken cancellationToken)
     {
+        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
+
         var options = BuildHttpOptions(maxRetries);
         var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
         using var response = await policy.ExecuteAsync(
@@ -270,16 +294,243 @@ internal sealed partial class ArcGisRestClient
 
     private static string NormalizeServiceUrl(string url)
     {
-        url = url.TrimEnd('/');
-
-        // Remove query string if present
-        var queryIndex = url.IndexOf('?');
-        if (queryIndex > 0)
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
-            url = url[..queryIndex];
+            return uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
         }
 
-        return url;
+        return url.TrimEnd('/');
+    }
+
+    private async Task EnsureSafeOutboundUriAsync(string url, CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new HttpRequestException("ArcGIS service URL must be a valid HTTPS URL.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            throw new HttpRequestException("ArcGIS service URL must not include embedded credentials.");
+        }
+
+        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        {
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
+        }
+
+        _ = await ResolveAllowedAddressesAsync(uri.DnsSafeHost, _hostAddressResolver, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
+        string host,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
+        }
+
+        if (IsLocalhostHostName(host))
+        {
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
+        }
+
+        if (IPAddress.TryParse(host, out var literalAddress))
+        {
+            if (IsPrivateOrReservedAddress(literalAddress))
+            {
+                throw new HttpRequestException(DisallowedNetworkAddressMessage);
+            }
+
+            return [literalAddress];
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new HttpRequestException(DisallowedNetworkAddressMessage, ex);
+        }
+
+        if (addresses.Length == 0)
+        {
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
+        }
+
+        foreach (var address in addresses)
+        {
+            if (IsPrivateOrReservedAddress(address))
+            {
+                throw new HttpRequestException(DisallowedNetworkAddressMessage);
+            }
+        }
+
+        return addresses;
+    }
+
+    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
+        SocketsHttpConnectionContext context,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        var addresses = await ResolveAllowedAddressesAsync(
+                context.DnsEndPoint.Host,
+                hostAddressResolver,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        Exception? lastException = null;
+        foreach (var address in addresses)
+        {
+            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+            try
+            {
+                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+            {
+                socket.Dispose();
+                lastException = ex;
+            }
+        }
+
+        throw new HttpRequestException("Unable to establish a secure connection to the ArcGIS service host.", lastException);
+    }
+
+    private static bool IsLocalhostHostName(string host)
+        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPrivateOrReservedAddress(IPAddress address)
+    {
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+
+            if (bytes[0] == 0)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 10)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 127)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 169 && bytes[1] == 254)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 192 && bytes[1] == 168)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19))
+            {
+                return true;
+            }
+
+            if (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113)
+            {
+                return true;
+            }
+
+            if (bytes[0] >= 224)
+            {
+                return true;
+            }
+        }
+        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var bytes = address.GetAddressBytes();
+
+            if (address.Equals(IPAddress.IPv6None))
+            {
+                return true;
+            }
+
+            if (address.Equals(IPAddress.IPv6Loopback))
+            {
+                return true;
+            }
+
+            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0)
+            {
+                return true;
+            }
+
+            if ((bytes[0] & 0xfe) == 0xfc)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8)
+            {
+                return true;
+            }
+
+            if (bytes[0] == 0xff)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string ExtractServiceName(string url)

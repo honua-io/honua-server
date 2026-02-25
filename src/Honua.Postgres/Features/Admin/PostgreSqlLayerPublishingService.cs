@@ -587,10 +587,24 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         CancellationToken cancellationToken)
     {
         const string sql = """
+            WITH layer_state AS (
+                SELECT COALESCE(MAX(layer_id), 0) AS max_layer_id
+                FROM honua.layers
+            ),
+            sequence_state AS (
+                SELECT last_value, is_called
+                FROM honua.layers_layer_id_seq
+            )
             SELECT setval(
                 pg_get_serial_sequence('honua.layers', 'layer_id'),
-                COALESCE((SELECT MAX(layer_id) FROM honua.layers), 0)
-            );
+                GREATEST(layer_state.max_layer_id, sequence_state.last_value),
+                CASE
+                    WHEN layer_state.max_layer_id = 0 AND sequence_state.is_called = FALSE THEN FALSE
+                    ELSE TRUE
+                END
+            )
+            FROM layer_state
+            CROSS JOIN sequence_state;
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);

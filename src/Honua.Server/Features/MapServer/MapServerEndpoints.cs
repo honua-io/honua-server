@@ -70,7 +70,7 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get map legend")
             .WithDescription("Returns legend information with swatch images for all visible layers")
             .WithTags("MapServer")
-            .CacheOutput("ServiceMetadata");
+            .CacheOutput("MapServerLegend");
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/find",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleFind(context))
@@ -101,6 +101,72 @@ internal static partial class MapServerEndpoints
             .WithSummary("Query features from a MapServer layer using POST")
             .WithDescription("Query features using the FeatureServer query handler")
             .WithTags("MapServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryGet)
+            .WithDisplayName("Query MapServer Service (GET)")
+            .WithName("MapServerServiceQueryGet")
+            .WithSummary("Query features from a MapServer service using GET")
+            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryPost)
+            .WithDisplayName("Query MapServer Service (POST)")
+            .WithName("MapServerServiceQueryPost")
+            .WithSummary("Query features from a MapServer service using POST")
+            .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("MapServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/tile/{z:int}/{y:int}/{x:int}",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleTile(context))
+            .WithDisplayName("Get Map Tile")
+            .WithName("MapServerTile")
+            .WithSummary("Get a cached raster map tile")
+            .WithDescription("Returns a PNG tile rendered from MapServer layer features")
+            .WithTags("MapServer")
+            .CacheOutput("MapServerTile");
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMTS",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWmts(context))
+            .WithDisplayName("WMTS Service")
+            .WithName("MapServerWmts")
+            .WithSummary("OGC WMTS endpoint")
+            .WithDescription("Provides OGC WMTS GetCapabilities, GetTile, and GetFeatureInfo operations")
+            .WithTags("MapServer")
+            .CacheOutput(policy => policy.NoCache());
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMTS/{**restPath}",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWmtsRestful(context))
+            .WithDisplayName("WMTS RESTful Resource")
+            .WithName("MapServerWmtsRestful")
+            .WithSummary("OGC WMTS RESTful endpoint")
+            .WithDescription("Provides OGC WMTS RESTful resources for capabilities, tiles, and feature info")
+            .WithTags("MapServer")
+            .CacheOutput(policy => policy.NoCache());
+
+        endpoints.MapGet("/ogc/services/{serviceId}/wmts",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWmts(context))
+            .WithDisplayName("WMTS Service (OGC Alias)")
+            .WithName("OgcServiceWmts")
+            .WithSummary("OGC WMTS endpoint (service-scoped alias)")
+            .WithDescription("Alias for the MapServer WMTS endpoint with an OGC-style service route")
+            .WithTags("MapServer", "OGC")
+            .CacheOutput(policy => policy.NoCache());
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMS",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWms(context))
+            .WithDisplayName("WMS Service")
+            .WithName("MapServerWms")
+            .WithSummary("OGC WMS endpoint")
+            .WithDescription("Provides OGC WMS GetCapabilities, GetMap, and GetFeatureInfo operations")
+            .WithTags("MapServer");
+
+        endpoints.MapGet("/ogc/services/{serviceId}/wms",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleWms(context))
+            .WithDisplayName("WMS Service (OGC Alias)")
+            .WithName("OgcServiceWms")
+            .WithSummary("OGC WMS endpoint (service-scoped alias)")
+            .WithDescription("Alias for the MapServer WMS endpoint with an OGC-style service route")
+            .WithTags("MapServer", "OGC");
 
         return endpoints;
     }

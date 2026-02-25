@@ -9,7 +9,7 @@ namespace Honua.Server.Tests;
 /// Collection definition for Server tests that share emulator containers.
 /// Tests in this collection will share LocalStack (S3) and Azurite (Azure Blob) containers.
 /// </summary>
-[CollectionDefinition("Emulators")]
+[CollectionDefinition("Emulators", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class EmulatorCollection : ICollectionFixture<EmulatorFixture>
 {

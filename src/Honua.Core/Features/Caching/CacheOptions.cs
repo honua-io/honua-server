@@ -78,6 +78,13 @@ public sealed class CacheOptions
     public int FallbackMaxEntries { get; set; } = 1000;
 
     /// <summary>
+    /// Maximum number of query response entries retained in the in-memory response cache.
+    /// Default is 10000 entries.
+    /// </summary>
+    [Range(100, 500000)]
+    public int ResponseCacheMaxEntries { get; set; } = 10000;
+
+    /// <summary>
     /// Interval in seconds to retry connecting to Redis after a failure.
     /// Default is 30 seconds.
     /// </summary>

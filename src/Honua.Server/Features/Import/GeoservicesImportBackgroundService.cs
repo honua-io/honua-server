@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Import;
 
 /// <summary>
 /// Background service for processing Geoservices import jobs.
-/// Uses distributed leader election to ensure only one instance processes jobs at a time.
+/// Uses Redis leader election when available, with a local fallback leader when Redis is unavailable.
 /// </summary>
 internal sealed partial class GeoservicesImportBackgroundService : BackgroundService
 {
@@ -38,8 +38,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             try
             {
                 // Try to acquire or maintain leadership
-                var isLeader = _jobManager.LeaderElection.IsLeader ||
-                               await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken);
+                var isLeader = await _jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken);
 
                 if (!isLeader)
                 {
@@ -49,7 +48,13 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 }
 
                 // Send heartbeat to maintain leadership
-                await _jobManager.LeaderElection.HeartbeatAsync(stoppingToken);
+                var heartbeatMaintained = await _jobManager.LeaderElection.HeartbeatAsync(stoppingToken);
+                if (!heartbeatMaintained)
+                {
+                    Log.NotLeader(_logger, _jobManager.LeaderElection.InstanceId);
+                    await Task.Delay(_leaderCheckInterval, stoppingToken);
+                    continue;
+                }
 
                 // Try to dequeue and process a job
                 var jobId = await _jobManager.JobQueue.DequeueAsync(_pollInterval, stoppingToken);
@@ -218,6 +223,28 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 request = request with { JobId = jobId };
             }
 
+            var serviceUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, stoppingToken).ConfigureAwait(false);
+            if (!serviceUrlValidation.IsValid)
+            {
+                var failedProgress = new GeoservicesImportProgress
+                {
+                    JobId = jobId,
+                    Status = GeoservicesImportStatus.Failed,
+                    SourceServiceUrl = request.ServiceUrl,
+                    SourceLayerId = request.LayerId,
+                    TableName = request.TableName,
+                    StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = serviceUrlValidation.ErrorMessage,
+                    CurrentPhase = "Import blocked by service URL validation"
+                };
+
+                await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                Log.JobRejectedUnsafeServiceUrl(_logger, jobId, request.ServiceUrl);
+                return;
+            }
+
             // Update progress to processing
             if (progress != null)
             {
@@ -375,5 +402,8 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
         [LoggerMessage(7711, LogLevel.Debug, "Cancellation monitor poll failed for job {JobId}")]
         public static partial void CancellationMonitorPollFailed(ILogger logger, string jobId, Exception exception);
+
+        [LoggerMessage(7712, LogLevel.Warning, "Import job {JobId} blocked by service URL validation: {ServiceUrl}")]
+        public static partial void JobRejectedUnsafeServiceUrl(ILogger logger, string jobId, string serviceUrl);
     }
 }

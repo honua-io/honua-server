@@ -35,8 +35,6 @@ The CITE test suite validates that Honua Server correctly implements the OGC API
 ### Running in CI
 
 CITE tests run automatically:
-- On pull requests to trunk
-- On pushes to trunk
 - Weekly via scheduled workflow
 - Manually via workflow dispatch
 

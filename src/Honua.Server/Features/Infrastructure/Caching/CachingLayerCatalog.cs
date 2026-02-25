@@ -48,41 +48,47 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
         string cacheKey = $"{LayerKeyPrefix}{layerId}";
         string existsKey = $"{LayerExistsKeyPrefix}{layerId}";
 
-        LayerDefinition? cached = await _cacheService.GetAsync<LayerDefinition>(cacheKey, cancellationToken).ConfigureAwait(false);
-        if (cached != null)
-        {
-            return cached;
-        }
-
-        CachedExistenceResult? cachedExists = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, cancellationToken).ConfigureAwait(false);
-        if (cachedExists != null && !cachedExists.Exists)
-        {
-            return null;
-        }
-
+        // Single Redis call optimized: Try to get both layer and existence data
+        // Use GetOrSetAsync with a factory that checks for cached existence data first
         var layerTtl = _options.GetLayerTtlWithJitter();
         LayerDefinition? layer = await _cacheService.GetOrSetAsync(
             cacheKey,
-            ct => _innerCatalog.GetLayerAsync(layerId, ct),
+            async ct =>
+            {
+                // Check cached existence result to avoid unnecessary database queries
+                CachedExistenceResult? cachedExists = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, ct).ConfigureAwait(false);
+                if (cachedExists != null && !cachedExists.Exists)
+                {
+                    return null; // Cached negative result, don't query database
+                }
+
+                // Query database since no cached negative result exists
+                return await _innerCatalog.GetLayerAsync(layerId, ct).ConfigureAwait(false);
+            },
             layerTtl,
             cancellationToken).ConfigureAwait(false);
 
-        if (layer != null)
+        // Optimized: Only update existence cache if we don't have cached existence data already
+        CachedExistenceResult? existsCached = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, cancellationToken).ConfigureAwait(false);
+        if (existsCached == null)
         {
-            await _cacheService.SetAsync(
-                existsKey,
-                new CachedExistenceResult(true),
-                layerTtl,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            var negativeTtl = _options.GetNegativeTtlWithJitter();
-            await _cacheService.SetAsync(
-                existsKey,
-                new CachedExistenceResult(false),
-                negativeTtl,
-                cancellationToken).ConfigureAwait(false);
+            if (layer != null)
+            {
+                await _cacheService.SetAsync(
+                    existsKey,
+                    new CachedExistenceResult(true),
+                    layerTtl,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var negativeTtl = _options.GetNegativeTtlWithJitter();
+                await _cacheService.SetAsync(
+                    existsKey,
+                    new CachedExistenceResult(false),
+                    negativeTtl,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         return layer;
@@ -113,41 +119,47 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
         string cacheKey = $"{ServiceKeyPrefix}{normalizedName}";
         string existsKey = $"{ServiceExistsKeyPrefix}{normalizedName}";
 
-        ServiceDefinition? cached = await _cacheService.GetAsync<ServiceDefinition>(cacheKey, cancellationToken).ConfigureAwait(false);
-        if (cached != null)
-        {
-            return cached;
-        }
-
-        CachedExistenceResult? cachedExists = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, cancellationToken).ConfigureAwait(false);
-        if (cachedExists != null && !cachedExists.Exists)
-        {
-            return null;
-        }
-
+        // Single Redis call optimized: Try to get both service and existence data
+        // Use GetOrSetAsync with a factory that checks for cached existence data first
         var serviceTtl = _options.GetServiceTtlWithJitter();
         ServiceDefinition? service = await _cacheService.GetOrSetAsync(
             cacheKey,
-            ct => _innerCatalog.GetServiceAsync(serviceName, ct),
+            async ct =>
+            {
+                // Check cached existence result to avoid unnecessary database queries
+                CachedExistenceResult? cachedExists = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, ct).ConfigureAwait(false);
+                if (cachedExists != null && !cachedExists.Exists)
+                {
+                    return null; // Cached negative result, don't query database
+                }
+
+                // Query database since no cached negative result exists
+                return await _innerCatalog.GetServiceAsync(serviceName, ct).ConfigureAwait(false);
+            },
             serviceTtl,
             cancellationToken).ConfigureAwait(false);
 
-        if (service != null)
+        // Optimized: Only update existence cache if we don't have cached existence data already
+        CachedExistenceResult? existsCached = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, cancellationToken).ConfigureAwait(false);
+        if (existsCached == null)
         {
-            await _cacheService.SetAsync(
-                existsKey,
-                new CachedExistenceResult(true),
-                serviceTtl,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            var negativeTtl = _options.GetNegativeTtlWithJitter();
-            await _cacheService.SetAsync(
-                existsKey,
-                new CachedExistenceResult(false),
-                negativeTtl,
-                cancellationToken).ConfigureAwait(false);
+            if (service != null)
+            {
+                await _cacheService.SetAsync(
+                    existsKey,
+                    new CachedExistenceResult(true),
+                    serviceTtl,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var negativeTtl = _options.GetNegativeTtlWithJitter();
+                await _cacheService.SetAsync(
+                    existsKey,
+                    new CachedExistenceResult(false),
+                    negativeTtl,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         return service;
@@ -175,25 +187,29 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
     {
         string existsKey = $"{LayerExistsKeyPrefix}{layerId}";
-        CachedExistenceResult? cachedExists = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, cancellationToken).ConfigureAwait(false);
-        if (cachedExists != null)
-        {
-            return cachedExists.Exists;
-        }
-
         string cacheKey = $"{LayerKeyPrefix}{layerId}";
-        LayerDefinition? cachedLayer = await _cacheService.GetAsync<LayerDefinition>(cacheKey, cancellationToken).ConfigureAwait(false);
-        if (cachedLayer != null)
-        {
-            var ttl = _options.GetLayerTtlWithJitter();
-            await _cacheService.SetAsync(existsKey, new CachedExistenceResult(true), ttl, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
 
-        bool exists = await _innerCatalog.LayerExistsAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var existsTtl = exists ? _options.GetLayerTtlWithJitter() : _options.GetNegativeTtlWithJitter();
-        await _cacheService.SetAsync(existsKey, new CachedExistenceResult(exists), existsTtl, cancellationToken).ConfigureAwait(false);
-        return exists;
+        // Optimized: Use GetOrSetAsync to avoid double Redis calls while checking both existence and layer cache
+        var existsTtl = _options.GetLayerTtlWithJitter();
+        CachedExistenceResult? result = await _cacheService.GetOrSetAsync(
+            existsKey,
+            async ct =>
+            {
+                // First check if we have the full layer cached
+                LayerDefinition? cachedLayer = await _cacheService.GetAsync<LayerDefinition>(cacheKey, ct).ConfigureAwait(false);
+                if (cachedLayer != null)
+                {
+                    return new CachedExistenceResult(true);
+                }
+
+                // Query database for existence
+                bool exists = await _innerCatalog.LayerExistsAsync(layerId, ct).ConfigureAwait(false);
+                return new CachedExistenceResult(exists);
+            },
+            existsTtl,
+            cancellationToken).ConfigureAwait(false);
+
+        return result?.Exists ?? false;
     }
 
     /// <inheritdoc />
@@ -201,25 +217,29 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     {
         string normalizedName = serviceName.ToLowerInvariant();
         string existsKey = $"{ServiceExistsKeyPrefix}{normalizedName}";
-        CachedExistenceResult? cachedExists = await _cacheService.GetAsync<CachedExistenceResult>(existsKey, cancellationToken).ConfigureAwait(false);
-        if (cachedExists != null)
-        {
-            return cachedExists.Exists;
-        }
-
         string cacheKey = $"{ServiceKeyPrefix}{normalizedName}";
-        ServiceDefinition? cachedService = await _cacheService.GetAsync<ServiceDefinition>(cacheKey, cancellationToken).ConfigureAwait(false);
-        if (cachedService != null)
-        {
-            var ttl = _options.GetServiceTtlWithJitter();
-            await _cacheService.SetAsync(existsKey, new CachedExistenceResult(true), ttl, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
 
-        bool exists = await _innerCatalog.ServiceExistsAsync(serviceName, cancellationToken).ConfigureAwait(false);
-        var existsTtl = exists ? _options.GetServiceTtlWithJitter() : _options.GetNegativeTtlWithJitter();
-        await _cacheService.SetAsync(existsKey, new CachedExistenceResult(exists), existsTtl, cancellationToken).ConfigureAwait(false);
-        return exists;
+        // Optimized: Use GetOrSetAsync to avoid double Redis calls while checking both existence and service cache
+        var existsTtl = _options.GetServiceTtlWithJitter();
+        CachedExistenceResult? result = await _cacheService.GetOrSetAsync(
+            existsKey,
+            async ct =>
+            {
+                // First check if we have the full service cached
+                ServiceDefinition? cachedService = await _cacheService.GetAsync<ServiceDefinition>(cacheKey, ct).ConfigureAwait(false);
+                if (cachedService != null)
+                {
+                    return new CachedExistenceResult(true);
+                }
+
+                // Query database for existence
+                bool exists = await _innerCatalog.ServiceExistsAsync(serviceName, ct).ConfigureAwait(false);
+                return new CachedExistenceResult(exists);
+            },
+            existsTtl,
+            cancellationToken).ConfigureAwait(false);
+
+        return result?.Exists ?? false;
     }
 
     /// <inheritdoc />

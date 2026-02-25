@@ -26,6 +26,9 @@ namespace Honua.Server.Features.Admin;
 /// </remarks>
 internal static partial class SecureConnectionEndpoints
 {
+    private const string InvalidSecureConnectionRequestMessage = "Secure connection request is invalid.";
+    private const string EncryptionRotationNotSupportedMessage = "Encryption key rotation is not supported in this deployment.";
+
     /// <summary>
     /// Log category for secure connection endpoints.
     /// </summary>
@@ -110,7 +113,7 @@ internal static partial class SecureConnectionEndpoints
     /// <summary>
     /// POST /api/v1/admin/connections/test - Test a draft connection before saving.
     /// </summary>
-    private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestDraftConnection(
             CreateSecureConnectionRequest request,
             [FromServices] IDatabaseConnectionStringBuilder connectionStringBuilder,
@@ -185,14 +188,17 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to test draft connection");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to test connection"));
+            return TypedResults.Problem(
+                title: "Draft connection test failed",
+                detail: "An internal error occurred while testing the draft connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
     /// <summary>
     /// GET /api/v1/admin/connections - List all secure connections (metadata only).
     /// </summary>
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<SecureConnectionSummary>>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<SecureConnectionSummary>>>, ProblemHttpResult>>
         HandleGetConnections(
             [FromServices] ISecureConnectionRegistry registry,
             HttpContext context,
@@ -228,14 +234,17 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retrieve secure connections");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to retrieve secure connections"));
+            return TypedResults.Problem(
+                title: "Secure connection listing failed",
+                detail: "An internal error occurred while retrieving secure connections.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
     /// <summary>
     /// GET /api/v1/admin/connections/{id} - Get specific connection details.
     /// </summary>
-    private static async Task<Results<Ok<ApiResponse<SecureConnectionDetail>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<SecureConnectionDetail>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
         HandleGetConnection(
             Guid id,
             [FromServices] ISecureConnectionRegistry registry,
@@ -278,14 +287,17 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to retrieve connection {ConnectionId}", id);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to retrieve connection"));
+            return TypedResults.Problem(
+                title: "Secure connection retrieval failed",
+                detail: "An internal error occurred while retrieving the secure connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
     /// <summary>
     /// POST /api/v1/admin/connections - Create new secure connection.
     /// </summary>
-    private static async Task<Results<Created<ApiResponse<SecureConnectionSummary>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Created<ApiResponse<SecureConnectionSummary>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleCreateConnection(
             CreateSecureConnectionRequest request,
             [FromServices] ISecureConnectionRegistry registry,
@@ -402,17 +414,25 @@ internal static partial class SecureConnectionEndpoints
             return TypedResults.Created($"/api/v1/admin/connections/{createdConnection.ConnectionId}",
                 ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Failed to create secure connection due to invalid operation");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(InvalidSecureConnectionRequestMessage));
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to create secure connection");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to create secure connection"));
+            return TypedResults.Problem(
+                title: "Secure connection creation failed",
+                detail: "An internal error occurred while creating the secure connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
     /// <summary>
     /// POST /api/v1/admin/connections/{id}/test - Test connection health.
     /// </summary>
-    private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestConnection(
             Guid id,
             [FromServices] ISecureConnectionResolver resolver,
@@ -446,14 +466,17 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to test connection {ConnectionId}", id);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to test connection"));
+            return TypedResults.Problem(
+                title: "Secure connection test failed",
+                detail: "An internal error occurred while testing the secure connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
     /// <summary>
     /// POST /api/v1/admin/connections/encryption/validate - Validate encryption service.
     /// </summary>
-    private static async Task<Results<Ok<ApiResponse<EncryptionValidationResult>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<EncryptionValidationResult>>, ProblemHttpResult>>
         HandleValidateEncryption(
             [FromServices] IConnectionEncryptionService encryptionService,
             HttpContext context,
@@ -479,11 +502,14 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to validate encryption service");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to validate encryption service"));
+            return TypedResults.Problem(
+                title: "Encryption validation failed",
+                detail: "An internal error occurred while validating encryption.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<SecureConnectionSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<SecureConnectionSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateConnection(
             Guid id,
             UpdateSecureConnectionRequest request,
@@ -604,11 +630,14 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to update secure connection {ConnectionId}", id);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to update secure connection"));
+            return TypedResults.Problem(
+                title: "Secure connection update failed",
+                detail: "An internal error occurred while updating the secure connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>>
         HandleDeleteConnection(
             Guid id,
             [FromServices] ISecureConnectionRegistry registry,
@@ -634,11 +663,14 @@ internal static partial class SecureConnectionEndpoints
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to delete secure connection {ConnectionId}", id);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to delete secure connection"));
+            return TypedResults.Problem(
+                title: "Secure connection deletion failed",
+                detail: "An internal error occurred while deleting the secure connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<KeyRotationResult>>, BadRequest<ApiResponse<object>>>>
+    private static async Task<Results<Ok<ApiResponse<KeyRotationResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleRotateEncryptionKey(
             [FromServices] IConnectionEncryptionService encryptionService,
             HttpContext context,
@@ -661,10 +693,18 @@ internal static partial class SecureConnectionEndpoints
 
             return TypedResults.Ok(ApiResponse<KeyRotationResult>.CreateSuccess(result));
         }
+        catch (NotSupportedException ex)
+        {
+            logger.LogWarning(ex, "Encryption key rotation is not supported");
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(EncryptionRotationNotSupportedMessage));
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to rotate encryption key");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure("Failed to rotate encryption key"));
+            return TypedResults.Problem(
+                title: "Encryption key rotation failed",
+                detail: "An internal error occurred while rotating the encryption key.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 

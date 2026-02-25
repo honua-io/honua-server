@@ -39,14 +39,14 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
 
     public async Task<ApiResult<ServiceSummary[]>> ListServicesAsync(CancellationToken ct = default)
     {
-        using var response = await _httpClient.GetAsync("api/v1/admin/services", ct);
+        using var response = await _httpClient.GetAsync("services", ct);
         return await ApiResponseReader.ReadWrappedAsync<ServiceSummary[]>(
             response, ct, AdminJsonContext.Default.Options);
     }
 
     public async Task<ApiResult<ServiceSettingsResponse>> GetSettingsAsync(string serviceName, CancellationToken ct = default)
     {
-        using var response = await _httpClient.GetAsync($"api/v1/admin/services/{Uri.EscapeDataString(serviceName)}/settings", ct);
+        using var response = await _httpClient.GetAsync($"services/{Uri.EscapeDataString(serviceName)}/settings", ct);
         return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(
             response, ct, AdminJsonContext.Default.Options);
     }
@@ -56,7 +56,7 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
         var request = new UpdateProtocolsRequest { EnabledProtocols = protocols };
         using var content = JsonContent.Create(request, AdminJsonContext.Default.UpdateProtocolsRequest);
         using var response = await _httpClient.PutAsync(
-            $"api/v1/admin/services/{Uri.EscapeDataString(serviceName)}/protocols", content, ct);
+            $"services/{Uri.EscapeDataString(serviceName)}/protocols", content, ct);
         return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(
             response, ct, AdminJsonContext.Default.Options);
     }
@@ -66,7 +66,7 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         using var content = JsonContent.Create(request, AdminJsonContext.Default.UpdateMapServerSettingsRequest);
         using var response = await _httpClient.PutAsync(
-            $"api/v1/admin/services/{Uri.EscapeDataString(serviceName)}/mapserver", content, ct);
+            $"services/{Uri.EscapeDataString(serviceName)}/mapserver", content, ct);
         return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(
             response, ct, AdminJsonContext.Default.Options);
     }

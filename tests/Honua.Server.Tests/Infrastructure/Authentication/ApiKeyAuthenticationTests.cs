@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -205,6 +206,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
         // Assert - Should deny access
         Assert.Equal(401, (int)response.StatusCode);
+        Assert.True(response.Headers.TryGetValues("WWW-Authenticate", out var challengeHeaders));
+        Assert.Contains(challengeHeaders, value => value.Contains("ApiKey", StringComparison.OrdinalIgnoreCase));
 
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("API key required", content);
@@ -232,6 +235,141 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("Admin authentication not configured", content);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_BasicAuthCompatibilityDisabled_DeniesAccess()
+    {
+        // Arrange
+        const string adminPassword = "test-basic-password";
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "false");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.Equal(401, (int)response.StatusCode);
+        Assert.True(response.Headers.TryGetValues("WWW-Authenticate", out var challengeHeaders));
+        Assert.DoesNotContain(challengeHeaders, value => value.Contains("Basic", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_InsecureTransport_DeniesAccess()
+    {
+        // Arrange
+        const string adminPassword = "test-basic-password";
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
+            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.Equal(401, (int)response.StatusCode);
+        Assert.True(response.Headers.TryGetValues("WWW-Authenticate", out var challengeHeaders));
+        Assert.Contains(challengeHeaders, value => value.Contains("ApiKey", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(challengeHeaders, value => value.Contains("Basic", StringComparison.OrdinalIgnoreCase));
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("requires HTTPS", content);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_ForwardedProtoSpoof_DeniesAccess()
+    {
+        // Arrange
+        const string adminPassword = "test-basic-password";
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
+            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
+        request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.Equal(401, (int)response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("requires HTTPS", content);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_BasicAndApiKeyHeaders_ApiKeyHeaderTakesPrecedence()
+    {
+        // Arrange
+        const string adminPassword = "test-basic-priority";
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
+            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "false");
+        });
+        using var client = factory.CreateClient();
+
+        // Act - Use invalid Basic password but valid X-API-Key header
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("X-API-Key", adminPassword);
+        var basicEncoded = Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:wrong-password"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basicEncoded);
+        var response = await client.SendAsync(request);
+
+        // Assert - X-API-Key should win and authenticate
+        Assert.NotEqual(401, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_BasicAuthCompatibilityEnabled_RequireHttpsDisabled_AllowsAccess()
+    {
+        // Arrange
+        const string adminPassword = "test-basic-password";
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", adminPassword);
+            builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
+            builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "false");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.NotEqual(401, (int)response.StatusCode);
     }
 
     #endregion

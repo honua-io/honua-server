@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -82,7 +84,19 @@ internal static class OperationsProgressEndpoints
                 $"Operation '{operationId}' not found"));
         }
 
-        return Results.Json(progress);
+        return CreateOperationStatusResult(progress);
+    }
+
+    private static IResult CreateOperationStatusResult(IOperationProgress progress)
+    {
+        return progress switch
+        {
+            UploadProgress uploadProgress => Results.Json(uploadProgress, OperationsProgressJsonContext.Default.UploadProgress),
+            ImportProgress importProgress => Results.Json(importProgress, OperationsProgressJsonContext.Default.ImportProgress),
+            IngestProgress ingestProgress => Results.Json(ingestProgress, OperationsProgressJsonContext.Default.IngestProgress),
+            GeoservicesImportProgress externalImportProgress => Results.Json(externalImportProgress, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
+            _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
+        };
     }
 
     /// <summary>
@@ -294,6 +308,10 @@ internal sealed record OperationsByTypeResponse
 /// </summary>
 [System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(IOperationProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(UploadProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(ImportProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(IngestProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(GeoservicesImportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]

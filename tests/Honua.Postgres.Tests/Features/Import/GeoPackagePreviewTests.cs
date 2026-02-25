@@ -203,6 +203,22 @@ public sealed class GeoPackagePreviewTests
         public void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null)
         {
         }
+
+        public void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null)
+        {
+        }
+
+        public void RecordMemoryPressure(double memoryPressurePercent, long allocatedMB, long availableMB)
+        {
+        }
+
+        public void RecordCacheLatency(string cacheType, string operation, TimeSpan duration, bool success = true)
+        {
+        }
+
+        public void RecordErrorWithContext(string errorType, string operation, IDictionary<string, object>? context, Exception? exception = null)
+        {
+        }
     }
 
     private sealed class NoopOperationScope : IOperationScope

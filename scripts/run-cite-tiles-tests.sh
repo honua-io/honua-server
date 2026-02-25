@@ -23,6 +23,7 @@ FAILED_TESTS=0
 SKIPPED_TESTS=0
 CANTTELL_TESTS=0
 TOTAL_TESTS=0
+RESULTS_SOURCE_DIR=""
 
 echo -e "${BLUE}OGC API Tiles CITE Conformance Tests${NC}"
 echo "============================================="
@@ -95,9 +96,32 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
+wait_for_http_endpoint() {
+    local url="$1"
+    local label="$2"
+    local timeout="${3:-90}"
+    local start_time current_time elapsed
+
+    start_time=$(date +%s)
+    while true; do
+        if curl -sS -f --max-time 10 "$url" > /dev/null; then
+            return 0
+        fi
+
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+        if [[ $elapsed -ge $timeout ]]; then
+            echo -e "${RED}${label} not accessible at ${url} after ${timeout}s${NC}"
+            return 1
+        fi
+
+        sleep 3
+    done
+}
+
 # Build Honua Server image if it doesn't exist
 echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! docker build -t honua-server:latest . > /dev/null 2>&1; then
+if ! docker build -t honua-server:latest .; then
     echo -e "${RED}Failed to build Honua Server Docker image${NC}"
     exit 1
 fi
@@ -119,8 +143,9 @@ trap cleanup EXIT
 echo -e "${YELLOW}Starting CITE Tiles test environment...${NC}"
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null || true
 
-# Start base services (without test profile)
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server postgres cite-engine
+# Start base services (without test profile). Bring up dependencies first
+# to avoid compose dependency-order errors on newer compose versions.
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d postgres honua-server cite-engine
 
 # Wait for Honua Server to be healthy
 echo -e "${YELLOW}Waiting for Honua Server to be ready...${NC}"
@@ -160,32 +185,27 @@ echo -e "${GREEN}CITE Tiles database seeded${NC}"
 echo -e "${YELLOW}Verifying OGC API Tiles endpoints...${NC}"
 
 # Test landing page
-if ! curl -s -f http://localhost:8080/ogc/tiles > /dev/null; then
-    echo -e "${RED}Tiles landing page not accessible${NC}"
+if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles" "Tiles landing page"; then
     exit 1
 fi
 
 # Test conformance endpoint
-if ! curl -s -f http://localhost:8080/ogc/tiles/conformance > /dev/null; then
-    echo -e "${RED}Tiles conformance endpoint not accessible${NC}"
+if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/conformance" "Tiles conformance endpoint"; then
     exit 1
 fi
 
 # Test collections endpoint
-if ! curl -s -f http://localhost:8080/ogc/tiles/collections > /dev/null; then
-    echo -e "${RED}Tiles collections endpoint not accessible${NC}"
+if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/collections" "Tiles collections endpoint"; then
     exit 1
 fi
 
 # Test tileMatrixSets endpoint
-if ! curl -s -f http://localhost:8080/ogc/tiles/tileMatrixSets > /dev/null; then
-    echo -e "${RED}TileMatrixSets endpoint not accessible${NC}"
+if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/tileMatrixSets" "TileMatrixSets endpoint"; then
     exit 1
 fi
 
 # Test tiles endpoint
-if ! curl -s -f http://localhost:8080/ogc/tiles/tiles > /dev/null; then
-    echo -e "${RED}Tiles tilesets endpoint not accessible${NC}"
+if ! wait_for_http_endpoint "http://localhost:8080/ogc/tiles/tiles" "Tiles tilesets endpoint"; then
     exit 1
 fi
 
@@ -233,10 +253,30 @@ fi
 # Run CITE tests
 echo -e "${YELLOW}Running OGC API Tiles CITE conformance tests...${NC}"
 echo "This may take several minutes..."
+test_run_started_epoch=$(date +%s)
 
 # Start the CITE runner with test profile
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s cite-runner >/dev/null 2>&1 || true
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
+run_cite_runner() {
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s cite-runner >/dev/null 2>&1 || true
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" --profile test up --force-recreate cite-runner
+}
+
+runner_attempt=1
+max_runner_attempts=2
+while true; do
+    if run_cite_runner; then
+        break
+    fi
+
+    if [[ $runner_attempt -ge $max_runner_attempts ]]; then
+        echo -e "${RED}CITE runner failed after ${runner_attempt} attempt(s)${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}CITE runner failed on attempt ${runner_attempt}; retrying once...${NC}"
+    runner_attempt=$((runner_attempt + 1))
+    sleep 10
+done
 
 # Wait for tests to complete
 echo -e "${YELLOW}Waiting for CITE tests to complete...${NC}"
@@ -270,17 +310,26 @@ if [[ -n "$CITE_RUNNER_CONTAINER" ]]; then
     docker cp "$CITE_RUNNER_CONTAINER":"$CITE_RESULTS_CONTAINER_DIR"/. "$CITE_RESULTS_DIR/" 2>/dev/null || true
 fi
 
+LATEST_SESSION_DIR=$(find "$CITE_RESULTS_DIR" -mindepth 1 -maxdepth 1 -type d -name "cite-tiles-session-*" -printf '%T@ %p\n' 2>/dev/null | awk -v start="$test_run_started_epoch" '$1 + 0 >= (start - 5) { print }' | sort -n | tail -n 1 | cut -d' ' -f2- || true)
+if [[ -n "${LATEST_SESSION_DIR:-}" && -d "$LATEST_SESSION_DIR" ]]; then
+    RESULTS_SOURCE_DIR="$LATEST_SESSION_DIR"
+    echo "Detected latest CITE session: $(basename "$LATEST_SESSION_DIR")"
+else
+    RESULTS_SOURCE_DIR="$CITE_RESULTS_DIR"
+    echo -e "${YELLOW}No session-specific directory found; falling back to full results directory${NC}"
+fi
+
 # Analyze results
 echo -e "\n${BLUE}CITE Test Results Analysis${NC}"
 echo "==============================="
 
 RESULTS_FOUND=false
-if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; then
+if [[ -d "$RESULTS_SOURCE_DIR" && $(ls -A "$RESULTS_SOURCE_DIR" 2>/dev/null) ]]; then
     RESULTS_FOUND=true
-    echo "Results saved to: $CITE_RESULTS_DIR/"
+    echo "Results saved to: $RESULTS_SOURCE_DIR/"
 
     # Look for test result files
-    RESULTS_XML=$(find "$CITE_RESULTS_DIR" -type f -name "testng-results.xml" | sort | tail -n 1)
+    RESULTS_XML=$(find "$RESULTS_SOURCE_DIR" -type f -name "testng-results.xml" | sort | tail -n 1)
     if [[ -n "$RESULTS_XML" && -f "$RESULTS_XML" ]]; then
         echo -e "${GREEN}Test result files found${NC}"
         TOTAL_TESTS=$(sed -n 's/.*total="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
@@ -288,14 +337,21 @@ if [[ -d "$CITE_RESULTS_DIR" && $(ls -A "$CITE_RESULTS_DIR" 2>/dev/null) ]]; the
         FAILED_TESTS=$(sed -n 's/.*failed="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         SKIPPED_TESTS=$(sed -n 's/.*skipped="\([0-9]\+\)".*/\1/p' "$RESULTS_XML" | head -n 1)
         CANTTELL_TESTS=0
-    elif find "$CITE_RESULTS_DIR" -type f \( -name "*.xml" -o -name "*.html" \) -print -quit | grep -q .; then
+    elif find "$RESULTS_SOURCE_DIR" -type f \( -name "*.xml" -o -name "*.html" \) -print -quit | grep -q .; then
         echo -e "${GREEN}Test result files found${NC}"
         # Fallback if summary files are present
-        PASSED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/passed-tests.txt" 2>/dev/null || echo "0")
-        FAILED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/failed-tests.txt" 2>/dev/null || echo "0")
-        SKIPPED_TESTS=$(wc -l < "$CITE_RESULTS_DIR/skipped-tests.txt" 2>/dev/null || echo "0")
-        CANTTELL_TESTS=$(wc -l < "$CITE_RESULTS_DIR/canttell-tests.txt" 2>/dev/null || echo "0")
+        PASSED_TESTS=$(wc -l < "$RESULTS_SOURCE_DIR/passed-tests.txt" 2>/dev/null || echo "0")
+        FAILED_TESTS=$(wc -l < "$RESULTS_SOURCE_DIR/failed-tests.txt" 2>/dev/null || echo "0")
+        SKIPPED_TESTS=$(wc -l < "$RESULTS_SOURCE_DIR/skipped-tests.txt" 2>/dev/null || echo "0")
+        CANTTELL_TESTS=$(wc -l < "$RESULTS_SOURCE_DIR/canttell-tests.txt" 2>/dev/null || echo "0")
         TOTAL_TESTS=$((PASSED_TESTS + FAILED_TESTS + SKIPPED_TESTS + CANTTELL_TESTS))
+    elif [[ -f "$RESULTS_SOURCE_DIR/error_log/log.txt" ]]; then
+        echo -e "${YELLOW}CITE session produced an error log and no test results${NC}"
+        TOTAL_TESTS=1
+        PASSED_TESTS=0
+        FAILED_TESTS=1
+        SKIPPED_TESTS=0
+        CANTTELL_TESTS=0
     else
         echo -e "${YELLOW}No test result files found${NC}"
     fi
@@ -335,7 +391,8 @@ fi
 
 # Generate summary report
 echo -e "\n${BLUE}Generating CITE Summary Report${NC}"
-cat > "$CITE_RESULTS_DIR/cite-summary.md" << EOF
+SUMMARY_FILE="$CITE_RESULTS_DIR/cite-tiles-summary.md"
+cat > "$SUMMARY_FILE" << EOF
 # OGC API Tiles CITE Conformance Test Results
 
 **Execution Date**: $(date)
@@ -395,13 +452,16 @@ fi)
 
 ## Files
 
-$(find "$CITE_RESULTS_DIR" -type f \( -name "*.xml" -o -name "*.html" -o -name "*.log" \) 2>/dev/null | sort || echo "No result files found")
+$(find "${RESULTS_SOURCE_DIR:-$CITE_RESULTS_DIR}" -type f \( -name "*.xml" -o -name "*.html" -o -name "*.log" \) 2>/dev/null | sort || echo "No result files found")
 
 ---
 Generated by: $0
 EOF
 
-echo -e "${GREEN}Summary report saved to: $CITE_RESULTS_DIR/cite-summary.md${NC}"
+# Backward-compatibility for any tooling that still reads cite-summary.md
+cp "$SUMMARY_FILE" "$CITE_RESULTS_DIR/cite-summary.md"
+
+echo -e "${GREEN}Summary report saved to: $SUMMARY_FILE${NC}"
 
 # Final status
 if [[ $FAILED_TESTS -eq 0 && $TOTAL_TESTS -gt 0 ]]; then

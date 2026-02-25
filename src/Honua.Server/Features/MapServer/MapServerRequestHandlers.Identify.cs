@@ -26,6 +26,7 @@ namespace Honua.Server.Features.MapServer;
 internal static partial class MapServerEndpoints
 {
     private const int DefaultTolerance = 3;
+    private const string InvalidIdentifyRequestMessage = "Invalid identify request parameters.";
 
     private enum IdentifyLayerMode
     {
@@ -344,7 +345,7 @@ internal static partial class MapServerEndpoints
         catch (ArgumentException ex)
         {
             MapServerLog.IdentifyFailed(logger, serviceId, ex.Message, ex);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return StandardErrorHelpers.CreateBadRequest(context, InvalidIdentifyRequestMessage);
         }
         catch (Exception ex)
         {

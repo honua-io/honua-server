@@ -42,12 +42,17 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
     /// <summary>
     /// High-priority queries that should be prepared immediately
     /// </summary>
-    private static HighPriorityQuery[] BuildHighPriorityQueries(string featuresTableName)
+    private static HighPriorityQuery[] BuildHighPriorityQueries(
+        string featuresTableName,
+        string layersTableName,
+        string servicesTableName,
+        string attachmentsTableName,
+        string layerFieldsTableName)
     {
         return new[]
         {
             // Layer catalog queries - executed on every layer metadata request
-            new HighPriorityQuery("layer_by_id", """
+            new HighPriorityQuery("layer_by_id", $"""
                 SELECT
                     l.layer_id,
                     l.layer_name,
@@ -62,19 +67,19 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
                     ST_XMax(l.extent) as xmax,
                     ST_YMax(l.extent) as ymax,
                     ST_SRID(l.extent) as extent_srid
-                FROM honua.layers l
+                FROM {layersTableName} l
                 WHERE l.layer_id = $1
                   AND l.enabled = TRUE
                 """),
 
             // Layer existence check - used for validation
-            new HighPriorityQuery("layer_exists", "SELECT 1 FROM honua.layers WHERE layer_id = $1 AND enabled = TRUE"),
+            new HighPriorityQuery("layer_exists", $"SELECT 1 FROM {layersTableName} WHERE layer_id = $1 AND enabled = TRUE"),
 
             // Service existence check - used for validation
-            new HighPriorityQuery("service_exists", "SELECT 1 FROM honua.services WHERE LOWER(service_name) = LOWER($1)"),
+            new HighPriorityQuery("service_exists", $"SELECT 1 FROM {servicesTableName} WHERE LOWER(service_name) = LOWER($1)"),
 
             // Layer SRID lookup - used for spatial queries
-            new HighPriorityQuery("layer_srid", "SELECT srid FROM honua.layers WHERE layer_id = $1 AND enabled = TRUE"),
+            new HighPriorityQuery("layer_srid", $"SELECT srid FROM {layersTableName} WHERE layer_id = $1 AND enabled = TRUE"),
 
             // Feature count query - used for metadata and pagination
             new HighPriorityQuery("feature_count", $"SELECT COUNT(*) FROM {featuresTableName} WHERE layer_id = $1"),
@@ -97,14 +102,14 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
             new HighPriorityQuery("health_check", "SELECT 1"),
 
             // Attachment count by feature - used for feature metadata
-            new HighPriorityQuery("attachment_count", """
+            new HighPriorityQuery("attachment_count", $"""
                 SELECT COUNT(*)
-                FROM honua.attachments
+                FROM {attachmentsTableName}
                 WHERE feature_id = $1 AND layer_id = $2
                 """),
 
             // Layer fields metadata - used for feature schema
-            new HighPriorityQuery("layer_fields", """
+            new HighPriorityQuery("layer_fields", $"""
                 SELECT
                     field_name,
                     field_type,
@@ -112,7 +117,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
                     is_nullable,
                     default_value,
                     field_alias
-                FROM honua.layer_fields
+                FROM {layerFieldsTableName}
                 WHERE layer_id = $1
                 ORDER BY field_order
                 """)
@@ -134,8 +139,21 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
         ArgumentNullException.ThrowIfNull(configuration);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        var featuresTableName = DatabaseSchema.GetFeaturesTableName(configuration["Database:Schema"]);
-        _highPriorityQueries = BuildHighPriorityQueries(featuresTableName);
+        var configuredSchema = configuration["Database:Schema"];
+        var metadataSchema = string.IsNullOrWhiteSpace(configuredSchema) ? "honua" : configuredSchema;
+
+        var featuresTableName = DatabaseSchema.GetFeaturesTableName(configuredSchema);
+        var layersTableName = DatabaseSchema.GetQualifiedTableName("layers", metadataSchema);
+        var servicesTableName = DatabaseSchema.GetQualifiedTableName("services", metadataSchema);
+        var attachmentsTableName = DatabaseSchema.GetQualifiedTableName("attachments", metadataSchema);
+        var layerFieldsTableName = DatabaseSchema.GetQualifiedTableName("layer_fields", metadataSchema);
+
+        _highPriorityQueries = BuildHighPriorityQueries(
+            featuresTableName,
+            layersTableName,
+            servicesTableName,
+            attachmentsTableName,
+            layerFieldsTableName);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

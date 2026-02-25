@@ -48,4 +48,5 @@ output "redis_connection_secret_arn" {
 output "redis_primary_endpoint" {
   description = "Redis primary endpoint address (if created)."
   value       = local.redis_create ? aws_elasticache_replication_group.redis[0].primary_endpoint_address : null
+  sensitive   = true
 }

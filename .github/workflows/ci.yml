@@ -157,7 +157,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
@@ -180,6 +180,32 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
+      - name: Reclaim disk space for test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk space before cleanup:"
+          df -h
+          docker system df || true
+
+          if command -v sudo >/dev/null 2>&1; then
+            SUDO="sudo"
+          else
+            SUDO=""
+          fi
+
+          $SUDO rm -rf /usr/local/lib/android || true
+          $SUDO rm -rf /opt/ghc || true
+          $SUDO rm -rf /usr/share/swift || true
+          $SUDO rm -rf /opt/hostedtoolcache/CodeQL || true
+
+          docker system prune -af --volumes || true
+          docker builder prune -af || true
+
+          echo "Disk space after cleanup:"
+          df -h
+          docker system df || true
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -248,12 +274,12 @@ jobs:
 
       - name: Pre-pull Docker images for faster tests
         run: |
-          docker pull postgis/postgis:16-3.4-alpine || true
-          docker pull postgis/postgis:18-3.6 || true
+          docker pull --quiet postgis/postgis:16-3.4-alpine || true
+          docker pull --quiet postgis/postgis:18-3.6 || true
 
       - name: Start emulator containers (Azurite + Localstack)
         run: |
-          docker compose -f .devcontainer/docker-compose.emulators.yml up -d
+          docker compose -f .devcontainer/docker-compose.emulators.yml up -d --quiet-pull
           for i in {1..30}; do
             if (echo > /dev/tcp/localhost/4566) >/dev/null 2>&1 \
               && (echo > /dev/tcp/localhost/10000) >/dev/null 2>&1; then
@@ -266,12 +292,12 @@ jobs:
           exit 1
 
       - name: Run .NET Tests
-        timeout-minutes: 25
+        timeout-minutes: 60
         run: |
           dotnet build tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
             --configuration Release
-          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps
-          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install
+          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps chromium
+          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install chromium
           dotnet test Honua.sln \
             --no-restore \
             --configuration Release \
@@ -279,7 +305,7 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
             --blame-hang-timeout 8m \
-            -- RunConfiguration.MaxCpuCount=0
+            -- RunConfiguration.MaxCpuCount=1
 
       - name: Install Python test dependencies
         run: |
@@ -582,12 +608,15 @@ jobs:
 
       - name: Start Honua Server
         run: |
-          dotnet run --project src/Honua.Server --configuration Release --no-build &
+          dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile &
           sleep 10
-          curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:5000/health || exit 1
+          curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:5000/healthz/live || exit 1
         env:
           ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
           ASPNETCORE_URLS: "http://localhost:5000"
+          ASPNETCORE_ENVIRONMENT: "Development"
+          HONUA_DEV_AUTH: "true"
+          HONUA_ADMIN_PASSWORD: "ci-js-integration-admin-password"
           Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"
           Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
 

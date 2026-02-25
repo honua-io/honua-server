@@ -68,6 +68,21 @@ internal static class ODataRequestValidation
         out ODataPagingParameters? paging,
         out IResult? error)
     {
+        return TryParsePaging(context, validationService, top, skip, skiptoken, count, filter: null, orderby: null, out paging, out error);
+    }
+
+    public static bool TryParsePaging(
+        HttpContext context,
+        ODataValidationService validationService,
+        string? top,
+        string? skip,
+        string? skiptoken,
+        string? count,
+        string? filter,
+        string? orderby,
+        out ODataPagingParameters? paging,
+        out IResult? error)
+    {
         paging = null;
         error = null;
 
@@ -83,10 +98,17 @@ internal static class ODataRequestValidation
             return false;
         }
 
-        if (!ODataParsingUtilities.TryParseOptionalInt(skiptoken, "$skiptoken", out var skipTokenValue, out parseError))
+        // Decode opaque $skiptoken (supports both legacy integer and Base64Url-encoded cursor)
+        int? skipTokenValue = null;
+        if (!string.IsNullOrWhiteSpace(skiptoken))
         {
-            error = ODataUtilityService.CreateODataError(context, "InvalidQueryOption", parseError!);
-            return false;
+            if (!ODataSkipTokenService.TryDecode(skiptoken, filter, orderby, out var decodedOffset, out var tokenError))
+            {
+                error = ODataUtilityService.CreateODataError(context, "InvalidQueryOption", tokenError!);
+                return false;
+            }
+
+            skipTokenValue = decodedOffset;
         }
 
         if (skipValue.HasValue && skipTokenValue.HasValue)
@@ -154,8 +176,28 @@ internal static class ODataRequestValidation
         out bool? countValue,
         out bool useSkipToken)
     {
-        var error = TryParsePagingOrError(context, validationService, top, skip, skiptoken, count, out var paging);
-        if (error != null)
+        return TryGetPagingValues(
+            context, validationService, top, skip, skiptoken, count,
+            filter: null, orderby: null,
+            out pagination, out topValue, out skipValue, out countValue, out useSkipToken);
+    }
+
+    public static IResult? TryGetPagingValues(
+        HttpContext context,
+        ODataValidationService validationService,
+        string? top,
+        string? skip,
+        string? skiptoken,
+        string? count,
+        string? filter,
+        string? orderby,
+        out PaginationValues pagination,
+        out int? topValue,
+        out int? skipValue,
+        out bool? countValue,
+        out bool useSkipToken)
+    {
+        if (!TryParsePaging(context, validationService, top, skip, skiptoken, count, filter, orderby, out var paging, out var error))
         {
             pagination = new PaginationValues(0, 0);
             topValue = null;

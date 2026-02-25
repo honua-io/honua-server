@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -256,6 +257,15 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
     /// </summary>
     private static void ValidateTokenValidation(TokenValidationOptions tokenValidation, List<string> failures)
     {
+        if (!string.IsNullOrWhiteSpace(tokenValidation.SymmetricSigningKey))
+        {
+            var keyBytes = Encoding.UTF8.GetByteCount(tokenValidation.SymmetricSigningKey);
+            if (keyBytes < 32)
+            {
+                failures.Add("TokenValidation.SymmetricSigningKey must be at least 32 UTF-8 bytes for HS256 security.");
+            }
+        }
+
         // Clock skew validation
         ValidateTimeSpan(tokenValidation.ClockSkew, TimeSpan.Zero, TimeSpan.FromMinutes(30), "TokenValidation.ClockSkew", failures);
 

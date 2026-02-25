@@ -82,6 +82,42 @@ public interface IPerformanceMonitor
     /// <param name="value">Duration value</param>
     /// <param name="tags">Optional tags for metric dimensions</param>
     void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null);
+
+    /// <summary>
+    /// Records a geospatial operation metric.
+    /// </summary>
+    /// <param name="operationType">Type of spatial operation (e.g., "transform", "intersects", "buffer")</param>
+    /// <param name="duration">Operation duration</param>
+    /// <param name="coordinateCount">Number of coordinates processed</param>
+    /// <param name="fromSrid">Source spatial reference identifier (null for non-transform operations)</param>
+    /// <param name="toSrid">Target spatial reference identifier (null for non-transform operations)</param>
+    void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null);
+
+    /// <summary>
+    /// Records memory pressure information and triggers alerts if necessary.
+    /// </summary>
+    /// <param name="memoryPressurePercent">Memory pressure as percentage (0-100)</param>
+    /// <param name="allocatedMB">Currently allocated memory in megabytes</param>
+    /// <param name="availableMB">Available memory in megabytes</param>
+    void RecordMemoryPressure(double memoryPressurePercent, long allocatedMB, long availableMB);
+
+    /// <summary>
+    /// Records cache operation latency.
+    /// </summary>
+    /// <param name="cacheType">Type of cache operation</param>
+    /// <param name="operation">Cache operation (get, set, remove, evict)</param>
+    /// <param name="duration">Operation duration</param>
+    /// <param name="success">Whether the operation was successful</param>
+    void RecordCacheLatency(string cacheType, string operation, TimeSpan duration, bool success = true);
+
+    /// <summary>
+    /// Records error with enhanced context for debugging.
+    /// </summary>
+    /// <param name="errorType">Type/category of error</param>
+    /// <param name="operation">Operation that failed</param>
+    /// <param name="context">Additional context information</param>
+    /// <param name="exception">The exception that occurred</param>
+    void RecordErrorWithContext(string errorType, string operation, IDictionary<string, object>? context, Exception? exception = null);
 }
 
 /// <summary>

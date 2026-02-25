@@ -134,6 +134,7 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 
 ## **Related Documentation**
 
+- [MVP Compatibility Contract](MVP_COMPATIBILITY_CONTRACT.md)
 - [Geospatial API Examples](API_EXAMPLES.md)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)

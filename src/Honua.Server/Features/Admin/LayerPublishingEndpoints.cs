@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -115,7 +116,7 @@ internal static class LayerPublishingEndpoints
             if (!migrationResult.Successful)
             {
                 logger.LogError(migrationResult.Error, "Layer publish migration failed: {Message}", migrationResult.ErrorMessage);
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
             var connectionId = Guid.TryParse(id, out var parsedId) ? parsedId : (Guid?)null;
@@ -139,6 +140,12 @@ internal static class LayerPublishingEndpoints
                 connectionString,
                 publishRequest,
                 context.RequestAborted);
+
+            await InvalidateServiceCatalogCacheAsync(
+                context,
+                result.ServiceName,
+                [result.LayerId],
+                logger).ConfigureAwait(false);
 
             var location = $"/api/v1/admin/connections/{id}/layers/{result.LayerId}";
             return TypedResults.Created(location, ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
@@ -197,7 +204,7 @@ internal static class LayerPublishingEndpoints
             if (!migrationResult.Successful)
             {
                 logger.LogError(migrationResult.Error, "Layer enable migration failed: {Message}", migrationResult.ErrorMessage);
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
             var result = await publishingService.SetLayerEnabledAsync(
@@ -211,6 +218,12 @@ internal static class LayerPublishingEndpoints
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Layer not found."));
             }
+
+            await InvalidateServiceCatalogCacheAsync(
+                context,
+                result.ServiceName,
+                [result.LayerId],
+                logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
         }
@@ -257,7 +270,7 @@ internal static class LayerPublishingEndpoints
             if (!migrationResult.Successful)
             {
                 logger.LogError(migrationResult.Error, "Layer bulk enable migration failed: {Message}", migrationResult.ErrorMessage);
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
             var result = await publishingService.SetServiceLayersEnabledAsync(
@@ -265,6 +278,15 @@ internal static class LayerPublishingEndpoints
                 serviceName ?? "default",
                 request.Enabled,
                 context.RequestAborted);
+
+            var cacheServiceName = !string.IsNullOrWhiteSpace(serviceName)
+                ? serviceName
+                : result.Count > 0 ? result[0].ServiceName : null;
+            await InvalidateServiceCatalogCacheAsync(
+                context,
+                cacheServiceName,
+                result.Select(layer => layer.LayerId),
+                logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(result));
         }
@@ -300,5 +322,30 @@ internal static class LayerPublishingEndpoints
         }
 
         return await resolver.ResolveConnectionStringAsync(id, cancellationToken);
+    }
+
+    private static async Task InvalidateServiceCatalogCacheAsync(
+        HttpContext context,
+        string? serviceName,
+        IEnumerable<int> layerIds,
+        ILogger<LayerPublishingEndpointsLog> logger)
+    {
+        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (cacheInvalidator == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await cacheInvalidator.InvalidateServiceCatalogAsync(
+                serviceName,
+                layerIds,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Failed to invalidate service catalog cache for {ServiceName}", serviceName);
+        }
     }
 }

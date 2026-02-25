@@ -33,6 +33,6 @@ DELETE /odata/v4/Layers('{id}')/Features({oid}) → Delete
 - OData CRUD less commonly used than query (most BI tools are read-only)
 
 ### Notes
-- `$expand` and `$apply` remain deferred to Beta (genuinely complex)
+- `$expand` and `$apply` are implemented (nested expand paths and advanced aggregation methods are not supported)
 - CRUD implementation reuses existing transaction logic
 - Same validation and error handling as other protocols

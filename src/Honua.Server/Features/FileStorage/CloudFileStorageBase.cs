@@ -275,9 +275,43 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
                 await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
             }
 
+            // Enhanced cleanup: Attempt to cleanup any partially uploaded files
+            await CleanupCancelledUploadResourcesAsync(uploadId, cancellationToken).ConfigureAwait(false);
+
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Cleanup resources associated with a cancelled upload to prevent storage leaks.
+    /// Override this method in derived classes to implement provider-specific cleanup.
+    /// </summary>
+    /// <param name="uploadId">The upload ID to clean up</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>A task representing the cleanup operation</returns>
+    protected virtual async Task CleanupCancelledUploadResourcesAsync(string uploadId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Try to find and delete any partially uploaded files associated with this upload
+            // This prevents storage bloat from cancelled uploads
+            var progress = await ProgressStore.GetProgressAsync(uploadId, cancellationToken).ConfigureAwait(false);
+            if (progress?.CloudFileId != null && !string.IsNullOrEmpty(progress.CloudFileId))
+            {
+                // Delete the partially uploaded cloud file
+                var deleted = await DeleteAsync(progress.CloudFileId, cancellationToken).ConfigureAwait(false);
+                if (deleted)
+                {
+                    FileStorageLog.CleanupCancelledUpload(Logger, uploadId, progress.CloudFileId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log but don't throw - cleanup is best-effort
+            FileStorageLog.CleanupCancelledUploadFailed(Logger, uploadId, ex);
+        }
     }
 }

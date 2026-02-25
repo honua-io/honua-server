@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
+
 namespace Honua.Server.Features.MapServer.Rendering;
 
 /// <summary>
@@ -9,8 +11,8 @@ namespace Honua.Server.Features.MapServer.Rendering;
 /// </summary>
 internal static class CoordinateTransformer
 {
-    private const double EarthRadius = 6378137.0;
-    private const double MaxLatitude = 85.0511287798066;
+    private const double EarthRadius = SpatialConstants.EarthRadius;
+    private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
 
     /// <summary>
     /// Converts a bounding box from one SRID to another.

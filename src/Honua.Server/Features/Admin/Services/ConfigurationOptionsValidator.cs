@@ -135,6 +135,13 @@ internal static class ConfigurationOptionsValidator
             }
 
             // Dev auth bypass is ignored outside development/test environments by the auth handler.
+
+            if (!isDevelopment &&
+                apiKeyOptions.EnableBasicAuthCompatibility &&
+                !apiKeyOptions.RequireHttpsForBasicAuth)
+            {
+                errors.Add("Authentication:BasicCompatibility:RequireHttps must be true when Basic compatibility is enabled in production.");
+            }
         }
         catch (Exception ex)
         {

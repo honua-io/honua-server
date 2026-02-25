@@ -676,6 +676,21 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCsvFormat_ReturnsCsvResponse()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?f=csv&limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/csv");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("id");
+        content.Should().Contain("geometry");
+        content.Should().Contain("\"\"coordinates\"\":");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithGeoJsonAcceptHeader_ReturnsGeoJsonResponse()
     {
         // Arrange
@@ -793,6 +808,21 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         geomProperty.ValueKind.Should().Be(JsonValueKind.Object);
         geomProperty.TryGetProperty("type", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetSingleItem_WithCsvFormat_ReturnsCsvResponse()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items/1?f=csv");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/csv");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("id");
+        content.Should().Contain("geometry");
+        content.Should().Contain("\"\"coordinates\"\":");
     }
 
     #endregion

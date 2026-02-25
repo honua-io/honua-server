@@ -49,8 +49,8 @@ jobs:
           context: .
           load: true
           tags: ${{ env.IMAGE_NAME }}:security-test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=security-jit
+          cache-to: type=gha,mode=max,scope=security-jit
 
       # 3. VULNERABILITY SCANNING (Trivy only - more comprehensive than Grype)
       - name: Run Trivy vulnerability scanner

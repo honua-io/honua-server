@@ -4,7 +4,7 @@ Sources:
 - https://developers.arcgis.com/rest/services-reference/enterprise/map-service/
 - https://developers.arcgis.com/rest/services-reference/enterprise/map-service-layer/
 
-Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
+Legend: **Implemented** | **Partial** | **Not implemented**
 
 ---
 
@@ -21,16 +21,16 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 | Find | `.../MapServer/find` | GET/POST | `GET/POST .../MapServer/find` | Cross-layer text search: `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
 | Legend | `.../MapServer/legend` | GET | `GET .../MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
 | Layer query | `.../MapServer/{layerId}/query` | GET/POST | `GET/POST .../MapServer/{layerId}/query` | Delegates to FeatureServer query handler. See [FeatureServer matrix](feature-server-matrix.md). |
+| Service-level query | `.../MapServer/query` | GET/POST | `GET/POST .../MapServer/query` | Delegates to FeatureServer query handler using `layerId` or `layers`. |
+| Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | `GET .../MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
+| WMTS | `.../MapServer/WMTS` | GET | `GET .../MapServer/WMTS` and `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo` (KVP), plus advertised RESTful `ResourceURL` templates for tile/feature info and optional metadata (`LegendURL`, `Themes`, `TileMatrixSetLimits`). |
+| WMS | `.../MapServer/WMS` | GET | `GET .../MapServer/WMS` and `GET /ogc/services/{serviceId}/wms` | Supports `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
 
 ### Not implemented
 
 | Operation | Esri path | Methods | Notes |
 | --- | --- | --- | --- |
 | Generate KML | `.../MapServer/generateKml` | GET | |
-| Service-level query | `.../MapServer/query` | GET | Only layer-level query exists. |
-| Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | Use OGC Tiles protocol. |
-| WMTS | `.../MapServer/WMTS` | GET | Use OGC Tiles protocol. |
-| WMS | `.../MapServer/WMS` | GET | |
 
 ---
 
@@ -62,7 +62,7 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 | `minScale` | Optional | Implemented | Derived from max of layer `minScale` values. |
 | `maxScale` | Optional | Implemented | Derived from min of layer `maxScale` values. |
 | `documentInfo` | Optional | Implemented | Title, Author, Comments, Subject, Category, Keywords. |
-| `tileInfo` | Optional | Not implemented | No tile cache. |
+| `tileInfo` | Optional | Implemented | Includes tile dimensions, DPI, origin, spatial reference, and level-of-detail entries for the dynamic tile route. |
 
 ### Layer metadata (`GET .../MapServer/{layerId}`)
 
@@ -134,3 +134,4 @@ Legend: **Implemented** | **Partial** | **Stubbed** | **Not implemented**
 - `gdbVersion` is consistently rejected with `400 Bad Request` across Export, Identify, and Find operations.
 - Identify result limit uses `LimitsOptions.Query.MaxRecordCount` (configurable) instead of a hard-coded value.
 - `maxAllowableOffset`, `geometryPrecision`, `returnZ`, `returnM`, and other advanced params are silently accepted (no validation error) but not yet applied.
+- Service metadata includes a `tileInfo` block even though map tiles are generated dynamically (not from a pre-built fused cache).

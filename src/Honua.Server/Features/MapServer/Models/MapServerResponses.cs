@@ -141,6 +141,12 @@ internal sealed class MapServerResponse
     /// </summary>
     [JsonPropertyName("documentInfo")]
     public MapServerDocumentInfo? DocumentInfo { get; init; }
+
+    /// <summary>
+    /// Tile caching information for the service (WebMercatorQuad tile matrix set).
+    /// </summary>
+    [JsonPropertyName("tileInfo")]
+    public TileInfo? TileInfo { get; init; }
 }
 
 /// <summary>
@@ -711,4 +717,94 @@ internal sealed class FindResult
     /// </summary>
     [JsonPropertyName("geometry")]
     public object? Geometry { get; init; }
+}
+
+/// <summary>
+/// Tile caching information describing the tiling scheme.
+/// </summary>
+internal sealed class TileInfo
+{
+    /// <summary>
+    /// Number of pixel rows per tile.
+    /// </summary>
+    [JsonPropertyName("rows")]
+    public int Rows { get; init; } = 256;
+
+    /// <summary>
+    /// Number of pixel columns per tile.
+    /// </summary>
+    [JsonPropertyName("cols")]
+    public int Cols { get; init; } = 256;
+
+    /// <summary>
+    /// Dots per inch for tile rendering.
+    /// </summary>
+    [JsonPropertyName("dpi")]
+    public int Dpi { get; init; } = 96;
+
+    /// <summary>
+    /// Image format used for tiles.
+    /// </summary>
+    [JsonPropertyName("format")]
+    public string Format { get; init; } = "PNG";
+
+    /// <summary>
+    /// Tile origin point in map coordinates.
+    /// </summary>
+    [JsonPropertyName("origin")]
+    public TileOrigin? Origin { get; init; }
+
+    /// <summary>
+    /// Spatial reference of the tile scheme.
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    public EsriSpatialReference? SpatialReference { get; init; }
+
+    /// <summary>
+    /// Levels of detail (zoom levels) available for tile access.
+    /// </summary>
+    [JsonPropertyName("lods")]
+    public LevelOfDetail[]? Lods { get; init; }
+}
+
+/// <summary>
+/// Tile origin point coordinates.
+/// </summary>
+internal sealed class TileOrigin
+{
+    /// <summary>
+    /// X coordinate of the tile origin.
+    /// </summary>
+    [JsonPropertyName("x")]
+    public double X { get; init; }
+
+    /// <summary>
+    /// Y coordinate of the tile origin.
+    /// </summary>
+    [JsonPropertyName("y")]
+    public double Y { get; init; }
+}
+
+/// <summary>
+/// Describes a single level of detail (zoom level) in a tiling scheme.
+/// </summary>
+internal sealed class LevelOfDetail
+{
+    /// <summary>
+    /// Zoom level number.
+    /// </summary>
+    [JsonPropertyName("level")]
+    public int Level { get; init; }
+
+    /// <summary>
+    /// Map resolution in units per pixel at this zoom level.
+    /// </summary>
+    [JsonPropertyName("resolution")]
+    public double Resolution { get; init; }
+
+    /// <summary>
+    /// Scale denominator at this zoom level.
+    /// </summary>
+    [JsonPropertyName("scale")]
+    public double Scale { get; init; }
 }

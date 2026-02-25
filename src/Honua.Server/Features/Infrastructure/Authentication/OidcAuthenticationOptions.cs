@@ -260,6 +260,12 @@ public sealed class ClaimsMappingOptions
 public sealed class TokenValidationOptions
 {
     /// <summary>
+    /// Gets or sets an optional symmetric signing key used for static JWT validation.
+    /// When set, runtime metadata discovery is bypassed and this key is used for Bearer signature validation.
+    /// </summary>
+    public string? SymmetricSigningKey { get; set; }
+
+    /// <summary>
     /// Gets or sets whether to validate the token issuer.
     /// </summary>
     public bool ValidateIssuer { get; set; } = true;

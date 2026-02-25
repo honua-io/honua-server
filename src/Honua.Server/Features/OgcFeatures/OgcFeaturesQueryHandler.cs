@@ -49,6 +49,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
+    private const int StreamingFlushInterval = 32;
     private static readonly ImmutableHashSet<string> _sortByCoreFields = ImmutableHashSet.Create(
         StringComparer.OrdinalIgnoreCase,
         FieldNames.ObjectId,
@@ -314,6 +315,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
+            if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
+            {
+                var fieldNames = ResolveCsvFieldNames(layer, projectedProperties);
+                var csv = BuildCsvResponse(features, fieldNames);
+                return Results.Text(csv, MediaTypes.Csv);
+            }
+
             if (canCache && cacheKey != null)
             {
                 var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
@@ -481,6 +489,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return Results.Text(gml, MediaTypes.Gml);
             }
 
+            if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
+            {
+                var fieldNames = ResolveCsvFieldNames(layer, null);
+                var csv = BuildCsvResponse([ogcFeature], fieldNames);
+                return Results.Text(csv, MediaTypes.Csv);
+            }
+
             if (canCache && cacheKey != null)
             {
                 var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
@@ -546,6 +561,19 @@ internal sealed partial class OgcFeaturesQueryHandler(
             Properties = properties,
             Links = links
         };
+    }
+
+    private static string[] ResolveCsvFieldNames(
+        LayerDefinition layer,
+        ImmutableHashSet<string>? projectedProperties)
+    {
+        IEnumerable<string> fieldNames = layer.AttributeFields.Select(field => field.Name);
+        if (projectedProperties != null)
+        {
+            fieldNames = fieldNames.Where(projectedProperties.Contains);
+        }
+
+        return fieldNames.ToArray();
     }
 
     private static ImmutableArray<Link> BuildItemsLinks(
@@ -627,6 +655,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var format when string.Equals(format, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) => "geojson",
             var format when string.Equals(format, MediaTypes.Html, StringComparison.OrdinalIgnoreCase) => "html",
             var format when string.Equals(format, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) => "gml",
+            var format when string.Equals(format, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase) => "csv",
             _ => null
         };
 
@@ -873,6 +902,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
         return OgcResponseFormatter.BuildGmlSingleFeature(feature);
     }
 
+    private static string BuildCsvResponse(IEnumerable<GeoJsonFeature> features, string[] fieldNames)
+    {
+        return OgcResponseFormatter.BuildCsvResponse(features, fieldNames);
+    }
+
     private static async Task StreamFeatureCollectionAsync(
         HttpContext context,
         IAsyncEnumerable<Feature> features,
@@ -896,6 +930,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteStartArray("features");
 
         var numberReturned = 0;
+        var featuresSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(
@@ -907,7 +942,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;
-            await writer.FlushAsync(cancellationToken);
+            if (++featuresSinceFlush >= StreamingFlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                featuresSinceFlush = 0;
+            }
         }
 
         writer.WriteEndArray();

@@ -31,6 +31,7 @@ internal static partial class MapServerEndpoints
     private const int DefaultImageHeight = 400;
     private const int DefaultDpi = 96;
     private const int MaxFeaturesPerLayer = 10_000;
+    private const string InvalidExportRequestMessage = "Invalid export request parameters.";
 
     /// <summary>
     /// Handle MapServer export (map image generation) requests.
@@ -380,7 +381,7 @@ internal static partial class MapServerEndpoints
         catch (ArgumentException ex)
         {
             MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return StandardErrorHelpers.CreateBadRequest(context, InvalidExportRequestMessage);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -1965,46 +1966,10 @@ internal static partial class MapServerEndpoints
     }
 
     private static SpatialFilter CreateBboxSpatialFilter(SkiaMapRenderer.RenderExtent extent, int srid)
-    {
-        var wkb = CreateEnvelopeWkb(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
-        return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
-    }
+        => SpatialFilterHelpers.CreateBboxSpatialFilter(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY, srid);
 
-    /// <summary>
-    /// Creates a WKB polygon representing a bounding box envelope.
-    /// </summary>
     private static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
-    {
-        var wkb = new byte[93];
-        var offset = 0;
-
-        wkb[offset++] = 1;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 3);
-        offset += 4;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 1);
-        offset += 4;
-
-        BitConverter.TryWriteBytes(wkb.AsSpan(offset), 5);
-        offset += 4;
-
-        WritePoint(wkb, ref offset, minX, minY);
-        WritePoint(wkb, ref offset, maxX, minY);
-        WritePoint(wkb, ref offset, maxX, maxY);
-        WritePoint(wkb, ref offset, minX, maxY);
-        WritePoint(wkb, ref offset, minX, minY);
-
-        return wkb;
-    }
-
-    private static void WritePoint(byte[] buffer, ref int offset, double x, double y)
-    {
-        BitConverter.TryWriteBytes(buffer.AsSpan(offset), x);
-        offset += 8;
-        BitConverter.TryWriteBytes(buffer.AsSpan(offset), y);
-        offset += 8;
-    }
+        => SpatialFilterHelpers.CreateEnvelopeWkb(minX, minY, maxX, maxY);
 
     private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties)
     {

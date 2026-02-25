@@ -5,9 +5,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Import.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
@@ -61,14 +64,48 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("valid HTTP");
+        content.Should().Contain("valid HTTPS");
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
-    public async Task Discover_WithNonExistentServer_ReturnsBadGateway()
+    public async Task Discover_WithHttpScheme_ReturnsBadRequest()
     {
-        // Arrange - use a URL that will fail to connect
+        var request = new
+        {
+            ServiceUrl = "http://example.com/arcgis/rest/services/Test/FeatureServer",
+            TimeoutSeconds = 5
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/discover", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("valid HTTPS");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithEmbeddedCredentials_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://user:pass@example.com/arcgis/rest/services/Test/FeatureServer",
+            TimeoutSeconds = 5
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/discover", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("embedded credentials");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithUnresolvableHost_ReturnsBadRequest()
+    {
+        // Arrange - use a URL that cannot be resolved in DNS
         var request = new
         {
             ServiceUrl = "https://nonexistent.arcgis.server.invalid/arcgis/rest/services/Test/FeatureServer",
@@ -78,8 +115,27 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         // Act
         var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/discover", request);
 
-        // Assert - should return 502 Bad Gateway when can't connect
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        // Assert - unresolved hosts should be rejected by SSRF hardening
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("unresolvable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithPrivateNetworkUrl_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://127.0.0.1/arcgis/rest/services/Test/FeatureServer",
+            TimeoutSeconds = 5
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/discover", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("private");
     }
 
     #endregion
@@ -149,6 +205,24 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WithHttpScheme_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "http://example.com/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "test_http_scheme"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("valid HTTPS");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Start_WithValidRequest_ReturnsAccepted()
     {
         // Arrange
@@ -169,6 +243,92 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         content.Should().Contain("jobId");
         content.Should().Contain("statusUrl");
         content.Should().Contain("cancelUrl");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WithPrivateNetworkUrl_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://127.0.0.1/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "test_private_url"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("private");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WithUnresolvableHost_ReturnsBadRequest()
+    {
+        var request = new
+        {
+            ServiceUrl = "https://nonexistent.arcgis.server.invalid/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "test_unresolvable_url"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("unresolvable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task BackgroundWorker_WithUnsafeStoredServiceUrl_FailsJobBeforeImport()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var jobManager = scope.ServiceProvider.GetRequiredService<IDistributedImportJobManager>();
+
+        var jobId = Guid.NewGuid().ToString("N")[..12];
+        var request = new GeoservicesImportRequest
+        {
+            JobId = jobId,
+            ServiceUrl = "https://127.0.0.1/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "unsafe_job_url",
+            TargetSrid = 4326,
+            OverwriteExisting = false,
+            RequestTimeoutSeconds = 30,
+            MaxRetries = 0,
+            AutoPublish = false
+        };
+
+        var progress = GeoservicesImportProgress.CreateInitial(
+            jobId,
+            request.ServiceUrl,
+            request.LayerId,
+            request.TableName);
+
+        await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
+        await jobManager.JobQueue.EnqueueAsync(jobId);
+
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        GeoservicesImportProgress? latestProgress = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            latestProgress = await jobManager.ProgressStore.GetProgressAsync(jobId);
+            if (latestProgress is { Status: GeoservicesImportStatus.Failed })
+            {
+                break;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        latestProgress.Should().NotBeNull();
+        latestProgress!.Status.Should().Be(GeoservicesImportStatus.Failed);
+        latestProgress.ErrorMessage.Should().Contain("not allowed");
     }
 
     #endregion

@@ -26,4 +26,17 @@ public static class PerformanceMonitoringServiceCollectionExtensions
         services.TryAddSingleton<IActiveDbConnectionTracker, ActiveDbConnectionTracker>();
         return services;
     }
+
+    /// <summary>
+    /// Registers enhanced performance monitoring services including memory pressure monitoring.
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddEnhancedPerformanceMonitoring(this IServiceCollection services)
+    {
+        // Add the default performance monitor
+        services.AddDefaultPerformanceMonitor();
+
+        return services;
+    }
 }

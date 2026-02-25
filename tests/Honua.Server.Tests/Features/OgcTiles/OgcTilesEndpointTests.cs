@@ -167,11 +167,17 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
-    public async Task GetDatasetTileset_WithoutCollections_WhenMultipleCollectionsExist_ReturnsBadRequest()
+    public async Task GetDatasetTileset_WithoutCollections_WhenMultipleCollectionsExist_ReturnsTilesetMetadata()
     {
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Json);
+
+        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
+        tileset.Should().NotBeNull();
+        tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
+        tileset.Links.Should().Contain(l => l.Rel == "item");
     }
 
     [IntegrationTest]

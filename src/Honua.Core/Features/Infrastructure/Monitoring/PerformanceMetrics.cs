@@ -214,6 +214,127 @@ internal sealed class PerformanceMetrics
 
     #endregion
 
+    #region Memory Pressure Metrics
+
+    /// <summary>
+    /// Gauge for memory pressure percentage.
+    /// </summary>
+    public static readonly ObservableGauge<double> MemoryPressurePercentage = Meter.CreateObservableGauge<double>(
+        "honua_memory_pressure_percent",
+        () => MemoryMonitor.GetMemoryUsage().MemoryPressurePercentage,
+        "percent",
+        "Current memory pressure as percentage of available memory");
+
+    /// <summary>
+    /// Counter for high memory pressure alerts.
+    /// </summary>
+    public static readonly Counter<long> HighMemoryPressureAlerts = Meter.CreateCounter<long>(
+        "honua_memory_pressure_alerts_total",
+        "alerts",
+        "Total number of high memory pressure alerts triggered");
+
+    /// <summary>
+    /// Histogram for allocated memory in megabytes.
+    /// </summary>
+    public static readonly Histogram<long> AllocatedMemoryMB = Meter.CreateHistogram<long>(
+        "honua_memory_allocated_mb",
+        "megabytes",
+        "Allocated memory in megabytes");
+
+    #endregion
+
+    #region Enhanced Cache Metrics
+
+    /// <summary>
+    /// Histogram for detailed cache hit ratio by cache type.
+    /// </summary>
+    public static readonly Histogram<double> DetailedCacheHitRatio = Meter.CreateHistogram<double>(
+        "honua_cache_hit_ratio_detailed",
+        "ratio",
+        "Detailed cache hit ratio by cache type and time window");
+
+    /// <summary>
+    /// Counter for cache errors.
+    /// </summary>
+    public static readonly Counter<long> CacheErrors = Meter.CreateCounter<long>(
+        "honua_cache_errors_total",
+        "errors",
+        "Total number of cache operation errors");
+
+    #endregion
+
+    #region Enhanced Geospatial Metrics
+
+    /// <summary>
+    /// Histogram for spatial query latency.
+    /// </summary>
+    public static readonly Histogram<double> SpatialQueryDuration = Meter.CreateHistogram<double>(
+        "honua_spatial_query_duration_ms",
+        "ms",
+        "Duration of spatial query operations in milliseconds");
+
+    /// <summary>
+    /// Counter for spatial query operations.
+    /// </summary>
+    public static readonly Counter<long> SpatialQueryCount = Meter.CreateCounter<long>(
+        "honua_spatial_query_total",
+        "queries",
+        "Total number of spatial query operations");
+
+    /// <summary>
+    /// Histogram for coordinate transformation performance.
+    /// </summary>
+    public static readonly Histogram<double> CoordinateTransformDuration = Meter.CreateHistogram<double>(
+        "honua_coordinate_transform_duration_ms",
+        "ms",
+        "Duration of coordinate transformation operations in milliseconds");
+
+    /// <summary>
+    /// Counter for coordinate transformation operations.
+    /// </summary>
+    public static readonly Counter<long> CoordinateTransformCount = Meter.CreateCounter<long>(
+        "honua_coordinate_transform_total",
+        "transforms",
+        "Total number of coordinate transformation operations");
+
+    /// <summary>
+    /// Histogram for spatial filter operations.
+    /// </summary>
+    public static readonly Histogram<double> SpatialFilterDuration = Meter.CreateHistogram<double>(
+        "honua_spatial_filter_duration_ms",
+        "ms",
+        "Duration of spatial filter operations in milliseconds");
+
+    /// <summary>
+    /// Counter for spatial filter operations.
+    /// </summary>
+    public static readonly Counter<long> SpatialFilterCount = Meter.CreateCounter<long>(
+        "honua_spatial_filter_total",
+        "filters",
+        "Total number of spatial filter operations");
+
+    #endregion
+
+    #region Error Tracking Metrics
+
+    /// <summary>
+    /// Counter for application errors by type.
+    /// </summary>
+    public static readonly Counter<long> ApplicationErrors = Meter.CreateCounter<long>(
+        "honua_application_errors_total",
+        "errors",
+        "Total number of application errors by type and operation");
+
+    /// <summary>
+    /// Histogram for error recovery time.
+    /// </summary>
+    public static readonly Histogram<double> ErrorRecoveryDuration = Meter.CreateHistogram<double>(
+        "honua_error_recovery_duration_ms",
+        "ms",
+        "Time taken to recover from errors in milliseconds");
+
+    #endregion
+
     #region Custom Metrics
 
     /// <summary>

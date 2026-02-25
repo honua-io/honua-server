@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Security;
@@ -19,6 +20,8 @@ namespace Honua.Server.Features.OgcFeatures.Services;
 /// </summary>
 internal static class OgcResponseFormatter
 {
+    private const int StreamingFlushInterval = 32;
+
     /// <summary>
     /// Formats feature responses based on requested output format.
     /// </summary>
@@ -204,6 +207,7 @@ internal static class OgcResponseFormatter
         await writer.WriteLineAsync(
             $"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
 
+        var writtenSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             var escapedId = SecurityElement.Escape(feature.Id.ToString());
@@ -213,7 +217,11 @@ internal static class OgcResponseFormatter
             WriteGmlProperties(writer, feature.Attributes, "      ");
             await writer.WriteLineAsync("    </app:Feature>");
             await writer.WriteLineAsync("  </wfs:member>");
-            await writer.FlushAsync(cancellationToken);
+            if (++writtenSinceFlush >= StreamingFlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                writtenSinceFlush = 0;
+            }
         }
 
         await writer.WriteLineAsync("</wfs:FeatureCollection>");
@@ -639,14 +647,49 @@ internal static class OgcResponseFormatter
                 row.Add(value);
             }
 
-            // Simplified geometry representation
-            var geometryValue = feature.Geometry?.Type ?? "";
+            var geometryValue = BuildCsvGeometryValue(feature.Geometry);
             row.Add(geometryValue);
 
             builder.AppendLine(string.Join(",", row.Select(EscapeCsvField)));
         }
 
         return builder.ToString();
+    }
+
+    private static string BuildCsvGeometryValue(SimpleGeoJsonGeometry? geometry)
+    {
+        if (geometry == null || string.IsNullOrWhiteSpace(geometry.Type))
+        {
+            return string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(geometry.CoordinatesJson))
+        {
+            return JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["type"] = geometry.Type
+            });
+        }
+
+        try
+        {
+            using var coordinatesDocument = JsonDocument.Parse(geometry.CoordinatesJson);
+            using var outputStream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(outputStream))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", geometry.Type);
+                writer.WritePropertyName("coordinates");
+                coordinatesDocument.RootElement.WriteTo(writer);
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(outputStream.ToArray());
+        }
+        catch (JsonException)
+        {
+            return geometry.Type;
+        }
     }
 
     private static string EscapeCsvField(string field)
@@ -656,11 +699,55 @@ internal static class OgcResponseFormatter
             return "";
         }
 
+        field = NeutralizePotentialSpreadsheetFormula(field);
+
         if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
         {
             return $"\"{field.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         }
 
         return field;
+    }
+
+    private static string NeutralizePotentialSpreadsheetFormula(string field)
+    {
+        return IsPotentialSpreadsheetFormula(field)
+            ? $"'{field}"
+            : field;
+    }
+
+    private static bool IsPotentialSpreadsheetFormula(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            return false;
+        }
+
+        var span = field.AsSpan();
+        var start = 0;
+        while (start < span.Length && char.IsWhiteSpace(span[start]))
+        {
+            start++;
+        }
+
+        if (start >= span.Length)
+        {
+            return false;
+        }
+
+        var firstToken = span[start];
+        if (firstToken is '=' or '@')
+        {
+            return true;
+        }
+
+        if (firstToken is '+' or '-')
+        {
+            // Preserve plain signed numeric values as numbers in CSV exports.
+            var trimmed = field[start..];
+            return !decimal.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        }
+
+        return false;
     }
 }

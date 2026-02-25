@@ -24,6 +24,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const int TestRelationshipId = 1;
+    private const int MaxRequestAttempts = 3;
+    private static readonly TimeSpan _requestTimeout = TimeSpan.FromMinutes(5);
 
     public async Task InitializeAsync()
     {
@@ -40,7 +42,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithValidParameters_ReturnsRelatedFeatures()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -81,7 +83,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithSingleObjectId_ReturnsOneGroup()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -102,7 +104,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithWhereClause_FiltersRelatedRecords()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&where=name='Related Feature 1'");
 
         // Assert
@@ -129,7 +131,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithOutFields_ReturnsOnlySpecifiedFields()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outFields=objectid,name");
 
         // Assert
@@ -159,7 +161,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithReturnGeometryFalse_ReturnsNoGeometry()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&returnGeometry=false");
 
         // Assert
@@ -181,7 +183,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithResultRecordCount_LimitsResults()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&resultRecordCount=1");
 
         // Assert
@@ -211,11 +213,11 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             returnGeometry = true,
             f = "json"
         });
-        var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
         // Act
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords", content);
+        var response = await PostJsonWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords",
+            requestBody);
 
         // Assert
         response.Be200Ok();
@@ -229,6 +231,60 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse!.RelatedRecordGroups.Should().HaveCount(2);
     }
 
+    private async Task<HttpResponseMessage> GetWithRetryAsync(
+        string requestUri,
+        int maxAttempts = MaxRequestAttempts)
+    {
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var client = _fixture.CreateClient(c => c.Timeout = _requestTimeout);
+            try
+            {
+                return await client.GetAsync(requestUri);
+            }
+            catch (Exception ex) when (ShouldRetryRequest(ex, attempt, maxAttempts))
+            {
+                await Task.Delay(GetRetryDelay(attempt));
+            }
+        }
+
+        throw new InvalidOperationException("GET retry loop terminated unexpectedly.");
+    }
+
+    private async Task<HttpResponseMessage> PostJsonWithRetryAsync(
+        string requestUri,
+        string requestBody,
+        int maxAttempts = MaxRequestAttempts)
+    {
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var client = _fixture.CreateClient(c => c.Timeout = _requestTimeout);
+            using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+            try
+            {
+                return await client.PostAsync(requestUri, content);
+            }
+            catch (Exception ex) when (ShouldRetryRequest(ex, attempt, maxAttempts))
+            {
+                await Task.Delay(GetRetryDelay(attempt));
+            }
+        }
+
+        throw new InvalidOperationException("POST retry loop terminated unexpectedly.");
+    }
+
+    private static bool ShouldRetryRequest(Exception exception, int attempt, int maxAttempts)
+    {
+        if (attempt >= maxAttempts)
+        {
+            return false;
+        }
+
+        return exception is TaskCanceledException or HttpRequestException;
+    }
+
+    private static TimeSpan GetRetryDelay(int attempt) => TimeSpan.FromMilliseconds(250 * attempt);
+
     #endregion
 
     #region Error Cases
@@ -239,7 +295,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithMissingObjectIds_Returns400()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?relationshipId={TestRelationshipId}");
 
         // Assert
@@ -261,7 +317,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithMissingRelationshipId_Returns400()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2");
 
         // Assert
@@ -283,7 +339,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithInvalidObjectIds_Returns400()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=invalid,abc&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -304,7 +360,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithInvalidRelationshipId_Returns400()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId=invalid");
 
         // Assert
@@ -325,7 +381,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithTooManyObjectIds_Returns400()
     {
         var objectIds = string.Join(",", Enumerable.Range(1, 1001));
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds={objectIds}&relationshipId={TestRelationshipId}");
 
         response.Be400BadRequest();
@@ -344,7 +400,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithNonExistentService_Returns404()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/nonexistent/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -366,7 +422,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithNonExistentLayer_Returns404()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/999/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -387,7 +443,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithNonExistentRelationship_Returns404()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId=999");
 
         // Assert
@@ -408,7 +464,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithExcessiveResultRecordCount_Returns400()
     {
         // Act - Request more than maximum allowed
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&resultRecordCount=99999");
 
         // Assert
@@ -428,7 +484,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_ResponseValidatesAgainstGeoServicesSchema()
     {
         // Act
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -472,7 +528,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithOutSrParameter_ReturnsRequestedSpatialReference()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outSR=4326");
 
         response.Be200Ok();
@@ -495,7 +551,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithUnsupportedFormat_Returns400()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&f=geojson");
 
         response.Be400BadRequest();
@@ -514,7 +570,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task QueryRelatedRecords_WithNoRelatedFeatures_ReturnsEmptyGroups()
     {
         // Act - Request related records for an object ID that has no related features
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=999&relationshipId={TestRelationshipId}");
 
         // Assert
@@ -541,7 +597,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     {
         // Act - Attempt SQL injection in WHERE clause
         var maliciousWhere = Uri.EscapeDataString("name='test'; DROP TABLE users; --");
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&where={maliciousWhere}");
 
         // Assert
@@ -563,7 +619,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     {
         // Act - Invalid WHERE clause format
         var invalidWhere = Uri.EscapeDataString("invalid syntax here");
-        var response = await _fixture.Client.GetAsync(
+        var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&where={invalidWhere}");
 
         // Assert

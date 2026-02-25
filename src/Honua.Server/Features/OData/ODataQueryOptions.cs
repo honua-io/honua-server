@@ -21,5 +21,6 @@ internal sealed record ODataQueryOptions
     [FromQuery(Name = "$compute")] public string? Compute { get; init; }
     [FromQuery(Name = "$search")] public string? Search { get; init; }
     [FromQuery(Name = "$apply")] public string? Apply { get; init; }
+    [FromQuery(Name = "$deltatoken")] public string? Deltatoken { get; init; }
     [FromQuery(Name = "$format")] public string? Format { get; init; }
 }

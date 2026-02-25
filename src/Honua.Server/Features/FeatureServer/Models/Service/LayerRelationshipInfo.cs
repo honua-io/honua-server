@@ -32,4 +32,19 @@ public sealed class LayerRelationshipInfo
     /// Field name used as the relationship key.
     /// </summary>
     public required string KeyField { get; init; }
+
+    /// <summary>
+    /// Field name in the origin layer used to match related records.
+    /// </summary>
+    public required string OriginKeyField { get; init; }
+
+    /// <summary>
+    /// Field name in the destination/related layer used to match records.
+    /// </summary>
+    public required string DestinationKeyField { get; init; }
+
+    /// <summary>
+    /// Optional relationship description.
+    /// </summary>
+    public string? Description { get; init; }
 }

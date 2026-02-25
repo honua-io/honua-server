@@ -53,8 +53,8 @@ public sealed class RedisImportJobManagerIntegrationTests
     {
         var lockKey = $"test:leader:{Guid.NewGuid():N}";
         using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
-        var electionA = new RedisLeaderElection(null, multiplexer, NullLogger.Instance, lockKey, "instance-a");
-        var electionB = new RedisLeaderElection(null, multiplexer, NullLogger.Instance, lockKey, "instance-b");
+        var electionA = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-a");
+        var electionB = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-b");
 
         try
         {
@@ -73,6 +73,36 @@ public sealed class RedisImportJobManagerIntegrationTests
         {
             electionA.Dispose();
             electionB.Dispose();
+        }
+    }
+
+    [IntegrationTest]
+    public async Task JobQueue_WithoutRedis_UsesInMemoryFallback()
+    {
+        var queue = new RedisJobQueue(null, NullLogger.Instance, $"test:queue:{Guid.NewGuid():N}");
+
+        await queue.EnqueueAsync("job-1");
+        var length = await queue.GetQueueLengthAsync();
+        length.Should().Be(1);
+
+        var job = await queue.DequeueAsync(TimeSpan.FromMilliseconds(200));
+        job.Should().Be("job-1");
+    }
+
+    [IntegrationTest]
+    public async Task LeaderElection_WithoutRedis_UsesLocalFallbackLeadership()
+    {
+        var election = new RedisLeaderElection(null, NullLogger.Instance, $"test:leader:{Guid.NewGuid():N}", "instance-a");
+        try
+        {
+            var acquired = await election.TryAcquireLeadershipAsync();
+
+            acquired.Should().BeTrue();
+            election.IsLeader.Should().BeTrue();
+        }
+        finally
+        {
+            election.Dispose();
         }
     }
 

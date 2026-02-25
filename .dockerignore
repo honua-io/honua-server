@@ -1,7 +1,8 @@
 # Build artifacts
-bin/
-obj/
-out/
+**/bin/
+**/obj/
+**/out/
+**/publish/
 
 # NuGet packages
 *.nupkg
@@ -11,6 +12,12 @@ out/
 TestResults/
 **/coverage.*
 **/TestResults/
+cite-results/
+cite-tiles-results/
+cite-wms-results/
+cite-wmts-results/
+.tmp-cite/
+client-compat-results/
 
 # Visual Studio / VS Code
 .vs/
@@ -42,6 +49,12 @@ docs/
 .github/
 scripts/
 !scripts/init-db.sql
+
+# Local infra and benchmark artifacts not needed for app image builds
+tests/
+benchmarks/
+infrastructure/
+**/.terraform/
 
 # Temporary files
 tmp/

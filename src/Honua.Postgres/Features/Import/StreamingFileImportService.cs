@@ -44,6 +44,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const int CrsDetectionHeaderSize = 8192;
+    private const long DefaultMaxArchiveEntryBytes = 500L * 1024 * 1024;
+    private const long DefaultMaxArchiveExtractedBytes = 1024L * 1024 * 1024;
+    private const double DefaultMaxArchiveCompressionRatio = 200d;
 
     /// <summary>
     /// Supported file extensions mapped to formats
@@ -54,10 +57,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".geojson"] = SupportedFileFormat.GeoJson,
             [".json"] = SupportedFileFormat.GeoJson,
             [".kml"] = SupportedFileFormat.Kml,
+            [".kmz"] = SupportedFileFormat.Kml,
             [".wkt"] = SupportedFileFormat.Wkt,
             [".zip"] = SupportedFileFormat.Shapefile,
             [".gpkg"] = SupportedFileFormat.GeoPackage,
-            [".gpx"] = SupportedFileFormat.Gpx
+            [".gpx"] = SupportedFileFormat.Gpx,
+            [".csv"] = SupportedFileFormat.Csv
         }
         .ToFrozenDictionary();
     private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
@@ -67,6 +72,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly string _shapefileScratchRoot = Path.Combine(Path.GetTempPath(), "honua-shapefile");
     private static readonly string _geoPackageScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geopackage");
+    private static readonly string _kmzScratchRoot = Path.Combine(Path.GetTempPath(), "honua-kmz");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -166,6 +172,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ImportResult result;
         ShapefileScratch? shapefileScratch = null;
         GeoPackageScratch? geoPackageScratch = null;
+        KmzScratch? kmzScratch = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
@@ -233,6 +240,28 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, request.FileName, cancellationToken);
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath);
+            }
+            else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(request.FileName))
+            {
+                kmzScratch = await PrepareKmzScratchAsync(fileStream, cancellationToken);
+
+                if (shouldDisposeStream)
+                {
+                    await fileStream.DisposeAsync();
+                    shouldDisposeStream = false;
+                }
+
+                fileStream = new FileStream(kmzScratch.KmlPath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    BufferSize = _limits.StreamBufferSize,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
+                shouldDisposeStream = true;
+                totalBytes = fileStream.Length;
+                detectedSrid = request.SourceSrid ?? 4326;
             }
             else
             {
@@ -346,6 +375,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
             CleanupShapefileScratch(shapefileScratch);
             CleanupGeoPackageScratch(geoPackageScratch);
+            CleanupKmzScratch(kmzScratch);
             RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
 
             if (status == "success")
@@ -408,6 +438,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
@@ -842,6 +873,21 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
     }
 
+    private static partial class KmzLog
+    {
+        [LoggerMessage(
+            EventId = 7409,
+            Level = LogLevel.Warning,
+            Message = "Failed to delete temporary KMZ file {ZipPath}")]
+        public static partial void DeleteZipFailed(ILogger logger, Exception exception, string zipPath);
+
+        [LoggerMessage(
+            EventId = 7410,
+            Level = LogLevel.Warning,
+            Message = "Failed to clean up KMZ scratch directory {ScratchDir}")]
+        public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
+    }
+
     /// <inheritdoc/>
     public async Task<FilePreview> PreviewFileAsync(
         Stream fileStream,
@@ -857,6 +903,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         ShapefileScratch? shapefileScratch = null;
         GeoPackageScratch? geoPackageScratch = null;
+        KmzScratch? kmzScratch = null;
+        Stream? kmzStream = null;
         try
         {
             int? detectedSrid;
@@ -883,6 +931,20 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, fileName, cancellationToken);
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath);
+            }
+            else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(fileName))
+            {
+                kmzScratch = await PrepareKmzScratchAsync(fileStream, cancellationToken);
+                kmzStream = new FileStream(kmzScratch.KmlPath, new FileStreamOptions
+                {
+                    Mode = FileMode.Open,
+                    Access = FileAccess.Read,
+                    Share = FileShare.Read,
+                    BufferSize = _limits.StreamBufferSize,
+                    Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+                });
+                fileStream = kmzStream;
+                detectedSrid = 4326;
             }
             else
             {
@@ -912,6 +974,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
                 SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
@@ -944,8 +1007,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
         finally
         {
+            if (kmzStream != null)
+            {
+                await kmzStream.DisposeAsync();
+            }
+
             CleanupShapefileScratch(shapefileScratch);
             CleanupGeoPackageScratch(geoPackageScratch);
+            CleanupKmzScratch(kmzScratch);
         }
     }
 
@@ -964,6 +1033,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
+                SupportedFileFormat.Csv => 4326,
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
                 _ => null
@@ -1016,6 +1086,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
+            SupportedFileFormat.Csv => 4326,
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
             _ => null
         };
@@ -1058,6 +1129,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private sealed record ShapefileScratch(string DirectoryPath, string ShpPath);
 
     private sealed record GeoPackageScratch(string DirectoryPath, string FilePath);
+
+    private sealed record KmzScratch(string DirectoryPath, string KmlPath);
 
     private sealed record GeoPackageLayerInfo(string TableName, string GeometryColumn, int? Srid);
 
@@ -1205,8 +1278,26 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         public ZipArchiveEntry? Cpg { get; set; }
     }
 
+    private sealed class ArchiveExtractionBudget
+    {
+        public ArchiveExtractionBudget(long maxTotalBytes, long maxEntryBytes, double maxCompressionRatio)
+        {
+            MaxTotalBytes = maxTotalBytes;
+            MaxEntryBytes = maxEntryBytes;
+            MaxCompressionRatio = maxCompressionRatio;
+        }
+
+        public long MaxTotalBytes { get; }
+        public long MaxEntryBytes { get; }
+        public double MaxCompressionRatio { get; }
+        public long TotalExtractedBytes { get; set; }
+    }
+
     private static bool IsZipFileName(string fileName)
         => string.Equals(Path.GetExtension(fileName), ".zip", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKmzFileName(string fileName)
+        => string.Equals(Path.GetExtension(fileName), ".kmz", StringComparison.OrdinalIgnoreCase);
 
     private async Task<ShapefileScratch> PrepareShapefileScratchAsync(
         Stream stream,
@@ -1251,26 +1342,27 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
             var entries = SelectShapefileEntries(archive)
                 ?? throw new InvalidDataException("Zip does not contain required .shp and .dbf files.");
+            var extractionBudget = CreateArchiveExtractionBudget();
 
             var shpPath = Path.Combine(scratchDir, entries.BaseName + ".shp");
             var dbfPath = Path.Combine(scratchDir, entries.BaseName + ".dbf");
 
-            await ExtractEntryAsync(entries.ShpEntry, shpPath, cancellationToken);
-            await ExtractEntryAsync(entries.DbfEntry, dbfPath, cancellationToken);
+            await ExtractEntryAsync(entries.ShpEntry, shpPath, extractionBudget, cancellationToken);
+            await ExtractEntryAsync(entries.DbfEntry, dbfPath, extractionBudget, cancellationToken);
 
             if (entries.ShxEntry != null)
             {
-                await ExtractEntryAsync(entries.ShxEntry, Path.Combine(scratchDir, entries.BaseName + ".shx"), cancellationToken);
+                await ExtractEntryAsync(entries.ShxEntry, Path.Combine(scratchDir, entries.BaseName + ".shx"), extractionBudget, cancellationToken);
             }
 
             if (entries.PrjEntry != null)
             {
-                await ExtractEntryAsync(entries.PrjEntry, Path.Combine(scratchDir, entries.BaseName + ".prj"), cancellationToken);
+                await ExtractEntryAsync(entries.PrjEntry, Path.Combine(scratchDir, entries.BaseName + ".prj"), extractionBudget, cancellationToken);
             }
 
             if (entries.CpgEntry != null)
             {
-                await ExtractEntryAsync(entries.CpgEntry, Path.Combine(scratchDir, entries.BaseName + ".cpg"), cancellationToken);
+                await ExtractEntryAsync(entries.CpgEntry, Path.Combine(scratchDir, entries.BaseName + ".cpg"), extractionBudget, cancellationToken);
             }
 
             return new ShapefileScratch(scratchDir, shpPath);
@@ -1336,6 +1428,76 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
     }
 
+    private async Task<KmzScratch> PrepareKmzScratchAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        var scratchDir = Path.Combine(_kmzScratchRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratchDir);
+
+        string? zipPath = null;
+        Stream? zipStream = null;
+        var leaveOpen = false;
+
+        try
+        {
+            if (stream.CanSeek)
+            {
+                if (stream.Position != 0)
+                {
+                    stream.Position = 0;
+                }
+
+                zipStream = stream;
+                leaveOpen = true;
+            }
+            else
+            {
+                zipPath = Path.Combine(scratchDir, "upload.kmz");
+                await using (var zipFileStream = File.Create(zipPath))
+                {
+                    await stream.CopyToAsync(zipFileStream, cancellationToken);
+                }
+
+                zipStream = File.OpenRead(zipPath);
+            }
+
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
+            var kmlEntry = SelectKmzKmlEntry(archive)
+                ?? throw new InvalidDataException("KMZ does not contain a .kml file.");
+            var extractionBudget = CreateArchiveExtractionBudget();
+
+            var kmlPath = Path.Combine(scratchDir, "doc.kml");
+            await ExtractEntryAsync(kmlEntry, kmlPath, extractionBudget, cancellationToken);
+
+            return new KmzScratch(scratchDir, kmlPath);
+        }
+        catch
+        {
+            CleanupKmzScratchDirectory(scratchDir);
+            throw;
+        }
+        finally
+        {
+            if (zipStream != null && !leaveOpen)
+            {
+                await zipStream.DisposeAsync();
+            }
+
+            if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
+            {
+                try
+                {
+                    File.Delete(zipPath);
+                }
+                catch (Exception ex)
+                {
+                    KmzLog.DeleteZipFailed(_logger, ex, zipPath);
+                }
+            }
+        }
+    }
+
     private static ShapefileEntries? SelectShapefileEntries(ZipArchive archive)
     {
         var groups = new Dictionary<string, ShapefileEntryGroup>(StringComparer.OrdinalIgnoreCase);
@@ -1396,14 +1558,119 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return null;
     }
 
+    private static ZipArchiveEntry? SelectKmzKmlEntry(ZipArchive archive)
+    {
+        ZipArchiveEntry? firstMatch = null;
+
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Name))
+            {
+                continue;
+            }
+
+            if (!string.Equals(Path.GetExtension(entry.Name), ".kml", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(entry.Name, "doc.kml", StringComparison.OrdinalIgnoreCase))
+            {
+                return entry;
+            }
+
+            firstMatch ??= entry;
+        }
+
+        return firstMatch;
+    }
+
+    private ArchiveExtractionBudget CreateArchiveExtractionBudget()
+    {
+        var maxEntryBytes = _limits.MaxArchiveEntryBytes > 0
+            ? _limits.MaxArchiveEntryBytes
+            : DefaultMaxArchiveEntryBytes;
+        var maxTotalBytes = _limits.MaxArchiveExtractedBytes > 0
+            ? _limits.MaxArchiveExtractedBytes
+            : DefaultMaxArchiveExtractedBytes;
+        var maxCompressionRatio = _limits.MaxArchiveCompressionRatio > 1
+            ? _limits.MaxArchiveCompressionRatio
+            : DefaultMaxArchiveCompressionRatio;
+
+        if (maxTotalBytes < maxEntryBytes)
+        {
+            maxTotalBytes = maxEntryBytes;
+        }
+
+        return new ArchiveExtractionBudget(maxTotalBytes, maxEntryBytes, maxCompressionRatio);
+    }
+
     private static async Task ExtractEntryAsync(
         ZipArchiveEntry entry,
         string destinationPath,
+        ArchiveExtractionBudget extractionBudget,
         CancellationToken cancellationToken)
     {
+        if (entry.Length < 0 || entry.CompressedLength < 0)
+        {
+            throw new InvalidDataException($"Archive entry '{entry.FullName}' has an invalid size.");
+        }
+
+        if (entry.Length > extractionBudget.MaxEntryBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive entry '{entry.FullName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
+        }
+
+        if (entry.Length > extractionBudget.MaxTotalBytes - extractionBudget.TotalExtractedBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive extraction exceeds maximum total uncompressed size ({extractionBudget.MaxTotalBytes:N0} bytes).");
+        }
+
+        if (entry.Length > 0)
+        {
+            if (entry.CompressedLength <= 0)
+            {
+                throw new InvalidDataException($"Archive entry '{entry.FullName}' has invalid compressed size.");
+            }
+
+            var compressionRatio = (double)entry.Length / entry.CompressedLength;
+            if (compressionRatio > extractionBudget.MaxCompressionRatio)
+            {
+                throw new InvalidDataException(
+                    $"Archive entry '{entry.FullName}' exceeds maximum compression ratio ({extractionBudget.MaxCompressionRatio:N0}).");
+            }
+        }
+
+        var entryExtractedBytes = 0L;
+        var buffer = new byte[64 * 1024];
         await using var entryStream = entry.Open();
         await using var outputStream = File.Create(destinationPath);
-        await entryStream.CopyToAsync(outputStream, cancellationToken);
+        while (true)
+        {
+            var bytesRead = await entryStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (bytesRead <= 0)
+            {
+                break;
+            }
+
+            entryExtractedBytes += bytesRead;
+            if (entryExtractedBytes > extractionBudget.MaxEntryBytes)
+            {
+                throw new InvalidDataException(
+                    $"Archive entry '{entry.FullName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
+            }
+
+            if (bytesRead > extractionBudget.MaxTotalBytes - extractionBudget.TotalExtractedBytes)
+            {
+                throw new InvalidDataException(
+                    $"Archive extraction exceeds maximum total uncompressed size ({extractionBudget.MaxTotalBytes:N0} bytes).");
+            }
+
+            await outputStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            extractionBudget.TotalExtractedBytes += bytesRead;
+        }
     }
 
     private void CleanupShapefileScratch(ShapefileScratch? scratch)
@@ -1446,6 +1713,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         CleanupGeoPackageScratchDirectory(scratch.DirectoryPath);
     }
 
+    private void CleanupKmzScratch(KmzScratch? scratch)
+    {
+        if (scratch == null)
+        {
+            return;
+        }
+
+        CleanupKmzScratchDirectory(scratch.DirectoryPath);
+    }
+
     private void CleanupGeoPackageScratchDirectory(string scratchDir)
     {
         if (string.IsNullOrWhiteSpace(scratchDir))
@@ -1463,6 +1740,26 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         catch (Exception ex)
         {
             GeoPackageLog.CleanupScratchFailed(_logger, ex, scratchDir);
+        }
+    }
+
+    private void CleanupKmzScratchDirectory(string scratchDir)
+    {
+        if (string.IsNullOrWhiteSpace(scratchDir))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(scratchDir))
+            {
+                Directory.Delete(scratchDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            KmzLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
 

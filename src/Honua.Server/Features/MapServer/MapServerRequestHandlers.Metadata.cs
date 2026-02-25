@@ -202,7 +202,49 @@ internal static partial class MapServerEndpoints
             {
                 Title = service.Name ?? "",
                 Comments = service.Description ?? ""
-            }
+            },
+            TileInfo = BuildTileInfo()
+        };
+    }
+
+    private static TileInfo BuildTileInfo()
+    {
+        const double webMercatorOrigin = SpatialConstants.WebMercatorExtent;
+        const int tileSize = 256;
+        const int maxZoom = 22;
+        const double pixelSize = 0.00028;
+
+        var lods = new LevelOfDetail[maxZoom + 1];
+        for (var z = 0; z <= maxZoom; z++)
+        {
+            var matrixSize = 1 << z;
+            var resolution = 2.0 * webMercatorOrigin / (tileSize * matrixSize);
+            var scale = resolution / pixelSize;
+            lods[z] = new LevelOfDetail
+            {
+                Level = z,
+                Resolution = resolution,
+                Scale = scale
+            };
+        }
+
+        return new TileInfo
+        {
+            Rows = tileSize,
+            Cols = tileSize,
+            Dpi = 96,
+            Format = "PNG",
+            Origin = new TileOrigin
+            {
+                X = -webMercatorOrigin,
+                Y = webMercatorOrigin
+            },
+            SpatialReference = new EsriSpatialReference
+            {
+                Wkid = 3857,
+                LatestWkid = 3857
+            },
+            Lods = lods
         };
     }
 

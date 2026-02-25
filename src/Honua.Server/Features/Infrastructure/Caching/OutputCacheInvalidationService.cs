@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Microsoft.AspNetCore.OutputCaching;
 
@@ -14,15 +15,18 @@ internal sealed partial class OutputCacheInvalidationService
 {
     private readonly IOutputCacheStore? _cacheStore;
     private readonly IResponseCache? _responseCache;
+    private readonly ICacheService? _metadataCache;
     private readonly ILogger<OutputCacheInvalidationService> _logger;
 
     public OutputCacheInvalidationService(
         IOutputCacheStore? cacheStore,
         IResponseCache? responseCache,
+        ICacheService? metadataCache,
         ILogger<OutputCacheInvalidationService> logger)
     {
         _cacheStore = cacheStore;
         _responseCache = responseCache;
+        _metadataCache = metadataCache;
         _logger = logger;
     }
 
@@ -87,6 +91,57 @@ internal sealed partial class OutputCacheInvalidationService
         return EvictTagsAsync(["ogc-metadata", "ogc-tiles"], cancellationToken);
     }
 
+    public Task InvalidateServiceCatalogAsync(
+        string? serviceId,
+        IEnumerable<int>? layerIds,
+        CancellationToken cancellationToken)
+    {
+        var normalizedServiceId = string.IsNullOrWhiteSpace(serviceId)
+            ? null
+            : serviceId.Trim().ToLowerInvariant();
+        var layerIdList = layerIds?
+            .Distinct()
+            .ToArray() ?? [];
+
+        var tags = new List<string>
+        {
+            "service-directory",
+            "service-metadata",
+            "layer-metadata",
+            "metadata",
+            "ogc-metadata",
+            "ogc-tiles",
+            "mvt-tiles"
+        };
+
+        if (!string.IsNullOrWhiteSpace(normalizedServiceId))
+        {
+            tags.Add($"service:{normalizedServiceId}");
+        }
+
+        var responsePatterns = new List<string>();
+        foreach (var layerId in layerIdList)
+        {
+            tags.Add($"layer:{layerId}");
+            tags.Add($"collection:{layerId}");
+
+            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId));
+            responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId));
+            responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(
+                layerId.ToString(CultureInfo.InvariantCulture)));
+
+            if (!string.IsNullOrWhiteSpace(normalizedServiceId))
+            {
+                responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, layerId));
+            }
+        }
+
+        return Task.WhenAll(
+            EvictTagsAsync(tags, cancellationToken),
+            EvictResponseCacheAsync(responsePatterns, cancellationToken),
+            EvictCatalogMetadataCacheAsync(normalizedServiceId, layerIdList, cancellationToken));
+    }
+
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
     {
         if (_cacheStore == null)
@@ -132,6 +187,60 @@ internal sealed partial class OutputCacheInvalidationService
         }
     }
 
+    private async Task EvictCatalogMetadataCacheAsync(
+        string? serviceId,
+        IReadOnlyCollection<int> layerIds,
+        CancellationToken cancellationToken)
+    {
+        if (_metadataCache == null)
+        {
+            return;
+        }
+
+        var keys = new List<string>
+        {
+            "services:all",
+            "layers:all"
+        };
+
+        if (!string.IsNullOrWhiteSpace(serviceId))
+        {
+            keys.Add($"service:{serviceId}");
+            keys.Add($"service:exists:{serviceId}");
+        }
+
+        foreach (var layerId in layerIds)
+        {
+            keys.Add($"layer:{layerId}");
+            keys.Add($"layer:exists:{layerId}");
+        }
+
+        foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await _metadataCache.RemoveAsync(key, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogEvictMetadataKeyFailed(_logger, key, ex);
+            }
+        }
+
+        foreach (var layerId in layerIds)
+        {
+            var pattern = $"relationship:{layerId}:*";
+            try
+            {
+                await _metadataCache.RemoveByPatternAsync(pattern, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogEvictMetadataPatternFailed(_logger, pattern, ex);
+            }
+        }
+    }
+
     [LoggerMessage(EventId = 4510, Level = LogLevel.Warning,
         Message = "Failed to evict output cache tag {Tag}")]
     private static partial void LogEvictTagFailed(ILogger logger, string tag, Exception exception);
@@ -139,4 +248,12 @@ internal sealed partial class OutputCacheInvalidationService
     [LoggerMessage(EventId = 4511, Level = LogLevel.Warning,
         Message = "Failed to evict response cache pattern {Pattern}")]
     private static partial void LogEvictPatternFailed(ILogger logger, string pattern, Exception exception);
+
+    [LoggerMessage(EventId = 4512, Level = LogLevel.Warning,
+        Message = "Failed to evict metadata cache key {Key}")]
+    private static partial void LogEvictMetadataKeyFailed(ILogger logger, string key, Exception exception);
+
+    [LoggerMessage(EventId = 4513, Level = LogLevel.Warning,
+        Message = "Failed to evict metadata cache pattern {Pattern}")]
+    private static partial void LogEvictMetadataPatternFailed(ILogger logger, string pattern, Exception exception);
 }

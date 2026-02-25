@@ -52,7 +52,10 @@ internal static class BaseUrlResolver
     private static bool TryGetConfiguredBaseUrl(IConfiguration configuration, out string baseUrl)
     {
         baseUrl = string.Empty;
-        var configured = configuration[BaseUrlConfigKey] ?? configuration[BaseUrlEnvKey];
+        var configured = GetFirstNonEmpty(
+            configuration[BaseUrlConfigKey],
+            configuration[BaseUrlEnvKey],
+            Environment.GetEnvironmentVariable(BaseUrlEnvKey));
 
         if (!string.IsNullOrWhiteSpace(configured))
         {
@@ -67,6 +70,19 @@ internal static class BaseUrlResolver
         }
 
         return false;
+    }
+
+    private static string? GetFirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     private static bool TryGetLocalOriginBaseUrl(HttpRequest request, out string baseUrl)

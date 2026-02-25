@@ -16,6 +16,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Schema;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.FileStorage;
@@ -100,10 +101,11 @@ else
 
     if (!string.IsNullOrWhiteSpace(redisConnectionString))
     {
+        var cacheKeyPrefix = builder.Configuration.GetSection("Cache")["KeyPrefix"] ?? "honua:";
         builder.Services.AddStackExchangeRedisCache(options =>
         {
             options.Configuration = redisConnectionString;
-            options.InstanceName = "honua:";
+            options.InstanceName = cacheKeyPrefix;
         });
     }
 }
@@ -112,8 +114,20 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 {
     try
     {
-        var redisConnection = ConnectionMultiplexer.Connect(redisConnectionString);
+        var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
+        redisOptions.AbortOnConnectFail = false;
+        redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
+        redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
+
+        var redisConnection = ConnectionMultiplexer.Connect(redisOptions);
         builder.Services.TryAddSingleton<IConnectionMultiplexer>(redisConnection);
+
+        if (!redisConnection.IsConnected)
+        {
+            var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
+            startupLogger.LogWarning(
+                "Redis multiplexer initialized without an active connection. The client will continue retrying in the background.");
+        }
     }
     catch (Exception ex)
     {
@@ -221,6 +235,10 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
+    new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
+        sp.GetService<IDistributedCache>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.FeatureServer.DistributedReplicaStore>>()));
 
 // Register Geoservices import job manager and background service
 builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(sp =>
@@ -244,6 +262,18 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
     options.IsTestMode = builder.Environment.IsEnvironment("Test");
     options.AdminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
+    options.EnableBasicAuthCompatibility =
+        builder.Configuration.GetValue("Authentication:BasicCompatibility:Enabled",
+            builder.Configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
+
+    // Enforce HTTPS for basic auth in production - override configuration for security
+    var requireHttpsForBasicAuth = builder.Configuration.GetValue("Authentication:BasicCompatibility:RequireHttps",
+        builder.Configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
+
+    // Always require HTTPS for basic auth in non-development environments
+    options.RequireHttpsForBasicAuth = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test")
+        ? requireHttpsForBasicAuth
+        : true;
 });
 
 // Configure OIDC authentication options
@@ -326,6 +356,15 @@ if (activeDbConnectionTracker != null)
 if (forwardedHeadersEnabled)
 {
     app.UseForwardedHeaders();
+}
+
+app.UseHostValidation();
+
+// Add HTTPS redirection middleware to enforce HTTPS for all requests
+// This ensures API keys and sensitive data are never transmitted over HTTP
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
 }
 
 app.Use(async (context, next) =>
@@ -611,6 +650,40 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
             return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, logger);
         });
     }
+
+    // Wrap ILayerStyleCatalog with caching decorator
+    var innerStyleCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerStyleCatalog));
+    if (innerStyleCatalogDescriptor != null)
+    {
+        services.Remove(innerStyleCatalogDescriptor);
+
+        services.AddScoped<ILayerStyleCatalog>(sp =>
+        {
+            ILayerStyleCatalog innerStyleCatalog;
+            if (innerStyleCatalogDescriptor.ImplementationFactory != null)
+            {
+                innerStyleCatalog = (ILayerStyleCatalog)innerStyleCatalogDescriptor.ImplementationFactory(sp);
+            }
+            else if (innerStyleCatalogDescriptor.ImplementationType != null)
+            {
+                innerStyleCatalog = (ILayerStyleCatalog)ActivatorUtilities.CreateInstance(sp, innerStyleCatalogDescriptor.ImplementationType);
+            }
+            else
+            {
+                throw new InvalidOperationException("Unable to resolve inner ILayerStyleCatalog implementation");
+            }
+
+            var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
+            if (!cacheOptions.Enabled)
+            {
+                return innerStyleCatalog;
+            }
+
+            var cacheService = sp.GetRequiredService<ICacheService>();
+            var options = sp.GetRequiredService<IOptions<CacheOptions>>();
+            return new CachingLayerStyleCatalog(innerStyleCatalog, cacheService, options);
+        });
+    }
 }
 
 // Configure limits with validation
@@ -803,9 +876,11 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
 
     services.AddSingleton<IResponseCache>(sp =>
     {
+        var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
         var innerCache = new MemoryResponseCache(
             sp.GetRequiredService<IMemoryCache>(),
-            sp.GetRequiredService<ILogger<MemoryResponseCache>>());
+            sp.GetRequiredService<ILogger<MemoryResponseCache>>(),
+            cacheOptions.ResponseCacheMaxEntries);
         return new MonitoredResponseCacheDecorator(
             innerCache,
             sp.GetRequiredService<IPerformanceMonitor>(),

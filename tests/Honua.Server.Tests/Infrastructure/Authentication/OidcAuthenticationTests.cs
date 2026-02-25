@@ -35,6 +35,8 @@ public class OidcAuthenticationTests : IAsyncLifetime
     private readonly ITestOutputHelper _output;
     private readonly WebAppFixture _fixture = new();
     private const string TestSigningKey = "ThisIsATestSigningKeyThatIsLongEnoughForHS256Algorithm!";
+    private const string TestIssuer = "https://test-issuer.example.com";
+    private const string TestAudience = "test-client-id";
 
     public OidcAuthenticationTests(ITestOutputHelper output)
     {
@@ -62,6 +64,15 @@ public class OidcAuthenticationTests : IAsyncLifetime
             .WithWebHostBuilder(builder =>
             {
                 configure?.Invoke(builder);
+
+                if (oidcSettings != null)
+                {
+                    foreach (var setting in oidcSettings)
+                    {
+                        builder.UseSetting(setting.Key, setting.Value);
+                    }
+                }
+
                 builder.UseEnvironment("Test");
 
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -100,6 +111,31 @@ public class OidcAuthenticationTests : IAsyncLifetime
             });
     }
 
+    private static Dictionary<string, string?> CreateEnabledOidcSettings(Dictionary<string, string?>? additionalSettings = null)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Oidc:Enabled"] = "true",
+            ["Oidc:Generic:Enabled"] = "true",
+            ["Oidc:Generic:Authority"] = TestIssuer,
+            ["Oidc:Generic:ClientId"] = TestAudience,
+            ["Oidc:ClaimsMapping:RoleClaimType"] = ClaimTypes.Role,
+            ["Oidc:TokenValidation:SymmetricSigningKey"] = TestSigningKey,
+            ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "false",
+            ["HONUA_ADMIN_PASSWORD"] = "test-password"
+        };
+
+        if (additionalSettings != null)
+        {
+            foreach (var pair in additionalSettings)
+            {
+                settings[pair.Key] = pair.Value;
+            }
+        }
+
+        return settings;
+    }
+
     /// <summary>
     /// Generates a test JWT token with the specified claims.
     /// </summary>
@@ -108,8 +144,8 @@ public class OidcAuthenticationTests : IAsyncLifetime
         string name = "Test User",
         string email = "test@example.com",
         string[]? roles = null,
-        string issuer = "https://test-issuer.example.com",
-        string audience = "test-client-id",
+        string issuer = TestIssuer,
+        string audience = TestAudience,
         int expiresInMinutes = 60)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
@@ -128,6 +164,7 @@ public class OidcAuthenticationTests : IAsyncLifetime
             foreach (var role in roles)
             {
                 claims.Add(new Claim("roles", role));
+                claims.Add(new Claim(ClaimTypes.Role, role));
             }
         }
 
@@ -358,6 +395,215 @@ public class OidcAuthenticationTests : IAsyncLifetime
         // Assert - Should deny access (OIDC is disabled)
         Assert.Equal(401, (int)response.StatusCode);
         _output.WriteLine($"Response status: {response.StatusCode}");
+    }
+
+    #endregion
+
+    #region OIDC Enabled Bearer Integration Tests
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_ValidBearerToken_AllowsAccess()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        if ((int)response.StatusCode == 401)
+        {
+            _output.WriteLine($"401 response body: {await response.Content.ReadAsStringAsync()}");
+            if (response.Headers.TryGetValues("WWW-Authenticate", out var headerValues))
+            {
+                _output.WriteLine($"WWW-Authenticate: {string.Join(" | ", headerValues)}");
+            }
+        }
+
+        // Assert - request should pass authz and fail later (for example with 404/500) in this harness
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_InvalidIssuerToken_DeniesAccess()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: "https://wrong-issuer.example.com");
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        AssertBearerFailureStatusCode(response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_InvalidAudienceToken_DeniesAccess()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"], audience: "wrong-audience");
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        AssertBearerFailureStatusCode(response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_ExpiredToken_DeniesAccess()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"], expiresInMinutes: -60);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        AssertBearerFailureStatusCode(response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_NonAdminRole_ReturnsForbidden()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["viewer"]);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert - auth succeeds, authorization fails
+        Assert.Equal(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_BearerAndApiKey_BearerTakesPrecedence_WhenInvalid()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var invalidBearer = GenerateTestJwtToken(roles: ["admin"], issuer: "https://wrong-issuer.example.com");
+
+        // Act - valid API key is present, but invalid bearer should still fail due bearer precedence
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("X-API-Key", "test-password");
+        request.Headers.Add("Authorization", $"Bearer {invalidBearer}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        AssertBearerFailureStatusCode(response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OidcEnabled_BearerAndApiKey_BearerTakesPrecedence_WhenValid()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var validBearer = GenerateTestJwtToken(roles: ["admin"]);
+
+        // Act - invalid API key is present, valid bearer should still succeed
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("X-API-Key", "wrong-password");
+        request.Headers.Add("Authorization", $"Bearer {validBearer}");
+        var response = await client.SendAsync(request);
+
+        if ((int)response.StatusCode == 401)
+        {
+            _output.WriteLine($"401 response body: {await response.Content.ReadAsStringAsync()}");
+            if (response.Headers.TryGetValues("WWW-Authenticate", out var headerValues))
+            {
+                _output.WriteLine($"WWW-Authenticate: {string.Join(" | ", headerValues)}");
+            }
+        }
+
+        // Assert
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task AdminWriteEndpoint_ApiKeyAuth_AllowsAuthorizationFlow()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
+        request.Headers.Add("X-API-Key", "test-password");
+        request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await client.SendAsync(request);
+
+        // Assert - write endpoint auth passes; downstream validation may still reject payload
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
+    public async Task AdminWriteEndpoint_BearerAuth_AllowsAuthorizationFlow()
+    {
+        // Arrange
+        var settings = CreateEnabledOidcSettings();
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await client.SendAsync(request);
+
+        if ((int)response.StatusCode == 401)
+        {
+            _output.WriteLine($"401 response body: {await response.Content.ReadAsStringAsync()}");
+            if (response.Headers.TryGetValues("WWW-Authenticate", out var headerValues))
+            {
+                _output.WriteLine($"WWW-Authenticate: {string.Join(" | ", headerValues)}");
+            }
+        }
+
+        // Assert - write endpoint auth passes; downstream validation may still reject payload
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
     }
 
     #endregion
@@ -729,6 +975,13 @@ public class OidcAuthenticationTests : IAsyncLifetime
     }
 
     #endregion
+
+    private static void AssertBearerFailureStatusCode(System.Net.HttpStatusCode statusCode)
+    {
+        Assert.True(
+            statusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.BadRequest,
+            $"Expected Bearer failure status 400/401 but received {(int)statusCode}.");
+    }
 
     /// <summary>
     /// Test logger implementation for unit testing.

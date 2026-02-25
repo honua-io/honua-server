@@ -30,14 +30,19 @@ This section is for people **building or extending** Honua (core contributors, a
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest Esri compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
 - [Benchmarks](benchmarks.md) — BenchmarkDotNet performance tests
+- [Production Audit Playbook](PRODUCTION_AUDIT_PLAYBOOK.md) — phased production-readiness audit execution
 - [OData Test Parity](ODATA_TEST_PARITY.md) — OData v4 specification compliance
 - [CITE OGC Features](cite-conformance-testing.md) — OGC API Features conformance
 - [CITE OGC Tiles](cite-tiles-conformance-testing.md) — OGC API Tiles conformance
+- [OGC API Maps Conformance](ogc-maps-conformance-testing.md) — OGC API Maps conformance gate
+- [CITE WMS 1.3](cite-wms-conformance-testing.md) — OGC WMS conformance
+- [CITE WMTS 1.0](cite-wmts-conformance-testing.md) — OGC WMTS conformance
 
 ## CI/CD
 
 - [CI Monitoring](CI_MONITORING.md) — CI health and alert monitoring
 - [CI Workflows](ci-workflows.md) — GitHub Actions pipeline overview
 - [CI Quality Gates](CI_QUALITY_GATES.md) — automated quality enforcement
+- [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [CodeCov Setup](CODECOV_SETUP.md) — code coverage monitoring
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review

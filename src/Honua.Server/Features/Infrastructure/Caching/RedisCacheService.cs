@@ -90,6 +90,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             return null;
 
         string prefixedKey = GetPrefixedKey(key);
+        using var operationScope = _performanceMonitor.StartOperation("cache_get")
+            .WithTag("cache_type", CacheType)
+            .WithTag("key", key);
 
         // Try Redis first if available
         if (_distributedCache != null)
@@ -111,20 +114,26 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                         if (TryDeserialize(data, prefixedKey, out T? value))
                         {
                             RecordCacheHit();
+                            operationScope.WithTag("result", "hit").WithTag("source", "redis");
                             return value;
                         }
 
                         await RemoveCorruptRedisEntryAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
                         RecordCacheMiss();
+                        operationScope.WithTag("result", "miss").WithTag("source", "redis").WithTag("reason", "corrupt");
                         return null;
                     }
 
                     RecordCacheMiss();
+                    operationScope.WithTag("result", "miss").WithTag("source", "redis");
                     return null;
                 }
                 catch (Exception ex)
                 {
                     HandleRedisFailure(ex);
+                    operationScope.WithTag("result", "error").WithTag("source", "redis");
+                    _performanceMonitor.RecordErrorWithContext("cache_error", "redis_get",
+                        new Dictionary<string, object> { ["cache_key"] = prefixedKey }, ex);
                 }
             }
         }
@@ -137,6 +146,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 if (TryDeserialize(entry.Data, prefixedKey, out T? value))
                 {
                     RecordCacheHit();
+                    operationScope.WithTag("result", "hit").WithTag("source", "fallback");
                     return value;
                 }
 
@@ -149,6 +159,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
 
         RecordCacheMiss();
+        operationScope.WithTag("result", "miss").WithTag("source", "fallback");
         return null;
     }
 
@@ -165,7 +176,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             return;
 
         string prefixedKey = GetPrefixedKey(key);
-        byte[] data = JsonSerializer.SerializeToUtf8Bytes(value, CacheJsonContext.Default.Options);
+        if (!TrySerialize(value, prefixedKey, out var data))
+        {
+            return;
+        }
 
         // Try Redis first if available
         if (_distributedCache != null)
@@ -199,32 +213,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         // Fallback to in-memory
         if (_options.EnableFallback)
         {
-            // Best-effort eviction: remove expired or oldest entries when at capacity.
-            // Take a single snapshot to avoid spin-looping on concurrent modifications.
-            if (_fallbackCache.Count >= _options.FallbackMaxEntries)
-            {
-                var now = DateTime.UtcNow;
-                var toEvict = _fallbackCache
-                    .Where(x => x.Value.ExpiresAt <= now)
-                    .Select(x => x.Key)
-                    .ToArray();
-
-                foreach (var expiredKey in toEvict)
-                {
-                    _fallbackCache.TryRemove(expiredKey, out _);
-                }
-
-                // If still at capacity, remove one entry by earliest expiry
-                if (_fallbackCache.Count >= _options.FallbackMaxEntries)
-                {
-                    var oldest = _fallbackCache.MinBy(x => x.Value.ExpiresAt);
-                    if (oldest.Key != null)
-                    {
-                        _fallbackCache.TryRemove(oldest.Key, out _);
-                    }
-                }
-            }
-
+            // Efficient cache eviction to prevent memory leaks under pressure
+            EvictEntriesIfNeeded();
             _fallbackCache[prefixedKey] = new CacheEntry(data, DateTime.UtcNow.Add(ttl));
         }
     }
@@ -441,6 +431,67 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
     }
 
+    /// <summary>
+    /// Efficiently evicts cache entries when at or near capacity to prevent memory leaks.
+    /// Uses a two-pass approach: first remove expired entries, then remove oldest entries
+    /// without expensive sorting operations.
+    /// </summary>
+    private void EvictEntriesIfNeeded()
+    {
+        // Fast path: if well under capacity, no eviction needed
+        if (_fallbackCache.Count < _options.FallbackMaxEntries * 0.9)
+            return;
+
+        var now = DateTime.UtcNow;
+        var targetSize = Math.Max(1, (int)(_options.FallbackMaxEntries * 0.75)); // Target 75% capacity
+
+        // First pass: Remove expired entries (most efficient)
+        var expiredKeys = new List<string>();
+        foreach (var kvp in _fallbackCache)
+        {
+            if (kvp.Value.ExpiresAt <= now)
+            {
+                expiredKeys.Add(kvp.Key);
+            }
+        }
+
+        foreach (var key in expiredKeys)
+        {
+            _fallbackCache.TryRemove(key, out _);
+        }
+
+        // If still over capacity after removing expired entries, remove oldest
+        if (_fallbackCache.Count > targetSize)
+        {
+            // Collect entries to evict in a single pass (O(n) instead of O(n log n))
+            var entriesToEvict = new List<(string Key, DateTime ExpiresAt)>();
+            var evictCount = _fallbackCache.Count - targetSize;
+
+            foreach (var kvp in _fallbackCache)
+            {
+                entriesToEvict.Add((kvp.Key, kvp.Value.ExpiresAt));
+
+                // Only collect enough entries to reduce to target size
+                if (entriesToEvict.Count >= evictCount * 2) // Collect 2x to account for concurrent removals
+                    break;
+            }
+
+            // Sort only the collected entries (much smaller set), then evict the oldest
+            entriesToEvict.Sort((a, b) => a.ExpiresAt.CompareTo(b.ExpiresAt));
+
+            var evicted = 0;
+            foreach (var (key, _) in entriesToEvict)
+            {
+                if (_fallbackCache.TryRemove(key, out _))
+                {
+                    evicted++;
+                    if (evicted >= evictCount)
+                        break;
+                }
+            }
+        }
+    }
+
     private bool ShouldRetryRedis(DateTime now)
     {
         var lastFailure = new DateTime(Volatile.Read(ref _lastRedisFailureTicks), DateTimeKind.Utc);
@@ -474,7 +525,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         try
         {
-            value = JsonSerializer.Deserialize<T>(data, CacheJsonContext.Default.Options);
+            var typeInfo = ResolveTypeInfo<T>();
+            value = JsonSerializer.Deserialize(data, typeInfo) as T;
             return value != null;
         }
         catch (JsonException ex)
@@ -489,6 +541,28 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             RedisCacheServiceLog.CacheEntryDeserializationFailed(_logger, cacheKey, ex);
             return false;
         }
+    }
+
+    private bool TrySerialize<T>(T value, string cacheKey, out byte[] data) where T : class
+    {
+        try
+        {
+            var typeInfo = ResolveTypeInfo<T>();
+            data = JsonSerializer.SerializeToUtf8Bytes((object?)value, typeInfo);
+            return true;
+        }
+        catch (NotSupportedException ex)
+        {
+            data = Array.Empty<byte>();
+            RedisCacheServiceLog.CacheEntrySerializationFailed(_logger, cacheKey, ex);
+            return false;
+        }
+    }
+
+    private static System.Text.Json.Serialization.Metadata.JsonTypeInfo ResolveTypeInfo<T>() where T : class
+    {
+        return CacheJsonContext.Default.GetTypeInfo(typeof(T))
+            ?? throw new NotSupportedException($"Type '{typeof(T).FullName}' is not registered in {nameof(CacheJsonContext)}.");
     }
 
     private async Task RemoveCorruptRedisEntryAsync(string prefixedKey, CancellationToken cancellationToken)
@@ -636,6 +710,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         _performanceMonitor.RecordCacheMetrics(CacheType, "eviction");
     }
 
+    private void RecordCacheOperation(string operation, TimeSpan duration, bool success = true)
+    {
+        _performanceMonitor.RecordCacheLatency(CacheType, operation, duration, success);
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -776,5 +855,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1006, LogLevel.Debug, "Failed to acquire distributed lock for cache key {CacheKey}")]
         public static partial void DistributedLockFailed(ILogger logger, string cacheKey, Exception exception);
+
+        [LoggerMessage(1007, LogLevel.Warning, "Failed to serialize cache entry {CacheKey}")]
+        public static partial void CacheEntrySerializationFailed(ILogger logger, string cacheKey, Exception exception);
     }
 }

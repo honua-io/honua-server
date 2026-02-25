@@ -284,6 +284,11 @@ public static class MediaTypes
     public const string Html = "text/html";
 
     /// <summary>
+    /// CSV media type.
+    /// </summary>
+    public const string Csv = "text/csv";
+
+    /// <summary>
     /// OpenAPI 3.0 specification media type.
     /// </summary>
     public const string OpenApi = "application/vnd.oai.openapi+json;version=3.0";
@@ -302,4 +307,9 @@ public static class MediaTypes
     /// Mapbox Vector Tile media type.
     /// </summary>
     public const string Mvt = "application/vnd.mapbox-vector-tile";
+
+    /// <summary>
+    /// PNG image media type.
+    /// </summary>
+    public const string Png = "image/png";
 }

@@ -137,6 +137,7 @@ internal static partial class ImportEndpoints
             [".kmz"] = "KMZ - Compressed KML format",
             [".gml"] = "GML - Geography Markup Language",
             [".wkt"] = "WKT - Well-Known Text format",
+            [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
             [".twkb"] = "TinyWKB - Compact binary format"
         };
 
@@ -452,6 +453,23 @@ internal static partial class ImportEndpoints
                     IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
                     await response.ExecuteAsync(context);
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Enhanced cleanup on cancellation: Clean up cloud storage if upload was started
+                if (cloudStorage != null && !string.IsNullOrEmpty(uploadId))
+                {
+                    try
+                    {
+                        _ = await cloudStorage.CancelUploadAsync(uploadId, CancellationToken.None);
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+                        Log.CleanupFailed(logger, uploadId, cleanupEx);
+                    }
+                }
+                throw;
             }
             finally
             {
@@ -795,6 +813,15 @@ internal static partial class ImportEndpoints
         /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3302, Level = LogLevel.Warning, Message = "Failed to update upload progress for {UploadId}")]
         public static partial void ProgressUpdateFailed(ILogger logger, string uploadId, Exception exception);
+
+        /// <summary>
+        /// Logs when cleanup of cancelled import resources fails.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="uploadId">The upload identifier.</param>
+        /// <param name="exception">The exception that caused the failure.</param>
+        [LoggerMessage(EventId = 3303, Level = LogLevel.Warning, Message = "Failed to cleanup cancelled import resources for {UploadId}")]
+        public static partial void CleanupFailed(ILogger logger, string uploadId, Exception exception);
     }
 
 }

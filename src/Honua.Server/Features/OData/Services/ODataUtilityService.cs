@@ -132,6 +132,8 @@ internal static class ODataUtilityService
 
     /// <summary>
     /// Generates the @odata.nextLink URL for pagination support.
+    /// When useSkipToken is true, the skip value is encoded as an opaque Base64Url cursor
+    /// that includes a query fingerprint to prevent token reuse across different queries.
     /// </summary>
     public static string GenerateNextLink(
         HttpRequest request,
@@ -150,7 +152,8 @@ internal static class ODataUtilityService
 
         if (useSkipToken)
         {
-            queryParams.Add($"$skiptoken={nextSkip}");
+            var opaqueToken = ODataSkipTokenService.Encode(nextSkip, filter, orderby);
+            queryParams.Add($"$skiptoken={Uri.EscapeDataString(opaqueToken)}");
         }
         else
         {
@@ -190,6 +193,21 @@ internal static class ODataUtilityService
         }
 
         return $"{baseUrl}{request.Path}?{string.Join("&", queryParams)}";
+    }
+
+    /// <summary>
+    /// Generates a @odata.deltaLink URL for change tracking support.
+    /// </summary>
+    public static string GenerateDeltaLink(
+        HttpRequest request,
+        int layerId,
+        DateTimeOffset timestamp)
+    {
+        return ODataDeltaService.GenerateDeltaLink(
+            request,
+            BaseUrlResolver.GetBaseUrl(request),
+            layerId,
+            timestamp);
     }
 
     /// <summary>
@@ -411,19 +429,25 @@ internal static class ODataUtilityService
             return Results.NoContent();
         }
 
+        var contentType = GetODataContentType(context.Request, format);
         if (crudResult.Data is Dictionary<string, object?> dictionary)
         {
             return Results.Json(
                 dictionary,
                 ODataJsonContext.Default.DictionaryStringObject,
-                contentType: GetODataContentType(context.Request, format),
+                contentType: contentType,
                 statusCode: crudResult.StatusCode);
         }
 
+        if (crudResult.Data is null)
+        {
+            return Results.StatusCode(crudResult.StatusCode);
+        }
+
         return Results.Json(
-            crudResult.Data,
-            ODataJsonContext.Default.Options,
-            contentType: GetODataContentType(context.Request, format),
+            (object)crudResult.Data,
+            ODataJsonContext.Default.Object,
+            contentType: contentType,
             statusCode: crudResult.StatusCode);
     }
 

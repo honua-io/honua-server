@@ -37,6 +37,7 @@ internal sealed partial class ODataStreamingQueryHandler(
     private readonly ILogger<ODataStreamingQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     private const int StreamingThreshold = 1000;
+    private const int FlushInterval = 32;
 
     /// <summary>
     /// Handles OData features collection request with streaming for large result sets
@@ -55,6 +56,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$compute")] string? compute = null,
         [FromQuery(Name = "$search")] string? search = null,
         [FromQuery(Name = "$apply")] string? apply = null,
+        [FromQuery(Name = "$deltatoken")] string? deltatoken = null,
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
@@ -83,6 +85,8 @@ internal sealed partial class ODataStreamingQueryHandler(
                 skip,
                 skiptoken,
                 count,
+                filter,
+                orderby,
                 out var pagination,
                 out var topValue,
                 out var skipValue,
@@ -91,6 +95,20 @@ internal sealed partial class ODataStreamingQueryHandler(
             if (pagingError != null)
             {
                 return pagingError;
+            }
+
+            // Validate $deltatoken if present
+            DateTimeOffset? deltaSince = null;
+            int? deltaLayerId = null;
+            if (!string.IsNullOrWhiteSpace(deltatoken))
+            {
+                if (!ODataDeltaService.TryDecode(deltatoken, out var decodedTimestamp, out var decodedLayerId, out var deltaError))
+                {
+                    return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
+                }
+
+                deltaSince = decodedTimestamp;
+                deltaLayerId = decodedLayerId;
             }
 
             if (!ODataComputeService.TryParse(compute, out var computeExpressions, out var computeError))
@@ -244,6 +262,15 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId = layerResolution.LayerId;
             }
 
+            // Validate that the delta token's layer ID matches the requested layer
+            if (deltaLayerId.HasValue && layerId.HasValue && deltaLayerId.Value != layerId.Value)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    $"$deltatoken was issued for layer {deltaLayerId.Value} but the request targets layer {layerId.Value}.");
+            }
+
             var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
                 context,
                 layerId.Value,
@@ -289,6 +316,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     useSkipToken,
                     compute,
                     format,
+                    deltaSince,
                     cancellationToken);
             }
 
@@ -421,6 +449,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
         var streamedCount = 0;
         var hasMoreResults = false;
+        var featuresSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
             if (streamedCount >= pagination.Limit)
@@ -441,8 +470,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                 cancellationToken);
             streamedCount++;
 
-            // Flush periodically for better streaming
-            await writer.FlushAsync(cancellationToken);
+            if (++featuresSinceFlush >= FlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                featuresSinceFlush = 0;
+            }
         }
 
         // End value array
@@ -468,6 +500,12 @@ internal sealed partial class ODataStreamingQueryHandler(
                 compute);
             writer.WriteString("@odata.nextLink", nextLink);
         }
+        else
+        {
+            // When there are no more pages, include a delta link for change tracking.
+            var deltaLink = ODataUtilityService.GenerateDeltaLink(context.Request, layerId, DateTimeOffset.UtcNow);
+            writer.WriteString("@odata.deltaLink", deltaLink);
+        }
 
         // End OData response
         writer.WriteEndObject();
@@ -490,13 +528,19 @@ internal sealed partial class ODataStreamingQueryHandler(
         CancellationToken cancellationToken)
     {
         writer.WriteStartObject();
-        var writtenProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var requiresCompute = !computeExpressions.IsDefaultOrEmpty;
+        HashSet<string>? writtenProperties = requiresCompute
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : null;
 
         // Core OData feature properties
         writer.WriteNumber("ObjectId", feature.Id);
-        writtenProperties.Add("ObjectId");
         writer.WriteNumber("LayerId", layerId);
-        writtenProperties.Add("LayerId");
+        if (writtenProperties is not null)
+        {
+            _ = writtenProperties.Add("ObjectId");
+            _ = writtenProperties.Add("LayerId");
+        }
 
         if (select == null || select.Contains("Geometry"))
         {
@@ -511,18 +555,24 @@ internal sealed partial class ODataStreamingQueryHandler(
                 writer.WriteNull("Geometry");
             }
 
-            writtenProperties.Add("Geometry");
+            if (writtenProperties is not null)
+            {
+                _ = writtenProperties.Add("Geometry");
+            }
         }
 
         Dictionary<string, object?>? computeSource = null;
         if (feature.Attributes != null)
         {
             var normalized = ODataAttributeSerializer.NormalizeAttributes(feature.Attributes);
-            computeSource = new Dictionary<string, object?>(normalized, StringComparer.OrdinalIgnoreCase)
+            if (requiresCompute)
             {
-                ["ObjectId"] = feature.Id,
-                ["LayerId"] = layerId
-            };
+                computeSource = new Dictionary<string, object?>(normalized, StringComparer.OrdinalIgnoreCase)
+                {
+                    ["ObjectId"] = feature.Id,
+                    ["LayerId"] = layerId
+                };
+            }
 
             foreach (var kvp in normalized)
             {
@@ -533,14 +583,14 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 if (select == null || select.Contains(kvp.Key))
                 {
-                    if (writtenProperties.Add(kvp.Key))
+                    if (writtenProperties == null || writtenProperties.Add(kvp.Key))
                     {
                         await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
                     }
                 }
             }
         }
-        else
+        else if (requiresCompute)
         {
             computeSource = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
@@ -549,7 +599,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             };
         }
 
-        if (!computeExpressions.IsDefaultOrEmpty && computeSource != null)
+        if (requiresCompute && computeSource != null)
         {
             ODataComputeService.ApplyCompute(computeSource, computeExpressions);
             foreach (var expression in computeExpressions)
@@ -559,12 +609,13 @@ internal sealed partial class ODataStreamingQueryHandler(
                     continue;
                 }
 
-                if (!writtenProperties.Add(expression.Alias))
+                if (writtenProperties is HashSet<string> writtenPropertiesSet &&
+                    !writtenPropertiesSet.Add(expression.Alias))
                 {
                     continue;
                 }
 
-                if (computeSource.TryGetValue(expression.Alias, out var computedValue))
+                if (computeSource!.TryGetValue(expression.Alias, out var computedValue))
                 {
                     await WriteODataJsonValueAsync(writer, expression.Alias, computedValue, cancellationToken);
                 }

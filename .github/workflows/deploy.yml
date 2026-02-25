@@ -72,8 +72,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=release-jit
+          cache-to: type=gha,mode=max,scope=release-jit
           provenance: true
           sbom: true
 
@@ -149,8 +149,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=aot
-          cache-to: type=gha,mode=max,scope=aot
+          cache-from: type=gha,scope=release-aot
+          cache-to: type=gha,mode=max,scope=release-aot
           provenance: true
           sbom: true
 

@@ -374,6 +374,10 @@ public class OgcMapsRenderingHandlerTests
         result.Should().BeAssignableTo<IStatusCodeHttpResult>();
         var statusCodeResult = (IStatusCodeHttpResult)result;
         statusCodeResult.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        result.Should().BeOfType<ProblemHttpResult>();
+        var problem = (ProblemHttpResult)result;
+        problem.ProblemDetails.Detail.Should().Be("Styled map rendering is not available for this collection type.");
+        problem.ProblemDetails.Detail.Should().NotContain("Styles are not supported");
     }
 
     [UnitTest]

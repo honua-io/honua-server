@@ -55,7 +55,9 @@ internal static class TileMatrixSetEndpoints
 
         var request = context.Request;
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var items = ImmutableArray.Create(OgcTilesUtilities.BuildWebMercatorQuadItem(baseUrl));
+        var items = ImmutableArray.Create(
+            OgcTilesUtilities.BuildWebMercatorQuadItem(baseUrl),
+            OgcTilesUtilities.BuildWorldCrs84QuadItem(baseUrl));
 
         var links = OgcCommonUtilities.BuildFormatLinks(
                 request,
@@ -102,7 +104,9 @@ internal static class TileMatrixSetEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix set '{tileMatrixSetId}' not found.");
         }
 
-        var definition = OgcTilesUtilities.BuildWebMercatorQuadDefinition(limitsOptions.Value.Tiles);
+        var definition = OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId)
+            ? OgcTilesUtilities.BuildWorldCrs84QuadDefinition(limitsOptions.Value.Tiles)
+            : OgcTilesUtilities.BuildWebMercatorQuadDefinition(limitsOptions.Value.Tiles);
         return OgcCommonUtilities.FormatMetadataResponse(definition, OgcTilesJsonContext.Default.TileMatrixSetDefinition, outputFormat, "Tile matrix set");
     }
 }

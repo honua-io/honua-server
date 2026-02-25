@@ -55,6 +55,8 @@ internal interface IQueryFormatter
 internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
+    [ThreadStatic]
+    private static WKBReader? _wkbReader;
 
     public QueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
@@ -392,7 +394,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        var reader = new WKBReader();
+        var reader = GetWkbReader();
         Geometry geometry;
 
         try
@@ -415,6 +417,12 @@ internal sealed class QueryFormatter : IQueryFormatter
             geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
         }
         return ConvertGeometryToGeoJsonGeometry(geometry);
+    }
+
+    private static WKBReader GetWkbReader()
+    {
+        _wkbReader ??= new WKBReader();
+        return _wkbReader;
     }
 
     private static GeoJsonGeometry ConvertGeometryToGeoJsonGeometry(Geometry geometry)
@@ -587,6 +595,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 /// </summary>
 internal sealed class StreamingQueryFormatter
 {
+    private const int FlushInterval = 32;
     private readonly GeometryLimits _geometryLimits;
 
     public StreamingQueryFormatter(IOptions<LimitsOptions> limitsOptions)
@@ -618,6 +627,7 @@ internal sealed class StreamingQueryFormatter
         });
 
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var outFieldLookup = CreateFieldLookup(outFields);
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
@@ -655,6 +665,7 @@ internal sealed class StreamingQueryFormatter
 
         // Start features array
         writer.WriteStartArray("features");
+        var featuresSinceFlush = 0;
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
@@ -662,15 +673,18 @@ internal sealed class StreamingQueryFormatter
                 writer,
                 feature,
                 returnGeometry,
-                outFields,
+                outFieldLookup,
                 objectIdFieldName,
                 returnZ,
                 returnM,
                 effectiveLimits,
                 cancellationToken);
 
-            // Flush periodically to improve streaming performance
-            await writer.FlushAsync(cancellationToken);
+            if (++featuresSinceFlush >= FlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                featuresSinceFlush = 0;
+            }
         }
 
         // End features array
@@ -711,6 +725,7 @@ internal sealed class StreamingQueryFormatter
         });
 
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var outFieldLookup = CreateFieldLookup(outFields);
 
         // Start GeoJSON FeatureCollection
         writer.WriteStartObject();
@@ -724,6 +739,7 @@ internal sealed class StreamingQueryFormatter
             geometryPrecision,
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
+        var featuresSinceFlush = 0;
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
@@ -731,15 +747,18 @@ internal sealed class StreamingQueryFormatter
                 writer,
                 feature,
                 returnGeometry,
-                outFields,
+                outFieldLookup,
                 objectIdFieldName,
                 returnZ,
                 returnM,
                 effectiveLimits,
                 cancellationToken);
 
-            // Flush periodically to improve streaming performance
-            await writer.FlushAsync(cancellationToken);
+            if (++featuresSinceFlush >= FlushInterval)
+            {
+                await writer.FlushAsync(cancellationToken);
+                featuresSinceFlush = 0;
+            }
         }
 
         // End features array
@@ -766,7 +785,7 @@ internal sealed class StreamingQueryFormatter
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
-        string[]? outFields,
+        HashSet<string>? outFieldLookup,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
@@ -787,7 +806,7 @@ internal sealed class StreamingQueryFormatter
                 var fieldName = kvp.Key;
 
                 // Skip fields not in outFields if specified
-                if (outFields != null && !outFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase))
+                if (outFieldLookup != null && !outFieldLookup.Contains(fieldName))
                 {
                     continue;
                 }
@@ -838,7 +857,7 @@ internal sealed class StreamingQueryFormatter
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
-        string[]? outFields,
+        HashSet<string>? outFieldLookup,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
@@ -881,7 +900,7 @@ internal sealed class StreamingQueryFormatter
                 var fieldName = kvp.Key;
 
                 // Skip fields not in outFields if specified
-                if (outFields != null && !outFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase))
+                if (outFieldLookup != null && !outFieldLookup.Contains(fieldName))
                 {
                     continue;
                 }
@@ -892,6 +911,16 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteEndObject(); // End properties
         writer.WriteEndObject(); // End feature
+    }
+
+    private static HashSet<string>? CreateFieldLookup(string[]? outFields)
+    {
+        if (outFields == null || outFields.Length == 0)
+        {
+            return null;
+        }
+
+        return new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

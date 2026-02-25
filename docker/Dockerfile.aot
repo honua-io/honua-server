@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Multi-stage Dockerfile for Honua Server
 # Native AOT build for minimal image size and fast cold start
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
@@ -25,16 +26,27 @@ COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Admin/*.csproj src/Honua.Admin/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
 
+ARG TARGETARCH
+
 # Restore dependencies
-RUN dotnet restore src/Honua.Server/Honua.Server.csproj
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) RUNTIME_ID="linux-musl-x64" ;; \
+        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet restore src/Honua.Server/Honua.Server.csproj \
+      --runtime "$RUNTIME_ID" \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeAdminUi=false
 
 # Copy source code
 COPY . .
 
 # Build Native AOT application for minimal image size
 ARG CONFIGURATION=Release
-ARG TARGETARCH
-RUN case "${TARGETARCH:-amd64}" in \
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ; ILC_SINGLE_THREADED="false" ;; \
         arm64) RUNTIME_ID="linux-musl-arm64" ; ILC_SINGLE_THREADED="true" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
@@ -44,6 +56,8 @@ RUN case "${TARGETARCH:-amd64}" in \
       --runtime "$RUNTIME_ID" \
       --self-contained true \
       --output /app \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeAdminUi=false \
       -p:PublishAot=true \
       -p:DebugType=None \
       -p:DebugSymbols=false \
@@ -57,12 +71,11 @@ RUN case "${TARGETARCH:-amd64}" in \
 # Runtime stage - distroless-style minimal image for maximum security
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
 
-# Security: Update packages and remove package manager
-RUN apk upgrade --no-cache && \
-    apk add --no-cache \
+# Security: Install runtime dependencies
+RUN apk add --no-cache \
     icu-libs \
     tzdata \
-    curl \
+    fontconfig \
     ca-certificates && \
     rm -rf /var/cache/apk/* && \
     rm -rf /tmp/*
@@ -78,9 +91,7 @@ COPY --from=build --chown=1001:1001 /app .
 # Security: Create runtime directories with proper permissions
 RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
     chown -R 1001:1001 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
-    chmod 750 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics && \
-    chmod 755 /app/Honua.Server && \
-    chmod -R 755 /app
+    chmod 750 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics
 
 # Security: Remove unnecessary setuid/setgid binaries
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
@@ -111,7 +122,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
 
 # Security: Enhanced health check with timeout and authentication bypass
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f --max-time 5 --connect-timeout 3 http://localhost:8080/healthz/live || exit 1
+    CMD wget -q -T 5 -O /dev/null http://localhost:8080/healthz/live || exit 1
 
 # Security: Explicit port exposure
 EXPOSE 8080/tcp

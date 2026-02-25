@@ -111,6 +111,7 @@ internal static partial class ODataEndpoints
                     query.Compute,
                     query.Search,
                     query.Apply,
+                    query.Deltatoken,
                     query.Format,
                     cancellationToken))
             .WithDisplayName("OData Features Collection")
@@ -156,6 +157,7 @@ internal static partial class ODataEndpoints
                     query.Compute,
                     query.Search,
                     query.Apply,
+                    query.Deltatoken,
                     query.Format,
                     cancellationToken))
             .WithDisplayName("OData Layer Features Collection")
@@ -217,6 +219,7 @@ internal static partial class ODataEndpoints
                     query.Compute,
                     query.Search,
                     query.Apply,
+                    query.Deltatoken,
                     query.Format,
                     cancellationToken))
             .WithDisplayName("OData Features Collection (Legacy)")

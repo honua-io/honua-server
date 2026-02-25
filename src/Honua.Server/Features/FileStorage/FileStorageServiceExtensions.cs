@@ -25,8 +25,7 @@ public static class FileStorageServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Register upload progress store
-        services.AddSingleton<IUploadProgressStore, InMemoryUploadProgressStore>();
+        RegisterUploadProgressStore(services);
 
         // Bind configuration
         var section = configuration.GetSection("FileStorage");
@@ -100,8 +99,7 @@ public static class FileStorageServiceExtensions
         this IServiceCollection services,
         Action<CloudStorageOptions> configure)
     {
-        // Register upload progress store
-        services.AddSingleton<IUploadProgressStore, InMemoryUploadProgressStore>();
+        RegisterUploadProgressStore(services);
 
         var options = new CloudStorageOptions();
         configure(options);
@@ -168,5 +166,19 @@ public static class FileStorageServiceExtensions
                 "FileStorage:AzureBlob:ConnectionString") ?? string.Empty;
         }
 
+    }
+
+    private static void RegisterUploadProgressStore(IServiceCollection services)
+    {
+        services.AddSingleton<IUploadProgressStore>(serviceProvider =>
+        {
+            var universalStore = serviceProvider.GetService<IUniversalProgressStore>();
+            if (universalStore != null)
+            {
+                return new UniversalUploadProgressStore(universalStore);
+            }
+
+            return new InMemoryUploadProgressStore();
+        });
     }
 }

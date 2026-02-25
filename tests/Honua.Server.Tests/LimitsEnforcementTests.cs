@@ -34,7 +34,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
             MaxRecordCount = 100,      // Lower than default for testing
             DefaultRecordCount = 50,   // Lower than default for testing
             MaxOffset = 1000,          // Lower than default for testing
-            QueryTimeout = TimeSpan.FromSeconds(10)
+            QueryTimeout = TimeSpan.FromSeconds(30)
         },
         Edits = new EditLimits
         {

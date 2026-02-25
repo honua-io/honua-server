@@ -80,4 +80,31 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Error,
         Message = "Failed to resolve admin password from secret provider")]
     public static partial void AdminPasswordResolutionFailed(ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs when Basic auth compatibility mode is used.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4108,
+        Level = LogLevel.Debug,
+        Message = "HTTP Basic authentication compatibility mode used")]
+    public static partial void BasicAuthCompatibilityUsed(ILogger logger);
+
+    /// <summary>
+    /// Logs when Basic auth compatibility mode is rejected due to insecure transport.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4109,
+        Level = LogLevel.Warning,
+        Message = "HTTP Basic authentication compatibility mode rejected because request was not HTTPS")]
+    public static partial void BasicAuthRejectedInsecureTransport(ILogger logger);
+
+    /// <summary>
+    /// Logs when an invalid Basic auth header is supplied.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4110,
+        Level = LogLevel.Debug,
+        Message = "Invalid HTTP Basic authorization header supplied")]
+    public static partial void InvalidBasicAuthorizationHeader(ILogger logger);
 }

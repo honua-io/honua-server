@@ -245,6 +245,17 @@ cite-results/*
 cite-tiles-results/*
 !cite-tiles-results/cite-summary.md
 !cite-tiles-results/conformance.json
+client-compat-results/
+# Deferred local scaffolding for issue #320 (not shipping in this PR)
+docker/client-compat-compose.yml
+docker/client-compat-seed.sql
+scripts/CLIENT_COMPAT_README.md
+scripts/client-compat-server.sh
+scripts/run-client-compat-tests.ps1
+scripts/setup-playwright-wsl.sh
+.tmp-cite/
+cite-wms-results/
+cite-wmts-results/
 
 # Environment files (keep examples, ignore actual configs)
 .env
@@ -253,6 +264,10 @@ cite-tiles-results/*
 .env.docker
 !.env.example
 !.env.*.example
+
+# Private keys
+*.pem
+scripts/setup-github-app-env.sh
 
 # AI assistant workspace files
 .serena/
@@ -274,3 +289,6 @@ coverage*/
 tmp/
 src/Honua.Server/tmp/
 src/Honua.Server/attachments/
+
+# Local audit artifacts
+.audit/runs/

@@ -3,6 +3,7 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -163,8 +164,7 @@ public static class OidcAuthenticationExtensions
     {
         var schemes = new List<string>
         {
-            AuthenticationExtensions.ApiKeyScheme,
-            JwtBearerScheme
+            CompositeScheme
         };
 
         if (oidcOptions.AzureAd?.IsValid == true)
@@ -319,15 +319,24 @@ public static class OidcAuthenticationExtensions
 
             options.TokenValidationParameters.ValidAudiences = validAudiences.ToArray();
 
-            // Configure authority for metadata retrieval
-            // Use the first available provider's authority
-            if (oidcOptions.AzureAd?.IsValid == true)
+            var staticSigningKey = oidcOptions.TokenValidation.SymmetricSigningKey;
+            if (!string.IsNullOrWhiteSpace(staticSigningKey))
             {
-                options.Authority = $"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0";
+                options.TokenValidationParameters.IssuerSigningKey =
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes(staticSigningKey));
             }
-            else if (oidcOptions.Generic?.IsValid == true)
+            else
             {
-                options.Authority = oidcOptions.Generic.Authority;
+                // Configure authority for metadata retrieval
+                // Use the first available provider's authority
+                if (oidcOptions.AzureAd?.IsValid == true)
+                {
+                    options.Authority = $"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0";
+                }
+                else if (oidcOptions.Generic?.IsValid == true)
+                {
+                    options.Authority = oidcOptions.Generic.Authority;
+                }
             }
 
             // For multiple issuers, we need to disable automatic issuer validation

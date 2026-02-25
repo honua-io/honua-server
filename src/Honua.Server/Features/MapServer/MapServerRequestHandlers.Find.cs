@@ -21,6 +21,7 @@ namespace Honua.Server.Features.MapServer;
 internal static partial class MapServerEndpoints
 {
     private const int MaxFindResults = 1000;
+    private const string InvalidFindRequestMessage = "Invalid find request parameters.";
 
     /// <summary>
     /// Handle MapServer find (cross-layer text search) requests.
@@ -253,7 +254,7 @@ internal static partial class MapServerEndpoints
         catch (ArgumentException ex)
         {
             MapServerLog.FindFailed(logger, serviceId, ex.Message, ex);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return StandardErrorHelpers.CreateBadRequest(context, InvalidFindRequestMessage);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {

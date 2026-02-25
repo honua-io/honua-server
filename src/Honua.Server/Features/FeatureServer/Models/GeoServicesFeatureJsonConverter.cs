@@ -3,11 +3,20 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Server.Features.FeatureServer.Models;
 
 internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoServicesFeature>
 {
+    private static readonly JsonTypeInfo _attributesTypeInfo =
+        FeatureServerJsonContext.Default.GetTypeInfo(typeof(Dictionary<string, object?>))
+        ?? throw new InvalidOperationException("FeatureServerJsonContext is missing Dictionary<string, object?> metadata.");
+
+    private static readonly JsonTypeInfo _geometryTypeInfo =
+        FeatureServerJsonContext.Default.GetTypeInfo(typeof(GeoServicesGeometry))
+        ?? throw new InvalidOperationException("FeatureServerJsonContext is missing GeoServicesGeometry metadata.");
+
     public override GeoServicesFeature Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         using var document = JsonDocument.ParseValue(ref reader);
@@ -16,7 +25,7 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
         Dictionary<string, object?> attributes = new(StringComparer.OrdinalIgnoreCase);
         if (root.TryGetProperty("attributes", out var attributesElement))
         {
-            attributes = attributesElement.Deserialize<Dictionary<string, object?>>(options)
+            attributes = JsonSerializer.Deserialize(attributesElement, _attributesTypeInfo) as Dictionary<string, object?>
                 ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         }
 
@@ -27,7 +36,7 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
             includeGeometry = true;
             if (geometryElement.ValueKind != JsonValueKind.Null)
             {
-                geometry = geometryElement.Deserialize<GeoServicesGeometry>(options);
+                geometry = JsonSerializer.Deserialize(geometryElement, _geometryTypeInfo) as GeoServicesGeometry;
             }
         }
 
@@ -44,7 +53,7 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
         writer.WriteStartObject();
 
         writer.WritePropertyName("attributes");
-        JsonSerializer.Serialize(writer, value.Attributes, options);
+        JsonSerializer.Serialize(writer, value.Attributes, _attributesTypeInfo);
 
         if (value.IncludeGeometry)
         {
@@ -55,7 +64,7 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
             }
             else
             {
-                JsonSerializer.Serialize(writer, value.Geometry, options);
+                JsonSerializer.Serialize(writer, value.Geometry, _geometryTypeInfo);
             }
         }
 

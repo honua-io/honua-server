@@ -1,6 +1,28 @@
 name: OGC API Tiles CITE Conformance Tests
 
 on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/Honua.Server/Features/OgcTiles/**'
+      - 'docker/cite-tiles-compose.yml'
+      - 'docker/cite-tiles-config/**'
+      - 'docker/cite-tiles-seed.sql'
+      - 'scripts/run-cite-tiles-tests.sh'
+      - '.github/workflows/cite-tiles-conformance.yml'
+  push:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/Honua.Server/Features/OgcTiles/**'
+      - 'docker/cite-tiles-compose.yml'
+      - 'docker/cite-tiles-config/**'
+      - 'docker/cite-tiles-seed.sql'
+      - 'scripts/run-cite-tiles-tests.sh'
+      - '.github/workflows/cite-tiles-conformance.yml'
   schedule:
     # Run weekly to catch conformance regressions
     - cron: '0 6 * * 2'  # Tuesday at 6am UTC (different from Features on Monday)
@@ -228,8 +250,13 @@ jobs:
             });
 
       - name: Fail on conformance issues
-        if: steps.parse-results.outputs.failed_tests != '0' && steps.parse-results.outputs.failed_tests != ''
+        if: steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0'
         run: |
+          if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
+            echo "OGC API Tiles CITE conformance results were not produced"
+            exit 1
+          fi
+
           echo "OGC API Tiles CITE conformance tests failed"
           echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
           echo "Review the test results and fix conformance issues"

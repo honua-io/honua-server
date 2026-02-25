@@ -43,6 +43,15 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         service.Capabilities.Should().Contain("Map");
         service.MaxImageWidth.Should().BeGreaterThan(0);
         service.MaxImageHeight.Should().BeGreaterThan(0);
+        service.TileInfo.Should().NotBeNull();
+        service.TileInfo!.Rows.Should().Be(256);
+        service.TileInfo.Cols.Should().Be(256);
+        service.TileInfo.Dpi.Should().Be(96);
+        service.TileInfo.Format.Should().Be("PNG");
+        service.TileInfo.Origin.Should().NotBeNull();
+        service.TileInfo.SpatialReference.Should().NotBeNull();
+        service.TileInfo.SpatialReference!.Wkid.Should().Be(3857);
+        service.TileInfo.Lods.Should().NotBeNullOrEmpty();
     }
 
     [IntegrationTest]
@@ -295,6 +304,20 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_AfterCachedValidRequest_InvalidSizeReturnsBadRequest()
+    {
+        var validResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20,20");
+        validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var invalidResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=invalid");
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithInvalidIdentifier_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer/legend?f=json");
@@ -331,6 +354,48 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features!.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/query")]
+    public async Task MapServer_ServiceQuery_GetWithLayerId_ReturnsFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query?layerId={WebAppFixture.TestLayerId}&where=1%3D1&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features!.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/query")]
+    public async Task MapServer_ServiceQuery_PostWithLayerId_ReturnsFeatures()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("layerId", WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new KeyValuePair<string, string>("where", "1=1"),
+            new KeyValuePair<string, string>("f", "json")
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query",
             payload);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);

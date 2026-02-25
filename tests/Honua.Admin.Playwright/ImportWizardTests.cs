@@ -92,7 +92,7 @@ public sealed class ImportWizardTests : IClassFixture<PlaywrightFixture>
             await page.GetByTestId("import-service-url").Locator("input").FillAsync("not-a-url");
             await page.GetByTestId("import-discover").ClickAsync();
 
-            await page.GetByText("Enter a valid HTTP(S) service URL.").WaitForAsync();
+            await page.GetByText("Enter a valid HTTPS service URL.").WaitForAsync();
         });
     }
 

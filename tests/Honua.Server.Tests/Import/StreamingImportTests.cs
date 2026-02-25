@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -225,6 +226,37 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_CsvFile_WithLongitudeLatitudeColumns_StreamsRows()
+    {
+        var csvContent = """
+            id,name,longitude,latitude,category
+            1,San Francisco,-122.4194,37.7749,city
+            2,Oakland,-122.2711,37.8044,city
+            3,"Half Moon Bay, CA",-122.4286,37.4636,town
+            """;
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(csvContent, Encoding.UTF8, "text/csv");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "test.csv"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("csv_import_table"), "TableName");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("csv_import_table");
+        responseContent.Should().Contain("Csv");
+        responseContent.Should().Contain("\"featureCount\":3");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_KmlFile_StreamsPlacemarks()
     {
         // Arrange - KML file with placemarks
@@ -267,6 +299,46 @@ public class StreamingImportTests : IAsyncLifetime
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("kml_import_table");
+        responseContent.Should().Contain("Kml");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_KmzFile_StreamsPlacemarks()
+    {
+        var kmlContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2">
+            <Document>
+                <Placemark>
+                    <name>San Francisco</name>
+                    <Point>
+                        <coordinates>-122.4194,37.7749,0</coordinates>
+                    </Point>
+                </Placemark>
+            </Document>
+        </kml>
+        """;
+
+        var kmzBytes = BuildKmzArchive(kmlContent);
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(kmzBytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.google-earth.kmz");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "test.kmz"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("kmz_import_table"), "TableName");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("kmz_import_table");
         responseContent.Should().Contain("Kml");
     }
 
@@ -315,6 +387,34 @@ public class StreamingImportTests : IAsyncLifetime
             CultureInfo.CurrentCulture = originalCulture;
             CultureInfo.CurrentUICulture = originalUiCulture;
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/preview")]
+    public async Task Preview_KmzFile_ReturnsKmlFormat()
+    {
+        var kmlContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <kml xmlns="http://www.opengis.net/kml/2.2">
+            <Document>
+                <Placemark>
+                    <name>San Francisco</name>
+                    <Point>
+                        <coordinates>-122.4194,37.7749,0</coordinates>
+                    </Point>
+                </Placemark>
+            </Document>
+        </kml>
+        """;
+
+        var kmzBytes = BuildKmzArchive(kmlContent);
+        await using var stream = new MemoryStream(kmzBytes);
+        var importService = _fixture.GetService<IFileImportService>();
+
+        var preview = await importService.PreviewFileAsync(stream, "preview_test.kmz");
+
+        preview.Format.Should().Be(SupportedFileFormat.Kml);
+        preview.TotalFeatureCount.Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -575,5 +675,19 @@ public class StreamingImportTests : IAsyncLifetime
         // Assert
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("No features found");
+    }
+
+    private static byte[] BuildKmzArchive(string kmlContent)
+    {
+        using var memoryStream = new MemoryStream();
+        using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("doc.kml", CompressionLevel.Optimal);
+            using var entryStream = entry.Open();
+            using var writer = new StreamWriter(entryStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            writer.Write(kmlContent);
+        }
+
+        return memoryStream.ToArray();
     }
 }
