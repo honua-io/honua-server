@@ -79,6 +79,7 @@ describe("arcgis migration integration", () => {
       "feature-layer": 1,
       map: 0,
       "map-view": 0,
+      "scene-view": 0,
       "web-map": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(1);

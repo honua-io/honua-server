@@ -80,7 +80,7 @@ export function buildJsMigrationReport(
       numerator,
       denominator,
       ratio,
-      scope: "FeatureLayer/Map/MapView/WebMap constructor call sites in safe-codemod scope",
+      scope: "FeatureLayer/Map/MapView/SceneView/WebMap constructor call sites in safe-codemod scope",
     },
     readiness,
     gates,
@@ -98,6 +98,7 @@ function summarizeManualTodosByKind(
     "feature-layer": 0,
     map: 0,
     "map-view": 0,
+    "scene-view": 0,
     "web-map": 0,
   };
 

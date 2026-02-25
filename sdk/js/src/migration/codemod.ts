@@ -7,7 +7,12 @@ const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
 const TODO_MARKER = "TODO(honua-migrate)";
 
-export type CodemodConstructorKind = "feature-layer" | "map" | "map-view" | "web-map";
+export type CodemodConstructorKind =
+  | "feature-layer"
+  | "map"
+  | "map-view"
+  | "scene-view"
+  | "web-map";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -41,6 +46,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     kind: "web-map",
     compatSymbol: "WebMapCompat",
     arcGisModules: new Set(["@arcgis/core/WebMap", "@arcgis/core/WebMap.js"]),
+  },
+  {
+    kind: "scene-view",
+    compatSymbol: "SceneViewCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/views/SceneView",
+      "@arcgis/core/views/SceneView.js",
+    ]),
   },
 ];
 
@@ -326,6 +339,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
+    "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
     "web-map": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
@@ -585,6 +599,8 @@ function isSafeConstructorCall(
       return isSafeMapCompatCall(node);
     case "map-view":
       return isSafeMapViewCompatCall(node);
+    case "scene-view":
+      return isSafeSceneViewCompatCall(node);
     case "web-map":
       return isSafeWebMapCompatCall(node);
     default:
@@ -750,6 +766,49 @@ function isSafeWebMapCompatCall(
       return {
         ok: false,
         reason: "WebMap options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSceneViewCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SceneView constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SceneView constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["map", "container", "center", "zoom", "camera", "qualityProfile", "viewingMode"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "SceneView options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "SceneView options include unsupported properties; requires manual migration.",
       };
     }
   }

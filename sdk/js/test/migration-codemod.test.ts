@@ -85,7 +85,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("new FeatureLayerCompat({ url })");
   });
 
-  it("rewrites safe Map, MapView, and WebMap constructors", () => {
+  it("rewrites safe Map, MapView, SceneView, and WebMap constructors", () => {
     const root = makeTempProject();
     const file = path.join(root, "view.ts");
     fs.writeFileSync(
@@ -93,11 +93,13 @@ describe("runEsriCompatCodemod", () => {
       [
         "import Map from '@arcgis/core/Map';",
         "import MapView from '@arcgis/core/views/MapView';",
+        "import SceneView from '@arcgis/core/views/SceneView';",
         "import WebMap from '@arcgis/core/WebMap';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, zoom: 4 });",
+        "const scene = new SceneView({ map, viewingMode: 'global', qualityProfile: 'high' });",
         "const webMap = new WebMap({ portalItem: { id: 'abc123' } });",
-        "void map; void view; void webMap;",
+        "void map; void view; void scene; void webMap;",
       ].join("\n"),
       "utf8",
     );
@@ -109,8 +111,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
-    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(result.metrics.autoMigratedCallSites).toBe(4);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind.map).toEqual({
       total: 1,
@@ -118,6 +120,11 @@ describe("runEsriCompatCodemod", () => {
       manual: 0,
     });
     expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["scene-view"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
@@ -130,13 +137,17 @@ describe("runEsriCompatCodemod", () => {
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { MapCompat, MapViewCompat, WebMapCompat } from "@honua/sdk-esri-compat";',
+      'import { MapCompat, MapViewCompat, SceneViewCompat, WebMapCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).not.toContain("@arcgis/core/Map");
     expect(nextSource).not.toContain("@arcgis/core/views/MapView");
+    expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
     expect(nextSource).not.toContain("@arcgis/core/WebMap");
     expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
     expect(nextSource).toContain("const view = new MapViewCompat({ map, zoom: 4 });");
+    expect(nextSource).toContain(
+      "const scene = new SceneViewCompat({ map, viewingMode: 'global', qualityProfile: 'high' });",
+    );
     expect(nextSource).toContain("const webMap = new WebMapCompat({ portalItem: { id: 'abc123' } });");
   });
 

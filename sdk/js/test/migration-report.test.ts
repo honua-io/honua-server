@@ -17,6 +17,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "feature-layer": { total: 2, autoMigrated: 1, manual: 1 },
         map: { total: 1, autoMigrated: 1, manual: 0 },
         "map-view": { total: 1, autoMigrated: 1, manual: 0 },
+        "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
         "web-map": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
@@ -110,6 +111,7 @@ describe("buildJsMigrationReport", () => {
       "feature-layer": 1,
       map: 0,
       "map-view": 0,
+      "scene-view": 0,
       "web-map": 0,
     });
     expect(report.manualTodoReasons).toEqual([
