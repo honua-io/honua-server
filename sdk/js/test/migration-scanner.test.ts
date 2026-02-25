@@ -1,0 +1,79 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { scanArcGisUsage, summarizeArcGisScan } from "../src/migration/scanner.js";
+
+const tempDirs: string[] = [];
+
+function makeTempProject(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "honua-arcgis-scan-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe("scanArcGisUsage", () => {
+  it("detects arcgis imports and symbol usage", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "map.ts"),
+      [
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const view = new MapView({});",
+        "const layer = new FeatureLayer({});",
+        "void view; void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.filesScanned).toBe(1);
+    expect(report.filesWithArcGisImports).toBe(1);
+    expect(report.imports.length).toBe(2);
+    expect(report.symbolUsageCounts.MapView).toBeGreaterThan(0);
+    expect(report.symbolUsageCounts.FeatureLayer).toBeGreaterThan(0);
+  });
+
+  it("flags advanced migration risk patterns", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "app.ts"),
+      [
+        "import WebMap from '@arcgis/core/WebMap';",
+        "const scene = import('@arcgis/core/views/SceneView');",
+        "void scene; void WebMap;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.flags).toContain("webmap-detected");
+    expect(report.flags).toContain("dynamic-import-detected");
+  });
+
+  it("produces a stable summary string", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "index.ts"),
+      "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';\nvoid new FeatureLayer({});\n",
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    const summary = summarizeArcGisScan(report);
+
+    expect(summary).toContain("filesScanned=1");
+    expect(summary).toContain("filesWithArcGisImports=1");
+    expect(summary).toContain("importCount=1");
+    expect(summary).toContain("FeatureLayer");
+  });
+});

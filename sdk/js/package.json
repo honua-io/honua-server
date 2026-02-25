@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

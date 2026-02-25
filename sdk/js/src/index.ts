@@ -10,3 +10,6 @@ export type {
 export { FeatureLayerCompat } from "./esri-compat/feature-layer.js";
 export { parseFeatureLayerUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl } from "./esri-compat/url.js";
+
+export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
+export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
