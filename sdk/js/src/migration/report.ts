@@ -19,6 +19,8 @@ export interface JsMigrationReport {
   scanReport: ArcGisScanReport;
   codemodResult: EsriCompatCodemodResult;
   manualRewriteMetric: ManualRewriteMetric;
+  readiness: MigrationReadiness;
+  gates: MigrationGateResult[];
   manualTodosByKind: Record<CodemodConstructorKind, number>;
   manualTodoReasons: MigrationReasonSummary[];
   unhandledArcGisModules: ArcGisModuleSummary[];
@@ -36,6 +38,19 @@ export interface ArcGisModuleSummary {
   count: number;
 }
 
+export type MigrationReadiness = "ready" | "assisted" | "blocked";
+
+export interface MigrationGateResult {
+  gate: "no-manual-todos" | "no-unhandled-modules" | "no-blocking-flags";
+  passed: boolean;
+  detail: string;
+}
+
+const BLOCKING_FLAGS = new Set([
+  "scene-3d-detected",
+  "advanced-widget-or-networking-detected",
+]);
+
 export function buildJsMigrationReport(
   rootDir: string,
   codemodResult: EsriCompatCodemodResult,
@@ -50,6 +65,8 @@ export function buildJsMigrationReport(
   const manualTodosByKind = summarizeManualTodosByKind(codemodResult.manualTodos);
   const manualTodoReasons = summarizeManualTodoReasons(codemodResult.manualTodos);
   const unhandledArcGisModules = summarizeUnhandledModules(resolvedScan);
+  const gates = buildMigrationGates(codemodResult, resolvedScan, unhandledArcGisModules);
+  const readiness = determineReadiness(gates);
 
   return {
     rootDir: codemodResult.rootDir,
@@ -62,6 +79,8 @@ export function buildJsMigrationReport(
       ratio,
       scope: "FeatureLayer/Map/MapView constructor call sites in safe-codemod scope",
     },
+    readiness,
+    gates,
     manualTodosByKind,
     manualTodoReasons,
     unhandledArcGisModules,
@@ -122,4 +141,49 @@ function summarizeUnhandledModules(scanReport: ArcGisScanReport): ArcGisModuleSu
   return Array.from(moduleCounts.entries())
     .map(([modulePath, count]) => ({ modulePath, count }))
     .sort((a, b) => (a.count === b.count ? a.modulePath.localeCompare(b.modulePath) : b.count - a.count));
+}
+
+function buildMigrationGates(
+  codemodResult: EsriCompatCodemodResult,
+  scanReport: ArcGisScanReport,
+  unhandledModules: readonly ArcGisModuleSummary[],
+): MigrationGateResult[] {
+  const hasManualTodos = codemodResult.metrics.manualCallSites > 0;
+  const blockingFlags = scanReport.flags.filter((flag) => BLOCKING_FLAGS.has(flag)).sort();
+
+  return [
+    {
+      gate: "no-manual-todos",
+      passed: !hasManualTodos,
+      detail: hasManualTodos
+        ? `${codemodResult.metrics.manualCallSites} manual codemod-scoped call sites remain`
+        : "all codemod-scoped call sites auto-migrated",
+    },
+    {
+      gate: "no-unhandled-modules",
+      passed: unhandledModules.length === 0,
+      detail:
+        unhandledModules.length === 0
+          ? "all discovered ArcGIS modules are in codemod scope"
+          : `${unhandledModules.length} ArcGIS modules remain outside codemod scope`,
+    },
+    {
+      gate: "no-blocking-flags",
+      passed: blockingFlags.length === 0,
+      detail:
+        blockingFlags.length === 0
+          ? "no blocking migration flags detected"
+          : `blocking flags: ${blockingFlags.join(", ")}`,
+    },
+  ];
+}
+
+function determineReadiness(gates: readonly MigrationGateResult[]): MigrationReadiness {
+  const blockingGate = gates.find((gate) => gate.gate === "no-blocking-flags");
+  if (blockingGate && !blockingGate.passed) {
+    return "blocked";
+  }
+
+  const allPassed = gates.every((gate) => gate.passed);
+  return allPassed ? "ready" : "assisted";
 }

@@ -126,5 +126,23 @@ describe("buildJsMigrationReport", () => {
       modulePath: "@arcgis/core/views/SceneView",
       count: 1,
     });
+    expect(report.readiness).toBe("blocked");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: false,
+        detail: "1 manual codemod-scoped call sites remain",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: false,
+        detail: "2 ArcGIS modules remain outside codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: false,
+        detail: "blocking flags: scene-3d-detected",
+      },
+    ]);
   });
 });

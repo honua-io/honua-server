@@ -35,5 +35,7 @@ export type {
   ArcGisModuleSummary,
   JsMigrationReport,
   ManualRewriteMetric,
+  MigrationGateResult,
+  MigrationReadiness,
   MigrationReasonSummary,
 } from "./migration/report.js";

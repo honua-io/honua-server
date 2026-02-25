@@ -58,10 +58,13 @@ function runCodemod(args: ParsedArgs): void {
       `manualRewrite=${report.manualRewriteMetric.numerator}/${report.manualRewriteMetric.denominator}`,
       `writeMode=${args.write ? "enabled" : "dry-run"}`,
       `annotateTodos=${args.annotateTodos ? "enabled" : "disabled"}`,
+      `readiness=${report.readiness}`,
       `byKind=${formatByKindMetrics(codemodResult.metrics.byKind)}`,
     ].join(" "),
   );
   process.stdout.write("\n");
+
+  process.stdout.write(`gates=${formatGateResults(report.gates)}\n`);
 
   if (report.manualTodos.length > 0) {
     process.stdout.write("manualTodos:\n");
@@ -170,6 +173,12 @@ function formatByKindMetrics(byKind: CodemodMetricsByKind): string {
       const metric = byKind[kind];
       return `${kind}:${metric.autoMigrated}/${metric.manual}/${metric.total}`;
     })
+    .join(",");
+}
+
+function formatGateResults(gates: readonly { gate: string; passed: boolean }[]): string {
+  return gates
+    .map((gate) => `${gate.gate}:${gate.passed ? "pass" : "fail"}`)
     .join(",");
 }
 
