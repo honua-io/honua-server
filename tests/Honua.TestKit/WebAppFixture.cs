@@ -67,6 +67,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
     private const string TestSecureConnectionName = "test";
     private const string TestSecureConnectionCreatedBy = "test-fixture";
+    private static readonly TimeSpan _defaultTestClientTimeout = TimeSpan.FromMinutes(5);
 
     public WebAppFixture()
     {
@@ -129,6 +130,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                         ["ConnectionStrings:honua"] = _postgres.ConnectionString,
                         ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
                         ["HONUA_SKIP_MIGRATIONS"] = "true",
+                        ["Limits:Connections:RequestTimeout"] = "00:05:00",
+                        ["Limits:Query:QueryTimeout"] = "00:02:00",
                         ["FileStorage:Provider"] = "Local",
                         ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
                         ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
@@ -159,6 +162,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                         .AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
+                            ["Limits:Connections:RequestTimeout"] = "00:05:00",
+                            ["Limits:Query:QueryTimeout"] = "00:02:00",
                             ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
                             ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
                         })
@@ -197,7 +202,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 });
             });
 
-        Client = _factory.CreateClient();
+        Client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
@@ -308,6 +313,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 ["HONUA_DEV_AUTH"] = "true",
                                 ["HONUA_SKIP_MIGRATIONS"] = "true",
                                 ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
+                                ["Limits:Connections:RequestTimeout"] = "00:05:00",
+                                ["Limits:Query:QueryTimeout"] = "00:02:00",
                                 ["Database:QueryCache:EnableAutomaticCaching"] = "false",
                                 ["FileStorage:Provider"] = "Local",
                                 ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
@@ -664,6 +671,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             ?? throw new InvalidOperationException("Web application factory not initialized.");
 
         var client = factory.CreateClient();
+        client.Timeout = _defaultTestClientTimeout;
         if (_useSharedServer && !string.IsNullOrWhiteSpace(_currentSchema))
         {
             client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
