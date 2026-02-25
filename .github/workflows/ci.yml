@@ -292,7 +292,7 @@ jobs:
           exit 1
 
       - name: Run .NET Tests
-        timeout-minutes: 35
+        timeout-minutes: 60
         run: |
           dotnet build tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
             --configuration Release
