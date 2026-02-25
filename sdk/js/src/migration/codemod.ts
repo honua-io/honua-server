@@ -379,17 +379,38 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
     }
 
     const importClause = statement.importClause;
-    if (!importClause?.name) {
+    if (!importClause) {
       continue;
     }
 
-    result.push({
-      kind: spec.kind,
-      localName: importClause.name.text,
-      start: statement.getStart(sourceFile),
-      end: statement.getEnd(),
-      hasNamedBindings: importClause.namedBindings !== undefined,
-    });
+    const localNames = new Set<string>();
+    if (importClause.name) {
+      localNames.add(importClause.name.text);
+    }
+
+    const namedBindings = importClause.namedBindings;
+    if (namedBindings && ts.isNamedImports(namedBindings)) {
+      for (const element of namedBindings.elements) {
+        const importedName = element.propertyName?.text ?? element.name.text;
+        if (importedName === "default") {
+          localNames.add(element.name.text);
+        }
+      }
+    }
+
+    if (localNames.size === 0) {
+      continue;
+    }
+
+    for (const localName of localNames) {
+      result.push({
+        kind: spec.kind,
+        localName,
+        start: statement.getStart(sourceFile),
+        end: statement.getEnd(),
+        hasNamedBindings: importClause.namedBindings !== undefined,
+      });
+    }
   }
 
   return result;

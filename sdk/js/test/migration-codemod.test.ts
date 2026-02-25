@@ -114,6 +114,38 @@ describe("runEsriCompatCodemod", () => {
     );
   });
 
+  it("rewrites constructors imported via named default alias", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "default-alias.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import { default as FeatureLayer } from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      "import { default as FeatureLayer } from '@arcgis/core/layers/FeatureLayer';",
+    );
+    expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("const layer = new FeatureLayerCompat({ url: serviceUrl });");
+  });
+
   it("rewrites safe Map, MapView, SceneView, and WebMap constructors", () => {
     const root = makeTempProject();
     const file = path.join(root, "view.ts");
