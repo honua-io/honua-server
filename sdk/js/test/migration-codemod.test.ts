@@ -284,4 +284,51 @@ describe("runEsriCompatCodemod", () => {
     );
     expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
   });
+
+  it("rewrites map and map-view dynamic imports including .js module paths", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "lazy-map.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadMapPieces() {",
+        "  const mapModule = await import('@arcgis/core/Map.js');",
+        "  const mapViewModule = await import('@arcgis/core/views/MapView');",
+        "  return [mapModule.default, mapViewModule.default];",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))',
+    );
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapViewCompat }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/Map.js");
+    expect(nextSource).not.toContain("@arcgis/core/views/MapView");
+  });
 });
