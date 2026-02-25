@@ -174,6 +174,40 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("const layer = new FeatureLayerCompat({ url: serviceUrl });");
   });
 
+  it("rewrites namespace default map constructors and drops unused arcgis import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "namespace-map.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import * as MapModule from '@arcgis/core/Map';",
+        "const map = new MapModule.default({ basemap: 'streets' });",
+        "void map;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).not.toContain("@arcgis/core/Map");
+    expect(nextSource).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
+  });
+
   it("rewrites safe Map, MapView, SceneView, and WebMap constructors", () => {
     const root = makeTempProject();
     const file = path.join(root, "view.ts");
