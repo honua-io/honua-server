@@ -48,5 +48,6 @@
 - [Getting Started](contributor/development/getting-started.md) — development setup
 - [Contributing](contributor/development/contributing.md) — code style, architecture rules, PR process
 - [Architecture](contributor/ARCHITECTURE.md) — system design
+- [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
 - [ADRs](contributor/adr/README.md) — architectural decisions
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md) — required compatibility/certification updates per release

@@ -96,6 +96,34 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
+wait_for_honua_server() {
+    local context_label="${1:-Honua Server}"
+    local start_time current_time elapsed
+
+    start_time=$(date +%s)
+    while true; do
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+
+        if [[ $elapsed -gt $HONUA_HEALTHCHECK_TIMEOUT ]]; then
+            echo -e "${RED}❌ Timeout waiting for ${context_label} to become healthy${NC}"
+            echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
+            return 1
+        fi
+
+        if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -q "healthy"; then
+            return 0
+        fi
+
+        if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -Eq "Exit|Restarting"; then
+            return 2
+        fi
+
+        echo "Waiting for ${context_label}... (${elapsed}s elapsed)"
+        sleep 5
+    done
+}
+
 # Build Honua Server image if it doesn't exist
 echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
 if ! docker build -t honua-server:latest .; then
@@ -150,24 +178,10 @@ echo -e "${GREEN}✅ Postgres is healthy${NC}"
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server
 
 echo -e "${YELLOW}Waiting for Honua Server to be ready (migrations)...${NC}"
-start_time=$(date +%s)
-while true; do
-    current_time=$(date +%s)
-    elapsed=$((current_time - start_time))
-
-    if [[ $elapsed -gt $HONUA_HEALTHCHECK_TIMEOUT ]]; then
-        echo -e "${RED}❌ Timeout waiting for Honua Server to become healthy${NC}"
-        echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
-        exit 1
-    fi
-
-    if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -q "healthy"; then
-        break
-    fi
-
-    echo "Waiting for Honua Server... (${elapsed}s elapsed)"
-    sleep 5
-done
+if ! wait_for_honua_server "Honua Server (migrations)"; then
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server || true
+    exit 1
+fi
 
 echo -e "${GREEN}✅ Honua Server is healthy${NC}"
 
@@ -186,31 +200,34 @@ docker cp docker/cite-seed.sql "$POSTGRES_CONTAINER":/tmp/cite-seed.sql
 docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite -f /tmp/cite-seed.sql >/dev/null
 echo -e "${GREEN}✅ CITE database seeded${NC}"
 
-# Start Honua Server + CITE engine after seeding
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server cite-engine
-
-# Wait for Honua Server to be healthy
-echo -e "${YELLOW}Waiting for Honua Server to be ready...${NC}"
-start_time=$(date +%s)
+# Restart Honua Server after seeding. Retry on transient startup failures.
+echo -e "${YELLOW}Starting Honua Server after seed...${NC}"
+start_attempt=1
+max_start_attempts=3
 while true; do
-    current_time=$(date +%s)
-    elapsed=$((current_time - start_time))
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server || true
 
-    if [[ $elapsed -gt $HONUA_HEALTHCHECK_TIMEOUT ]]; then
-        echo -e "${RED}❌ Timeout waiting for Honua Server to become healthy${NC}"
-        echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
-        exit 1
-    fi
-
-    if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -q "healthy"; then
+    echo -e "${YELLOW}Waiting for Honua Server to be ready...${NC}"
+    if wait_for_honua_server "Honua Server"; then
         break
     fi
 
-    echo "Waiting for Honua Server... (${elapsed}s elapsed)"
+    if [[ $start_attempt -ge $max_start_attempts ]]; then
+        echo -e "${RED}❌ Honua Server failed to become healthy after ${max_start_attempts} attempts${NC}"
+        $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server || true
+        exit 1
+    fi
+
+    echo -e "${YELLOW}⚠️ Honua Server startup failed (attempt ${start_attempt}/${max_start_attempts}); retrying...${NC}"
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s honua-server >/dev/null 2>&1 || true
+    start_attempt=$((start_attempt + 1))
     sleep 5
 done
 
 echo -e "${GREEN}✅ Honua Server is healthy${NC}"
+
+# Start CITE engine after Honua Server is confirmed healthy.
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d cite-engine
 
 # Verify API endpoints are responding (after seeding to avoid cached empty data)
 echo -e "${YELLOW}Verifying OGC API Features endpoints...${NC}"

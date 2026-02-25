@@ -237,14 +237,12 @@ docs/temp/
 *.local.json
 appsettings.Development.json
 !appsettings.Development.json.template
-cite-results/cite-session-*/
-cite-tiles-results/cite-tiles-session-*/
-cite-results/*
-!cite-results/cite-summary.md
-!cite-results/conformance.json
-cite-tiles-results/*
-!cite-tiles-results/cite-summary.md
-!cite-tiles-results/conformance.json
+cite-results/
+cite-tiles-results/
+cite-wms-results/
+cite-wmts-results/
+ogc-maps-results/
+.tmp-cite/
 client-compat-results/
 # Deferred local scaffolding for issue #320 (not shipping in this PR)
 docker/client-compat-compose.yml
@@ -253,9 +251,6 @@ scripts/CLIENT_COMPAT_README.md
 scripts/client-compat-server.sh
 scripts/run-client-compat-tests.ps1
 scripts/setup-playwright-wsl.sh
-.tmp-cite/
-cite-wms-results/
-cite-wmts-results/
 
 # Environment files (keep examples, ignore actual configs)
 .env

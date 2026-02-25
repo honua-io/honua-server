@@ -18,6 +18,7 @@ CITE_RESULTS_DIR="cite-tiles-results"
 CITE_RESULTS_CONTAINER_DIR="/root/te_base/users/cite/logs"
 CITE_TIMEOUT=1800  # 30 minutes timeout
 HONUA_HEALTHCHECK_TIMEOUT=300  # 5 minutes
+POSTGRES_HEALTHCHECK_TIMEOUT=120  # 2 minutes
 PASSED_TESTS=0
 FAILED_TESTS=0
 SKIPPED_TESTS=0
@@ -96,6 +97,57 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
+wait_for_postgres() {
+    local start_time current_time elapsed
+
+    start_time=$(date +%s)
+    while true; do
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+
+        if [[ $elapsed -gt $POSTGRES_HEALTHCHECK_TIMEOUT ]]; then
+            echo -e "${RED}Timeout waiting for Postgres to become healthy${NC}"
+            echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs postgres"
+            return 1
+        fi
+
+        if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps postgres | grep -q "healthy"; then
+            return 0
+        fi
+
+        echo "Waiting for Postgres... (${elapsed}s elapsed)"
+        sleep 5
+    done
+}
+
+wait_for_honua_server() {
+    local context_label="${1:-Honua Server}"
+    local start_time current_time elapsed
+
+    start_time=$(date +%s)
+    while true; do
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+
+        if [[ $elapsed -gt $HONUA_HEALTHCHECK_TIMEOUT ]]; then
+            echo -e "${RED}Timeout waiting for ${context_label} to become healthy${NC}"
+            echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
+            return 1
+        fi
+
+        if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -q "healthy"; then
+            return 0
+        fi
+
+        if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -Eq "Exit|Restarting"; then
+            return 2
+        fi
+
+        echo "Waiting for ${context_label}... (${elapsed}s elapsed)"
+        sleep 5
+    done
+}
+
 wait_for_http_endpoint() {
     local url="$1"
     local label="$2"
@@ -143,32 +195,29 @@ trap cleanup EXIT
 echo -e "${YELLOW}Starting CITE Tiles test environment...${NC}"
 $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null || true
 
-# Start base services (without test profile). Bring up dependencies first
-# to avoid compose dependency-order errors on newer compose versions.
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d postgres honua-server cite-engine
+# Start Postgres first so seeding can happen before server caches metadata
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d postgres
+
+echo -e "${YELLOW}Waiting for Postgres to be ready...${NC}"
+if ! wait_for_postgres; then
+    exit 1
+fi
+echo -e "${GREEN}Postgres is healthy${NC}"
+
+# Start Honua Server once for migrations, then stop before seeding
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server
 
 # Wait for Honua Server to be healthy
-echo -e "${YELLOW}Waiting for Honua Server to be ready...${NC}"
-start_time=$(date +%s)
-while true; do
-    current_time=$(date +%s)
-    elapsed=$((current_time - start_time))
-
-    if [[ $elapsed -gt $HONUA_HEALTHCHECK_TIMEOUT ]]; then
-        echo -e "${RED}Timeout waiting for Honua Server to become healthy${NC}"
-        echo "Check logs with: $COMPOSE_CMD -f $CITE_COMPOSE_FILE logs honua-server"
-        exit 1
-    fi
-
-    if $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps honua-server | grep -q "healthy"; then
-        break
-    fi
-
-    echo "Waiting for Honua Server... (${elapsed}s elapsed)"
-    sleep 5
-done
+echo -e "${YELLOW}Waiting for Honua Server to be ready (migrations)...${NC}"
+if ! wait_for_honua_server "Honua Server (migrations)"; then
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server || true
+    exit 1
+fi
 
 echo -e "${GREEN}Honua Server is healthy${NC}"
+
+echo -e "${YELLOW}Stopping Honua Server to seed data...${NC}"
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" stop honua-server
 
 echo -e "${YELLOW}Seeding CITE Tiles database...${NC}"
 POSTGRES_CONTAINER=$($COMPOSE_CMD -f "$CITE_COMPOSE_FILE" ps -q postgres)
@@ -180,6 +229,35 @@ fi
 docker cp docker/cite-tiles-seed.sql "$POSTGRES_CONTAINER":/tmp/cite-tiles-seed.sql
 docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cite_tiles -f /tmp/cite-tiles-seed.sql >/dev/null
 echo -e "${GREEN}CITE Tiles database seeded${NC}"
+
+# Restart Honua Server after seeding. Retry on transient startup failures.
+echo -e "${YELLOW}Starting Honua Server after seed...${NC}"
+start_attempt=1
+max_start_attempts=3
+while true; do
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server || true
+
+    echo -e "${YELLOW}Waiting for Honua Server to be ready...${NC}"
+    if wait_for_honua_server "Honua Server"; then
+        break
+    fi
+
+    if [[ $start_attempt -ge $max_start_attempts ]]; then
+        echo -e "${RED}Honua Server failed to become healthy after ${max_start_attempts} attempts${NC}"
+        $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server || true
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Honua Server startup failed (attempt ${start_attempt}/${max_start_attempts}); retrying...${NC}"
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" rm -f -s honua-server >/dev/null 2>&1 || true
+    start_attempt=$((start_attempt + 1))
+    sleep 5
+done
+
+echo -e "${GREEN}Honua Server is healthy${NC}"
+
+# Start CITE engine after Honua Server is confirmed healthy.
+$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d cite-engine
 
 # Verify API endpoints are responding (after seeding to avoid cached empty data)
 echo -e "${YELLOW}Verifying OGC API Tiles endpoints...${NC}"
