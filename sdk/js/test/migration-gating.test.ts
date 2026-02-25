@@ -93,14 +93,16 @@ describe("evaluateMigrationGates", () => {
       failOnUnhandled: true,
       failOnBlocked: true,
       maxManualRatio: 0.1,
+      maxManualInterventionRatio: 0.3,
     });
 
     expect(result.failed).toBe(true);
-    expect(result.failures).toHaveLength(4);
+    expect(result.failures).toHaveLength(5);
     expect(result.failures[0]).toContain("manual rewrite required");
     expect(result.failures[1]).toContain("outside codemod scope");
     expect(result.failures[2]).toContain("exceeds max");
-    expect(result.failures[3]).toContain("readiness is blocked");
+    expect(result.failures[3]).toContain("manual intervention ratio");
+    expect(result.failures[4]).toContain("readiness is blocked");
   });
 
   it("passes when gates are disabled or thresholds are met", () => {
@@ -110,6 +112,7 @@ describe("evaluateMigrationGates", () => {
       failOnUnhandled: false,
       failOnBlocked: false,
       maxManualRatio: 0.25,
+      maxManualInterventionRatio: 0.4,
     });
 
     expect(result.failed).toBe(false);

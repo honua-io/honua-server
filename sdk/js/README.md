@@ -45,7 +45,7 @@ node dist/src/migration/cli.js codemod ./src --write --report migration-report.j
 node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json
 
 # Gate in CI (non-zero exit if migration constraints fail)
-node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2
+node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3
 ```
 
 The codemod is intentionally conservative:
@@ -65,6 +65,7 @@ The codemod is intentionally conservative:
   - `--fail-on-unhandled`
   - `--fail-on-blocked`
   - `--max-manual-ratio <0..1>`
+  - `--max-manual-intervention-ratio <0..1>`
 - CLI summary includes:
   - per-type migration counts as `byKind=feature-layer:auto/manual/total,...`,
   - grouped manual reasons,

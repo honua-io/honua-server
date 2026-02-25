@@ -5,6 +5,7 @@ export interface MigrationGateOptions {
   failOnUnhandled: boolean;
   failOnBlocked: boolean;
   maxManualRatio?: number;
+  maxManualInterventionRatio?: number;
 }
 
 export interface MigrationGateEvaluation {
@@ -36,6 +37,15 @@ export function evaluateMigrationGates(
   ) {
     failures.push(
       `manual rewrite ratio ${report.manualRewriteMetric.ratio.toFixed(3)} exceeds max ${options.maxManualRatio.toFixed(3)}`,
+    );
+  }
+
+  if (
+    options.maxManualInterventionRatio !== undefined &&
+    report.manualInterventionMetric.ratio > options.maxManualInterventionRatio
+  ) {
+    failures.push(
+      `manual intervention ratio ${report.manualInterventionMetric.ratio.toFixed(3)} exceeds max ${options.maxManualInterventionRatio.toFixed(3)}`,
     );
   }
 

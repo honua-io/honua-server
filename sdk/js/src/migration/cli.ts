@@ -15,6 +15,7 @@ interface ParsedArgs {
   failOnUnhandled: boolean;
   failOnBlocked: boolean;
   maxManualRatio?: number;
+  maxManualInterventionRatio?: number;
   reportPath?: string;
   compatImportPath?: string;
 }
@@ -105,6 +106,7 @@ function runCodemod(args: ParsedArgs): void {
     failOnUnhandled: args.failOnUnhandled,
     failOnBlocked: args.failOnBlocked,
     maxManualRatio: args.maxManualRatio,
+    maxManualInterventionRatio: args.maxManualInterventionRatio,
   });
   if (gateEvaluation.failed) {
     process.stdout.write("gatingFailures:\n");
@@ -141,6 +143,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let failOnUnhandled = false;
   let failOnBlocked = false;
   let maxManualRatio: number | undefined;
+  let maxManualInterventionRatio: number | undefined;
   let compatImportPath: string | undefined;
 
   for (let i = 0; i < positional.length; i += 1) {
@@ -183,6 +186,21 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       i += 1;
       continue;
     }
+    if (token === "--max-manual-intervention-ratio") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+
+      const parsedRatio = Number.parseFloat(next);
+      if (!Number.isFinite(parsedRatio) || parsedRatio < 0 || parsedRatio > 1) {
+        return undefined;
+      }
+
+      maxManualInterventionRatio = parsedRatio;
+      i += 1;
+      continue;
+    }
     if (token === "--report") {
       const next = positional[i + 1];
       if (!next) {
@@ -220,6 +238,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     failOnUnhandled,
     failOnBlocked,
     maxManualRatio,
+    maxManualInterventionRatio,
     reportPath,
     compatImportPath,
   };
@@ -245,12 +264,12 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>]",
+      "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
-      "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2",
+      "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
     ].join("\n"),
   );
   process.stdout.write("\n");
