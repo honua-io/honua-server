@@ -103,6 +103,7 @@ export interface CodemodMetrics {
 export interface CodemodFileResult {
   file: string;
   rewrittenConstructors: number;
+  rewrittenDynamicImports: number;
   addedCompatImport: boolean;
   removedArcGisImports: number;
   annotatedTodoComments: number;
@@ -160,6 +161,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
 
     const hasChanges =
       fileResult.rewrittenConstructors > 0 ||
+      fileResult.rewrittenDynamicImports > 0 ||
       fileResult.addedCompatImport ||
       fileResult.removedArcGisImports > 0 ||
       fileResult.annotatedTodoComments > 0;
@@ -170,6 +172,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
       fileResults.push({
         file,
         rewrittenConstructors: fileResult.rewrittenConstructors,
+        rewrittenDynamicImports: fileResult.rewrittenDynamicImports,
         addedCompatImport: fileResult.addedCompatImport,
         removedArcGisImports: fileResult.removedArcGisImports,
         annotatedTodoComments: fileResult.annotatedTodoComments,
@@ -179,6 +182,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
       fileResults.push({
         file,
         rewrittenConstructors: 0,
+        rewrittenDynamicImports: 0,
         addedCompatImport: false,
         removedArcGisImports: 0,
         annotatedTodoComments: 0,
@@ -193,6 +197,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
     filesChanged: fileResults.filter(
       (item) =>
         item.rewrittenConstructors > 0 ||
+        item.rewrittenDynamicImports > 0 ||
         item.addedCompatImport ||
         item.removedArcGisImports > 0 ||
         item.annotatedTodoComments > 0,
@@ -211,6 +216,7 @@ function codemodFile(
 ): {
   nextSource: string;
   rewrittenConstructors: number;
+  rewrittenDynamicImports: number;
   rewrittenKinds: CodemodConstructorKind[];
   addedCompatImport: boolean;
   removedArcGisImports: number;
@@ -219,17 +225,6 @@ function codemodFile(
 } {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const imports = collectSupportedImports(sourceFile);
-  if (imports.length === 0) {
-    return {
-      nextSource: source,
-      rewrittenConstructors: 0,
-      rewrittenKinds: [],
-      addedCompatImport: false,
-      removedArcGisImports: 0,
-      annotatedTodoComments: 0,
-      manualTodos: [],
-    };
-  }
 
   const importsByLocalName = new Map<string, ArcGisImportBinding>();
   for (const importBinding of imports) {
@@ -239,12 +234,32 @@ function codemodFile(
   }
 
   const constructorEdits: TextEdit[] = [];
+  const dynamicImportEdits: TextEdit[] = [];
   const rewrittenKinds: CodemodConstructorKind[] = [];
   const manualTodos: MigrationTodo[] = [];
   const todoCommentEdits: TextEdit[] = [];
   const requiredCompatSymbols = new Set<string>();
 
   walk(sourceFile, (node) => {
+    if (isArcGisDynamicImportCall(node)) {
+      const firstArg = node.arguments[0];
+      if (!ts.isStringLiteral(firstArg)) {
+        return;
+      }
+
+      const modulePath = firstArg.text;
+      const spec = MODULE_TO_SPEC.get(modulePath);
+      if (spec) {
+        dynamicImportEdits.push({
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          text: buildCompatDynamicImportExpression(compatImportPath, spec.compatSymbol),
+        });
+        rewrittenKinds.push(spec.kind);
+      }
+      return;
+    }
+
     if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression)) {
       return;
     }
@@ -288,10 +303,11 @@ function codemodFile(
     }
   });
 
-  if (constructorEdits.length === 0) {
+  if (constructorEdits.length === 0 && dynamicImportEdits.length === 0) {
     return {
       nextSource: applyTextEdits(source, todoCommentEdits),
       rewrittenConstructors: 0,
+      rewrittenDynamicImports: 0,
       rewrittenKinds: [],
       addedCompatImport: false,
       removedArcGisImports: 0,
@@ -300,7 +316,11 @@ function codemodFile(
     };
   }
 
-  let transformed = applyTextEdits(source, [...constructorEdits, ...todoCommentEdits]);
+  let transformed = applyTextEdits(source, [
+    ...constructorEdits,
+    ...dynamicImportEdits,
+    ...todoCommentEdits,
+  ]);
   const removedArcGisImports = removeUnusedArcGisImports(file, transformed);
   transformed = removedArcGisImports.nextSource;
 
@@ -316,6 +336,7 @@ function codemodFile(
   return {
     nextSource: transformed,
     rewrittenConstructors: constructorEdits.length,
+    rewrittenDynamicImports: dynamicImportEdits.length,
     rewrittenKinds,
     addedCompatImport: compatImportResult.changed,
     removedArcGisImports: removedArcGisImports.removedCount,
@@ -465,6 +486,20 @@ function findImportInsertionIndex(sourceFile: ts.SourceFile): number {
     index = statement.end;
   }
   return index;
+}
+
+function isArcGisDynamicImportCall(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) {
+    return false;
+  }
+  if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) {
+    return false;
+  }
+  return node.arguments.length === 1;
+}
+
+function buildCompatDynamicImportExpression(compatImportPath: string, compatSymbol: string): string {
+  return `import("${compatImportPath}").then((m) => ({ default: m.${compatSymbol} }))`;
 }
 
 function removeUnusedArcGisImports(

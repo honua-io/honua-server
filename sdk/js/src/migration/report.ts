@@ -139,7 +139,7 @@ function summarizeUnhandledModules(scanReport: ArcGisScanReport): ArcGisModuleSu
   for (const hit of scanReport.imports) {
     const usageStyle = classifyUsageStyle(hit.importClause);
     const isHandledByCodemodScope =
-      supportedModules.has(hit.modulePath) && usageStyle === "static-import";
+      supportedModules.has(hit.modulePath) && usageStyle !== "require";
     if (isHandledByCodemodScope) {
       continue;
     }

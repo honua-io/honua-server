@@ -25,6 +25,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
       {
         file: "/tmp/app/src/main.ts",
         rewrittenConstructors: 3,
+        rewrittenDynamicImports: 0,
         addedCompatImport: true,
         removedArcGisImports: 2,
         annotatedTodoComments: 1,
@@ -121,12 +122,7 @@ describe("buildJsMigrationReport", () => {
         kinds: ["feature-layer"],
       },
     ]);
-    expect(report.unhandledArcGisModules).toHaveLength(1);
-    expect(report.unhandledArcGisModules).toContainEqual({
-      modulePath: "@arcgis/core/views/SceneView",
-      usageStyle: "dynamic-import",
-      count: 1,
-    });
+    expect(report.unhandledArcGisModules).toHaveLength(0);
     expect(report.readiness).toBe("blocked");
     expect(report.gates).toEqual([
       {
@@ -136,8 +132,8 @@ describe("buildJsMigrationReport", () => {
       },
       {
         gate: "no-unhandled-modules",
-        passed: false,
-        detail: "1 ArcGIS modules remain outside codemod scope",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
       },
       {
         gate: "no-blocking-flags",

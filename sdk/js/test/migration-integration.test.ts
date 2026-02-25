@@ -44,9 +44,9 @@ describe("arcgis migration integration", () => {
     const report = buildJsMigrationReport(workingCopy, codemodResult, scanReport);
 
     expect(codemodResult.filesScanned).toBeGreaterThanOrEqual(2);
-    expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
+    expect(codemodResult.filesChanged).toBe(2);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(6);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
     expect(codemodResult.metrics.manualCallSites).toBe(1);
     expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
       total: 2,
@@ -63,6 +63,11 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["scene-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(codemodResult.metrics.byKind["web-map"]).toEqual({
       total: 1,
       autoMigrated: 1,
@@ -74,7 +79,7 @@ describe("arcgis migration integration", () => {
     expect(report.scanReport.flags).toContain("scene-3d-detected");
     expect(report.scanReport.flags).toContain("webmap-detected");
     expect(report.manualRewriteMetric.numerator).toBe(1);
-    expect(report.manualRewriteMetric.denominator).toBe(5);
+    expect(report.manualRewriteMetric.denominator).toBe(6);
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 1,
       map: 0,
@@ -84,12 +89,7 @@ describe("arcgis migration integration", () => {
     });
     expect(report.manualTodoReasons).toHaveLength(1);
     expect(report.manualTodoReasons[0].kinds).toEqual(["feature-layer"]);
-    expect(report.unhandledArcGisModules).toHaveLength(1);
-    expect(report.unhandledArcGisModules).toContainEqual({
-      modulePath: "@arcgis/core/views/SceneView",
-      usageStyle: "dynamic-import",
-      count: 1,
-    });
+    expect(report.unhandledArcGisModules).toHaveLength(0);
     expect(report.readiness).toBe("blocked");
     expect(report.gates).toEqual([
       {
@@ -99,8 +99,8 @@ describe("arcgis migration integration", () => {
       },
       {
         gate: "no-unhandled-modules",
-        passed: false,
-        detail: "1 ArcGIS modules remain outside codemod scope",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
       },
       {
         gate: "no-blocking-flags",
@@ -127,5 +127,11 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain('import WebMap from "@arcgis/core/WebMap";');
     expect(migratedMain).not.toContain('import Map from "@arcgis/core/Map";');
     expect(migratedMain).not.toContain('import MapView from "@arcgis/core/views/MapView";');
+
+    const migratedLazy = fs.readFileSync(path.join(workingCopy, "src", "lazy.ts"), "utf8");
+    expect(migratedLazy).toContain(
+      'import("@honua/sdk-esri-compat").then((m) => ({ default: m.SceneViewCompat }))',
+    );
+    expect(migratedLazy).not.toContain("@arcgis/core/views/SceneView");
   });
 });

@@ -247,4 +247,41 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource.includes(marker)).toBe(true);
     expect(nextSource.split(marker)).toHaveLength(2);
   });
+
+  it("rewrites supported dynamic imports to compat dynamic bridge", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "lazy.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadScene() {",
+        "  const module = await import('@arcgis/core/views/SceneView');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["scene-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.SceneViewCompat }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
+  });
 });
