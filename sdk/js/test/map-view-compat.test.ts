@@ -80,4 +80,92 @@ describe("MapViewCompat", () => {
     expect(centerValues).toEqual([[10, 20]]);
     expect(events).toEqual([{ zoom: 4, center: [10, 20] }]);
   });
+
+  it("supports popup bridge helpers and popup watchers", () => {
+    const view = new MapViewCompat();
+    const popupVisibility: unknown[] = [];
+    const popupEvents: unknown[] = [];
+
+    view.watch("popup.visible", (value) => {
+      popupVisibility.push(value);
+    });
+    view.on("popup-open", (event) => {
+      popupEvents.push({ type: "open", event });
+    });
+    view.on("popup-close", (event) => {
+      popupEvents.push({ type: "close", event });
+    });
+
+    view.openPopup({
+      title: "Layer Info",
+      content: "Details",
+      location: [1, 2],
+      features: [{ id: 123 }],
+    });
+    expect(view.popup.visible).toBe(true);
+    expect(view.popup.title).toBe("Layer Info");
+    expect(view.popup.content).toBe("Details");
+    expect(view.popup.location).toEqual([1, 2]);
+    expect(view.popup.features).toEqual([{ id: 123 }]);
+
+    view.closePopup();
+    expect(view.popup.visible).toBe(false);
+    expect(view.popup.features).toEqual([]);
+    expect(view.popup.title).toBeUndefined();
+    expect(view.popup.content).toBeUndefined();
+
+    expect(popupVisibility).toEqual([true, false]);
+    expect(popupEvents).toHaveLength(2);
+    expect(popupEvents[0]).toEqual({
+      type: "open",
+      event: {
+        title: "Layer Info",
+        content: "Details",
+        location: [1, 2],
+        features: [{ id: 123 }],
+      },
+    });
+    expect(popupEvents[1]).toEqual({ type: "close", event: undefined });
+  });
+
+  it("supports whenLayerView bridge and layer view query/watch helpers", async () => {
+    const layer = {
+      id: "layer-1",
+      queryFeatures(options: unknown) {
+        return Promise.resolve({ features: [{ id: "f-1", options }] });
+      },
+    };
+    const view = new MapViewCompat({ map: new MapCompat({ layers: [layer] }) });
+
+    const createdEvents: unknown[] = [];
+    view.on("layerview-create", (event) => {
+      createdEvents.push(event);
+    });
+
+    const layerViewA = await view.whenLayerView(layer);
+    const layerViewB = await view.whenLayerView(layer);
+
+    expect(layerViewA).toBe(layerViewB);
+    expect(createdEvents).toHaveLength(1);
+    expect(createdEvents[0]).toMatchObject({ layer });
+    expect(layerViewA.layer).toBe(layer);
+
+    const updatingValues: unknown[] = [];
+    const updatingHandle = layerViewA.watch("updating", (value) => {
+      updatingValues.push(value);
+    });
+    layerViewA.setUpdating(true);
+    layerViewA.setUpdating(false);
+    expect(updatingValues).toEqual([true, false]);
+
+    updatingHandle.remove();
+    layerViewA.setUpdating(true);
+    expect(updatingValues).toEqual([true, false]);
+
+    const queryResult = await layerViewA.queryFeatures({ where: "1=1" });
+    expect(queryResult).toEqual({ features: [{ id: "f-1", options: { where: "1=1" } }] });
+
+    const fallbackLayerView = await view.whenLayerView({ id: "layer-no-query" });
+    expect(await fallbackLayerView.queryFeatures()).toEqual({ features: [] });
+  });
 });

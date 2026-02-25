@@ -17,7 +17,13 @@ export type { ParsedFeatureLayerUrl } from "./esri-compat/url.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
 export { MapViewCompat } from "./esri-compat/map-view.js";
-export type { MapViewCompatOptions, MapViewGoToTarget, MapViewHandle } from "./esri-compat/map-view.js";
+export type {
+  MapViewCompatOptions,
+  MapViewGoToTarget,
+  MapViewHandle,
+  MapViewPopupOpenOptions,
+} from "./esri-compat/map-view.js";
+export { MapViewLayerViewCompat, MapViewPopupCompat } from "./esri-compat/map-view.js";
 export { SceneViewCompat } from "./esri-compat/scene-view.js";
 export type { SceneViewCompatOptions } from "./esri-compat/scene-view.js";
 export { WebMapCompat } from "./esri-compat/web-map.js";

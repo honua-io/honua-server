@@ -14,14 +14,133 @@ export interface MapViewHandle {
   remove(): void;
 }
 
+export interface MapViewPopupOpenOptions {
+  location?: unknown;
+  features?: readonly unknown[];
+  title?: string;
+  content?: unknown;
+}
+
+type PopupChangeType = "open" | "close";
+
+export class MapViewPopupCompat {
+  public visible: boolean;
+  public location: unknown;
+  public features: unknown[];
+  public title: string | undefined;
+  public content: unknown;
+
+  private readonly onChange: (type: PopupChangeType, options?: MapViewPopupOpenOptions) => void;
+
+  public constructor(onChange: (type: PopupChangeType, options?: MapViewPopupOpenOptions) => void) {
+    this.visible = false;
+    this.location = undefined;
+    this.features = [];
+    this.title = undefined;
+    this.content = undefined;
+    this.onChange = onChange;
+  }
+
+  public open(options: MapViewPopupOpenOptions = {}): void {
+    this.visible = true;
+    this.location = options.location;
+    this.features = options.features ? [...options.features] : [];
+    this.title = options.title;
+    this.content = options.content;
+    this.onChange("open", options);
+  }
+
+  public close(): void {
+    if (!this.visible) {
+      return;
+    }
+
+    this.visible = false;
+    this.location = undefined;
+    this.features = [];
+    this.title = undefined;
+    this.content = undefined;
+    this.onChange("close");
+  }
+}
+
+export class MapViewLayerViewCompat {
+  public readonly layer: unknown;
+  public updating: boolean;
+  public suspended: boolean;
+
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+
+  public constructor(layer: unknown) {
+    this.layer = layer;
+    this.updating = false;
+    this.suspended = false;
+    this.watchListeners = new Map();
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
+  public setUpdating(value: boolean): void {
+    this.updating = value;
+    this.notifyWatchers("updating", value);
+  }
+
+  public setSuspended(value: boolean): void {
+    this.suspended = value;
+    this.notifyWatchers("suspended", value);
+  }
+
+  public async queryFeatures(options: unknown = {}): Promise<unknown> {
+    if (isQueryFeaturesProvider(this.layer)) {
+      return this.layer.queryFeatures(options);
+    }
+
+    return { features: [] };
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
+  }
+}
+
+interface QueryFeaturesProvider {
+  queryFeatures(options?: unknown): Promise<unknown> | unknown;
+}
+
 export class MapViewCompat {
   public map: unknown;
   public container: unknown;
   public center: unknown;
   public zoom: number | undefined;
+  public readonly popup: MapViewPopupCompat;
 
   private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly layerViews: Map<unknown, MapViewLayerViewCompat>;
   private readonly readyPromise: Promise<MapViewCompat>;
 
   public constructor(options: MapViewCompatOptions = {}) {
@@ -29,8 +148,17 @@ export class MapViewCompat {
     this.container = options.container;
     this.center = options.center;
     this.zoom = options.zoom;
+    this.popup = new MapViewPopupCompat((type, popupOptions) => {
+      this.notifyWatchers("popup.visible", this.popup.visible);
+      this.notifyWatchers("popup.features", this.popup.features);
+      this.notifyWatchers("popup.location", this.popup.location);
+      this.notifyWatchers("popup.title", this.popup.title);
+      this.notifyWatchers("popup.content", this.popup.content);
+      this.emit(type === "open" ? "popup-open" : "popup-close", popupOptions);
+    });
     this.eventListeners = new Map();
     this.watchListeners = new Map();
+    this.layerViews = new Map();
     this.readyPromise = Promise.resolve(this);
   }
 
@@ -55,6 +183,26 @@ export class MapViewCompat {
     this.emit("go-to", target);
 
     return this;
+  }
+
+  public openPopup(options: MapViewPopupOpenOptions = {}): void {
+    this.popup.open(options);
+  }
+
+  public closePopup(): void {
+    this.popup.close();
+  }
+
+  public async whenLayerView(layer: unknown): Promise<MapViewLayerViewCompat> {
+    const existing = this.layerViews.get(layer);
+    if (existing) {
+      return existing;
+    }
+
+    const layerView = new MapViewLayerViewCompat(layer);
+    this.layerViews.set(layer, layerView);
+    this.emit("layerview-create", { layer, layerView });
+    return layerView;
   }
 
   public on(eventName: string, listener: (event: unknown) => void): MapViewHandle {
@@ -89,6 +237,11 @@ export class MapViewCompat {
 
   public destroy(): void {
     this.emit("destroy", undefined);
+    for (const layerView of this.layerViews.values()) {
+      layerView.destroy();
+    }
+    this.layerViews.clear();
+    this.closePopup();
     this.map = undefined;
     this.notifyWatchers("map", this.map);
     this.container = undefined;
@@ -122,4 +275,13 @@ export class MapViewCompat {
       listener(value);
     }
   }
+}
+
+function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "queryFeatures" in value &&
+    typeof value.queryFeatures === "function"
+  );
 }
