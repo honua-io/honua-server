@@ -4,12 +4,16 @@ import fs from "node:fs";
 import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 import { runEsriCompatCodemod, type CodemodMetricsByKind } from "./codemod.js";
 import { buildJsMigrationReport } from "./report.js";
+import { evaluateMigrationGates } from "./gating.js";
 
 interface ParsedArgs {
   command: "scan" | "codemod";
   target: string;
   write: boolean;
   annotateTodos: boolean;
+  failOnManual: boolean;
+  failOnBlocked: boolean;
+  maxManualRatio?: number;
   reportPath?: string;
   compatImportPath?: string;
 }
@@ -93,6 +97,19 @@ function runCodemod(args: ParsedArgs): void {
     fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${args.reportPath}\n`);
   }
+
+  const gateEvaluation = evaluateMigrationGates(report, {
+    failOnManual: args.failOnManual,
+    failOnBlocked: args.failOnBlocked,
+    maxManualRatio: args.maxManualRatio,
+  });
+  if (gateEvaluation.failed) {
+    process.stdout.write("gatingFailures:\n");
+    for (const failure of gateEvaluation.failures) {
+      process.stdout.write(`- ${failure}\n`);
+    }
+    process.exitCode = 2;
+  }
 }
 
 function parseArgs(argv: string[]): ParsedArgs | undefined {
@@ -102,6 +119,8 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       target: process.cwd(),
       write: false,
       annotateTodos: false,
+      failOnManual: false,
+      failOnBlocked: false,
     };
   }
 
@@ -114,6 +133,9 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let reportPath: string | undefined;
   let write = false;
   let annotateTodos = false;
+  let failOnManual = false;
+  let failOnBlocked = false;
+  let maxManualRatio: number | undefined;
   let compatImportPath: string | undefined;
 
   for (let i = 0; i < positional.length; i += 1) {
@@ -127,6 +149,29 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--annotate-todos") {
       annotateTodos = true;
+      continue;
+    }
+    if (token === "--fail-on-manual") {
+      failOnManual = true;
+      continue;
+    }
+    if (token === "--fail-on-blocked") {
+      failOnBlocked = true;
+      continue;
+    }
+    if (token === "--max-manual-ratio") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+
+      const parsedRatio = Number.parseFloat(next);
+      if (!Number.isFinite(parsedRatio) || parsedRatio < 0 || parsedRatio > 1) {
+        return undefined;
+      }
+
+      maxManualRatio = parsedRatio;
+      i += 1;
       continue;
     }
     if (token === "--report") {
@@ -162,6 +207,9 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     target: target ?? process.cwd(),
     write,
     annotateTodos,
+    failOnManual,
+    failOnBlocked,
+    maxManualRatio,
     reportPath,
     compatImportPath,
   };
@@ -187,11 +235,12 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>]",
+      "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-blocked] [--max-manual-ratio <0..1>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
+      "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --max-manual-ratio 0.2",
     ].join("\n"),
   );
   process.stdout.write("\n");

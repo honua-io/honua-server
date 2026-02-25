@@ -44,3 +44,5 @@ export type {
   MigrationReadiness,
   MigrationReasonSummary,
 } from "./migration/report.js";
+export { evaluateMigrationGates } from "./migration/gating.js";
+export type { MigrationGateEvaluation, MigrationGateOptions } from "./migration/gating.js";

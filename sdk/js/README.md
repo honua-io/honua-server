@@ -43,6 +43,9 @@ node dist/src/migration/cli.js codemod ./src --write --report migration-report.j
 
 # Safe codemod (write + inline TODO annotations for manual sites)
 node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json
+
+# Gate in CI (non-zero exit if migration constraints fail)
+node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-blocked --max-manual-ratio 0.2
 ```
 
 The codemod is intentionally conservative:
@@ -55,6 +58,10 @@ The codemod is intentionally conservative:
 - it skips complex constructors and records manual TODO entries in the report,
 - optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
 - it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,
+- it supports CI gating flags:
+  - `--fail-on-manual`
+  - `--fail-on-blocked`
+  - `--max-manual-ratio <0..1>`
 - CLI summary includes:
   - per-type migration counts as `byKind=feature-layer:auto/manual/total,...`,
   - grouped manual reasons,
