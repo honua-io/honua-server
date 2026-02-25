@@ -17,6 +17,32 @@ describe("MapCompat", () => {
     expect(map.layers).toEqual([layerB]);
     expect(map.remove(layerA)).toBe(false);
   });
+
+  it("supports indexed layer operations and id-based lookup", () => {
+    const layerA = { id: "a" };
+    const layerB = { id: "b" };
+    const layerC = { id: "c" };
+    const layerD = { id: "d" };
+    const map = new MapCompat({ layers: [layerA, layerC] });
+
+    map.add(layerB, 1);
+    expect(map.layers).toEqual([layerA, layerB, layerC]);
+
+    map.addMany([layerD], 0);
+    expect(map.allLayers).toEqual([layerD, layerA, layerB, layerC]);
+    expect(map.findLayerById("b")).toBe(layerB);
+    expect(map.findLayerById("missing")).toBeUndefined();
+
+    expect(map.reorder(layerC, 1)).toBe(true);
+    expect(map.layers).toEqual([layerD, layerC, layerA, layerB]);
+    expect(map.reorder({ id: "not-present" }, 0)).toBe(false);
+
+    expect(map.removeMany([layerD, layerB])).toBe(2);
+    expect(map.layers).toEqual([layerC, layerA]);
+
+    map.removeAll();
+    expect(map.layers).toEqual([]);
+  });
 });
 
 describe("MapViewCompat", () => {
