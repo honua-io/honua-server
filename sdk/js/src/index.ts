@@ -13,3 +13,13 @@ export type { ParsedFeatureLayerUrl } from "./esri-compat/url.js";
 
 export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
 export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
+export { runEsriCompatCodemod } from "./migration/codemod.js";
+export type {
+  CodemodFileResult,
+  CodemodMetrics,
+  EsriCompatCodemodOptions,
+  EsriCompatCodemodResult,
+  MigrationTodo,
+} from "./migration/codemod.js";
+export { buildJsMigrationReport } from "./migration/report.js";
+export type { JsMigrationReport, ManualRewriteMetric } from "./migration/report.js";

@@ -56,6 +56,8 @@ describe("scanArcGisUsage", () => {
     );
 
     const report = scanArcGisUsage(root);
+    expect(report.imports.some((item) => item.importClause === "import(...)")).toBe(true);
+    expect(report.imports.some((item) => item.modulePath === "@arcgis/core/views/SceneView")).toBe(true);
     expect(report.flags).toContain("webmap-detected");
     expect(report.flags).toContain("dynamic-import-detected");
   });

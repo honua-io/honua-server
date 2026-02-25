@@ -28,13 +28,16 @@ export function scanArcGisUsage(rootDir: string): ArcGisScanReport {
 
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
+    if (source.includes("@arcgis/core/")) {
+      addFileLevelFlags(source, flags);
+    }
+
     const fileImports = findArcGisImports(source, file);
     if (fileImports.length === 0) {
       continue;
     }
 
     imports.push(...fileImports);
-    addFileLevelFlags(source, flags);
 
     for (const importHit of fileImports) {
       for (const symbol of importHit.symbols) {
@@ -122,6 +125,18 @@ function findArcGisImports(source: string, file: string): ArcGisImportHit[] {
       symbols: [],
     });
     requireMatch = requireRegex.exec(source);
+  }
+
+  const dynamicImportRegex = /import\(\s*["'](@arcgis\/core\/[^"']+)["']\s*\)/g;
+  let dynamicImportMatch: RegExpExecArray | null = dynamicImportRegex.exec(source);
+  while (dynamicImportMatch !== null) {
+    hits.push({
+      file,
+      modulePath: dynamicImportMatch[1],
+      importClause: "import(...)",
+      symbols: [],
+    });
+    dynamicImportMatch = dynamicImportRegex.exec(source);
   }
 
   return hits;

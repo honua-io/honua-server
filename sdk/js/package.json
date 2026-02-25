@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js"
+    "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js scan",
+    "migrate:arcgis": "npm run build --silent && node dist/src/migration/cli.js codemod"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",
