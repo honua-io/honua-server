@@ -35,8 +35,11 @@ export interface MigrationReasonSummary {
 
 export interface ArcGisModuleSummary {
   modulePath: string;
+  usageStyle: ArcGisUsageStyle;
   count: number;
 }
+
+export type ArcGisUsageStyle = "static-import" | "dynamic-import" | "require";
 
 export type MigrationReadiness = "ready" | "assisted" | "blocked";
 
@@ -133,15 +136,45 @@ function summarizeUnhandledModules(scanReport: ArcGisScanReport): ArcGisModuleSu
   const moduleCounts = new Map<string, number>();
 
   for (const hit of scanReport.imports) {
-    if (supportedModules.has(hit.modulePath)) {
+    const usageStyle = classifyUsageStyle(hit.importClause);
+    const isHandledByCodemodScope =
+      supportedModules.has(hit.modulePath) && usageStyle === "static-import";
+    if (isHandledByCodemodScope) {
       continue;
     }
-    moduleCounts.set(hit.modulePath, (moduleCounts.get(hit.modulePath) ?? 0) + 1);
+
+    const key = `${hit.modulePath}|${usageStyle}`;
+    moduleCounts.set(key, (moduleCounts.get(key) ?? 0) + 1);
   }
 
   return Array.from(moduleCounts.entries())
-    .map(([modulePath, count]) => ({ modulePath, count }))
-    .sort((a, b) => (a.count === b.count ? a.modulePath.localeCompare(b.modulePath) : b.count - a.count));
+    .map(([key, count]) => {
+      const [modulePath, usageStyleText] = key.split("|", 2);
+      return {
+        modulePath,
+        usageStyle: usageStyleText as ArcGisUsageStyle,
+        count,
+      };
+    })
+    .sort((a, b) => {
+      if (a.count !== b.count) {
+        return b.count - a.count;
+      }
+      if (a.modulePath !== b.modulePath) {
+        return a.modulePath.localeCompare(b.modulePath);
+      }
+      return a.usageStyle.localeCompare(b.usageStyle);
+    });
+}
+
+function classifyUsageStyle(importClause: string): ArcGisUsageStyle {
+  if (importClause === "import(...)") {
+    return "dynamic-import";
+  }
+  if (importClause === "require(...)") {
+    return "require";
+  }
+  return "static-import";
 }
 
 function buildMigrationGates(

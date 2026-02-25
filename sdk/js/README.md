@@ -57,5 +57,5 @@ The codemod is intentionally conservative:
 - CLI summary includes:
   - per-type migration counts as `byKind=feature-layer:auto/manual/total,...`,
   - grouped manual reasons,
-  - unhandled ArcGIS module inventory for out-of-scope APIs,
+  - unhandled ArcGIS module inventory (with `static-import` / `dynamic-import` / `require` usage style),
   - readiness classification (`ready`, `assisted`, `blocked`) with explicit gate results.

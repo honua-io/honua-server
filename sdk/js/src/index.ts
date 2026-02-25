@@ -35,6 +35,7 @@ export { SUPPORTED_ARCGIS_MODULES } from "./migration/codemod.js";
 export { buildJsMigrationReport } from "./migration/report.js";
 export type {
   ArcGisModuleSummary,
+  ArcGisUsageStyle,
   JsMigrationReport,
   ManualRewriteMetric,
   MigrationGateResult,

@@ -122,6 +122,7 @@ describe("buildJsMigrationReport", () => {
     expect(report.unhandledArcGisModules).toHaveLength(1);
     expect(report.unhandledArcGisModules).toContainEqual({
       modulePath: "@arcgis/core/views/SceneView",
+      usageStyle: "dynamic-import",
       count: 1,
     });
     expect(report.readiness).toBe("blocked");

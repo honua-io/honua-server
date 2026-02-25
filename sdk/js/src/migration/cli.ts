@@ -83,7 +83,7 @@ function runCodemod(args: ParsedArgs): void {
   if (report.unhandledArcGisModules.length > 0) {
     process.stdout.write("unhandledArcGisModules:\n");
     for (const moduleItem of report.unhandledArcGisModules.slice(0, 10)) {
-      process.stdout.write(`- ${moduleItem.modulePath} (${moduleItem.count})\n`);
+      process.stdout.write(`- ${moduleItem.modulePath} [${moduleItem.usageStyle}] (${moduleItem.count})\n`);
     }
   }
 
