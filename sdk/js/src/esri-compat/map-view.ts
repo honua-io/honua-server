@@ -21,6 +21,32 @@ export interface MapViewPopupOpenOptions {
   content?: unknown;
 }
 
+export interface MapViewScreenPoint {
+  x: number;
+  y: number;
+}
+
+export interface MapViewMapPoint extends MapViewScreenPoint {
+  spatialReference?: unknown;
+}
+
+export interface MapViewHitTestEvent {
+  x?: number;
+  y?: number;
+  mapPoint?: MapViewMapPoint;
+}
+
+export interface MapViewHitTestResultItem {
+  type: "graphic";
+  graphic: unknown;
+  layer?: unknown;
+  mapPoint?: MapViewMapPoint;
+}
+
+export interface MapViewHitTestResult {
+  results: MapViewHitTestResultItem[];
+}
+
 type PopupChangeType = "open" | "close";
 
 export class MapViewPopupCompat {
@@ -171,6 +197,37 @@ export class MapViewCompat {
     return view;
   }
 
+  public toMap(screenPoint: MapViewScreenPoint): MapViewMapPoint {
+    return {
+      x: screenPoint.x,
+      y: screenPoint.y,
+    };
+  }
+
+  public toScreen(mapPoint: MapViewMapPoint): MapViewScreenPoint {
+    return {
+      x: mapPoint.x,
+      y: mapPoint.y,
+    };
+  }
+
+  public async hitTest(event: MapViewHitTestEvent = {}): Promise<MapViewHitTestResult> {
+    const mapPoint =
+      event.mapPoint ??
+      (typeof event.x === "number" && typeof event.y === "number"
+        ? this.toMap({ x: event.x, y: event.y })
+        : undefined);
+
+    return {
+      results: this.popup.features.map((feature) => ({
+        type: "graphic",
+        graphic: feature,
+        layer: extractGraphicLayer(feature),
+        mapPoint,
+      })),
+    };
+  }
+
   public async goTo(target: MapViewGoToTarget): Promise<MapViewCompat> {
     if (target.center !== undefined) {
       this.center = target.center;
@@ -284,4 +341,14 @@ function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider
     "queryFeatures" in value &&
     typeof value.queryFeatures === "function"
   );
+}
+
+function extractGraphicLayer(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  if (!("layer" in value)) {
+    return undefined;
+  }
+  return value.layer;
 }

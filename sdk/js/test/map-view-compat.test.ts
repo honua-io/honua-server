@@ -194,4 +194,35 @@ describe("MapViewCompat", () => {
     const fallbackLayerView = await view.whenLayerView({ id: "layer-no-query" });
     expect(await fallbackLayerView.queryFeatures()).toEqual({ features: [] });
   });
+
+  it("supports toMap/toScreen and hitTest popup result bridge", async () => {
+    const featureA = { id: "a", layer: { id: "layer-a" } };
+    const featureB = { id: "b" };
+    const view = new MapViewCompat();
+
+    const mapPoint = view.toMap({ x: 100, y: 200 });
+    expect(mapPoint).toEqual({ x: 100, y: 200 });
+    expect(view.toScreen(mapPoint)).toEqual({ x: 100, y: 200 });
+
+    view.openPopup({
+      location: mapPoint,
+      features: [featureA, featureB],
+    });
+
+    const hit = await view.hitTest({ x: 100, y: 200 });
+    expect(hit.results).toEqual([
+      {
+        type: "graphic",
+        graphic: featureA,
+        layer: { id: "layer-a" },
+        mapPoint: { x: 100, y: 200 },
+      },
+      {
+        type: "graphic",
+        graphic: featureB,
+        layer: undefined,
+        mapPoint: { x: 100, y: 200 },
+      },
+    ]);
+  });
 });

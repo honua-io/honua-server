@@ -12,7 +12,12 @@ export type {
   MapViewCompatOptions,
   MapViewGoToTarget,
   MapViewHandle,
+  MapViewHitTestEvent,
+  MapViewHitTestResult,
+  MapViewHitTestResultItem,
+  MapViewMapPoint,
   MapViewPopupOpenOptions,
+  MapViewScreenPoint,
 } from "./esri-compat/map-view.js";
 export { SceneViewCompat } from "./esri-compat/scene-view.js";
 export type { SceneViewCompatOptions } from "./esri-compat/scene-view.js";
