@@ -127,6 +127,19 @@ function findArcGisImports(source: string, file: string): ArcGisImportHit[] {
     sideEffectImportMatch = sideEffectImportRegex.exec(source);
   }
 
+  const exportRegex = /export\s+([^;]+?)\s+from\s+["'](@arcgis\/core\/[^"']+)["'];?/g;
+  let exportMatch: RegExpExecArray | null = exportRegex.exec(source);
+  while (exportMatch !== null) {
+    const exportClause = exportMatch[1].trim();
+    hits.push({
+      file,
+      modulePath: exportMatch[2],
+      importClause: `export ${exportClause}`,
+      symbols: extractImportedSymbols(exportClause),
+    });
+    exportMatch = exportRegex.exec(source);
+  }
+
   const requireRegex = /require\(["'](@arcgis\/core\/[^"']+)["']\)/g;
   let requireMatch: RegExpExecArray | null = requireRegex.exec(source);
   while (requireMatch !== null) {

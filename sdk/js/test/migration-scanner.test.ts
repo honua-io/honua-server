@@ -86,6 +86,35 @@ describe("scanArcGisUsage", () => {
     expect(report.flags).toEqual([]);
   });
 
+  it("captures arcgis re-export declarations", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "exports.ts"),
+      [
+        "export { default as FeatureLayer } from '@arcgis/core/layers/FeatureLayer';",
+        "export * from '@arcgis/core/views/MapView';",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.imports).toEqual([
+      {
+        file: path.join(root, "exports.ts"),
+        modulePath: "@arcgis/core/layers/FeatureLayer",
+        importClause: "export { default as FeatureLayer }",
+        symbols: ["FeatureLayer"],
+      },
+      {
+        file: path.join(root, "exports.ts"),
+        modulePath: "@arcgis/core/views/MapView",
+        importClause: "export *",
+        symbols: [],
+      },
+    ]);
+    expect(report.filesWithArcGisImports).toBe(1);
+  });
+
   it("produces a stable summary string", () => {
     const root = makeTempProject();
     fs.writeFileSync(
