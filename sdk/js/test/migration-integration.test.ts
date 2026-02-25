@@ -22,6 +22,28 @@ function fixturePath(...parts: string[]): string {
   return path.join(fixturesDir, ...parts);
 }
 
+function runFixtureMigration(fixtureName: string): {
+  workingCopy: string;
+  scanReport: ReturnType<typeof scanArcGisUsage>;
+  codemodResult: ReturnType<typeof runEsriCompatCodemod>;
+  report: ReturnType<typeof buildJsMigrationReport>;
+} {
+  const tempRoot = makeTempDir();
+  const sampleSource = fixturePath(fixtureName);
+  const workingCopy = path.join(tempRoot, fixtureName);
+  fs.cpSync(sampleSource, workingCopy, { recursive: true });
+
+  const scanReport = scanArcGisUsage(workingCopy);
+  const codemodResult = runEsriCompatCodemod({
+    rootDir: workingCopy,
+    write: true,
+    compatImportPath: "@honua/sdk-esri-compat",
+  });
+  const report = buildJsMigrationReport(workingCopy, codemodResult, scanReport);
+
+  return { workingCopy, scanReport, codemodResult, report };
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -30,18 +52,7 @@ afterEach(() => {
 
 describe("arcgis migration integration", () => {
   it("runs scanner+codemod+report on an esri-style sample app fixture", () => {
-    const tempRoot = makeTempDir();
-    const sampleSource = fixturePath("esri-sample-app");
-    const workingCopy = path.join(tempRoot, "sample-app");
-    fs.cpSync(sampleSource, workingCopy, { recursive: true });
-    const scanReport = scanArcGisUsage(workingCopy);
-
-    const codemodResult = runEsriCompatCodemod({
-      rootDir: workingCopy,
-      write: true,
-      compatImportPath: "@honua/sdk-esri-compat",
-    });
-    const report = buildJsMigrationReport(workingCopy, codemodResult, scanReport);
+    const { workingCopy, report, codemodResult } = runFixtureMigration("esri-sample-app");
 
     expect(codemodResult.filesScanned).toBeGreaterThanOrEqual(2);
     expect(codemodResult.filesChanged).toBe(2);
@@ -133,5 +144,97 @@ describe("arcgis migration integration", () => {
       'import("@honua/sdk-esri-compat").then((m) => ({ default: m.SceneViewCompat }))',
     );
     expect(migratedLazy).not.toContain("@arcgis/core/views/SceneView");
+  });
+
+  it("reports ready when a fixture fully auto-migrates with no blocking flags", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-ready-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 3,
+      ratio: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("new FeatureLayerCompat({");
+    expect(migratedMain).toContain("new MapCompat({");
+    expect(migratedMain).toContain("new MapViewCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
+    expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
+  });
+
+  it("reports assisted when require-style ArcGIS usage remains unhandled without blocking flags", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-assisted-require-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(0);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(0);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 0,
+      ratio: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([
+      {
+        modulePath: "@arcgis/core/Map",
+        usageStyle: "require",
+        count: 1,
+      },
+    ]);
+    expect(report.readiness).toBe("assisted");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: false,
+        detail: "1 ArcGIS modules remain outside codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const source = fs.readFileSync(path.join(workingCopy, "src", "main.cjs"), "utf8");
+    expect(source).toContain("require(\"@arcgis/core/Map\")");
+    expect(source).toContain("new Map({");
+    expect(source).toContain('basemap: "streets"');
   });
 });
