@@ -50,6 +50,7 @@ Generate publish-ready split packages under `dist/packages/`:
 
 ```bash
 npm run build:split-packages
+npm run verify:split-packages
 ```
 
 Create local tarballs for all split packages:

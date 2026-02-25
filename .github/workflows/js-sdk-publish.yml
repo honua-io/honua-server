@@ -44,7 +44,7 @@ jobs:
         run: |
           npm run typecheck
           npm test
-          npm run build:split-packages
+          npm run verify:split-packages
 
       - name: Validate tag version
         if: github.event_name == 'push'

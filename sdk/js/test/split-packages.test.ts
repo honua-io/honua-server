@@ -11,6 +11,7 @@ describe("split package manifests", () => {
     };
 
     expect(packageJson.scripts?.["build:split-packages"]).toContain("prepare-split-packages.mjs");
+    expect(packageJson.scripts?.["verify:split-packages"]).toContain("verify-split-packages.mjs");
     expect(packageJson.scripts?.["pack:split-packages"]).toContain("dist/packages/honua-sdk");
     expect(packageJson.scripts?.["pack:split-packages"]).toContain(
       "dist/packages/honua-sdk-esri-compat",
