@@ -58,6 +58,10 @@ Create local tarballs for all split packages:
 npm run pack:split-packages
 ```
 
+CI publish workflow:
+- manual dry-run or publish via `Publish JS SDK Packages` workflow
+- tag-triggered publish uses tags in form `js-sdk-v<version>` and enforces tag/version match
+
 ## Migration CLI
 
 ```bash

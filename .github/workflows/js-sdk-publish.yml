@@ -46,8 +46,23 @@ jobs:
           npm test
           npm run build:split-packages
 
+      - name: Validate tag version
+        if: github.event_name == 'push'
+        run: |
+          package_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          tag_version="${GITHUB_REF_NAME#js-sdk-v}"
+          if [[ "$tag_version" != "$package_version" ]]; then
+            echo "Tag version ($tag_version) does not match sdk/js package version ($package_version)."
+            exit 1
+          fi
+
       - name: Publish split packages
         run: |
+          if [[ "${DRY_RUN}" != "true" && -z "${NODE_AUTH_TOKEN}" ]]; then
+            echo "NPM_TOKEN secret is required for publishing."
+            exit 1
+          fi
+
           flags=""
           if [[ "${DRY_RUN}" == "true" ]]; then
             flags="--dry-run"
