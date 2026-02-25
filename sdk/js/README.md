@@ -5,11 +5,11 @@ Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 This package currently provides:
 
 - core HTTP client (`HonuaClient`) for FeatureServer and catalog operations,
-- Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapCompat`, `MapViewCompat`) for migration-critical patterns,
+- Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapCompat`, `MapViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.createQuery()`, and `MapView` watch/event handles,
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
 - ArcGIS usage scanner (`scanArcGisUsage`) for migration inventory and risk flags,
-- safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `Map`, and `MapView` safe constructors,
+- safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `Map`, `MapView`, and `WebMap` safe constructors,
 - migration report builder with explicit manual TODOs and rewrite metric,
 - unit tests for request mapping and URL parsing.
 
@@ -50,6 +50,7 @@ The codemod is intentionally conservative:
   - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })`
   - `new Map(...)` -> `new MapCompat(...)`
   - `new MapView(...)` -> `new MapViewCompat(...)`
+  - `new WebMap(...)` -> `new WebMapCompat(...)`
 - it skips complex constructors and records manual TODO entries in the report,
 - optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
 - it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,

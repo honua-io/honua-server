@@ -40,13 +40,13 @@ function runScan(target: string, reportPath?: string): void {
 }
 
 function runCodemod(args: ParsedArgs): void {
+  const scanReport = scanArcGisUsage(args.target);
   const codemodResult = runEsriCompatCodemod({
     rootDir: args.target,
     write: args.write,
     compatImportPath: args.compatImportPath,
     annotateTodos: args.annotateTodos,
   });
-  const scanReport = scanArcGisUsage(args.target);
   const report = buildJsMigrationReport(args.target, codemodResult, scanReport);
 
   process.stdout.write(

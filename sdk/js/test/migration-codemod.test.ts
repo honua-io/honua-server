@@ -85,7 +85,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("new FeatureLayerCompat({ url })");
   });
 
-  it("rewrites safe Map and MapView constructors", () => {
+  it("rewrites safe Map, MapView, and WebMap constructors", () => {
     const root = makeTempProject();
     const file = path.join(root, "view.ts");
     fs.writeFileSync(
@@ -93,9 +93,11 @@ describe("runEsriCompatCodemod", () => {
       [
         "import Map from '@arcgis/core/Map';",
         "import MapView from '@arcgis/core/views/MapView';",
+        "import WebMap from '@arcgis/core/WebMap';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, zoom: 4 });",
-        "void map; void view;",
+        "const webMap = new WebMap({ portalItem: { id: 'abc123' } });",
+        "void map; void view; void webMap;",
       ].join("\n"),
       "utf8",
     );
@@ -107,8 +109,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
-    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind.map).toEqual({
       total: 1,
@@ -120,13 +122,22 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["web-map"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain('import { MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain(
+      'import { MapCompat, MapViewCompat, WebMapCompat } from "@honua/sdk-esri-compat";',
+    );
     expect(nextSource).not.toContain("@arcgis/core/Map");
     expect(nextSource).not.toContain("@arcgis/core/views/MapView");
+    expect(nextSource).not.toContain("@arcgis/core/WebMap");
     expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
     expect(nextSource).toContain("const view = new MapViewCompat({ map, zoom: 4 });");
+    expect(nextSource).toContain("const webMap = new WebMapCompat({ portalItem: { id: 'abc123' } });");
   });
 
   it("keeps complex constructor and reports manual TODO", () => {

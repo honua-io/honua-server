@@ -17,6 +17,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "feature-layer": { total: 2, autoMigrated: 1, manual: 1 },
         map: { total: 1, autoMigrated: 1, manual: 0 },
         "map-view": { total: 1, autoMigrated: 1, manual: 0 },
+        "web-map": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -109,6 +110,7 @@ describe("buildJsMigrationReport", () => {
       "feature-layer": 1,
       map: 0,
       "map-view": 0,
+      "web-map": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {
@@ -117,11 +119,7 @@ describe("buildJsMigrationReport", () => {
         kinds: ["feature-layer"],
       },
     ]);
-    expect(report.unhandledArcGisModules).toHaveLength(2);
-    expect(report.unhandledArcGisModules).toContainEqual({
-      modulePath: "@arcgis/core/WebMap",
-      count: 1,
-    });
+    expect(report.unhandledArcGisModules).toHaveLength(1);
     expect(report.unhandledArcGisModules).toContainEqual({
       modulePath: "@arcgis/core/views/SceneView",
       count: 1,
@@ -136,7 +134,7 @@ describe("buildJsMigrationReport", () => {
       {
         gate: "no-unhandled-modules",
         passed: false,
-        detail: "2 ArcGIS modules remain outside codemod scope",
+        detail: "1 ArcGIS modules remain outside codemod scope",
       },
       {
         gate: "no-blocking-flags",

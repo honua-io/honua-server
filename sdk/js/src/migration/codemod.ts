@@ -7,7 +7,7 @@ const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
 const TODO_MARKER = "TODO(honua-migrate)";
 
-export type CodemodConstructorKind = "feature-layer" | "map" | "map-view";
+export type CodemodConstructorKind = "feature-layer" | "map" | "map-view" | "web-map";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -36,6 +36,11 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
       "@arcgis/core/views/MapView",
       "@arcgis/core/views/MapView.js",
     ]),
+  },
+  {
+    kind: "web-map",
+    compatSymbol: "WebMapCompat",
+    arcGisModules: new Set(["@arcgis/core/WebMap", "@arcgis/core/WebMap.js"]),
   },
 ];
 
@@ -321,6 +326,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
+    "web-map": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -579,6 +585,8 @@ function isSafeConstructorCall(
       return isSafeMapCompatCall(node);
     case "map-view":
       return isSafeMapViewCompatCall(node);
+    case "web-map":
+      return isSafeWebMapCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -699,6 +707,49 @@ function isSafeMapViewCompatCall(
       return {
         ok: false,
         reason: "MapView options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeWebMapCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "WebMap constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "WebMap constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["portalItem", "basemap", "layers"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "WebMap options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "WebMap options include unsupported properties; requires manual migration.",
       };
     }
   }

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { runEsriCompatCodemod } from "../src/migration/codemod.js";
 import { buildJsMigrationReport } from "../src/migration/report.js";
+import { scanArcGisUsage } from "../src/migration/scanner.js";
 
 const tempDirs: string[] = [];
 
@@ -33,18 +34,19 @@ describe("arcgis migration integration", () => {
     const sampleSource = fixturePath("esri-sample-app");
     const workingCopy = path.join(tempRoot, "sample-app");
     fs.cpSync(sampleSource, workingCopy, { recursive: true });
+    const scanReport = scanArcGisUsage(workingCopy);
 
     const codemodResult = runEsriCompatCodemod({
       rootDir: workingCopy,
       write: true,
       compatImportPath: "@honua/sdk-esri-compat",
     });
-    const report = buildJsMigrationReport(workingCopy, codemodResult);
+    const report = buildJsMigrationReport(workingCopy, codemodResult, scanReport);
 
     expect(codemodResult.filesScanned).toBeGreaterThanOrEqual(2);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
     expect(codemodResult.metrics.manualCallSites).toBe(1);
     expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
       total: 2,
@@ -61,25 +63,27 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["web-map"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(codemodResult.manualTodos[0].kind).toBe("feature-layer");
 
     expect(report.scanReport.flags).toContain("dynamic-import-detected");
     expect(report.scanReport.flags).toContain("scene-3d-detected");
     expect(report.scanReport.flags).toContain("webmap-detected");
     expect(report.manualRewriteMetric.numerator).toBe(1);
-    expect(report.manualRewriteMetric.denominator).toBe(4);
+    expect(report.manualRewriteMetric.denominator).toBe(5);
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 1,
       map: 0,
       "map-view": 0,
+      "web-map": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(1);
     expect(report.manualTodoReasons[0].kinds).toEqual(["feature-layer"]);
-    expect(report.unhandledArcGisModules).toHaveLength(2);
-    expect(report.unhandledArcGisModules).toContainEqual({
-      modulePath: "@arcgis/core/WebMap",
-      count: 1,
-    });
+    expect(report.unhandledArcGisModules).toHaveLength(1);
     expect(report.unhandledArcGisModules).toContainEqual({
       modulePath: "@arcgis/core/views/SceneView",
       count: 1,
@@ -94,7 +98,7 @@ describe("arcgis migration integration", () => {
       {
         gate: "no-unhandled-modules",
         passed: false,
-        detail: "2 ArcGIS modules remain outside codemod scope",
+        detail: "1 ArcGIS modules remain outside codemod scope",
       },
       {
         gate: "no-blocking-flags",
@@ -105,7 +109,7 @@ describe("arcgis migration integration", () => {
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { FeatureLayerCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+      'import { FeatureLayerCompat, MapCompat, MapViewCompat, WebMapCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain(
       'const simple = new FeatureLayerCompat({ url: "https://example.test/rest/services/default/FeatureServer/0" });',
@@ -118,6 +122,7 @@ describe("arcgis migration integration", () => {
       'const complex = new FeatureLayer({ url: layerUrl, outFields: ["*"] });',
     );
     expect(migratedMain).toContain('import FeatureLayer from "@arcgis/core/layers/FeatureLayer";');
+    expect(migratedMain).not.toContain('import WebMap from "@arcgis/core/WebMap";');
     expect(migratedMain).not.toContain('import Map from "@arcgis/core/Map";');
     expect(migratedMain).not.toContain('import MapView from "@arcgis/core/views/MapView";');
   });

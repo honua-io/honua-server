@@ -15,6 +15,8 @@ export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
 export { MapViewCompat } from "./esri-compat/map-view.js";
 export type { MapViewCompatOptions, MapViewGoToTarget, MapViewHandle } from "./esri-compat/map-view.js";
+export { WebMapCompat } from "./esri-compat/web-map.js";
+export type { WebMapCompatOptions } from "./esri-compat/web-map.js";
 
 export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
 export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
