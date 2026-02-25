@@ -28,6 +28,12 @@ export interface FeatureLayerCreateQueryResult {
   returnGeometry: boolean;
 }
 
+export interface FeatureLayerQueryCountOptions {
+  where?: string;
+  method?: QueryMethod;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
 export class FeatureLayerCompat {
   public readonly url: string;
   public readonly serviceId: string;
@@ -84,6 +90,56 @@ export class FeatureLayerCompat {
     });
   }
 
+  public async queryObjectIds(options: FeatureLayerQueryCountOptions = {}): Promise<number[]> {
+    const response = await this.client.queryFeatures({
+      serviceId: this.serviceId,
+      layerId: this.layerId,
+      where: options.where,
+      returnGeometry: false,
+      method: options.method,
+      extraParams: {
+        ...options.extraParams,
+        returnIdsOnly: true,
+      },
+    });
+
+    if (isRecord(response) && Array.isArray(response.objectIds)) {
+      return response.objectIds
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+    }
+
+    const features = extractFeatures(response);
+    if (!features) {
+      return [];
+    }
+
+    return features
+      .map((feature) => extractObjectId(feature))
+      .filter((value): value is number => value !== undefined);
+  }
+
+  public async queryFeatureCount(options: FeatureLayerQueryCountOptions = {}): Promise<number> {
+    const response = await this.client.queryFeatures({
+      serviceId: this.serviceId,
+      layerId: this.layerId,
+      where: options.where,
+      returnGeometry: false,
+      method: options.method,
+      extraParams: {
+        ...options.extraParams,
+        returnCountOnly: true,
+      },
+    });
+
+    if (isRecord(response) && typeof response.count === "number") {
+      return Number.isFinite(response.count) ? response.count : 0;
+    }
+
+    const features = extractFeatures(response);
+    return features?.length ?? 0;
+  }
+
   public applyEdits(options: FeatureLayerEditsOptions): Promise<unknown> {
     return this.client.applyEdits({
       serviceId: this.serviceId,
@@ -94,4 +150,39 @@ export class FeatureLayerCompat {
       rollbackOnFailure: options.rollbackOnFailure,
     });
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function extractFeatures(value: unknown): unknown[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (!Array.isArray(value.features)) {
+    return undefined;
+  }
+  return value.features;
+}
+
+function extractObjectId(feature: unknown): number | undefined {
+  if (!isRecord(feature)) {
+    return undefined;
+  }
+
+  const attributes = feature.attributes;
+  if (!isRecord(attributes)) {
+    return undefined;
+  }
+
+  for (const key of ["objectid", "OBJECTID", "id"]) {
+    const raw = attributes[key];
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
 }

@@ -122,4 +122,93 @@ describe("FeatureLayerCompat", () => {
       returnGeometry: true,
     });
   });
+
+  it("supports queryObjectIds with returnIdsOnly passthrough", async () => {
+    let lastQuery: unknown;
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(request: unknown): Promise<unknown> {
+          lastQuery = request;
+          return Promise.resolve({ objectIds: [7, "8", "NaN"] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    const objectIds = await layer.queryObjectIds({ where: "status = 'open'" });
+
+    expect(objectIds).toEqual([7, 8]);
+    expect(JSON.stringify(lastQuery)).toContain('"where":"status = \'open\'"');
+    expect(JSON.stringify(lastQuery)).toContain('"returnIdsOnly":true');
+  });
+
+  it("supports queryObjectIds fallback parsing from feature attributes", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({
+            features: [
+              { attributes: { OBJECTID: 11 } },
+              { attributes: { objectid: "12" } },
+              { attributes: { id: 13 } },
+              { attributes: { name: "missing-object-id" } },
+            ],
+          });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    const objectIds = await layer.queryObjectIds();
+    expect(objectIds).toEqual([11, 12, 13]);
+  });
+
+  it("supports queryFeatureCount with returnCountOnly and fallback feature length", async () => {
+    let firstRequest: unknown;
+    let queryCalls = 0;
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(request: unknown): Promise<unknown> {
+          queryCalls += 1;
+          if (queryCalls === 1) {
+            firstRequest = request;
+            return Promise.resolve({ count: 42 });
+          }
+          return Promise.resolve({ features: [{}, {}, {}] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    const count = await layer.queryFeatureCount({ where: "1=1" });
+    const fallbackCount = await layer.queryFeatureCount({ where: "1=0" });
+
+    expect(count).toBe(42);
+    expect(fallbackCount).toBe(3);
+    expect(JSON.stringify(firstRequest)).toContain('"returnCountOnly":true');
+  });
 });

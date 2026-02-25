@@ -6,7 +6,7 @@ This package currently provides:
 
 - core HTTP client (`HonuaClient`) for FeatureServer and catalog operations,
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
-  including basic `when()` lifecycle support, `FeatureLayer.createQuery()`, and `MapView` watch/event handles,
+  including basic `when()` lifecycle support, `FeatureLayer.createQuery()/queryObjectIds()/queryFeatureCount()`, and `MapView` watch/event handles,
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
 - ArcGIS usage scanner (`scanArcGisUsage`) for migration inventory and risk flags,
 - safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `Map`, `MapView`, `SceneView`, and `WebMap` safe constructors,

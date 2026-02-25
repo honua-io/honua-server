@@ -8,7 +8,10 @@ export type {
 } from "./core/types.js";
 
 export { FeatureLayerCompat } from "./esri-compat/feature-layer.js";
-export type { FeatureLayerCreateQueryResult } from "./esri-compat/feature-layer.js";
+export type {
+  FeatureLayerCreateQueryResult,
+  FeatureLayerQueryCountOptions,
+} from "./esri-compat/feature-layer.js";
 export { parseFeatureLayerUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl } from "./esri-compat/url.js";
 export { MapCompat } from "./esri-compat/map.js";
