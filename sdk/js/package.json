@@ -1,0 +1,19 @@
+{
+  "name": "@honua/sdk-js",
+  "version": "0.0.1-alpha.0",
+  "description": "Honua JavaScript SDK scaffold (core + Esri compatibility layer)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.16"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
