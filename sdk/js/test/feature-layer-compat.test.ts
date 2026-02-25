@@ -34,6 +34,10 @@ describe("FeatureLayerCompat", () => {
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/1000",
       client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({ id: 1000 });
+        }
+
         public queryFeatures(request: unknown): Promise<unknown> {
           requestedUrl = JSON.stringify(request);
           return Promise.resolve({ features: [] });
@@ -58,9 +62,15 @@ describe("FeatureLayerCompat", () => {
   });
 
   it("supports load/when lifecycle helpers", async () => {
+    let metadataCalls = 0;
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/1000",
       client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          metadataCalls += 1;
+          return Promise.resolve({ id: 1000, name: "Sample Layer" });
+        }
+
         public queryFeatures(): Promise<unknown> {
           return Promise.resolve({ features: [] });
         }
@@ -81,5 +91,35 @@ describe("FeatureLayerCompat", () => {
     expect(layer.loaded).toBe(true);
     expect(callbackLayer).toBe(layer);
     expect(resolved).toBe(layer);
+    expect(layer.metadata).toEqual({ id: 1000, name: "Sample Layer" });
+    expect(metadataCalls).toBe(1);
+
+    await layer.load();
+    expect(metadataCalls).toBe(1);
+  });
+
+  it("creates a default query object", () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    expect(layer.createQuery()).toEqual({
+      where: "1=1",
+      outFields: ["*"],
+      returnGeometry: true,
+    });
   });
 });

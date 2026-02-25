@@ -22,11 +22,18 @@ export interface FeatureLayerEditsOptions {
   rollbackOnFailure?: boolean;
 }
 
+export interface FeatureLayerCreateQueryResult {
+  where: string;
+  outFields: string[];
+  returnGeometry: boolean;
+}
+
 export class FeatureLayerCompat {
   public readonly url: string;
   public readonly serviceId: string;
   public readonly layerId: number;
   public loaded: boolean;
+  public metadata: unknown;
 
   private readonly client: HonuaClient;
 
@@ -36,10 +43,14 @@ export class FeatureLayerCompat {
     this.serviceId = parsed.serviceId;
     this.layerId = parsed.layerId;
     this.loaded = false;
+    this.metadata = undefined;
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
   }
 
   public async load(): Promise<FeatureLayerCompat> {
+    if (!this.loaded) {
+      this.metadata = await this.client.getLayerMetadata(this.serviceId, this.layerId);
+    }
     this.loaded = true;
     return this;
   }
@@ -51,6 +62,14 @@ export class FeatureLayerCompat {
     }
 
     return layer;
+  }
+
+  public createQuery(): FeatureLayerCreateQueryResult {
+    return {
+      where: "1=1",
+      outFields: ["*"],
+      returnGeometry: true,
+    };
   }
 
   public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<unknown> {
