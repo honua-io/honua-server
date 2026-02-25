@@ -51,7 +51,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
-      --no-restore \
       --self-contained false \
       --output /app \
       -p:PublishAot=false \
