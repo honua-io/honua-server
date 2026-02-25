@@ -123,6 +123,44 @@ describe("FeatureLayerCompat", () => {
     });
   });
 
+  it("uses constructor defaults for outFields and definitionExpression", async () => {
+    const capturedQueries: string[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      outFields: ["OBJECTID", "NAME"],
+      definitionExpression: "status = 1",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(request: unknown): Promise<unknown> {
+          capturedQueries.push(JSON.stringify(request));
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    expect(layer.createQuery()).toEqual({
+      where: "status = 1",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: true,
+    });
+
+    await layer.queryFeatures();
+    await layer.queryObjectIds();
+    await layer.queryFeatureCount();
+
+    expect(capturedQueries[0]).toContain('"where":"status = 1"');
+    expect(capturedQueries[0]).toContain('"outFields":["OBJECTID","NAME"]');
+    expect(capturedQueries[1]).toContain('"where":"status = 1"');
+    expect(capturedQueries[2]).toContain('"where":"status = 1"');
+  });
+
   it("supports queryObjectIds with returnIdsOnly passthrough", async () => {
     let lastQuery: unknown;
     const layer = new FeatureLayerCompat({

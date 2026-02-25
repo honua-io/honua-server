@@ -85,6 +85,35 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("new FeatureLayerCompat({ url })");
   });
 
+  it("rewrites FeatureLayer constructors with supported options", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "supported-options.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({ url: serviceUrl, outFields: ['*'], definitionExpression: 'status = 1' });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      "new FeatureLayerCompat({ url: serviceUrl, outFields: ['*'], definitionExpression: 'status = 1' })",
+    );
+  });
+
   it("rewrites safe Map, MapView, SceneView, and WebMap constructors", () => {
     const root = makeTempProject();
     const file = path.join(root, "view.ts");
@@ -158,7 +187,7 @@ describe("runEsriCompatCodemod", () => {
       file,
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
-        "const layer = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });",
+        "const layer = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
         "void layer;",
       ].join("\n"),
       "utf8",
@@ -175,10 +204,10 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.manualCallSites).toBe(1);
     expect(result.manualTodos).toHaveLength(1);
     expect(result.manualTodos[0].kind).toBe("feature-layer");
-    expect(result.manualTodos[0].reason).toContain("non-url properties");
+    expect(result.manualTodos[0].reason).toContain("unsupported properties");
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain("new FeatureLayer({ url: serviceUrl, outFields: ['*'] })");
+    expect(nextSource).toContain("new FeatureLayer({ url: serviceUrl, renderer: customRenderer })");
   });
 
   it("keeps ArcGIS import when mixed auto and manual call sites exist", () => {
@@ -189,7 +218,7 @@ describe("runEsriCompatCodemod", () => {
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "const a = new FeatureLayer({ url: serviceUrl });",
-        "const b = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });",
+        "const b = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
         "void a; void b;",
       ].join("\n"),
       "utf8",
@@ -215,7 +244,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("@arcgis/core/layers/FeatureLayer");
     expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const a = new FeatureLayerCompat({ url: serviceUrl });");
-    expect(nextSource).toContain("const b = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });");
+    expect(nextSource).toContain(
+      "const b = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
+    );
   });
 
   it("can annotate manual todos inline without duplicating markers on rerun", () => {
@@ -225,7 +256,7 @@ describe("runEsriCompatCodemod", () => {
       file,
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
-        "const layer = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });",
+        "const layer = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
         "void layer;",
       ].join("\n"),
       "utf8",

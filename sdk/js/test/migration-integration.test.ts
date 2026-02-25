@@ -57,12 +57,12 @@ describe("arcgis migration integration", () => {
     expect(codemodResult.filesScanned).toBeGreaterThanOrEqual(2);
     expect(codemodResult.filesChanged).toBe(2);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(6);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
-    expect(codemodResult.metrics.manualCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(6);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
       total: 2,
-      autoMigrated: 1,
-      manual: 1,
+      autoMigrated: 2,
+      manual: 0,
     });
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -84,36 +84,35 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
-    expect(codemodResult.manualTodos[0].kind).toBe("feature-layer");
+    expect(codemodResult.manualTodos).toEqual([]);
 
     expect(report.scanReport.flags).toContain("dynamic-import-detected");
     expect(report.scanReport.flags).toContain("scene-3d-detected");
     expect(report.scanReport.flags).toContain("webmap-detected");
-    expect(report.manualRewriteMetric.numerator).toBe(1);
+    expect(report.manualRewriteMetric.numerator).toBe(0);
     expect(report.manualRewriteMetric.denominator).toBe(6);
     expect(report.manualInterventionMetric).toMatchObject({
-      numerator: 1,
+      numerator: 0,
       denominator: 6,
-      ratio: 1 / 6,
-      manualCodemodCallSites: 1,
+      ratio: 0,
+      manualCodemodCallSites: 0,
       unhandledUsageHits: 0,
     });
     expect(report.manualTodosByKind).toEqual({
-      "feature-layer": 1,
+      "feature-layer": 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
       "web-map": 0,
     });
-    expect(report.manualTodoReasons).toHaveLength(1);
-    expect(report.manualTodoReasons[0].kinds).toEqual(["feature-layer"]);
+    expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
     expect(report.readiness).toBe("blocked");
     expect(report.gates).toEqual([
       {
         gate: "no-manual-todos",
-        passed: false,
-        detail: "1 manual codemod-scoped call sites remain",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
       },
       {
         gate: "no-unhandled-modules",
@@ -139,9 +138,9 @@ describe("arcgis migration integration", () => {
     );
     expect(migratedMain).toContain("const mapView = new MapViewCompat({");
     expect(migratedMain).toContain(
-      'const complex = new FeatureLayer({ url: layerUrl, outFields: ["*"] });',
+      'const complex = new FeatureLayerCompat({ url: layerUrl, outFields: ["*"] });',
     );
-    expect(migratedMain).toContain('import FeatureLayer from "@arcgis/core/layers/FeatureLayer";');
+    expect(migratedMain).not.toContain('import FeatureLayer from "@arcgis/core/layers/FeatureLayer";');
     expect(migratedMain).not.toContain('import WebMap from "@arcgis/core/WebMap";');
     expect(migratedMain).not.toContain('import Map from "@arcgis/core/Map";');
     expect(migratedMain).not.toContain('import MapView from "@arcgis/core/views/MapView";');

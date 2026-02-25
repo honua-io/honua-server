@@ -662,6 +662,9 @@ function isSafeFeatureLayerCompatCall(
     };
   }
 
+  let hasUrlOption = false;
+  const allowed = new Set(["url", "outFields", "definitionExpression"]);
+
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -670,12 +673,24 @@ function isSafeFeatureLayerCompatCall(
       };
     }
 
-    if (getObjectPropertyName(property) !== "url") {
+    const name = getObjectPropertyName(property);
+    if (name === "url") {
+      hasUrlOption = true;
+    }
+
+    if (!name || !allowed.has(name)) {
       return {
         ok: false,
-        reason: "FeatureLayer options include non-url properties; requires manual migration.",
+        reason: "FeatureLayer options include unsupported properties; requires manual migration.",
       };
     }
+  }
+
+  if (!hasUrlOption) {
+    return {
+      ok: false,
+      reason: "FeatureLayer options missing required url property; requires manual migration.",
+    };
   }
 
   return { ok: true };

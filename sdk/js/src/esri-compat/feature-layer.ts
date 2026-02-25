@@ -4,6 +4,8 @@ import { parseFeatureLayerUrl } from "./url.js";
 
 export interface FeatureLayerCompatOptions {
   url: string;
+  outFields?: string | string[];
+  definitionExpression?: string;
   client?: HonuaClient;
 }
 
@@ -38,6 +40,8 @@ export class FeatureLayerCompat {
   public readonly url: string;
   public readonly serviceId: string;
   public readonly layerId: number;
+  public readonly outFields: string[] | undefined;
+  public readonly definitionExpression: string | undefined;
   public loaded: boolean;
   public metadata: unknown;
 
@@ -48,6 +52,13 @@ export class FeatureLayerCompat {
     this.url = options.url;
     this.serviceId = parsed.serviceId;
     this.layerId = parsed.layerId;
+    this.outFields =
+      options.outFields === undefined
+        ? undefined
+        : Array.isArray(options.outFields)
+          ? [...options.outFields]
+          : [options.outFields];
+    this.definitionExpression = options.definitionExpression;
     this.loaded = false;
     this.metadata = undefined;
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
@@ -72,8 +83,8 @@ export class FeatureLayerCompat {
 
   public createQuery(): FeatureLayerCreateQueryResult {
     return {
-      where: "1=1",
-      outFields: ["*"],
+      where: this.definitionExpression ?? "1=1",
+      outFields: this.outFields ? [...this.outFields] : ["*"],
       returnGeometry: true,
     };
   }
@@ -82,8 +93,8 @@ export class FeatureLayerCompat {
     return this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
-      where: options.where,
-      outFields: options.outFields,
+      where: options.where ?? this.definitionExpression,
+      outFields: options.outFields ?? this.outFields,
       returnGeometry: options.returnGeometry,
       method: options.method,
       extraParams: options.extraParams,
@@ -94,7 +105,7 @@ export class FeatureLayerCompat {
     const response = await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
-      where: options.where,
+      where: options.where ?? this.definitionExpression,
       returnGeometry: false,
       method: options.method,
       extraParams: {
@@ -123,7 +134,7 @@ export class FeatureLayerCompat {
     const response = await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
-      where: options.where,
+      where: options.where ?? this.definitionExpression,
       returnGeometry: false,
       method: options.method,
       extraParams: {

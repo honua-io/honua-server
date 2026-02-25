@@ -35,7 +35,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
             file: "/tmp/app/src/main.ts",
             line: 8,
             column: 17,
-            reason: "FeatureLayer options include non-url properties; requires manual migration.",
+            reason: "FeatureLayer options include unsupported properties; requires manual migration.",
           },
         ],
       },
@@ -46,7 +46,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         file: "/tmp/app/src/main.ts",
         line: 8,
         column: 17,
-        reason: "FeatureLayer options include non-url properties; requires manual migration.",
+        reason: "FeatureLayer options include unsupported properties; requires manual migration.",
       },
     ],
   };
@@ -124,7 +124,7 @@ describe("buildJsMigrationReport", () => {
     });
     expect(report.manualTodoReasons).toEqual([
       {
-        reason: "FeatureLayer options include non-url properties; requires manual migration.",
+        reason: "FeatureLayer options include unsupported properties; requires manual migration.",
         count: 1,
         kinds: ["feature-layer"],
       },

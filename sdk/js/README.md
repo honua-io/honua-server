@@ -50,7 +50,7 @@ node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandle
 
 The codemod is intentionally conservative:
 - it rewrites safe constructors:
-  - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })`
+  - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `outFields` and `definitionExpression`)
   - `new Map(...)` -> `new MapCompat(...)`
   - `new MapView(...)` -> `new MapViewCompat(...)`
   - `new SceneView(...)` -> `new SceneViewCompat(...)`
