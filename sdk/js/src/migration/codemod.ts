@@ -39,6 +39,10 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   },
 ];
 
+export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
+  Array.from(spec.arcGisModules),
+);
+
 const MODULE_TO_SPEC = buildModuleToSpecLookup(REWRITE_SPECS);
 
 interface TextEdit {

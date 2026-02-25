@@ -29,5 +29,11 @@ export type {
   EsriCompatCodemodResult,
   MigrationTodo,
 } from "./migration/codemod.js";
+export { SUPPORTED_ARCGIS_MODULES } from "./migration/codemod.js";
 export { buildJsMigrationReport } from "./migration/report.js";
-export type { JsMigrationReport, ManualRewriteMetric } from "./migration/report.js";
+export type {
+  ArcGisModuleSummary,
+  JsMigrationReport,
+  ManualRewriteMetric,
+  MigrationReasonSummary,
+} from "./migration/report.js";

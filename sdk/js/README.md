@@ -53,4 +53,7 @@ The codemod is intentionally conservative:
 - it skips complex constructors and records manual TODO entries in the report,
 - optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
 - it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,
-- CLI summary includes per-type migration counts as `byKind=feature-layer:auto/manual/total,...`.
+- CLI summary includes:
+  - per-type migration counts as `byKind=feature-layer:auto/manual/total,...`,
+  - grouped manual reasons,
+  - and unhandled ArcGIS module inventory for out-of-scope APIs.

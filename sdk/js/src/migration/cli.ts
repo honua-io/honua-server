@@ -70,6 +70,20 @@ function runCodemod(args: ParsedArgs): void {
     }
   }
 
+  if (report.manualTodoReasons.length > 0) {
+    process.stdout.write("manualReasons:\n");
+    for (const reason of report.manualTodoReasons.slice(0, 5)) {
+      process.stdout.write(`- ${reason.count}x [${reason.kinds.join(",")}] ${reason.reason}\n`);
+    }
+  }
+
+  if (report.unhandledArcGisModules.length > 0) {
+    process.stdout.write("unhandledArcGisModules:\n");
+    for (const moduleItem of report.unhandledArcGisModules.slice(0, 10)) {
+      process.stdout.write(`- ${moduleItem.modulePath} (${moduleItem.count})\n`);
+    }
+  }
+
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
   if (args.reportPath) {

@@ -68,6 +68,22 @@ describe("arcgis migration integration", () => {
     expect(report.scanReport.flags).toContain("webmap-detected");
     expect(report.manualRewriteMetric.numerator).toBe(1);
     expect(report.manualRewriteMetric.denominator).toBe(4);
+    expect(report.manualTodosByKind).toEqual({
+      "feature-layer": 1,
+      map: 0,
+      "map-view": 0,
+    });
+    expect(report.manualTodoReasons).toHaveLength(1);
+    expect(report.manualTodoReasons[0].kinds).toEqual(["feature-layer"]);
+    expect(report.unhandledArcGisModules).toHaveLength(2);
+    expect(report.unhandledArcGisModules).toContainEqual({
+      modulePath: "@arcgis/core/WebMap",
+      count: 1,
+    });
+    expect(report.unhandledArcGisModules).toContainEqual({
+      modulePath: "@arcgis/core/views/SceneView",
+      count: 1,
+    });
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
