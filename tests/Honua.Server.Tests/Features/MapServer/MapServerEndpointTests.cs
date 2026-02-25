@@ -304,6 +304,20 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_AfterCachedValidRequest_InvalidSizeReturnsBadRequest()
+    {
+        var validResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20,20");
+        validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var invalidResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=invalid");
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithInvalidIdentifier_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer/legend?f=json");

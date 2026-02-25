@@ -126,7 +126,7 @@ else
 fi
 
 echo -e "${YELLOW}Building Honua Server Docker image...${NC}"
-if ! docker build -t honua-server:latest . > /dev/null 2>&1; then
+if ! docker build -t honua-server:latest .; then
     echo -e "${RED}Failed to build Honua Server Docker image${NC}"
     exit 1
 fi

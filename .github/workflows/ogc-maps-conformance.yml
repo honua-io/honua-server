@@ -1,0 +1,130 @@
+name: OGC API Maps Conformance Tests
+
+on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/Honua.Server/Features/OgcMaps/**'
+      - 'src/Honua.Postgres/Features/Raster/**'
+      - 'tests/Honua.Server.Tests/Features/OgcMaps/**'
+      - 'scripts/run-ogc-maps-conformance-tests.sh'
+      - '.github/workflows/ogc-maps-conformance.yml'
+  push:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/Honua.Server/Features/OgcMaps/**'
+      - 'src/Honua.Postgres/Features/Raster/**'
+      - 'tests/Honua.Server.Tests/Features/OgcMaps/**'
+      - 'scripts/run-ogc-maps-conformance-tests.sh'
+      - '.github/workflows/ogc-maps-conformance.yml'
+  schedule:
+    # Weekly drift check for OGC API - Maps declarations and behavior
+    - cron: '0 6 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  ogc-maps-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-ogc-maps-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-ogc-maps-
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore tests/Honua.Server.Tests/Honua.Server.Tests.csproj
+
+      - name: Run OGC API - Maps conformance tests
+        id: run-tests
+        run: |
+          set +e
+          timeout 1800 ./scripts/run-ogc-maps-conformance-tests.sh --configuration Release --verbose
+          test_exit_code=$?
+          set -e
+          echo "exit_code=$test_exit_code" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Parse results
+        id: parse-results
+        if: always()
+        run: |
+          if [[ ! -f ogc-maps-results/ogc-maps-summary.md ]]; then
+            echo "results_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TOTAL_TESTS=$(grep "Total Tests" ogc-maps-results/ogc-maps-summary.md | grep -o '[0-9]\+' || echo "0")
+          PASSED_TESTS=$(grep "Passed" ogc-maps-results/ogc-maps-summary.md | grep -o '[0-9]\+' | head -n 1 || echo "0")
+          FAILED_TESTS=$(grep "Failed" ogc-maps-results/ogc-maps-summary.md | grep -o '[0-9]\+' | head -n 1 || echo "0")
+          SKIPPED_TESTS=$(grep "Skipped" ogc-maps-results/ogc-maps-summary.md | grep -o '[0-9]\+' | head -n 1 || echo "0")
+
+          echo "total_tests=$TOTAL_TESTS" >> "$GITHUB_OUTPUT"
+          echo "passed_tests=$PASSED_TESTS" >> "$GITHUB_OUTPUT"
+          echo "failed_tests=$FAILED_TESTS" >> "$GITHUB_OUTPUT"
+          echo "skipped_tests=$SKIPPED_TESTS" >> "$GITHUB_OUTPUT"
+          echo "results_available=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload OGC API - Maps artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ogc-maps-conformance-results-${{ github.run_number }}
+          path: |
+            ogc-maps-results/
+          retention-days: 30
+
+      - name: Fail on conformance issues
+        if: always()
+        run: |
+          if [[ "${{ steps.run-tests.outputs.exit_code }}" == "124" ]]; then
+            echo "OGC API - Maps conformance tests timed out after 30 minutes"
+            exit 1
+          elif [[ "${{ steps.run-tests.outputs.exit_code }}" != "0" ]]; then
+            echo "OGC API - Maps conformance tests failed with exit code: ${{ steps.run-tests.outputs.exit_code }}"
+            exit 1
+          fi
+
+          if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
+            echo "OGC API - Maps conformance results were not produced"
+            exit 1
+          fi
+
+          if [[ "${{ steps.parse-results.outputs.total_tests }}" == "0" ]]; then
+            echo "No OGC API - Maps conformance tests were executed"
+            exit 1
+          fi
+
+          if [[ "${{ steps.parse-results.outputs.failed_tests }}" != "0" ]]; then
+            echo "OGC API - Maps conformance tests failed"
+            echo "Failed tests: ${{ steps.parse-results.outputs.failed_tests }}"
+            exit 1
+          fi
+
+          echo "OGC API - Maps conformance tests passed"

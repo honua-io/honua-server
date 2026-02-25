@@ -81,6 +81,28 @@ public sealed class OgcTilesRasterTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetCollectionTile_AfterCachedPngRequest_InvalidAcceptStillReturnsNotAcceptable()
+    {
+        using var pngRequest = new HttpRequestMessage(HttpMethod.Get,
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0");
+        pngRequest.Headers.Accept.Clear();
+        pngRequest.Headers.Accept.ParseAdd(MediaTypes.Png);
+
+        var pngResponse = await _fixture.Client.SendAsync(pngRequest);
+        pngResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        using var invalidAcceptRequest = new HttpRequestMessage(HttpMethod.Get,
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0");
+        invalidAcceptRequest.Headers.Accept.Clear();
+        invalidAcceptRequest.Headers.Accept.ParseAdd("text/plain");
+
+        var invalidAcceptResponse = await _fixture.Client.SendAsync(invalidAcceptRequest);
+        invalidAcceptResponse.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetTile_WithPngFormat_WorldCRS84Quad_ReturnsRasterImage()
     {

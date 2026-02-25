@@ -77,17 +77,11 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
-        if (!Uri.TryCreate(request.ServiceUrl, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != "http" && uri.Scheme != "https"))
-        {
-            await AdminResponseWriter.WriteErrorAsync(context, "ServiceUrl must be a valid HTTP(S) URL", StatusCodes.Status400BadRequest);
-            return;
-        }
-
-        if (await IsPrivateNetworkAddressAsync(uri))
+        var discoverUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, cancellationToken);
+        if (!discoverUrlValidation.IsValid)
         {
             await AdminResponseWriter.WriteErrorAsync(context,
-                "ServiceUrl resolves to a private or loopback network address, which is not allowed.",
+                discoverUrlValidation.ErrorMessage!,
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -195,17 +189,11 @@ internal static partial class GeoservicesImportEndpoints
             return;
         }
 
-        if (!Uri.TryCreate(request.ServiceUrl, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != "http" && uri.Scheme != "https"))
-        {
-            await AdminResponseWriter.WriteErrorAsync(context, "ServiceUrl must be a valid HTTP(S) URL", StatusCodes.Status400BadRequest);
-            return;
-        }
-
-        if (await IsPrivateNetworkAddressAsync(uri))
+        var startUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, cancellationToken);
+        if (!startUrlValidation.IsValid)
         {
             await AdminResponseWriter.WriteErrorAsync(context,
-                "ServiceUrl resolves to a private or loopback network address, which is not allowed.",
+                startUrlValidation.ErrorMessage!,
                 StatusCodes.Status400BadRequest);
             return;
         }
@@ -381,128 +369,6 @@ internal static partial class GeoservicesImportEndpoints
         var response = new GeoservicesImportJobsResponse { Jobs = jobs.ToArray() };
         await Results.Json(response, GeoservicesImportApiJsonContext.Default.GeoservicesImportJobsResponse)
             .ExecuteAsync(context);
-    }
-
-    private static async Task<bool> IsPrivateNetworkAddressAsync(Uri uri)
-    {
-        System.Net.IPAddress[] addresses;
-        try
-        {
-            addresses = await System.Net.Dns.GetHostAddressesAsync(uri.Host);
-        }
-        catch (System.Net.Sockets.SocketException)
-        {
-            // DNS failures are handled downstream by HTTP client error handling (502).
-            // Treat unresolved hosts as non-private here to avoid misclassifying them as SSRF attempts.
-            return false;
-        }
-
-        foreach (var address in addresses)
-        {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsPrivateOrReservedAddress(System.Net.IPAddress address)
-    {
-        if (System.Net.IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        // Map IPv6-mapped IPv4 addresses to their IPv4 equivalent for consistent checking
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-
-            // 0.0.0.0/8 (this network)
-            if (bytes[0] == 0)
-            {
-                return true;
-            }
-
-            // 10.0.0.0/8
-            if (bytes[0] == 10)
-            {
-                return true;
-            }
-
-            // 172.16.0.0/12
-            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
-            {
-                return true;
-            }
-
-            // 192.168.0.0/16
-            if (bytes[0] == 192 && bytes[1] == 168)
-            {
-                return true;
-            }
-
-            // 169.254.0.0/16 (link-local, includes cloud metadata 169.254.169.254)
-            if (bytes[0] == 169 && bytes[1] == 254)
-            {
-                return true;
-            }
-
-            // 100.64.0.0/10 (carrier-grade NAT)
-            if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127)
-            {
-                return true;
-            }
-
-            // 198.18.0.0/15 (benchmarking)
-            if (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19))
-            {
-                return true;
-            }
-
-            // 224.0.0.0/4 and 240.0.0.0/4 (multicast/reserved)
-            if (bytes[0] >= 224)
-            {
-                return true;
-            }
-        }
-        else if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-
-            // ::/128 (unspecified)
-            if (address.Equals(System.Net.IPAddress.IPv6None))
-            {
-                return true;
-            }
-
-            // fe80::/10 (IPv6 link-local)
-            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80)
-            {
-                return true;
-            }
-
-            // fc00::/7 (unique local address)
-            if ((bytes[0] & 0xfe) == 0xfc)
-            {
-                return true;
-            }
-
-            // ff00::/8 (multicast)
-            if (bytes[0] == 0xff)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static bool IsActiveStatus(GeoservicesImportStatus status)

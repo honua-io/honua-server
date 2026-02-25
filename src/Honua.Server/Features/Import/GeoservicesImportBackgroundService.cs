@@ -223,6 +223,28 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 request = request with { JobId = jobId };
             }
 
+            var serviceUrlValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.ServiceUrl, stoppingToken).ConfigureAwait(false);
+            if (!serviceUrlValidation.IsValid)
+            {
+                var failedProgress = new GeoservicesImportProgress
+                {
+                    JobId = jobId,
+                    Status = GeoservicesImportStatus.Failed,
+                    SourceServiceUrl = request.ServiceUrl,
+                    SourceLayerId = request.LayerId,
+                    TableName = request.TableName,
+                    StartedAt = progress?.StartedAt ?? DateTimeOffset.UtcNow.Subtract(stopwatch.Elapsed),
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    ErrorMessage = serviceUrlValidation.ErrorMessage,
+                    CurrentPhase = "Import blocked by service URL validation"
+                };
+
+                await SetFinalProgressAsync(failedProgress, CancellationToken.None).ConfigureAwait(false);
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                Log.JobRejectedUnsafeServiceUrl(_logger, jobId, request.ServiceUrl);
+                return;
+            }
+
             // Update progress to processing
             if (progress != null)
             {
@@ -380,5 +402,8 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
         [LoggerMessage(7711, LogLevel.Debug, "Cancellation monitor poll failed for job {JobId}")]
         public static partial void CancellationMonitorPollFailed(ILogger logger, string jobId, Exception exception);
+
+        [LoggerMessage(7712, LogLevel.Warning, "Import job {JobId} blocked by service URL validation: {ServiceUrl}")]
+        public static partial void JobRejectedUnsafeServiceUrl(ILogger logger, string jobId, string serviceUrl);
     }
 }

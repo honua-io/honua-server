@@ -158,10 +158,19 @@ internal static partial class FeatureServerEndpoints
 
         var service = resourceResult.Resource!.Service;
         var layer = resourceResult.Resource.Layer;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service.Name,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
         }
 
         var values = ToCaseInsensitiveDictionary(context.Request.Query);

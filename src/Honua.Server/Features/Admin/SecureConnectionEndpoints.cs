@@ -26,6 +26,9 @@ namespace Honua.Server.Features.Admin;
 /// </remarks>
 internal static partial class SecureConnectionEndpoints
 {
+    private const string InvalidSecureConnectionRequestMessage = "Secure connection request is invalid.";
+    private const string EncryptionRotationNotSupportedMessage = "Encryption key rotation is not supported in this deployment.";
+
     /// <summary>
     /// Log category for secure connection endpoints.
     /// </summary>
@@ -414,7 +417,7 @@ internal static partial class SecureConnectionEndpoints
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Failed to create secure connection due to invalid operation");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(InvalidSecureConnectionRequestMessage));
         }
         catch (Exception ex)
         {
@@ -693,7 +696,7 @@ internal static partial class SecureConnectionEndpoints
         catch (NotSupportedException ex)
         {
             logger.LogWarning(ex, "Encryption key rotation is not supported");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(EncryptionRotationNotSupportedMessage));
         }
         catch (Exception ex)
         {

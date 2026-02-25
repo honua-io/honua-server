@@ -39,6 +39,24 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_IgnoresSpoofedHostHeader()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+        request.Headers.Host = "evil.example";
+
+        var response = await _fixture.Client.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<Capabilities");
+        content.Should().NotContain("evil.example");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcAlias_GetCapabilities_ReturnsXml()
     {

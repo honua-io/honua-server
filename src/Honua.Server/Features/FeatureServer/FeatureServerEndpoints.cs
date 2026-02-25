@@ -218,7 +218,8 @@ internal static partial class FeatureServerEndpoints
             .WithName("Calculate")
             .WithSummary("Calculate field values for features")
             .WithDescription("Calculates new field values using expressions for matching features")
-            .WithTags("FeatureServer");
+            .WithTags("FeatureServer")
+            .RequireAuthorization();
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/queryDomains", HandleQueryDomains)
             .WithDisplayName("Query Domains")

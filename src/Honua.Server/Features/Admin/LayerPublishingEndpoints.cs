@@ -116,7 +116,7 @@ internal static class LayerPublishingEndpoints
             if (!migrationResult.Successful)
             {
                 logger.LogError(migrationResult.Error, "Layer publish migration failed: {Message}", migrationResult.ErrorMessage);
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
             var connectionId = Guid.TryParse(id, out var parsedId) ? parsedId : (Guid?)null;
@@ -204,7 +204,7 @@ internal static class LayerPublishingEndpoints
             if (!migrationResult.Successful)
             {
                 logger.LogError(migrationResult.Error, "Layer enable migration failed: {Message}", migrationResult.ErrorMessage);
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
             var result = await publishingService.SetLayerEnabledAsync(
@@ -270,7 +270,7 @@ internal static class LayerPublishingEndpoints
             if (!migrationResult.Successful)
             {
                 logger.LogError(migrationResult.Error, "Layer bulk enable migration failed: {Message}", migrationResult.ErrorMessage);
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(migrationResult.ErrorMessage ?? "Database migration failed."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
             var result = await publishingService.SetServiceLayersEnabledAsync(

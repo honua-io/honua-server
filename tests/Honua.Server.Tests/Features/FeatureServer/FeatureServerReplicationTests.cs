@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -97,6 +98,28 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithLayerOutsideService_ReturnsBadRequest()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "InvalidLayerReplica",
+            layers = "99999",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.ToLowerInvariant().Should().Contain("invalid layer ids");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_ValidReplica_ReturnsChanges()
@@ -177,6 +200,36 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ExtractChanges_WithReplicaContainingInvalidLayerReference_ReturnsNotFound()
+    {
+        var replicaStore = _fixture.GetService<IReplicaStore>();
+        var replicaId = Guid.NewGuid().ToString("N");
+        var poisonedReplica = new ReplicaState(
+            replicaId,
+            "PoisonedReplica",
+            WebAppFixture.TestServiceId,
+            "perReplica",
+            [99999],
+            DateTimeOffset.UtcNow);
+
+        await replicaStore.SetAsync(poisonedReplica, cancellationToken: CancellationToken.None);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     public async Task SynchronizeReplica_ValidReplica_ReturnsSuccess()
@@ -236,6 +289,37 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("replicaID");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_WithReplicaContainingInvalidLayerReference_ReturnsNotFound()
+    {
+        var replicaStore = _fixture.GetService<IReplicaStore>();
+        var replicaId = Guid.NewGuid().ToString("N");
+        var poisonedReplica = new ReplicaState(
+            replicaId,
+            "PoisonedSyncReplica",
+            WebAppFixture.TestServiceId,
+            "perReplica",
+            [99999],
+            DateTimeOffset.UtcNow);
+
+        await replicaStore.SetAsync(poisonedReplica, cancellationToken: CancellationToken.None);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

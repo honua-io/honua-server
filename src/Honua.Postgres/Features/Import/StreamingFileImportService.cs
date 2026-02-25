@@ -44,6 +44,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@table_name)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const int CrsDetectionHeaderSize = 8192;
+    private const long DefaultMaxArchiveEntryBytes = 500L * 1024 * 1024;
+    private const long DefaultMaxArchiveExtractedBytes = 1024L * 1024 * 1024;
+    private const double DefaultMaxArchiveCompressionRatio = 200d;
 
     /// <summary>
     /// Supported file extensions mapped to formats
@@ -1275,6 +1278,21 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         public ZipArchiveEntry? Cpg { get; set; }
     }
 
+    private sealed class ArchiveExtractionBudget
+    {
+        public ArchiveExtractionBudget(long maxTotalBytes, long maxEntryBytes, double maxCompressionRatio)
+        {
+            MaxTotalBytes = maxTotalBytes;
+            MaxEntryBytes = maxEntryBytes;
+            MaxCompressionRatio = maxCompressionRatio;
+        }
+
+        public long MaxTotalBytes { get; }
+        public long MaxEntryBytes { get; }
+        public double MaxCompressionRatio { get; }
+        public long TotalExtractedBytes { get; set; }
+    }
+
     private static bool IsZipFileName(string fileName)
         => string.Equals(Path.GetExtension(fileName), ".zip", StringComparison.OrdinalIgnoreCase);
 
@@ -1324,26 +1342,27 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
             var entries = SelectShapefileEntries(archive)
                 ?? throw new InvalidDataException("Zip does not contain required .shp and .dbf files.");
+            var extractionBudget = CreateArchiveExtractionBudget();
 
             var shpPath = Path.Combine(scratchDir, entries.BaseName + ".shp");
             var dbfPath = Path.Combine(scratchDir, entries.BaseName + ".dbf");
 
-            await ExtractEntryAsync(entries.ShpEntry, shpPath, cancellationToken);
-            await ExtractEntryAsync(entries.DbfEntry, dbfPath, cancellationToken);
+            await ExtractEntryAsync(entries.ShpEntry, shpPath, extractionBudget, cancellationToken);
+            await ExtractEntryAsync(entries.DbfEntry, dbfPath, extractionBudget, cancellationToken);
 
             if (entries.ShxEntry != null)
             {
-                await ExtractEntryAsync(entries.ShxEntry, Path.Combine(scratchDir, entries.BaseName + ".shx"), cancellationToken);
+                await ExtractEntryAsync(entries.ShxEntry, Path.Combine(scratchDir, entries.BaseName + ".shx"), extractionBudget, cancellationToken);
             }
 
             if (entries.PrjEntry != null)
             {
-                await ExtractEntryAsync(entries.PrjEntry, Path.Combine(scratchDir, entries.BaseName + ".prj"), cancellationToken);
+                await ExtractEntryAsync(entries.PrjEntry, Path.Combine(scratchDir, entries.BaseName + ".prj"), extractionBudget, cancellationToken);
             }
 
             if (entries.CpgEntry != null)
             {
-                await ExtractEntryAsync(entries.CpgEntry, Path.Combine(scratchDir, entries.BaseName + ".cpg"), cancellationToken);
+                await ExtractEntryAsync(entries.CpgEntry, Path.Combine(scratchDir, entries.BaseName + ".cpg"), extractionBudget, cancellationToken);
             }
 
             return new ShapefileScratch(scratchDir, shpPath);
@@ -1446,9 +1465,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
             var kmlEntry = SelectKmzKmlEntry(archive)
                 ?? throw new InvalidDataException("KMZ does not contain a .kml file.");
+            var extractionBudget = CreateArchiveExtractionBudget();
 
             var kmlPath = Path.Combine(scratchDir, "doc.kml");
-            await ExtractEntryAsync(kmlEntry, kmlPath, cancellationToken);
+            await ExtractEntryAsync(kmlEntry, kmlPath, extractionBudget, cancellationToken);
 
             return new KmzScratch(scratchDir, kmlPath);
         }
@@ -1565,14 +1585,92 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return firstMatch;
     }
 
+    private ArchiveExtractionBudget CreateArchiveExtractionBudget()
+    {
+        var maxEntryBytes = _limits.MaxArchiveEntryBytes > 0
+            ? _limits.MaxArchiveEntryBytes
+            : DefaultMaxArchiveEntryBytes;
+        var maxTotalBytes = _limits.MaxArchiveExtractedBytes > 0
+            ? _limits.MaxArchiveExtractedBytes
+            : DefaultMaxArchiveExtractedBytes;
+        var maxCompressionRatio = _limits.MaxArchiveCompressionRatio > 1
+            ? _limits.MaxArchiveCompressionRatio
+            : DefaultMaxArchiveCompressionRatio;
+
+        if (maxTotalBytes < maxEntryBytes)
+        {
+            maxTotalBytes = maxEntryBytes;
+        }
+
+        return new ArchiveExtractionBudget(maxTotalBytes, maxEntryBytes, maxCompressionRatio);
+    }
+
     private static async Task ExtractEntryAsync(
         ZipArchiveEntry entry,
         string destinationPath,
+        ArchiveExtractionBudget extractionBudget,
         CancellationToken cancellationToken)
     {
+        if (entry.Length < 0 || entry.CompressedLength < 0)
+        {
+            throw new InvalidDataException($"Archive entry '{entry.FullName}' has an invalid size.");
+        }
+
+        if (entry.Length > extractionBudget.MaxEntryBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive entry '{entry.FullName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
+        }
+
+        if (entry.Length > extractionBudget.MaxTotalBytes - extractionBudget.TotalExtractedBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive extraction exceeds maximum total uncompressed size ({extractionBudget.MaxTotalBytes:N0} bytes).");
+        }
+
+        if (entry.Length > 0)
+        {
+            if (entry.CompressedLength <= 0)
+            {
+                throw new InvalidDataException($"Archive entry '{entry.FullName}' has invalid compressed size.");
+            }
+
+            var compressionRatio = (double)entry.Length / entry.CompressedLength;
+            if (compressionRatio > extractionBudget.MaxCompressionRatio)
+            {
+                throw new InvalidDataException(
+                    $"Archive entry '{entry.FullName}' exceeds maximum compression ratio ({extractionBudget.MaxCompressionRatio:N0}).");
+            }
+        }
+
+        var entryExtractedBytes = 0L;
+        var buffer = new byte[64 * 1024];
         await using var entryStream = entry.Open();
         await using var outputStream = File.Create(destinationPath);
-        await entryStream.CopyToAsync(outputStream, cancellationToken);
+        while (true)
+        {
+            var bytesRead = await entryStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (bytesRead <= 0)
+            {
+                break;
+            }
+
+            entryExtractedBytes += bytesRead;
+            if (entryExtractedBytes > extractionBudget.MaxEntryBytes)
+            {
+                throw new InvalidDataException(
+                    $"Archive entry '{entry.FullName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
+            }
+
+            if (bytesRead > extractionBudget.MaxTotalBytes - extractionBudget.TotalExtractedBytes)
+            {
+                throw new InvalidDataException(
+                    $"Archive extraction exceeds maximum total uncompressed size ({extractionBudget.MaxTotalBytes:N0} bytes).");
+            }
+
+            await outputStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            extractionBudget.TotalExtractedBytes += bytesRead;
+        }
     }
 
     private void CleanupShapefileScratch(ShapefileScratch? scratch)

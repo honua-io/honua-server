@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -169,7 +170,16 @@ internal static class ServiceCollectionExtensions
                     StreamBufferSize = int.TryParse(section["StreamBufferSize"], out var bufferSize) ? bufferSize : limits.StreamBufferSize,
                     UseTransactions = bool.TryParse(section["UseTransactions"], out var useTransactions) ? useTransactions : limits.UseTransactions,
                     ContinueOnError = bool.TryParse(section["ContinueOnError"], out var continueOnError) ? continueOnError : limits.ContinueOnError,
-                    MaxFeaturesPerFile = int.TryParse(section["MaxFeaturesPerFile"], out var maxFeatures) ? maxFeatures : limits.MaxFeaturesPerFile
+                    MaxFeaturesPerFile = int.TryParse(section["MaxFeaturesPerFile"], out var maxFeatures) ? maxFeatures : limits.MaxFeaturesPerFile,
+                    MaxArchiveEntryBytes = long.TryParse(section["MaxArchiveEntryBytes"], out var maxArchiveEntryBytes) ? maxArchiveEntryBytes : limits.MaxArchiveEntryBytes,
+                    MaxArchiveExtractedBytes = long.TryParse(section["MaxArchiveExtractedBytes"], out var maxArchiveExtractedBytes) ? maxArchiveExtractedBytes : limits.MaxArchiveExtractedBytes,
+                    MaxArchiveCompressionRatio = double.TryParse(
+                        section["MaxArchiveCompressionRatio"],
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out var maxArchiveCompressionRatio)
+                        ? maxArchiveCompressionRatio
+                        : limits.MaxArchiveCompressionRatio
                 };
             }
 
@@ -211,10 +221,7 @@ internal static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
             })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            });
+            .ConfigurePrimaryHttpMessageHandler(static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler());
 
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();

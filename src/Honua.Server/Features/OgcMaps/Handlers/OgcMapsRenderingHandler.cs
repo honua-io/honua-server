@@ -350,7 +350,7 @@ internal sealed class OgcMapsRenderingHandler
             scope.RecordException(ex);
             return Results.Problem(
                 title: "Styled maps are not currently supported for raster collections.",
-                detail: ex.Message,
+                detail: "Styled map rendering is not available for this collection type.",
                 statusCode: StatusCodes.Status501NotImplemented);
         }
         catch (Exception ex)

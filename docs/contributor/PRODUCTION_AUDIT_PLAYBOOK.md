@@ -82,5 +82,6 @@ A release candidate is production-audit ready only when all criteria below hold:
 
 1. `./scripts/run-production-audit.sh --mode full` reports zero required check failures.
 2. CITE suites used in phase 2 report zero failed conformance tests.
-3. Coverage and architecture gates remain green in CI (`TreatWarningsAsErrors`, API surface coverage, coverage thresholds).
-4. Manual GIS compatibility and geodetic verification evidence is attached to the release/PR.
+3. OGC API - Maps conformance integration suite reports zero failed tests.
+4. Coverage and architecture gates remain green in CI (`TreatWarningsAsErrors`, API surface coverage, coverage thresholds).
+5. Manual GIS compatibility and geodetic verification evidence is attached to the release/PR.

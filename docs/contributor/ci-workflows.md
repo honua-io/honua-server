@@ -18,6 +18,7 @@ This document tracks the current workflow layout. The source of truth is `.githu
 |---|---|---|
 | `cite-conformance.yml` | OGC API Features CITE tests | schedule + manual |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE tests | PR + push + schedule + manual |
+| `ogc-maps-conformance.yml` | OGC API Maps conformance tests | PR + push + schedule + manual |
 | `cite-wms-conformance.yml` | OGC WMS 1.3 CITE tests | PR + push + schedule + manual |
 | `cite-wmts-conformance.yml` | OGC WMTS 1.0 CITE tests | PR + push + schedule + manual |
 | `openapi-contract-governance.yml` | Control-plane OpenAPI validation + breaking-change diff | PR + push + manual |

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
@@ -57,7 +58,12 @@ internal static partial class FeatureServerEndpoints
         var layersParam = GetValueString(values, "layers");
         var syncModel = GetValueString(values, "syncModel") ?? "perReplica";
 
-        var layerIds = ParseLayerIds(layersParam, service.Layers);
+        if (!TryResolveReplicaLayerIds(context, service, layersParam, out var layerIds, out var layerError))
+        {
+            return layerError ?? StandardErrorHelpers.CreateBadRequest(
+                context,
+                "layers parameter contains one or more invalid layer IDs for this service.");
+        }
 
         var replicaId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
@@ -142,6 +148,13 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
+        if (!TryResolveReplicaLayersForExtract(context, service, replica, out var replicaLayers, out var replicaLayerError))
+        {
+            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
         // Query real feature counts from the database for each layer in the replica.
         // For the first sync (LastSyncTime == CreatedAt), all features are reported as adds.
         // For subsequent syncs, without dedicated change tracking tables, report zero changes.
@@ -149,17 +162,17 @@ internal static partial class FeatureServerEndpoints
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var layerChanges = new List<LayerChanges>();
 
-        foreach (var layerIdInReplica in replica.LayerIds)
+        foreach (var layer in replicaLayers)
         {
             var adds = 0L;
             if (isFirstSync)
             {
-                adds = await featureReader.CountAsync(layerIdInReplica, new FeatureQuery(), cancellationToken);
+                adds = await featureReader.CountAsync(layer.Id, new FeatureQuery(), cancellationToken);
             }
 
             layerChanges.Add(new LayerChanges
             {
-                Id = layerIdInReplica,
+                Id = layer.Id,
                 Adds = (int)Math.Min(adds, int.MaxValue),
                 Updates = 0,
                 Deletes = 0
@@ -231,6 +244,13 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
+        if (!TryResolveReplicaLayersForExtract(context, service, replica, out var replicaLayers, out var replicaLayerError))
+        {
+            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
         var editsJson = GetValueString(values, "edits");
 
@@ -254,7 +274,7 @@ internal static partial class FeatureServerEndpoints
             if (features is { Length: > 0 })
             {
                 // Apply the incoming edits to the first replica layer
-                var targetLayerId = replica.LayerIds.Length > 0 ? replica.LayerIds[0] : 0;
+                var targetLayerId = replicaLayers[0].Id;
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
@@ -346,23 +366,120 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.SuccessResponse, contentType: "application/json");
     }
 
-    private static int[] ParseLayerIds(string? layersParam, IReadOnlyList<Honua.Core.Features.Catalog.Domain.LayerDefinition> serviceLayers)
+    private static bool TryResolveReplicaLayerIds(
+        HttpContext context,
+        ServiceDefinition service,
+        string? layersParam,
+        out int[] layerIds,
+        out IResult? error)
     {
+        layerIds = [];
+        error = null;
+
         if (string.IsNullOrWhiteSpace(layersParam))
         {
-            return serviceLayers.Select(l => l.Id).ToArray();
+            var accessibleLayers = service.Layers
+                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                .Select(layer => layer.Id)
+                .ToArray();
+
+            if (accessibleLayers.Length == 0)
+            {
+                error = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service)
+                        ?? StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
+                return false;
+            }
+
+            layerIds = accessibleLayers;
+            return true;
         }
 
+        var layerById = service.Layers.ToDictionary(layer => layer.Id);
         var tokens = layersParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var ids = new List<int>();
+        var ids = new HashSet<int>();
+
         foreach (var token in tokens)
         {
-            if (int.TryParse(token, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id))
+            if (!int.TryParse(token, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id))
             {
-                ids.Add(id);
+                error = StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter must contain only numeric layer IDs.");
+                return false;
             }
+
+            if (!layerById.TryGetValue(id, out var layer))
+            {
+                error = StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter contains one or more invalid layer IDs for this service.");
+                return false;
+            }
+
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            if (accessError != null)
+            {
+                error = accessError;
+                return false;
+            }
+
+            ids.Add(id);
         }
 
-        return ids.Count > 0 ? ids.ToArray() : serviceLayers.Select(l => l.Id).ToArray();
+        if (ids.Count == 0)
+        {
+            error = StandardErrorHelpers.CreateBadRequest(
+                context,
+                "layers parameter must contain at least one layer ID.");
+            return false;
+        }
+
+        layerIds = ids.ToArray();
+        return true;
+    }
+
+    private static bool TryResolveReplicaLayersForExtract(
+        HttpContext context,
+        ServiceDefinition service,
+        ReplicaState replica,
+        out LayerDefinition[] layers,
+        out IResult? error)
+    {
+        layers = [];
+        error = null;
+
+        var serviceLayerById = service.Layers.ToDictionary(layer => layer.Id);
+        var resolved = new List<LayerDefinition>(replica.LayerIds.Length);
+
+        foreach (var layerId in replica.LayerIds.Distinct())
+        {
+            if (!serviceLayerById.TryGetValue(layerId, out var layer))
+            {
+                error = StandardErrorHelpers.CreateNotFound(
+                    context,
+                    $"Replica '{replica.ReplicaId}' not found for service '{service.Name}'.");
+                return false;
+            }
+
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+            if (accessError != null)
+            {
+                error = accessError;
+                return false;
+            }
+
+            resolved.Add(layer);
+        }
+
+        if (resolved.Count == 0)
+        {
+            error = StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Replica '{replica.ReplicaId}' not found for service '{service.Name}'.");
+            return false;
+        }
+
+        layers = resolved.ToArray();
+        return true;
     }
 }

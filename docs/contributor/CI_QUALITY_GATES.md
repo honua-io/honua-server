@@ -9,7 +9,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `codeql.yml`: static analysis.
 - `container-security.yml`: container security scanning.
 - `performance.yml`, `performance-benchmarks.yml`, `load-soak-nightly.yml`: performance coverage.
-- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`: OGC conformance testing.
+- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing.
 - `openapi-contract-governance.yml`: Admin/control-plane OpenAPI contract validation and breaking-change checks.
 - `control-plane-sdk-governance.yml`: reproducible control-plane SDK generation and release artifact publishing.
 - `nightly-container-build.yml`: nightly image builds.
@@ -36,6 +36,7 @@ The CITE regression gates for implemented map/tile standards must pass on:
 | `cite-wms-conformance.yml` | WMS 1.3 (`ets-wms13`) | `failed_tests == 0` and `total_tests > 0` |
 | `cite-wmts-conformance.yml` | WMTS 1.0 (`ets-wmts10`) | `failed_tests == 0` and `total_tests > 0` |
 | `cite-tiles-conformance.yml` | OGC API Tiles 1.0 (`ets-ogcapi-tiles10`) | `failed_tests == 0` and `total_tests > 0` |
+| `ogc-maps-conformance.yml` | OGC API Maps 1.0 (integration conformance suite) | `failed_tests == 0` and `total_tests > 0` |
 
 ### Temporary failures
 
@@ -55,11 +56,13 @@ Each conformance workflow must publish:
 ## Local Conformance Runs
 
 - OGC API Tiles: `./scripts/run-cite-tiles-tests.sh`
+- OGC API Maps: `./scripts/run-ogc-maps-conformance-tests.sh`
 - WMS 1.3: `./scripts/run-cite-wms-tests.sh`
 - WMTS 1.0: `./scripts/run-cite-wmts-tests.sh`
 
 Detailed setup and troubleshooting:
 - `docs/contributor/cite-tiles-conformance-testing.md`
+- `docs/contributor/ogc-maps-conformance-testing.md`
 - `docs/contributor/cite-wms-conformance-testing.md`
 - `docs/contributor/cite-wmts-conformance-testing.md`
 

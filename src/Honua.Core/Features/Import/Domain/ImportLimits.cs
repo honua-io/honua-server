@@ -93,6 +93,24 @@ public sealed record ImportLimits
     public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
 
     /// <summary>
+    /// Maximum uncompressed bytes extracted from a single archive entry during ZIP/KMZ import.
+    /// Default: 500MB (524288000 bytes).
+    /// </summary>
+    public long MaxArchiveEntryBytes { get; init; } = FileSizeConstants.FiveHundredMB;
+
+    /// <summary>
+    /// Maximum total uncompressed bytes extracted from a ZIP/KMZ archive during import.
+    /// Default: 1GB (1073741824 bytes).
+    /// </summary>
+    public long MaxArchiveExtractedBytes { get; init; } = FileSizeConstants.OneGB;
+
+    /// <summary>
+    /// Maximum allowed compression ratio for ZIP/KMZ entries (uncompressed/compressed).
+    /// Default: 200.
+    /// </summary>
+    public double MaxArchiveCompressionRatio { get; init; } = 200;
+
+    /// <summary>
     /// Whether to skip invalid geometries or fail the import.
     /// When true, invalid geometries are skipped; when false, import fails.
     /// Default: true (skip invalid).

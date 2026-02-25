@@ -358,6 +358,8 @@ if (forwardedHeadersEnabled)
     app.UseForwardedHeaders();
 }
 
+app.UseHostValidation();
+
 // Add HTTPS redirection middleware to enforce HTTPS for all requests
 // This ensures API keys and sensitive data are never transmitted over HTTP
 if (!app.Environment.IsDevelopment())

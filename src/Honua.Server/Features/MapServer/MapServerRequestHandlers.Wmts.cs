@@ -241,7 +241,7 @@ internal static partial class MapServerEndpoints
             }
 
             MapServerLog.WmtsRequested(logger, serviceId, "GetCapabilities");
-            var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var xml = BuildWmtsCapabilities(svcDef, serviceId, baseUrl, sections);
             return Results.Content(xml, responseMimeType);
         }

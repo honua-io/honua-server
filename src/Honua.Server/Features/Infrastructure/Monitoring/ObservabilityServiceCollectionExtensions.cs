@@ -53,6 +53,23 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("service-metadata", "metadata");
             });
 
+            // MapServer legend caching policy
+            options.AddPolicy("MapServerLegend", policy =>
+            {
+                policy.Expire(ttl.ServiceMetadata);
+                policy.SetVaryByRouteValue("serviceId");
+                policy.SetVaryByQuery("f", "size", "dynamicLayers");
+                policy.Tag("service-metadata", "metadata");
+            });
+
+            // MapServer tile caching policy
+            options.AddPolicy("MapServerTile", policy =>
+            {
+                policy.Expire(ttl.ServiceMetadata);
+                policy.SetVaryByRouteValue("serviceId", "z", "y", "x");
+                policy.Tag("service-metadata", "tiles");
+            });
+
             // GeoServices service directory caching policy
             options.AddPolicy("ServiceDirectory", policy =>
             {
@@ -233,6 +250,7 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Expire(ttl.OgcTilesDatasetTile);
                 policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
+                policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "tiles");
             });
 
@@ -242,6 +260,7 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Expire(ttl.OgcTilesTile);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
+                policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "tiles");
             });
 

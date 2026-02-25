@@ -310,6 +310,9 @@ run_protocol_agent() {
         run_check "protocol" "2" "openapi-contract-validation" "required" \
             "./scripts/validate-openapi-contracts.sh" || return $?
 
+        run_check "protocol" "2" "ogc-maps-conformance-tests" "required" \
+            "./scripts/run-ogc-maps-conformance-tests.sh --configuration Release" || return $?
+
         if [[ "$SKIP_CITE" == "true" ]]; then
             record_skip "protocol" "2" "cite-ogc-features" "required" "skipped by --skip-cite"
             record_skip "protocol" "2" "cite-ogc-tiles" "required" "skipped by --skip-cite"

@@ -1178,9 +1178,14 @@
         }
 
         if (!Uri.TryCreate(_serviceUrl, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != "http" && uri.Scheme != "https"))
+            uri.Scheme != "https")
         {
-            return "Enter a valid HTTP(S) service URL.";
+            return "Enter a valid HTTPS service URL.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            return "Service URL must not include embedded credentials.";
         }
 
         return null;

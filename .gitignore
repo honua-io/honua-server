@@ -289,3 +289,6 @@ coverage*/
 tmp/
 src/Honua.Server/tmp/
 src/Honua.Server/attachments/
+
+# Local audit artifacts
+.audit/runs/

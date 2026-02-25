@@ -31,6 +31,7 @@ internal static partial class MapServerEndpoints
     private const int DefaultImageHeight = 400;
     private const int DefaultDpi = 96;
     private const int MaxFeaturesPerLayer = 10_000;
+    private const string InvalidExportRequestMessage = "Invalid export request parameters.";
 
     /// <summary>
     /// Handle MapServer export (map image generation) requests.
@@ -380,7 +381,7 @@ internal static partial class MapServerEndpoints
         catch (ArgumentException ex)
         {
             MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return StandardErrorHelpers.CreateBadRequest(context, InvalidExportRequestMessage);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {

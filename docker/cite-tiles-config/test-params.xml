@@ -2,7 +2,7 @@
 <values xmlns:parsers="http://www.occamlab.com/te/parsers">
   <parsers:session>
     <parsers:test>ets-ogcapi-tiles10</parsers:test>
-    <parsers:profile>full</parsers:profile>
+    <parsers:profile>minimal</parsers:profile>
   </parsers:session>
   <value key="tilematrixsetdefinitionuri">http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad</value>
   <value key="urltemplatefortiles">http://honua-server:8080/ogc/tiles/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol}</value>

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Security;
@@ -698,11 +699,55 @@ internal static class OgcResponseFormatter
             return "";
         }
 
+        field = NeutralizePotentialSpreadsheetFormula(field);
+
         if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
         {
             return $"\"{field.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
         }
 
         return field;
+    }
+
+    private static string NeutralizePotentialSpreadsheetFormula(string field)
+    {
+        return IsPotentialSpreadsheetFormula(field)
+            ? $"'{field}"
+            : field;
+    }
+
+    private static bool IsPotentialSpreadsheetFormula(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            return false;
+        }
+
+        var span = field.AsSpan();
+        var start = 0;
+        while (start < span.Length && char.IsWhiteSpace(span[start]))
+        {
+            start++;
+        }
+
+        if (start >= span.Length)
+        {
+            return false;
+        }
+
+        var firstToken = span[start];
+        if (firstToken is '=' or '@')
+        {
+            return true;
+        }
+
+        if (firstToken is '+' or '-')
+        {
+            // Preserve plain signed numeric values as numbers in CSV exports.
+            var trimmed = field[start..];
+            return !decimal.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        }
+
+        return false;
     }
 }

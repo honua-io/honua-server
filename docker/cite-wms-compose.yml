@@ -10,6 +10,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
       - PUBLIC_BASE_URL=http://honua-server:8080
+      - HostValidation__AllowedHosts__0=honua-server
+      - HostValidation__AllowedHosts__1=localhost
       - HONUA_ADMIN_PASSWORD=cite-admin-password
       - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cite_wms;User Id=postgres;Password=cite_password;
       - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cite_wms;User Id=postgres;Password=cite_password;

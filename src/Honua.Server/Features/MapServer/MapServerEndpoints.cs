@@ -70,7 +70,7 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get map legend")
             .WithDescription("Returns legend information with swatch images for all visible layers")
             .WithTags("MapServer")
-            .CacheOutput("ServiceMetadata");
+            .CacheOutput("MapServerLegend");
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/find",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleFind(context))
@@ -123,7 +123,7 @@ internal static partial class MapServerEndpoints
             .WithSummary("Get a cached raster map tile")
             .WithDescription("Returns a PNG tile rendered from MapServer layer features")
             .WithTags("MapServer")
-            .CacheOutput("ServiceMetadata");
+            .CacheOutput("MapServerTile");
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMTS",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleWmts(context))

@@ -38,6 +38,8 @@ namespace Honua.Server.Tests.Features.Security;
 
 public sealed class FeatureServerServiceRbacTests
 {
+    private const string CalculateExpression = "[{\"field\":\"name\",\"sqlExpression\":\"'RBAC'\"}]";
+
     [IntegrationTest]
     [Protocol(Protocols.FeatureServer)]
     [Operation(Operations.ApplyEdits)]
@@ -98,6 +100,66 @@ public sealed class FeatureServerServiceRbacTests
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/applyEdits",
             ServiceRbacTestFixture.CreateApplyEditsContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Calculate)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithAnonymousClient_ReturnsUnauthorized()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Calculate)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithReadOnlyRole_ReturnsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Calculate)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithScopedDataEditor_DeniesOtherService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.BetaService}/FeatureServer/{ServiceRbacTestFixture.BetaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.Calculate)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_WithScopedDataEditor_AllowsMatchingService()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+
+        var response = await client.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/calculate?calcExpression={Uri.EscapeDataString(CalculateExpression)}&f=json");
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
