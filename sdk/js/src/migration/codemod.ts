@@ -72,9 +72,7 @@ interface TextEdit {
 interface ArcGisImportBinding {
   kind: CodemodConstructorKind;
   localName: string;
-  start: number;
-  end: number;
-  hasNamedBindings: boolean;
+  importStyle: "identifier" | "namespace-default";
 }
 
 export interface MigrationTodo {
@@ -260,22 +258,23 @@ function codemodFile(
       return;
     }
 
-    if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression)) {
+    if (!ts.isNewExpression(node)) {
       return;
     }
 
-    const importBinding = importsByLocalName.get(node.expression.text);
-    if (!importBinding) {
+    const rewriteTarget = resolveConstructorRewriteTarget(node.expression, sourceFile, importsByLocalName);
+    if (!rewriteTarget) {
       return;
     }
 
+    const importBinding = rewriteTarget.binding;
     const safeCheck = isSafeConstructorCall(importBinding.kind, node);
     if (safeCheck.ok) {
       const spec = specForKind(importBinding.kind);
       requiredCompatSymbols.add(spec.compatSymbol);
       constructorEdits.push({
-        start: node.expression.getStart(sourceFile),
-        end: node.expression.getEnd(),
+        start: rewriteTarget.start,
+        end: rewriteTarget.end,
         text: spec.compatSymbol,
       });
       rewrittenKinds.push(importBinding.kind);
@@ -383,9 +382,12 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
       continue;
     }
 
-    const localNames = new Set<string>();
     if (importClause.name) {
-      localNames.add(importClause.name.text);
+      result.push({
+        kind: spec.kind,
+        localName: importClause.name.text,
+        importStyle: "identifier",
+      });
     }
 
     const namedBindings = importClause.namedBindings;
@@ -393,27 +395,62 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
       for (const element of namedBindings.elements) {
         const importedName = element.propertyName?.text ?? element.name.text;
         if (importedName === "default") {
-          localNames.add(element.name.text);
+          result.push({
+            kind: spec.kind,
+            localName: element.name.text,
+            importStyle: "identifier",
+          });
         }
       }
     }
-
-    if (localNames.size === 0) {
-      continue;
-    }
-
-    for (const localName of localNames) {
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
       result.push({
         kind: spec.kind,
-        localName,
-        start: statement.getStart(sourceFile),
-        end: statement.getEnd(),
-        hasNamedBindings: importClause.namedBindings !== undefined,
+        localName: namedBindings.name.text,
+        importStyle: "namespace-default",
       });
     }
   }
 
   return result;
+}
+
+function resolveConstructorRewriteTarget(
+  expression: ts.Expression,
+  sourceFile: ts.SourceFile,
+  importsByLocalName: ReadonlyMap<string, ArcGisImportBinding>,
+): { binding: ArcGisImportBinding; start: number; end: number } | undefined {
+  if (ts.isIdentifier(expression)) {
+    const binding = importsByLocalName.get(expression.text);
+    if (!binding || binding.importStyle !== "identifier") {
+      return undefined;
+    }
+
+    return {
+      binding,
+      start: expression.getStart(sourceFile),
+      end: expression.getEnd(),
+    };
+  }
+
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.name.text === "default" &&
+    ts.isIdentifier(expression.expression)
+  ) {
+    const binding = importsByLocalName.get(expression.expression.text);
+    if (!binding || binding.importStyle !== "namespace-default") {
+      return undefined;
+    }
+
+    return {
+      binding,
+      start: expression.getStart(sourceFile),
+      end: expression.getEnd(),
+    };
+  }
+
+  return undefined;
 }
 
 function ensureCompatNamedImports(
@@ -528,19 +565,34 @@ function removeUnusedArcGisImports(
   source: string,
 ): { nextSource: string; removedCount: number } {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const imports = collectSupportedImports(sourceFile);
   const removals: TextEdit[] = [];
 
-  for (const importBinding of imports) {
-    if (importBinding.hasNamedBindings) {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
-    const references = countIdentifierUsagesExcludingImports(sourceFile, importBinding.localName);
-    if (references > 0) {
+    if (!MODULE_TO_SPEC.has(statement.moduleSpecifier.text)) {
       continue;
     }
 
-    const bounds = expandToFullLine(source, importBinding.start, importBinding.end);
+    const importClause = statement.importClause;
+    if (!importClause) {
+      continue;
+    }
+
+    const localIdentifiers = extractImportClauseLocalIdentifiers(importClause);
+    if (localIdentifiers.length === 0) {
+      continue;
+    }
+
+    const hasReferences = localIdentifiers.some(
+      (identifier) => countIdentifierUsagesExcludingImports(sourceFile, identifier) > 0,
+    );
+    if (hasReferences) {
+      continue;
+    }
+
+    const bounds = expandToFullLine(source, statement.getStart(sourceFile), statement.getEnd());
     removals.push({
       start: bounds.start,
       end: bounds.end,
@@ -556,6 +608,29 @@ function removeUnusedArcGisImports(
     nextSource: applyTextEdits(source, removals),
     removedCount: removals.length,
   };
+}
+
+function extractImportClauseLocalIdentifiers(importClause: ts.ImportClause): string[] {
+  const names: string[] = [];
+  if (importClause.name) {
+    names.push(importClause.name.text);
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (!namedBindings) {
+    return names;
+  }
+
+  if (ts.isNamespaceImport(namedBindings)) {
+    names.push(namedBindings.name.text);
+    return names;
+  }
+
+  for (const element of namedBindings.elements) {
+    names.push(element.name.text);
+  }
+
+  return names;
 }
 
 function countIdentifierUsagesExcludingImports(sourceFile: ts.SourceFile, name: string): number {
