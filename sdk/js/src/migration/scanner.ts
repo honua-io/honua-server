@@ -115,6 +115,18 @@ function findArcGisImports(source: string, file: string): ArcGisImportHit[] {
     importMatch = importRegex.exec(source);
   }
 
+  const sideEffectImportRegex = /import\s+["'](@arcgis\/core\/[^"']+)["'];?/g;
+  let sideEffectImportMatch: RegExpExecArray | null = sideEffectImportRegex.exec(source);
+  while (sideEffectImportMatch !== null) {
+    hits.push({
+      file,
+      modulePath: sideEffectImportMatch[1],
+      importClause: "side-effect-import",
+      symbols: [],
+    });
+    sideEffectImportMatch = sideEffectImportRegex.exec(source);
+  }
+
   const requireRegex = /require\(["'](@arcgis\/core\/[^"']+)["']\)/g;
   let requireMatch: RegExpExecArray | null = requireRegex.exec(source);
   while (requireMatch !== null) {

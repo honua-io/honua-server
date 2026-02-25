@@ -258,4 +258,64 @@ describe("arcgis migration integration", () => {
     expect(source).toContain("new Map({");
     expect(source).toContain('basemap: "streets"');
   });
+
+  it("reports assisted for side-effect ArcGIS imports outside codemod scope", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-assisted-side-effect-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(scanReport.imports).toEqual([
+      {
+        file: path.join(workingCopy, "src", "main.ts"),
+        modulePath: "@arcgis/core/identity/IdentityManager",
+        importClause: "side-effect-import",
+        symbols: [],
+      },
+    ]);
+    expect(codemodResult.filesChanged).toBe(0);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(0);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 0,
+      ratio: 0,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 1,
+      denominator: 1,
+      ratio: 1,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 1,
+    });
+    expect(report.unhandledArcGisModules).toEqual([
+      {
+        modulePath: "@arcgis/core/identity/IdentityManager",
+        usageStyle: "static-import",
+        count: 1,
+      },
+    ]);
+    expect(report.readiness).toBe("assisted");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: false,
+        detail: "1 ArcGIS modules remain outside codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const source = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(source).toContain('import "@arcgis/core/identity/IdentityManager";');
+  });
 });

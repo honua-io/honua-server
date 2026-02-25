@@ -62,6 +62,30 @@ describe("scanArcGisUsage", () => {
     expect(report.flags).toContain("dynamic-import-detected");
   });
 
+  it("captures side-effect ArcGIS imports", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "side-effects.ts"),
+      [
+        "import '@arcgis/core/identity/IdentityManager';",
+        "export const ready = true;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.imports).toEqual([
+      {
+        file: path.join(root, "side-effects.ts"),
+        modulePath: "@arcgis/core/identity/IdentityManager",
+        importClause: "side-effect-import",
+        symbols: [],
+      },
+    ]);
+    expect(report.filesWithArcGisImports).toBe(1);
+    expect(report.flags).toEqual([]);
+  });
+
   it("produces a stable summary string", () => {
     const root = makeTempProject();
     fs.writeFileSync(
