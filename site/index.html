@@ -6,12 +6,12 @@
     <title>Honua - Modern GIS Infrastructure</title>
     <meta
       name="description"
-      content="Honua is a cloud native GIS server built for interoperability, performance, and long-term flexibility."
+      content="Honua is a cloud native GIS server that speaks Esri REST, OGC API, OData, and MVT from one codebase. 530 OGC conformance tests passing. Drop-in compatible with ArcGIS Pro, QGIS, MapLibre, Power BI."
     />
     <meta property="og:title" content="Modern GIS Infrastructure for the Cloud Era" />
     <meta
       property="og:description"
-      content="A cloud native, open GIS server designed for interoperability, performance, and low-risk modernization."
+      content="A cloud native, open GIS server designed for interoperability, performance, and low-risk modernization. Drop-in compatible with ArcGIS Pro, QGIS, and MapLibre."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://honua.io" />
@@ -26,7 +26,7 @@
     <meta name="twitter:title" content="Modern GIS Infrastructure for the Cloud Era" />
     <meta
       name="twitter:description"
-      content="A cloud native, open GIS server designed for interoperability, performance, and low-risk modernization."
+      content="A cloud native, open GIS server designed for interoperability, performance, and low-risk modernization. Drop-in compatible with ArcGIS Pro, QGIS, and MapLibre."
     />
     <meta
       name="twitter:image"
@@ -56,14 +56,15 @@
             </div>
           </div>
           <div class="nav-links">
-            <a href="#compatibility">Compatibility</a>
-            <a href="#odata">For Enterprise</a>
+            <a href="#capabilities">Capabilities</a>
+            <a href="#conformance">Conformance</a>
             <a
               href="https://github.com/honua-io/honua-server/blob/trunk/docs/README.md"
               target="_blank"
               rel="noopener noreferrer"
               >Docs</a
             >
+            <a class="nav-cta" href="mailto:mike@honua.io?subject=Honua%20Early%20Access">Early Access</a>
           </div>
         </nav>
 
@@ -72,54 +73,75 @@
             <p class="eyebrow">Cloud Native GIS Server</p>
             <h1>The Modern Alternative to Legacy GIS Servers</h1>
             <p class="subhead secondary">
-              Deliver scalable, standards-based GIS services with the flexibility of cloud native
-              infrastructure - <span class="emphasis">without costly legacy lock-in</span>.
+              Serve features, maps, and tiles through Esri REST, OGC API, OData, and MVT
+              from one codebase and one PostGIS database &mdash;
+              <span class="emphasis">without per-user licensing</span>.
             </p>
             <div class="cta-row">
               <a
                 class="btn primary"
+                href="mailto:mike@honua.io?subject=Honua%20Early%20Access&body=I'm%20interested%20in%20the%20Honua%20early%20access%20program.%0A%0AOrganization:%0ACurrent%20stack:%0AUse%20case:"
+                >Request Early Access</a
+              >
+              <a
+                class="btn secondary"
                 href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/README.md"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Get Started</a
               >
+              <a
+                class="btn ghost"
+                href="https://github.com/honua-io/honua-server"
+                target="_blank"
+                rel="noopener noreferrer"
+                >GitHub</a
+              >
             </div>
             <div class="meta-list">
               <span class="meta-label">Built for</span>
-              <span>GIS engineers, data platform teams, and DevOps wanting scalable, modern geospatial services</span>
+              <span>Organizations modernizing legacy GIS, reducing licensing costs, or adopting open standards</span>
             </div>
           </div>
           <div class="hero-panel reveal delay-1">
+            <div class="panel-card accent">
+              <h3>Early access program</h3>
+              <p>
+                We're working with early partners to validate migration paths from ArcGIS Server and Enterprise.
+                If you're evaluating alternatives or facing licensing pressure, let's talk.
+              </p>
+              <div class="cta-row" style="margin-bottom: 0">
+                <a
+                  class="btn primary"
+                  href="mailto:mike@honua.io?subject=Honua%20Early%20Access&body=I'm%20interested%20in%20the%20Honua%20early%20access%20program.%0A%0AOrganization:%0ACurrent%20stack:%0AUse%20case:"
+                  >Talk to Us</a
+                >
+              </div>
+            </div>
             <div class="panel-card">
               <h3>Why modernize now</h3>
-              <p>Most GIS platforms were designed before containers, CI/CD, and cloud native operations.</p>
               <ul class="bullet-list">
-                <li>VM-based deployments</li>
-                <li>Manual upgrades</li>
-                <li>Poor observability</li>
-                <li>Costly licensing</li>
-                <li>No dynamic scaling</li>
+                <li>Concurrent licensing deprecated</li>
+                <li>Forced Desktop-to-Pro migration</li>
+                <li>Per-user costs rising</li>
+                <li>Cloud-native deployment gaps</li>
+                <li>Open standards mandates increasing</li>
               </ul>
-            </div>
-            <div class="panel-card accent">
-              <h3>Low-risk modernization</h3>
-              <p>
-                Honua enables gradual, low-risk modernization by importing existing services and data
-                so you can transition without disrupting current systems.
-              </p>
             </div>
           </div>
         </div>
       </header>
 
       <div class="logo-banner">
-        <span class="logo-banner__label">WORKS SEAMLESSLY WITH</span>
+        <span class="logo-banner__label">DROP-IN COMPATIBLE WITH</span>
         <div class="logo-banner__logos">
           <span class="logo-badge">ArcGIS Pro</span>
+          <span class="logo-badge">ArcGIS JS API</span>
           <span class="logo-badge">Esri SDKs</span>
+          <span class="logo-badge">QGIS</span>
           <span class="logo-badge">MapLibre</span>
           <span class="logo-badge">Leaflet</span>
-          <span class="logo-badge">QGIS</span>
+          <span class="logo-badge">OpenLayers</span>
           <span class="logo-badge">Power BI</span>
           <span class="logo-badge">Excel</span>
           <span class="logo-badge">Tableau</span>
@@ -148,7 +170,7 @@
           <g filter="url(#ds)">
             <rect x="8" y="114" width="120" height="48" rx="8" fill="#fff" stroke="#d3e2e6" stroke-width="1.2"/>
             <text x="68" y="135" text-anchor="middle" font-size="11.5" font-weight="600" fill="#0e2433">Web Maps</text>
-            <text x="68" y="151" text-anchor="middle" font-size="8.5" fill="#4a6474">MapLibre · Leaflet · Esri</text>
+            <text x="68" y="151" text-anchor="middle" font-size="8.5" fill="#4a6474">MapLibre · Leaflet · Esri JS</text>
           </g>
           <g filter="url(#ds)">
             <rect x="8" y="174" width="120" height="48" rx="8" fill="#fff" stroke="#d3e2e6" stroke-width="1.2"/>
@@ -156,7 +178,7 @@
             <text x="68" y="211" text-anchor="middle" font-size="8.5" fill="#4a6474">Power BI · Excel · Tableau</text>
           </g>
 
-          <!-- Client → LB arrows -->
+          <!-- Client to LB arrows -->
           <line x1="128" y1="36" x2="222" y2="115" stroke="#d3e2e6" stroke-width="1.2" marker-end="url(#arr)"/>
           <line x1="128" y1="84" x2="222" y2="123" stroke="#d3e2e6" stroke-width="1.2" marker-end="url(#arr)"/>
           <line x1="128" y1="138" x2="222" y2="133" stroke="#d3e2e6" stroke-width="1.2" marker-end="url(#arr)"/>
@@ -174,7 +196,7 @@
             <text x="276" y="142" text-anchor="middle" font-size="8.5" fill="#4a6474">Ingress</text>
           </g>
 
-          <!-- LB → Platform arrow -->
+          <!-- LB to Platform arrow -->
           <line x1="330" y1="128" x2="382" y2="128" stroke="#d3e2e6" stroke-width="1.2" marker-end="url(#arr)"/>
 
           <!-- Honua Platform container -->
@@ -209,7 +231,7 @@
           <!-- Auto-scale indicator -->
           <text x="503" y="248" text-anchor="middle" font-size="7.5" fill="#1f6f7a" font-weight="500">&#x21D5; Auto-scaling</text>
 
-          <!-- Platform → Infrastructure arrows -->
+          <!-- Platform to Infrastructure arrows -->
           <line x1="606" y1="77" x2="665" y2="38" stroke="#1f6f7a" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrt)"/>
           <text x="644" y="48" font-size="7" font-weight="500" fill="#1f6f7a">OTel</text>
           <line x1="606" y1="131" x2="665" y2="108" stroke="#d3e2e6" stroke-width="1.2" marker-end="url(#arr)"/>
@@ -241,12 +263,111 @@
       </div>
 
       <main>
+        <section id="conformance" class="section highlight reveal delay-2">
+          <div class="section-header">
+            <h2>530 OGC Conformance Tests. 100% Pass Rate.</h2>
+            <p>Honua is tested against official OGC CITE conformance suites. These aren't internal tests &mdash; they're the same certification suites used by standards bodies worldwide.</p>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-number">137/137</span>
+              <span class="stat-label">OGC API Features</span>
+              <span class="stat-detail">Parts 1, 2 &amp; 3</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-number">227/227</span>
+              <span class="stat-label">WMS 1.3</span>
+              <span class="stat-detail">Full CITE suite</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-number">118/118</span>
+              <span class="stat-label">WMTS 1.0</span>
+              <span class="stat-detail">Full CITE suite</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-number">16/16</span>
+              <span class="stat-label">OGC API Tiles</span>
+              <span class="stat-detail">7 conformance classes</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-number">32/32</span>
+              <span class="stat-label">OGC API Maps</span>
+              <span class="stat-detail">Full conformance</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="capabilities" class="section reveal delay-3">
+          <div class="section-header">
+            <h2>One Server. Five Protocol Families.</h2>
+            <p>Publish once from PostGIS. Consume through whichever protocol your clients need. No ETL, no sync, no duplication.</p>
+          </div>
+          <div class="grid three">
+            <div class="card">
+              <h3>GeoServices REST</h3>
+              <p class="card-subtitle">Esri FeatureServer + MapServer</p>
+              <ul class="bullet-list">
+                <li>23 FeatureServer operations (query, edits, attachments, related records, replicas, domains, statistics)</li>
+                <li>8 MapServer operations (export, identify, find, legend, query, tiles)</li>
+                <li>Full query parameter support (spatial, temporal, statistics, pagination, sorting)</li>
+                <li>Batch edits via applyEdits and append</li>
+              </ul>
+              <p class="note">Existing ArcGIS Pro, ArcGIS JS, and Esri SDK apps connect without code changes.</p>
+            </div>
+            <div class="card">
+              <h3>OGC API</h3>
+              <p class="card-subtitle">Features, Tiles, Maps, WMS, WMTS</p>
+              <ul class="bullet-list">
+                <li>OGC API Features with CQL2 filtering (10 spatial, 14 temporal, 4 array predicates, 32+ functions)</li>
+                <li>OGC API Tiles with MVT and raster output</li>
+                <li>OGC API Maps for dynamic rendering</li>
+                <li>WMS 1.3 and WMTS 1.0 for legacy OGC clients</li>
+                <li>Full CRUD transactions</li>
+              </ul>
+              <p class="note">QGIS, OpenLayers, MapLibre, and any OGC-compliant client.</p>
+            </div>
+            <div class="card">
+              <h3>OData v4 + MVT</h3>
+              <p class="card-subtitle">Enterprise data + vector tiles</p>
+              <ul class="bullet-list">
+                <li>21 OData operations ($filter, $select, $orderby, $apply, $batch, $search, $expand, spatial functions)</li>
+                <li>Aggregation, change tracking, batch operations</li>
+                <li>Vector tiles at /tiles/{layer}/{z}/{x}/{y}.mvt</li>
+              </ul>
+              <p class="note">Power BI, Excel, Tableau, SAP, and any OData v4 client. No plugins required.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="who" class="section reveal delay-3">
+          <div class="section-header">
+            <h2>Who This Is For</h2>
+          </div>
+          <div class="grid three">
+            <div class="card highlight-card">
+              <h3>Facing licensing pressure</h3>
+              <p>Concurrent licenses deprecated. Per-user costs rising. You need the same feature serving capability without the escalating price tag.</p>
+              <p class="note">Honua serves FeatureServer and MapServer endpoints that your existing ArcGIS clients already understand.</p>
+            </div>
+            <div class="card highlight-card">
+              <h3>Modernizing infrastructure</h3>
+              <p>Your data is in PostGIS. You need it served to web apps, dashboards, and desktop GIS. You don't need an enterprise platform to do it.</p>
+              <p class="note">Container-native, stateless, horizontally scalable. Deploy with Docker, Helm, or Terraform.</p>
+            </div>
+            <div class="card highlight-card">
+              <h3>Mandated open standards</h3>
+              <p>INSPIRE, FAIR data, or procurement requirements demand OGC-compliant services. You need certified conformance, not partial support.</p>
+              <p class="note">530 OGC conformance tests passing. 100% pass rate across all five CITE suites.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="odata" class="section highlight reveal delay-3">
           <div class="section-header">
             <h2>Treat Spatial Data like Business Data</h2>
             <p>
               Stop locking data in spatial silos. Native OData support means your layers work instantly
-              in Excel, Power BI, and SAP—no plugins required.
+              in Excel, Power BI, and SAP &mdash; no plugins required.
             </p>
           </div>
           <div class="grid two">
@@ -261,43 +382,30 @@
               </ul>
             </div>
             <div class="card">
-              <p>Transform GIS into a core component of your data platform - not a silo.</p>
+              <p>Transform GIS into a core component of your data platform &mdash; not a silo.</p>
               <p class="note">
-                OData v4 endpoints, including spatial and edit workflows, are built in and designed for
+                OData v4 endpoints, including spatial functions, aggregation, batch operations, and edit workflows, are built in and designed for
                 enterprise tooling.
               </p>
             </div>
           </div>
         </section>
 
-        <section id="modernize" class="section reveal delay-2">
-          <div id="compatibility"></div>
+        <section id="modernize" class="section reveal delay-3">
           <div class="section-header">
-            <h2>Extend Your GIS with Open Standards</h2>
-            <p>Honua runs alongside your existing servers, letting you phase in cloud native workflows without breaking current apps.</p>
-            <p class="note">Compatible with ArcGIS Pro, QGIS, Esri SDKs, MapLibre, and Leaflet.</p>
+            <h2>Migrate at Your Own Pace</h2>
+            <p>Honua runs alongside your existing servers. Phase in cloud native workflows without breaking current apps.</p>
           </div>
-          <div class="grid three">
+          <div class="grid two">
             <div class="card">
-              <h3>Migrate at your own pace</h3>
+              <h3>Low-risk transition</h3>
               <ul class="bullet-list">
-                <li>Import existing feature and map services</li>
+                <li>Import existing Esri REST services directly</li>
                 <li>Preserve service structures and metadata</li>
-                <li>Maintain compatibility with current clients</li>
-                <li>Run alongside legacy systems</li>
-                <li>Avoid "rip-and-replace" projects</li>
+                <li>Existing ArcGIS clients keep working &mdash; same endpoints, same protocols</li>
+                <li>Run alongside legacy systems during transition</li>
+                <li>No "rip-and-replace" required</li>
               </ul>
-            </div>
-            <div class="card">
-              <h3>Supported interfaces</h3>
-              <div class="pill-list">
-                <span class="pill">GeoServices REST: Catalog, FeatureServer, MapServer, ImageServer, Geometry Service</span>
-                <span class="pill">OGC API: Features, Maps, Tiles</span>
-                <span class="pill">OData v4</span>
-                <span class="pill">Vector Tiles (MVT)</span>
-                <span class="pill">OpenTelemetry</span>
-              </div>
-              <p class="note">Open standards keep services portable across vendors and clouds.</p>
             </div>
             <div class="card">
               <h3>Data ingestion</h3>
@@ -311,43 +419,25 @@
                 <span class="pill">KML</span>
                 <span class="pill">WKT</span>
               </div>
+              <p class="note" style="margin-top: 12px">All data lives in PostGIS. No proprietary formats, no geodatabase lock-in.</p>
             </div>
           </div>
-          <div class="callout">Reduce migration risk while gaining modern infrastructure benefits.</div>
-        </section>
-
-        <section id="operations" class="section reveal delay-4">
-          <div class="section-header">
-            <h2>Built for Real-World Operations</h2>
-            <p>Honua is designed for organizations that operate geospatial systems in production environments.</p>
-          </div>
-          <div class="pill-grid">
-            <span class="pill">Local and regional governments</span>
-            <span class="pill">Utilities and infrastructure providers</span>
-            <span class="pill">Environmental and planning firms</span>
-            <span class="pill">GIS consultants and integrators</span>
-            <span class="pill">SaaS teams with spatial data</span>
-          </div>
-          <p class="note">
-            Whether modernizing legacy deployments or launching new platforms, Honua fits into existing
-            workflows.
-          </p>
         </section>
 
         <section id="cloudnative" class="section reveal delay-4">
           <div class="section-header">
             <h2>Cloud Native by Design</h2>
-            <p>Honua is engineered for modern operations from day one.</p>
+            <p>Engineered for modern operations from day one. Not retrofitted.</p>
           </div>
           <div class="grid three">
             <div class="card">
-              <h3>Architecture highlights</h3>
+              <h3>Architecture</h3>
               <ul class="bullet-list">
-                <li>Container-first deployment</li>
+                <li>Stateless, container-first</li>
                 <li>Kubernetes-native scaling</li>
-                <li>OpenTelemetry and modern observability</li>
-                <li>Infrastructure as Code support</li>
-                <li>GitOps and safe deployments</li>
+                <li>OpenTelemetry observability</li>
+                <li>Health checks and readiness probes</li>
+                <li>Infrastructure as Code</li>
               </ul>
             </div>
             <div class="card">
@@ -362,7 +452,16 @@
                 <span class="pill">Helm</span>
                 <span class="pill">Docker Compose</span>
               </div>
-              <p class="note">Templates are designed to be copied and adapted to your environment.</p>
+            </div>
+            <div class="card">
+              <h3>Dependencies</h3>
+              <ul class="bullet-list">
+                <li><strong>PostGIS</strong> &mdash; only required dependency</li>
+                <li><strong>Redis</strong> &mdash; optional, for multi-node caching</li>
+                <li><strong>Object storage</strong> &mdash; optional, for file import</li>
+                <li>No GDAL dependency</li>
+                <li>No Java runtime</li>
+              </ul>
             </div>
           </div>
         </section>
@@ -371,14 +470,14 @@
           <div class="callout">Open core under the Elastic License v2 (ELv2). Free to use, deploy, and modify.</div>
         </section>
 
-        <section id="get-started" class="section reveal delay-6">
+        <section id="get-started" class="section reveal delay-5">
           <div class="section-header">
-            <h2>Deploy to Production in Minutes</h2>
-            <p>Deploy Honua locally or in the cloud. Launch your first geospatial API in under 10 minutes.</p>
+            <h2>Deploy in Minutes</h2>
+            <p>Self-serve deployment for evaluation. Docker or Kubernetes.</p>
           </div>
           <div class="grid two">
             <div class="card">
-              <h3>Quick start (Docker)</h3>
+              <h3>Docker</h3>
               <pre><code>docker run -p 8080:8080 \
   -e ConnectionStrings__DefaultConnection="Host=postgres;Database=honua;Username=postgres;Password=postgres" \
   -e HONUA_ADMIN_PASSWORD="change-me" \
@@ -396,25 +495,29 @@ helm install honua infrastructure/helm/honua \
 
         <section class="section footer-cta reveal delay-6">
           <div class="section-header">
-            <h2>Ready to Modernize Your GIS Infrastructure?</h2>
-            <p>Start building interoperable, cloud native geospatial services today.</p>
+            <h2>Ready to Evaluate?</h2>
+            <p>We're looking for early partners &mdash; organizations evaluating alternatives to ArcGIS Server, modernizing GIS infrastructure, or adopting open standards. Tell us about your use case.</p>
           </div>
           <div class="cta-row">
             <a
               class="btn primary"
-              href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/README.md"
-              target="_blank"
-              rel="noopener noreferrer"
-              >Get Started</a
+              href="mailto:mike@honua.io?subject=Honua%20Early%20Access&body=I'm%20interested%20in%20the%20Honua%20early%20access%20program.%0A%0AOrganization:%0ACurrent%20stack:%0AUse%20case:"
+              >Request Early Access</a
             >
             <a
               class="btn secondary"
+              href="https://github.com/honua-io/honua-server/blob/trunk/infrastructure/README.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Self-Serve Setup</a
+            >
+            <a
+              class="btn ghost"
               href="https://github.com/honua-io/honua-server"
               target="_blank"
               rel="noopener noreferrer"
               >GitHub</a
             >
-            <a class="btn ghost" href="mailto:mike@honua.io">Request Pilot</a>
           </div>
         </section>
       </main>
@@ -422,7 +525,7 @@ helm install honua infrastructure/helm/honua \
       <footer class="footer">
         <div>
           <strong>Honua</strong>
-          <p>Cloud-native geospatial APIs with open standards and low lock-in.</p>
+          <p>Cloud-native geospatial APIs with open standards and no lock-in.</p>
           <p class="note">&copy; 2026 Honua. Licensed under ELv2.</p>
         </div>
         <div>

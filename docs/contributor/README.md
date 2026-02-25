@@ -13,6 +13,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 - [Architecture Overview](ARCHITECTURE.md) — system design and component interaction
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
+- [Esri Migration Platform Plan](ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
 - [ADRs](adr/README.md) — architectural decisions and rationale
 - [Architecture Review Criteria](architecture-criteria.md) — PR review quality gates
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
