@@ -82,21 +82,24 @@ describe("evaluateMigrationGates", () => {
     const report = createReport();
     const result = evaluateMigrationGates(report, {
       failOnManual: true,
+      failOnUnhandled: true,
       failOnBlocked: true,
       maxManualRatio: 0.1,
     });
 
     expect(result.failed).toBe(true);
-    expect(result.failures).toHaveLength(3);
+    expect(result.failures).toHaveLength(4);
     expect(result.failures[0]).toContain("manual rewrite required");
-    expect(result.failures[1]).toContain("exceeds max");
-    expect(result.failures[2]).toContain("readiness is blocked");
+    expect(result.failures[1]).toContain("outside codemod scope");
+    expect(result.failures[2]).toContain("exceeds max");
+    expect(result.failures[3]).toContain("readiness is blocked");
   });
 
   it("passes when gates are disabled or thresholds are met", () => {
     const report = createReport();
     const result = evaluateMigrationGates(report, {
       failOnManual: false,
+      failOnUnhandled: false,
       failOnBlocked: false,
       maxManualRatio: 0.25,
     });

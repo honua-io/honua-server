@@ -2,6 +2,7 @@ import type { JsMigrationReport } from "./report.js";
 
 export interface MigrationGateOptions {
   failOnManual: boolean;
+  failOnUnhandled: boolean;
   failOnBlocked: boolean;
   maxManualRatio?: number;
 }
@@ -20,6 +21,12 @@ export function evaluateMigrationGates(
   if (options.failOnManual && report.manualRewriteMetric.numerator > 0) {
     failures.push(
       `manual rewrite required (${report.manualRewriteMetric.numerator}/${report.manualRewriteMetric.denominator})`,
+    );
+  }
+
+  if (options.failOnUnhandled && report.unhandledArcGisModules.length > 0) {
+    failures.push(
+      `${report.unhandledArcGisModules.length} ArcGIS modules remain outside codemod scope`,
     );
   }
 
