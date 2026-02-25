@@ -1,5 +1,7 @@
 # Honua Server Documentation
 
+Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
+
 ## Start here
 
 | I want to... | Go to |
@@ -28,10 +30,11 @@
 ### Coverage Matrices
 
 - [FeatureServer Coverage](user/feature-server-matrix.md)
-- [MapServer Coverage](user/map-server-matrix.md)
+- [MapServer Coverage](user/map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0)
+- [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
 - [OGC API Tiles Coverage](user/specifications/ogc-api-tiles-coverage.md)
 - [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
-- [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
+- [Geometry Service Coverage](user/specifications/geometry-service-coverage.md)
 
 ## DevOps Documentation
 

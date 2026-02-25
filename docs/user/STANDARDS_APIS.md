@@ -8,8 +8,12 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-------------------|-------------|------------------|-----|
 | **ArcGIS Pro/Desktop** | FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` or `/rest/services/{id}/MapServer` | Esri compatibility (data + maps) |
 | **QGIS/OpenLayers** | OGC API Features | `/ogc/features` | Open standards |
+| **QGIS/GeoServer clients (legacy OGC)** | WMS 1.3 / WMTS 1.0 | `.../MapServer/WMS` or `.../MapServer/WMTS` | Legacy OGC raster map services |
+| **Server-rendered maps (OGC)** | OGC API Maps | `/ogc/maps` | Standards-based rendered map images |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
-| **Web Maps (MapLibre)** | Vector Tiles | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering |
+| **Web Maps (MapLibre)** | Vector Tiles + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Fast rendering with auto-styles |
+| **Esri raster/image workflows** | ImageServer | `/rest/services/{id}/ImageServer` | Esri raster compatibility |
+| **Esri geometry operations** | Geometry Service | `/rest/services/geometry` | Buffer, simplify, project, intersect, union, clip, difference, area, length |
 | **Custom Applications** | Any protocol | Multiple endpoints | Choose by client needs |
 
 ---
@@ -100,18 +104,112 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 ---
 
-## **Vector Tiles (MVT)**
+## **OGC API Maps**
+
+**Best for**: Standards-based server-rendered map images
+
+**Endpoint structure:**
+```
+/ogc/maps
+|-- /conformance
+|-- /map
+|-- /collections/{id}/map
+|-- /collections/{id}/styles/{styleId}/map
+|-- /collections/{id}/map/tiles
+```
+
+**Output formats:** PNG, JPEG, TIFF
+
+**Typical use cases:**
+- Server-rendered maps via open standards
+- Dynamic map image generation without Esri dependencies
+- OGC-compliant map rendering workflows
+
+---
+
+## **WMS 1.3 / WMTS 1.0**
+
+**Best for**: Legacy OGC map services (QGIS, GeoServer ecosystem clients)
+
+**Endpoint structure:**
+```
+/rest/services/{id}/MapServer/WMS    (or /ogc/services/{id}/wms)
+|-- ?service=WMS&request=GetCapabilities
+|-- ?service=WMS&request=GetMap
+|-- ?service=WMS&request=GetFeatureInfo
+
+/rest/services/{id}/MapServer/WMTS   (or /ogc/services/{id}/wmts)
+|-- ?service=WMTS&request=GetCapabilities
+|-- ?service=WMTS&request=GetTile
+|-- ?service=WMTS&request=GetFeatureInfo
+```
+
+**Typical use cases:**
+- QGIS WMS/WMTS layer connections
+- Desktop GIS clients expecting legacy OGC services
+- INSPIRE/SDI compliance requiring WMS/WMTS endpoints
+
+---
+
+## **GeoServices REST ImageServer**
+
+**Best for**: Esri raster/image workflows
+
+**Endpoint structure:**
+```
+/rest/services/{id}/ImageServer
+|-- /exportImage
+|-- /identify
+|-- /tile/{level}/{row}/{col}
+```
+
+**Typical use cases:**
+- ArcGIS Pro raster rendering
+- Image export and pixel value queries
+- Tiled image serving
+
+---
+
+## **GeoServices REST Geometry Service**
+
+**Best for**: Esri geometry operations
+
+**Endpoint structure:**
+```
+/rest/services/geometry
+|-- /buffer
+|-- /simplify
+|-- /project
+|-- /intersect
+|-- /union
+|-- /clip
+|-- /difference
+|-- /area
+|-- /length
+```
+
+**Typical use cases:**
+- Coordinate reprojection
+- Geometry buffering and simplification
+- Esri SDK geometry helper operations
+
+---
+
+## **Vector Tiles (MVT) + TileJSON**
 
 **Best for**: High-performance web maps
 
 **Endpoint structure:**
 ```
-/tiles/{layerId}/{z}/{x}/{y}.mvt
+/tiles/{layerId}/{z}/{x}/{y}.mvt     (vector tiles)
+/tiles/{layerId}/tile.json            (TileJSON metadata)
+/api/styles/{layerId}.json            (auto-generated MapLibre style)
 ```
 
 **Typical use cases:**
-- MapLibre or Leaflet maps
-- Fast rendering at multiple zoom levels
+- MapLibre GL JS maps with auto-generated styles
+- Leaflet and Mapbox GL maps
+- Fast vector rendering at multiple zoom levels
 
 ---
 
@@ -119,16 +217,27 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 Protocol support is tracked per standard and operation. Use these docs to confirm supported behaviors:
 
-**OGC API Features:**
+**GeoServices REST:**
+- [FeatureServer Coverage Matrix](feature-server-matrix.md) — aligned to [Esri REST Feature Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
+- [MapServer Coverage Matrix](map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
+- [Geometry Service Coverage](specifications/geometry-service-coverage.md)
+
+**OGC API:**
 - [OGC API Features Coverage](specifications/ogc-api-features-coverage.md)
 - [Part 1 — Core](specifications/ogc-api-features-part1-core.md)
 - [Part 2 — CRS](specifications/ogc-api-features-part2-crs.md)
 - [Part 3 — Filtering](specifications/ogc-api-features-part3-filtering.md)
+- [OGC API Tiles Coverage](specifications/ogc-api-tiles-coverage.md)
 
-**Other protocols:**
+**Enterprise data:**
 - [OData v4 Coverage](specifications/odata-v4-coverage.md)
-- [FeatureServer Coverage Matrix](feature-server-matrix.md) — aligned to [Esri REST Feature Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
-- [MapServer Coverage Matrix](map-server-matrix.md) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
+
+**OGC CITE conformance (100% pass rate):**
+- OGC API Features: 137/137 tests
+- OGC API Tiles: 16/16 tests
+- WMS 1.3: 227/227 tests
+- WMTS 1.0: 118/118 tests
+- OGC API Maps: 32/32 tests
 
 ---
 

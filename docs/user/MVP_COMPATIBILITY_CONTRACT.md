@@ -7,11 +7,17 @@ Use this page first, then drill into the linked protocol matrices/spec docs.
 
 | Protocol | MVP status | Supported now | Partial / unsupported highlights | Deep reference |
 |---|---|---|---|---|
-| GeoServices REST FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replica endpoints | Advanced Esri operations remain partial/unsupported (for example query bins/top features, advanced SQL options, full offline parity) | [FeatureServer Coverage Matrix](feature-server-matrix.md) |
-| GeoServices REST MapServer | Supported with partial parity | Export/identify/legend/find/query, WMS 1.3, WMTS 1.0 (KVP) | WMTS scope is limited (for example matrix-set/encoding constraints), some Esri operations remain unsupported | [MapServer Coverage Matrix](map-server-matrix.md) |
-| OGC API Features | Supported with partial parity | Core collections/items, transactions, filtering support, OpenAPI | Full standards coverage varies by conformance class and optional extensions | [OGC API Features Coverage](specifications/ogc-api-features-coverage.md) |
-| OGC API Tiles | Supported with partial parity | Landing/conformance/collections, tilesets, vector/raster tile endpoints | Full parity depends on conformance class and matrix-set/profile support | [OGC API Tiles Coverage](specifications/ogc-api-tiles-coverage.md) |
-| OData v4 | Supported with partial parity | Core OData entities/metadata/query, `$batch`, paging tokens, spatial functions | Delta/change-tracking semantics are MVP-level and not full enterprise change-feed parity | [OData v4 Coverage](specifications/odata-v4-coverage.md) |
+| GeoServices REST FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replica endpoints, calculate, validateSQL, append | Advanced Esri operations remain partial/unsupported (query bins/top features, advanced SQL options, full offline parity) | [FeatureServer Coverage Matrix](feature-server-matrix.md) |
+| GeoServices REST MapServer | Supported with partial parity | Export/identify/legend/find/query/tiles, WMS 1.3, WMTS 1.0 (KVP + RESTful) | WMTS scope limited to WebMercatorQuad; some Esri operations unsupported (generateKml) | [MapServer Coverage Matrix](map-server-matrix.md) |
+| GeoServices REST ImageServer | Supported | Service metadata, exportImage, identify, tile | Raster serving for ArcGIS image workflows | — |
+| GeoServices REST Geometry Service | Supported | Buffer, simplify, project, intersect, union, clip, difference, area, length | 9 geometry operations via PostGIS | [Geometry Service Coverage](specifications/geometry-service-coverage.md) |
+| OGC API Features | Supported (CITE certified) | Core collections/items, transactions, CQL2 filtering, CRS, OpenAPI | 137/137 CITE tests passing; coverage varies by optional extensions | [OGC API Features Coverage](specifications/ogc-api-features-coverage.md) |
+| OGC API Tiles | Supported (CITE certified) | Landing/conformance/collections, tilesets, vector/raster tiles | 16/16 CITE tests passing; 7 conformance classes | [OGC API Tiles Coverage](specifications/ogc-api-tiles-coverage.md) |
+| OGC API Maps | Supported | Conformance, dataset map, collection map, styled map, map tiles | 32/32 conformance tests passing | — |
+| WMS 1.3 | Supported (CITE certified) | GetCapabilities, GetMap, GetFeatureInfo | 227/227 CITE tests passing | [MapServer Coverage Matrix](map-server-matrix.md) |
+| WMTS 1.0 | Supported (CITE certified) | GetCapabilities, GetTile, GetFeatureInfo (KVP + RESTful) | 118/118 CITE tests passing; WebMercatorQuad only | [MapServer Coverage Matrix](map-server-matrix.md) |
+| OData v4 | Supported with partial parity | Core entities/metadata/query, `$batch`, `$apply`, `$search`, `$skiptoken`, `$deltatoken`, spatial functions | Delta change-tracking is timestamp-based (MVP-level); PUT not supported | [OData v4 Coverage](specifications/odata-v4-coverage.md) |
+| Vector Tiles (MVT) | Supported | PostGIS-native `ST_AsMVT` generation, TileJSON metadata, auto-generated MapLibre styles | — | — |
 
 ## FeatureServer Replication Limitations (MVP)
 

@@ -89,7 +89,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
-**Geometry operations** — GeoServices Geometry Service endpoints for `buffer`, `simplify`, and `project`.
+**Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 
@@ -145,19 +145,14 @@ infrastructure/
 
 ## Documentation
 
+Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
+
 | I want to... | Go to |
 |---|---|
-| Set up a dev environment | [Getting Started](docs/contributor/development/getting-started.md) |
-| Deploy to production | [Infrastructure](infrastructure/README.md) |
-| Call the API | [Standards APIs](docs/user/STANDARDS_APIS.md) / [API Examples](docs/user/API_EXAMPLES.md) |
-| Manage services and layers | [Control Plane API](docs/user/CONTROL_PLANE_API.md) |
+| Deploy to production | [Infrastructure & Deployment](https://honua.gitbook.io/honuaio/devops-guide/infrastructure) |
+| Call the API | [Protocols Overview](https://honua.gitbook.io/honuaio/) |
 | Check MVP compatibility limits | [MVP Compatibility Contract](docs/user/MVP_COMPATIBILITY_CONTRACT.md) |
-| Understand the architecture | [Architecture](docs/contributor/ARCHITECTURE.md) / [ADRs](docs/contributor/adr/README.md) |
-| Configure security | [Security Configuration](docs/devops/security.md) |
-| Troubleshoot issues | [Troubleshooting](docs/devops/troubleshooting.md) / [Runbooks](docs/devops/runbooks/README.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
-
-Full documentation index: [`docs/README.md`](docs/README.md)
 
 ## License
 
