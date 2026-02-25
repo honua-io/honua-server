@@ -25,7 +25,7 @@ export function buildJsMigrationReport(
   const resolvedScan = scanReport ?? scanArcGisUsage(rootDir);
   const scanSummary = summarizeArcGisScan(resolvedScan);
 
-  const denominator = codemodResult.metrics.totalFeatureLayerCallSites;
+  const denominator = codemodResult.metrics.totalCodemodScopedCallSites;
   const numerator = codemodResult.metrics.manualCallSites;
   const ratio = denominator === 0 ? 0 : numerator / denominator;
 
@@ -38,7 +38,7 @@ export function buildJsMigrationReport(
       numerator,
       denominator,
       ratio,
-      scope: "FeatureLayer constructor call sites in safe-codemod scope",
+      scope: "FeatureLayer/Map/MapView constructor call sites in safe-codemod scope",
     },
     manualTodos: codemodResult.manualTodos,
   };

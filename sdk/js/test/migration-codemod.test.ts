@@ -42,7 +42,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalFeatureLayerCallSites).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
     expect(result.metrics.autoMigratedCallSites).toBe(1);
     expect(result.metrics.manualCallSites).toBe(0);
 
@@ -50,6 +50,68 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("new FeatureLayerCompat({ url: serviceUrl })");
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
+  });
+
+  it("rewrites FeatureLayer shorthand url options", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "shorthand.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const url = 'https://example.test/rest/services/default/FeatureServer/0';",
+        "const layer = new FeatureLayer({ url });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new FeatureLayerCompat({ url })");
+  });
+
+  it("rewrites safe Map and MapView constructors", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "view.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, zoom: 4 });",
+        "void map; void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).not.toContain("@arcgis/core/Map");
+    expect(nextSource).not.toContain("@arcgis/core/views/MapView");
+    expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
+    expect(nextSource).toContain("const view = new MapViewCompat({ map, zoom: 4 });");
   });
 
   it("keeps complex constructor and reports manual TODO", () => {
@@ -71,7 +133,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(0);
-    expect(result.metrics.totalFeatureLayerCallSites).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
     expect(result.metrics.autoMigratedCallSites).toBe(0);
     expect(result.metrics.manualCallSites).toBe(1);
     expect(result.manualTodos).toHaveLength(1);
@@ -102,7 +164,7 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalFeatureLayerCallSites).toBe(2);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
     expect(result.metrics.autoMigratedCallSites).toBe(1);
     expect(result.metrics.manualCallSites).toBe(1);
 

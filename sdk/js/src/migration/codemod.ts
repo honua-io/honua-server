@@ -4,13 +4,41 @@ import ts from "typescript";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-
-const FEATURE_LAYER_MODULES = new Set([
-  "@arcgis/core/layers/FeatureLayer",
-  "@arcgis/core/layers/FeatureLayer.js",
-]);
-
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
+
+type ConstructorKind = "feature-layer" | "map" | "map-view";
+
+interface ConstructorRewriteSpec {
+  kind: ConstructorKind;
+  compatSymbol: string;
+  arcGisModules: ReadonlySet<string>;
+}
+
+const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
+  {
+    kind: "feature-layer",
+    compatSymbol: "FeatureLayerCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/FeatureLayer",
+      "@arcgis/core/layers/FeatureLayer.js",
+    ]),
+  },
+  {
+    kind: "map",
+    compatSymbol: "MapCompat",
+    arcGisModules: new Set(["@arcgis/core/Map", "@arcgis/core/Map.js"]),
+  },
+  {
+    kind: "map-view",
+    compatSymbol: "MapViewCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/views/MapView",
+      "@arcgis/core/views/MapView.js",
+    ]),
+  },
+];
+
+const MODULE_TO_SPEC = buildModuleToSpecLookup(REWRITE_SPECS);
 
 interface TextEdit {
   start: number;
@@ -18,8 +46,8 @@ interface TextEdit {
   text: string;
 }
 
-interface FeatureLayerImport {
-  modulePath: string;
+interface ArcGisImportBinding {
+  kind: ConstructorKind;
   localName: string;
   start: number;
   end: number;
@@ -34,7 +62,7 @@ export interface MigrationTodo {
 }
 
 export interface CodemodMetrics {
-  totalFeatureLayerCallSites: number;
+  totalCodemodScopedCallSites: number;
   autoMigratedCallSites: number;
   manualCallSites: number;
 }
@@ -68,7 +96,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
   const compatImportPath = options.compatImportPath ?? DEFAULT_COMPAT_IMPORT_PATH;
 
   const metrics: CodemodMetrics = {
-    totalFeatureLayerCallSites: 0,
+    totalCodemodScopedCallSites: 0,
     autoMigratedCallSites: 0,
     manualCallSites: 0,
   };
@@ -78,7 +106,8 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
     const fileResult = codemodFile(file, source, compatImportPath);
-    metrics.totalFeatureLayerCallSites +=
+
+    metrics.totalCodemodScopedCallSites +=
       fileResult.rewrittenConstructors + fileResult.manualTodos.length;
     metrics.autoMigratedCallSites += fileResult.rewrittenConstructors;
     metrics.manualCallSites += fileResult.manualTodos.length;
@@ -122,7 +151,11 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
   };
 }
 
-function codemodFile(file: string, source: string, compatImportPath: string): {
+function codemodFile(
+  file: string,
+  source: string,
+  compatImportPath: string,
+): {
   nextSource: string;
   rewrittenConstructors: number;
   addedCompatImport: boolean;
@@ -130,8 +163,8 @@ function codemodFile(file: string, source: string, compatImportPath: string): {
   manualTodos: MigrationTodo[];
 } {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const featureLayerImports = collectFeatureLayerImports(sourceFile);
-  if (featureLayerImports.length === 0) {
+  const imports = collectSupportedImports(sourceFile);
+  if (imports.length === 0) {
     return {
       nextSource: source,
       rewrittenConstructors: 0,
@@ -141,27 +174,35 @@ function codemodFile(file: string, source: string, compatImportPath: string): {
     };
   }
 
-  const importNames = new Set(featureLayerImports.map((item) => item.localName));
+  const importsByLocalName = new Map<string, ArcGisImportBinding>();
+  for (const importBinding of imports) {
+    if (!importsByLocalName.has(importBinding.localName)) {
+      importsByLocalName.set(importBinding.localName, importBinding);
+    }
+  }
+
   const constructorEdits: TextEdit[] = [];
   const manualTodos: MigrationTodo[] = [];
+  const requiredCompatSymbols = new Set<string>();
 
   walk(sourceFile, (node) => {
-    if (!ts.isNewExpression(node)) {
-      return;
-    }
-    if (!ts.isIdentifier(node.expression)) {
-      return;
-    }
-    if (!importNames.has(node.expression.text)) {
+    if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression)) {
       return;
     }
 
-    const safeCheck = isSafeFeatureLayerCompatCall(node);
+    const importBinding = importsByLocalName.get(node.expression.text);
+    if (!importBinding) {
+      return;
+    }
+
+    const safeCheck = isSafeConstructorCall(importBinding.kind, node);
     if (safeCheck.ok) {
+      const spec = specForKind(importBinding.kind);
+      requiredCompatSymbols.add(spec.compatSymbol);
       constructorEdits.push({
         start: node.expression.getStart(sourceFile),
         end: node.expression.getEnd(),
-        text: "FeatureLayerCompat",
+        text: spec.compatSymbol,
       });
       return;
     }
@@ -186,65 +227,147 @@ function codemodFile(file: string, source: string, compatImportPath: string): {
   }
 
   let transformed = applyTextEdits(source, constructorEdits);
-  const removedArcGisImports = removeUnusedArcGisFeatureLayerImports(file, transformed);
+  const removedArcGisImports = removeUnusedArcGisImports(file, transformed);
   transformed = removedArcGisImports.nextSource;
-  const addedCompatImport = ensureCompatImport(
+
+  const compatSymbols = Array.from(requiredCompatSymbols).sort();
+  const compatImportResult = ensureCompatNamedImports(
     file,
     transformed,
-    "FeatureLayerCompat",
+    compatSymbols,
     compatImportPath,
   );
-  transformed = addedCompatImport.nextSource;
+  transformed = compatImportResult.nextSource;
 
   return {
     nextSource: transformed,
     rewrittenConstructors: constructorEdits.length,
-    addedCompatImport: addedCompatImport.added,
+    addedCompatImport: compatImportResult.changed,
     removedArcGisImports: removedArcGisImports.removedCount,
     manualTodos: manualTodos.sort(compareTodos),
   };
 }
 
-function ensureCompatImport(
-  file: string,
-  source: string,
-  symbol: string,
-  importPath: string,
-): { nextSource: string; added: boolean } {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+function buildModuleToSpecLookup(specs: readonly ConstructorRewriteSpec[]): Map<string, ConstructorRewriteSpec> {
+  const result = new Map<string, ConstructorRewriteSpec>();
+  for (const spec of specs) {
+    for (const modulePath of spec.arcGisModules) {
+      result.set(modulePath, spec);
+    }
+  }
+  return result;
+}
+
+function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding[] {
+  const result: ArcGisImportBinding[] = [];
+
   for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement)) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
-    if (!ts.isStringLiteral(statement.moduleSpecifier)) {
+
+    const spec = MODULE_TO_SPEC.get(statement.moduleSpecifier.text);
+    if (!spec) {
+      continue;
+    }
+
+    const importClause = statement.importClause;
+    if (!importClause?.name) {
+      continue;
+    }
+
+    result.push({
+      kind: spec.kind,
+      localName: importClause.name.text,
+      start: statement.getStart(sourceFile),
+      end: statement.getEnd(),
+      hasNamedBindings: importClause.namedBindings !== undefined,
+    });
+  }
+
+  return result;
+}
+
+function ensureCompatNamedImports(
+  file: string,
+  source: string,
+  symbols: readonly string[],
+  importPath: string,
+): { nextSource: string; changed: boolean } {
+  if (symbols.length === 0) {
+    return { nextSource: source, changed: false };
+  }
+
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
     if (statement.moduleSpecifier.text !== importPath) {
       continue;
     }
-    const namedBindings = statement.importClause?.namedBindings;
+
+    const importClause = statement.importClause;
+    const namedBindings = importClause?.namedBindings;
     if (namedBindings && ts.isNamedImports(namedBindings)) {
-      for (const element of namedBindings.elements) {
-        if (element.name.text === symbol) {
-          return { nextSource: source, added: false };
-        }
+      const existingSymbols = namedBindings.elements.map((element) => element.name.text);
+      const existingSet = new Set(existingSymbols);
+      const missing = symbols.filter((symbol) => !existingSet.has(symbol));
+      if (missing.length === 0) {
+        return { nextSource: source, changed: false };
       }
+
+      const mergedSymbols = [...existingSymbols, ...missing];
+      const replacement = buildNamedImportText(
+        importPath,
+        importClause?.name?.text,
+        mergedSymbols,
+      );
+
+      const nextSource = applyTextEdits(source, [
+        {
+          start: statement.getStart(sourceFile),
+          end: statement.getEnd(),
+          text: replacement,
+        },
+      ]);
+      return { nextSource, changed: true };
     }
+
+    const importLine = `${buildNamedImportText(importPath, undefined, symbols)}\n`;
+    const insertion = statement.getEnd();
+    const nextSource = `${source.slice(0, insertion)}\n${importLine}${source.slice(insertion)}`;
+    return { nextSource, changed: true };
   }
 
-  const importLine = `import { ${symbol} } from "${importPath}";`;
   const insertionIndex = findImportInsertionIndex(sourceFile);
+  const importLine = buildNamedImportText(importPath, undefined, symbols);
   const prefix = source.slice(0, insertionIndex);
   const suffix = source.slice(insertionIndex);
-
   const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
   const leading = needsLeadingNewline ? "\n" : "";
   const needsTrailingNewline =
     suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
   const trailing = needsTrailingNewline ? "\n" : "";
 
-  const nextSource = `${prefix}${leading}${importLine}${trailing}${suffix}`;
-  return { nextSource, added: true };
+  return {
+    nextSource: `${prefix}${leading}${importLine}${trailing}${suffix}`,
+    changed: true,
+  };
+}
+
+function buildNamedImportText(
+  importPath: string,
+  defaultImport: string | undefined,
+  namedImports: readonly string[],
+): string {
+  const uniqueNamed = Array.from(new Set(namedImports));
+  const namedImportText = `{ ${uniqueNamed.join(", ")} }`;
+  if (defaultImport) {
+    return `import ${defaultImport}, ${namedImportText} from "${importPath}";`;
+  }
+
+  return `import ${namedImportText} from "${importPath}";`;
 }
 
 function findImportInsertionIndex(sourceFile: ts.SourceFile): number {
@@ -258,24 +381,24 @@ function findImportInsertionIndex(sourceFile: ts.SourceFile): number {
   return index;
 }
 
-function removeUnusedArcGisFeatureLayerImports(
+function removeUnusedArcGisImports(
   file: string,
   source: string,
 ): { nextSource: string; removedCount: number } {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const imports = collectFeatureLayerImports(sourceFile);
+  const imports = collectSupportedImports(sourceFile);
   const removals: TextEdit[] = [];
 
-  for (const importNode of imports) {
-    if (importNode.hasNamedBindings) {
+  for (const importBinding of imports) {
+    if (importBinding.hasNamedBindings) {
       continue;
     }
-    const references = countIdentifierUsagesExcludingImports(sourceFile, importNode.localName);
+    const references = countIdentifierUsagesExcludingImports(sourceFile, importBinding.localName);
     if (references > 0) {
       continue;
     }
 
-    const bounds = expandToFullLine(source, importNode.start, importNode.end);
+    const bounds = expandToFullLine(source, importBinding.start, importBinding.end);
     removals.push({
       start: bounds.start,
       end: bounds.end,
@@ -291,38 +414,6 @@ function removeUnusedArcGisFeatureLayerImports(
     nextSource: applyTextEdits(source, removals),
     removedCount: removals.length,
   };
-}
-
-function collectFeatureLayerImports(sourceFile: ts.SourceFile): FeatureLayerImport[] {
-  const imports: FeatureLayerImport[] = [];
-
-  for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement)) {
-      continue;
-    }
-    if (!ts.isStringLiteral(statement.moduleSpecifier)) {
-      continue;
-    }
-    if (!FEATURE_LAYER_MODULES.has(statement.moduleSpecifier.text)) {
-      continue;
-    }
-
-    const importClause = statement.importClause;
-    if (!importClause?.name) {
-      continue;
-    }
-
-    const hasNamedBindings = importClause.namedBindings !== undefined;
-    imports.push({
-      modulePath: statement.moduleSpecifier.text,
-      localName: importClause.name.text,
-      start: statement.getStart(sourceFile),
-      end: statement.getEnd(),
-      hasNamedBindings,
-    });
-  }
-
-  return imports;
 }
 
 function countIdentifierUsagesExcludingImports(sourceFile: ts.SourceFile, name: string): number {
@@ -375,7 +466,7 @@ function expandToFullLine(source: string, start: number, end: number): { start: 
   return { start: expandedStart, end: expandedEnd };
 }
 
-function applyTextEdits(source: string, edits: TextEdit[]): string {
+function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
   const sorted = edits
     .slice()
     .sort((a, b) => (a.start === b.start ? b.end - a.end : b.start - a.start));
@@ -387,7 +478,25 @@ function applyTextEdits(source: string, edits: TextEdit[]): string {
   return nextSource;
 }
 
-function isSafeFeatureLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+function isSafeConstructorCall(
+  kind: ConstructorKind,
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  switch (kind) {
+    case "feature-layer":
+      return isSafeFeatureLayerCompatCall(node);
+    case "map":
+      return isSafeMapCompatCall(node);
+    case "map-view":
+      return isSafeMapViewCompatCall(node);
+    default:
+      return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
+  }
+}
+
+function isSafeFeatureLayerCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length !== 1) {
     return {
@@ -405,14 +514,14 @@ function isSafeFeatureLayerCompatCall(node: ts.NewExpression): { ok: true } | { 
   }
 
   for (const property of arg.properties) {
-    if (!ts.isPropertyAssignment(property)) {
+    if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason: "FeatureLayer options contain spread/shorthand/method syntax; requires manual migration.",
+        reason: "FeatureLayer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
 
-    if (!isUrlPropertyName(property.name)) {
+    if (getObjectPropertyName(property) !== "url") {
       return {
         ok: false,
         reason: "FeatureLayer options include non-url properties; requires manual migration.",
@@ -423,14 +532,112 @@ function isSafeFeatureLayerCompatCall(node: ts.NewExpression): { ok: true } | { 
   return { ok: true };
 }
 
-function isUrlPropertyName(name: ts.PropertyName): boolean {
+function isSafeMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Map constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Map constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["basemap", "layers"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Map options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Map options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeMapViewCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "MapView constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "MapView constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["map", "container", "center", "zoom"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "MapView options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "MapView options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function getPropertyNameText(name: ts.PropertyName): string | undefined {
   if (ts.isIdentifier(name)) {
-    return name.text === "url";
+    return name.text;
   }
   if (ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
-    return name.text === "url";
+    return name.text;
   }
-  return false;
+  return undefined;
+}
+
+function isAssignableObjectProperty(property: ts.ObjectLiteralElementLike): boolean {
+  return ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property);
+}
+
+function getObjectPropertyName(property: ts.ObjectLiteralElementLike): string | undefined {
+  if (ts.isPropertyAssignment(property)) {
+    return getPropertyNameText(property.name);
+  }
+  if (ts.isShorthandPropertyAssignment(property)) {
+    return property.name.text;
+  }
+  return undefined;
 }
 
 function collectSourceFiles(rootDir: string): string[] {
@@ -461,6 +668,15 @@ function collectSourceFiles(rootDir: string): string[] {
 function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
   visit(node);
   node.forEachChild((child) => walk(child, visit));
+}
+
+function specForKind(kind: ConstructorKind): ConstructorRewriteSpec {
+  for (const spec of REWRITE_SPECS) {
+    if (spec.kind === kind) {
+      return spec;
+    }
+  }
+  throw new Error(`Unknown constructor rewrite kind: ${kind}`);
 }
 
 function compareTodos(a: MigrationTodo, b: MigrationTodo): number {
