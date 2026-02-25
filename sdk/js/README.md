@@ -13,6 +13,16 @@ This package currently provides:
 - migration report builder with explicit manual TODOs and rewrite metric,
 - unit tests for request mapping and URL parsing.
 
+## Entrypoints
+
+Prefer subpath entrypoints to keep Honua-first and migration layers separate:
+
+- Honua-first core: `@honua/sdk-js/honua`
+- Esri compat bridge: `@honua/sdk-js/esri-compat`
+- Migration tooling: `@honua/sdk-js/migration`
+
+The root entrypoint (`@honua/sdk-js`) remains available as an aggregate export for compatibility.
+
 ## Install
 
 ```bash

@@ -3,6 +3,25 @@
   "version": "0.0.1-alpha.0",
   "description": "Honua JavaScript SDK scaffold (core + Esri compatibility layer)",
   "type": "module",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./honua": {
+      "types": "./dist/src/honua.d.ts",
+      "default": "./dist/src/honua.js"
+    },
+    "./esri-compat": {
+      "types": "./dist/src/esri-compat-entry.d.ts",
+      "default": "./dist/src/esri-compat-entry.js"
+    },
+    "./migration": {
+      "types": "./dist/src/migration-entry.d.ts",
+      "default": "./dist/src/migration-entry.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
