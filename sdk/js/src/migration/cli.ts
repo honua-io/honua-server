@@ -2,13 +2,14 @@
 
 import fs from "node:fs";
 import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
-import { runEsriCompatCodemod } from "./codemod.js";
+import { runEsriCompatCodemod, type CodemodMetricsByKind } from "./codemod.js";
 import { buildJsMigrationReport } from "./report.js";
 
 interface ParsedArgs {
   command: "scan" | "codemod";
   target: string;
   write: boolean;
+  annotateTodos: boolean;
   reportPath?: string;
   compatImportPath?: string;
 }
@@ -43,6 +44,7 @@ function runCodemod(args: ParsedArgs): void {
     rootDir: args.target,
     write: args.write,
     compatImportPath: args.compatImportPath,
+    annotateTodos: args.annotateTodos,
   });
   const scanReport = scanArcGisUsage(args.target);
   const report = buildJsMigrationReport(args.target, codemodResult, scanReport);
@@ -55,6 +57,8 @@ function runCodemod(args: ParsedArgs): void {
       `manual=${codemodResult.metrics.manualCallSites}`,
       `manualRewrite=${report.manualRewriteMetric.numerator}/${report.manualRewriteMetric.denominator}`,
       `writeMode=${args.write ? "enabled" : "dry-run"}`,
+      `annotateTodos=${args.annotateTodos ? "enabled" : "disabled"}`,
+      `byKind=${formatByKindMetrics(codemodResult.metrics.byKind)}`,
     ].join(" "),
   );
   process.stdout.write("\n");
@@ -62,7 +66,7 @@ function runCodemod(args: ParsedArgs): void {
   if (report.manualTodos.length > 0) {
     process.stdout.write("manualTodos:\n");
     for (const todo of report.manualTodos) {
-      process.stdout.write(`- ${todo.file}:${todo.line}:${todo.column} ${todo.reason}\n`);
+      process.stdout.write(`- ${todo.file}:${todo.line}:${todo.column} [${todo.kind}] ${todo.reason}\n`);
     }
   }
 
@@ -80,6 +84,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       command: "scan",
       target: process.cwd(),
       write: false,
+      annotateTodos: false,
     };
   }
 
@@ -91,6 +96,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let target: string | undefined;
   let reportPath: string | undefined;
   let write = false;
+  let annotateTodos = false;
   let compatImportPath: string | undefined;
 
   for (let i = 0; i < positional.length; i += 1) {
@@ -100,6 +106,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--write") {
       write = true;
+      continue;
+    }
+    if (token === "--annotate-todos") {
+      annotateTodos = true;
       continue;
     }
     if (token === "--report") {
@@ -134,9 +144,19 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     command,
     target: target ?? process.cwd(),
     write,
+    annotateTodos,
     reportPath,
     compatImportPath,
   };
+}
+
+function formatByKindMetrics(byKind: CodemodMetricsByKind): string {
+  return (Object.keys(byKind) as Array<keyof CodemodMetricsByKind>)
+    .map((kind) => {
+      const metric = byKind[kind];
+      return `${kind}:${metric.autoMigrated}/${metric.manual}/${metric.total}`;
+    })
+    .join(",");
 }
 
 function printUsage(): void {
@@ -144,11 +164,11 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--write] [--report <file>] [--compat-import-path <pkg>]",
+      "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
-      "  node dist/src/migration/cli.js codemod ./src --write --report migration-report.json",
+      "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
     ].join("\n"),
   );
   process.stdout.write("\n");

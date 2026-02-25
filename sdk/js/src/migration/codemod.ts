@@ -5,11 +5,12 @@ import ts from "typescript";
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
+const TODO_MARKER = "TODO(honua-migrate)";
 
-type ConstructorKind = "feature-layer" | "map" | "map-view";
+export type CodemodConstructorKind = "feature-layer" | "map" | "map-view";
 
 interface ConstructorRewriteSpec {
-  kind: ConstructorKind;
+  kind: CodemodConstructorKind;
   compatSymbol: string;
   arcGisModules: ReadonlySet<string>;
 }
@@ -47,7 +48,7 @@ interface TextEdit {
 }
 
 interface ArcGisImportBinding {
-  kind: ConstructorKind;
+  kind: CodemodConstructorKind;
   localName: string;
   start: number;
   end: number;
@@ -55,16 +56,26 @@ interface ArcGisImportBinding {
 }
 
 export interface MigrationTodo {
+  kind: CodemodConstructorKind;
   file: string;
   line: number;
   column: number;
   reason: string;
 }
 
+export interface CodemodKindMetrics {
+  total: number;
+  autoMigrated: number;
+  manual: number;
+}
+
+export type CodemodMetricsByKind = Record<CodemodConstructorKind, CodemodKindMetrics>;
+
 export interface CodemodMetrics {
   totalCodemodScopedCallSites: number;
   autoMigratedCallSites: number;
   manualCallSites: number;
+  byKind: CodemodMetricsByKind;
 }
 
 export interface CodemodFileResult {
@@ -72,6 +83,7 @@ export interface CodemodFileResult {
   rewrittenConstructors: number;
   addedCompatImport: boolean;
   removedArcGisImports: number;
+  annotatedTodoComments: number;
   manualTodos: MigrationTodo[];
 }
 
@@ -88,35 +100,47 @@ export interface EsriCompatCodemodOptions {
   rootDir: string;
   write?: boolean;
   compatImportPath?: string;
+  annotateTodos?: boolean;
 }
 
 export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCompatCodemodResult {
   const rootDir = path.resolve(options.rootDir);
   const files = collectSourceFiles(rootDir);
   const compatImportPath = options.compatImportPath ?? DEFAULT_COMPAT_IMPORT_PATH;
+  const annotateTodos = options.annotateTodos ?? false;
 
   const metrics: CodemodMetrics = {
     totalCodemodScopedCallSites: 0,
     autoMigratedCallSites: 0,
     manualCallSites: 0,
+    byKind: createEmptyByKindMetrics(),
   };
   const fileResults: CodemodFileResult[] = [];
   const manualTodos: MigrationTodo[] = [];
 
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
-    const fileResult = codemodFile(file, source, compatImportPath);
+    const fileResult = codemodFile(file, source, compatImportPath, annotateTodos);
 
-    metrics.totalCodemodScopedCallSites +=
-      fileResult.rewrittenConstructors + fileResult.manualTodos.length;
-    metrics.autoMigratedCallSites += fileResult.rewrittenConstructors;
-    metrics.manualCallSites += fileResult.manualTodos.length;
+    for (const kind of fileResult.rewrittenKinds) {
+      metrics.byKind[kind].autoMigrated += 1;
+      metrics.byKind[kind].total += 1;
+      metrics.autoMigratedCallSites += 1;
+      metrics.totalCodemodScopedCallSites += 1;
+    }
+    for (const todo of fileResult.manualTodos) {
+      metrics.byKind[todo.kind].manual += 1;
+      metrics.byKind[todo.kind].total += 1;
+      metrics.manualCallSites += 1;
+      metrics.totalCodemodScopedCallSites += 1;
+    }
     manualTodos.push(...fileResult.manualTodos);
 
     const hasChanges =
       fileResult.rewrittenConstructors > 0 ||
       fileResult.addedCompatImport ||
-      fileResult.removedArcGisImports > 0;
+      fileResult.removedArcGisImports > 0 ||
+      fileResult.annotatedTodoComments > 0;
     if (hasChanges) {
       if (options.write) {
         fs.writeFileSync(file, fileResult.nextSource, "utf8");
@@ -126,6 +150,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
         rewrittenConstructors: fileResult.rewrittenConstructors,
         addedCompatImport: fileResult.addedCompatImport,
         removedArcGisImports: fileResult.removedArcGisImports,
+        annotatedTodoComments: fileResult.annotatedTodoComments,
         manualTodos: fileResult.manualTodos,
       });
     } else if (fileResult.manualTodos.length > 0) {
@@ -134,6 +159,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
         rewrittenConstructors: 0,
         addedCompatImport: false,
         removedArcGisImports: 0,
+        annotatedTodoComments: 0,
         manualTodos: fileResult.manualTodos,
       });
     }
@@ -143,7 +169,11 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
     rootDir,
     filesScanned: files.length,
     filesChanged: fileResults.filter(
-      (item) => item.rewrittenConstructors > 0 || item.addedCompatImport || item.removedArcGisImports > 0,
+      (item) =>
+        item.rewrittenConstructors > 0 ||
+        item.addedCompatImport ||
+        item.removedArcGisImports > 0 ||
+        item.annotatedTodoComments > 0,
     ).length,
     metrics,
     fileResults: fileResults.sort((a, b) => a.file.localeCompare(b.file)),
@@ -155,11 +185,14 @@ function codemodFile(
   file: string,
   source: string,
   compatImportPath: string,
+  annotateTodos: boolean,
 ): {
   nextSource: string;
   rewrittenConstructors: number;
+  rewrittenKinds: CodemodConstructorKind[];
   addedCompatImport: boolean;
   removedArcGisImports: number;
+  annotatedTodoComments: number;
   manualTodos: MigrationTodo[];
 } {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
@@ -168,8 +201,10 @@ function codemodFile(
     return {
       nextSource: source,
       rewrittenConstructors: 0,
+      rewrittenKinds: [],
       addedCompatImport: false,
       removedArcGisImports: 0,
+      annotatedTodoComments: 0,
       manualTodos: [],
     };
   }
@@ -182,7 +217,9 @@ function codemodFile(
   }
 
   const constructorEdits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
   const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
   const requiredCompatSymbols = new Set<string>();
 
   walk(sourceFile, (node) => {
@@ -204,29 +241,44 @@ function codemodFile(
         end: node.expression.getEnd(),
         text: spec.compatSymbol,
       });
+      rewrittenKinds.push(importBinding.kind);
       return;
     }
 
-    const location = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const nodeStart = node.getStart(sourceFile);
+    const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
     manualTodos.push({
+      kind: importBinding.kind,
       file,
       line: location.line + 1,
       column: location.character + 1,
       reason: safeCheck.reason,
     });
+    if (annotateTodos) {
+      const lineStart = findLineStartOffset(source, nodeStart);
+      if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+        todoCommentEdits.push({
+          start: lineStart,
+          end: lineStart,
+          text: `// ${TODO_MARKER}[${importBinding.kind}]: ${safeCheck.reason}\n`,
+        });
+      }
+    }
   });
 
   if (constructorEdits.length === 0) {
     return {
-      nextSource: source,
+      nextSource: applyTextEdits(source, todoCommentEdits),
       rewrittenConstructors: 0,
+      rewrittenKinds: [],
       addedCompatImport: false,
       removedArcGisImports: 0,
+      annotatedTodoComments: todoCommentEdits.length,
       manualTodos: manualTodos.sort(compareTodos),
     };
   }
 
-  let transformed = applyTextEdits(source, constructorEdits);
+  let transformed = applyTextEdits(source, [...constructorEdits, ...todoCommentEdits]);
   const removedArcGisImports = removeUnusedArcGisImports(file, transformed);
   transformed = removedArcGisImports.nextSource;
 
@@ -242,8 +294,10 @@ function codemodFile(
   return {
     nextSource: transformed,
     rewrittenConstructors: constructorEdits.length,
+    rewrittenKinds,
     addedCompatImport: compatImportResult.changed,
     removedArcGisImports: removedArcGisImports.removedCount,
+    annotatedTodoComments: todoCommentEdits.length,
     manualTodos: manualTodos.sort(compareTodos),
   };
 }
@@ -256,6 +310,14 @@ function buildModuleToSpecLookup(specs: readonly ConstructorRewriteSpec[]): Map<
     }
   }
   return result;
+}
+
+function createEmptyByKindMetrics(): CodemodMetricsByKind {
+  return {
+    "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    map: { total: 0, autoMigrated: 0, manual: 0 },
+    "map-view": { total: 0, autoMigrated: 0, manual: 0 },
+  };
 }
 
 function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding[] {
@@ -466,6 +528,30 @@ function expandToFullLine(source: string, start: number, end: number): { start: 
   return { start: expandedStart, end: expandedEnd };
 }
 
+function findLineStartOffset(source: string, position: number): number {
+  let start = position;
+  while (start > 0 && source[start - 1] !== "\n") {
+    start -= 1;
+  }
+  return start;
+}
+
+function shouldInsertTodoComment(source: string, lineStart: number, nodeStart: number): boolean {
+  const currentPrefix = source.slice(lineStart, nodeStart);
+  if (currentPrefix.includes(TODO_MARKER)) {
+    return false;
+  }
+
+  if (lineStart === 0) {
+    return true;
+  }
+
+  const previousLineEnd = lineStart - 1;
+  const previousLineStart = findLineStartOffset(source, previousLineEnd);
+  const previousLine = source.slice(previousLineStart, lineStart);
+  return !previousLine.includes(TODO_MARKER);
+}
+
 function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
   const sorted = edits
     .slice()
@@ -479,7 +565,7 @@ function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
 }
 
 function isSafeConstructorCall(
-  kind: ConstructorKind,
+  kind: CodemodConstructorKind,
   node: ts.NewExpression,
 ): { ok: true } | { ok: false; reason: string } {
   switch (kind) {
@@ -670,7 +756,7 @@ function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
   node.forEachChild((child) => walk(child, visit));
 }
 
-function specForKind(kind: ConstructorKind): ConstructorRewriteSpec {
+function specForKind(kind: CodemodConstructorKind): ConstructorRewriteSpec {
   for (const spec of REWRITE_SPECS) {
     if (spec.kind === kind) {
       return spec;
@@ -689,6 +775,9 @@ function compareTodos(a: MigrationTodo, b: MigrationTodo): number {
   }
   if (a.column !== b.column) {
     return a.column - b.column;
+  }
+  if (a.kind !== b.kind) {
+    return a.kind.localeCompare(b.kind);
   }
   return a.reason.localeCompare(b.reason);
 }

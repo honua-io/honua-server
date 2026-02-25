@@ -45,6 +45,11 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
     expect(result.metrics.autoMigratedCallSites).toBe(1);
     expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
@@ -105,6 +110,16 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
     expect(result.metrics.autoMigratedCallSites).toBe(2);
     expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import { MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";');
@@ -137,6 +152,7 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.autoMigratedCallSites).toBe(0);
     expect(result.metrics.manualCallSites).toBe(1);
     expect(result.manualTodos).toHaveLength(1);
+    expect(result.manualTodos[0].kind).toBe("feature-layer");
     expect(result.manualTodos[0].reason).toContain("non-url properties");
 
     const nextSource = fs.readFileSync(file, "utf8");
@@ -167,11 +183,46 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
     expect(result.metrics.autoMigratedCallSites).toBe(1);
     expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 2,
+      autoMigrated: 1,
+      manual: 1,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain("@arcgis/core/layers/FeatureLayer");
     expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const a = new FeatureLayerCompat({ url: serviceUrl });");
     expect(nextSource).toContain("const b = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });");
+  });
+
+  it("can annotate manual todos inline without duplicating markers on rerun", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "annotated.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({ url: serviceUrl, outFields: ['*'] });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      annotateTodos: true,
+    });
+    runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      annotateTodos: true,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    const marker = "// TODO(honua-migrate)[feature-layer]:";
+    expect(nextSource.includes(marker)).toBe(true);
+    expect(nextSource.split(marker)).toHaveLength(2);
   });
 });

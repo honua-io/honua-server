@@ -46,6 +46,22 @@ describe("arcgis migration integration", () => {
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
     expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
     expect(codemodResult.metrics.manualCallSites).toBe(1);
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
+      total: 2,
+      autoMigrated: 1,
+      manual: 1,
+    });
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.manualTodos[0].kind).toBe("feature-layer");
 
     expect(report.scanReport.flags).toContain("dynamic-import-detected");
     expect(report.scanReport.flags).toContain("scene-3d-detected");

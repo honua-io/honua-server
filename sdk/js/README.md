@@ -39,6 +39,9 @@ node dist/src/migration/cli.js codemod ./src --report migration-report.json
 
 # Safe codemod (write changes)
 node dist/src/migration/cli.js codemod ./src --write --report migration-report.json
+
+# Safe codemod (write + inline TODO annotations for manual sites)
+node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json
 ```
 
 The codemod is intentionally conservative:
@@ -47,4 +50,6 @@ The codemod is intentionally conservative:
   - `new Map(...)` -> `new MapCompat(...)`
   - `new MapView(...)` -> `new MapViewCompat(...)`
 - it skips complex constructors and records manual TODO entries in the report,
-- it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites.
+- optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
+- it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,
+- CLI summary includes per-type migration counts as `byKind=feature-layer:auto/manual/total,...`.
