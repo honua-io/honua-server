@@ -305,7 +305,7 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
             --blame-hang-timeout 8m \
-            -- RunConfiguration.MaxCpuCount=0
+            -- RunConfiguration.MaxCpuCount=1
 
       - name: Install Python test dependencies
         run: |
