@@ -26,6 +26,7 @@ export class FeatureLayerCompat {
   public readonly url: string;
   public readonly serviceId: string;
   public readonly layerId: number;
+  public loaded: boolean;
 
   private readonly client: HonuaClient;
 
@@ -34,7 +35,22 @@ export class FeatureLayerCompat {
     this.url = options.url;
     this.serviceId = parsed.serviceId;
     this.layerId = parsed.layerId;
+    this.loaded = false;
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
+  }
+
+  public async load(): Promise<FeatureLayerCompat> {
+    this.loaded = true;
+    return this;
+  }
+
+  public async when(callback?: (layer: FeatureLayerCompat) => void): Promise<FeatureLayerCompat> {
+    const layer = await this.load();
+    if (callback) {
+      callback(layer);
+    }
+
+    return layer;
   }
 
   public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<unknown> {

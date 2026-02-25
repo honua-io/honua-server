@@ -13,7 +13,7 @@ export type { ParsedFeatureLayerUrl } from "./esri-compat/url.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
 export { MapViewCompat } from "./esri-compat/map-view.js";
-export type { MapViewCompatOptions, MapViewGoToTarget } from "./esri-compat/map-view.js";
+export type { MapViewCompatOptions, MapViewGoToTarget, MapViewHandle } from "./esri-compat/map-view.js";
 
 export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
 export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";

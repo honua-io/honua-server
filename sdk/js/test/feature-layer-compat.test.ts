@@ -56,4 +56,30 @@ describe("FeatureLayerCompat", () => {
     expect(requestedUrl).toContain("\"layerId\":1000");
     expect(requestedUrl).toContain("\"where\":\"1=1\"");
   });
+
+  it("supports load/when lifecycle helpers", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    expect(layer.loaded).toBe(false);
+
+    let callbackLayer: FeatureLayerCompat | undefined;
+    const resolved = await layer.when((resolvedLayer) => {
+      callbackLayer = resolvedLayer;
+    });
+
+    expect(layer.loaded).toBe(true);
+    expect(callbackLayer).toBe(layer);
+    expect(resolved).toBe(layer);
+  });
 });

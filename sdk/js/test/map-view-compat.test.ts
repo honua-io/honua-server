@@ -29,8 +29,12 @@ describe("MapViewCompat", () => {
       center: [-157.8, 21.3],
     });
 
-    const ready = await view.when();
+    let callbackView: MapViewCompat | undefined;
+    const ready = await view.when((resolvedView) => {
+      callbackView = resolvedView;
+    });
     expect(ready).toBe(view);
+    expect(callbackView).toBe(view);
     expect(view.map).toBe(map);
     expect(view.zoom).toBe(3);
 
@@ -40,5 +44,40 @@ describe("MapViewCompat", () => {
 
     view.destroy();
     expect(view.map).toBeUndefined();
+  });
+
+  it("supports watch and on handles", async () => {
+    const view = new MapViewCompat({
+      zoom: 2,
+      center: [0, 0],
+    });
+
+    const zoomValues: unknown[] = [];
+    const centerValues: unknown[] = [];
+    const events: unknown[] = [];
+
+    const zoomHandle = view.watch("zoom", (value) => {
+      zoomValues.push(value);
+    });
+    const centerHandle = view.watch("center", (value) => {
+      centerValues.push(value);
+    });
+    const eventHandle = view.on("go-to", (event) => {
+      events.push(event);
+    });
+
+    await view.goTo({ zoom: 4, center: [10, 20] });
+    expect(zoomValues).toEqual([4]);
+    expect(centerValues).toEqual([[10, 20]]);
+    expect(events).toEqual([{ zoom: 4, center: [10, 20] }]);
+
+    zoomHandle.remove();
+    centerHandle.remove();
+    eventHandle.remove();
+
+    await view.goTo({ zoom: 6, center: [30, 40] });
+    expect(zoomValues).toEqual([4]);
+    expect(centerValues).toEqual([[10, 20]]);
+    expect(events).toEqual([{ zoom: 4, center: [10, 20] }]);
   });
 });
