@@ -154,7 +154,7 @@ The codemod is intentionally conservative:
   - `new MapView(...)` -> `new MapViewCompat(...)` (supports `map`, `container`, `center`, `zoom`, `scale`, `rotation`, `extent`, `constraints`, `padding`, `highlightOptions`, `spatialReference`, and `popup`)
   - `new SceneView(...)` -> `new SceneViewCompat(...)` (supports core `MapView` options plus `viewingMode`, `qualityProfile`, and `camera`)
   - `new WebMap(...)` -> `new WebMapCompat(...)` (supports `portalItem`, `basemap`, `layers`, `ground`, `tables`, and `spatialReference`)
-  - `new LayerList(...)` -> `new LayerListCompat(...)`
+  - `new LayerList(...)` -> `new LayerListCompat(...)` (supports `view`, `map`, `container`, `includeHidden`, `autoRefresh`, and `listItemCreatedFunction`)
   - `new Legend(...)` -> `new LegendCompat(...)`
   - `new Popup(...)` -> `new PopupCompat(...)`
   - `new Home(...)` -> `new HomeCompat(...)`

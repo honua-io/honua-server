@@ -966,6 +966,8 @@ describe("runEsriCompatCodemod", () => {
         "const layerList = new LayerList({",
         "  view,",
         "  container: 'layer-list',",
+        "  includeHidden: true,",
+        "  autoRefresh: false,",
         "  listItemCreatedFunction: (event) => {",
         "    event.item.actionsSections = [[{ id: 'zoom-to', title: 'Zoom To' }]];",
         "  },",
@@ -994,6 +996,8 @@ describe("runEsriCompatCodemod", () => {
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import { LayerListCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const layerList = new LayerListCompat({");
+    expect(nextSource).toContain("includeHidden: true");
+    expect(nextSource).toContain("autoRefresh: false");
     expect(nextSource).toContain("listItemCreatedFunction: (event) => {");
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
   });
