@@ -8,6 +8,7 @@ import {
   BookmarksCompat,
   CompassCompat,
   CompatEventBus,
+  CoordinateConversionCompat,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   DirectionsCompat,
@@ -70,6 +71,7 @@ describe("entrypoint modules", () => {
     expect(ZoomCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");
+    expect(CoordinateConversionCompat).toBeTypeOf("function");
     expect(CompatEventBus).toBeTypeOf("function");
     expect(createEsriRequestInterceptors).toBeTypeOf("function");
     expect(createArcGisTokenInterceptor).toBeTypeOf("function");

@@ -22,6 +22,7 @@ import Measurement from "@arcgis/core/widgets/Measurement";
 import TimeSlider from "@arcgis/core/widgets/TimeSlider";
 import RouteLayer from "@arcgis/core/layers/RouteLayer";
 import Directions from "@arcgis/core/widgets/Directions";
+import CoordinateConversion from "@arcgis/core/widgets/CoordinateConversion";
 
 const map = new Map({
   basemap: "streets",
@@ -93,6 +94,12 @@ const directions = new Directions({
   useDefaultRouteLayer: false,
   showSaveAsButton: false,
 });
+const coordinateConversion = new CoordinateConversion({
+  view,
+  mode: "live",
+  multipleConversionsEnabled: true,
+  formats: ["lonlat", "dms"],
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -112,6 +119,7 @@ view.ui.add(track, "top-left");
 view.ui.add(measurement, "bottom-right");
 view.ui.add(timeSlider, "bottom-left");
 view.ui.add(directions, "top-right");
+view.ui.add(coordinateConversion, "bottom-left");
 
 popup.open({
   title: "Migration",
@@ -142,3 +150,4 @@ void measurement;
 void timeSlider;
 void routeLayer;
 void directions;
+void coordinateConversion;

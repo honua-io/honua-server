@@ -93,6 +93,12 @@ export type {
   DirectionsCompatOptions,
   DirectionsSolveSummaryCompat,
 } from "./esri-compat/directions.js";
+export { CoordinateConversionCompat } from "./esri-compat/coordinate-conversion.js";
+export type {
+  CoordinateConversionCompatOptions,
+  CoordinateConversionResultCompat,
+  CoordinateFormatCompat,
+} from "./esri-compat/coordinate-conversion.js";
 export { LayerListCompat } from "./esri-compat/layer-list.js";
 export type { LayerListCompatOptions, LayerListItemCompat } from "./esri-compat/layer-list.js";
 export { LegendCompat } from "./esri-compat/legend.js";

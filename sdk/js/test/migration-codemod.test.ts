@@ -291,6 +291,7 @@ describe("runEsriCompatCodemod", () => {
         "import TimeSlider from '@arcgis/core/widgets/TimeSlider';",
         "import RouteLayer from '@arcgis/core/layers/RouteLayer';",
         "import Directions from '@arcgis/core/widgets/Directions';",
+        "import CoordinateConversion from '@arcgis/core/widgets/CoordinateConversion';",
         "const view = {};",
         "const routeLayer = new RouteLayer({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
@@ -314,6 +315,7 @@ describe("runEsriCompatCodemod", () => {
         "const measurement = new Measurement({ view, container: 'measurement-div', activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
         "const timeSlider = new TimeSlider({ view, container: 'time-slider-div', mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
         "const directions = new Directions({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
+        "const coordinateConversion = new CoordinateConversion({ view, container: 'coords-div', mode: 'live', multipleConversionsEnabled: true, formats: ['lonlat', 'dms'] });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -336,6 +338,7 @@ describe("runEsriCompatCodemod", () => {
         "void timeSlider;",
         "void routeLayer;",
         "void directions;",
+        "void coordinateConversion;",
       ].join("\n"),
       "utf8",
     );
@@ -347,8 +350,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(22);
-    expect(result.metrics.autoMigratedCallSites).toBe(22);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(23);
+    expect(result.metrics.autoMigratedCallSites).toBe(23);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -460,10 +463,15 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["coordinate-conversion-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, DirectionsCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MeasurementCompat, PopupCompat, RouteLayerCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, CoordinateConversionCompat, DirectionsCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MeasurementCompat, PopupCompat, RouteLayerCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain(
       "const routeLayer = new RouteLayerCompat({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
@@ -511,6 +519,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const directions = new DirectionsCompat({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
     );
+    expect(nextSource).toContain(
+      "const coordinateConversion = new CoordinateConversionCompat({ view, container: 'coords-div', mode: 'live', multipleConversionsEnabled: true, formats: ['lonlat', 'dms'] });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -533,6 +544,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/TimeSlider");
     expect(nextSource).not.toContain("@arcgis/core/layers/RouteLayer");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Directions");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/CoordinateConversion");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

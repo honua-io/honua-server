@@ -134,6 +134,7 @@ describe("arcgis migration integration", () => {
       "measurement-widget": 0,
       "time-slider-widget": 0,
       "directions-widget": 0,
+      "coordinate-conversion-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -460,8 +461,8 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(24);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(24);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(25);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(25);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -583,12 +584,17 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["coordinate-conversion-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(report.readiness).toBe("ready");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, DirectionsCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, MeasurementCompat, PopupCompat, RouteLayerCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, CoordinateConversionCompat, DirectionsCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, MeasurementCompat, PopupCompat, RouteLayerCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
@@ -619,6 +625,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('rotationEnabled: true');
     expect(migratedMain).toContain("const routeLayer = new RouteLayerCompat({");
     expect(migratedMain).toContain("const directions = new DirectionsCompat({");
+    expect(migratedMain).toContain("const coordinateConversion = new CoordinateConversionCompat({");
     expect(migratedMain).toContain("const measurement = new MeasurementCompat({");
     expect(migratedMain).toContain('activeTool: "distance"');
     expect(migratedMain).toContain('linearUnit: "kilometers"');
@@ -646,6 +653,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('view.ui.add(measurement, "bottom-right");');
     expect(migratedMain).toContain('view.ui.add(timeSlider, "bottom-left");');
     expect(migratedMain).toContain('view.ui.add(directions, "top-right");');
+    expect(migratedMain).toContain('view.ui.add(coordinateConversion, "bottom-left");');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
@@ -668,6 +676,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/TimeSlider");
     expect(migratedMain).not.toContain("@arcgis/core/layers/RouteLayer");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Directions");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/CoordinateConversion");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {

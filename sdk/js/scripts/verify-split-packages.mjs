@@ -52,6 +52,7 @@ import {
   BookmarksCompat,
   CompassCompat,
   CompatEventBus,
+  CoordinateConversionCompat,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   DirectionsCompat,
@@ -92,6 +93,7 @@ import {
 
 if (typeof HonuaClient !== "function") throw new Error("HonuaClient export missing");
 if (typeof CompatEventBus !== "function") throw new Error("CompatEventBus export missing");
+if (typeof CoordinateConversionCompat !== "function") throw new Error("CoordinateConversionCompat export missing");
 if (typeof createEsriRequestInterceptors !== "function") throw new Error("createEsriRequestInterceptors export missing");
 if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
 if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
