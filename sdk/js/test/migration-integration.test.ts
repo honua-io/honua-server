@@ -260,7 +260,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
   });
 
-  it("reports assisted when require-style ArcGIS usage is auto-migrated but remains scan-unhandled", () => {
+  it("reports ready when supported require-style ArcGIS usage is fully auto-migrated", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-assisted-require-app",
     );
@@ -276,20 +276,14 @@ describe("arcgis migration integration", () => {
       ratio: 0,
     });
     expect(report.manualInterventionMetric).toMatchObject({
-      numerator: 1,
-      denominator: 2,
-      ratio: 0.5,
+      numerator: 0,
+      denominator: 1,
+      ratio: 0,
       manualCodemodCallSites: 0,
-      unhandledUsageHits: 1,
+      unhandledUsageHits: 0,
     });
-    expect(report.unhandledArcGisModules).toEqual([
-      {
-        modulePath: "@arcgis/core/Map",
-        usageStyle: "require",
-        count: 1,
-      },
-    ]);
-    expect(report.readiness).toBe("assisted");
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
     expect(report.gates).toEqual([
       {
         gate: "no-manual-todos",
@@ -298,8 +292,8 @@ describe("arcgis migration integration", () => {
       },
       {
         gate: "no-unhandled-modules",
-        passed: false,
-        detail: "1 ArcGIS modules remain outside codemod scope",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
       },
       {
         gate: "no-blocking-flags",

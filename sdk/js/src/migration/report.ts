@@ -1,5 +1,6 @@
 import {
   SUPPORTED_ARCGIS_MODULES,
+  SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
   type CodemodConstructorKind,
   type EsriCompatCodemodResult,
   type MigrationTodo,
@@ -77,7 +78,7 @@ export function buildJsMigrationReport(
   const ratio = denominator === 0 ? 0 : numerator / denominator;
   const manualTodosByKind = summarizeManualTodosByKind(codemodResult.manualTodos);
   const manualTodoReasons = summarizeManualTodoReasons(codemodResult.manualTodos);
-  const unhandledArcGisModules = summarizeUnhandledModules(resolvedScan);
+  const unhandledArcGisModules = summarizeUnhandledModules(resolvedScan, codemodResult);
   const unhandledUsageHits = unhandledArcGisModules.reduce(
     (total, moduleItem) => total + moduleItem.count,
     0,
@@ -159,14 +160,22 @@ function summarizeManualTodoReasons(todos: readonly MigrationTodo[]): MigrationR
     .sort((a, b) => (a.count === b.count ? a.reason.localeCompare(b.reason) : b.count - a.count));
 }
 
-function summarizeUnhandledModules(scanReport: ArcGisScanReport): ArcGisModuleSummary[] {
+function summarizeUnhandledModules(
+  scanReport: ArcGisScanReport,
+  codemodResult: EsriCompatCodemodResult,
+): ArcGisModuleSummary[] {
   const supportedModules = new Set(SUPPORTED_ARCGIS_MODULES);
   const moduleCounts = new Map<string, number>();
 
   for (const hit of scanReport.imports) {
     const usageStyle = classifyUsageStyle(hit.importClause);
+    const supportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
+    const requireCoveredByCodemod =
+      usageStyle === "require" &&
+      supportedKind !== undefined &&
+      codemodResult.metrics.byKind[supportedKind].total > 0;
     const isHandledByCodemodScope =
-      supportedModules.has(hit.modulePath) && usageStyle !== "require";
+      supportedModules.has(hit.modulePath) && (usageStyle !== "require" || requireCoveredByCodemod);
     if (isHandledByCodemodScope) {
       continue;
     }

@@ -149,4 +149,62 @@ describe("buildJsMigrationReport", () => {
       },
     ]);
   });
+
+  it("treats require usage of supported modules as handled when codemod covered the kind", () => {
+    const codemodResult = createCodemodResult();
+    const scanReport: ArcGisScanReport = {
+      rootDir: "/tmp/app",
+      filesScanned: 1,
+      filesWithArcGisImports: 1,
+      imports: [
+        {
+          file: "/tmp/app/src/main.cjs",
+          modulePath: "@arcgis/core/Map",
+          importClause: "require(...)",
+          symbols: ["Map"],
+        },
+      ],
+      symbolUsageCounts: {
+        Map: 1,
+      },
+      flags: [],
+    };
+
+    const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.gates.find((gate) => gate.gate === "no-unhandled-modules")).toMatchObject({
+      passed: true,
+    });
+  });
+
+  it("keeps unsupported require modules in unhandled inventory", () => {
+    const codemodResult = createCodemodResult();
+    const scanReport: ArcGisScanReport = {
+      rootDir: "/tmp/app",
+      filesScanned: 1,
+      filesWithArcGisImports: 1,
+      imports: [
+        {
+          file: "/tmp/app/src/main.cjs",
+          modulePath: "@arcgis/core/identity/IdentityManager",
+          importClause: "require(...)",
+          symbols: [],
+        },
+      ],
+      symbolUsageCounts: {},
+      flags: [],
+    };
+
+    const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+    expect(report.unhandledArcGisModules).toEqual([
+      {
+        modulePath: "@arcgis/core/identity/IdentityManager",
+        usageStyle: "require",
+        count: 1,
+      },
+    ]);
+    expect(report.gates.find((gate) => gate.gate === "no-unhandled-modules")).toMatchObject({
+      passed: false,
+    });
+  });
 });

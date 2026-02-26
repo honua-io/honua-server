@@ -60,6 +60,8 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
 export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
   Array.from(spec.arcGisModules),
 );
+export const SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH: Readonly<Record<string, CodemodConstructorKind>> =
+  Object.freeze(buildModuleToKindLookup(REWRITE_SPECS));
 
 const MODULE_TO_SPEC = buildModuleToSpecLookup(REWRITE_SPECS);
 
@@ -349,6 +351,18 @@ function buildModuleToSpecLookup(specs: readonly ConstructorRewriteSpec[]): Map<
   for (const spec of specs) {
     for (const modulePath of spec.arcGisModules) {
       result.set(modulePath, spec);
+    }
+  }
+  return result;
+}
+
+function buildModuleToKindLookup(
+  specs: readonly ConstructorRewriteSpec[],
+): Record<string, CodemodConstructorKind> {
+  const result: Record<string, CodemodConstructorKind> = {};
+  for (const spec of specs) {
+    for (const modulePath of spec.arcGisModules) {
+      result[modulePath] = spec.kind;
     }
   }
   return result;
