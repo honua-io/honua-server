@@ -133,6 +133,9 @@ node dist/src/migration/cli.js reconcile --source-base-url https://source.exampl
 The codemod is intentionally conservative:
 - default target (`--target honua-compat`) rewrites safe constructors:
   - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `outFields` and `definitionExpression`)
+  - `new Color(...)` -> `new ColorCompat(...)`
+  - `new SimpleRenderer(...)` -> `new SimpleRendererCompat(...)`
+  - `new UniqueValueRenderer(...)` -> `new UniqueValueRendererCompat(...)`
   - `new GraphicsLayer(...)` -> `new GraphicsLayerCompat(...)`
   - `new GroupLayer(...)` -> `new GroupLayerCompat(...)`
   - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `sublayers`, `opacity`, and `visible`)
@@ -168,7 +171,7 @@ The codemod is intentionally conservative:
   - `new MapImageLayer({ ... })` -> `HonuaEsriLeaflet.dynamicMapLayer({ ... })`
   - `new TileLayer({ ... })` -> `HonuaEsriLeaflet.tiledMapLayer({ ... })`
   - dynamic imports for those modules -> `Promise.resolve({ default: HonuaEsriLeaflet.* })`
-  - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `GraphicsLayer`, `GroupLayer`, `LayerList`, `Legend`, `Popup`, `Home`, `BasemapToggle`, `Locate`, `ScaleBar`, `Search`, `BasemapGallery`, `Bookmarks`, `Expand`, `Compass`, `Fullscreen`, `Zoom`, `Attribution`, `Sketch`, `Editor`, `Track`, `Measurement`, `TimeSlider`, `RouteLayer`, `Directions`) are emitted as manual TODO/report entries
+  - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `Color`, `SimpleRenderer`, `UniqueValueRenderer`, `GraphicsLayer`, `GroupLayer`, `LayerList`, `Legend`, `Popup`, `Home`, `BasemapToggle`, `Locate`, `ScaleBar`, `Search`, `BasemapGallery`, `Bookmarks`, `Expand`, `Compass`, `Fullscreen`, `Zoom`, `Attribution`, `Sketch`, `Editor`, `Track`, `Measurement`, `TimeSlider`, `RouteLayer`, `Directions`) are emitted as manual TODO/report entries
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),
 - it skips complex constructors and records manual TODO entries in the report,
 - it keeps CommonJS `require(...)` constructor sites as manual TODOs (for example `.cjs` or `.js` files exporting via `module.exports`/`exports.*`),
@@ -183,7 +186,7 @@ The codemod is intentionally conservative:
   - `--max-manual-ratio <0..1>`
   - `--max-manual-intervention-ratio <0..1>`
 - CLI summary includes:
-  - per-type migration counts as `byKind=feature-layer:auto/manual/total,graphic:auto/manual/total,point-geometry:auto/manual/total,simple-line-symbol:auto/manual/total,simple-marker-symbol:auto/manual/total,...,route-layer:auto/manual/total,layer-list:auto/manual/total,legend-widget:auto/manual/total,popup-widget:auto/manual/total,home-widget:auto/manual/total,basemap-toggle-widget:auto/manual/total,locate-widget:auto/manual/total,scale-bar-widget:auto/manual/total,search-widget:auto/manual/total,basemap-gallery-widget:auto/manual/total,bookmarks-widget:auto/manual/total,expand-widget:auto/manual/total,compass-widget:auto/manual/total,fullscreen-widget:auto/manual/total,zoom-widget:auto/manual/total,attribution-widget:auto/manual/total,sketch-widget:auto/manual/total,editor-widget:auto/manual/total,track-widget:auto/manual/total,measurement-widget:auto/manual/total,time-slider-widget:auto/manual/total,directions-widget:auto/manual/total,query:auto/manual/total,feature-set:auto/manual/total,oauth-info:auto/manual/total,identity-manager:auto/manual/total,esri-request:auto/manual/total,esri-config:auto/manual/total`,
+  - per-type migration counts as `byKind=feature-layer:auto/manual/total,graphic:auto/manual/total,point-geometry:auto/manual/total,color:auto/manual/total,simple-line-symbol:auto/manual/total,simple-marker-symbol:auto/manual/total,simple-renderer:auto/manual/total,unique-value-renderer:auto/manual/total,...,route-layer:auto/manual/total,layer-list:auto/manual/total,legend-widget:auto/manual/total,popup-widget:auto/manual/total,home-widget:auto/manual/total,basemap-toggle-widget:auto/manual/total,locate-widget:auto/manual/total,scale-bar-widget:auto/manual/total,search-widget:auto/manual/total,basemap-gallery-widget:auto/manual/total,bookmarks-widget:auto/manual/total,expand-widget:auto/manual/total,compass-widget:auto/manual/total,fullscreen-widget:auto/manual/total,zoom-widget:auto/manual/total,attribution-widget:auto/manual/total,sketch-widget:auto/manual/total,editor-widget:auto/manual/total,track-widget:auto/manual/total,measurement-widget:auto/manual/total,time-slider-widget:auto/manual/total,directions-widget:auto/manual/total,query:auto/manual/total,feature-set:auto/manual/total,oauth-info:auto/manual/total,identity-manager:auto/manual/total,esri-request:auto/manual/total,esri-config:auto/manual/total,reactive-utils:auto/manual/total`,
   - grouped manual reasons,
   - unhandled ArcGIS module inventory (with `static-import` / `dynamic-import` / `require` usage style),
   - scanner flags include module-shape and risk hints (for example `commonjs-detected`, `scene-3d-detected`, `dynamic-import-detected`),

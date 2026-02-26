@@ -19,8 +19,11 @@ describe("JS parity matrix", () => {
     const featureLayer = matrix.find((row) => row.kind === "feature-layer");
     const graphic = matrix.find((row) => row.kind === "graphic");
     const point = matrix.find((row) => row.kind === "point-geometry");
+    const color = matrix.find((row) => row.kind === "color");
     const simpleLineSymbol = matrix.find((row) => row.kind === "simple-line-symbol");
     const simpleMarkerSymbol = matrix.find((row) => row.kind === "simple-marker-symbol");
+    const simpleRenderer = matrix.find((row) => row.kind === "simple-renderer");
+    const uniqueValueRenderer = matrix.find((row) => row.kind === "unique-value-renderer");
     const basemap = matrix.find((row) => row.kind === "basemap");
     const map = matrix.find((row) => row.kind === "map");
     const track = matrix.find((row) => row.kind === "track-widget");
@@ -55,11 +58,23 @@ describe("JS parity matrix", () => {
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });
+    expect(color).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
     expect(simpleLineSymbol).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });
     expect(simpleMarkerSymbol).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(simpleRenderer).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(uniqueValueRenderer).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

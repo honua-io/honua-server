@@ -84,8 +84,11 @@ describe("migration cli parity matrix", () => {
     const featureLayer = report.matrix.find((row) => row.kind === "feature-layer");
     const graphic = report.matrix.find((row) => row.kind === "graphic");
     const point = report.matrix.find((row) => row.kind === "point-geometry");
+    const color = report.matrix.find((row) => row.kind === "color");
     const simpleLineSymbol = report.matrix.find((row) => row.kind === "simple-line-symbol");
     const simpleMarkerSymbol = report.matrix.find((row) => row.kind === "simple-marker-symbol");
+    const simpleRenderer = report.matrix.find((row) => row.kind === "simple-renderer");
+    const uniqueValueRenderer = report.matrix.find((row) => row.kind === "unique-value-renderer");
     const basemap = report.matrix.find((row) => row.kind === "basemap");
     const track = report.matrix.find((row) => row.kind === "track-widget");
     const routeTask = report.matrix.find((row) => row.kind === "route-task");
@@ -111,8 +114,11 @@ describe("migration cli parity matrix", () => {
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(point).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(color).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleLineSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(simpleRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(uniqueValueRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });

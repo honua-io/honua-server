@@ -11,6 +11,7 @@ import {
   CompassCompat,
   CompatEventBus,
   CoordinateConversionCompat,
+  ColorCompat,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   DirectionsCompat,
@@ -58,12 +59,14 @@ import {
   SketchCompat,
   SimpleLineSymbolCompat,
   SimpleMarkerSymbolCompat,
+  SimpleRendererCompat,
   ScaleBarCompat,
   SwipeCompat,
   TableListCompat,
   TrackCompat,
   TimeSliderCompat,
   TileLayerCompat,
+  UniqueValueRendererCompat,
   ZoomCompat,
   watch,
   when,
@@ -103,6 +106,7 @@ describe("entrypoint modules", () => {
     expect(ZoomCompat).toBeTypeOf("function");
     expect(GraphicCompat).toBeTypeOf("function");
     expect(PointCompat).toBeTypeOf("function");
+    expect(ColorCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");
     expect(CoordinateConversionCompat).toBeTypeOf("function");
@@ -154,6 +158,8 @@ describe("entrypoint modules", () => {
     expect(SearchCompat).toBeTypeOf("function");
     expect(SimpleLineSymbolCompat).toBeTypeOf("function");
     expect(SimpleMarkerSymbolCompat).toBeTypeOf("function");
+    expect(SimpleRendererCompat).toBeTypeOf("function");
+    expect(UniqueValueRendererCompat).toBeTypeOf("function");
     expect(WebMapCompat).toBeTypeOf("function");
     expect(watch).toBeTypeOf("function");
     expect(when).toBeTypeOf("function");

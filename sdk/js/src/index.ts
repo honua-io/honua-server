@@ -46,6 +46,8 @@ export type {
 } from "./esri-compat/feature-table.js";
 export { FeatureSetCompat } from "./esri-compat/feature-set.js";
 export type { FeatureSetCompatOptions } from "./esri-compat/feature-set.js";
+export { ColorCompat } from "./esri-compat/color.js";
+export type { ColorCompatInput } from "./esri-compat/color.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,
@@ -98,6 +100,13 @@ export { SimpleLineSymbolCompat } from "./esri-compat/simple-line-symbol.js";
 export type { SimpleLineSymbolCompatOptions } from "./esri-compat/simple-line-symbol.js";
 export { SimpleMarkerSymbolCompat } from "./esri-compat/simple-marker-symbol.js";
 export type { SimpleMarkerSymbolCompatOptions } from "./esri-compat/simple-marker-symbol.js";
+export { SimpleRendererCompat } from "./esri-compat/simple-renderer.js";
+export type { SimpleRendererCompatOptions } from "./esri-compat/simple-renderer.js";
+export { UniqueValueRendererCompat } from "./esri-compat/unique-value-renderer.js";
+export type {
+  UniqueValueInfoCompat,
+  UniqueValueRendererCompatOptions,
+} from "./esri-compat/unique-value-renderer.js";
 export { GroupLayerCompat } from "./esri-compat/group-layer.js";
 export type { GroupLayerCompatOptions } from "./esri-compat/group-layer.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";

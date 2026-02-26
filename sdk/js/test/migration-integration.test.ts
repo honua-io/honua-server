@@ -106,8 +106,11 @@ describe("arcgis migration integration", () => {
       "feature-layer": 0,
       graphic: 0,
       "point-geometry": 0,
+      color: 0,
       "simple-line-symbol": 0,
       "simple-marker-symbol": 0,
+      "simple-renderer": 0,
+      "unique-value-renderer": 0,
       "graphics-layer": 0,
       "group-layer": 0,
       "map-image-layer": 0,
@@ -581,6 +584,42 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const symbol = new SimpleMarkerSymbolCompat({");
     expect(migratedMain).toContain("const graphic = new GraphicCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/geometry/Point");
+  });
+
+  it("migrates color/renderer fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-renderers-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.color).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["simple-renderer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["unique-value-renderer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { ColorCompat, SimpleRendererCompat, UniqueValueRendererCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const baseColor = new ColorCompat([255, 102, 0, 0.8]);");
+    expect(migratedMain).toContain("const simple = new SimpleRendererCompat({");
+    expect(migratedMain).toContain("const unique = new UniqueValueRendererCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/renderers/SimpleRenderer");
   });
 
   it("migrates feature-set fixture with ready gating", () => {

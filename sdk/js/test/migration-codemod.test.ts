@@ -255,6 +255,108 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleMarkerSymbol");
   });
 
+  it("rewrites safe color/renderer constructors and removes ArcGIS imports", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "renderers.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Color from '@arcgis/core/Color';",
+        "import SimpleRenderer from '@arcgis/core/renderers/SimpleRenderer';",
+        "import UniqueValueRenderer from '@arcgis/core/renderers/UniqueValueRenderer';",
+        "const color = new Color([255, 102, 0, 0.8]);",
+        "const simple = new SimpleRenderer({ symbol: { type: 'simple-fill', color } });",
+        "const unique = new UniqueValueRenderer({",
+        "  field: 'status',",
+        "  uniqueValueInfos: [",
+        "    { value: 'open', label: 'Open', symbol: { type: 'simple-fill', color: 'green' } },",
+        "  ],",
+        "});",
+        "void color; void simple; void unique;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.color).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["simple-renderer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["unique-value-renderer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { ColorCompat, SimpleRendererCompat, UniqueValueRendererCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new ColorCompat([255, 102, 0, 0.8])");
+    expect(nextSource).toContain("new SimpleRendererCompat({ symbol: { type: 'simple-fill', color } })");
+    expect(nextSource).toContain("new UniqueValueRendererCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/Color");
+    expect(nextSource).not.toContain("@arcgis/core/renderers/SimpleRenderer");
+    expect(nextSource).not.toContain("@arcgis/core/renderers/UniqueValueRenderer");
+  });
+
+  it("creates manual TODO for unsupported renderer options", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "renderer-manual.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import SimpleRenderer from '@arcgis/core/renderers/SimpleRenderer';",
+        "const renderer = new SimpleRenderer({ symbol: { type: 'simple-fill' }, authoringInfo: { foo: true } });",
+        "void renderer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: false,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(0);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.metrics.byKind["simple-renderer"]).toEqual({
+      total: 1,
+      autoMigrated: 0,
+      manual: 1,
+    });
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "simple-renderer",
+          reason: "SimpleRenderer options include unsupported properties; requires manual migration.",
+        }),
+      ]),
+    );
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("@arcgis/core/renderers/SimpleRenderer");
+    expect(nextSource).toContain("new SimpleRenderer({ symbol: { type: 'simple-fill' }, authoringInfo: { foo: true } })");
+  });
+
   it("rewrites safe FeatureSet constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "feature-set.ts");

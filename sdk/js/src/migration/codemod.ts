@@ -29,8 +29,11 @@ export type CodemodConstructorKind =
   | "feature-layer"
   | "graphic"
   | "point-geometry"
+  | "color"
   | "simple-line-symbol"
   | "simple-marker-symbol"
+  | "simple-renderer"
+  | "unique-value-renderer"
   | "graphics-layer"
   | "group-layer"
   | "map-image-layer"
@@ -109,6 +112,11 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set(["@arcgis/core/geometry/Point", "@arcgis/core/geometry/Point.js"]),
   },
   {
+    kind: "color",
+    compatSymbol: "ColorCompat",
+    arcGisModules: new Set(["@arcgis/core/Color", "@arcgis/core/Color.js"]),
+  },
+  {
     kind: "simple-line-symbol",
     compatSymbol: "SimpleLineSymbolCompat",
     arcGisModules: new Set([
@@ -122,6 +130,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/symbols/SimpleMarkerSymbol",
       "@arcgis/core/symbols/SimpleMarkerSymbol.js",
+    ]),
+  },
+  {
+    kind: "simple-renderer",
+    compatSymbol: "SimpleRendererCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/renderers/SimpleRenderer",
+      "@arcgis/core/renderers/SimpleRenderer.js",
+    ]),
+  },
+  {
+    kind: "unique-value-renderer",
+    compatSymbol: "UniqueValueRendererCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/renderers/UniqueValueRenderer",
+      "@arcgis/core/renderers/UniqueValueRenderer.js",
     ]),
   },
   {
@@ -1481,8 +1505,11 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
     graphic: { total: 0, autoMigrated: 0, manual: 0 },
     "point-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    color: { total: 0, autoMigrated: 0, manual: 0 },
     "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-renderer": { total: 0, autoMigrated: 0, manual: 0 },
+    "unique-value-renderer": { total: 0, autoMigrated: 0, manual: 0 },
     "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
@@ -2171,10 +2198,16 @@ function isSafeConstructorCall(
       return isSafeGraphicCompatCall(node);
     case "point-geometry":
       return isSafePointGeometryCompatCall(node);
+    case "color":
+      return isSafeColorCompatCall(node);
     case "simple-line-symbol":
       return isSafeSimpleLineSymbolCompatCall(node);
     case "simple-marker-symbol":
       return isSafeSimpleMarkerSymbolCompatCall(node);
+    case "simple-renderer":
+      return isSafeSimpleRendererCompatCall(node);
+    case "unique-value-renderer":
+      return isSafeUniqueValueRendererCompatCall(node);
     case "graphics-layer":
       return isSafeGraphicsLayerCompatCall(node);
     case "group-layer":
@@ -2575,6 +2608,35 @@ function isSafePointGeometryCompatCall(
   return { ok: true };
 }
 
+function isSafeColorCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Color constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (
+    ts.isStringLiteralLike(arg) ||
+    ts.isArrayLiteralExpression(arg) ||
+    ts.isObjectLiteralExpression(arg)
+  ) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    reason: "Color constructor argument is not a string/array/object literal.",
+  };
+}
+
 function isSafeSimpleLineSymbolCompatCall(
   node: ts.NewExpression,
 ): { ok: true } | { ok: false; reason: string } {
@@ -2656,6 +2718,101 @@ function isSafeSimpleMarkerSymbolCompatCall(
       return {
         ok: false,
         reason: "SimpleMarkerSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleRendererCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleRenderer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleRenderer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["symbol", "label", "description", "visualVariables"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "SimpleRenderer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "SimpleRenderer options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeUniqueValueRendererCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "UniqueValueRenderer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "UniqueValueRenderer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "field",
+    "field2",
+    "field3",
+    "defaultSymbol",
+    "defaultLabel",
+    "uniqueValueInfos",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "UniqueValueRenderer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "UniqueValueRenderer options include unsupported properties; requires manual migration.",
       };
     }
   }
