@@ -31,6 +31,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "basemap-toggle-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "locate-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "search-widget": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -145,6 +146,7 @@ describe("buildJsMigrationReport", () => {
       "basemap-toggle-widget": 0,
       "locate-widget": 0,
       "scale-bar-widget": 0,
+      "search-widget": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

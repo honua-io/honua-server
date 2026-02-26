@@ -106,3 +106,13 @@ export { SceneViewCompat } from "./esri-compat/scene-view.js";
 export type { SceneViewCompatOptions } from "./esri-compat/scene-view.js";
 export { WebMapCompat } from "./esri-compat/web-map.js";
 export type { WebMapCompatOptions } from "./esri-compat/web-map.js";
+export { SearchCompat } from "./esri-compat/search.js";
+export type {
+  SearchCompatOptions,
+  SearchRequestCompat,
+  SearchResponseCompat,
+  SearchResultCompat,
+  SearchSourceCompat,
+  SearchSuggestionCompat,
+  SuggestResponseCompat,
+} from "./esri-compat/search.js";

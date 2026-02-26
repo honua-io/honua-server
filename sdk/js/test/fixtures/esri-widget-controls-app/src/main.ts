@@ -7,6 +7,7 @@ import Home from "@arcgis/core/widgets/Home";
 import BasemapToggle from "@arcgis/core/widgets/BasemapToggle";
 import Locate from "@arcgis/core/widgets/Locate";
 import ScaleBar from "@arcgis/core/widgets/ScaleBar";
+import Search from "@arcgis/core/widgets/Search";
 
 const map = new Map({
   basemap: "streets",
@@ -24,11 +25,13 @@ const home = new Home({ view });
 const basemapToggle = new BasemapToggle({ view, nextBasemap: "satellite" });
 const locate = new Locate({ view });
 const scaleBar = new ScaleBar({ view, unit: "dual" });
+const search = new Search({ view, container: "search-div", includeDefaultSources: false });
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
 view.ui.add(popup, { position: "manual", index: 0 });
 view.ui.add([basemapToggle, locate, scaleBar], "bottom-right");
+view.ui.add(search, "top-left");
 
 popup.open({
   title: "Migration",
@@ -44,3 +47,4 @@ void home;
 void basemapToggle;
 void locate;
 void scaleBar;
+void search;

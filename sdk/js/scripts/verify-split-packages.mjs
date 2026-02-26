@@ -63,6 +63,7 @@ import {
   MapViewCompat,
   MapViewUiCompat,
   PopupCompat,
+  SearchCompat,
   ScaleBarCompat,
   TileLayerCompat,
 } from "@honua/sdk-esri-compat";
@@ -92,6 +93,7 @@ if (typeof MapImageLayerCompat !== "function") throw new Error("MapImageLayerCom
 if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export missing");
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
+if (typeof SearchCompat !== "function") throw new Error("SearchCompat export missing");
 if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat export missing");
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
 if (typeof runEsriCompatCodemod !== "function") throw new Error("runEsriCompatCodemod export missing");

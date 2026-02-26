@@ -20,6 +20,7 @@ import {
   MapViewCompat,
   MapViewUiCompat,
   PopupCompat,
+  SearchCompat,
   ScaleBarCompat,
   TileLayerCompat,
   parseMapServiceUrl,
@@ -63,6 +64,7 @@ describe("entrypoint modules", () => {
     expect(TileLayerCompat).toBeTypeOf("function");
     expect(parseMapServiceUrl).toBeTypeOf("function");
     expect(SceneViewCompat).toBeTypeOf("function");
+    expect(SearchCompat).toBeTypeOf("function");
     expect(WebMapCompat).toBeTypeOf("function");
   });
 
