@@ -8,6 +8,7 @@ This package currently provides:
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
 - compat widgets/components (`LayerListCompat`, `LegendCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
+- request/auth migration bridge helpers (`createEsriRequestInterceptors`, `createArcGisTokenInterceptor`) plus core `HonuaClient` interceptor hooks (`before`/`after`/`error`),
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
 - ArcGIS usage scanner (`scanArcGisUsage`) for migration inventory and risk flags,
 - safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `MapImageLayer`, `Map`, `MapView`, `SceneView`, and `WebMap` safe constructors,

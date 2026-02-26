@@ -47,6 +47,8 @@ try {
 import { HonuaClient } from "@honua/sdk";
 import {
   CompatEventBus,
+  createArcGisTokenInterceptor,
+  createEsriRequestInterceptors,
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -64,6 +66,8 @@ import {
 
 if (typeof HonuaClient !== "function") throw new Error("HonuaClient export missing");
 if (typeof CompatEventBus !== "function") throw new Error("CompatEventBus export missing");
+if (typeof createEsriRequestInterceptors !== "function") throw new Error("createEsriRequestInterceptors export missing");
+if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");

@@ -1,5 +1,36 @@
 export type QueryMethod = "GET" | "POST";
 
+export interface HonuaRequestContext {
+  url: string;
+  path: string;
+  method: QueryMethod;
+  init: RequestInit;
+}
+
+export interface HonuaRequestMutation {
+  url?: string;
+  method?: QueryMethod;
+  init?: RequestInit;
+}
+
+export interface HonuaResponseContext {
+  request: HonuaRequestContext;
+  response: Response;
+}
+
+export interface HonuaErrorContext {
+  request: HonuaRequestContext;
+  error: unknown;
+}
+
+export interface HonuaRequestInterceptor {
+  before?(
+    context: HonuaRequestContext,
+  ): void | HonuaRequestMutation | Promise<void | HonuaRequestMutation>;
+  after?(context: HonuaResponseContext): void | Promise<void>;
+  error?(context: HonuaErrorContext): void | Promise<void>;
+}
+
 export interface QueryFeaturesRequest {
   serviceId: string;
   layerId: number;
@@ -79,4 +110,5 @@ export interface HonuaClientOptions {
   apiKey?: string;
   bearerToken?: string;
   fetchFn?: typeof fetch;
+  interceptors?: readonly HonuaRequestInterceptor[];
 }

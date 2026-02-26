@@ -4,6 +4,11 @@ export type {
   ApplyEditsRequest,
   ExportMapRequest,
   HonuaClientOptions,
+  HonuaErrorContext,
+  HonuaRequestContext,
+  HonuaRequestInterceptor,
+  HonuaRequestMutation,
+  HonuaResponseContext,
   MapIdentifyRequest,
   MapLegendRequest,
   QueryFeaturesRequest,
@@ -31,6 +36,17 @@ export { GroupLayerCompat } from "./esri-compat/group-layer.js";
 export type { GroupLayerCompatOptions } from "./esri-compat/group-layer.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/url.js";
+export {
+  createArcGisTokenInterceptor,
+  createEsriRequestInterceptors,
+} from "./esri-compat/request.js";
+export type {
+  ArcGisTokenInterceptorOptions,
+  EsriBeforeRequestParams,
+  EsriRequestInterceptorCompat,
+  EsriRequestOptionsLike,
+  EsriUrlPattern,
+} from "./esri-compat/request.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";

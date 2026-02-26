@@ -5,6 +5,17 @@ export type {
 } from "./esri-compat/feature-layer.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/url.js";
+export {
+  createArcGisTokenInterceptor,
+  createEsriRequestInterceptors,
+} from "./esri-compat/request.js";
+export type {
+  ArcGisTokenInterceptorOptions,
+  EsriBeforeRequestParams,
+  EsriRequestInterceptorCompat,
+  EsriRequestOptionsLike,
+  EsriUrlPattern,
+} from "./esri-compat/request.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,

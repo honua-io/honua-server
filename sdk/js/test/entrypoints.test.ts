@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { HonuaClient, HonuaHttpError } from "../src/honua.js";
 import {
   CompatEventBus,
+  createArcGisTokenInterceptor,
+  createEsriRequestInterceptors,
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -32,6 +34,8 @@ describe("entrypoint modules", () => {
   it("exposes esri-compat entrypoint", () => {
     expect(FeatureLayerCompat).toBeTypeOf("function");
     expect(CompatEventBus).toBeTypeOf("function");
+    expect(createEsriRequestInterceptors).toBeTypeOf("function");
+    expect(createArcGisTokenInterceptor).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
     expect(LayerListCompat).toBeTypeOf("function");

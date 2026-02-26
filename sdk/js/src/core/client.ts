@@ -3,6 +3,11 @@ import type {
   ApplyEditsRequest,
   ExportMapRequest,
   HonuaClientOptions,
+  HonuaErrorContext,
+  HonuaRequestContext,
+  HonuaRequestInterceptor,
+  HonuaRequestMutation,
+  HonuaResponseContext,
   MapIdentifyRequest,
   MapLegendRequest,
   QueryFeaturesRequest,
@@ -65,6 +70,7 @@ export class HonuaClient {
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
   private readonly defaultHeaders: HeadersInit;
+  private readonly interceptors: readonly HonuaRequestInterceptor[];
 
   public constructor(options: HonuaClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -78,6 +84,7 @@ export class HonuaClient {
       headers.Authorization = `Bearer ${options.bearerToken}`;
     }
     this.defaultHeaders = headers;
+    this.interceptors = options.interceptors ?? [];
   }
 
   public async listServices(format: "json" | "pjson" = "json"): Promise<unknown> {
@@ -306,21 +313,63 @@ export class HonuaClient {
     path: string,
     init?: RequestInit,
   ): Promise<unknown> {
-    const response = await this.fetchFn(`${this.baseUrl}${path}`, {
+    let request: HonuaRequestContext = {
+      url: `${this.baseUrl}${path}`,
+      path,
       method,
-      headers: {
-        ...this.defaultHeaders,
-        Accept: "application/json",
-        ...(init?.headers ?? {}),
+      init: {
+        method,
+        headers: mergeHeaders(
+          this.defaultHeaders,
+          { Accept: "application/json" },
+          init?.headers,
+        ),
+        body: init?.body,
       },
-      body: init?.body,
-    });
+    };
 
-    const body = await parseResponseBody(response);
-    if (!response.ok) {
-      throw this.toHttpError(response.status, body);
+    request = await this.applyBeforeInterceptors(request);
+
+    try {
+      const response = await this.fetchFn(request.url, {
+        ...request.init,
+        method: request.method,
+      });
+      await this.applyAfterInterceptors({ request: cloneRequestContext(request), response });
+
+      const body = await parseResponseBody(response);
+      if (!response.ok) {
+        throw this.toHttpError(response.status, body);
+      }
+      return body;
+    } catch (error) {
+      await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
+      throw error;
     }
-    return body;
+  }
+
+  private async applyBeforeInterceptors(request: HonuaRequestContext): Promise<HonuaRequestContext> {
+    let next = cloneRequestContext(request);
+    for (const interceptor of this.interceptors) {
+      const mutation = await interceptor.before?.(cloneRequestContext(next));
+      if (!mutation) {
+        continue;
+      }
+      next = applyRequestMutation(next, mutation);
+    }
+    return next;
+  }
+
+  private async applyAfterInterceptors(context: HonuaResponseContext): Promise<void> {
+    for (const interceptor of this.interceptors) {
+      await interceptor.after?.(context);
+    }
+  }
+
+  private async applyErrorInterceptors(context: HonuaErrorContext): Promise<void> {
+    for (const interceptor of this.interceptors) {
+      await interceptor.error?.(context);
+    }
   }
 
   private toHttpError(statusCode: number, body: unknown): HonuaHttpError {
@@ -356,4 +405,73 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 
 function isObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null;
+}
+
+function applyRequestMutation(
+  request: HonuaRequestContext,
+  mutation: HonuaRequestMutation,
+): HonuaRequestContext {
+  const nextInit =
+    mutation.init === undefined
+      ? request.init
+      : {
+          ...request.init,
+          ...mutation.init,
+          headers: mergeHeaders(request.init.headers, mutation.init.headers),
+        };
+
+  return {
+    url: mutation.url ?? request.url,
+    path: request.path,
+    method: mutation.method ?? request.method,
+    init: {
+      ...nextInit,
+      method: mutation.method ?? request.method,
+    },
+  };
+}
+
+function cloneRequestContext(request: HonuaRequestContext): HonuaRequestContext {
+  return {
+    ...request,
+    init: {
+      ...request.init,
+      headers: cloneHeadersInit(request.init.headers),
+    },
+  };
+}
+
+function cloneHeadersInit(headers: HeadersInit | undefined): HeadersInit {
+  return mergeHeaders(headers);
+}
+
+function mergeHeaders(...headersList: Array<HeadersInit | undefined>): Record<string, string> {
+  const merged: Record<string, string> = {};
+  for (const headers of headersList) {
+    if (!headers) {
+      continue;
+    }
+
+    if (headers instanceof Headers) {
+      for (const [key, value] of headers.entries()) {
+        merged[key] = value;
+      }
+      continue;
+    }
+
+    if (Array.isArray(headers)) {
+      for (const [key, value] of headers) {
+        merged[key] = value;
+      }
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(headers)) {
+      if (value === undefined) {
+        continue;
+      }
+      merged[key] = String(value);
+    }
+  }
+  return merged;
 }
