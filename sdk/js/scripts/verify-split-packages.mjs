@@ -91,6 +91,10 @@ import {
   PopupCompat,
   OAuthInfoCompat,
   PointCompat,
+  PolylineCompat,
+  PolygonCompat,
+  ExtentCompat,
+  SpatialReferenceCompat,
   QueryCompat,
   reactiveUtils,
   resetEsriConfig,
@@ -162,6 +166,11 @@ if (typeof FullscreenCompat !== "function") throw new Error("FullscreenCompat ex
 if (typeof ZoomCompat !== "function") throw new Error("ZoomCompat export missing");
 if (typeof GraphicCompat !== "function") throw new Error("GraphicCompat export missing");
 if (typeof PointCompat !== "function") throw new Error("PointCompat export missing");
+if (typeof PolylineCompat !== "function") throw new Error("PolylineCompat export missing");
+if (typeof PolygonCompat !== "function") throw new Error("PolygonCompat export missing");
+if (typeof ExtentCompat !== "function") throw new Error("ExtentCompat export missing");
+if (typeof SpatialReferenceCompat !== "function")
+  throw new Error("SpatialReferenceCompat export missing");
 if (typeof ColorCompat !== "function") throw new Error("ColorCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");

@@ -255,6 +255,110 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleMarkerSymbol");
   });
 
+  it("rewrites safe geometry primitive constructors and removes ArcGIS imports", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "geometry-primitives.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import SpatialReference from '@arcgis/core/geometry/SpatialReference';",
+        "import Extent from '@arcgis/core/geometry/Extent';",
+        "import Polyline from '@arcgis/core/geometry/Polyline';",
+        "import Polygon from '@arcgis/core/geometry/Polygon';",
+        "const sr = new SpatialReference({ wkid: 4326 });",
+        "const extent = new Extent({ xmin: -10, ymin: -5, xmax: 30, ymax: 15, spatialReference: sr });",
+        "const polyline = new Polyline({ paths: [[[0, 0], [1, 1]]], spatialReference: sr });",
+        "const polygon = new Polygon({ rings: [[[0, 0], [10, 0], [10, 10], [0, 0]]], spatialReference: sr });",
+        "void sr; void extent; void polyline; void polygon;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(result.metrics.autoMigratedCallSites).toBe(4);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["spatial-reference"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["extent-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["polyline-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["polygon-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("SpatialReferenceCompat");
+    expect(nextSource).toContain("ExtentCompat");
+    expect(nextSource).toContain("PolylineCompat");
+    expect(nextSource).toContain("PolygonCompat");
+    expect(nextSource).toContain("new SpatialReferenceCompat({ wkid: 4326 })");
+    expect(nextSource).toContain("new ExtentCompat({ xmin: -10, ymin: -5, xmax: 30, ymax: 15, spatialReference: sr })");
+    expect(nextSource).toContain("new PolylineCompat({ paths: [[[0, 0], [1, 1]]], spatialReference: sr })");
+    expect(nextSource).toContain("new PolygonCompat({ rings: [[[0, 0], [10, 0], [10, 10], [0, 0]]], spatialReference: sr })");
+    expect(nextSource).not.toContain("@arcgis/core/geometry/SpatialReference");
+    expect(nextSource).not.toContain("@arcgis/core/geometry/Extent");
+    expect(nextSource).not.toContain("@arcgis/core/geometry/Polyline");
+    expect(nextSource).not.toContain("@arcgis/core/geometry/Polygon");
+  });
+
+  it("creates manual TODO for unsupported extent options", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "extent-manual.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Extent from '@arcgis/core/geometry/Extent';",
+        "const extent = new Extent({ xmin: 0, ymin: 0, xmax: 10, ymax: 10, type: 'extent' });",
+        "void extent;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: false,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(0);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.metrics.byKind["extent-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 0,
+      manual: 1,
+    });
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "extent-geometry",
+          reason: "Extent options include unsupported properties; requires manual migration.",
+        }),
+      ]),
+    );
+  });
+
   it("rewrites safe color/symbol/renderer constructors and removes ArcGIS imports", () => {
     const root = makeTempProject();
     const file = path.join(root, "renderers.ts");

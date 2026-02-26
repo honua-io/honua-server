@@ -84,6 +84,10 @@ describe("migration cli parity matrix", () => {
     const featureLayer = report.matrix.find((row) => row.kind === "feature-layer");
     const graphic = report.matrix.find((row) => row.kind === "graphic");
     const point = report.matrix.find((row) => row.kind === "point-geometry");
+    const polyline = report.matrix.find((row) => row.kind === "polyline-geometry");
+    const polygon = report.matrix.find((row) => row.kind === "polygon-geometry");
+    const extent = report.matrix.find((row) => row.kind === "extent-geometry");
+    const spatialReference = report.matrix.find((row) => row.kind === "spatial-reference");
     const color = report.matrix.find((row) => row.kind === "color");
     const simpleLineSymbol = report.matrix.find((row) => row.kind === "simple-line-symbol");
     const simpleMarkerSymbol = report.matrix.find((row) => row.kind === "simple-marker-symbol");
@@ -116,6 +120,10 @@ describe("migration cli parity matrix", () => {
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(point).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(polyline).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(polygon).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(extent).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(spatialReference).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(color).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleLineSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });

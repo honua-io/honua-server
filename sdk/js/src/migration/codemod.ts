@@ -29,6 +29,10 @@ export type CodemodConstructorKind =
   | "feature-layer"
   | "graphic"
   | "point-geometry"
+  | "polyline-geometry"
+  | "polygon-geometry"
+  | "extent-geometry"
+  | "spatial-reference"
   | "color"
   | "simple-line-symbol"
   | "simple-marker-symbol"
@@ -112,6 +116,29 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     kind: "point-geometry",
     compatSymbol: "PointCompat",
     arcGisModules: new Set(["@arcgis/core/geometry/Point", "@arcgis/core/geometry/Point.js"]),
+  },
+  {
+    kind: "polyline-geometry",
+    compatSymbol: "PolylineCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Polyline", "@arcgis/core/geometry/Polyline.js"]),
+  },
+  {
+    kind: "polygon-geometry",
+    compatSymbol: "PolygonCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Polygon", "@arcgis/core/geometry/Polygon.js"]),
+  },
+  {
+    kind: "extent-geometry",
+    compatSymbol: "ExtentCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Extent", "@arcgis/core/geometry/Extent.js"]),
+  },
+  {
+    kind: "spatial-reference",
+    compatSymbol: "SpatialReferenceCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/geometry/SpatialReference",
+      "@arcgis/core/geometry/SpatialReference.js",
+    ]),
   },
   {
     kind: "color",
@@ -1523,6 +1550,10 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
     graphic: { total: 0, autoMigrated: 0, manual: 0 },
     "point-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "polyline-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "polygon-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "extent-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "spatial-reference": { total: 0, autoMigrated: 0, manual: 0 },
     color: { total: 0, autoMigrated: 0, manual: 0 },
     "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
@@ -2218,6 +2249,14 @@ function isSafeConstructorCall(
       return isSafeGraphicCompatCall(node);
     case "point-geometry":
       return isSafePointGeometryCompatCall(node);
+    case "polyline-geometry":
+      return isSafePolylineGeometryCompatCall(node);
+    case "polygon-geometry":
+      return isSafePolygonGeometryCompatCall(node);
+    case "extent-geometry":
+      return isSafeExtentGeometryCompatCall(node);
+    case "spatial-reference":
+      return isSafeSpatialReferenceCompatCall(node);
     case "color":
       return isSafeColorCompatCall(node);
     case "simple-line-symbol":
@@ -2625,6 +2664,189 @@ function isSafePointGeometryCompatCall(
       return {
         ok: false,
         reason: "Point options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafePolylineGeometryCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Polyline constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Polyline constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["paths", "spatialReference", "hasZ", "hasM"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Polyline options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Polyline options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafePolygonGeometryCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Polygon constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Polygon constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["rings", "spatialReference", "hasZ", "hasM"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Polygon options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Polygon options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeExtentGeometryCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Extent constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Extent constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "xmin",
+    "ymin",
+    "xmax",
+    "ymax",
+    "zmin",
+    "zmax",
+    "mmin",
+    "mmax",
+    "spatialReference",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Extent options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Extent options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSpatialReferenceCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SpatialReference constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SpatialReference constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["wkid", "latestWkid", "wkt", "vcsWkid", "latestVcsWkid"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "SpatialReference options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "SpatialReference options include unsupported properties; requires manual migration.",
       };
     }
   }

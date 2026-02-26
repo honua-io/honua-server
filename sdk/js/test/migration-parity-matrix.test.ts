@@ -19,6 +19,10 @@ describe("JS parity matrix", () => {
     const featureLayer = matrix.find((row) => row.kind === "feature-layer");
     const graphic = matrix.find((row) => row.kind === "graphic");
     const point = matrix.find((row) => row.kind === "point-geometry");
+    const polyline = matrix.find((row) => row.kind === "polyline-geometry");
+    const polygon = matrix.find((row) => row.kind === "polygon-geometry");
+    const extent = matrix.find((row) => row.kind === "extent-geometry");
+    const spatialReference = matrix.find((row) => row.kind === "spatial-reference");
     const color = matrix.find((row) => row.kind === "color");
     const simpleLineSymbol = matrix.find((row) => row.kind === "simple-line-symbol");
     const simpleMarkerSymbol = matrix.find((row) => row.kind === "simple-marker-symbol");
@@ -57,6 +61,22 @@ describe("JS parity matrix", () => {
       esriLeaflet: "assisted",
     });
     expect(point).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(polyline).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(polygon).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(extent).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(spatialReference).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

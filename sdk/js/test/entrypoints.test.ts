@@ -50,6 +50,10 @@ import {
   PopupTemplateCompat,
   OAuthInfoCompat,
   PointCompat,
+  PolylineCompat,
+  PolygonCompat,
+  ExtentCompat,
+  SpatialReferenceCompat,
   QueryCompat,
   RouteLayerCompat,
   RouteTaskCompat,
@@ -108,6 +112,10 @@ describe("entrypoint modules", () => {
     expect(ZoomCompat).toBeTypeOf("function");
     expect(GraphicCompat).toBeTypeOf("function");
     expect(PointCompat).toBeTypeOf("function");
+    expect(PolylineCompat).toBeTypeOf("function");
+    expect(PolygonCompat).toBeTypeOf("function");
+    expect(ExtentCompat).toBeTypeOf("function");
+    expect(SpatialReferenceCompat).toBeTypeOf("function");
     expect(ColorCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");

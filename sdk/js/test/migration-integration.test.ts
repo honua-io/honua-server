@@ -106,6 +106,10 @@ describe("arcgis migration integration", () => {
       "feature-layer": 0,
       graphic: 0,
       "point-geometry": 0,
+      "polyline-geometry": 0,
+      "polygon-geometry": 0,
+      "extent-geometry": 0,
+      "spatial-reference": 0,
       color: 0,
       "simple-line-symbol": 0,
       "simple-marker-symbol": 0,
@@ -586,6 +590,51 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const symbol = new SimpleMarkerSymbolCompat({");
     expect(migratedMain).toContain("const graphic = new GraphicCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/geometry/Point");
+  });
+
+  it("migrates geometry primitives fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-geometry-primitives-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["spatial-reference"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["extent-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["polyline-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["polygon-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("SpatialReferenceCompat");
+    expect(migratedMain).toContain("ExtentCompat");
+    expect(migratedMain).toContain("PolylineCompat");
+    expect(migratedMain).toContain("PolygonCompat");
+    expect(migratedMain).not.toContain("@arcgis/core/geometry/SpatialReference");
+    expect(migratedMain).not.toContain("@arcgis/core/geometry/Extent");
+    expect(migratedMain).not.toContain("@arcgis/core/geometry/Polyline");
+    expect(migratedMain).not.toContain("@arcgis/core/geometry/Polygon");
   });
 
   it("migrates color/renderer fixture with ready gating", () => {
