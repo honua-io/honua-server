@@ -1,4 +1,9 @@
-import type { HonuaRequestInterceptor, QueryMethod } from "../core/types.js";
+import type {
+  HonuaRequestContext,
+  HonuaRequestInterceptor,
+  HonuaRequestMutation,
+  QueryMethod,
+} from "../core/types.js";
 
 export type EsriUrlPattern = string | RegExp;
 
@@ -29,55 +34,95 @@ export interface ArcGisTokenInterceptorOptions {
   bearerPrefix?: string;
 }
 
+export interface EsriRequestInterceptorHandle {
+  remove(): void;
+}
+
 export function createEsriRequestInterceptors(
   interceptors: readonly EsriRequestInterceptorCompat[],
 ): HonuaRequestInterceptor[] {
-  return interceptors.map((interceptor) => ({
-    before: async (context) => {
-      if (!matchesPattern(context.url, interceptor.urls)) {
-        return undefined;
-      }
+  return interceptors.map((interceptor) => createHonuaInterceptorFromEsri(interceptor));
+}
 
-      if (!interceptor.before) {
-        return undefined;
-      }
+export class EsriRequestInterceptorRegistry {
+  private readonly interceptorsInternal: EsriRequestInterceptorCompat[];
 
-      const requestOptions: EsriRequestOptionsLike = {
-        method: context.method,
-        headers: headersToRecord(context.init.headers),
-        body: context.init.body,
-      };
-      const params: EsriBeforeRequestParams = {
-        url: context.url,
-        requestOptions,
-      };
+  public constructor(initialInterceptors: readonly EsriRequestInterceptorCompat[] = []) {
+    this.interceptorsInternal = [...initialInterceptors];
+  }
 
-      await interceptor.before(params);
-      const method = normalizeMethod(params.requestOptions.method, context.method);
-      return {
-        url: params.url,
-        method,
-        init: {
-          ...context.init,
-          method,
-          headers: params.requestOptions.headers,
-          body: params.requestOptions.body,
-        },
-      };
-    },
-    after: async (context) => {
-      if (!matchesPattern(context.request.url, interceptor.urls)) {
-        return;
-      }
-      await interceptor.after?.(context.response);
-    },
-    error: async (context) => {
-      if (!matchesPattern(context.request.url, interceptor.urls)) {
-        return;
-      }
-      await interceptor.error?.(context.error);
-    },
-  }));
+  public get interceptors(): readonly EsriRequestInterceptorCompat[] {
+    return [...this.interceptorsInternal];
+  }
+
+  public add(interceptor: EsriRequestInterceptorCompat): EsriRequestInterceptorHandle {
+    this.interceptorsInternal.push(interceptor);
+    return {
+      remove: () => {
+        this.remove(interceptor);
+      },
+    };
+  }
+
+  public remove(interceptor: EsriRequestInterceptorCompat): boolean {
+    const index = this.interceptorsInternal.indexOf(interceptor);
+    if (index < 0) {
+      return false;
+    }
+    this.interceptorsInternal.splice(index, 1);
+    return true;
+  }
+
+  public clear(): void {
+    this.interceptorsInternal.length = 0;
+  }
+
+  public toHonuaInterceptors(): HonuaRequestInterceptor[] {
+    return createEsriRequestInterceptors(this.interceptorsInternal);
+  }
+
+  public asHonuaInterceptor(): HonuaRequestInterceptor {
+    return {
+      before: async (context) => {
+        let currentContext = cloneRequestContext(context);
+        let applied = false;
+        for (const interceptor of this.interceptorsInternal) {
+          if (!interceptor.before || !matchesPattern(currentContext.url, interceptor.urls)) {
+            continue;
+          }
+          const params = toEsriBeforeRequestParams(currentContext);
+          await interceptor.before(params);
+          const mutation = fromEsriBeforeRequestParams(currentContext, params);
+          currentContext = applyMutationToContext(currentContext, mutation);
+          applied = true;
+        }
+
+        return applied
+          ? {
+              url: currentContext.url,
+              method: currentContext.method,
+              init: currentContext.init,
+            }
+          : undefined;
+      },
+      after: async (context) => {
+        for (const interceptor of this.interceptorsInternal) {
+          if (!interceptor.after || !matchesPattern(context.request.url, interceptor.urls)) {
+            continue;
+          }
+          await interceptor.after(context.response);
+        }
+      },
+      error: async (context) => {
+        for (const interceptor of this.interceptorsInternal) {
+          if (!interceptor.error || !matchesPattern(context.request.url, interceptor.urls)) {
+            continue;
+          }
+          await interceptor.error(context.error);
+        }
+      },
+    };
+  }
 }
 
 export function createArcGisTokenInterceptor(
@@ -124,6 +169,93 @@ function normalizeMethod(method: string | undefined, fallback: QueryMethod): Que
 
   const upper = method.toUpperCase();
   return upper === "POST" ? "POST" : "GET";
+}
+
+function createHonuaInterceptorFromEsri(
+  interceptor: EsriRequestInterceptorCompat,
+): HonuaRequestInterceptor {
+  return {
+    before: async (context) => {
+      if (!matchesPattern(context.url, interceptor.urls) || !interceptor.before) {
+        return undefined;
+      }
+      const params = toEsriBeforeRequestParams(context);
+      await interceptor.before(params);
+      return fromEsriBeforeRequestParams(context, params);
+    },
+    after: async (context) => {
+      if (!matchesPattern(context.request.url, interceptor.urls)) {
+        return;
+      }
+      await interceptor.after?.(context.response);
+    },
+    error: async (context) => {
+      if (!matchesPattern(context.request.url, interceptor.urls)) {
+        return;
+      }
+      await interceptor.error?.(context.error);
+    },
+  };
+}
+
+function toEsriBeforeRequestParams(context: HonuaRequestContext): EsriBeforeRequestParams {
+  return {
+    url: context.url,
+    requestOptions: {
+      method: context.method,
+      headers: headersToRecord(context.init.headers),
+      body: context.init.body,
+    },
+  };
+}
+
+function fromEsriBeforeRequestParams(
+  context: HonuaRequestContext,
+  params: EsriBeforeRequestParams,
+): HonuaRequestMutation {
+  const method = normalizeMethod(params.requestOptions.method, context.method);
+  return {
+    url: params.url,
+    method,
+    init: {
+      ...context.init,
+      method,
+      headers: params.requestOptions.headers,
+      body: params.requestOptions.body,
+    },
+  };
+}
+
+function applyMutationToContext(
+  context: HonuaRequestContext,
+  mutation: HonuaRequestMutation,
+): HonuaRequestContext {
+  const method = mutation.method ?? context.method;
+  const nextInit =
+    mutation.init === undefined
+      ? context.init
+      : {
+          ...context.init,
+          ...mutation.init,
+          method,
+        };
+
+  return {
+    ...context,
+    url: mutation.url ?? context.url,
+    method,
+    init: nextInit,
+  };
+}
+
+function cloneRequestContext(context: HonuaRequestContext): HonuaRequestContext {
+  return {
+    ...context,
+    init: {
+      ...context.init,
+      headers: headersToRecord(context.init.headers),
+    },
+  };
 }
 
 function matchesPattern(url: string, pattern: EsriUrlPattern | readonly EsriUrlPattern[] | undefined): boolean {

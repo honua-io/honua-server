@@ -49,6 +49,7 @@ import {
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
+  EsriRequestInterceptorRegistry,
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -69,6 +70,7 @@ if (typeof HonuaClient !== "function") throw new Error("HonuaClient export missi
 if (typeof CompatEventBus !== "function") throw new Error("CompatEventBus export missing");
 if (typeof createEsriRequestInterceptors !== "function") throw new Error("createEsriRequestInterceptors export missing");
 if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
+if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");

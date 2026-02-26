@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EsriRequestInterceptorRegistry,
   HonuaClient,
   HonuaHttpError,
   createArcGisTokenInterceptor,
@@ -143,5 +144,37 @@ describe("esri-style request bridge", () => {
 
     expect(requestedUrls[0]).toContain("token=query-token");
     expect(requestedHeaders[0]).toMatchObject({ Authorization: "Bearer bearer-token" });
+  });
+
+  it("supports dynamic interceptor add/remove via registry bridge", async () => {
+    const registry = new EsriRequestInterceptorRegistry();
+    const requestedHeaders: HeadersInit[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [registry.asHonuaInterceptor()],
+      fetchFn: async (_input, init) => {
+        requestedHeaders.push(init?.headers ?? {});
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+    expect(requestedHeaders[0]).not.toMatchObject({ "X-Registry": "on" });
+
+    const handle = registry.add({
+      before: (params) => {
+        params.requestOptions.headers = {
+          ...(params.requestOptions.headers ?? {}),
+          "X-Registry": "on",
+        };
+      },
+    });
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+    expect(requestedHeaders[1]).toMatchObject({ "X-Registry": "on" });
+
+    handle.remove();
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+    expect(requestedHeaders[2]).not.toMatchObject({ "X-Registry": "on" });
   });
 });

@@ -5,6 +5,7 @@ import {
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
+  EsriRequestInterceptorRegistry,
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -37,6 +38,7 @@ describe("entrypoint modules", () => {
     expect(CompatEventBus).toBeTypeOf("function");
     expect(createEsriRequestInterceptors).toBeTypeOf("function");
     expect(createArcGisTokenInterceptor).toBeTypeOf("function");
+    expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
     expect(LayerListCompat).toBeTypeOf("function");

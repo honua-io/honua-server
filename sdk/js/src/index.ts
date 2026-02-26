@@ -43,10 +43,12 @@ export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/u
 export {
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
+  EsriRequestInterceptorRegistry,
 } from "./esri-compat/request.js";
 export type {
   ArcGisTokenInterceptorOptions,
   EsriBeforeRequestParams,
+  EsriRequestInterceptorHandle,
   EsriRequestInterceptorCompat,
   EsriRequestOptionsLike,
   EsriUrlPattern,
