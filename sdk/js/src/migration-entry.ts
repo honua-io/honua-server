@@ -25,3 +25,5 @@ export type {
 } from "./migration/report.js";
 export { evaluateMigrationGates } from "./migration/gating.js";
 export type { MigrationGateEvaluation, MigrationGateOptions } from "./migration/gating.js";
+export { runLayerReconciliation, summarizeLayerReconciliation } from "./migration/reconcile.js";
+export type { LayerReconciliationOptions, LayerReconciliationReport } from "./migration/reconcile.js";

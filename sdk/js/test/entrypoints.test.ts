@@ -12,6 +12,7 @@ import {
 import {
   buildJsMigrationReport,
   evaluateMigrationGates,
+  runLayerReconciliation,
   runEsriCompatCodemod,
   scanArcGisUsage,
 } from "../src/migration-entry.js";
@@ -36,5 +37,6 @@ describe("entrypoint modules", () => {
     expect(runEsriCompatCodemod).toBeTypeOf("function");
     expect(buildJsMigrationReport).toBeTypeOf("function");
     expect(evaluateMigrationGates).toBeTypeOf("function");
+    expect(runLayerReconciliation).toBeTypeOf("function");
   });
 });

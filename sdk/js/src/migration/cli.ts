@@ -5,9 +5,10 @@ import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 import { runEsriCompatCodemod, type CodemodMetricsByKind } from "./codemod.js";
 import { buildJsMigrationReport } from "./report.js";
 import { evaluateMigrationGates } from "./gating.js";
+import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
 
 interface ParsedArgs {
-  command: "scan" | "codemod";
+  command: "scan" | "codemod" | "reconcile";
   target: string;
   write: boolean;
   annotateTodos: boolean;
@@ -18,6 +19,12 @@ interface ParsedArgs {
   maxManualInterventionRatio?: number;
   reportPath?: string;
   compatImportPath?: string;
+  sourceBaseUrl?: string;
+  sourceServiceId?: string;
+  targetBaseUrl?: string;
+  targetServiceId?: string;
+  layerId?: number;
+  sampleSize?: number;
 }
 
 const parsed = parseArgs(process.argv.slice(2));
@@ -27,6 +34,11 @@ if (!parsed) {
 } else {
   if (parsed.command === "scan") {
     runScan(parsed.target, parsed.reportPath);
+  } else if (parsed.command === "reconcile") {
+    void runReconcile(parsed).catch((error) => {
+      process.stderr.write(`reconcileError=${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
   } else {
     runCodemod(parsed);
   }
@@ -117,6 +129,46 @@ function runCodemod(args: ParsedArgs): void {
   }
 }
 
+async function runReconcile(args: ParsedArgs): Promise<void> {
+  if (
+    !args.sourceBaseUrl ||
+    !args.sourceServiceId ||
+    !args.targetBaseUrl ||
+    !args.targetServiceId ||
+    args.layerId === undefined
+  ) {
+    printUsage();
+    process.exitCode = 1;
+    return;
+  }
+
+  const report = await runLayerReconciliation({
+    sourceBaseUrl: args.sourceBaseUrl,
+    sourceServiceId: args.sourceServiceId,
+    targetBaseUrl: args.targetBaseUrl,
+    targetServiceId: args.targetServiceId,
+    layerId: args.layerId,
+    sampleSize: args.sampleSize,
+  });
+
+  process.stdout.write(`${summarizeLayerReconciliation(report)}\n`);
+  process.stdout.write(
+    `checks=${report.checks
+      .map((check) => `${check.check}:${check.passed ? "pass" : "fail"}`)
+      .join(",")}\n`,
+  );
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+
+  if (args.reportPath) {
+    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  }
+
+  if (!report.passed) {
+    process.exitCode = 2;
+  }
+}
+
 function parseArgs(argv: string[]): ParsedArgs | undefined {
   if (argv.length === 0) {
     return {
@@ -131,8 +183,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
 
   const maybeCommand = argv[0];
-  const command: "scan" | "codemod" =
-    maybeCommand === "scan" || maybeCommand === "codemod" ? maybeCommand : "scan";
+  const command: "scan" | "codemod" | "reconcile" =
+    maybeCommand === "scan" || maybeCommand === "codemod" || maybeCommand === "reconcile"
+      ? maybeCommand
+      : "scan";
   const positional = command === maybeCommand ? argv.slice(1) : argv.slice(0);
 
   let target: string | undefined;
@@ -145,6 +199,12 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let maxManualRatio: number | undefined;
   let maxManualInterventionRatio: number | undefined;
   let compatImportPath: string | undefined;
+  let sourceBaseUrl: string | undefined;
+  let sourceServiceId: string | undefined;
+  let targetBaseUrl: string | undefined;
+  let targetServiceId: string | undefined;
+  let layerId: number | undefined;
+  let sampleSize: number | undefined;
 
   for (let i = 0; i < positional.length; i += 1) {
     const token = positional[i];
@@ -219,7 +279,72 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       i += 1;
       continue;
     }
+    if (token === "--source-base-url") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      sourceBaseUrl = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--source-service-id") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      sourceServiceId = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--target-base-url") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      targetBaseUrl = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--target-service-id") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      targetServiceId = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--layer-id") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      const parsedLayerId = Number.parseInt(next, 10);
+      if (!Number.isFinite(parsedLayerId)) {
+        return undefined;
+      }
+      layerId = parsedLayerId;
+      i += 1;
+      continue;
+    }
+    if (token === "--sample-size") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      const parsedSampleSize = Number.parseInt(next, 10);
+      if (!Number.isFinite(parsedSampleSize) || parsedSampleSize <= 0) {
+        return undefined;
+      }
+      sampleSize = parsedSampleSize;
+      i += 1;
+      continue;
+    }
     if (token.startsWith("--")) {
+      return undefined;
+    }
+    if (command === "reconcile") {
       return undefined;
     }
     if (!target) {
@@ -241,6 +366,12 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     maxManualInterventionRatio,
     reportPath,
     compatImportPath,
+    sourceBaseUrl,
+    sourceServiceId,
+    targetBaseUrl,
+    targetServiceId,
+    layerId,
+    sampleSize,
   };
 }
 
@@ -265,11 +396,13 @@ function printUsage(): void {
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
       "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
+      "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
     ].join("\n"),
   );
   process.stdout.write("\n");

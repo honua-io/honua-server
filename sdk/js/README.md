@@ -11,6 +11,7 @@ This package currently provides:
 - ArcGIS usage scanner (`scanArcGisUsage`) for migration inventory and risk flags,
 - safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `MapImageLayer`, `Map`, `MapView`, `SceneView`, and `WebMap` safe constructors,
 - migration report builder with explicit manual TODOs and rewrite metric,
+- service reconciliation helper (`runLayerReconciliation`) for feature-count, geometry-validity, and attribute-key checks,
 - unit tests for request mapping and URL parsing.
 
 ## Entrypoints
@@ -80,6 +81,9 @@ node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report m
 
 # Gate in CI (non-zero exit if migration constraints fail)
 node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3
+
+# Compare source vs target service fidelity for one layer
+node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json
 ```
 
 The codemod is intentionally conservative:

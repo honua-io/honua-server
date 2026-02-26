@@ -46,7 +46,12 @@ try {
   const smokeScript = `
 import { HonuaClient } from "@honua/sdk";
 import { FeatureLayerCompat, MapImageLayerCompat, MapViewCompat } from "@honua/sdk-esri-compat";
-import { scanArcGisUsage, runEsriCompatCodemod, buildJsMigrationReport } from "@honua/honua-migrate";
+import {
+  buildJsMigrationReport,
+  runEsriCompatCodemod,
+  runLayerReconciliation,
+  scanArcGisUsage,
+} from "@honua/honua-migrate";
 
 if (typeof HonuaClient !== "function") throw new Error("HonuaClient export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
@@ -55,6 +60,7 @@ if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export m
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
 if (typeof runEsriCompatCodemod !== "function") throw new Error("runEsriCompatCodemod export missing");
 if (typeof buildJsMigrationReport !== "function") throw new Error("buildJsMigrationReport export missing");
+if (typeof runLayerReconciliation !== "function") throw new Error("runLayerReconciliation export missing");
 
 console.log("splitPackageSmoke=ok");
 `.trimStart();

@@ -33,6 +33,21 @@ describe("HonuaClient", () => {
     expect(requestedInit?.method).toBe("GET");
   });
 
+  it("retrieves map service metadata", async () => {
+    let requestedUrl: string | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ mapName: "default" }), { status: 200 });
+      },
+    });
+
+    const response = await client.getMapServiceMetadata("default");
+    expect(response).toEqual({ mapName: "default" });
+    expect(requestedUrl).toContain("/rest/services/default/MapServer?f=json");
+  });
+
   it("applies edits using form payload", async () => {
     let requestedBody = "";
 

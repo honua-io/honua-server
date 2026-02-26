@@ -145,6 +145,7 @@ function createMigrationPackage() {
       "```bash",
       "npx @honua/honua-migrate scan ./src",
       "npx @honua/honua-migrate codemod ./src --write --report migration-report.json",
+      "npx @honua/honua-migrate reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --report reconcile-report.json",
       "```",
       "",
       "This package is generated from `@honua/sdk-js` build artifacts.",
