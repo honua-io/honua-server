@@ -244,6 +244,42 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("const Map = require('@arcgis/core/Map').default;");
   });
 
+  it("rewrites destructured require default constructor expressions", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "require-destructured.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "const { default: MapCtor } = require('@arcgis/core/Map');",
+        "const map = new MapCtor({ basemap: 'streets' });",
+        "void map;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
+    expect(nextSource).not.toContain("require('@arcgis/core/Map')");
+    expect(nextSource).not.toContain("const { default: MapCtor } = require('@arcgis/core/Map');");
+  });
+
   it("keeps require constructor in .cjs and reports manual TODO", () => {
     const root = makeTempProject();
     const file = path.join(root, "require-map.cjs");

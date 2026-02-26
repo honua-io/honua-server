@@ -80,6 +80,11 @@ interface ArcGisImportBinding {
   sourceKind: "import" | "require";
 }
 
+interface RequireBinding {
+  modulePath: string;
+  localName: string;
+}
+
 export interface MigrationTodo {
   kind: CodemodConstructorKind;
   file: string;
@@ -467,23 +472,19 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
     }
 
     for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+      const requireBinding = extractRequireBindingFromDeclaration(declaration);
+      if (!requireBinding) {
         continue;
       }
 
-      const modulePath = extractModulePathFromRequireInitializer(declaration.initializer);
-      if (!modulePath) {
-        continue;
-      }
-
-      const spec = MODULE_TO_SPEC.get(modulePath);
+      const spec = MODULE_TO_SPEC.get(requireBinding.modulePath);
       if (!spec) {
         continue;
       }
 
       result.push({
         kind: spec.kind,
-        localName: declaration.name.text,
+        localName: requireBinding.localName,
         importStyle: "identifier",
         sourceKind: "require",
       });
@@ -688,18 +689,18 @@ function removeUnusedArcGisImports(
     }
 
     const declaration = statement.declarationList.declarations[0];
-    if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+    const requireBinding = extractRequireBindingFromDeclaration(declaration);
+    if (!requireBinding) {
       continue;
     }
 
-    const modulePath = extractModulePathFromRequireInitializer(declaration.initializer);
-    if (!modulePath || !MODULE_TO_SPEC.has(modulePath)) {
+    if (!MODULE_TO_SPEC.has(requireBinding.modulePath)) {
       continue;
     }
 
     const references = countIdentifierUsagesExcludingImportsAndDefinitions(
       sourceFile,
-      declaration.name.text,
+      requireBinding.localName,
     );
     if (references > 0) {
       continue;
@@ -745,6 +746,53 @@ function extractModulePathFromRequireInitializer(initializer: ts.Expression): st
     ts.isStringLiteral(initializer.expression.arguments[0])
   ) {
     return initializer.expression.arguments[0].text;
+  }
+
+  return undefined;
+}
+
+function extractRequireBindingFromDeclaration(
+  declaration: ts.VariableDeclaration,
+): RequireBinding | undefined {
+  if (!declaration.initializer) {
+    return undefined;
+  }
+
+  const modulePath = extractModulePathFromRequireInitializer(declaration.initializer);
+  if (!modulePath) {
+    return undefined;
+  }
+
+  if (ts.isIdentifier(declaration.name)) {
+    return {
+      modulePath,
+      localName: declaration.name.text,
+    };
+  }
+
+  if (!ts.isObjectBindingPattern(declaration.name)) {
+    return undefined;
+  }
+
+  for (const element of declaration.name.elements) {
+    let propertyNameText: string | undefined;
+    if (!element.propertyName) {
+      propertyNameText = ts.isIdentifier(element.name) ? element.name.text : undefined;
+    } else if (ts.isIdentifier(element.propertyName)) {
+      propertyNameText = element.propertyName.text;
+    } else {
+      propertyNameText = element.propertyName.getText();
+    }
+    if (propertyNameText !== "default") {
+      continue;
+    }
+    if (!ts.isIdentifier(element.name)) {
+      continue;
+    }
+    return {
+      modulePath,
+      localName: element.name.text,
+    };
   }
 
   return undefined;
@@ -829,7 +877,10 @@ function isInImportContext(node: ts.Identifier): boolean {
 }
 
 function isVariableDeclarationName(node: ts.Identifier): boolean {
-  return ts.isVariableDeclaration(node.parent) && node.parent.name === node;
+  return (
+    (ts.isVariableDeclaration(node.parent) && node.parent.name === node) ||
+    (ts.isBindingElement(node.parent) && node.parent.name === node)
+  );
 }
 
 function expandToFullLine(source: string, start: number, end: number): { start: number; end: number } {
