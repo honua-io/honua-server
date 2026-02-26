@@ -24,6 +24,7 @@ export type CodemodConstructorKind =
   | "map-image-layer"
   | "tile-layer"
   | "route-layer"
+  | "route-task"
   | "map"
   | "map-view"
   | "scene-view"
@@ -104,6 +105,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/layers/RouteLayer",
       "@arcgis/core/layers/RouteLayer.js",
+    ]),
+  },
+  {
+    kind: "route-task",
+    compatSymbol: "RouteTaskCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/rest/route/RouteTask",
+      "@arcgis/core/rest/route/RouteTask.js",
     ]),
   },
   {
@@ -770,6 +779,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "route-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "route-task": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1439,6 +1449,8 @@ function isSafeConstructorCall(
       return isSafeTileLayerCompatCall(node);
     case "route-layer":
       return isSafeRouteLayerCompatCall(node);
+    case "route-task":
+      return isSafeRouteTaskCompatCall(node);
     case "map":
       return isSafeMapCompatCall(node);
     case "map-view":
@@ -1542,6 +1554,52 @@ function isSafeRouteLayerCompatCall(
       return {
         ok: false,
         reason: "RouteLayer options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeRouteTaskCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "RouteTask constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+    return { ok: true };
+  }
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "RouteTask constructor argument is not an object literal or string literal.",
+    };
+  }
+
+  const allowed = new Set(["url", "apiKey", "requestOptions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "RouteTask options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "RouteTask options include unsupported properties; requires manual migration.",
       };
     }
   }

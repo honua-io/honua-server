@@ -19,6 +19,7 @@ describe("JS parity matrix", () => {
     const featureLayer = matrix.find((row) => row.kind === "feature-layer");
     const map = matrix.find((row) => row.kind === "map");
     const track = matrix.find((row) => row.kind === "track-widget");
+    const routeTask = matrix.find((row) => row.kind === "route-task");
 
     expect(featureLayer).toMatchObject({
       honuaCompat: "compat",
@@ -29,6 +30,10 @@ describe("JS parity matrix", () => {
       esriLeaflet: "assisted",
     });
     expect(track).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(routeTask).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

@@ -74,6 +74,7 @@ import {
   MapViewUiCompat,
   PopupCompat,
   RouteLayerCompat,
+  RouteTaskCompat,
   SearchCompat,
   SketchCompat,
   ScaleBarCompat,
@@ -122,6 +123,7 @@ if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export m
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
 if (typeof RouteLayerCompat !== "function") throw new Error("RouteLayerCompat export missing");
+if (typeof RouteTaskCompat !== "function") throw new Error("RouteTaskCompat export missing");
 if (typeof SearchCompat !== "function") throw new Error("SearchCompat export missing");
 if (typeof SketchCompat !== "function") throw new Error("SketchCompat export missing");
 if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat export missing");

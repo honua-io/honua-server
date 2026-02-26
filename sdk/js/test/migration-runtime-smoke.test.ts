@@ -56,13 +56,18 @@ describe("migration runtime smoke", () => {
         "import Map from '@arcgis/core/Map';",
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "import RouteTask from '@arcgis/core/rest/route/RouteTask';",
         "const featureLayer = new FeatureLayer({ url: 'https://example.test/rest/services/default/FeatureServer/0' });",
         "const mapImage = new MapImageLayer({ url: 'https://example.test/rest/services/default/MapServer' });",
+        "const routeTask = new RouteTask({ url: 'https://example.test/rest/services/network/RouteServer' });",
+        "const routeResult = await routeTask.solve({ stops: [{ location: [-157.0, 21.3] }, { location: [-157.01, 21.31] }] });",
         "const map = new Map({ basemap: 'streets', layers: [featureLayer, mapImage] });",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  featureLayerCtor: featureLayer.constructor.name,",
         "  mapImageCtor: mapImage.constructor.name,",
+        "  routeTaskCtor: routeTask.constructor.name,",
+        "  routeResultCount: routeResult.routeResults.length,",
         "  layerCount: map.layers.length,",
         "};",
       ].join("\n"),
@@ -75,8 +80,8 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
@@ -84,6 +89,8 @@ describe("migration runtime smoke", () => {
       mapCtor: "MapCompat",
       featureLayerCtor: "FeatureLayerCompat",
       mapImageCtor: "MapImageLayerCompat",
+      routeTaskCtor: "RouteTaskCompat",
+      routeResultCount: 1,
       layerCount: 2,
     });
   });

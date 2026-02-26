@@ -31,6 +31,7 @@ import {
   MapViewUiCompat,
   PopupCompat,
   RouteLayerCompat,
+  RouteTaskCompat,
   SearchCompat,
   SketchCompat,
   ScaleBarCompat,
@@ -90,6 +91,7 @@ describe("entrypoint modules", () => {
     expect(MeasurementCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
     expect(RouteLayerCompat).toBeTypeOf("function");
+    expect(RouteTaskCompat).toBeTypeOf("function");
     expect(SketchCompat).toBeTypeOf("function");
     expect(TrackCompat).toBeTypeOf("function");
     expect(TimeSliderCompat).toBeTypeOf("function");

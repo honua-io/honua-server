@@ -206,8 +206,8 @@ describe("scanArcGisUsage", () => {
     fs.writeFileSync(
       path.join(root, "advanced.ts"),
       [
-        "import RouteTask from '@arcgis/core/rest/route/RouteTask';",
-        "void RouteTask;",
+        "import Geoprocessor from '@arcgis/core/rest/geoprocessor/Geoprocessor';",
+        "void Geoprocessor;",
       ].join("\n"),
       "utf8",
     );

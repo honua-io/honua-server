@@ -6,9 +6,7 @@ import {
 
 export type JsParityCategory = "layer" | "view" | "widget" | "control";
 export type JsParityStatus = "native" | "compat" | "assisted" | "unsupported";
-export type JsParityMatrixKind =
-  | CodemodConstructorKind
-  | "route-task";
+export type JsParityMatrixKind = CodemodConstructorKind;
 
 export interface JsParityMatrixEntry {
   kind: JsParityMatrixKind;
@@ -72,21 +70,7 @@ const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (
     };
   });
 
-const EXTRA_MATRIX_ROWS: readonly JsParityMatrixEntry[] = [
-  {
-    kind: "route-task",
-    category: "widget",
-    arcGisModule: "@arcgis/core/rest/route/RouteTask",
-    honuaCompat: "unsupported",
-    esriLeaflet: "unsupported",
-    notes: "task-level route REST integration not yet in codemod scope",
-  },
-];
-
-export const JS_PARITY_MATRIX: readonly JsParityMatrixEntry[] = Object.freeze([
-  ...BASE_MATRIX_ROWS,
-  ...EXTRA_MATRIX_ROWS,
-]);
+export const JS_PARITY_MATRIX: readonly JsParityMatrixEntry[] = Object.freeze([...BASE_MATRIX_ROWS]);
 
 export function getJsParityMatrix(): readonly JsParityMatrixEntry[] {
   return JS_PARITY_MATRIX;

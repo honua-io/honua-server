@@ -107,6 +107,18 @@ export type {
   RouteSolveResultCompat,
   RouteStopCompat,
 } from "./esri-compat/route-layer.js";
+export { RouteTaskCompat } from "./esri-compat/route-task.js";
+export type {
+  RouteTaskCompatOptions,
+  RouteTaskDirectionsFeatureCompat,
+  RouteTaskDirectionsSummaryCompat,
+  RouteTaskResultGraphicCompat,
+  RouteTaskRouteResultCompat,
+  RouteTaskSolveParametersCompat,
+  RouteTaskSolveResultCompat,
+  RouteTaskStopFeatureCompat,
+  RouteTaskStopsFeatureSetCompat,
+} from "./esri-compat/route-task.js";
 export { DirectionsCompat } from "./esri-compat/directions.js";
 export type {
   DirectionsCompatOptions,

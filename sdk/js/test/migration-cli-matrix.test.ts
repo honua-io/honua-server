@@ -83,8 +83,10 @@ describe("migration cli parity matrix", () => {
 
     const featureLayer = report.matrix.find((row) => row.kind === "feature-layer");
     const track = report.matrix.find((row) => row.kind === "track-widget");
+    const routeTask = report.matrix.find((row) => row.kind === "route-task");
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
   }, 20_000);

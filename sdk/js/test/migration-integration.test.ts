@@ -109,6 +109,7 @@ describe("arcgis migration integration", () => {
       "map-image-layer": 0,
       "tile-layer": 0,
       "route-layer": 0,
+      "route-task": 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
@@ -373,6 +374,30 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/TileLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
+  });
+
+  it("migrates route task fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-route-task-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["route-task"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { RouteTaskCompat } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("const routeTask = new RouteTaskCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/rest/route/RouteTask");
   });
 
   it("supports esri-leaflet codemod target for deterministic subset", () => {

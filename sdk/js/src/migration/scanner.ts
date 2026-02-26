@@ -221,7 +221,7 @@ function addFileLevelFlags(source: string, flags: Set<string>): void {
   if (/import\(\s*["']@arcgis\/core\//.test(source)) {
     flags.add("dynamic-import-detected");
   }
-  if (/RouteTask|ClosestFacility|ServiceArea|Geoprocessor/.test(source)) {
+  if (/ClosestFacility|ServiceArea|Geoprocessor/.test(source)) {
     flags.add("advanced-widget-or-networking-detected");
   }
   if (

@@ -191,6 +191,41 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
   });
 
+  it("rewrites safe RouteTask constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "route-task.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import RouteTask from '@arcgis/core/rest/route/RouteTask';",
+        "const routeTask = new RouteTask({ url: routeUrl, apiKey: routeApiKey });",
+        "void routeTask;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["route-task"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { RouteTaskCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new RouteTaskCompat({ url: routeUrl, apiKey: routeApiKey })");
+    expect(nextSource).not.toContain("@arcgis/core/rest/route/RouteTask");
+  });
+
   it("rewrites safe GraphicsLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "graphics-layer.ts");
