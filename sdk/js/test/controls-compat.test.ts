@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BasemapToggleCompat,
+  CompassCompat,
   CompatEventBus,
   HomeCompat,
   LocateCompat,
@@ -86,5 +87,18 @@ describe("common controls compat", () => {
     expect(view.zoom).toBe(12);
     expect(events).toContain("locate.start");
     expect(events).toContain("locate.success");
+  });
+
+  it("CompassCompat rotates and resets view rotation", () => {
+    const view = new MapViewCompat({ zoom: 2 }) as MapViewCompat & { rotation?: number };
+    view.rotation = 23;
+
+    const compass = new CompassCompat({ view });
+    expect(compass.orientation).toBe(23);
+
+    expect(compass.rotateTo(45)).toBe(45);
+    expect(view.rotation).toBe(45);
+    expect(compass.goToNorth()).toBe(0);
+    expect(view.rotation).toBe(0);
   });
 });

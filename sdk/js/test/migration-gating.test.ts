@@ -44,6 +44,8 @@ function createReport(): JsMigrationReport {
           "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "search-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "basemap-gallery-widget": { total: 0, autoMigrated: 0, manual: 0 },
+          "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
+          "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
         },
       },
       fileResults: [],
@@ -100,6 +102,8 @@ function createReport(): JsMigrationReport {
       "scale-bar-widget": 0,
       "search-widget": 0,
       "basemap-gallery-widget": 0,
+      "expand-widget": 0,
+      "compass-widget": 0,
     },
     manualTodoReasons: [],
     unhandledArcGisModules: [

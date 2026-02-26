@@ -33,12 +33,14 @@ export type {
 } from "./esri-compat/event-bus.js";
 export {
   BasemapToggleCompat,
+  CompassCompat,
   HomeCompat,
   LocateCompat,
   ScaleBarCompat,
 } from "./esri-compat/controls.js";
 export type {
   BasemapToggleCompatOptions,
+  CompassCompatOptions,
   HomeCompatOptions,
   HomeViewpointCompat,
   LocateCompatOptions,
@@ -48,6 +50,8 @@ export type {
 } from "./esri-compat/controls.js";
 export { BasemapGalleryCompat } from "./esri-compat/basemap-gallery.js";
 export type { BasemapGalleryCompatOptions } from "./esri-compat/basemap-gallery.js";
+export { ExpandCompat } from "./esri-compat/expand.js";
+export type { ExpandCompatOptions } from "./esri-compat/expand.js";
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";
 export type {
   GraphicsLayerCompatOptions,

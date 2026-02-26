@@ -35,7 +35,9 @@ export type CodemodConstructorKind =
   | "locate-widget"
   | "scale-bar-widget"
   | "search-widget"
-  | "basemap-gallery-widget";
+  | "basemap-gallery-widget"
+  | "expand-widget"
+  | "compass-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -180,6 +182,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/BasemapGallery",
       "@arcgis/core/widgets/BasemapGallery.js",
+    ]),
+  },
+  {
+    kind: "expand-widget",
+    compatSymbol: "ExpandCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Expand",
+      "@arcgis/core/widgets/Expand.js",
+    ]),
+  },
+  {
+    kind: "compass-widget",
+    compatSymbol: "CompassCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Compass",
+      "@arcgis/core/widgets/Compass.js",
     ]),
   },
 ];
@@ -656,6 +674,8 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "search-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "basemap-gallery-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1323,6 +1343,10 @@ function isSafeConstructorCall(
       return isSafeSearchWidgetCompatCall(node);
     case "basemap-gallery-widget":
       return isSafeBasemapGalleryWidgetCompatCall(node);
+    case "expand-widget":
+      return isSafeExpandWidgetCompatCall(node);
+    case "compass-widget":
+      return isSafeCompassWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2129,6 +2153,92 @@ function isSafeBasemapGalleryWidgetCompatCall(
       return {
         ok: false,
         reason: "BasemapGallery options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeExpandWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Expand constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Expand constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "content", "expanded", "mode", "group"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Expand options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Expand options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeCompassWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Compass constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Compass constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Compass options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Compass options include unsupported properties; requires manual migration.",
       };
     }
   }

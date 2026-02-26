@@ -278,6 +278,8 @@ describe("runEsriCompatCodemod", () => {
         "import ScaleBar from '@arcgis/core/widgets/ScaleBar';",
         "import Search from '@arcgis/core/widgets/Search';",
         "import BasemapGallery from '@arcgis/core/widgets/BasemapGallery';",
+        "import Compass from '@arcgis/core/widgets/Compass';",
+        "import Expand from '@arcgis/core/widgets/Expand';",
         "const view = {};",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div' });",
@@ -288,6 +290,8 @@ describe("runEsriCompatCodemod", () => {
         "const scaleBar = new ScaleBar({ view, container: 'scale-div', unit: 'dual' });",
         "const search = new Search({ view, container: 'search-div', includeDefaultSources: false });",
         "const basemapGallery = new BasemapGallery({ view, container: 'gallery-div' });",
+        "const compass = new Compass({ view });",
+        "const expand = new Expand({ view, content: legend, expanded: false });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -297,6 +301,8 @@ describe("runEsriCompatCodemod", () => {
         "void scaleBar;",
         "void search;",
         "void basemapGallery;",
+        "void compass;",
+        "void expand;",
       ].join("\n"),
       "utf8",
     );
@@ -308,8 +314,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(9);
-    expect(result.metrics.autoMigratedCallSites).toBe(9);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(11);
+    expect(result.metrics.autoMigratedCallSites).toBe(11);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -356,10 +362,20 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["expand-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["compass-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { BasemapGalleryCompat, BasemapToggleCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
+      'import { BasemapGalleryCompat, BasemapToggleCompat, CompassCompat, ExpandCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
@@ -376,6 +392,8 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const basemapGallery = new BasemapGalleryCompat({ view, container: 'gallery-div' });",
     );
+    expect(nextSource).toContain("const compass = new CompassCompat({ view });");
+    expect(nextSource).toContain("const expand = new ExpandCompat({ view, content: legend, expanded: false });");
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -385,6 +403,8 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/ScaleBar");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Search");
     expect(nextSource).not.toContain("@arcgis/core/widgets/BasemapGallery");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Compass");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Expand");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

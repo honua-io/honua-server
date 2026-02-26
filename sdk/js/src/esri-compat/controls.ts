@@ -172,6 +172,12 @@ export interface LocatePositionCompat {
   };
 }
 
+export interface CompassCompatOptions {
+  view?: unknown;
+  container?: unknown;
+  eventBus?: CompatEventBus;
+}
+
 export class LocateCompat {
   public readonly view: unknown;
   public readonly container: unknown;
@@ -217,6 +223,40 @@ export class LocateCompat {
       this.eventBus.emit("locate.error", { error }, this);
       throw error;
     }
+  }
+}
+
+export class CompassCompat {
+  public readonly view: unknown;
+  public readonly container: unknown;
+  public readonly eventBus: CompatEventBus;
+  public orientation: number;
+
+  public constructor(options: CompassCompatOptions = {}) {
+    this.view = options.view;
+    this.container = options.container;
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.orientation = extractViewRotation(options.view) ?? 0;
+  }
+
+  public rotateTo(rotation: number): number {
+    const next = Number.isFinite(rotation) ? rotation : this.orientation;
+    this.orientation = next;
+    if (isRecord(this.view)) {
+      this.view.rotation = next;
+    }
+    this.eventBus.emit("compass.rotated", { rotation: next }, this);
+    return this.orientation;
+  }
+
+  public reset(): number {
+    const rotation = this.rotateTo(0);
+    this.eventBus.emit("compass.reset", { rotation }, this);
+    return rotation;
+  }
+
+  public goToNorth(): number {
+    return this.reset();
   }
 }
 
@@ -319,6 +359,14 @@ function getDefaultLocateProvider(): () => Promise<LocatePositionCompat> {
         },
       );
     });
+}
+
+function extractViewRotation(view: unknown): number | undefined {
+  if (!isRecord(view)) {
+    return undefined;
+  }
+  const rotation = view.rotation;
+  return typeof rotation === "number" && Number.isFinite(rotation) ? rotation : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

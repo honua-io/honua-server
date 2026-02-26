@@ -48,10 +48,12 @@ import { HonuaClient } from "@honua/sdk";
 import {
   BasemapToggleCompat,
   BasemapGalleryCompat,
+  CompassCompat,
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   EsriRequestInterceptorRegistry,
+  ExpandCompat,
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -84,8 +86,10 @@ if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompa
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
 if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");
+if (typeof CompassCompat !== "function") throw new Error("CompassCompat export missing");
 if (typeof LocateCompat !== "function") throw new Error("LocateCompat export missing");
 if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export missing");
+if (typeof ExpandCompat !== "function") throw new Error("ExpandCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");
 if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export missing");
