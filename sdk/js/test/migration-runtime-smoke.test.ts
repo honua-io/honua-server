@@ -180,6 +180,9 @@ describe("migration runtime smoke", () => {
         "const coordinateConversion = new CoordinateConversion({ view, mode: 'live', multipleConversionsEnabled: true, formats: ['lonlat', 'dms'] });",
         "const printer = new Print({ view, container: 'print', printServiceUrl: 'https://example.test/print', templateOptions: { format: 'pdf', layout: 'a4-landscape' } });",
         "const swipe = new Swipe({ view, container: 'swipe', position: 45, leadingLayers: [], trailingLayers: [] });",
+        "featureTemplates.setTemplates([{ id: 'open', name: 'Open' }, { id: 'restricted', name: 'Restricted' }]);",
+        "const selectedTemplate = featureTemplates.selectTemplate('open');",
+        "const featureFormSubmit = await featureForm.submit({ status: 'approved' });",
         "popup.open({ title: 'Runtime', content: 'Smoke', features: [{ id: 'a' }, { id: 'b' }] });",
         "const popupBefore = popup.selectedFeature;",
         "popup.next();",
@@ -192,6 +195,9 @@ describe("migration runtime smoke", () => {
         "const mapTableCount = tableList.useMapTables().length;",
         "const searchResponse = await search.search('honua');",
         "await search.nextResult();",
+        "const tracked = await track.start();",
+        "const solvedRoute = await directions.solve();",
+        "const directionsSummary = directions.getSummary();",
         "view.ui.add([layerList, tableList, featureWidget, featureForm, featureTemplates, legend, popup, home, basemapToggle, locate, scaleBar, search, basemapLayerList, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, distanceMeasurement2d, areaMeasurement2d, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
@@ -241,6 +247,14 @@ describe("migration runtime smoke", () => {
         "  mapTableCount,",
         "  searchResultCount: searchResponse.results.length,",
         "  searchSelectedResult: search.selectedResult?.name,",
+        "  templateCount: featureTemplates.templates.length,",
+        "  selectedTemplateName: selectedTemplate?.name,",
+        "  featureFormStatus: featureFormSubmit.values.status,",
+        "  trackedLongitude: tracked.coords.longitude,",
+        "  trackedLatitude: tracked.coords.latitude,",
+        "  solvedRoutePathPoints: solvedRoute?.path?.length ?? 0,",
+        "  directionsStopCount: directionsSummary?.stopCount ?? 0,",
+        "  directionsDistanceMeters: directionsSummary?.distanceMeters ?? 0,",
       "};",
       ].join("\n"),
       "utf8",
@@ -271,7 +285,15 @@ describe("migration runtime smoke", () => {
       mapTableCount: 2,
       searchResultCount: 2,
       searchSelectedResult: "Secondary honua",
+      templateCount: 1,
+      selectedTemplateName: "Open",
+      featureFormStatus: "approved",
+      trackedLongitude: -157.8583,
+      trackedLatitude: 21.3069,
+      solvedRoutePathPoints: 2,
+      directionsStopCount: 2,
       scaleText: expect.stringContaining("1:"),
+      directionsDistanceMeters: expect.any(Number),
       widgetCtors: [
         "LayerListCompat",
         "TableListCompat",
@@ -307,5 +329,6 @@ describe("migration runtime smoke", () => {
       ],
     });
     expect(migrated.default.scaleText).toContain(" / ");
+    expect(migrated.default.directionsDistanceMeters).toBeGreaterThan(0);
   });
 });
