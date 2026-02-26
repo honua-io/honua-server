@@ -47,6 +47,7 @@ try {
 import { HonuaClient } from "@honua/sdk";
 import {
   AttributionCompat,
+  BasemapCompat,
   BasemapToggleCompat,
   BasemapGalleryCompat,
   BasemapLayerListCompat,
@@ -116,6 +117,7 @@ if (typeof FeatureTemplatesCompat !== "function") throw new Error("FeatureTempla
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof FeatureTableCompat !== "function") throw new Error("FeatureTableCompat export missing");
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
+if (typeof BasemapCompat !== "function") throw new Error("BasemapCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
 if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");
 if (typeof BasemapLayerListCompat !== "function") throw new Error("BasemapLayerListCompat export missing");

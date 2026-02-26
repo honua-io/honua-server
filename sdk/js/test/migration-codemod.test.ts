@@ -226,6 +226,49 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/rest/route/RouteTask");
   });
 
+  it("rewrites safe Basemap constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "basemap.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Basemap from '@arcgis/core/Basemap';",
+        "import Map from '@arcgis/core/Map';",
+        "const basemap = new Basemap({ id: 'streets-vector' });",
+        "const map = new Map({ basemap });",
+        "void map;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.basemap).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { BasemapCompat, MapCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("const basemap = new BasemapCompat({ id: 'streets-vector' });");
+    expect(nextSource).toContain("const map = new MapCompat({ basemap });");
+    expect(nextSource).not.toContain("@arcgis/core/Basemap");
+  });
+
   it("rewrites safe FeatureTable constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "feature-table.ts");

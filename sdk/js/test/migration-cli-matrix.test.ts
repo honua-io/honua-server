@@ -82,6 +82,7 @@ describe("migration cli parity matrix", () => {
     };
 
     const featureLayer = report.matrix.find((row) => row.kind === "feature-layer");
+    const basemap = report.matrix.find((row) => row.kind === "basemap");
     const track = report.matrix.find((row) => row.kind === "track-widget");
     const routeTask = report.matrix.find((row) => row.kind === "route-task");
     const swipe = report.matrix.find((row) => row.kind === "swipe-widget");
@@ -97,6 +98,7 @@ describe("migration cli parity matrix", () => {
       (row) => row.kind === "area-measurement-2d-widget",
     );
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(swipe).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });

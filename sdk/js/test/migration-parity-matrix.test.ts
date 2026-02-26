@@ -17,6 +17,7 @@ describe("JS parity matrix", () => {
   it("tracks esri-leaflet deterministic subset as compat and others as assisted/unsupported", () => {
     const matrix = getJsParityMatrix();
     const featureLayer = matrix.find((row) => row.kind === "feature-layer");
+    const basemap = matrix.find((row) => row.kind === "basemap");
     const map = matrix.find((row) => row.kind === "map");
     const track = matrix.find((row) => row.kind === "track-widget");
     const routeTask = matrix.find((row) => row.kind === "route-task");
@@ -34,6 +35,10 @@ describe("JS parity matrix", () => {
     expect(featureLayer).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "compat",
+    });
+    expect(basemap).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
     });
     expect(map).toMatchObject({
       honuaCompat: "compat",

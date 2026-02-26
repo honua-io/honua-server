@@ -110,6 +110,7 @@ describe("arcgis migration integration", () => {
       "tile-layer": 0,
       "route-layer": 0,
       "route-task": 0,
+      basemap: 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
@@ -384,6 +385,44 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/TileLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
+  });
+
+  it("migrates basemap constructor fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-basemap-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.basemap).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { BasemapCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const basemap = new BasemapCompat({");
+    expect(migratedMain).toContain("const map = new MapCompat({");
+    expect(migratedMain).toContain("const view = new MapViewCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/Basemap");
   });
 
   it("migrates route task fixture with ready gating", () => {

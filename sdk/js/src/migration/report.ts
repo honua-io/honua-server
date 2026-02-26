@@ -102,7 +102,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion constructor call sites in safe-codemod scope",
+        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion constructor call sites in safe-codemod scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -133,6 +133,7 @@ function summarizeManualTodosByKind(
     "tile-layer": 0,
     "route-layer": 0,
     "route-task": 0,
+    basemap: 0,
     map: 0,
     "map-view": 0,
     "scene-view": 0,

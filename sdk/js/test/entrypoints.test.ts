@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { HonuaClient, HonuaHttpError } from "../src/honua.js";
 import {
   AttributionCompat,
+  BasemapCompat,
   BasemapToggleCompat,
   BasemapGalleryCompat,
   BasemapLayerListCompat,
@@ -72,6 +73,7 @@ describe("entrypoint modules", () => {
   it("exposes esri-compat entrypoint", () => {
     expect(FeatureLayerCompat).toBeTypeOf("function");
     expect(HomeCompat).toBeTypeOf("function");
+    expect(BasemapCompat).toBeTypeOf("function");
     expect(BasemapToggleCompat).toBeTypeOf("function");
     expect(BasemapGalleryCompat).toBeTypeOf("function");
     expect(BasemapLayerListCompat).toBeTypeOf("function");

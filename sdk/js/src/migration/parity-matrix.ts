@@ -42,6 +42,7 @@ const LAYER_KINDS = new Set<CodemodConstructorKind>([
   "map-image-layer",
   "tile-layer",
   "route-layer",
+  "basemap",
 ]);
 
 const CANONICAL_MODULE_BY_KIND = buildCanonicalModuleMap();

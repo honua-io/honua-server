@@ -25,6 +25,7 @@ export type CodemodConstructorKind =
   | "tile-layer"
   | "route-layer"
   | "route-task"
+  | "basemap"
   | "map"
   | "map-view"
   | "scene-view"
@@ -124,6 +125,11 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
       "@arcgis/core/rest/route/RouteTask",
       "@arcgis/core/rest/route/RouteTask.js",
     ]),
+  },
+  {
+    kind: "basemap",
+    compatSymbol: "BasemapCompat",
+    arcGisModules: new Set(["@arcgis/core/Basemap", "@arcgis/core/Basemap.js"]),
   },
   {
     kind: "map",
@@ -870,6 +876,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "route-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "route-task": { total: 0, autoMigrated: 0, manual: 0 },
+    basemap: { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1551,6 +1558,8 @@ function isSafeConstructorCall(
       return isSafeRouteLayerCompatCall(node);
     case "route-task":
       return isSafeRouteTaskCompatCall(node);
+    case "basemap":
+      return isSafeBasemapCompatCall(node);
     case "map":
       return isSafeMapCompatCall(node);
     case "map-view":
@@ -1720,6 +1729,49 @@ function isSafeRouteTaskCompatCall(
       return {
         ok: false,
         reason: "RouteTask options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Basemap constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Basemap constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["id", "title", "baseLayers", "referenceLayers"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Basemap options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Basemap options include unsupported properties; requires manual migration.",
       };
     }
   }
