@@ -964,7 +964,7 @@ function codemodFile(
       return;
     }
 
-    const safeCheck = isSafeConstructorCall(importBinding.kind, node);
+    const safeCheck = isSafeConstructorCall(importBinding.kind, node, target);
     if (safeCheck.ok) {
       if (target === "honua-compat") {
         const spec = specForKind(importBinding.kind);
@@ -2268,10 +2268,11 @@ function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
 function isSafeConstructorCall(
   kind: CodemodConstructorKind,
   node: ts.NewExpression,
+  target: CodemodTarget,
 ): { ok: true } | { ok: false; reason: string } {
   switch (kind) {
     case "feature-layer":
-      return isSafeFeatureLayerCompatCall(node);
+      return isSafeFeatureLayerCompatCall(node, target);
     case "graphic":
       return isSafeGraphicCompatCall(node);
     case "point-geometry":
@@ -2567,6 +2568,7 @@ function isSafeBasemapCompatCall(
 
 function isSafeFeatureLayerCompatCall(
   node: ts.NewExpression,
+  target: CodemodTarget,
 ): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length !== 1) {
@@ -2585,7 +2587,26 @@ function isSafeFeatureLayerCompatCall(
   }
 
   let hasUrlOption = false;
-  const allowed = new Set(["url", "outFields", "definitionExpression"]);
+  const allowed =
+    target === "honua-compat"
+      ? new Set([
+          "url",
+          "id",
+          "title",
+          "outFields",
+          "definitionExpression",
+          "renderer",
+          "popupTemplate",
+          "labelingInfo",
+          "labelsVisible",
+          "opacity",
+          "visible",
+          "minScale",
+          "maxScale",
+          "legendEnabled",
+          "listMode",
+        ])
+      : new Set(["url", "outFields", "definitionExpression"]);
 
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {

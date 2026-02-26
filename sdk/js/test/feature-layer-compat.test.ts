@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FeatureLayerCompat, parseFeatureLayerUrl } from "../src/index.js";
+import { CompatEventBus, FeatureLayerCompat, parseFeatureLayerUrl } from "../src/index.js";
 
 describe("parseFeatureLayerUrl", () => {
   it("parses canonical feature layer URL", () => {
@@ -403,5 +403,81 @@ describe("FeatureLayerCompat", () => {
     expect(JSON.stringify(requests[1])).toContain("/FeatureServer/1000/99/attachments");
     expect(JSON.stringify(requests[2])).toContain("/FeatureServer/1000/99/deleteAttachments");
     expect(JSON.stringify(requests[2])).toContain("attachmentIds=7%2C8");
+  });
+
+  it("preserves common display options and emits event bus lifecycle changes", async () => {
+    const eventBus = new CompatEventBus();
+    const events: string[] = [];
+    eventBus.onAny((event) => {
+      events.push(event.type);
+    });
+
+    const renderer = { type: "simple" };
+    const popupTemplate = { title: "{NAME}" };
+    const initialLabeling = [{ where: "1=1" }];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      id: "parcels",
+      title: "Parcels",
+      renderer,
+      popupTemplate,
+      labelingInfo: initialLabeling,
+      labelsVisible: false,
+      opacity: 0.6,
+      visible: false,
+      minScale: 12000,
+      maxScale: 2400,
+      legendEnabled: false,
+      listMode: "hide",
+      eventBus,
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({ id: 1000 });
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    expect(layer.id).toBe("parcels");
+    expect(layer.title).toBe("Parcels");
+    expect(layer.renderer).toEqual(renderer);
+    expect(layer.popupTemplate).toEqual(popupTemplate);
+    expect(layer.labelingInfo).toEqual(initialLabeling);
+    expect(layer.labelsVisible).toBe(false);
+    expect(layer.opacity).toBe(0.6);
+    expect(layer.visible).toBe(false);
+    expect(layer.minScale).toBe(12000);
+    expect(layer.maxScale).toBe(2400);
+    expect(layer.legendEnabled).toBe(false);
+    expect(layer.listMode).toBe("hide");
+    expect(layer.eventBus).toBe(eventBus);
+
+    await layer.load();
+    layer.setVisibility(true);
+    layer.setOpacity(2);
+    layer.setRenderer({ type: "class-breaks" });
+    layer.setPopupTemplate({ title: "Updated" });
+    layer.setLabelingInfo([{ where: "status = 'open'" }]);
+    layer.refresh();
+
+    expect(layer.visible).toBe(true);
+    expect(layer.opacity).toBe(1);
+    expect(layer.renderer).toEqual({ type: "class-breaks" });
+    expect(layer.popupTemplate).toEqual({ title: "Updated" });
+    expect(layer.labelingInfo).toEqual([{ where: "status = 'open'" }]);
+    expect(events).toContain("feature-layer.loaded");
+    expect(events).toContain("layer.visibility-changed");
+    expect(events).toContain("layer.opacity-changed");
+    expect(events).toContain("feature-layer.renderer-changed");
+    expect(events).toContain("feature-layer.popup-template-changed");
+    expect(events).toContain("feature-layer.labeling-changed");
+    expect(events).toContain("feature-layer.refreshed");
   });
 });

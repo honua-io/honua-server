@@ -92,7 +92,23 @@ describe("runEsriCompatCodemod", () => {
       file,
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
-        "const layer = new FeatureLayer({ url: serviceUrl, outFields: ['*'], definitionExpression: 'status = 1' });",
+        "const layer = new FeatureLayer({",
+        "  url: serviceUrl,",
+        "  id: 'parcels',",
+        "  title: 'Parcels',",
+        "  outFields: ['*'],",
+        "  definitionExpression: 'status = 1',",
+        "  renderer: customRenderer,",
+        "  popupTemplate,",
+        "  labelingInfo: [labels],",
+        "  labelsVisible: true,",
+        "  opacity: 0.75,",
+        "  visible: true,",
+        "  minScale: 0,",
+        "  maxScale: 0,",
+        "  legendEnabled: true,",
+        "  listMode: 'show',",
+        "});",
         "void layer;",
       ].join("\n"),
       "utf8",
@@ -109,9 +125,12 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.manualCallSites).toBe(0);
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      "new FeatureLayerCompat({ url: serviceUrl, outFields: ['*'], definitionExpression: 'status = 1' })",
-    );
+    expect(nextSource).toContain("new FeatureLayerCompat({");
+    expect(nextSource).toContain("renderer: customRenderer");
+    expect(nextSource).toContain("popupTemplate");
+    expect(nextSource).toContain("labelingInfo: [labels]");
+    expect(nextSource).toContain("legendEnabled: true");
+    expect(nextSource).toContain("listMode: 'show'");
   });
 
   it("rewrites safe Graphic constructor and removes ArcGIS import", () => {
@@ -2083,7 +2102,7 @@ describe("runEsriCompatCodemod", () => {
       file,
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
-        "const layer = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
+        "const layer = new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } });",
         "void layer;",
       ].join("\n"),
       "utf8",
@@ -2103,7 +2122,7 @@ describe("runEsriCompatCodemod", () => {
     expect(result.manualTodos[0].reason).toContain("unsupported properties");
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain("new FeatureLayer({ url: serviceUrl, renderer: customRenderer })");
+    expect(nextSource).toContain("new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } })");
   });
 
   it("keeps ArcGIS import when mixed auto and manual call sites exist", () => {
@@ -2114,7 +2133,7 @@ describe("runEsriCompatCodemod", () => {
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "const a = new FeatureLayer({ url: serviceUrl });",
-        "const b = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
+        "const b = new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } });",
         "void a; void b;",
       ].join("\n"),
       "utf8",
@@ -2141,7 +2160,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("const a = new FeatureLayerCompat({ url: serviceUrl });");
     expect(nextSource).toContain(
-      "const b = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
+      "const b = new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } });",
     );
   });
 
@@ -2152,7 +2171,7 @@ describe("runEsriCompatCodemod", () => {
       file,
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
-        "const layer = new FeatureLayer({ url: serviceUrl, renderer: customRenderer });",
+        "const layer = new FeatureLayer({ url: serviceUrl, portalItem: { id: 'abc123' } });",
         "void layer;",
       ].join("\n"),
       "utf8",

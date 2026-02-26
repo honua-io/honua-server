@@ -132,7 +132,7 @@ node dist/src/migration/cli.js reconcile --source-base-url https://source.exampl
 
 The codemod is intentionally conservative:
 - default target (`--target honua-compat`) rewrites safe constructors:
-  - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `outFields` and `definitionExpression`)
+  - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `labelsVisible`, `opacity`, `visible`, `minScale`, `maxScale`, `legendEnabled`, and `listMode`)
   - `new Polyline(...)` -> `new PolylineCompat(...)`
   - `new Polygon(...)` -> `new PolygonCompat(...)`
   - `new Extent(...)` -> `new ExtentCompat(...)`

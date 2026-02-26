@@ -1,12 +1,26 @@
 import { HonuaClient } from "../core/client.js";
 import type { QueryMethod } from "../core/types.js";
+import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
 import { parseFeatureLayerUrl } from "./url.js";
 
 export interface FeatureLayerCompatOptions {
   url: string;
+  id?: string;
+  title?: string;
   outFields?: string | string[];
   definitionExpression?: string;
+  renderer?: unknown;
+  popupTemplate?: unknown;
+  labelingInfo?: unknown[];
+  labelsVisible?: boolean;
+  opacity?: number;
+  visible?: boolean;
+  minScale?: number;
+  maxScale?: number;
+  legendEnabled?: boolean;
+  listMode?: string;
   client?: HonuaClient;
+  eventBus?: CompatEventBus;
 }
 
 export interface FeatureLayerQueryOptions {
@@ -74,12 +88,25 @@ export interface FeatureLayerQueryExtentResult {
 
 export class FeatureLayerCompat {
   public readonly url: string;
+  public id: string;
+  public title: string | undefined;
   public readonly serviceId: string;
   public readonly layerId: number;
   public readonly outFields: string[] | undefined;
   public readonly definitionExpression: string | undefined;
+  public renderer: unknown;
+  public popupTemplate: unknown;
+  public labelingInfo: unknown[];
+  public labelsVisible: boolean;
+  public opacity: number;
+  public visible: boolean;
+  public minScale: number;
+  public maxScale: number;
+  public legendEnabled: boolean;
+  public listMode: string;
   public loaded: boolean;
   public metadata: unknown;
+  public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
 
@@ -88,6 +115,8 @@ export class FeatureLayerCompat {
     this.url = options.url;
     this.serviceId = parsed.serviceId;
     this.layerId = parsed.layerId;
+    this.id = options.id ?? `${this.serviceId}-${this.layerId}`;
+    this.title = options.title;
     this.outFields =
       options.outFields === undefined
         ? undefined
@@ -95,14 +124,30 @@ export class FeatureLayerCompat {
           ? [...options.outFields]
           : [options.outFields];
     this.definitionExpression = options.definitionExpression;
+    this.renderer = options.renderer;
+    this.popupTemplate = options.popupTemplate;
+    this.labelingInfo = Array.isArray(options.labelingInfo) ? [...options.labelingInfo] : [];
+    this.labelsVisible = options.labelsVisible ?? true;
+    this.opacity = normalizeOpacity(options.opacity ?? 1);
+    this.visible = options.visible ?? true;
+    this.minScale = normalizeScale(options.minScale);
+    this.maxScale = normalizeScale(options.maxScale);
+    this.legendEnabled = options.legendEnabled ?? true;
+    this.listMode = options.listMode ?? "show";
     this.loaded = false;
     this.metadata = undefined;
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
   }
 
   public async load(): Promise<FeatureLayerCompat> {
     if (!this.loaded) {
       this.metadata = await this.client.getLayerMetadata(this.serviceId, this.layerId);
+      this.eventBus.emit(
+        "feature-layer.loaded",
+        { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
+        this,
+      );
     }
     this.loaded = true;
     return this;
@@ -120,6 +165,44 @@ export class FeatureLayerCompat {
   public refresh(): void {
     this.loaded = false;
     this.metadata = undefined;
+    this.eventBus.emit(
+      "feature-layer.refreshed",
+      { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
+      this,
+    );
+  }
+
+  public setVisibility(visible: boolean): void {
+    this.visible = visible;
+    this.eventBus.emit(
+      "layer.visibility-changed",
+      { layerId: this.id, serviceId: this.serviceId, sublayerId: this.layerId, visible },
+      this,
+    );
+  }
+
+  public setOpacity(opacity: number): void {
+    this.opacity = normalizeOpacity(opacity);
+    this.eventBus.emit(
+      "layer.opacity-changed",
+      { layerId: this.id, serviceId: this.serviceId, sublayerId: this.layerId, opacity: this.opacity },
+      this,
+    );
+  }
+
+  public setRenderer(renderer: unknown): void {
+    this.renderer = renderer;
+    this.eventBus.emit("feature-layer.renderer-changed", { layerId: this.id }, this);
+  }
+
+  public setPopupTemplate(popupTemplate: unknown): void {
+    this.popupTemplate = popupTemplate;
+    this.eventBus.emit("feature-layer.popup-template-changed", { layerId: this.id }, this);
+  }
+
+  public setLabelingInfo(labelingInfo: readonly unknown[]): void {
+    this.labelingInfo = [...labelingInfo];
+    this.eventBus.emit("feature-layer.labeling-changed", { layerId: this.id }, this);
   }
 
   public createQuery(): FeatureLayerCreateQueryResult {
@@ -304,6 +387,20 @@ export class FeatureLayerCompat {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizeOpacity(opacity: number): number {
+  if (!Number.isFinite(opacity)) {
+    return 1;
+  }
+  return Math.min(Math.max(opacity, 0), 1);
+}
+
+function normalizeScale(scale: number | undefined): number {
+  if (scale === undefined || !Number.isFinite(scale)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(scale));
 }
 
 function extractFeatures(value: unknown): unknown[] | undefined {
