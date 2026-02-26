@@ -60,11 +60,13 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
       {
         file: "/tmp/app/src/main.ts",
+        rewrittenImports: 0,
         rewrittenConstructors: 3,
         rewrittenDynamicImports: 0,
         addedCompatImport: true,
@@ -203,6 +205,7 @@ describe("buildJsMigrationReport", () => {
       "time-slider-widget": 0,
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
+      "reactive-utils": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

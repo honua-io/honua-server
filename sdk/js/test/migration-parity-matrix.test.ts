@@ -31,6 +31,7 @@ describe("JS parity matrix", () => {
       (row) => row.kind === "distance-measurement-2d-widget",
     );
     const areaMeasurement2dWidget = matrix.find((row) => row.kind === "area-measurement-2d-widget");
+    const reactiveUtils = matrix.find((row) => row.kind === "reactive-utils");
 
     expect(featureLayer).toMatchObject({
       honuaCompat: "compat",
@@ -81,6 +82,10 @@ describe("JS parity matrix", () => {
       esriLeaflet: "assisted",
     });
     expect(areaMeasurement2dWidget).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(reactiveUtils).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

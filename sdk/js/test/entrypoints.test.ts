@@ -43,6 +43,7 @@ import {
   PopupTemplateCompat,
   RouteLayerCompat,
   RouteTaskCompat,
+  reactiveUtils,
   SearchCompat,
   SketchCompat,
   ScaleBarCompat,
@@ -52,6 +53,9 @@ import {
   TimeSliderCompat,
   TileLayerCompat,
   ZoomCompat,
+  watch,
+  when,
+  whenOnce,
   parseMapServiceUrl,
   SceneViewCompat,
   WebMapCompat,
@@ -116,6 +120,7 @@ describe("entrypoint modules", () => {
     expect(PopupTemplateCompat).toBeTypeOf("function");
     expect(RouteLayerCompat).toBeTypeOf("function");
     expect(RouteTaskCompat).toBeTypeOf("function");
+    expect(reactiveUtils.watch).toBeTypeOf("function");
     expect(SwipeCompat).toBeTypeOf("function");
     expect(TableListCompat).toBeTypeOf("function");
     expect(SketchCompat).toBeTypeOf("function");
@@ -126,6 +131,9 @@ describe("entrypoint modules", () => {
     expect(SceneViewCompat).toBeTypeOf("function");
     expect(SearchCompat).toBeTypeOf("function");
     expect(WebMapCompat).toBeTypeOf("function");
+    expect(watch).toBeTypeOf("function");
+    expect(when).toBeTypeOf("function");
+    expect(whenOnce).toBeTypeOf("function");
   });
 
   it("exposes migration tooling entrypoint", () => {

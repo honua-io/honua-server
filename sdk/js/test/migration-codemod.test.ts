@@ -1707,6 +1707,79 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
   });
 
+  it("rewrites reactiveUtils static imports to compat helpers", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "reactive-utils.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import * as reactiveUtils from '@arcgis/core/core/reactiveUtils';",
+        "let ready = false;",
+        "reactiveUtils.whenOnce(() => ready);",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["reactive-utils"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { reactiveUtils } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/core/reactiveUtils");
+  });
+
+  it("rewrites reactiveUtils dynamic imports to compat dynamic bridge", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "reactive-utils-dynamic.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadReactive() {",
+        "  const module = await import('@arcgis/core/core/reactiveUtils.js');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["reactive-utils"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.reactiveUtils }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/core/reactiveUtils");
+  });
+
   it("rewrites map and map-view dynamic imports including .js module paths", () => {
     const root = makeTempProject();
     const file = path.join(root, "lazy-map.ts");

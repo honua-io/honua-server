@@ -14,6 +14,8 @@ const ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON =
   "No deterministic esri-leaflet mapping for this constructor; requires manual migration.";
 const ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
   "Dynamic import has no deterministic esri-leaflet mapping; requires manual migration.";
+const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON =
+  "ReactiveUtils import shape is unsupported for automatic migration.";
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
@@ -62,7 +64,8 @@ export type CodemodConstructorKind =
   | "measurement-widget"
   | "time-slider-widget"
   | "directions-widget"
-  | "coordinate-conversion-widget";
+  | "coordinate-conversion-widget"
+  | "reactive-utils";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -422,6 +425,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
       "@arcgis/core/widgets/CoordinateConversion.js",
     ]),
   },
+  {
+    kind: "reactive-utils",
+    compatSymbol: "reactiveUtils",
+    arcGisModules: new Set([
+      "@arcgis/core/core/reactiveUtils",
+      "@arcgis/core/core/reactiveUtils.js",
+    ]),
+  },
 ];
 
 const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> =
@@ -485,6 +496,7 @@ export interface CodemodMetrics {
 
 export interface CodemodFileResult {
   file: string;
+  rewrittenImports: number;
   rewrittenConstructors: number;
   rewrittenDynamicImports: number;
   addedCompatImport: boolean;
@@ -546,6 +558,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
     manualTodos.push(...fileResult.manualTodos);
 
     const hasChanges =
+      fileResult.rewrittenImports > 0 ||
       fileResult.rewrittenConstructors > 0 ||
       fileResult.rewrittenDynamicImports > 0 ||
       fileResult.addedCompatImport ||
@@ -557,6 +570,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
       }
       fileResults.push({
         file,
+        rewrittenImports: fileResult.rewrittenImports,
         rewrittenConstructors: fileResult.rewrittenConstructors,
         rewrittenDynamicImports: fileResult.rewrittenDynamicImports,
         addedCompatImport: fileResult.addedCompatImport,
@@ -567,6 +581,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
     } else if (fileResult.manualTodos.length > 0) {
       fileResults.push({
         file,
+        rewrittenImports: 0,
         rewrittenConstructors: 0,
         rewrittenDynamicImports: 0,
         addedCompatImport: false,
@@ -584,6 +599,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
     filesChanged: fileResults.filter(
       (item) =>
         item.rewrittenConstructors > 0 ||
+        item.rewrittenImports > 0 ||
         item.rewrittenDynamicImports > 0 ||
         item.addedCompatImport ||
         item.removedArcGisImports > 0 ||
@@ -603,6 +619,7 @@ function codemodFile(
   target: CodemodTarget,
 ): {
   nextSource: string;
+  rewrittenImports: number;
   rewrittenConstructors: number;
   rewrittenDynamicImports: number;
   rewrittenKinds: CodemodConstructorKind[];
@@ -623,6 +640,7 @@ function codemodFile(
 
   const constructorEdits: TextEdit[] = [];
   const dynamicImportEdits: TextEdit[] = [];
+  const importEdits: TextEdit[] = [];
   const rewrittenKinds: CodemodConstructorKind[] = [];
   const manualTodos: MigrationTodo[] = [];
   const todoCommentEdits: TextEdit[] = [];
@@ -632,6 +650,18 @@ function codemodFile(
     findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
   const fileExtension = path.extname(file).toLowerCase();
   const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
+
+  const reactiveUtilsImportRewrite = rewriteReactiveUtilsImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+  });
+  importEdits.push(...reactiveUtilsImportRewrite.edits);
+  rewrittenKinds.push(...reactiveUtilsImportRewrite.rewrittenKinds);
+  manualTodos.push(...reactiveUtilsImportRewrite.manualTodos);
+  todoCommentEdits.push(...reactiveUtilsImportRewrite.todoCommentEdits);
 
   walk(sourceFile, (node) => {
     if (isArcGisDynamicImportCall(node)) {
@@ -795,9 +825,10 @@ function codemodFile(
     }
   });
 
-  if (constructorEdits.length === 0 && dynamicImportEdits.length === 0) {
+  if (constructorEdits.length === 0 && dynamicImportEdits.length === 0 && importEdits.length === 0) {
     return {
       nextSource: applyTextEdits(source, todoCommentEdits),
+      rewrittenImports: 0,
       rewrittenConstructors: 0,
       rewrittenDynamicImports: 0,
       rewrittenKinds: [],
@@ -809,6 +840,7 @@ function codemodFile(
   }
 
   let transformed = applyTextEdits(source, [
+    ...importEdits,
     ...constructorEdits,
     ...dynamicImportEdits,
     ...todoCommentEdits,
@@ -840,6 +872,7 @@ function codemodFile(
 
   return {
     nextSource: transformed,
+    rewrittenImports: importEdits.length,
     rewrittenConstructors: constructorEdits.length,
     rewrittenDynamicImports: dynamicImportEdits.length,
     rewrittenKinds,
@@ -848,6 +881,123 @@ function codemodFile(
     annotatedTodoComments: todoCommentEdits.length,
     manualTodos: manualTodos.sort(compareTodos),
   };
+}
+
+function rewriteReactiveUtilsImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "reactive-utils") {
+      continue;
+    }
+
+    const replacement = buildReactiveUtilsCompatImport(
+      statement,
+      options.sourceFile,
+      options.compatImportPath,
+    );
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "reactive-utils",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON,
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[reactive-utils]: ${REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("reactive-utils");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildReactiveUtilsCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return `import { reactiveUtils } from "${compatImportPath}";`;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("reactiveUtils", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("reactiveUtils", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "reactiveUtils") {
+        specifiers.push(renderImportSpecifier("reactiveUtils", localName));
+        continue;
+      }
+      if (importedName === "watch" || importedName === "when" || importedName === "whenOnce") {
+        specifiers.push(renderImportSpecifier(importedName, localName));
+        continue;
+      }
+
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("reactiveUtils");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
+function renderImportSpecifier(importedName: string, localName: string): string {
+  return importedName === localName ? importedName : `${importedName} as ${localName}`;
 }
 
 function hasCommonJsExportMarkers(source: string): boolean {
@@ -923,6 +1073,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1065,14 +1216,14 @@ function ensureCompatNamedImports(
     const importClause = statement.importClause;
     const namedBindings = importClause?.namedBindings;
     if (namedBindings && ts.isNamedImports(namedBindings)) {
-      const existingSymbols = namedBindings.elements.map((element) => element.name.text);
-      const existingSet = new Set(existingSymbols);
-      const missing = symbols.filter((symbol) => !existingSet.has(symbol));
+      const existingSpecifiers = namedBindings.elements.map((element) => element.getText(sourceFile));
+      const existingLocalNames = new Set(namedBindings.elements.map((element) => element.name.text));
+      const missing = symbols.filter((symbol) => !existingLocalNames.has(symbol));
       if (missing.length === 0) {
         return { nextSource: source, changed: false };
       }
 
-      const mergedSymbols = [...existingSymbols, ...missing];
+      const mergedSymbols = [...existingSpecifiers, ...missing];
       const replacement = buildNamedImportText(
         importPath,
         importClause?.name?.text,
@@ -1644,6 +1795,11 @@ function isSafeConstructorCall(
       return isSafeDirectionsWidgetCompatCall(node);
     case "coordinate-conversion-widget":
       return isSafeCoordinateConversionWidgetCompatCall(node);
+    case "reactive-utils":
+      return {
+        ok: false,
+        reason: "ReactiveUtils is not a constructor and requires import-based migration.",
+      };
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }

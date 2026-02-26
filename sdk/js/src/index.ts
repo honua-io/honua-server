@@ -193,6 +193,12 @@ export type {
 } from "./esri-compat/popup.js";
 export { PopupTemplateCompat } from "./esri-compat/popup-template.js";
 export type { PopupTemplateCompatOptions } from "./esri-compat/popup-template.js";
+export { reactiveUtils, watch, when, whenOnce } from "./esri-compat/reactive-utils.js";
+export type {
+  ReactiveUtilsHandleCompat,
+  ReactiveUtilsWatchOptionsCompat,
+  ReactiveUtilsWhenOptionsCompat,
+} from "./esri-compat/reactive-utils.js";
 export { PrintCompat } from "./esri-compat/print.js";
 export type {
   PrintCompatOptions,

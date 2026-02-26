@@ -148,6 +148,7 @@ describe("arcgis migration integration", () => {
       "time-slider-widget": 0,
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
+      "reactive-utils": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -448,6 +449,32 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('import { RouteTaskCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const routeTask = new RouteTaskCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/rest/route/RouteTask");
+  });
+
+  it("migrates reactive-utils fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-reactive-utils-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["reactive-utils"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { reactiveUtils } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("reactiveUtils.whenOnce(() => ready);");
+    expect(migratedMain).not.toContain("@arcgis/core/core/reactiveUtils");
   });
 
   it("migrates feature table fixture with ready gating", () => {

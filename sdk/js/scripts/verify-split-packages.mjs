@@ -82,6 +82,7 @@ import {
   MapViewUiCompat,
   PrintCompat,
   PopupCompat,
+  reactiveUtils,
   RouteLayerCompat,
   RouteTaskCompat,
   SearchCompat,
@@ -92,6 +93,9 @@ import {
   TrackCompat,
   TimeSliderCompat,
   TileLayerCompat,
+  watch,
+  when,
+  whenOnce,
   ZoomCompat,
 } from "@honua/sdk-esri-compat";
 import {
@@ -142,6 +146,7 @@ if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export m
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PrintCompat !== "function") throw new Error("PrintCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
+if (typeof reactiveUtils.watch !== "function") throw new Error("reactiveUtils export missing");
 if (typeof RouteLayerCompat !== "function") throw new Error("RouteLayerCompat export missing");
 if (typeof RouteTaskCompat !== "function") throw new Error("RouteTaskCompat export missing");
 if (typeof SearchCompat !== "function") throw new Error("SearchCompat export missing");
@@ -151,6 +156,9 @@ if (typeof SwipeCompat !== "function") throw new Error("SwipeCompat export missi
 if (typeof TableListCompat !== "function") throw new Error("TableListCompat export missing");
 if (typeof TrackCompat !== "function") throw new Error("TrackCompat export missing");
 if (typeof TimeSliderCompat !== "function") throw new Error("TimeSliderCompat export missing");
+if (typeof watch !== "function") throw new Error("watch export missing");
+if (typeof when !== "function") throw new Error("when export missing");
+if (typeof whenOnce !== "function") throw new Error("whenOnce export missing");
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
 if (typeof runEsriCompatCodemod !== "function") throw new Error("runEsriCompatCodemod export missing");
 if (typeof buildJsMigrationReport !== "function") throw new Error("buildJsMigrationReport export missing");
