@@ -66,6 +66,7 @@ export type CodemodConstructorKind =
   | "time-slider-widget"
   | "directions-widget"
   | "coordinate-conversion-widget"
+  | "query"
   | "reactive-utils";
 
 interface ConstructorRewriteSpec {
@@ -429,6 +430,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/CoordinateConversion",
       "@arcgis/core/widgets/CoordinateConversion.js",
+    ]),
+  },
+  {
+    kind: "query",
+    compatSymbol: "QueryCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/rest/support/Query",
+      "@arcgis/core/rest/support/Query.js",
     ]),
   },
   {
@@ -1080,6 +1089,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    query: { total: 0, autoMigrated: 0, manual: 0 },
     "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
@@ -1804,6 +1814,8 @@ function isSafeConstructorCall(
       return isSafeDirectionsWidgetCompatCall(node);
     case "coordinate-conversion-widget":
       return isSafeCoordinateConversionWidgetCompatCall(node);
+    case "query":
+      return isSafeQueryCompatCall(node);
     case "reactive-utils":
       return {
         ok: false,
@@ -3932,6 +3944,63 @@ function isSafeCoordinateConversionWidgetCompatCall(
       return {
         ok: false,
         reason: "CoordinateConversion options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeQueryCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Query constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Query constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "where",
+    "outFields",
+    "returnGeometry",
+    "orderByFields",
+    "objectIds",
+    "geometry",
+    "spatialRelationship",
+    "outSpatialReference",
+    "num",
+    "start",
+    "timeExtent",
+    "groupByFieldsForStatistics",
+    "outStatistics",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Query options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Query options include unsupported properties; requires manual migration.",
       };
     }
   }

@@ -42,6 +42,7 @@ import {
   PrintCompat,
   PopupCompat,
   PopupTemplateCompat,
+  QueryCompat,
   RouteLayerCompat,
   RouteTaskCompat,
   reactiveUtils,
@@ -120,6 +121,7 @@ describe("entrypoint modules", () => {
     expect(DistanceMeasurement2DCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
     expect(PopupTemplateCompat).toBeTypeOf("function");
+    expect(QueryCompat).toBeTypeOf("function");
     expect(RouteLayerCompat).toBeTypeOf("function");
     expect(RouteTaskCompat).toBeTypeOf("function");
     expect(reactiveUtils.watch).toBeTypeOf("function");

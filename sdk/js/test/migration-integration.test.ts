@@ -149,6 +149,7 @@ describe("arcgis migration integration", () => {
       "time-slider-widget": 0,
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
+      query: 0,
       "reactive-utils": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
@@ -498,6 +499,36 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('import { GraphicCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const parcelGraphic = new GraphicCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/Graphic");
+  });
+
+  it("migrates query fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-query-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(2);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind.query).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, QueryCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const parcels = new FeatureLayerCompat({");
+    expect(migratedMain).toContain("const query = new QueryCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/rest/support/Query");
   });
 
   it("migrates feature table fixture with ready gating", () => {

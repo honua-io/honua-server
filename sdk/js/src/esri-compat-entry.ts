@@ -186,6 +186,8 @@ export type {
   ReactiveUtilsWatchOptionsCompat,
   ReactiveUtilsWhenOptionsCompat,
 } from "./esri-compat/reactive-utils.js";
+export { QueryCompat } from "./esri-compat/query.js";
+export type { QueryCompatOptions } from "./esri-compat/query.js";
 export { PrintCompat } from "./esri-compat/print.js";
 export type {
   PrintCompatOptions,

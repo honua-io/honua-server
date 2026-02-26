@@ -154,6 +154,48 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/Graphic");
   });
 
+  it("rewrites safe Query constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "query.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Query from '@arcgis/core/rest/support/Query';",
+        "const query = new Query({",
+        "  where: \"status = 'active'\",",
+        "  outFields: ['OBJECTID'],",
+        "  returnGeometry: false,",
+        "  orderByFields: ['OBJECTID DESC'],",
+        "  num: 20,",
+        "  start: 0,",
+        "});",
+        "void query;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.query).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { QueryCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new QueryCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/rest/support/Query");
+  });
+
   it("rewrites safe MapImageLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "map-image-layer.ts");

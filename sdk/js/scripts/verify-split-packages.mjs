@@ -83,6 +83,7 @@ import {
   MapViewUiCompat,
   PrintCompat,
   PopupCompat,
+  QueryCompat,
   reactiveUtils,
   RouteLayerCompat,
   RouteTaskCompat,
@@ -148,6 +149,7 @@ if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export m
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PrintCompat !== "function") throw new Error("PrintCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
+if (typeof QueryCompat !== "function") throw new Error("QueryCompat export missing");
 if (typeof reactiveUtils.watch !== "function") throw new Error("reactiveUtils export missing");
 if (typeof RouteLayerCompat !== "function") throw new Error("RouteLayerCompat export missing");
 if (typeof RouteTaskCompat !== "function") throw new Error("RouteTaskCompat export missing");

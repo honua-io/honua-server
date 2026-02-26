@@ -61,6 +61,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        query: { total: 0, autoMigrated: 0, manual: 0 },
         "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
@@ -207,6 +208,7 @@ describe("buildJsMigrationReport", () => {
       "time-slider-widget": 0,
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
+      query: 0,
       "reactive-utils": 0,
     });
     expect(report.manualTodoReasons).toEqual([
