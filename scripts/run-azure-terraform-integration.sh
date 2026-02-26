@@ -416,13 +416,17 @@ run_tf_apply_with_token_retry() {
 wait_for_ready() {
   local base_url="$1"
   local timeout="$2"
-  local ready_url="${base_url%/}/healthz/ready"
+  local normalized_base
+  local ready_url
   local start_epoch
   local elapsed
 
+  normalized_base="$(normalize_base_url "$base_url")"
+  ready_url="${normalized_base}/healthz/ready"
+
   start_epoch="$(date +%s)"
   while true; do
-    if curl -fsS --max-time 20 "$ready_url" >/dev/null; then
+    if curl -fsSL --max-time 20 "$ready_url" >/dev/null; then
       elapsed=$(( $(date +%s) - start_epoch ))
       if (( elapsed > READY_SLO_SECONDS )); then
         log_error "Ready SLO failed: ${elapsed}s exceeds ${READY_SLO_SECONDS}s ($ready_url)"
@@ -445,10 +449,14 @@ run_load_probe() {
   local base_url="$1"
   local requests="$2"
   local concurrency="$3"
-  local target_url="${base_url%/}/healthz/ready"
+  local normalized_base
+  local target_url
   local fail_file
   local failures
   local error_rate
+
+  normalized_base="$(normalize_base_url "$base_url")"
+  target_url="${normalized_base}/healthz/ready"
 
   fail_file="$(mktemp)"
 
@@ -511,14 +519,16 @@ assert_idempotent_plan() {
 
 verify_protocol_endpoints() {
   local base_url="$1"
-  local normalized="${base_url%/}"
+  local normalized
   local status
 
-  curl -fsS --max-time 20 "${normalized}/rest/services?f=pjson" >/dev/null
-  curl -fsS --max-time 20 "${normalized}/ogc/features" >/dev/null
-  curl -fsS --max-time 20 "${normalized}/odata" >/dev/null
+  normalized="$(normalize_base_url "$base_url")"
 
-  status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
+  curl -fsSL --max-time 20 "${normalized}/rest/services?f=pjson" >/dev/null
+  curl -fsSL --max-time 20 "${normalized}/ogc/features" >/dev/null
+  curl -fsSL --max-time 20 "${normalized}/odata" >/dev/null
+
+  status="$(curl -sSL -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
     log_error "Expected unauthenticated admin endpoint to return 401/403, got $status"
     return 1
@@ -535,6 +545,16 @@ json_escape() {
   value="${value//$'\r'/\\r}"
   value="${value//$'\t'/\\t}"
   printf '%s' "$value"
+}
+
+normalize_base_url() {
+  local base_url="${1%/}"
+  if [[ "$base_url" =~ ^https?:// ]]; then
+    printf '%s\n' "$base_url"
+    return
+  fi
+
+  printf 'https://%s\n' "$base_url"
 }
 
 extract_json_string_field() {
@@ -575,7 +595,7 @@ run_db_sql() {
 run_admin_api_crud_smoke() {
   local base_url="$1"
   local db_host="$2"
-  local normalized="${base_url%/}"
+  local normalized
   local suffix
   local table_name
   local layer_name
@@ -591,6 +611,7 @@ run_admin_api_crud_smoke() {
   local create_connection_response
   local publish_layer_response
 
+  normalized="$(normalize_base_url "$base_url")"
   suffix="$(date -u +%m%d%H%M%S)$RANDOM"
   table_name="smoke_${suffix}"
   layer_name="Smoke Layer ${suffix}"
@@ -1223,3 +1244,4 @@ main() {
 }
 
 main "$@"
+  normalized="$(normalize_base_url "$base_url")"
