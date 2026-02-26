@@ -192,6 +192,46 @@ describe("MapViewCompat", () => {
     expect(events).toEqual([{ zoom: 4, center: [10, 20], scale: 2500000, rotation: 20 }]);
   });
 
+  it("supports direct state mutators and emits change events", () => {
+    const eventBus = new CompatEventBus();
+    const events: string[] = [];
+    eventBus.onAny((event) => {
+      events.push(event.type);
+    });
+
+    const view = new MapViewCompat({ eventBus });
+
+    view.setCenter([10, 20]);
+    view.setZoom(7);
+    view.setScale(2500000);
+    view.setRotation(30);
+    view.setExtent({ xmin: 0, ymin: 0, xmax: 10, ymax: 10 });
+    view.setPadding({ left: 12, right: 12, top: 4, bottom: 4 });
+    view.setConstraints({ minZoom: 2 });
+    view.setHighlightOptions({ color: "#0ff" });
+    view.setSpatialReference({ wkid: 4326 });
+
+    expect(view.center).toEqual([10, 20]);
+    expect(view.zoom).toBe(7);
+    expect(view.scale).toBe(2500000);
+    expect(view.rotation).toBe(30);
+    expect(view.extent).toEqual({ xmin: 0, ymin: 0, xmax: 10, ymax: 10 });
+    expect(view.padding).toEqual({ left: 12, right: 12, top: 4, bottom: 4 });
+    expect(view.constraints).toEqual({ minZoom: 2 });
+    expect(view.highlightOptions).toEqual({ color: "#0ff" });
+    expect(view.spatialReference).toEqual({ wkid: 4326 });
+    expect(view.toMap({ x: 1, y: 2 })).toEqual({ x: 1, y: 2, spatialReference: { wkid: 4326 } });
+    expect(events).toContain("view.center-changed");
+    expect(events).toContain("view.zoom-changed");
+    expect(events).toContain("view.scale-changed");
+    expect(events).toContain("view.rotation-changed");
+    expect(events).toContain("view.extent-changed");
+    expect(events).toContain("view.padding-changed");
+    expect(events).toContain("view.constraints-changed");
+    expect(events).toContain("view.highlight-options-changed");
+    expect(events).toContain("view.spatial-reference-changed");
+  });
+
   it("supports popup bridge helpers and popup watchers", () => {
     const view = new MapViewCompat({
       popup: {

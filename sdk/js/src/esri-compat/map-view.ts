@@ -574,24 +574,19 @@ export class MapViewCompat {
 
   public async goTo(target: MapViewGoToTarget): Promise<MapViewCompat> {
     if (target.center !== undefined) {
-      this.center = target.center;
-      this.notifyWatchers("center", this.center);
+      this.setCenter(target.center);
     }
     if (target.zoom !== undefined) {
-      this.zoom = target.zoom;
-      this.notifyWatchers("zoom", this.zoom);
+      this.setZoom(target.zoom);
     }
     if (target.scale !== undefined) {
-      this.scale = target.scale;
-      this.notifyWatchers("scale", this.scale);
+      this.setScale(target.scale);
     }
     if (target.rotation !== undefined) {
-      this.rotation = target.rotation;
-      this.notifyWatchers("rotation", this.rotation);
+      this.setRotation(target.rotation);
     }
     if (target.extent !== undefined) {
-      this.extent = target.extent;
-      this.notifyWatchers("extent", this.extent);
+      this.setExtent(target.extent);
     }
     this.eventBus.emit("view.go-to", target, this);
     this.emit("go-to", target);
@@ -605,6 +600,60 @@ export class MapViewCompat {
 
   public closePopup(): void {
     this.popup.close();
+  }
+
+  public setCenter(center: unknown): void {
+    this.center = center;
+    this.notifyWatchers("center", this.center);
+    this.eventBus.emit("view.center-changed", { center }, this);
+  }
+
+  public setZoom(zoom: number | undefined): void {
+    this.zoom = zoom;
+    this.notifyWatchers("zoom", this.zoom);
+    this.eventBus.emit("view.zoom-changed", { zoom }, this);
+  }
+
+  public setScale(scale: number | undefined): void {
+    this.scale = scale;
+    this.notifyWatchers("scale", this.scale);
+    this.eventBus.emit("view.scale-changed", { scale }, this);
+  }
+
+  public setRotation(rotation: number | undefined): void {
+    this.rotation = rotation;
+    this.notifyWatchers("rotation", this.rotation);
+    this.eventBus.emit("view.rotation-changed", { rotation }, this);
+  }
+
+  public setExtent(extent: unknown): void {
+    this.extent = extent;
+    this.notifyWatchers("extent", this.extent);
+    this.eventBus.emit("view.extent-changed", { extent }, this);
+  }
+
+  public setPadding(padding: unknown): void {
+    this.padding = padding;
+    this.notifyWatchers("padding", this.padding);
+    this.eventBus.emit("view.padding-changed", { padding }, this);
+  }
+
+  public setConstraints(constraints: unknown): void {
+    this.constraints = constraints;
+    this.notifyWatchers("constraints", this.constraints);
+    this.eventBus.emit("view.constraints-changed", { constraints }, this);
+  }
+
+  public setHighlightOptions(highlightOptions: unknown): void {
+    this.highlightOptions = highlightOptions;
+    this.notifyWatchers("highlightOptions", this.highlightOptions);
+    this.eventBus.emit("view.highlight-options-changed", { highlightOptions }, this);
+  }
+
+  public setSpatialReference(spatialReference: unknown): void {
+    this.spatialReference = spatialReference;
+    this.notifyWatchers("spatialReference", this.spatialReference);
+    this.eventBus.emit("view.spatial-reference-changed", { spatialReference }, this);
   }
 
   public async whenLayerView(layer: unknown): Promise<MapViewLayerViewCompat> {
