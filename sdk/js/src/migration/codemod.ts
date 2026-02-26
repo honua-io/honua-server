@@ -2105,7 +2105,7 @@ function isSafeMapViewCompatCall(
     };
   }
 
-  const allowed = new Set(["map", "container", "center", "zoom"]);
+  const allowed = new Set(["map", "container", "center", "zoom", "popup"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -2479,9 +2479,16 @@ function isSafeFeatureTableWidgetCompatCall(
     "view",
     "layer",
     "container",
+    "title",
+    "description",
+    "actionColumnConfig",
+    "attachmentsEnabled",
+    "paginationEnabled",
     "objectIdField",
     "where",
     "filterGeometry",
+    "filterBySelectionEnabled",
+    "relatedRecordsEnabled",
     "tableTemplate",
     "visibleElements",
     "fieldConfigs",

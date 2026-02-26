@@ -22,6 +22,7 @@ import {
   ExpandCompat,
   FeatureLayerCompat,
   FeatureTableCompat,
+  FeatureTableHighlightIdsCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
   HomeCompat,
@@ -98,6 +99,7 @@ describe("entrypoint modules", () => {
     expect(FeatureTemplatesCompat).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(FeatureTableCompat).toBeTypeOf("function");
+    expect(FeatureTableHighlightIdsCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
     expect(IdentifyCompat).toBeTypeOf("function");
     expect(LayerListCompat).toBeTypeOf("function");

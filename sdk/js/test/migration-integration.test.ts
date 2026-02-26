@@ -483,6 +483,51 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
+  it("migrates advanced feature table fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-feature-table-relates-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["feature-table-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, FeatureTableCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const table = new FeatureTableCompat({");
+    expect(migratedMain).toContain("relatedRecordsEnabled: true");
+    expect(migratedMain).toContain("attachmentsEnabled: true");
+    expect(migratedMain).toContain("table.highlightIds.push(1);");
+    expect(migratedMain).toContain("table.highlightIds.on(\"change\", (event) => {");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTable");
+  });
+
   it("migrates feature widget fixture with ready gating", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-feature-widget-app",

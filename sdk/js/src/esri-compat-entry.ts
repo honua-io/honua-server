@@ -16,7 +16,15 @@ export type {
   FeatureTemplatesCompatOptions,
 } from "./esri-compat/feature-templates.js";
 export { FeatureTableCompat } from "./esri-compat/feature-table.js";
-export type { FeatureTableCompatOptions, FeatureTableRowCompat } from "./esri-compat/feature-table.js";
+export { FeatureTableHighlightIdsCompat } from "./esri-compat/feature-table.js";
+export type {
+  FeatureTableCompatOptions,
+  FeatureTableHighlightIdsChangeEventCompat,
+  FeatureTableHighlightIdsHandleCompat,
+  FeatureTableQueryRelatedRecordsOptions,
+  FeatureTableRowCompat,
+  FeatureTableStateCompat,
+} from "./esri-compat/feature-table.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/url.js";
 export {

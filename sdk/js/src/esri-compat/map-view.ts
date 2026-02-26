@@ -5,6 +5,7 @@ export interface MapViewCompatOptions {
   container?: unknown;
   center?: unknown;
   zoom?: number;
+  popup?: unknown;
   eventBus?: CompatEventBus;
 }
 
@@ -65,28 +66,55 @@ export interface MapViewUiComponentRecord {
 
 type PopupChangeType = "open" | "close";
 
+export interface MapViewPopupViewModelCompat {
+  active: boolean;
+}
+
+export interface MapViewPopupCompatOptions {
+  autoOpenEnabled?: boolean;
+  dockEnabled?: boolean;
+  dockOptions?: unknown;
+}
+
 export class MapViewPopupCompat {
   public visible: boolean;
   public location: unknown;
   public features: unknown[];
+  public selectedFeature: unknown;
   public title: string | undefined;
   public content: unknown;
+  public autoOpenEnabled: boolean;
+  public dockEnabled: boolean;
+  public dockOptions: unknown;
+  public readonly viewModel: MapViewPopupViewModelCompat;
 
   private readonly onChange: (type: PopupChangeType, options?: MapViewPopupOpenOptions) => void;
 
-  public constructor(onChange: (type: PopupChangeType, options?: MapViewPopupOpenOptions) => void) {
+  public constructor(
+    onChange: (type: PopupChangeType, options?: MapViewPopupOpenOptions) => void,
+    options: MapViewPopupCompatOptions = {},
+  ) {
     this.visible = false;
     this.location = undefined;
     this.features = [];
+    this.selectedFeature = undefined;
     this.title = undefined;
     this.content = undefined;
+    this.autoOpenEnabled = options.autoOpenEnabled ?? true;
+    this.dockEnabled = options.dockEnabled ?? false;
+    this.dockOptions = options.dockOptions;
+    this.viewModel = {
+      active: false,
+    };
     this.onChange = onChange;
   }
 
   public open(options: MapViewPopupOpenOptions = {}): void {
     this.visible = true;
+    this.viewModel.active = true;
     this.location = options.location;
     this.features = options.features ? [...options.features] : [];
+    this.selectedFeature = this.features[0];
     this.title = options.title;
     this.content = options.content;
     this.onChange("open", options);
@@ -98,8 +126,10 @@ export class MapViewPopupCompat {
     }
 
     this.visible = false;
+    this.viewModel.active = false;
     this.location = undefined;
     this.features = [];
+    this.selectedFeature = undefined;
     this.title = undefined;
     this.content = undefined;
     this.onChange("close");
@@ -457,12 +487,14 @@ export class MapViewCompat {
     this.popup = new MapViewPopupCompat((type, popupOptions) => {
       this.notifyWatchers("popup.visible", this.popup.visible);
       this.notifyWatchers("popup.features", this.popup.features);
+      this.notifyWatchers("popup.selectedFeature", this.popup.selectedFeature);
       this.notifyWatchers("popup.location", this.popup.location);
       this.notifyWatchers("popup.title", this.popup.title);
       this.notifyWatchers("popup.content", this.popup.content);
+      this.notifyWatchers("popup.viewModel.active", this.popup.viewModel.active);
       this.eventBus.emit(type === "open" ? "popup.open" : "popup.close", popupOptions, this);
       this.emit(type === "open" ? "popup-open" : "popup-close", popupOptions);
-    });
+    }, extractPopupOptions(options.popup));
     this.ui = new MapViewUiCompat(this.eventBus, (components) => {
       this.notifyWatchers("ui.components", components);
     });
@@ -730,4 +762,18 @@ function extractGraphicLayer(value: unknown): unknown {
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null;
+}
+
+function extractPopupOptions(popup: unknown): MapViewPopupCompatOptions {
+  if (!isRecord(popup)) {
+    return {};
+  }
+
+  return {
+    autoOpenEnabled:
+      typeof popup.autoOpenEnabled === "boolean" ? popup.autoOpenEnabled : undefined,
+    dockEnabled:
+      typeof popup.dockEnabled === "boolean" ? popup.dockEnabled : undefined,
+    dockOptions: popup.dockOptions,
+  };
 }

@@ -308,6 +308,75 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
+  it("rewrites FeatureTable with advanced options used by migration samples", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-table-advanced.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import FeatureTable from '@arcgis/core/widgets/FeatureTable';",
+        "const view = new MapView({ map, container: 'viewDiv', popup: { dockEnabled: true, dockOptions: { breakpoint: false } } });",
+        "const layer = new FeatureLayer({ url: layerUrl });",
+        "const table = new FeatureTable({",
+        "  view,",
+        "  layer,",
+        "  container: 'tableDiv',",
+        "  title: () => 'Rows',",
+        "  description: 'Hydrants',",
+        "  actionColumnConfig: { label: 'Go', icon: 'zoom-to-object', callback: (params) => view.goTo(params.feature) },",
+        "  attachmentsEnabled: true,",
+        "  paginationEnabled: true,",
+        "  editingEnabled: true,",
+        "  relatedRecordsEnabled: true,",
+        "  where: '1=1',",
+        "  filterGeometry: { xmin: 0, ymin: 0, xmax: 1, ymax: 1 },",
+        "  filterBySelectionEnabled: false,",
+        "  tableTemplate: { columnTemplates: [{ type: 'field', fieldName: 'FACILITYID', autoWidth: true }] },",
+        "});",
+        "void table;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["feature-table-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat, FeatureTableCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new MapViewCompat({ map, container: 'viewDiv', popup: { dockEnabled: true, dockOptions: { breakpoint: false } } })");
+    expect(nextSource).toContain("const table = new FeatureTableCompat({");
+    expect(nextSource).toContain("relatedRecordsEnabled: true");
+    expect(nextSource).toContain("filterBySelectionEnabled: false");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
+  });
+
   it("rewrites safe PopupTemplate constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "popup-template.ts");

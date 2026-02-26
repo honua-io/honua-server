@@ -154,7 +154,7 @@ export class PopupCompat {
     this.features = [...viewPopup.features];
     this.title = viewPopup.title;
     this.content = viewPopup.content;
-    this.selectedFeature = this.features[0];
+    this.selectedFeature = viewPopup.selectedFeature ?? this.features[0];
     this.notifyWatchers("visible", this.visible);
     this.notifyWatchers("location", this.location);
     this.notifyWatchers("features", this.features);
@@ -179,6 +179,7 @@ interface ViewPopupLike {
   visible: boolean;
   location: unknown;
   features: unknown[];
+  selectedFeature?: unknown;
   title: string | undefined;
   content: unknown;
   open(options?: PopupOpenOptionsCompat): void;

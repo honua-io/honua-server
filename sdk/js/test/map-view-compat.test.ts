@@ -108,12 +108,21 @@ describe("MapViewCompat", () => {
   });
 
   it("supports popup bridge helpers and popup watchers", () => {
-    const view = new MapViewCompat();
+    const view = new MapViewCompat({
+      popup: {
+        dockEnabled: true,
+        dockOptions: { breakpoint: false },
+      },
+    });
     const popupVisibility: unknown[] = [];
+    const popupActive: unknown[] = [];
     const popupEvents: unknown[] = [];
 
     view.watch("popup.visible", (value) => {
       popupVisibility.push(value);
+    });
+    view.watch("popup.viewModel.active", (value) => {
+      popupActive.push(value);
     });
     view.on("popup-open", (event) => {
       popupEvents.push({ type: "open", event });
@@ -133,14 +142,21 @@ describe("MapViewCompat", () => {
     expect(view.popup.content).toBe("Details");
     expect(view.popup.location).toEqual([1, 2]);
     expect(view.popup.features).toEqual([{ id: 123 }]);
+    expect(view.popup.selectedFeature).toEqual({ id: 123 });
+    expect(view.popup.viewModel.active).toBe(true);
+    expect(view.popup.dockEnabled).toBe(true);
+    expect(view.popup.dockOptions).toEqual({ breakpoint: false });
 
     view.closePopup();
     expect(view.popup.visible).toBe(false);
     expect(view.popup.features).toEqual([]);
+    expect(view.popup.selectedFeature).toBeUndefined();
+    expect(view.popup.viewModel.active).toBe(false);
     expect(view.popup.title).toBeUndefined();
     expect(view.popup.content).toBeUndefined();
 
     expect(popupVisibility).toEqual([true, false]);
+    expect(popupActive).toEqual([true, false]);
     expect(popupEvents).toHaveLength(2);
     expect(popupEvents[0]).toEqual({
       type: "open",
