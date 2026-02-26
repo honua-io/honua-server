@@ -263,7 +263,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/GroupLayer");
   });
 
-  it("rewrites safe LayerList/Legend/Popup widget constructors", () => {
+  it("rewrites safe widget/control constructors", () => {
     const root = makeTempProject();
     const file = path.join(root, "widgets.ts");
     fs.writeFileSync(
@@ -272,13 +272,25 @@ describe("runEsriCompatCodemod", () => {
         "import LayerList from '@arcgis/core/widgets/LayerList';",
         "import Legend from '@arcgis/core/widgets/Legend';",
         "import Popup from '@arcgis/core/widgets/Popup';",
+        "import Home from '@arcgis/core/widgets/Home';",
+        "import BasemapToggle from '@arcgis/core/widgets/BasemapToggle';",
+        "import Locate from '@arcgis/core/widgets/Locate';",
+        "import ScaleBar from '@arcgis/core/widgets/ScaleBar';",
         "const view = {};",
         "const layerList = new LayerList({ view });",
         "const legend = new Legend({ view });",
         "const popup = new Popup({ view, dockEnabled: true });",
+        "const home = new Home({ view });",
+        "const basemapToggle = new BasemapToggle({ view, nextBasemap: 'satellite' });",
+        "const locate = new Locate({ view });",
+        "const scaleBar = new ScaleBar({ view, unit: 'dual' });",
         "void layerList;",
         "void legend;",
         "void popup;",
+        "void home;",
+        "void basemapToggle;",
+        "void locate;",
+        "void scaleBar;",
       ].join("\n"),
       "utf8",
     );
@@ -290,8 +302,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
-    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(7);
+    expect(result.metrics.autoMigratedCallSites).toBe(7);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -308,17 +320,45 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["home-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["basemap-toggle-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["locate-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["scale-bar-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { LayerListCompat, LegendCompat, PopupCompat } from "@honua/sdk-esri-compat";',
+      'import { BasemapToggleCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view });");
     expect(nextSource).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
+    expect(nextSource).toContain("const home = new HomeCompat({ view });");
+    expect(nextSource).toContain("const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: 'satellite' });");
+    expect(nextSource).toContain("const locate = new LocateCompat({ view });");
+    expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, unit: 'dual' });");
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Home");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/BasemapToggle");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Locate");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/ScaleBar");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

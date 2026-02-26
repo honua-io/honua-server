@@ -3,6 +3,10 @@ import MapView from "@arcgis/core/views/MapView";
 import LayerList from "@arcgis/core/widgets/LayerList";
 import Legend from "@arcgis/core/widgets/Legend";
 import Popup from "@arcgis/core/widgets/Popup";
+import Home from "@arcgis/core/widgets/Home";
+import BasemapToggle from "@arcgis/core/widgets/BasemapToggle";
+import Locate from "@arcgis/core/widgets/Locate";
+import ScaleBar from "@arcgis/core/widgets/ScaleBar";
 
 const map = new Map({
   basemap: "streets",
@@ -16,6 +20,10 @@ const view = new MapView({
 const layerList = new LayerList({ view });
 const legend = new Legend({ view });
 const popup = new Popup({ view, dockEnabled: true });
+const home = new Home({ view });
+const basemapToggle = new BasemapToggle({ view, nextBasemap: "satellite" });
+const locate = new Locate({ view });
+const scaleBar = new ScaleBar({ view, unit: "dual" });
 
 popup.open({
   title: "Migration",
@@ -27,3 +35,7 @@ void view;
 void layerList;
 void legend;
 void popup;
+void home;
+void basemapToggle;
+void locate;
+void scaleBar;

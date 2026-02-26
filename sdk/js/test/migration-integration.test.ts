@@ -115,6 +115,10 @@ describe("arcgis migration integration", () => {
       "layer-list": 0,
       "legend-widget": 0,
       "popup-widget": 0,
+      "home-widget": 0,
+      "basemap-toggle-widget": 0,
+      "locate-widget": 0,
+      "scale-bar-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -434,15 +438,15 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 
-  it("migrates map widgets (layer list, legend, popup) with ready gating", () => {
+  it("migrates map widgets and controls with ready gating", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-widget-controls-app",
     );
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(9);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(9);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -469,19 +473,47 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["home-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["basemap-toggle-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["locate-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["scale-bar-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(report.readiness).toBe("ready");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { LayerListCompat, LegendCompat, MapCompat, MapViewCompat, PopupCompat } from "@honua/sdk-esri-compat";',
+      'import { BasemapToggleCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
     expect(migratedMain).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
+    expect(migratedMain).toContain("const home = new HomeCompat({ view });");
+    expect(migratedMain).toContain('const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: "satellite" });');
+    expect(migratedMain).toContain("const locate = new LocateCompat({ view });");
+    expect(migratedMain).toContain('const scaleBar = new ScaleBarCompat({ view, unit: "dual" });');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Home");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/BasemapToggle");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Locate");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/ScaleBar");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {

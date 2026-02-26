@@ -27,6 +27,10 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
         "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "home-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "basemap-toggle-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "locate-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -137,6 +141,10 @@ describe("buildJsMigrationReport", () => {
       "layer-list": 0,
       "legend-widget": 0,
       "popup-widget": 0,
+      "home-widget": 0,
+      "basemap-toggle-widget": 0,
+      "locate-widget": 0,
+      "scale-bar-widget": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

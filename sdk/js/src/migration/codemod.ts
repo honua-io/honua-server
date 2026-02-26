@@ -29,7 +29,11 @@ export type CodemodConstructorKind =
   | "web-map"
   | "layer-list"
   | "legend-widget"
-  | "popup-widget";
+  | "popup-widget"
+  | "home-widget"
+  | "basemap-toggle-widget"
+  | "locate-widget"
+  | "scale-bar-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -126,6 +130,38 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Popup",
       "@arcgis/core/widgets/Popup.js",
+    ]),
+  },
+  {
+    kind: "home-widget",
+    compatSymbol: "HomeCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Home",
+      "@arcgis/core/widgets/Home.js",
+    ]),
+  },
+  {
+    kind: "basemap-toggle-widget",
+    compatSymbol: "BasemapToggleCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/BasemapToggle",
+      "@arcgis/core/widgets/BasemapToggle.js",
+    ]),
+  },
+  {
+    kind: "locate-widget",
+    compatSymbol: "LocateCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Locate",
+      "@arcgis/core/widgets/Locate.js",
+    ]),
+  },
+  {
+    kind: "scale-bar-widget",
+    compatSymbol: "ScaleBarCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/ScaleBar",
+      "@arcgis/core/widgets/ScaleBar.js",
     ]),
   },
 ];
@@ -596,6 +632,10 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
     "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "home-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "basemap-toggle-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "locate-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1251,6 +1291,14 @@ function isSafeConstructorCall(
       return isSafeLegendWidgetCompatCall(node);
     case "popup-widget":
       return isSafePopupWidgetCompatCall(node);
+    case "home-widget":
+      return isSafeHomeWidgetCompatCall(node);
+    case "basemap-toggle-widget":
+      return isSafeBasemapToggleWidgetCompatCall(node);
+    case "locate-widget":
+      return isSafeLocateWidgetCompatCall(node);
+    case "scale-bar-widget":
+      return isSafeScaleBarWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -1799,6 +1847,178 @@ function isSafePopupWidgetCompatCall(
       return {
         ok: false,
         reason: "Popup options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeHomeWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Home constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Home constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Home options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Home options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapToggleWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "BasemapToggle constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "BasemapToggle constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "nextBasemap"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "BasemapToggle options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "BasemapToggle options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeLocateWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Locate constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Locate constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Locate options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Locate options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeScaleBarWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "ScaleBar constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "ScaleBar constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "unit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "ScaleBar options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "ScaleBar options include unsupported properties; requires manual migration.",
       };
     }
   }
