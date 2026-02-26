@@ -30,6 +30,7 @@ export type CodemodConstructorKind =
   | "scene-view"
   | "web-map"
   | "layer-list"
+  | "feature-table-widget"
   | "legend-widget"
   | "popup-widget"
   | "home-widget"
@@ -147,6 +148,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/LayerList",
       "@arcgis/core/widgets/LayerList.js",
+    ]),
+  },
+  {
+    kind: "feature-table-widget",
+    compatSymbol: "FeatureTableCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/FeatureTable",
+      "@arcgis/core/widgets/FeatureTable.js",
     ]),
   },
   {
@@ -785,6 +794,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
     "web-map": { total: 0, autoMigrated: 0, manual: 0 },
     "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "home-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1461,6 +1471,8 @@ function isSafeConstructorCall(
       return isSafeWebMapCompatCall(node);
     case "layer-list":
       return isSafeLayerListCompatCall(node);
+    case "feature-table-widget":
+      return isSafeFeatureTableWidgetCompatCall(node);
     case "legend-widget":
       return isSafeLegendWidgetCompatCall(node);
     case "popup-widget":
@@ -2064,6 +2076,61 @@ function isSafeLayerListCompatCall(
       return {
         ok: false,
         reason: "LayerList options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureTableWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureTable constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureTable constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layer",
+    "container",
+    "objectIdField",
+    "where",
+    "filterGeometry",
+    "tableTemplate",
+    "visibleElements",
+    "fieldConfigs",
+    "editingEnabled",
+    "multiSortEnabled",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureTable options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "FeatureTable options include unsupported properties; requires manual migration.",
       };
     }
   }

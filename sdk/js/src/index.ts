@@ -25,6 +25,8 @@ export type {
   FeatureLayerQueryAttachmentsOptions,
   FeatureLayerQueryCountOptions,
 } from "./esri-compat/feature-layer.js";
+export { FeatureTableCompat } from "./esri-compat/feature-table.js";
+export type { FeatureTableCompatOptions, FeatureTableRowCompat } from "./esri-compat/feature-table.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,

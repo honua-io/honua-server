@@ -226,6 +226,45 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/rest/route/RouteTask");
   });
 
+  it("rewrites safe FeatureTable constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-table.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import FeatureTable from '@arcgis/core/widgets/FeatureTable';",
+        "const layer = new FeatureLayer({ url: layerUrl });",
+        "const table = new FeatureTable({ layer, container: 'feature-table', where: '1=1', objectIdField: 'OBJECTID' });",
+        "void table;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-table-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat, FeatureTableCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new FeatureTableCompat({ layer, container: 'feature-table', where: '1=1', objectIdField: 'OBJECTID' })");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
+  });
+
   it("rewrites safe GraphicsLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "graphics-layer.ts");

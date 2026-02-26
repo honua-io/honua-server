@@ -102,7 +102,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Map/MapView/SceneView/WebMap/LayerList/Legend/Popup/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/Measurement/TimeSlider/Directions/CoordinateConversion constructor call sites in safe-codemod scope",
+        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Map/MapView/SceneView/WebMap/LayerList/FeatureTable/Legend/Popup/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/Measurement/TimeSlider/Directions/CoordinateConversion constructor call sites in safe-codemod scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -138,6 +138,7 @@ function summarizeManualTodosByKind(
     "scene-view": 0,
     "web-map": 0,
     "layer-list": 0,
+    "feature-table-widget": 0,
     "legend-widget": 0,
     "popup-widget": 0,
     "home-widget": 0,

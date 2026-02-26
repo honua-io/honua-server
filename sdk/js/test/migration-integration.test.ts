@@ -115,6 +115,7 @@ describe("arcgis migration integration", () => {
       "scene-view": 0,
       "web-map": 0,
       "layer-list": 0,
+      "feature-table-widget": 0,
       "legend-widget": 0,
       "popup-widget": 0,
       "home-widget": 0,
@@ -398,6 +399,39 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('import { RouteTaskCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const routeTask = new RouteTaskCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/rest/route/RouteTask");
+  });
+
+  it("migrates feature table fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-feature-table-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(2);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["feature-table-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, FeatureTableCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const parcels = new FeatureLayerCompat({");
+    expect(migratedMain).toContain("const table = new FeatureTableCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
   it("supports esri-leaflet codemod target for deterministic subset", () => {

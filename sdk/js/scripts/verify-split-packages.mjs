@@ -60,6 +60,7 @@ import {
   EditorCompat,
   ExpandCompat,
   FeatureLayerCompat,
+  FeatureTableCompat,
   FullscreenCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -101,6 +102,7 @@ if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriR
 if (typeof DirectionsCompat !== "function") throw new Error("DirectionsCompat export missing");
 if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
+if (typeof FeatureTableCompat !== "function") throw new Error("FeatureTableCompat export missing");
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
 if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");

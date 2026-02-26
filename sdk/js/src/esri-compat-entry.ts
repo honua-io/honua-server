@@ -6,6 +6,8 @@ export type {
   FeatureLayerQueryAttachmentsOptions,
   FeatureLayerQueryCountOptions,
 } from "./esri-compat/feature-layer.js";
+export { FeatureTableCompat } from "./esri-compat/feature-table.js";
+export type { FeatureTableCompatOptions, FeatureTableRowCompat } from "./esri-compat/feature-table.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/url.js";
 export {

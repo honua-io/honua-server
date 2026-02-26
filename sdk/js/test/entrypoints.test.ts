@@ -16,6 +16,7 @@ import {
   EditorCompat,
   ExpandCompat,
   FeatureLayerCompat,
+  FeatureTableCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
   HomeCompat,
@@ -80,6 +81,7 @@ describe("entrypoint modules", () => {
     expect(DirectionsCompat).toBeTypeOf("function");
     expect(EditorCompat).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
+    expect(FeatureTableCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
     expect(IdentifyCompat).toBeTypeOf("function");
     expect(LayerListCompat).toBeTypeOf("function");
