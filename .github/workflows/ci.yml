@@ -102,6 +102,12 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      - name: Install Playwright browser (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser migration smoke test
+        run: npm run test:playwright
+
       - name: Split package verification
         run: npm run verify:split-packages
 

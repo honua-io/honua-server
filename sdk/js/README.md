@@ -36,6 +36,7 @@ npm install
 ```bash
 npm run typecheck
 npm test
+npm run test:playwright
 npm run scan:arcgis -- ../../path/to/arcgis-app
 npm run migrate:arcgis -- ../../path/to/arcgis-app --write --report migration-report.json
 npm run build:split-packages

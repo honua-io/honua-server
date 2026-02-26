@@ -44,6 +44,8 @@ jobs:
         run: |
           npm run typecheck
           npm test
+          npx playwright install --with-deps chromium
+          npm run test:playwright
           npm run verify:split-packages
 
       - name: Validate tag version
