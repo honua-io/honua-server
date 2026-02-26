@@ -141,13 +141,20 @@ internal static partial class ODataPathParser
         {
             var hasLayerId = false;
             var hasObjectId = false;
-            var parts = keyText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var parts = keyText.Split(',', StringSplitOptions.TrimEntries);
             foreach (var part in parts)
             {
-                var kvp = part.Split('=', 2, StringSplitOptions.TrimEntries);
-                if (kvp.Length != 2)
+                if (string.IsNullOrWhiteSpace(part))
                 {
-                    continue;
+                    errorMessage = "Invalid key predicate format for Features.";
+                    return false;
+                }
+
+                var kvp = part.Split('=', 2, StringSplitOptions.TrimEntries);
+                if (kvp.Length != 2 || string.IsNullOrWhiteSpace(kvp[0]) || string.IsNullOrWhiteSpace(kvp[1]))
+                {
+                    errorMessage = "Invalid key predicate format for Features.";
+                    return false;
                 }
 
                 var name = kvp[0];
@@ -155,6 +162,12 @@ internal static partial class ODataPathParser
 
                 if (name.Equals("LayerId", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (hasLayerId)
+                    {
+                        errorMessage = "LayerId key cannot be specified more than once.";
+                        return false;
+                    }
+
                     if (!TryParseInt(value, out layerId))
                     {
                         errorMessage = "LayerId must be a valid integer.";
@@ -165,6 +178,12 @@ internal static partial class ODataPathParser
                 }
                 else if (name.Equals("ObjectId", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (hasObjectId)
+                    {
+                        errorMessage = "ObjectId key cannot be specified more than once.";
+                        return false;
+                    }
+
                     if (!TryParseLong(value, out objectId))
                     {
                         errorMessage = "ObjectId must be a valid integer.";
@@ -172,6 +191,11 @@ internal static partial class ODataPathParser
                     }
 
                     hasObjectId = true;
+                }
+                else
+                {
+                    errorMessage = $"Unsupported key property '{name}' for Features.";
+                    return false;
                 }
             }
 
@@ -184,8 +208,10 @@ internal static partial class ODataPathParser
             return true;
         }
 
-        var positional = keyText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var positional = keyText.Split(',', StringSplitOptions.TrimEntries);
         if (positional.Length != 2 ||
+            string.IsNullOrWhiteSpace(positional[0]) ||
+            string.IsNullOrWhiteSpace(positional[1]) ||
             !TryParseInt(positional[0], out layerId) ||
             !TryParseLong(positional[1], out objectId))
         {

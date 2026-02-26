@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -669,6 +670,17 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQueryFeatures_GetWithMalformedLayersDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/query?layers={TestLayerId},&where=1%3D1&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -2673,6 +2685,25 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         result!.DeleteResults.Should().HaveCount(1);
         result.DeleteResults![0].Success.Should().BeTrue();
         result.DeleteResults[0].ObjectId.Should().Be(objectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkDelete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    public async Task DeleteFeatures_WithMalformedObjectIdsDelimiter_ReturnsBadRequest()
+    {
+        var deletePayload = """
+            {
+              "objectIds": "1,,2",
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
+            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     private static long ReadObjectIdValue(object? value)

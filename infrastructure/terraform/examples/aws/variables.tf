@@ -32,7 +32,7 @@ variable "db_password" {
 variable "honua_image" {
   description = "Container image to deploy to ECS."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
+  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "db_publicly_accessible" {

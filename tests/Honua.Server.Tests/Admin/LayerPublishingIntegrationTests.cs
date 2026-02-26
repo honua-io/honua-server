@@ -263,6 +263,57 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         _layerId.Value.Should().BeGreaterThan(0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WithExternalConnectionWithoutMirroredRegistryRecord_ReturnsCreated()
+    {
+        var externalDatabaseName = await CreateConnectionDatabaseAsync();
+        var externalTableName = $"layer_ext_{Guid.NewGuid():N}";
+        var externalServiceName = $"svc_ext_{Guid.NewGuid():N}";
+        var externalConnectionId = Guid.Empty;
+
+        try
+        {
+            var externalConnectionString = BuildConnectionString(externalDatabaseName);
+            await CreatePostGisTableAsync(externalConnectionString, externalTableName);
+            externalConnectionId = await CreateTransientSecureConnectionAsync(
+                externalConnectionString,
+                $"layer-publish-external-{Guid.NewGuid():N}");
+
+            var publishRequest = new PublishLayerRequest
+            {
+                Schema = PublishSchema,
+                Table = externalTableName,
+                LayerName = $"Layer {externalTableName}",
+                Description = "Layer publish external database integration test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "id",
+                Fields = new[] { "id", "name", "population" },
+                ServiceName = externalServiceName,
+                Enabled = true
+            };
+
+            var publishResponse = await _client.PostAsync(
+                $"/api/v1/admin/connections/{externalConnectionId}/layers",
+                JsonContent.Create(publishRequest, options: _jsonOptions));
+
+            var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+            publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        }
+        finally
+        {
+            if (externalConnectionId != Guid.Empty)
+            {
+                await DeleteSecureConnectionAsync(externalConnectionId);
+            }
+
+            await DropConnectionDatabaseAsync(externalDatabaseName);
+        }
+    }
+
     private async Task CreatePostGisTableAsync()
     {
         var sql = $"""
@@ -278,6 +329,26 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             """;
 
         await _fixture.Postgres.ExecuteAsync(sql);
+    }
+
+    private static async Task CreatePostGisTableAsync(string connectionString, string tableName)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE EXTENSION IF NOT EXISTS postgis;
+            CREATE TABLE public.{tableName} (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                population INTEGER,
+                geom geometry(Point, 4326) NOT NULL
+            );
+            INSERT INTO public.{tableName} (name, population, geom)
+            VALUES ('Test Feature', 100, ST_SetSRID(ST_Point(1, 1), 4326));
+            """;
+
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task CreateSecureConnectionAsync(string connectionString)
@@ -329,6 +400,13 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await registry.DeleteConnectionAsync(_connectionId);
     }
 
+    private async Task DeleteSecureConnectionAsync(Guid connectionId)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
+        await registry.DeleteConnectionAsync(connectionId);
+    }
+
     private async Task DropPostGisTableAsync()
     {
         if (string.IsNullOrWhiteSpace(_tableName))
@@ -338,6 +416,97 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var sql = $"DROP TABLE IF EXISTS public.{_tableName};";
         await _fixture.Postgres.ExecuteAsync(sql);
+    }
+
+    private async Task<Guid> CreateTransientSecureConnectionAsync(string connectionString, string name)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
+        var encryptionService = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        var encrypted = await encryptionService.EncryptConnectionStringAsync(connectionString);
+        var keyVersion = await encryptionService.GetCurrentKeyVersionAsync();
+        var sslRequired = builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull;
+        var sslMode = Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true);
+
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: name,
+            host: builder.Host!,
+            port: builder.Port,
+            databaseName: builder.Database!,
+            username: builder.Username!,
+            encryptedConnectionString: encrypted,
+            encryptionKeyVersion: keyVersion,
+            createdBy: nameof(LayerPublishingIntegrationTests),
+            description: "Transient external layer publishing integration test connection",
+            sslRequired: sslRequired,
+            sslMode: sslMode);
+
+        var created = await registry.CreateConnectionAsync(connection);
+        return created.ConnectionId;
+    }
+
+    private string BuildConnectionString(string databaseName)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            Database = databaseName,
+            Pooling = false
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private string BuildAdminConnectionString()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            Database = "postgres",
+            Pooling = false
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private async Task<string> CreateConnectionDatabaseAsync()
+    {
+        var databaseName = $"conn_{Guid.NewGuid():N}".ToLowerInvariant();
+        var adminConnectionString = BuildAdminConnectionString();
+
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"CREATE DATABASE {databaseName};";
+        await command.ExecuteNonQueryAsync();
+
+        return databaseName;
+    }
+
+    private async Task DropConnectionDatabaseAsync(string databaseName)
+    {
+        var adminConnectionString = BuildAdminConnectionString();
+
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+
+        await using (var terminateCommand = connection.CreateCommand())
+        {
+            terminateCommand.CommandText = """
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = @db_name
+                  AND pid <> pg_backend_pid();
+                """;
+            terminateCommand.Parameters.AddWithValue("db_name", databaseName);
+            await terminateCommand.ExecuteNonQueryAsync();
+        }
+
+        await using (var dropCommand = connection.CreateCommand())
+        {
+            dropCommand.CommandText = $"DROP DATABASE IF EXISTS {databaseName};";
+            await dropCommand.ExecuteNonQueryAsync();
+        }
     }
 
     private async Task CleanupPublishedLayerAsync()

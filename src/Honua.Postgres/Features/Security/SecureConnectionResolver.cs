@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
@@ -95,7 +96,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         if (connection == null)
         {
             _logConnectionNotFound(_logger, connectionName, null);
-            throw new InvalidOperationException($"Connection configuration '{connectionName}' not found");
+            throw new ResourceNotFoundException($"Connection configuration '{connectionName}' not found");
         }
 
         return await ResolveConnectionStringInternalAsync(connection, cancellationToken);
@@ -107,7 +108,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         if (connection == null)
         {
             _logConnectionNotFoundById(_logger, connectionId, null);
-            throw new InvalidOperationException($"Connection configuration with ID {connectionId} not found");
+            throw new ResourceNotFoundException($"Connection configuration with ID {connectionId} not found");
         }
 
         return await ResolveConnectionStringInternalAsync(connection, cancellationToken);

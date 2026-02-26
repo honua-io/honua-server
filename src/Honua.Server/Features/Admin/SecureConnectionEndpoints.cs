@@ -415,9 +415,18 @@ internal static partial class SecureConnectionEndpoints
                 ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
         catch (InvalidOperationException ex)
+            when (IsClientSafeCreateConnectionInvalidOperation(ex))
         {
-            logger.LogWarning(ex, "Failed to create secure connection due to invalid operation");
+            logger.LogWarning(ex, "Failed to create secure connection due to invalid request state");
             return TypedResults.BadRequest(ApiResponse<object>.Failure(InvalidSecureConnectionRequestMessage));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Failed to create secure connection due to internal invalid operation");
+            return TypedResults.Problem(
+                title: "Secure connection creation failed",
+                detail: "An internal error occurred while creating the secure connection.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (Exception ex)
         {
@@ -427,6 +436,15 @@ internal static partial class SecureConnectionEndpoints
                 detail: "An internal error occurred while creating the secure connection.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static bool IsClientSafeCreateConnectionInvalidOperation(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("cannot have both encrypted connection string and secret reference", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("must have either encrypted connection string or secret reference", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("SecretType must be specified when using SecretRef", StringComparison.OrdinalIgnoreCase) ||
+               exception.Message.Contains("SSL cannot be disabled when SslRequired is true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

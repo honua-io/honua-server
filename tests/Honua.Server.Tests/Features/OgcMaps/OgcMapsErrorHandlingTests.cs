@@ -177,6 +177,17 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/map")]
+    public async Task GetDatasetMap_CollectionsWithMalformedDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/map?collections={TestLayerId},&bbox=-180,-90,180,90&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/map")]
     public async Task GetDatasetMap_AllInvalidCollectionIds_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

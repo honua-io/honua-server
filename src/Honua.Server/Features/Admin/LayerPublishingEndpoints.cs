@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -52,7 +53,7 @@ internal static class LayerPublishingEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleListLayers(
             string id,
             string? serviceName,
@@ -81,10 +82,18 @@ internal static class LayerPublishingEndpoints
             logger.LogWarning(ex, "Layer list invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer list connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer list failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer list failed",
+                detail: "An internal error occurred while retrieving layers.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -93,7 +102,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<PublishedLayerSummary>>, BadRequest<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Created<ApiResponse<PublishedLayerSummary>>, BadRequest<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandlePublishLayer(
             string id,
             PublishLayerRequest request,
@@ -175,10 +184,18 @@ internal static class LayerPublishingEndpoints
             logger.LogWarning(ex, "Layer publish invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer publish connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer publish failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer publish failed",
+                detail: "An internal error occurred while publishing the layer.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)
         {
@@ -186,7 +203,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetLayerEnabled(
             string id,
             int layerId,
@@ -242,10 +259,18 @@ internal static class LayerPublishingEndpoints
             logger.LogWarning(ex, "Layer toggle invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer toggle connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer toggle failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer toggle failed",
+                detail: "An internal error occurred while updating layer state.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)
         {
@@ -253,7 +278,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetServiceLayersEnabled(
             string id,
             LayerEnabledRequest request,
@@ -305,10 +330,18 @@ internal static class LayerPublishingEndpoints
             logger.LogWarning(ex, "Layer bulk toggle invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer bulk toggle failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer bulk toggle failed",
+                detail: "An internal error occurred while updating service layer state.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)
         {

@@ -172,12 +172,28 @@ internal static partial class MapServerEndpoints
                         "ACCEPTFORMATS parameter value is required.");
                 }
 
+                if (HasEmptyCommaSeparatedToken(acceptFormats))
+                {
+                    return CreateWmtsExceptionReport(
+                        "InvalidParameterValue",
+                        "acceptFormats",
+                        "ACCEPTFORMATS contains an empty format value.");
+                }
+
                 responseMimeType = ResolveWmtsCapabilitiesMimeType(acceptFormats);
             }
 
             var acceptVersions = GetQueryValue(request, "ACCEPTVERSIONS");
             if (!string.IsNullOrWhiteSpace(acceptVersions))
             {
+                if (HasEmptyCommaSeparatedToken(acceptVersions))
+                {
+                    return CreateWmtsExceptionReport(
+                        "InvalidParameterValue",
+                        "acceptVersions",
+                        "ACCEPTVERSIONS contains an empty version value.");
+                }
+
                 var versions = acceptVersions
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (!versions.Contains(WmtsVersion, StringComparer.OrdinalIgnoreCase))
@@ -234,6 +250,14 @@ internal static partial class MapServerEndpoints
                     "MissingParameterValue",
                     "sections",
                     "SECTIONS parameter value is required.");
+            }
+
+            if (HasEmptyCommaSeparatedToken(sectionsParam))
+            {
+                return CreateWmtsExceptionReport(
+                    "InvalidParameterValue",
+                    "sections",
+                    "SECTIONS contains an empty section value.");
             }
 
             if (!TryParseWmtsSections(sectionsParam, out var sections, out var sectionsError))

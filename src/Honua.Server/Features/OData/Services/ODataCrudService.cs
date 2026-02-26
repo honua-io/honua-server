@@ -178,7 +178,7 @@ internal sealed partial class ODataCrudService
             Log.CreateFeatureFailed(_logger, layerId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.Conflict("A conflicting feature already exists.");
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or NotSupportedException)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.BadRequest("Invalid request data.");
@@ -309,7 +309,7 @@ internal sealed partial class ODataCrudService
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.Conflict("The update conflicted with existing data.");
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or NotSupportedException)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.BadRequest("Invalid request data.");

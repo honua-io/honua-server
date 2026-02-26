@@ -216,9 +216,13 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
 
-            // Return safe error message without leaking exception details
             var httpContext = _httpContextAccessor.HttpContext!;
-            return StandardErrorHelpers.CreateBadRequest(httpContext, "Invalid query parameters");
+            if (IsClientSafeInvalidOperation(ex))
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext, "Invalid query parameters");
+            }
+
+            return StandardErrorHelpers.CreateInternalServerError(httpContext, "Related records query execution failed");
         }
         catch (Exception ex)
         {
@@ -227,6 +231,16 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             var httpContext = _httpContextAccessor.HttpContext!;
             return StandardErrorHelpers.CreateInternalServerError(httpContext, "Related records query execution failed");
         }
+    }
+
+    private static bool IsClientSafeInvalidOperation(InvalidOperationException exception)
+    {
+        if (string.IsNullOrWhiteSpace(exception.Message))
+        {
+            return false;
+        }
+
+        return exception.Message.StartsWith("Invalid related query", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryValidateUnsupportedRelatedRecordsParameters(

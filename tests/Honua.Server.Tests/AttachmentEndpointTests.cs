@@ -126,6 +126,17 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
+    public async Task QueryAttachments_WithMalformedObjectIdsDelimiter_Returns400()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId},");
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
     public async Task AddAttachment_WithValidFile_ReturnsSuccess()
@@ -373,6 +384,40 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
 
         // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithMalformedAttachmentIdsDelimiter_Returns400()
+    {
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new StringContent("999,"), "attachmentIds" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithInvalidAttachmentIdsToken_Returns400()
+    {
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new StringContent("999,abc"), "attachmentIds" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
+
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
     }
 

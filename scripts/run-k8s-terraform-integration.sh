@@ -17,7 +17,7 @@ NAMESPACE="${K8S_TF_NAMESPACE:-honua}"
 OBS_NAMESPACE="${K8S_TF_OBS_NAMESPACE:-honua-observability}"
 RELEASE_NAME="${K8S_TF_RELEASE_NAME:-honua}"
 INGRESS_HOSTNAME="${K8S_TF_INGRESS_HOSTNAME:-honua.local}"
-HONUA_IMAGE="${HONUA_K8S_IMAGE:-ghcr.io/honua-io/honua-server:latest-aot}"
+HONUA_IMAGE="${HONUA_K8S_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
 PREVIOUS_IMAGE="${HONUA_K8S_PREVIOUS_IMAGE:-}"
 AUTO_DESTROY=true
 QUICK_SCALE=true
@@ -258,7 +258,7 @@ parse_image() {
   fi
 
   if [[ "$image" != *":"* ]]; then
-    log_error "Image must include a tag. Example: ghcr.io/honua-io/honua-server:latest-aot"
+    log_error "Image must include a tag. Example: ghcr.io/honua-io/honua-server:latest"
     exit 1
   fi
 

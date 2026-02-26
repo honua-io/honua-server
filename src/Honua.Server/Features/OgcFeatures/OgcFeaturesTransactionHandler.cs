@@ -260,10 +260,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
-                Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                Log.ReplaceFeatureFailed(_logger, collectionId, ex);
+                return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while replacing the feature.");
             }
             catch (ArgumentException ex)
             {
@@ -460,10 +460,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 Log.PatchFeatureNotFound(_logger, collectionId, featureId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
-                Log.PatchFeatureNotFound(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                Log.PatchFeatureFailed(_logger, collectionId, ex);
+                return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while patching the feature.");
             }
             catch (ArgumentException ex)
             {

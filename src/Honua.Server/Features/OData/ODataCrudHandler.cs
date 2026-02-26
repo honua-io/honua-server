@@ -46,6 +46,14 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
+        if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(select))
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "InvalidQueryOption",
+                "$select contains an empty field expression.");
+        }
+
         var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
         if (formatValidation != null)
         {

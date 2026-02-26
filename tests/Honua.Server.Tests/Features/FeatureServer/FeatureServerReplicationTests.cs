@@ -120,6 +120,25 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithMalformedLayerDelimiter_ReturnsBadRequest()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "MalformedLayerDelimiterReplica",
+            layers = "0,",
+            f = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_ValidReplica_ReturnsChanges()

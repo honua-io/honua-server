@@ -98,6 +98,34 @@ public class OgcFeaturesErrorHandlingTests : IAsyncLifetime
     }
 
     [Fact]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetItem_FeatureIdWithInvalidEscapedSequence_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/items/%25E0%25A4%25A");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+    }
+
+    [Fact]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task GetItem_FeatureIdWithEncodedPercent_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/items/%25");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+    }
+
+    [Fact]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_InvalidRequest_ReturnsStandardizedErrorFormat()
     {

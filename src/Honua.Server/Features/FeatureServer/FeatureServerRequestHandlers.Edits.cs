@@ -1066,6 +1066,12 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        if (HasEmptyDeleteToken(payload))
+        {
+            error = $"{key} contains an empty value.";
+            return false;
+        }
+
         deletes = ParseDeleteTokens(payload);
         return true;
     }
@@ -1098,7 +1104,14 @@ internal static partial class FeatureServerEndpoints
 
         if (element.ValueKind == JsonValueKind.String)
         {
-            deletes = ParseDeleteTokens(element.GetString() ?? string.Empty);
+            var payload = element.GetString() ?? string.Empty;
+            if (HasEmptyDeleteToken(payload))
+            {
+                error = $"{key} contains an empty value.";
+                return false;
+            }
+
+            deletes = ParseDeleteTokens(payload);
             return true;
         }
 
@@ -1134,6 +1147,19 @@ internal static partial class FeatureServerEndpoints
         }
 
         return parsed;
+    }
+
+    private static bool HasEmptyDeleteToken(string value)
+    {
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryParseBooleanElement(JsonElement element, out bool value)

@@ -638,6 +638,17 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$select=ObjectId,,LayerId")]
+    public async Task Features_WithMalformedSelectDelimiter_ReturnsODataError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$select=ObjectId,,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,LayerId")]
     public async Task Features_WithLargeTop_UsesStreamingResponse()
     {
@@ -657,6 +668,17 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var first = items[0];
         first.TryGetProperty("Geometry", out _).Should().BeFalse();
         first.TryGetProperty("name", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,,LayerId")]
+    public async Task Features_WithMalformedSelectDelimiter_WhenStreaming_ReturnsODataError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=2000&$select=ObjectId,,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

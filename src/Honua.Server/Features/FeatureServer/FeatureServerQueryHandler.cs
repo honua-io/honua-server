@@ -570,8 +570,12 @@ internal sealed class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            // Return safe error message without leaking exception details
-            return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
+            if (IsClientSafeInvalidOperation(ex))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
+            }
+
+            return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
         }
         catch (Exception ex)
         {
@@ -1039,6 +1043,21 @@ internal sealed class FeatureServerQueryHandler(
         }
 
         return false;
+    }
+
+    private static bool IsClientSafeInvalidOperation(InvalidOperationException exception)
+    {
+        if (string.IsNullOrWhiteSpace(exception.Message))
+        {
+            return false;
+        }
+
+        return exception.Message.StartsWith("Invalid query", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.StartsWith("Invalid spatial parameters", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.StartsWith("Invalid geometry", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.StartsWith("Invalid orderByFields", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.StartsWith("Unknown orderByFields", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("Geometry is required for nearest neighbor queries", StringComparison.OrdinalIgnoreCase);
     }
 
     private static QueryResult<Feature> ApplyDistinctValues(QueryResult<Feature> result, string[] outFields)

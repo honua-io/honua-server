@@ -197,7 +197,19 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
-            tokens.AddRange(value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            var segments = value.Split(',', StringSplitOptions.TrimEntries);
+            foreach (var segment in segments)
+            {
+                if (segment.Length == 0)
+                {
+                    error = string.Equals(key, "objectIds", StringComparison.OrdinalIgnoreCase)
+                        ? "Invalid objectId value. objectIds parameter must contain only numeric values."
+                        : $"{key} parameter must contain only numeric values";
+                    return false;
+                }
+
+                tokens.Add(segment);
+            }
         }
 
         if (tokens.Count == 0)

@@ -29,18 +29,22 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
-    public async Task GetCollection_WhenCatalogThrowsCapitalizedArgumentException_Returns404()
+    public async Task GetCollection_WhenCatalogThrowsArgumentException_Returns500()
     {
         var response = await _fixture.Client.GetAsync("/ogc/features/collections/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().NotContain("Invalid Parse failure");
     }
 
     [Fact]
-    public async Task GetQueryables_WhenCatalogThrowsCapitalizedArgumentException_Returns404()
+    public async Task GetQueryables_WhenCatalogThrowsArgumentException_Returns500()
     {
         var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/queryables");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().NotContain("Invalid Parse failure");
     }
 }

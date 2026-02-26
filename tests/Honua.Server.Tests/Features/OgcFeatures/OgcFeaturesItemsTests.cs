@@ -309,6 +309,16 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithMalformedIdsDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?ids=1,,2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithInvalidProperties_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
@@ -319,10 +329,30 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithMalformedPropertiesDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?properties=name,,name");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithInvalidSortBy_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{TestLayerId}/items?sortby=not_a_field");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithMalformedSortByDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?sortby=name,,name");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

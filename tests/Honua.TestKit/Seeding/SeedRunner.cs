@@ -57,6 +57,7 @@ internal static class SeedRunner
     private static readonly Regex _identifierRegex = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
     private static readonly Regex _typeRegex = new("^[A-Za-z0-9_(),\\s\\[\\]]+$", RegexOptions.CultureInvariant);
     private const int MaxConcurrencyRetryAttempts = 3;
+    private const long SeedApplicationLockKey = 7_893_641_160_553_452_791;
 
     public static async Task ApplyAsync(
         NpgsqlDataSource dataSource,
@@ -104,6 +105,7 @@ internal static class SeedRunner
         await using var connection = await dataSource.OpenConnectionAsync().ConfigureAwait(false);
         // Use RepeatableRead for test seeding to ensure consistent data setup
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead).ConfigureAwait(false);
+        await AcquireSeedApplicationLockAsync(connection).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(schemaName))
         {
@@ -145,6 +147,14 @@ internal static class SeedRunner
 
     private static TimeSpan GetRetryDelay(int attempt)
         => TimeSpan.FromMilliseconds(50 * Math.Pow(2, attempt - 1));
+
+    private static async Task AcquireSeedApplicationLockAsync(NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_advisory_xact_lock(@lock_key);";
+        _ = command.Parameters.AddWithValue("lock_key", SeedApplicationLockKey);
+        _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
+    }
 
     private static SeedDefinition LoadSeed(string seedPath)
     {

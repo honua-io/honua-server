@@ -136,7 +136,7 @@ internal static partial class MapServerEndpoints
             var sizeValue = sizeValues.ToString();
             if (!string.IsNullOrWhiteSpace(sizeValue))
             {
-                var parts = sizeValue.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                var parts = sizeValue.Split(',', StringSplitOptions.TrimEntries);
                 if (parts.Length == 2)
                 {
                     if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) || width <= 0)
@@ -160,6 +160,11 @@ internal static partial class MapServerEndpoints
                     }
 
                     height = width;
+                }
+                else
+                {
+                    error = "Invalid size parameter. Expected format: size or width,height.";
+                    return false;
                 }
             }
         }

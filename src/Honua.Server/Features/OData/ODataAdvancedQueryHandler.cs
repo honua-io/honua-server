@@ -138,6 +138,22 @@ internal sealed partial class ODataAdvancedQueryHandler(
                 return queryValidation;
             }
 
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(select))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$select contains an empty field expression.");
+            }
+
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(expand))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$expand contains an empty navigation expression.");
+            }
+
             if (string.IsNullOrWhiteSpace(search))
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", "$search parameter is required.");

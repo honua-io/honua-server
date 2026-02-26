@@ -423,6 +423,62 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/connections")]
+    public async Task CreateConnection_WhenEncryptionServiceThrowsInvalidOperation_ReturnsInternalServerError()
+    {
+        const string sensitiveError = "encryption failed secret=abc123";
+
+        var localFixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IConnectionEncryptionService>();
+                services.AddSingleton<IConnectionEncryptionService>(
+                    new ThrowingEncryptionService(
+                        new InvalidOperationException(sensitiveError),
+                        failureTrigger: "testpassword123"));
+            });
+
+        await localFixture.InitializeAsync();
+
+        try
+        {
+            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var request = new CreateSecureConnectionRequest
+            {
+                Name = $"test-encryption-failure-{Guid.NewGuid():N}",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                Password = "testpassword123",
+                SslRequired = true,
+                SslMode = "Require"
+            };
+
+            var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
+            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+            var response = await client.PostAsync("/api/v1/admin/connections", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(sensitiveError);
+            responseBody.Should().NotContain("secret=abc123");
+        }
+        finally
+        {
+            await localFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/connections")]
     [Endpoint("GET /api/v1/admin/connections")]
     public async Task Endpoints_ResponsesSanitized_NoSensitiveDataExposed()
     {
@@ -566,5 +622,35 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         {
             return Task.FromResult(true);
         }
+    }
+
+    private sealed class ThrowingEncryptionService(Exception exception, string failureTrigger) : IConnectionEncryptionService
+    {
+        private readonly Exception _exception = exception;
+        private readonly string _failureTrigger = failureTrigger;
+
+        public Task<byte[]> EncryptConnectionStringAsync(string connectionString)
+        {
+            if (connectionString.Contains(_failureTrigger, StringComparison.Ordinal))
+            {
+                return Task.FromException<byte[]>(_exception);
+            }
+
+            // Any deterministic payload is acceptable for tests that only assert
+            // endpoint behavior and do not decrypt persisted connection strings.
+            return Task.FromResult(Encoding.UTF8.GetBytes("test-encrypted-payload"));
+        }
+
+        public Task<string> DecryptConnectionStringAsync(byte[] encryptedData, int keyVersion)
+            => Task.FromException<string>(new NotSupportedException());
+
+        public Task<int> GetCurrentKeyVersionAsync()
+            => Task.FromResult(1);
+
+        public Task<int> RotateKeyAsync()
+            => Task.FromException<int>(new NotSupportedException());
+
+        public Task<bool> ValidateEncryptionAsync()
+            => Task.FromResult(false);
     }
 }

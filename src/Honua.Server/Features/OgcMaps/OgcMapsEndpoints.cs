@@ -121,7 +121,12 @@ public static partial class OgcMapsEndpoints
         var selectedLayerIds = Array.Empty<int>();
         if (request.Collections is not null)
         {
-            var collectionTokens = request.Collections.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (HasEmptyCommaSeparatedToken(request.Collections))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
+            }
+
+            var collectionTokens = request.Collections.Split(',', StringSplitOptions.TrimEntries);
             if (collectionTokens.Length == 0)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
@@ -219,5 +224,18 @@ public static partial class OgcMapsEndpoints
     {
         var parsed = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);
         return parsed && layerId >= 0;
+    }
+
+    private static bool HasEmptyCommaSeparatedToken(string value)
+    {
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

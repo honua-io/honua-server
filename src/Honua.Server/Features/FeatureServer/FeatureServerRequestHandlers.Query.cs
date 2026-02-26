@@ -221,8 +221,20 @@ internal static partial class FeatureServerEndpoints
         }
 
         var layersValue = layersRaw.ToString();
-        var segments = layersValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length != 1)
+        var segments = new List<string>();
+        foreach (var segment in layersValue.Split(',', StringSplitOptions.None))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.Length == 0)
+            {
+                error = "layers must contain exactly one layer identifier";
+                return false;
+            }
+
+            segments.Add(trimmed);
+        }
+
+        if (segments.Count != 1)
         {
             error = "layers must contain exactly one layer identifier";
             return false;
@@ -347,10 +359,17 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        var outFields = GetValueString(values, "outFields");
+        if (HasEmptyCommaSeparatedToken(outFields))
+        {
+            error = "outFields parameter contains an empty field name";
+            return false;
+        }
+
         parameters = new QueryParameters
         {
             Where = GetValueString(values, "where"),
-            OutFields = NormalizeOutFields(GetValueString(values, "outFields")),
+            OutFields = NormalizeOutFields(outFields),
             OrderByFields = GetValueString(values, "orderByFields"),
             Geometry = GetValueString(values, "geometry"),
             InSr = GetValueString(values, "inSR"),
@@ -411,5 +430,23 @@ internal static partial class FeatureServerEndpoints
         }
 
         return string.Join(',', tokens);
+    }
+
+    private static bool HasEmptyCommaSeparatedToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -666,6 +666,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         Guid? connectionId,
         CancellationToken cancellationToken)
     {
+        var persistedConnectionId = await ResolvePersistedConnectionIdAsync(
+            connection,
+            transaction,
+            connectionId,
+            cancellationToken);
+
         const string sql = """
             INSERT INTO honua.services (
                 service_name,
@@ -685,9 +691,52 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         command.Parameters.AddWithValue("@srid", srid);
         command.Parameters.AddWithValue("@formats", _defaultFormats);
         command.Parameters.AddWithValue("@capabilities", _defaultCapabilities);
-        command.Parameters.AddWithValue("@connectionId", (object?)connectionId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@connectionId", (object?)persistedConnectionId ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<Guid?> ResolvePersistedConnectionIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid? connectionId,
+        CancellationToken cancellationToken)
+    {
+        if (!connectionId.HasValue)
+        {
+            return null;
+        }
+
+        const string tableExistsSql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'honua'
+                  AND table_name = 'data_connections'
+            );
+            """;
+
+        await using (var tableCommand = new NpgsqlCommand(tableExistsSql, connection, transaction))
+        {
+            var tableExists = (bool?)await tableCommand.ExecuteScalarAsync(cancellationToken) ?? false;
+            if (!tableExists)
+            {
+                return null;
+            }
+        }
+
+        const string connectionExistsSql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM honua.data_connections
+                WHERE connection_id = @connectionId
+            );
+            """;
+
+        await using var connectionCommand = new NpgsqlCommand(connectionExistsSql, connection, transaction);
+        connectionCommand.Parameters.AddWithValue("@connectionId", connectionId.Value);
+        var connectionExists = (bool?)await connectionCommand.ExecuteScalarAsync(cancellationToken) ?? false;
+        return connectionExists ? connectionId : null;
     }
 
     private static async Task EnsureServiceLayerAsync(

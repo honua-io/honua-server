@@ -73,4 +73,27 @@ internal static class ODataParsingUtilities
         parsed = result;
         return true;
     }
+
+    /// <summary>
+    /// Determines whether a comma-separated value contains an empty token.
+    /// </summary>
+    /// <param name="value">The raw comma-separated value.</param>
+    /// <returns>True when an empty token is present; otherwise false.</returns>
+    public static bool HasEmptyCommaSeparatedToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

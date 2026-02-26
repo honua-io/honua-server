@@ -74,6 +74,14 @@ internal sealed partial class ODataQueryHandler(
                 return formatValidation;
             }
 
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(select))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$select contains an empty field expression.");
+            }
+
             var pagingError = ODataRequestValidation.TryGetPagingValues(
                 context,
                 _validationService,
@@ -188,6 +196,14 @@ internal sealed partial class ODataQueryHandler(
             if (formatValidation != null)
             {
                 return formatValidation;
+            }
+
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(select))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$select contains an empty field expression.");
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
@@ -334,6 +350,22 @@ internal sealed partial class ODataQueryHandler(
             if (queryValidation != null)
             {
                 return queryValidation;
+            }
+
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(select))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$select contains an empty field expression.");
+            }
+
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(expand))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$expand contains an empty navigation expression.");
             }
 
             if (!ODataComputeService.TryParse(compute, out var computeExpressions, out var computeError))
