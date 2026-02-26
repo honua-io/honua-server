@@ -6,6 +6,7 @@ import { evaluateMigrationGates } from "../src/migration/gating.js";
 function createReport(): JsMigrationReport {
   return {
     rootDir: "/tmp/app",
+    codemodTarget: "honua-compat",
     scanSummary: "",
     scanReport: {
       rootDir: "/tmp/app",
@@ -17,6 +18,7 @@ function createReport(): JsMigrationReport {
     },
     codemodResult: {
       rootDir: "/tmp/app",
+      target: "honua-compat",
       filesScanned: 1,
       filesChanged: 1,
       metrics: {

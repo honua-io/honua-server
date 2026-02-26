@@ -344,6 +344,7 @@ describe("arcgis migration integration", () => {
       autoMigrated: 0,
       manual: 1,
     });
+    expect(report.codemodTarget).toBe("esri-leaflet");
     expect(report.readiness).toBe("assisted");
     expect(report.manualTodos.some((todo) => todo.kind === "map")).toBe(true);
 

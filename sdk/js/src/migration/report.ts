@@ -25,6 +25,7 @@ export interface ManualInterventionMetric {
 
 export interface JsMigrationReport {
   rootDir: string;
+  codemodTarget: "honua-compat" | "esri-leaflet";
   scanSummary: string;
   scanReport: ArcGisScanReport;
   codemodResult: EsriCompatCodemodResult;
@@ -92,6 +93,7 @@ export function buildJsMigrationReport(
 
   return {
     rootDir: codemodResult.rootDir,
+    codemodTarget: codemodResult.target,
     scanSummary,
     scanReport: resolvedScan,
     codemodResult,

@@ -7,6 +7,7 @@ import type { EsriCompatCodemodResult } from "../src/migration/codemod.js";
 function createCodemodResult(): EsriCompatCodemodResult {
   return {
     rootDir: "/tmp/app",
+    target: "honua-compat",
     filesScanned: 2,
     filesChanged: 1,
     metrics: {
@@ -105,6 +106,7 @@ function createScanReport(): ArcGisScanReport {
 describe("buildJsMigrationReport", () => {
   it("builds manual summaries and unhandled module inventory", () => {
     const report = buildJsMigrationReport("/tmp/app", createCodemodResult(), createScanReport());
+    expect(report.codemodTarget).toBe("honua-compat");
 
     expect(report.manualRewriteMetric).toMatchObject({
       numerator: 1,

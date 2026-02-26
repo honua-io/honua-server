@@ -155,6 +155,7 @@ export interface CodemodFileResult {
 
 export interface EsriCompatCodemodResult {
   rootDir: string;
+  target: CodemodTarget;
   filesScanned: number;
   filesChanged: number;
   metrics: CodemodMetrics;
@@ -238,6 +239,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
 
   return {
     rootDir,
+    target,
     filesScanned: files.length,
     filesChanged: fileResults.filter(
       (item) =>

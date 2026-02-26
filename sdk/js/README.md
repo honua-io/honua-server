@@ -112,6 +112,7 @@ The codemod is intentionally conservative:
 - optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
 - it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,
 - it computes `manualIntervention = numerator / denominator` across codemod-scoped call sites plus unhandled ArcGIS usage hits,
+- migration report JSON includes `codemodTarget` so CI artifacts clearly indicate target mode (`honua-compat` or `esri-leaflet`),
 - it supports CI gating flags:
   - `--fail-on-manual`
   - `--fail-on-unhandled`
