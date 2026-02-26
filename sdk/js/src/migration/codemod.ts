@@ -11,6 +11,7 @@ const CJS_REQUIRE_MANUAL_REASON =
 
 export type CodemodConstructorKind =
   | "feature-layer"
+  | "map-image-layer"
   | "map"
   | "map-view"
   | "scene-view"
@@ -29,6 +30,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/layers/FeatureLayer",
       "@arcgis/core/layers/FeatureLayer.js",
+    ]),
+  },
+  {
+    kind: "map-image-layer",
+    compatSymbol: "MapImageLayerCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/MapImageLayer",
+      "@arcgis/core/layers/MapImageLayer.js",
     ]),
   },
   {
@@ -408,6 +417,7 @@ function buildModuleToKindLookup(
 function createEmptyByKindMetrics(): CodemodMetricsByKind {
   return {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -943,6 +953,8 @@ function isSafeConstructorCall(
   switch (kind) {
     case "feature-layer":
       return isSafeFeatureLayerCompatCall(node);
+    case "map-image-layer":
+      return isSafeMapImageLayerCompatCall(node);
     case "map":
       return isSafeMapCompatCall(node);
     case "map-view":
@@ -1003,6 +1015,58 @@ function isSafeFeatureLayerCompatCall(
     return {
       ok: false,
       reason: "FeatureLayer options missing required url property; requires manual migration.",
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeMapImageLayerCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length !== 1) {
+    return {
+      ok: false,
+      reason: "MapImageLayer constructor is not a single object-literal argument.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "MapImageLayer constructor argument is not an object literal.",
+    };
+  }
+
+  let hasUrlOption = false;
+  const allowed = new Set(["url", "sublayers", "opacity", "visible"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "MapImageLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (name === "url") {
+      hasUrlOption = true;
+    }
+
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "MapImageLayer options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  if (!hasUrlOption) {
+    return {
+      ok: false,
+      reason: "MapImageLayer options missing required url property; requires manual migration.",
     };
   }
 

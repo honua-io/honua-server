@@ -99,7 +99,8 @@ export function buildJsMigrationReport(
       numerator,
       denominator,
       ratio,
-      scope: "FeatureLayer/Map/MapView/SceneView/WebMap constructor call sites in safe-codemod scope",
+      scope:
+        "FeatureLayer/MapImageLayer/Map/MapView/SceneView/WebMap constructor call sites in safe-codemod scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -124,6 +125,7 @@ function summarizeManualTodosByKind(
 ): Record<CodemodConstructorKind, number> {
   const summary: Record<CodemodConstructorKind, number> = {
     "feature-layer": 0,
+    "map-image-layer": 0,
     map: 0,
     "map-view": 0,
     "scene-view": 0,

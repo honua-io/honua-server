@@ -14,10 +14,15 @@ export type {
   FeatureLayerCreateQueryResult,
   FeatureLayerQueryCountOptions,
 } from "./esri-compat/feature-layer.js";
-export { parseFeatureLayerUrl } from "./esri-compat/url.js";
-export type { ParsedFeatureLayerUrl } from "./esri-compat/url.js";
+export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";
+export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/url.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
+export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
+export type {
+  MapImageLayerCompatOptions,
+  MapImageLayerExportOptions,
+} from "./esri-compat/map-image-layer.js";
 export { MapViewCompat } from "./esri-compat/map-view.js";
 export type {
   MapViewCompatOptions,

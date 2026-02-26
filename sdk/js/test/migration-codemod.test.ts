@@ -114,6 +114,45 @@ describe("runEsriCompatCodemod", () => {
     );
   });
 
+  it("rewrites safe MapImageLayer constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "map-image-layer.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "const layer = new MapImageLayer({",
+        "  url: serviceUrl,",
+        "  sublayers: [{ id: 0 }],",
+        "  opacity: 0.8,",
+        "  visible: true,",
+        "});",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { MapImageLayerCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new MapImageLayerCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
+  });
+
   it("rewrites constructors imported via named default alias", () => {
     const root = makeTempProject();
     const file = path.join(root, "default-alias.ts");

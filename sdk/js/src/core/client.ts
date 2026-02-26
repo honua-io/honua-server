@@ -69,6 +69,14 @@ export class HonuaClient {
     );
   }
 
+  public async getMapServiceMetadata(serviceId: string): Promise<unknown> {
+    const query = new URLSearchParams({ f: "json" });
+    return this.requestJson(
+      "GET",
+      `/rest/services/${encodeURIComponent(serviceId)}/MapServer?${query.toString()}`,
+    );
+  }
+
   public async queryFeatures(request: QueryFeaturesRequest): Promise<unknown> {
     const method: QueryMethod = request.method ?? "GET";
     const params = new URLSearchParams();

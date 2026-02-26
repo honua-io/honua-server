@@ -4,6 +4,7 @@ import { HonuaClient, HonuaHttpError } from "../src/honua.js";
 import {
   FeatureLayerCompat,
   MapCompat,
+  MapImageLayerCompat,
   MapViewCompat,
   SceneViewCompat,
   WebMapCompat,
@@ -24,6 +25,7 @@ describe("entrypoint modules", () => {
   it("exposes esri-compat entrypoint", () => {
     expect(FeatureLayerCompat).toBeTypeOf("function");
     expect(MapCompat).toBeTypeOf("function");
+    expect(MapImageLayerCompat).toBeTypeOf("function");
     expect(MapViewCompat).toBeTypeOf("function");
     expect(SceneViewCompat).toBeTypeOf("function");
     expect(WebMapCompat).toBeTypeOf("function");

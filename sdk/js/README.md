@@ -5,11 +5,11 @@ Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 This package currently provides:
 
 - core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
-- Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
-  including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `Map` layer collection helpers, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
+- Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
+  including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()`, `Map` layer collection helpers, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
 - ArcGIS usage scanner (`scanArcGisUsage`) for migration inventory and risk flags,
-- safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `Map`, `MapView`, `SceneView`, and `WebMap` safe constructors,
+- safe codemod runner (`runEsriCompatCodemod`) for `FeatureLayer`, `MapImageLayer`, `Map`, `MapView`, `SceneView`, and `WebMap` safe constructors,
 - migration report builder with explicit manual TODOs and rewrite metric,
 - unit tests for request mapping and URL parsing.
 
@@ -85,6 +85,7 @@ node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandle
 The codemod is intentionally conservative:
 - it rewrites safe constructors:
   - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `outFields` and `definitionExpression`)
+  - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `sublayers`, `opacity`, and `visible`)
   - `new Map(...)` -> `new MapCompat(...)`
   - `new MapView(...)` -> `new MapViewCompat(...)`
   - `new SceneView(...)` -> `new SceneViewCompat(...)`

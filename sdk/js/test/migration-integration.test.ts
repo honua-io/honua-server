@@ -100,6 +100,7 @@ describe("arcgis migration integration", () => {
     });
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 0,
+      "map-image-layer": 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
@@ -258,6 +259,63 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
     expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
+  });
+
+  it("migrates map image layer app flow with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-map-image-layer-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(2);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 2,
+      ratio: 0,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 0,
+      denominator: 2,
+      ratio: 0,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { MapCompat, MapImageLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const parcels = new MapImageLayerCompat({");
+    expect(migratedMain).toContain("const map = new MapCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/MapImageLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {
