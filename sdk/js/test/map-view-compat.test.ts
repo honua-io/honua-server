@@ -241,6 +241,7 @@ describe("MapViewCompat", () => {
     });
     const popupVisibility: unknown[] = [];
     const popupActive: unknown[] = [];
+    const popupSelectionIndexes: unknown[] = [];
     const popupEvents: unknown[] = [];
 
     view.watch("popup.visible", (value) => {
@@ -249,50 +250,78 @@ describe("MapViewCompat", () => {
     view.watch("popup.viewModel.active", (value) => {
       popupActive.push(value);
     });
+    view.watch("popup.selectedFeatureIndex", (value) => {
+      popupSelectionIndexes.push(value);
+    });
     view.on("popup-open", (event) => {
       popupEvents.push({ type: "open", event });
     });
     view.on("popup-close", (event) => {
       popupEvents.push({ type: "close", event });
     });
+    view.on("popup-selection-change", (event) => {
+      popupEvents.push({ type: "selection", event });
+    });
 
     view.openPopup({
       title: "Layer Info",
       content: "Details",
       location: [1, 2],
-      features: [{ id: 123 }],
+      features: [{ id: 123 }, { id: 456 }],
     });
     expect(view.popup.visible).toBe(true);
     expect(view.popup.title).toBe("Layer Info");
     expect(view.popup.content).toBe("Details");
     expect(view.popup.location).toEqual([1, 2]);
-    expect(view.popup.features).toEqual([{ id: 123 }]);
+    expect(view.popup.features).toEqual([{ id: 123 }, { id: 456 }]);
     expect(view.popup.selectedFeature).toEqual({ id: 123 });
+    expect(view.popup.selectedFeatureIndex).toBe(0);
     expect(view.popup.viewModel.active).toBe(true);
     expect(view.popup.dockEnabled).toBe(true);
     expect(view.popup.dockOptions).toEqual({ breakpoint: false });
+
+    expect(view.popup.next()).toEqual({ id: 456 });
+    expect(view.popup.selectedFeatureIndex).toBe(1);
+    expect(view.popup.previous()).toEqual({ id: 123 });
+    expect(view.popup.selectedFeatureIndex).toBe(0);
 
     view.closePopup();
     expect(view.popup.visible).toBe(false);
     expect(view.popup.features).toEqual([]);
     expect(view.popup.selectedFeature).toBeUndefined();
+    expect(view.popup.selectedFeatureIndex).toBe(-1);
     expect(view.popup.viewModel.active).toBe(false);
     expect(view.popup.title).toBeUndefined();
     expect(view.popup.content).toBeUndefined();
 
-    expect(popupVisibility).toEqual([true, false]);
-    expect(popupActive).toEqual([true, false]);
-    expect(popupEvents).toHaveLength(2);
+    expect(popupVisibility).toEqual([true, true, true, false]);
+    expect(popupActive).toEqual([true, true, true, false]);
+    expect(popupSelectionIndexes).toEqual([0, 1, 0, -1]);
+    expect(popupEvents).toHaveLength(4);
     expect(popupEvents[0]).toEqual({
       type: "open",
       event: {
         title: "Layer Info",
         content: "Details",
         location: [1, 2],
-        features: [{ id: 123 }],
+        features: [{ id: 123 }, { id: 456 }],
       },
     });
-    expect(popupEvents[1]).toEqual({ type: "close", event: undefined });
+    expect(popupEvents[1]).toEqual({
+      type: "selection",
+      event: {
+        selectedFeature: { id: 456 },
+        selectedFeatureIndex: 1,
+      },
+    });
+    expect(popupEvents[2]).toEqual({
+      type: "selection",
+      event: {
+        selectedFeature: { id: 123 },
+        selectedFeatureIndex: 0,
+      },
+    });
+    expect(popupEvents[3]).toEqual({ type: "close", event: undefined });
   });
 
   it("supports ui component add/remove/move/find helpers", () => {

@@ -74,7 +74,7 @@ export interface MapViewUiComponentRecord {
   index: number;
 }
 
-type PopupChangeType = "open" | "close";
+type PopupChangeType = "open" | "close" | "selection";
 
 export interface MapViewPopupViewModelCompat {
   active: boolean;
@@ -91,6 +91,7 @@ export class MapViewPopupCompat {
   public location: unknown;
   public features: unknown[];
   public selectedFeature: unknown;
+  public selectedFeatureIndex: number;
   public title: string | undefined;
   public content: unknown;
   public autoOpenEnabled: boolean;
@@ -108,6 +109,7 @@ export class MapViewPopupCompat {
     this.location = undefined;
     this.features = [];
     this.selectedFeature = undefined;
+    this.selectedFeatureIndex = -1;
     this.title = undefined;
     this.content = undefined;
     this.autoOpenEnabled = options.autoOpenEnabled ?? true;
@@ -125,6 +127,7 @@ export class MapViewPopupCompat {
     this.location = options.location;
     this.features = options.features ? [...options.features] : [];
     this.selectedFeature = this.features[0];
+    this.selectedFeatureIndex = this.features.length > 0 ? 0 : -1;
     this.title = options.title;
     this.content = options.content;
     this.onChange("open", options);
@@ -140,9 +143,47 @@ export class MapViewPopupCompat {
     this.location = undefined;
     this.features = [];
     this.selectedFeature = undefined;
+    this.selectedFeatureIndex = -1;
     this.title = undefined;
     this.content = undefined;
     this.onChange("close");
+  }
+
+  public selectFeature(featureOrIndex: unknown | number): unknown {
+    if (this.features.length === 0) {
+      return undefined;
+    }
+
+    const index =
+      typeof featureOrIndex === "number"
+        ? normalizeFeatureIndex(featureOrIndex, this.features.length)
+        : this.features.findIndex((feature) => feature === featureOrIndex);
+    if (index < 0) {
+      return undefined;
+    }
+
+    this.selectedFeatureIndex = index;
+    this.selectedFeature = this.features[index];
+    this.onChange("selection");
+    return this.selectedFeature;
+  }
+
+  public next(): unknown {
+    if (this.features.length === 0) {
+      return undefined;
+    }
+    const current = this.selectedFeatureIndex >= 0 ? this.selectedFeatureIndex : 0;
+    const next = Math.min(current + 1, this.features.length - 1);
+    return this.selectFeature(next);
+  }
+
+  public previous(): unknown {
+    if (this.features.length === 0) {
+      return undefined;
+    }
+    const current = this.selectedFeatureIndex >= 0 ? this.selectedFeatureIndex : 0;
+    const previous = Math.max(current - 1, 0);
+    return this.selectFeature(previous);
   }
 }
 
@@ -512,12 +553,25 @@ export class MapViewCompat {
       this.notifyWatchers("popup.visible", this.popup.visible);
       this.notifyWatchers("popup.features", this.popup.features);
       this.notifyWatchers("popup.selectedFeature", this.popup.selectedFeature);
+      this.notifyWatchers("popup.selectedFeatureIndex", this.popup.selectedFeatureIndex);
       this.notifyWatchers("popup.location", this.popup.location);
       this.notifyWatchers("popup.title", this.popup.title);
       this.notifyWatchers("popup.content", this.popup.content);
       this.notifyWatchers("popup.viewModel.active", this.popup.viewModel.active);
-      this.eventBus.emit(type === "open" ? "popup.open" : "popup.close", popupOptions, this);
-      this.emit(type === "open" ? "popup-open" : "popup-close", popupOptions);
+      if (type === "open") {
+        this.eventBus.emit("popup.open", popupOptions, this);
+        this.emit("popup-open", popupOptions);
+      } else if (type === "close") {
+        this.eventBus.emit("popup.close", popupOptions, this);
+        this.emit("popup-close", popupOptions);
+      } else {
+        const selection = {
+          selectedFeature: this.popup.selectedFeature,
+          selectedFeatureIndex: this.popup.selectedFeatureIndex,
+        };
+        this.eventBus.emit("popup.selected-feature-changed", selection, this);
+        this.emit("popup-selection-change", selection);
+      }
     }, extractPopupOptions(options.popup));
     this.ui = new MapViewUiCompat(this.eventBus, (components) => {
       this.notifyWatchers("ui.components", components);
@@ -780,6 +834,18 @@ function normalizeUiIndex(index: number, length: number): number {
     return length;
   }
   return Math.min(Math.max(index, 0), length);
+}
+
+function normalizeFeatureIndex(index: number, length: number): number {
+  if (!Number.isFinite(index)) {
+    return -1;
+  }
+
+  const normalized = Math.trunc(index);
+  if (normalized < 0 || normalized >= length) {
+    return -1;
+  }
+  return normalized;
 }
 
 function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider {
