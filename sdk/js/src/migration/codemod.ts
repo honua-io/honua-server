@@ -6,6 +6,8 @@ const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
 const TODO_MARKER = "TODO(honua-migrate)";
+const CJS_REQUIRE_MANUAL_REASON =
+  "CommonJS (.cjs) require constructors are not auto-migrated; convert the module to ESM and rerun.";
 
 export type CodemodConstructorKind =
   | "feature-layer"
@@ -75,6 +77,7 @@ interface ArcGisImportBinding {
   kind: CodemodConstructorKind;
   localName: string;
   importStyle: "identifier" | "namespace-default";
+  sourceKind: "import" | "require";
 }
 
 export interface MigrationTodo {
@@ -239,6 +242,7 @@ function codemodFile(
   const manualTodos: MigrationTodo[] = [];
   const todoCommentEdits: TextEdit[] = [];
   const requiredCompatSymbols = new Set<string>();
+  const fileExtension = path.extname(file).toLowerCase();
 
   walk(sourceFile, (node) => {
     if (isArcGisDynamicImportCall(node)) {
@@ -270,6 +274,29 @@ function codemodFile(
     }
 
     const importBinding = rewriteTarget.binding;
+    if (fileExtension === ".cjs" && importBinding.sourceKind === "require") {
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: importBinding.kind,
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: CJS_REQUIRE_MANUAL_REASON,
+      });
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[${importBinding.kind}]: ${CJS_REQUIRE_MANUAL_REASON}\n`,
+          });
+        }
+      }
+      return;
+    }
+
     const safeCheck = isSafeConstructorCall(importBinding.kind, node);
     if (safeCheck.ok) {
       const spec = specForKind(importBinding.kind);
@@ -401,6 +428,7 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
         kind: spec.kind,
         localName: importClause.name.text,
         importStyle: "identifier",
+        sourceKind: "import",
       });
     }
 
@@ -413,6 +441,7 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
             kind: spec.kind,
             localName: element.name.text,
             importStyle: "identifier",
+            sourceKind: "import",
           });
         }
       }
@@ -422,6 +451,7 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
         kind: spec.kind,
         localName: namedBindings.name.text,
         importStyle: "namespace-default",
+        sourceKind: "import",
       });
     }
   }
@@ -450,6 +480,7 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
         kind: spec.kind,
         localName: declaration.name.text,
         importStyle: "identifier",
+        sourceKind: "require",
       });
     }
   }

@@ -260,35 +260,37 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
   });
 
-  it("reports ready when supported require-style ArcGIS usage is fully auto-migrated", () => {
+  it("reports assisted when .cjs require-style usage requires manual migration", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-assisted-require-app",
     );
 
     expect(scanReport.flags).toEqual([]);
-    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.filesChanged).toBe(0);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
-    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
+    expect(codemodResult.metrics.manualCallSites).toBe(1);
     expect(report.manualRewriteMetric).toMatchObject({
-      numerator: 0,
+      numerator: 1,
       denominator: 1,
-      ratio: 0,
+      ratio: 1,
     });
     expect(report.manualInterventionMetric).toMatchObject({
-      numerator: 0,
+      numerator: 1,
       denominator: 1,
-      ratio: 0,
-      manualCodemodCallSites: 0,
+      ratio: 1,
+      manualCodemodCallSites: 1,
       unhandledUsageHits: 0,
     });
     expect(report.unhandledArcGisModules).toEqual([]);
-    expect(report.readiness).toBe("ready");
+    expect(report.readiness).toBe("assisted");
+    expect(report.manualTodos).toHaveLength(1);
+    expect(report.manualTodos[0]?.reason).toContain("CommonJS (.cjs) require constructors");
     expect(report.gates).toEqual([
       {
         gate: "no-manual-todos",
-        passed: true,
-        detail: "all codemod-scoped call sites auto-migrated",
+        passed: false,
+        detail: "1 manual codemod-scoped call sites remain",
       },
       {
         gate: "no-unhandled-modules",
@@ -303,12 +305,11 @@ describe("arcgis migration integration", () => {
     ]);
 
     const source = fs.readFileSync(path.join(workingCopy, "src", "main.cjs"), "utf8");
-    expect(source).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
-    expect(source).toContain("new MapCompat({");
+    expect(source).toContain('require("@arcgis/core/Map")');
+    expect(source).toContain("new Map({");
     expect(source).toContain('basemap: "streets"');
     expect(source).toContain("module.exports = { map };");
-    expect(source).not.toContain('@arcgis/core/Map');
-    expect(source).not.toContain("new Map({");
+    expect(source).not.toContain("@honua/sdk-esri-compat");
   });
 
   it("reports assisted for side-effect ArcGIS imports outside codemod scope", () => {

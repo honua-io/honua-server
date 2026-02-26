@@ -91,6 +91,7 @@ The codemod is intentionally conservative:
   - `new WebMap(...)` -> `new WebMapCompat(...)`
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),
 - it skips complex constructors and records manual TODO entries in the report,
+- it keeps CommonJS `.cjs` `require(...)` constructor sites as manual TODOs (no auto CJS->ESM rewrite),
 - optionally it can inject inline `// TODO(honua-migrate)...` comments for manual sites (`--annotate-todos`),
 - it computes `manualRewrite = numerator / denominator` for codemod-scoped call sites,
 - it computes `manualIntervention = numerator / denominator` across codemod-scoped call sites plus unhandled ArcGIS usage hits,
