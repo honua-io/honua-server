@@ -245,6 +245,37 @@ describe("HonuaClient", () => {
     expect(requestedBody).toContain("time=2024-01-01%2C2024-12-31");
   });
 
+  it("supports raw request helper for custom endpoints", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    });
+
+    const response = await client.request({
+      path: "/rest/services/default/FeatureServer/0/queryAttachments",
+      method: "POST",
+      responseFormat: "pjson",
+      query: { objectIds: "1,2" },
+      headers: { "X-Debug": "1" },
+      body: "where=1%3D1",
+    });
+
+    expect(response).toEqual({ ok: true });
+    expect(requestedUrl).toContain("/rest/services/default/FeatureServer/0/queryAttachments?");
+    expect(requestedUrl).toContain("f=pjson");
+    expect(requestedUrl).toContain("objectIds=1%2C2");
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedInit?.headers).toMatchObject({ "X-Debug": "1" });
+    expect(requestedInit?.body).toBe("where=1%3D1");
+  });
+
   it("throws HonuaHttpError for non-2xx responses", async () => {
     const client = new HonuaClient({
       baseUrl: "https://example.test",

@@ -46,6 +46,27 @@ export interface FeatureLayerQueryRelatedFeaturesOptions {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface FeatureLayerQueryAttachmentsOptions {
+  objectIds?: number[] | string;
+  where?: string;
+  method?: QueryMethod;
+  responseFormat?: "json" | "pjson";
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface FeatureLayerListAttachmentsOptions {
+  objectId: number;
+  responseFormat?: "json" | "pjson";
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface FeatureLayerDeleteAttachmentsOptions {
+  objectId: number;
+  attachmentIds: number[] | string;
+  responseFormat?: "json" | "pjson";
+  extraParams?: Record<string, string | number | boolean>;
+}
+
 export interface FeatureLayerQueryExtentResult {
   extent: unknown | null;
   count?: number;
@@ -220,6 +241,63 @@ export class FeatureLayerCompat {
       returnGeometry: options.returnGeometry,
       method: options.method,
       extraParams: options.extraParams,
+    });
+  }
+
+  public queryAttachments(options: FeatureLayerQueryAttachmentsOptions = {}): Promise<unknown> {
+    return this.client.request({
+      method: options.method ?? "GET",
+      path: `/rest/services/${encodeURIComponent(this.serviceId)}/FeatureServer/${this.layerId}/queryAttachments`,
+      responseFormat: options.responseFormat ?? "json",
+      query: {
+        ...(options.objectIds === undefined
+          ? {}
+          : {
+              objectIds: Array.isArray(options.objectIds)
+                ? options.objectIds.join(",")
+                : options.objectIds,
+            }),
+        ...(options.where === undefined ? {} : { where: options.where }),
+        ...(options.extraParams ?? {}),
+      },
+    });
+  }
+
+  public listAttachments(options: FeatureLayerListAttachmentsOptions): Promise<unknown> {
+    return this.client.request({
+      method: "GET",
+      path:
+        `/rest/services/${encodeURIComponent(this.serviceId)}` +
+        `/FeatureServer/${this.layerId}/${options.objectId}/attachments`,
+      responseFormat: options.responseFormat ?? "json",
+      query: options.extraParams,
+    });
+  }
+
+  public deleteAttachments(options: FeatureLayerDeleteAttachmentsOptions): Promise<unknown> {
+    const params = new URLSearchParams();
+    params.set("f", options.responseFormat ?? "json");
+    params.set(
+      "attachmentIds",
+      Array.isArray(options.attachmentIds)
+        ? options.attachmentIds.join(",")
+        : String(options.attachmentIds),
+    );
+    if (options.extraParams) {
+      for (const [key, value] of Object.entries(options.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    return this.client.request({
+      method: "POST",
+      path:
+        `/rest/services/${encodeURIComponent(this.serviceId)}` +
+        `/FeatureServer/${this.layerId}/${options.objectId}/deleteAttachments`,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
     });
   }
 }

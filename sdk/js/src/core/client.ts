@@ -4,6 +4,7 @@ import type {
   ExportMapRequest,
   HonuaClientOptions,
   HonuaErrorContext,
+  HonuaRawRequest,
   HonuaRequestContext,
   HonuaRequestInterceptor,
   HonuaRequestMutation,
@@ -17,6 +18,20 @@ import type {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+function normalizePath(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+function resolveRequestUrl(baseUrl: string, path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  return `${baseUrl}${path}`;
 }
 
 function normalizeOutFields(outFields: string | string[] | undefined): string {
@@ -90,6 +105,24 @@ export class HonuaClient {
   public async listServices(format: "json" | "pjson" = "json"): Promise<unknown> {
     const query = new URLSearchParams({ f: format });
     return this.requestJson("GET", `/rest/services?${query.toString()}`);
+  }
+
+  public async request(request: HonuaRawRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", request.responseFormat ?? "json");
+    if (request.query) {
+      for (const [key, value] of Object.entries(request.query)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const normalizedPath = normalizePath(request.path);
+    const pathWithQuery = params.size > 0 ? `${normalizedPath}?${params.toString()}` : normalizedPath;
+    return this.requestJson(method, pathWithQuery, {
+      headers: request.headers,
+      body: request.body,
+    });
   }
 
   public async getLayerMetadata(serviceId: string, layerId: number): Promise<unknown> {
@@ -314,7 +347,7 @@ export class HonuaClient {
     init?: RequestInit,
   ): Promise<unknown> {
     let request: HonuaRequestContext = {
-      url: `${this.baseUrl}${path}`,
+      url: resolveRequestUrl(this.baseUrl, path),
       path,
       method,
       init: {

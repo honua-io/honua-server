@@ -96,6 +96,15 @@ export interface MapIdentifyRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface HonuaRawRequest {
+  path: string;
+  method?: QueryMethod;
+  responseFormat?: "json" | "pjson";
+  query?: Record<string, string | number | boolean>;
+  headers?: HeadersInit;
+  body?: BodyInit | null;
+}
+
 export interface ApplyEditsRequest {
   serviceId: string;
   layerId: number;

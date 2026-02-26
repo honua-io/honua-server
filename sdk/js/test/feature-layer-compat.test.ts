@@ -363,4 +363,45 @@ describe("FeatureLayerCompat", () => {
     expect(JSON.stringify(relatedRequest)).toContain('"outFields":["OBJECTID","NAME"]');
     expect(JSON.stringify(relatedRequest)).toContain('"returnGeometry":false');
   });
+
+  it("maps attachment helper calls to attachment endpoints", async () => {
+    const requests: unknown[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryRelatedRecords(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public request(request: unknown): Promise<unknown> {
+          requests.push(request);
+          return Promise.resolve({ ok: true });
+        }
+      })() as any,
+    });
+
+    await layer.queryAttachments({ objectIds: [1, 2], where: "1=1" });
+    await layer.listAttachments({ objectId: 99 });
+    await layer.deleteAttachments({ objectId: 99, attachmentIds: [7, 8] });
+
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[0])).toContain("/FeatureServer/1000/queryAttachments");
+    expect(JSON.stringify(requests[0])).toContain('"objectIds":"1,2"');
+    expect(JSON.stringify(requests[0])).toContain('"where":"1=1"');
+    expect(JSON.stringify(requests[1])).toContain("/FeatureServer/1000/99/attachments");
+    expect(JSON.stringify(requests[2])).toContain("/FeatureServer/1000/99/deleteAttachments");
+    expect(JSON.stringify(requests[2])).toContain("attachmentIds=7%2C8");
+  });
 });

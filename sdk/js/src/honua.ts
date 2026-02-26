@@ -4,6 +4,7 @@ export type {
   ApplyEditsRequest,
   ExportMapRequest,
   HonuaClientOptions,
+  HonuaRawRequest,
   HonuaErrorContext,
   HonuaRequestContext,
   HonuaRequestInterceptor,
