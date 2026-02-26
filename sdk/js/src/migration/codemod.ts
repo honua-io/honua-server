@@ -55,6 +55,8 @@ export type CodemodConstructorKind =
   | "sketch-widget"
   | "editor-widget"
   | "track-widget"
+  | "distance-measurement-2d-widget"
+  | "area-measurement-2d-widget"
   | "measurement-widget"
   | "time-slider-widget"
   | "directions-widget"
@@ -355,6 +357,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Track",
       "@arcgis/core/widgets/Track.js",
+    ]),
+  },
+  {
+    kind: "distance-measurement-2d-widget",
+    compatSymbol: "DistanceMeasurement2DCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/DistanceMeasurement2D",
+      "@arcgis/core/widgets/DistanceMeasurement2D.js",
+    ]),
+  },
+  {
+    kind: "area-measurement-2d-widget",
+    compatSymbol: "AreaMeasurement2DCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/AreaMeasurement2D",
+      "@arcgis/core/widgets/AreaMeasurement2D.js",
     ]),
   },
   {
@@ -882,6 +900,8 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "distance-measurement-2d-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "area-measurement-2d-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1591,6 +1611,10 @@ function isSafeConstructorCall(
       return isSafeEditorWidgetCompatCall(node);
     case "track-widget":
       return isSafeTrackWidgetCompatCall(node);
+    case "distance-measurement-2d-widget":
+      return isSafeDistanceMeasurement2dWidgetCompatCall(node);
+    case "area-measurement-2d-widget":
+      return isSafeAreaMeasurement2dWidgetCompatCall(node);
     case "measurement-widget":
       return isSafeMeasurementWidgetCompatCall(node);
     case "time-slider-widget":
@@ -3306,6 +3330,90 @@ function isSafeTrackWidgetCompatCall(
       return {
         ok: false,
         reason: "Track options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeDistanceMeasurement2dWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "DistanceMeasurement2D constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "DistanceMeasurement2D constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "unit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "DistanceMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "DistanceMeasurement2D options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeAreaMeasurement2dWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "AreaMeasurement2D constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "AreaMeasurement2D constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "unit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "AreaMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "AreaMeasurement2D options include unsupported properties; requires manual migration.",
       };
     }
   }

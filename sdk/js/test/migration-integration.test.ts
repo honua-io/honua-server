@@ -140,6 +140,8 @@ describe("arcgis migration integration", () => {
       "sketch-widget": 0,
       "editor-widget": 0,
       "track-widget": 0,
+      "distance-measurement-2d-widget": 0,
+      "area-measurement-2d-widget": 0,
       "measurement-widget": 0,
       "time-slider-widget": 0,
       "directions-widget": 0,
@@ -681,6 +683,49 @@ describe("arcgis migration integration", () => {
     );
     expect(migratedMain).toContain("const swipe = new SwipeCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Swipe");
+  });
+
+  it("migrates distance/area measurement 2d fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-measurement-2d-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["distance-measurement-2d-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["area-measurement-2d-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { AreaMeasurement2DCompat, DistanceMeasurement2DCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const distance = new DistanceMeasurement2DCompat({");
+    expect(migratedMain).toContain("const area = new AreaMeasurement2DCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/DistanceMeasurement2D");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/AreaMeasurement2D");
   });
 
   it("supports esri-leaflet codemod target for deterministic subset", () => {

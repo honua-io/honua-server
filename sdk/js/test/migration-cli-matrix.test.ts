@@ -90,6 +90,12 @@ describe("migration cli parity matrix", () => {
     const tableListWidget = report.matrix.find((row) => row.kind === "table-list-widget");
     const featureTemplatesWidget = report.matrix.find((row) => row.kind === "feature-templates-widget");
     const basemapLayerListWidget = report.matrix.find((row) => row.kind === "basemap-layer-list-widget");
+    const distanceMeasurement2dWidget = report.matrix.find(
+      (row) => row.kind === "distance-measurement-2d-widget",
+    );
+    const areaMeasurement2dWidget = report.matrix.find(
+      (row) => row.kind === "area-measurement-2d-widget",
+    );
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
@@ -99,6 +105,8 @@ describe("migration cli parity matrix", () => {
     expect(tableListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(featureTemplatesWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(basemapLayerListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(distanceMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(areaMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
   }, 20_000);

@@ -474,6 +474,71 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Swipe");
   });
 
+  it("rewrites safe DistanceMeasurement2D and AreaMeasurement2D constructors", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "measurement-2d.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import DistanceMeasurement2D from '@arcgis/core/widgets/DistanceMeasurement2D';",
+        "import AreaMeasurement2D from '@arcgis/core/widgets/AreaMeasurement2D';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
+        "const distance = new DistanceMeasurement2D({ view, container: 'distance-2d', unit: 'kilometers' });",
+        "const area = new AreaMeasurement2D({ view, container: 'area-2d', unit: 'square-kilometers' });",
+        "void distance;",
+        "void area;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(result.metrics.autoMigratedCallSites).toBe(4);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["distance-measurement-2d-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["area-measurement-2d-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { AreaMeasurement2DCompat, DistanceMeasurement2DCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain(
+      "const distance = new DistanceMeasurement2DCompat({ view, container: 'distance-2d', unit: 'kilometers' });",
+    );
+    expect(nextSource).toContain(
+      "const area = new AreaMeasurement2DCompat({ view, container: 'area-2d', unit: 'square-kilometers' });",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/widgets/DistanceMeasurement2D");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/AreaMeasurement2D");
+  });
+
   it("rewrites safe TableList constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "table-list.ts");

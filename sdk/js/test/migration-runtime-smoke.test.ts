@@ -125,6 +125,8 @@ describe("migration runtime smoke", () => {
         "import Sketch from '@arcgis/core/widgets/Sketch';",
         "import Editor from '@arcgis/core/widgets/Editor';",
         "import Track from '@arcgis/core/widgets/Track';",
+        "import DistanceMeasurement2D from '@arcgis/core/widgets/DistanceMeasurement2D';",
+        "import AreaMeasurement2D from '@arcgis/core/widgets/AreaMeasurement2D';",
         "import Measurement from '@arcgis/core/widgets/Measurement';",
         "import TimeSlider from '@arcgis/core/widgets/TimeSlider';",
         "import RouteLayer from '@arcgis/core/layers/RouteLayer';",
@@ -155,13 +157,15 @@ describe("migration runtime smoke", () => {
         "const sketch = new Sketch({ view, layer: undefined, creationMode: 'update' });",
         "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
         "const track = new Track({ view, goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
+        "const distanceMeasurement2d = new DistanceMeasurement2D({ view, container: 'distance-2d', unit: 'kilometers' });",
+        "const areaMeasurement2d = new AreaMeasurement2D({ view, container: 'area-2d', unit: 'square-kilometers' });",
         "const measurement = new Measurement({ view, activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
         "const timeSlider = new TimeSlider({ view, mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
         "const directions = new Directions({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
         "const coordinateConversion = new CoordinateConversion({ view, mode: 'live', multipleConversionsEnabled: true, formats: ['lonlat', 'dms'] });",
         "const printer = new Print({ view, container: 'print', printServiceUrl: 'https://example.test/print', templateOptions: { format: 'pdf', layout: 'a4-landscape' } });",
         "const swipe = new Swipe({ view, container: 'swipe', position: 45, leadingLayers: [], trailingLayers: [] });",
-        "view.ui.add([layerList, tableList, featureWidget, featureForm, featureTemplates, legend, popup, search, basemapLayerList, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
+        "view.ui.add([layerList, tableList, featureWidget, featureForm, featureTemplates, legend, popup, search, basemapLayerList, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, distanceMeasurement2d, areaMeasurement2d, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
@@ -186,6 +190,8 @@ describe("migration runtime smoke", () => {
         "    sketch.constructor.name,",
         "    editor.constructor.name,",
         "    track.constructor.name,",
+        "    distanceMeasurement2d.constructor.name,",
+        "    areaMeasurement2d.constructor.name,",
         "    measurement.constructor.name,",
         "    timeSlider.constructor.name,",
         "    directions.constructor.name,",
@@ -206,15 +212,15 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(28);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(28);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(30);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(30);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 25,
+      uiCount: 27,
       widgetCtors: [
         "LayerListCompat",
         "TableListCompat",
@@ -235,6 +241,8 @@ describe("migration runtime smoke", () => {
         "SketchCompat",
         "EditorCompat",
         "TrackCompat",
+        "DistanceMeasurement2DCompat",
+        "AreaMeasurement2DCompat",
         "MeasurementCompat",
         "TimeSliderCompat",
         "DirectionsCompat",

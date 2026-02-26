@@ -74,6 +74,8 @@ import {
   LegendCompat,
   LocateCompat,
   MeasurementCompat,
+  AreaMeasurement2DCompat,
+  DistanceMeasurement2DCompat,
   MapImageLayerCompat,
   MapViewCompat,
   MapViewUiCompat,
@@ -122,6 +124,8 @@ if (typeof CompassCompat !== "function") throw new Error("CompassCompat export m
 if (typeof AttributionCompat !== "function") throw new Error("AttributionCompat export missing");
 if (typeof LocateCompat !== "function") throw new Error("LocateCompat export missing");
 if (typeof MeasurementCompat !== "function") throw new Error("MeasurementCompat export missing");
+if (typeof AreaMeasurement2DCompat !== "function") throw new Error("AreaMeasurement2DCompat export missing");
+if (typeof DistanceMeasurement2DCompat !== "function") throw new Error("DistanceMeasurement2DCompat export missing");
 if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export missing");
 if (typeof ExpandCompat !== "function") throw new Error("ExpandCompat export missing");
 if (typeof FullscreenCompat !== "function") throw new Error("FullscreenCompat export missing");

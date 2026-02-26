@@ -206,6 +206,11 @@ export type {
   MeasurementResultCompat,
   MeasurementToolCompat,
 } from "./esri-compat/measurement.js";
+export { AreaMeasurement2DCompat, DistanceMeasurement2DCompat } from "./esri-compat/measurement-2d.js";
+export type {
+  AreaMeasurement2DCompatOptions,
+  DistanceMeasurement2DCompatOptions,
+} from "./esri-compat/measurement-2d.js";
 export { TimeSliderCompat } from "./esri-compat/time-slider.js";
 export type {
   TimeExtentCompat,

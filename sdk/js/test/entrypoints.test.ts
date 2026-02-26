@@ -29,6 +29,8 @@ import {
   LegendCompat,
   LocateCompat,
   FullscreenCompat,
+  AreaMeasurement2DCompat,
+  DistanceMeasurement2DCompat,
   MeasurementCompat,
   MapCompat,
   MapImageLayerCompat,
@@ -103,6 +105,8 @@ describe("entrypoint modules", () => {
     expect(MapViewUiCompat).toBeTypeOf("function");
     expect(PrintCompat).toBeTypeOf("function");
     expect(MeasurementCompat).toBeTypeOf("function");
+    expect(AreaMeasurement2DCompat).toBeTypeOf("function");
+    expect(DistanceMeasurement2DCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
     expect(RouteLayerCompat).toBeTypeOf("function");
     expect(RouteTaskCompat).toBeTypeOf("function");
