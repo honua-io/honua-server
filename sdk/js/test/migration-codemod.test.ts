@@ -1291,7 +1291,7 @@ describe("runEsriCompatCodemod", () => {
         "import TableList from '@arcgis/core/widgets/TableList';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
-        "const tableList = new TableList({ view, container: 'table-list', tables: [{ id: 'parcels' }] });",
+        "const tableList = new TableList({ view, container: 'table-list', tables: [{ id: 'parcels' }], autoRefresh: false });",
         "void tableList;",
       ].join("\n"),
       "utf8",
@@ -1318,7 +1318,7 @@ describe("runEsriCompatCodemod", () => {
       'import { MapCompat, MapViewCompat, TableListCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain(
-      "new TableListCompat({ view, container: 'table-list', tables: [{ id: 'parcels' }] })",
+      "new TableListCompat({ view, container: 'table-list', tables: [{ id: 'parcels' }], autoRefresh: false })",
     );
     expect(nextSource).not.toContain("@arcgis/core/widgets/TableList");
   });
@@ -1334,7 +1334,7 @@ describe("runEsriCompatCodemod", () => {
         "import BasemapLayerList from '@arcgis/core/widgets/BasemapLayerList';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
-        "const basemapLayerList = new BasemapLayerList({ view, container: 'basemap-layer-list' });",
+        "const basemapLayerList = new BasemapLayerList({ view, container: 'basemap-layer-list', autoRefresh: false });",
         "void basemapLayerList;",
       ].join("\n"),
       "utf8",
@@ -1361,7 +1361,7 @@ describe("runEsriCompatCodemod", () => {
       'import { BasemapLayerListCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain(
-      "new BasemapLayerListCompat({ view, container: 'basemap-layer-list' })",
+      "new BasemapLayerListCompat({ view, container: 'basemap-layer-list', autoRefresh: false })",
     );
     expect(nextSource).not.toContain("@arcgis/core/widgets/BasemapLayerList");
   });
@@ -1477,7 +1477,7 @@ describe("runEsriCompatCodemod", () => {
         "const locate = new Locate({ view, container: 'locate-div' });",
         "const scaleBar = new ScaleBar({ view, container: 'scale-div', unit: 'dual' });",
         "const search = new Search({ view, container: 'search-div', includeDefaultSources: false });",
-        "const basemapGallery = new BasemapGallery({ view, container: 'gallery-div' });",
+        "const basemapGallery = new BasemapGallery({ view, container: 'gallery-div', autoRefresh: false });",
         "const compass = new Compass({ view });",
         "const expand = new Expand({ view, content: legend, expanded: false });",
         "const bookmarks = new Bookmarks({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
@@ -1664,7 +1664,7 @@ describe("runEsriCompatCodemod", () => {
       "const search = new SearchCompat({ view, container: 'search-div', includeDefaultSources: false });",
     );
     expect(nextSource).toContain(
-      "const basemapGallery = new BasemapGalleryCompat({ view, container: 'gallery-div' });",
+      "const basemapGallery = new BasemapGalleryCompat({ view, container: 'gallery-div', autoRefresh: false });",
     );
     expect(nextSource).toContain("const compass = new CompassCompat({ view });");
     expect(nextSource).toContain("const expand = new ExpandCompat({ view, content: legend, expanded: false });");

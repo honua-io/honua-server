@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
 
 export interface BasemapGalleryCompatOptions {
   view?: unknown;
@@ -6,6 +6,7 @@ export interface BasemapGalleryCompatOptions {
   container?: unknown;
   source?: readonly unknown[];
   eventBus?: CompatEventBus;
+  autoRefresh?: boolean;
 }
 
 export class BasemapGalleryCompat {
@@ -13,17 +14,35 @@ export class BasemapGalleryCompat {
   public readonly map: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public readonly autoRefresh: boolean;
   public source: unknown[];
   public activeBasemap: unknown;
+
+  private readonly subscriptions: CompatEventSubscription[];
 
   public constructor(options: BasemapGalleryCompatOptions = {}) {
     this.view = options.view;
     this.map = options.map ?? extractViewMap(options.view);
     this.container = options.container;
     this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
+      options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
+    this.autoRefresh = options.autoRefresh ?? true;
     this.source = Array.isArray(options.source) ? [...options.source] : [];
     this.activeBasemap = extractMapBasemap(this.map);
+    this.subscriptions = [];
+
+    if (this.autoRefresh) {
+      this.subscriptions.push(
+        this.eventBus.on("map.basemap-changed", (event) => {
+          this.activeBasemap = extractPayloadBasemap(event.payload);
+          this.eventBus.emit(
+            "basemap-gallery.active-basemap-changed",
+            { basemap: this.activeBasemap },
+            this,
+          );
+        }),
+      );
+    }
   }
 
   public get basemaps(): readonly unknown[] {
@@ -41,13 +60,27 @@ export class BasemapGalleryCompat {
       return undefined;
     }
 
+    setMapBasemap(this.map, basemap, this.eventBus, this);
     this.activeBasemap = basemap;
-    if (isRecord(this.map)) {
-      this.map.basemap = basemap;
-    }
     this.eventBus.emit("basemap-gallery.selected", { basemap }, this);
     this.eventBus.emit("basemap.toggle", { activeBasemap: basemap }, this);
     return basemap;
+  }
+
+  public refresh(): unknown {
+    this.activeBasemap = extractMapBasemap(this.map);
+    this.eventBus.emit(
+      "basemap-gallery.active-basemap-changed",
+      { basemap: this.activeBasemap },
+      this,
+    );
+    return this.activeBasemap;
+  }
+
+  public destroy(): void {
+    for (const subscription of this.subscriptions.splice(0)) {
+      subscription.remove();
+    }
   }
 
   private resolveBasemap(basemapOrId: unknown): unknown {
@@ -68,6 +101,23 @@ export class BasemapGalleryCompat {
   }
 }
 
+interface MapBasemapSetter {
+  setBasemap(basemap: unknown): void;
+}
+
+function setMapBasemap(map: unknown, basemap: unknown, eventBus: CompatEventBus, source: unknown): void {
+  if (!isRecord(map)) {
+    return;
+  }
+  if (isMapBasemapSetter(map)) {
+    map.setBasemap(basemap);
+    return;
+  }
+
+  map.basemap = basemap;
+  eventBus.emit("map.basemap-changed", { basemap }, source);
+}
+
 function extractViewMap(view: unknown): unknown {
   if (!isRecord(view)) {
     return undefined;
@@ -80,6 +130,17 @@ function extractMapBasemap(map: unknown): unknown {
     return undefined;
   }
   return map.basemap;
+}
+
+function extractPayloadBasemap(payload: unknown): unknown {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  return payload.basemap;
+}
+
+function isMapBasemapSetter(value: unknown): value is MapBasemapSetter {
+  return isRecord(value) && typeof value.setBasemap === "function";
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

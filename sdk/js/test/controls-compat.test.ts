@@ -42,6 +42,11 @@ describe("common controls compat", () => {
     expect(toggle.toggle()).toBe("satellite");
     expect(map.basemap).toBe("satellite");
     expect(toggle.nextBasemap).toBe("streets");
+
+    map.setBasemap("gray");
+    expect(toggle.activeBasemap).toBe("gray");
+
+    toggle.destroy();
   });
 
   it("ScaleBarCompat refreshes text when view zoom changes", async () => {

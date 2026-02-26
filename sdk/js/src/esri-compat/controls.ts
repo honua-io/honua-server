@@ -68,14 +68,21 @@ export class BasemapToggleCompat {
   public activeBasemap: unknown;
   public nextBasemap: unknown;
 
+  private readonly subscriptions: CompatEventSubscription[];
+
   public constructor(options: BasemapToggleCompatOptions = {}) {
     this.view = options.view;
     this.map = options.map ?? extractViewMap(options.view);
     this.container = options.container;
     this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
+      options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
     this.activeBasemap = extractMapBasemap(this.map);
     this.nextBasemap = options.nextBasemap;
+    this.subscriptions = [
+      this.eventBus.on("map.basemap-changed", (event) => {
+        this.activeBasemap = extractPayloadBasemap(event.payload);
+      }),
+    ];
   }
 
   public toggle(): unknown {
@@ -85,8 +92,8 @@ export class BasemapToggleCompat {
     }
 
     const previous = currentMap.basemap;
-    currentMap.basemap = this.nextBasemap;
-    this.activeBasemap = currentMap.basemap;
+    setMapBasemap(currentMap, this.nextBasemap, this.eventBus, this);
+    this.activeBasemap = extractMapBasemap(currentMap);
     this.nextBasemap = previous;
     this.eventBus.emit(
       "basemap.toggle",
@@ -97,6 +104,12 @@ export class BasemapToggleCompat {
       this,
     );
     return this.activeBasemap;
+  }
+
+  public destroy(): void {
+    for (const subscription of this.subscriptions.splice(0)) {
+      subscription.remove();
+    }
   }
 }
 
@@ -406,6 +419,10 @@ interface GoToProvider {
   goTo(target: { center?: unknown; zoom?: number }): Promise<unknown> | unknown;
 }
 
+interface MapBasemapSetter {
+  setBasemap(basemap: unknown): void;
+}
+
 function isGoToProvider(value: unknown): value is GoToProvider {
   return isRecord(value) && typeof value.goTo === "function";
 }
@@ -448,6 +465,30 @@ function extractMapBasemap(map: unknown): unknown {
     return undefined;
   }
   return map.basemap;
+}
+
+function extractPayloadBasemap(payload: unknown): unknown {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  return payload.basemap;
+}
+
+function setMapBasemap(map: unknown, basemap: unknown, eventBus: CompatEventBus, source: unknown): void {
+  if (!isRecord(map)) {
+    return;
+  }
+  if (isMapBasemapSetter(map)) {
+    map.setBasemap(basemap);
+    return;
+  }
+
+  map.basemap = basemap;
+  eventBus.emit("map.basemap-changed", { basemap }, source);
+}
+
+function isMapBasemapSetter(value: unknown): value is MapBasemapSetter {
+  return isRecord(value) && typeof value.setBasemap === "function";
 }
 
 function buildScaleBarText(scale: number, unit: ScaleBarUnitCompat): string {

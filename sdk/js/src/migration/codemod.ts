@@ -3849,6 +3849,7 @@ function isSafeTableListWidgetCompatCall(
     "map",
     "container",
     "tables",
+    "autoRefresh",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -4597,7 +4598,7 @@ function isSafeBasemapLayerListWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map", "container"]);
+  const allowed = new Set(["view", "map", "container", "autoRefresh"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4640,7 +4641,7 @@ function isSafeBasemapGalleryWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map", "container", "source"]);
+  const allowed = new Set(["view", "map", "container", "source", "autoRefresh"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

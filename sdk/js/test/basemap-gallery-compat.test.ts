@@ -5,6 +5,10 @@ import { BasemapGalleryCompat, CompatEventBus, MapCompat, MapViewCompat } from "
 describe("BasemapGalleryCompat", () => {
   it("selects basemap by id/title and updates map basemap", () => {
     const eventBus = new CompatEventBus();
+    const events: string[] = [];
+    eventBus.onAny((event) => {
+      events.push(event.type);
+    });
     const map = new MapCompat({ basemap: "streets", eventBus }) as MapCompat & { basemap: unknown };
     const view = new MapViewCompat({ map, eventBus });
 
@@ -25,6 +29,10 @@ describe("BasemapGalleryCompat", () => {
     expect(gallery.select("Streets")).toBe(streets);
     expect(map.basemap).toBe(streets);
     expect(gallery.activeBasemap).toBe(streets);
+    expect(events).toContain("map.basemap-changed");
+    expect(events).toContain("basemap-gallery.selected");
+
+    gallery.destroy();
   });
 
   it("updates source and returns undefined for unknown ids", () => {
@@ -34,5 +42,19 @@ describe("BasemapGalleryCompat", () => {
     gallery.setBasemaps(source);
     expect(gallery.basemaps).toEqual(source);
     expect(gallery.select("missing")).toBeUndefined();
+
+    gallery.destroy();
+  });
+
+  it("auto-refreshes active basemap when map basemap changes externally", () => {
+    const eventBus = new CompatEventBus();
+    const map = new MapCompat({ basemap: "streets", eventBus });
+    const gallery = new BasemapGalleryCompat({ map, eventBus });
+
+    expect(gallery.activeBasemap).toBe("streets");
+    map.setBasemap("topographic");
+    expect(gallery.activeBasemap).toBe("topographic");
+
+    gallery.destroy();
   });
 });
