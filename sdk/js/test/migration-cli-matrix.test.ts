@@ -88,6 +88,7 @@ describe("migration cli parity matrix", () => {
     const featureWidget = report.matrix.find((row) => row.kind === "feature-widget");
     const featureFormWidget = report.matrix.find((row) => row.kind === "feature-form-widget");
     const tableListWidget = report.matrix.find((row) => row.kind === "table-list-widget");
+    const featureTemplatesWidget = report.matrix.find((row) => row.kind === "feature-templates-widget");
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
@@ -95,6 +96,7 @@ describe("migration cli parity matrix", () => {
     expect(featureWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(featureFormWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(tableListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(featureTemplatesWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
   }, 20_000);

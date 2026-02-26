@@ -117,6 +117,7 @@ describe("arcgis migration integration", () => {
       "layer-list": 0,
       "table-list-widget": 0,
       "feature-widget": 0,
+      "feature-templates-widget": 0,
       "feature-form-widget": 0,
       "feature-table-widget": 0,
       "legend-widget": 0,
@@ -540,6 +541,37 @@ describe("arcgis migration integration", () => {
     );
     expect(migratedMain).toContain("const tableList = new TableListCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/TableList");
+  });
+
+  it("migrates feature templates fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-feature-templates-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(2);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["feature-templates-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, FeatureTemplatesCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const templates = new FeatureTemplatesCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTemplates");
   });
 
   it("migrates print widget fixture with ready gating", () => {

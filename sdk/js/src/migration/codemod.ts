@@ -32,6 +32,7 @@ export type CodemodConstructorKind =
   | "layer-list"
   | "table-list-widget"
   | "feature-widget"
+  | "feature-templates-widget"
   | "feature-form-widget"
   | "feature-table-widget"
   | "legend-widget"
@@ -169,6 +170,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Feature",
       "@arcgis/core/widgets/Feature.js",
+    ]),
+  },
+  {
+    kind: "feature-templates-widget",
+    compatSymbol: "FeatureTemplatesCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/FeatureTemplates",
+      "@arcgis/core/widgets/FeatureTemplates.js",
     ]),
   },
   {
@@ -841,6 +850,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
     "table-list-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-templates-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-form-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1525,6 +1535,8 @@ function isSafeConstructorCall(
       return isSafeTableListWidgetCompatCall(node);
     case "feature-widget":
       return isSafeFeatureWidgetCompatCall(node);
+    case "feature-templates-widget":
+      return isSafeFeatureTemplatesWidgetCompatCall(node);
     case "feature-form-widget":
       return isSafeFeatureFormWidgetCompatCall(node);
     case "feature-table-widget":
@@ -2233,6 +2245,55 @@ function isSafeFeatureWidgetCompatCall(
       return {
         ok: false,
         reason: "Feature options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureTemplatesWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureTemplates constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureTemplates constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layerInfos",
+    "container",
+    "filterFunction",
+    "groupBy",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureTemplates options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "FeatureTemplates options include unsupported properties; requires manual migration.",
       };
     }
   }

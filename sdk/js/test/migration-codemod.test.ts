@@ -349,6 +349,47 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureForm");
   });
 
+  it("rewrites safe FeatureTemplates constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-templates.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import FeatureTemplates from '@arcgis/core/widgets/FeatureTemplates';",
+        "const layer = new FeatureLayer({ url: layerUrl });",
+        "const templates = new FeatureTemplates({ layerInfos: [{ layer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted' });",
+        "void templates;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-templates-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat, FeatureTemplatesCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain(
+      "new FeatureTemplatesCompat({ layerInfos: [{ layer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted' })",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTemplates");
+  });
+
   it("rewrites safe Print constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "print.ts");
