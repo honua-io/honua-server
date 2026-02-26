@@ -48,6 +48,7 @@ import { HonuaClient } from "@honua/sdk";
 import {
   BasemapToggleCompat,
   BasemapGalleryCompat,
+  BookmarksCompat,
   CompassCompat,
   CompatEventBus,
   createArcGisTokenInterceptor,
@@ -86,6 +87,7 @@ if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompa
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
 if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");
+if (typeof BookmarksCompat !== "function") throw new Error("BookmarksCompat export missing");
 if (typeof CompassCompat !== "function") throw new Error("CompassCompat export missing");
 if (typeof LocateCompat !== "function") throw new Error("LocateCompat export missing");
 if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export missing");

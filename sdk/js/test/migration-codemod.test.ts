@@ -280,6 +280,7 @@ describe("runEsriCompatCodemod", () => {
         "import BasemapGallery from '@arcgis/core/widgets/BasemapGallery';",
         "import Compass from '@arcgis/core/widgets/Compass';",
         "import Expand from '@arcgis/core/widgets/Expand';",
+        "import Bookmarks from '@arcgis/core/widgets/Bookmarks';",
         "const view = {};",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div' });",
@@ -292,6 +293,7 @@ describe("runEsriCompatCodemod", () => {
         "const basemapGallery = new BasemapGallery({ view, container: 'gallery-div' });",
         "const compass = new Compass({ view });",
         "const expand = new Expand({ view, content: legend, expanded: false });",
+        "const bookmarks = new Bookmarks({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -303,6 +305,7 @@ describe("runEsriCompatCodemod", () => {
         "void basemapGallery;",
         "void compass;",
         "void expand;",
+        "void bookmarks;",
       ].join("\n"),
       "utf8",
     );
@@ -314,8 +317,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(11);
-    expect(result.metrics.autoMigratedCallSites).toBe(11);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(12);
+    expect(result.metrics.autoMigratedCallSites).toBe(12);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -372,10 +375,15 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["bookmarks-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { BasemapGalleryCompat, BasemapToggleCompat, CompassCompat, ExpandCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
+      'import { BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
@@ -394,6 +402,9 @@ describe("runEsriCompatCodemod", () => {
     );
     expect(nextSource).toContain("const compass = new CompassCompat({ view });");
     expect(nextSource).toContain("const expand = new ExpandCompat({ view, content: legend, expanded: false });");
+    expect(nextSource).toContain(
+      "const bookmarks = new BookmarksCompat({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -405,6 +416,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/BasemapGallery");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Compass");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Expand");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Bookmarks");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

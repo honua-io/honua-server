@@ -37,7 +37,8 @@ export type CodemodConstructorKind =
   | "search-widget"
   | "basemap-gallery-widget"
   | "expand-widget"
-  | "compass-widget";
+  | "compass-widget"
+  | "bookmarks-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -198,6 +199,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Compass",
       "@arcgis/core/widgets/Compass.js",
+    ]),
+  },
+  {
+    kind: "bookmarks-widget",
+    compatSymbol: "BookmarksCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Bookmarks",
+      "@arcgis/core/widgets/Bookmarks.js",
     ]),
   },
 ];
@@ -676,6 +685,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "basemap-gallery-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "bookmarks-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1347,6 +1357,8 @@ function isSafeConstructorCall(
       return isSafeExpandWidgetCompatCall(node);
     case "compass-widget":
       return isSafeCompassWidgetCompatCall(node);
+    case "bookmarks-widget":
+      return isSafeBookmarksWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2239,6 +2251,49 @@ function isSafeCompassWidgetCompatCall(
       return {
         ok: false,
         reason: "Compass options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeBookmarksWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Bookmarks constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Bookmarks constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "bookmarks"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Bookmarks options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Bookmarks options include unsupported properties; requires manual migration.",
       };
     }
   }

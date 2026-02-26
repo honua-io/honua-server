@@ -50,6 +50,8 @@ export type {
 } from "./esri-compat/controls.js";
 export { BasemapGalleryCompat } from "./esri-compat/basemap-gallery.js";
 export type { BasemapGalleryCompatOptions } from "./esri-compat/basemap-gallery.js";
+export { BookmarksCompat } from "./esri-compat/bookmarks.js";
+export type { BookmarkCompatItem, BookmarksCompatOptions } from "./esri-compat/bookmarks.js";
 export { ExpandCompat } from "./esri-compat/expand.js";
 export type { ExpandCompatOptions } from "./esri-compat/expand.js";
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";

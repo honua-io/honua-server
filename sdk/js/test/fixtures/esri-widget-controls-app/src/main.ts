@@ -11,6 +11,7 @@ import Search from "@arcgis/core/widgets/Search";
 import BasemapGallery from "@arcgis/core/widgets/BasemapGallery";
 import Expand from "@arcgis/core/widgets/Expand";
 import Compass from "@arcgis/core/widgets/Compass";
+import Bookmarks from "@arcgis/core/widgets/Bookmarks";
 
 const map = new Map({
   basemap: "streets",
@@ -32,6 +33,15 @@ const search = new Search({ view, container: "search-div", includeDefaultSources
 const basemapGallery = new BasemapGallery({ view, container: "gallery-div" });
 const compass = new Compass({ view });
 const expand = new Expand({ view, content: legend, expanded: false });
+const bookmarks = new Bookmarks({
+  view,
+  bookmarks: [
+    {
+      name: "Home",
+      target: { center: [0, 0], zoom: 2 },
+    },
+  ],
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -41,6 +51,7 @@ view.ui.add(search, "top-left");
 view.ui.add(basemapGallery, "top-right");
 view.ui.add(compass, "top-left");
 view.ui.add(expand, "top-right");
+view.ui.add(bookmarks, "top-right");
 
 popup.open({
   title: "Migration",
@@ -60,3 +71,4 @@ void search;
 void basemapGallery;
 void compass;
 void expand;
+void bookmarks;

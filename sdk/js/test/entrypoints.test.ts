@@ -4,6 +4,7 @@ import { HonuaClient, HonuaHttpError } from "../src/honua.js";
 import {
   BasemapToggleCompat,
   BasemapGalleryCompat,
+  BookmarksCompat,
   CompassCompat,
   CompatEventBus,
   createArcGisTokenInterceptor,
@@ -49,6 +50,7 @@ describe("entrypoint modules", () => {
     expect(HomeCompat).toBeTypeOf("function");
     expect(BasemapToggleCompat).toBeTypeOf("function");
     expect(BasemapGalleryCompat).toBeTypeOf("function");
+    expect(BookmarksCompat).toBeTypeOf("function");
     expect(CompassCompat).toBeTypeOf("function");
     expect(ExpandCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
