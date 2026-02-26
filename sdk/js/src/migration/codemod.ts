@@ -34,7 +34,8 @@ export type CodemodConstructorKind =
   | "basemap-toggle-widget"
   | "locate-widget"
   | "scale-bar-widget"
-  | "search-widget";
+  | "search-widget"
+  | "basemap-gallery-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -171,6 +172,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Search",
       "@arcgis/core/widgets/Search.js",
+    ]),
+  },
+  {
+    kind: "basemap-gallery-widget",
+    compatSymbol: "BasemapGalleryCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/BasemapGallery",
+      "@arcgis/core/widgets/BasemapGallery.js",
     ]),
   },
 ];
@@ -646,6 +655,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "locate-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "search-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "basemap-gallery-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1311,6 +1321,8 @@ function isSafeConstructorCall(
       return isSafeScaleBarWidgetCompatCall(node);
     case "search-widget":
       return isSafeSearchWidgetCompatCall(node);
+    case "basemap-gallery-widget":
+      return isSafeBasemapGalleryWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2074,6 +2086,49 @@ function isSafeSearchWidgetCompatCall(
       return {
         ok: false,
         reason: "Search options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapGalleryWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "BasemapGallery constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "BasemapGallery constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "source"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "BasemapGallery options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "BasemapGallery options include unsupported properties; requires manual migration.",
       };
     }
   }

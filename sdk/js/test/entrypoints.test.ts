@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { HonuaClient, HonuaHttpError } from "../src/honua.js";
 import {
   BasemapToggleCompat,
+  BasemapGalleryCompat,
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
@@ -45,6 +46,7 @@ describe("entrypoint modules", () => {
     expect(FeatureLayerCompat).toBeTypeOf("function");
     expect(HomeCompat).toBeTypeOf("function");
     expect(BasemapToggleCompat).toBeTypeOf("function");
+    expect(BasemapGalleryCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");
     expect(CompatEventBus).toBeTypeOf("function");

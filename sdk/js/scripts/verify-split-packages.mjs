@@ -47,6 +47,7 @@ try {
 import { HonuaClient } from "@honua/sdk";
 import {
   BasemapToggleCompat,
+  BasemapGalleryCompat,
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
@@ -82,6 +83,7 @@ if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriR
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
+if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");
 if (typeof LocateCompat !== "function") throw new Error("LocateCompat export missing");
 if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");

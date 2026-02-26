@@ -42,6 +42,8 @@ export type {
   ScaleBarCompatOptions,
   ScaleBarUnitCompat,
 } from "./esri-compat/controls.js";
+export { BasemapGalleryCompat } from "./esri-compat/basemap-gallery.js";
+export type { BasemapGalleryCompatOptions } from "./esri-compat/basemap-gallery.js";
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";
 export type {
   GraphicsLayerCompatOptions,

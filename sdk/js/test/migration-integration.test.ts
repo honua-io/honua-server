@@ -120,6 +120,7 @@ describe("arcgis migration integration", () => {
       "locate-widget": 0,
       "scale-bar-widget": 0,
       "search-widget": 0,
+      "basemap-gallery-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -446,8 +447,8 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(10);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(10);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(11);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(11);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -499,12 +500,17 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["basemap-gallery-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(report.readiness).toBe("ready");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { BasemapToggleCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
+      'import { BasemapGalleryCompat, BasemapToggleCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
@@ -514,11 +520,13 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const locate = new LocateCompat({ view });");
     expect(migratedMain).toContain('const scaleBar = new ScaleBarCompat({ view, unit: "dual" });');
     expect(migratedMain).toContain('const search = new SearchCompat({ view, container: "search-div", includeDefaultSources: false });');
+    expect(migratedMain).toContain('const basemapGallery = new BasemapGalleryCompat({ view, container: "gallery-div" });');
     expect(migratedMain).toContain('view.ui.add(layerList, "top-right");');
     expect(migratedMain).toContain('view.ui.add([legend, home], "top-left");');
     expect(migratedMain).toContain('view.ui.add(popup, { position: "manual", index: 0 });');
     expect(migratedMain).toContain('view.ui.add([basemapToggle, locate, scaleBar], "bottom-right");');
     expect(migratedMain).toContain('view.ui.add(search, "top-left");');
+    expect(migratedMain).toContain('view.ui.add(basemapGallery, "top-right");');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
@@ -527,6 +535,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Locate");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/ScaleBar");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Search");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/BasemapGallery");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {
