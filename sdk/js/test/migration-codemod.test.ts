@@ -794,4 +794,76 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/Map.js");
     expect(nextSource).not.toContain("@arcgis/core/views/MapView");
   });
+
+  it("rewrites supported dynamic imports for esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "lazy-esri-leaflet.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadLayerFactory() {",
+        "  const module = await import('@arcgis/core/layers/FeatureLayer');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(nextSource).toContain(
+      "await Promise.resolve({ default: HonuaEsriLeaflet.featureLayer })",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
+  });
+
+  it("keeps unsupported dynamic imports as manual TODOs for esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "lazy-unsupported-esri-leaflet.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadMapCtor() {",
+        "  const module = await import('@arcgis/core/Map');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+      annotateTodos: true,
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos[0]).toMatchObject({
+      kind: "map",
+    });
+    expect(result.manualTodos[0]?.reason).toContain("Dynamic import");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("@arcgis/core/Map");
+    expect(nextSource).toContain("// TODO(honua-migrate)[map]:");
+  });
 });
