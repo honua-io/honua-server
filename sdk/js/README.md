@@ -105,4 +105,5 @@ The codemod is intentionally conservative:
   - per-type migration counts as `byKind=feature-layer:auto/manual/total,...`,
   - grouped manual reasons,
   - unhandled ArcGIS module inventory (with `static-import` / `dynamic-import` / `require` usage style),
+  - scanner flags include module-shape and risk hints (for example `commonjs-detected`, `scene-3d-detected`, `dynamic-import-detected`),
   - readiness classification (`ready`, `assisted`, `blocked`) with explicit gate results.

@@ -464,7 +464,7 @@ describe("arcgis migration integration", () => {
       "esri-assisted-require-app",
     );
 
-    expect(scanReport.flags).toEqual([]);
+    expect(scanReport.flags).toEqual(["commonjs-detected"]);
     expect(codemodResult.filesChanged).toBe(0);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
     expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
@@ -516,7 +516,7 @@ describe("arcgis migration integration", () => {
       "esri-assisted-require-js-cjs-app",
     );
 
-    expect(scanReport.flags).toEqual([]);
+    expect(scanReport.flags).toEqual(["commonjs-detected"]);
     expect(codemodResult.filesChanged).toBe(0);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
     expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);

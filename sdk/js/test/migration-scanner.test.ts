@@ -109,7 +109,7 @@ describe("scanArcGisUsage", () => {
     ]);
     expect(report.symbolUsageCounts.Map).toBeGreaterThan(0);
     expect(report.filesWithArcGisImports).toBe(1);
-    expect(report.flags).toEqual([]);
+    expect(report.flags).toEqual(["commonjs-detected"]);
   });
 
   it("captures destructured require default imports with local symbol usage", () => {
@@ -135,7 +135,7 @@ describe("scanArcGisUsage", () => {
     ]);
     expect(report.symbolUsageCounts.MapCtor).toBeGreaterThan(0);
     expect(report.filesWithArcGisImports).toBe(1);
-    expect(report.flags).toEqual([]);
+    expect(report.flags).toEqual(["commonjs-detected"]);
   });
 
   it("captures arcgis re-export declarations", () => {
