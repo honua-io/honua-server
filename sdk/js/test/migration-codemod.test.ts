@@ -2039,8 +2039,8 @@ describe("runEsriCompatCodemod", () => {
         "import MapView from '@arcgis/core/views/MapView';",
         "import SceneView from '@arcgis/core/views/SceneView';",
         "import WebMap from '@arcgis/core/WebMap';",
-        "const map = new Map({ basemap: 'streets' });",
-        "const view = new MapView({ map, zoom: 4 });",
+        "const map = new Map({ basemap: 'streets', ground: 'world-elevation', tables: [tableLayer], spatialReference: { wkid: 3857 } });",
+        "const view = new MapView({ map, zoom: 4, scale: 5000000, rotation: 10, extent: initialExtent, constraints: { minZoom: 2 }, padding: { left: 8 }, highlightOptions: { color: '#ff0' }, spatialReference: { wkid: 4326 } });",
         "const scene = new SceneView({ map, viewingMode: 'global', qualityProfile: 'high' });",
         "const webMap = new WebMap({ portalItem: { id: 'abc123' } });",
         "void map; void view; void scene; void webMap;",
@@ -2087,8 +2087,16 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/views/MapView");
     expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
     expect(nextSource).not.toContain("@arcgis/core/WebMap");
-    expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
-    expect(nextSource).toContain("const view = new MapViewCompat({ map, zoom: 4 });");
+    expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets'");
+    expect(nextSource).toContain("ground: 'world-elevation'");
+    expect(nextSource).toContain("tables: [tableLayer]");
+    expect(nextSource).toContain("spatialReference: { wkid: 3857 }");
+    expect(nextSource).toContain("const view = new MapViewCompat({ map, zoom: 4, scale: 5000000, rotation: 10");
+    expect(nextSource).toContain("extent: initialExtent");
+    expect(nextSource).toContain("constraints: { minZoom: 2 }");
+    expect(nextSource).toContain("padding: { left: 8 }");
+    expect(nextSource).toContain("highlightOptions: { color: '#ff0' }");
+    expect(nextSource).toContain("spatialReference: { wkid: 4326 }");
     expect(nextSource).toContain(
       "const scene = new SceneViewCompat({ map, viewingMode: 'global', qualityProfile: 'high' });",
     );

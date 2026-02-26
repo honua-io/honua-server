@@ -150,8 +150,8 @@ The codemod is intentionally conservative:
   - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `sublayers`, `opacity`, and `visible`)
   - `new TileLayer({ url: ... })` -> `new TileLayerCompat({ url: ... })` (supports `opacity` and `visible`)
   - `new RouteLayer(...)` -> `new RouteLayerCompat(...)`
-  - `new Map(...)` -> `new MapCompat(...)`
-  - `new MapView(...)` -> `new MapViewCompat(...)`
+  - `new Map(...)` -> `new MapCompat(...)` (supports `basemap`, `layers`, `ground`, `tables`, `portalItem`, and `spatialReference`)
+  - `new MapView(...)` -> `new MapViewCompat(...)` (supports `map`, `container`, `center`, `zoom`, `scale`, `rotation`, `extent`, `constraints`, `padding`, `highlightOptions`, `spatialReference`, and `popup`)
   - `new SceneView(...)` -> `new SceneViewCompat(...)`
   - `new WebMap(...)` -> `new WebMapCompat(...)`
   - `new LayerList(...)` -> `new LayerListCompat(...)`

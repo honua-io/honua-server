@@ -5,6 +5,13 @@ export interface MapViewCompatOptions {
   container?: unknown;
   center?: unknown;
   zoom?: number;
+  scale?: number;
+  rotation?: number;
+  extent?: unknown;
+  constraints?: unknown;
+  padding?: unknown;
+  highlightOptions?: unknown;
+  spatialReference?: unknown;
   popup?: unknown;
   eventBus?: CompatEventBus;
 }
@@ -12,6 +19,9 @@ export interface MapViewCompatOptions {
 export interface MapViewGoToTarget {
   center?: unknown;
   zoom?: number;
+  scale?: number;
+  rotation?: number;
+  extent?: unknown;
 }
 
 export interface MapViewHandle {
@@ -468,6 +478,13 @@ export class MapViewCompat {
   public container: unknown;
   public center: unknown;
   public zoom: number | undefined;
+  public scale: number | undefined;
+  public rotation: number | undefined;
+  public extent: unknown;
+  public constraints: unknown;
+  public padding: unknown;
+  public highlightOptions: unknown;
+  public spatialReference: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly popup: MapViewPopupCompat;
   public readonly ui: MapViewUiCompat;
@@ -482,6 +499,13 @@ export class MapViewCompat {
     this.container = options.container;
     this.center = options.center;
     this.zoom = options.zoom;
+    this.scale = options.scale;
+    this.rotation = options.rotation;
+    this.extent = options.extent;
+    this.constraints = options.constraints;
+    this.padding = options.padding;
+    this.highlightOptions = options.highlightOptions;
+    this.spatialReference = options.spatialReference;
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(options.map, options.container) ?? new CompatEventBus();
     this.popup = new MapViewPopupCompat((type, popupOptions) => {
@@ -514,10 +538,14 @@ export class MapViewCompat {
   }
 
   public toMap(screenPoint: MapViewScreenPoint): MapViewMapPoint {
-    return {
+    const mapPoint: MapViewMapPoint = {
       x: screenPoint.x,
       y: screenPoint.y,
     };
+    if (this.spatialReference !== undefined) {
+      mapPoint.spatialReference = this.spatialReference;
+    }
+    return mapPoint;
   }
 
   public toScreen(mapPoint: MapViewMapPoint): MapViewScreenPoint {
@@ -552,6 +580,18 @@ export class MapViewCompat {
     if (target.zoom !== undefined) {
       this.zoom = target.zoom;
       this.notifyWatchers("zoom", this.zoom);
+    }
+    if (target.scale !== undefined) {
+      this.scale = target.scale;
+      this.notifyWatchers("scale", this.scale);
+    }
+    if (target.rotation !== undefined) {
+      this.rotation = target.rotation;
+      this.notifyWatchers("rotation", this.rotation);
+    }
+    if (target.extent !== undefined) {
+      this.extent = target.extent;
+      this.notifyWatchers("extent", this.extent);
     }
     this.eventBus.emit("view.go-to", target, this);
     this.emit("go-to", target);
@@ -627,6 +667,20 @@ export class MapViewCompat {
     this.notifyWatchers("center", this.center);
     this.zoom = undefined;
     this.notifyWatchers("zoom", this.zoom);
+    this.scale = undefined;
+    this.notifyWatchers("scale", this.scale);
+    this.rotation = undefined;
+    this.notifyWatchers("rotation", this.rotation);
+    this.extent = undefined;
+    this.notifyWatchers("extent", this.extent);
+    this.constraints = undefined;
+    this.notifyWatchers("constraints", this.constraints);
+    this.padding = undefined;
+    this.notifyWatchers("padding", this.padding);
+    this.highlightOptions = undefined;
+    this.notifyWatchers("highlightOptions", this.highlightOptions);
+    this.spatialReference = undefined;
+    this.notifyWatchers("spatialReference", this.spatialReference);
     this.eventListeners.clear();
     this.watchListeners.clear();
   }

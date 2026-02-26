@@ -3,16 +3,28 @@ import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
 export interface MapCompatOptions {
   basemap?: unknown;
   layers?: unknown;
+  ground?: unknown;
+  tables?: unknown[];
+  portalItem?: unknown;
+  spatialReference?: unknown;
   eventBus?: CompatEventBus;
 }
 
 export class MapCompat {
   public basemap: unknown;
+  public ground: unknown;
+  public tables: unknown[];
+  public portalItem: unknown;
+  public spatialReference: unknown;
   public readonly eventBus: CompatEventBus;
   private readonly layersInternal: unknown[];
 
   public constructor(options: MapCompatOptions = {}) {
     this.basemap = options.basemap;
+    this.ground = options.ground;
+    this.tables = Array.isArray(options.tables) ? [...options.tables] : [];
+    this.portalItem = options.portalItem;
+    this.spatialReference = options.spatialReference;
     this.layersInternal = Array.isArray(options.layers) ? [...options.layers] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.layers) ?? new CompatEventBus();
   }
@@ -107,6 +119,26 @@ export class MapCompat {
     }
 
     return undefined;
+  }
+
+  public setBasemap(basemap: unknown): void {
+    this.basemap = basemap;
+    this.eventBus.emit("map.basemap-changed", { basemap }, this);
+  }
+
+  public setGround(ground: unknown): void {
+    this.ground = ground;
+    this.eventBus.emit("map.ground-changed", { ground }, this);
+  }
+
+  public setTables(tables: readonly unknown[]): void {
+    this.tables = [...tables];
+    this.eventBus.emit("map.tables-changed", { tables: this.tables }, this);
+  }
+
+  public setSpatialReference(spatialReference: unknown): void {
+    this.spatialReference = spatialReference;
+    this.eventBus.emit("map.spatial-reference-changed", { spatialReference }, this);
   }
 }
 

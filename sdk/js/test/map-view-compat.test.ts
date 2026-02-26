@@ -43,6 +43,43 @@ describe("MapCompat", () => {
     map.removeAll();
     expect(map.layers).toEqual([]);
   });
+
+  it("preserves map metadata options and emits basemap/ground/table/spatial events", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const map = new MapCompat({
+      basemap: "streets",
+      ground: "world-elevation",
+      tables: [{ id: "table-1" }],
+      portalItem: { id: "webmap-1" },
+      spatialReference: { wkid: 3857 },
+      eventBus,
+    });
+
+    expect(map.basemap).toBe("streets");
+    expect(map.ground).toBe("world-elevation");
+    expect(map.tables).toEqual([{ id: "table-1" }]);
+    expect(map.portalItem).toEqual({ id: "webmap-1" });
+    expect(map.spatialReference).toEqual({ wkid: 3857 });
+
+    map.setBasemap("satellite");
+    map.setGround("custom-ground");
+    map.setTables([{ id: "table-2" }]);
+    map.setSpatialReference({ wkid: 4326 });
+
+    expect(map.basemap).toBe("satellite");
+    expect(map.ground).toBe("custom-ground");
+    expect(map.tables).toEqual([{ id: "table-2" }]);
+    expect(map.spatialReference).toEqual({ wkid: 4326 });
+    expect(eventTypes).toContain("map.basemap-changed");
+    expect(eventTypes).toContain("map.ground-changed");
+    expect(eventTypes).toContain("map.tables-changed");
+    expect(eventTypes).toContain("map.spatial-reference-changed");
+  });
 });
 
 describe("MapViewCompat", () => {
@@ -52,7 +89,14 @@ describe("MapViewCompat", () => {
       map,
       container: "viewDiv",
       zoom: 3,
+      scale: 5000000,
+      rotation: 10,
       center: [-157.8, 21.3],
+      extent: { xmin: -160, ymin: 20, xmax: -155, ymax: 23 },
+      constraints: { minZoom: 2 },
+      padding: { left: 16, right: 16, top: 8, bottom: 8 },
+      highlightOptions: { color: "#ff0" },
+      spatialReference: { wkid: 4326 },
     });
 
     let callbackView: MapViewCompat | undefined;
@@ -63,22 +107,51 @@ describe("MapViewCompat", () => {
     expect(callbackView).toBe(view);
     expect(view.map).toBe(map);
     expect(view.zoom).toBe(3);
+    expect(view.scale).toBe(5000000);
+    expect(view.rotation).toBe(10);
+    expect(view.extent).toEqual({ xmin: -160, ymin: 20, xmax: -155, ymax: 23 });
+    expect(view.constraints).toEqual({ minZoom: 2 });
+    expect(view.padding).toEqual({ left: 16, right: 16, top: 8, bottom: 8 });
+    expect(view.highlightOptions).toEqual({ color: "#ff0" });
+    expect(view.spatialReference).toEqual({ wkid: 4326 });
 
-    await view.goTo({ zoom: 8, center: [-155, 19.5] });
+    await view.goTo({
+      zoom: 8,
+      center: [-155, 19.5],
+      scale: 1200000,
+      rotation: 35,
+      extent: { xmin: -159, ymin: 19, xmax: -154, ymax: 24 },
+    });
     expect(view.zoom).toBe(8);
     expect(view.center).toEqual([-155, 19.5]);
+    expect(view.scale).toBe(1200000);
+    expect(view.rotation).toBe(35);
+    expect(view.extent).toEqual({ xmin: -159, ymin: 19, xmax: -154, ymax: 24 });
+    expect(view.toMap({ x: 100, y: 200 })).toEqual({
+      x: 100,
+      y: 200,
+      spatialReference: { wkid: 4326 },
+    });
 
     view.destroy();
     expect(view.map).toBeUndefined();
+    expect(view.scale).toBeUndefined();
+    expect(view.rotation).toBeUndefined();
+    expect(view.extent).toBeUndefined();
+    expect(view.spatialReference).toBeUndefined();
   });
 
   it("supports watch and on handles", async () => {
     const view = new MapViewCompat({
       zoom: 2,
+      scale: 10000000,
+      rotation: 0,
       center: [0, 0],
     });
 
     const zoomValues: unknown[] = [];
+    const scaleValues: unknown[] = [];
+    const rotationValues: unknown[] = [];
     const centerValues: unknown[] = [];
     const events: unknown[] = [];
 
@@ -88,23 +161,35 @@ describe("MapViewCompat", () => {
     const centerHandle = view.watch("center", (value) => {
       centerValues.push(value);
     });
+    const scaleHandle = view.watch("scale", (value) => {
+      scaleValues.push(value);
+    });
+    const rotationHandle = view.watch("rotation", (value) => {
+      rotationValues.push(value);
+    });
     const eventHandle = view.on("go-to", (event) => {
       events.push(event);
     });
 
-    await view.goTo({ zoom: 4, center: [10, 20] });
+    await view.goTo({ zoom: 4, center: [10, 20], scale: 2500000, rotation: 20 });
     expect(zoomValues).toEqual([4]);
+    expect(scaleValues).toEqual([2500000]);
+    expect(rotationValues).toEqual([20]);
     expect(centerValues).toEqual([[10, 20]]);
-    expect(events).toEqual([{ zoom: 4, center: [10, 20] }]);
+    expect(events).toEqual([{ zoom: 4, center: [10, 20], scale: 2500000, rotation: 20 }]);
 
     zoomHandle.remove();
     centerHandle.remove();
+    scaleHandle.remove();
+    rotationHandle.remove();
     eventHandle.remove();
 
-    await view.goTo({ zoom: 6, center: [30, 40] });
+    await view.goTo({ zoom: 6, center: [30, 40], scale: 1000000, rotation: 35 });
     expect(zoomValues).toEqual([4]);
+    expect(scaleValues).toEqual([2500000]);
+    expect(rotationValues).toEqual([20]);
     expect(centerValues).toEqual([[10, 20]]);
-    expect(events).toEqual([{ zoom: 4, center: [10, 20] }]);
+    expect(events).toEqual([{ zoom: 4, center: [10, 20], scale: 2500000, rotation: 20 }]);
   });
 
   it("supports popup bridge helpers and popup watchers", () => {

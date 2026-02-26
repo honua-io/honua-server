@@ -3567,7 +3567,7 @@ function isSafeMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false
     };
   }
 
-  const allowed = new Set(["basemap", "layers"]);
+  const allowed = new Set(["basemap", "layers", "ground", "tables", "portalItem", "spatialReference"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3610,7 +3610,20 @@ function isSafeMapViewCompatCall(
     };
   }
 
-  const allowed = new Set(["map", "container", "center", "zoom", "popup"]);
+  const allowed = new Set([
+    "map",
+    "container",
+    "center",
+    "zoom",
+    "scale",
+    "rotation",
+    "extent",
+    "constraints",
+    "padding",
+    "highlightOptions",
+    "spatialReference",
+    "popup",
+  ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
