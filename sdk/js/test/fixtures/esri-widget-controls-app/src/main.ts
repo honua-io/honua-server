@@ -43,9 +43,12 @@ const view = new MapView({
 const layerList = new LayerList({ view });
 const legend = new Legend({ view });
 const popup = new Popup({ view, dockEnabled: true });
-const home = new Home({ view });
+const home = new Home({
+  view,
+  viewpoint: { center: [0, 0], zoom: 3 },
+});
 const basemapToggle = new BasemapToggle({ view, nextBasemap: "satellite" });
-const locate = new Locate({ view });
+const locate = new Locate({ view, zoom: 12 });
 const scaleBar = new ScaleBar({ view, unit: "dual" });
 const search = new Search({ view, container: "search-div", includeDefaultSources: false });
 const basemapGallery = new BasemapGallery({ view, container: "gallery-div" });

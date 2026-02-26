@@ -1472,9 +1472,9 @@ describe("runEsriCompatCodemod", () => {
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div', includeHidden: true, autoRefresh: false });",
         "const popup = new Popup({ view, container: 'popup-div', dockEnabled: true });",
-        "const home = new Home({ view, container: 'home-div' });",
+        "const home = new Home({ view, container: 'home-div', viewpoint: { center: [0, 0], zoom: 3 } });",
         "const basemapToggle = new BasemapToggle({ view, container: 'basemap-div', nextBasemap: 'satellite' });",
-        "const locate = new Locate({ view, container: 'locate-div' });",
+        "const locate = new Locate({ view, container: 'locate-div', zoom: 12, locateProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
         "const scaleBar = new ScaleBar({ view, container: 'scale-div', unit: 'dual' });",
         "const search = new Search({ view, container: 'search-div', includeDefaultSources: false, autoRefreshSources: false });",
         "const basemapGallery = new BasemapGallery({ view, container: 'gallery-div', autoRefresh: false });",
@@ -1654,11 +1654,15 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div', includeHidden: true, autoRefresh: false });");
     expect(nextSource).toContain("const popup = new PopupCompat({ view, container: 'popup-div', dockEnabled: true });");
-    expect(nextSource).toContain("const home = new HomeCompat({ view, container: 'home-div' });");
+    expect(nextSource).toContain(
+      "const home = new HomeCompat({ view, container: 'home-div', viewpoint: { center: [0, 0], zoom: 3 } });",
+    );
     expect(nextSource).toContain(
       "const basemapToggle = new BasemapToggleCompat({ view, container: 'basemap-div', nextBasemap: 'satellite' });",
     );
-    expect(nextSource).toContain("const locate = new LocateCompat({ view, container: 'locate-div' });");
+    expect(nextSource).toContain(
+      "const locate = new LocateCompat({ view, container: 'locate-div', zoom: 12, locateProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
+    );
     expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, container: 'scale-div', unit: 'dual' });");
     expect(nextSource).toContain(
       "const search = new SearchCompat({ view, container: 'search-div', includeDefaultSources: false, autoRefreshSources: false });",

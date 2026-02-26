@@ -1484,9 +1484,10 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
     expect(migratedMain).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
-    expect(migratedMain).toContain("const home = new HomeCompat({ view });");
+    expect(migratedMain).toContain("const home = new HomeCompat({");
+    expect(migratedMain).toContain("viewpoint: { center: [0, 0], zoom: 3 },");
     expect(migratedMain).toContain('const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: "satellite" });');
-    expect(migratedMain).toContain("const locate = new LocateCompat({ view });");
+    expect(migratedMain).toContain("const locate = new LocateCompat({ view, zoom: 12 });");
     expect(migratedMain).toContain('const scaleBar = new ScaleBarCompat({ view, unit: "dual" });');
     expect(migratedMain).toContain('const search = new SearchCompat({ view, container: "search-div", includeDefaultSources: false });');
     expect(migratedMain).toContain('const basemapGallery = new BasemapGalleryCompat({ view, container: "gallery-div" });');

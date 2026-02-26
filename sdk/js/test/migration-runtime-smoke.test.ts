@@ -117,6 +117,10 @@ describe("migration runtime smoke", () => {
         "import TableList from '@arcgis/core/widgets/TableList';",
         "import Legend from '@arcgis/core/widgets/Legend';",
         "import Popup from '@arcgis/core/widgets/Popup';",
+        "import Home from '@arcgis/core/widgets/Home';",
+        "import BasemapToggle from '@arcgis/core/widgets/BasemapToggle';",
+        "import Locate from '@arcgis/core/widgets/Locate';",
+        "import ScaleBar from '@arcgis/core/widgets/ScaleBar';",
         "import Search from '@arcgis/core/widgets/Search';",
         "import BasemapLayerList from '@arcgis/core/widgets/BasemapLayerList';",
         "import BasemapGallery from '@arcgis/core/widgets/BasemapGallery';",
@@ -149,6 +153,10 @@ describe("migration runtime smoke", () => {
         "const featureTemplates = new FeatureTemplates({ layerInfos: [{ layer: routeLayer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted' });",
         "const legend = new Legend({ view, container: 'legend' });",
         "const popup = new Popup({ view, container: 'popup', dockEnabled: true });",
+        "const home = new Home({ view, container: 'home-div', viewpoint: { center: [0, 0], zoom: 3 } });",
+        "const basemapToggle = new BasemapToggle({ view, container: 'basemap-toggle-div', nextBasemap: 'satellite' });",
+        "const locate = new Locate({ view, container: 'locate-div', zoom: 12, locateProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
+        "const scaleBar = new ScaleBar({ view, container: 'scalebar-div', unit: 'dual' });",
         "const search = new Search({ view, container: 'search', includeDefaultSources: false });",
         "const basemapLayerList = new BasemapLayerList({ view, container: 'basemap-layer-list' });",
         "const basemapGallery = new BasemapGallery({ view, container: 'gallery' });",
@@ -169,7 +177,7 @@ describe("migration runtime smoke", () => {
         "const coordinateConversion = new CoordinateConversion({ view, mode: 'live', multipleConversionsEnabled: true, formats: ['lonlat', 'dms'] });",
         "const printer = new Print({ view, container: 'print', printServiceUrl: 'https://example.test/print', templateOptions: { format: 'pdf', layout: 'a4-landscape' } });",
         "const swipe = new Swipe({ view, container: 'swipe', position: 45, leadingLayers: [], trailingLayers: [] });",
-        "view.ui.add([layerList, tableList, featureWidget, featureForm, featureTemplates, legend, popup, search, basemapLayerList, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, distanceMeasurement2d, areaMeasurement2d, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
+        "view.ui.add([layerList, tableList, featureWidget, featureForm, featureTemplates, legend, popup, home, basemapToggle, locate, scaleBar, search, basemapLayerList, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, distanceMeasurement2d, areaMeasurement2d, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
@@ -182,6 +190,10 @@ describe("migration runtime smoke", () => {
         "    featureTemplates.constructor.name,",
         "    legend.constructor.name,",
         "    popup.constructor.name,",
+        "    home.constructor.name,",
+        "    basemapToggle.constructor.name,",
+        "    locate.constructor.name,",
+        "    scaleBar.constructor.name,",
         "    search.constructor.name,",
         "    basemapLayerList.constructor.name,",
         "    basemapGallery.constructor.name,",
@@ -216,15 +228,15 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(30);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(30);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(34);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(34);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 27,
+      uiCount: 31,
       widgetCtors: [
         "LayerListCompat",
         "TableListCompat",
@@ -233,6 +245,10 @@ describe("migration runtime smoke", () => {
         "FeatureTemplatesCompat",
         "LegendCompat",
         "PopupCompat",
+        "HomeCompat",
+        "BasemapToggleCompat",
+        "LocateCompat",
+        "ScaleBarCompat",
         "SearchCompat",
         "BasemapLayerListCompat",
         "BasemapGalleryCompat",

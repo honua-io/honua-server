@@ -4383,7 +4383,7 @@ function isSafeHomeWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "container"]);
+  const allowed = new Set(["view", "container", "viewpoint"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4469,7 +4469,7 @@ function isSafeLocateWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "container"]);
+  const allowed = new Set(["view", "container", "zoom", "locateProvider"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
