@@ -83,7 +83,7 @@ describe("scanArcGisUsage", () => {
       },
     ]);
     expect(report.filesWithArcGisImports).toBe(1);
-    expect(report.flags).toEqual([]);
+    expect(report.flags).toEqual(["auth-or-request-customization-detected"]);
   });
 
   it("captures require imports with local symbol usage", () => {
@@ -182,5 +182,22 @@ describe("scanArcGisUsage", () => {
     expect(summary).toContain("filesWithArcGisImports=1");
     expect(summary).toContain("importCount=1");
     expect(summary).toContain("FeatureLayer");
+  });
+
+  it("flags auth/request customization patterns", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "auth.ts"),
+      [
+        "import esriConfig from '@arcgis/core/config';",
+        "import IdentityManager from '@arcgis/core/identity/IdentityManager';",
+        "esriConfig.request.interceptors.push({ before() {} });",
+        "void IdentityManager;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.flags).toContain("auth-or-request-customization-detected");
   });
 });

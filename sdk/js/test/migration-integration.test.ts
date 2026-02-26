@@ -739,7 +739,7 @@ describe("arcgis migration integration", () => {
       "esri-assisted-side-effect-app",
     );
 
-    expect(scanReport.flags).toEqual([]);
+    expect(scanReport.flags).toEqual(["auth-or-request-customization-detected"]);
     expect(scanReport.imports).toEqual([
       {
         file: path.join(workingCopy, "src", "main.ts"),

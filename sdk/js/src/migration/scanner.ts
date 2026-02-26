@@ -224,6 +224,13 @@ function addFileLevelFlags(source: string, flags: Set<string>): void {
   if (/Sketch|Editor|Track|Directions|RouteLayer/.test(source)) {
     flags.add("advanced-widget-or-networking-detected");
   }
+  if (
+    /IdentityManager|OAuthInfo|esriConfig|request\s*\.\s*interceptors|\/request["']|generateToken|Credential/i.test(
+      source,
+    )
+  ) {
+    flags.add("auth-or-request-customization-detected");
+  }
   if (/\bmodule\.exports\b/.test(source) || /\bexports\.[A-Za-z_$][A-Za-z0-9_$]*\b/.test(source)) {
     flags.add("commonjs-detected");
   }
