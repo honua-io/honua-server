@@ -100,6 +100,8 @@ describe("arcgis migration integration", () => {
     });
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 0,
+      "graphics-layer": 0,
+      "group-layer": 0,
       "map-image-layer": 0,
       map: 0,
       "map-view": 0,
@@ -315,6 +317,46 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const parcels = new MapImageLayerCompat({");
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/MapImageLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
+  });
+
+  it("migrates map + group-layer + graphics-layer fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-layer-tree-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["graphics-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["group-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { GraphicsLayerCompat, GroupLayerCompat, MapCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const graphics = new GraphicsLayerCompat({");
+    expect(migratedMain).toContain("const group = new GroupLayerCompat({");
+    expect(migratedMain).toContain("const map = new MapCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/GraphicsLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/GroupLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 

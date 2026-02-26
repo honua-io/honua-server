@@ -4,6 +4,8 @@ export type {
   ApplyEditsRequest,
   ExportMapRequest,
   HonuaClientOptions,
+  MapIdentifyRequest,
+  MapLegendRequest,
   QueryFeaturesRequest,
   QueryMethod,
   QueryRelatedRecordsRequest,

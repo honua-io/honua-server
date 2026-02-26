@@ -100,7 +100,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/MapImageLayer/Map/MapView/SceneView/WebMap constructor call sites in safe-codemod scope",
+        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/Map/MapView/SceneView/WebMap constructor call sites in safe-codemod scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -125,6 +125,8 @@ function summarizeManualTodosByKind(
 ): Record<CodemodConstructorKind, number> {
   const summary: Record<CodemodConstructorKind, number> = {
     "feature-layer": 0,
+    "graphics-layer": 0,
+    "group-layer": 0,
     "map-image-layer": 0,
     map: 0,
     "map-view": 0,

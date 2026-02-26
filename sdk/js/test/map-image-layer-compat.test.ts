@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MapImageLayerCompat, parseMapServiceUrl } from "../src/index.js";
+import { CompatEventBus, MapImageLayerCompat, parseMapServiceUrl } from "../src/index.js";
 
 describe("parseMapServiceUrl", () => {
   it("parses canonical map service URL", () => {
@@ -84,5 +84,71 @@ describe("MapImageLayerCompat", () => {
     expect(JSON.stringify(exportRequest)).toContain('"bbox":[-180,-90,180,90]');
     expect(JSON.stringify(exportRequest)).toContain('"size":[256,256]');
     expect(JSON.stringify(exportRequest)).toContain('"format":"png32"');
+  });
+
+  it("maps legend and identify helpers with serviceId and emits visibility events", async () => {
+    const requests: Array<{ kind: string; payload: unknown }> = [];
+    const events: string[] = [];
+    const eventBus = new CompatEventBus();
+    eventBus.onAny((event) => {
+      events.push(event.type);
+    });
+
+    const layer = new MapImageLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      eventBus,
+      client: new (class {
+        public getMapServiceMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public exportMap(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public getMapLegend(request: unknown): Promise<unknown> {
+          requests.push({ kind: "legend", payload: request });
+          return Promise.resolve({ layers: [] });
+        }
+
+        public identifyMap(request: unknown): Promise<unknown> {
+          requests.push({ kind: "identify", payload: request });
+          return Promise.resolve({ results: [] });
+        }
+      })() as any,
+    });
+
+    expect(await layer.getLegend({ size: 18 })).toEqual({ layers: [] });
+    expect(await layer.legend({ dynamicLayers: '[{"id":1}]' })).toEqual({ layers: [] });
+    expect(
+      await layer.identify({
+        geometry: { x: 1, y: 2 },
+        mapExtent: [0, 0, 10, 10],
+        imageDisplay: [256, 256, 96],
+      }),
+    ).toEqual({ results: [] });
+
+    layer.setVisibility(false);
+    expect(layer.visible).toBe(false);
+
+    expect(requests).toHaveLength(3);
+    expect(requests[0]).toMatchObject({
+      kind: "legend",
+      payload: { serviceId: "default", size: 18 },
+    });
+    expect(requests[1]).toMatchObject({
+      kind: "legend",
+      payload: { serviceId: "default", dynamicLayers: '[{"id":1}]' },
+    });
+    expect(requests[2]).toMatchObject({
+      kind: "identify",
+      payload: {
+        serviceId: "default",
+        geometry: { x: 1, y: 2 },
+        mapExtent: [0, 0, 10, 10],
+        imageDisplay: [256, 256, 96],
+      },
+    });
+    expect(events).toContain("layer.visibility-changed");
   });
 });

@@ -38,6 +38,33 @@ export interface ExportMapRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface MapLegendRequest {
+  serviceId: string;
+  responseFormat?: "json" | "pjson";
+  size?: string | number | [number, number];
+  dynamicLayers?: string;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface MapIdentifyRequest {
+  serviceId: string;
+  geometry: string | Record<string, unknown>;
+  geometryType?: string;
+  sr?: string | number;
+  layers?: string;
+  tolerance?: number;
+  mapExtent: string | [number, number, number, number];
+  imageDisplay: string | [number, number, number];
+  returnGeometry?: boolean;
+  responseFormat?: "json" | "pjson";
+  maxAllowableOffset?: number;
+  layerDefs?: string;
+  dynamicLayers?: string;
+  time?: string;
+  method?: QueryMethod;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
 export interface ApplyEditsRequest {
   serviceId: string;
   layerId: number;

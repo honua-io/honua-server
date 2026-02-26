@@ -1,18 +1,35 @@
 import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
 
-export interface MapCompatOptions {
-  basemap?: unknown;
-  layers?: unknown;
+export interface GroupLayerCompatOptions {
+  id?: string;
+  title?: string;
+  layers?: unknown[];
+  visible?: boolean;
+  opacity?: number;
+  listMode?: "show" | "hide";
+  visibilityMode?: "independent" | "inherited" | "exclusive";
   eventBus?: CompatEventBus;
 }
 
-export class MapCompat {
-  public basemap: unknown;
+export class GroupLayerCompat {
+  public readonly type: "group";
+  public id: string | undefined;
+  public title: string | undefined;
+  public visible: boolean;
+  public opacity: number;
+  public listMode: "show" | "hide";
+  public visibilityMode: "independent" | "inherited" | "exclusive";
   public readonly eventBus: CompatEventBus;
   private readonly layersInternal: unknown[];
 
-  public constructor(options: MapCompatOptions = {}) {
-    this.basemap = options.basemap;
+  public constructor(options: GroupLayerCompatOptions = {}) {
+    this.type = "group";
+    this.id = options.id;
+    this.title = options.title;
+    this.visible = options.visible ?? true;
+    this.opacity = options.opacity ?? 1;
+    this.listMode = options.listMode ?? "show";
+    this.visibilityMode = options.visibilityMode ?? "independent";
     this.layersInternal = Array.isArray(options.layers) ? [...options.layers] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.layers) ?? new CompatEventBus();
   }
@@ -33,13 +50,13 @@ export class MapCompat {
   public add(layer: unknown, index?: number): void {
     if (index === undefined) {
       this.layersInternal.push(layer);
-      this.eventBus.emit("map.layer-added", { layer, index: this.layersInternal.length - 1 }, this);
+      this.eventBus.emit("group-layer.layer-added", { groupLayerId: this.id, layer, index: this.layersInternal.length - 1 }, this);
       return;
     }
 
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, layer);
-    this.eventBus.emit("map.layer-added", { layer, index: insertAt }, this);
+    this.eventBus.emit("group-layer.layer-added", { groupLayerId: this.id, layer, index: insertAt }, this);
   }
 
   public addMany(layers: readonly unknown[], index?: number): void {
@@ -50,13 +67,13 @@ export class MapCompat {
     if (index === undefined) {
       const startIndex = this.layersInternal.length;
       this.layersInternal.push(...layers);
-      this.eventBus.emit("map.layers-added", { layers: [...layers], index: startIndex }, this);
+      this.eventBus.emit("group-layer.layers-added", { groupLayerId: this.id, layers: [...layers], index: startIndex }, this);
       return;
     }
 
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, ...layers);
-    this.eventBus.emit("map.layers-added", { layers: [...layers], index: insertAt }, this);
+    this.eventBus.emit("group-layer.layers-added", { groupLayerId: this.id, layers: [...layers], index: insertAt }, this);
   }
 
   public remove(layer: unknown): boolean {
@@ -66,7 +83,7 @@ export class MapCompat {
     }
 
     this.layersInternal.splice(index, 1);
-    this.eventBus.emit("map.layer-removed", { layer, index }, this);
+    this.eventBus.emit("group-layer.layer-removed", { groupLayerId: this.id, layer, index }, this);
     return true;
   }
 
@@ -83,20 +100,7 @@ export class MapCompat {
   public removeAll(): void {
     const removedLayers = [...this.layersInternal];
     this.layersInternal.length = 0;
-    this.eventBus.emit("map.layers-cleared", { layers: removedLayers }, this);
-  }
-
-  public reorder(layer: unknown, index: number): boolean {
-    const existingIndex = this.layersInternal.indexOf(layer);
-    if (existingIndex < 0) {
-      return false;
-    }
-
-    this.layersInternal.splice(existingIndex, 1);
-    const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
-    this.layersInternal.splice(insertAt, 0, layer);
-    this.eventBus.emit("map.layer-reordered", { layer, fromIndex: existingIndex, toIndex: insertAt }, this);
-    return true;
+    this.eventBus.emit("group-layer.layers-cleared", { groupLayerId: this.id, layers: removedLayers }, this);
   }
 
   public findLayerById(id: string): unknown {
@@ -108,6 +112,16 @@ export class MapCompat {
 
     return undefined;
   }
+
+  public setVisibility(visible: boolean): void {
+    this.visible = visible;
+    this.eventBus.emit("layer.visibility-changed", { layerId: this.id, visible }, this);
+  }
+
+  public setOpacity(opacity: number): void {
+    this.opacity = opacity;
+    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
+  }
 }
 
 interface LayerWithId {
@@ -115,12 +129,7 @@ interface LayerWithId {
 }
 
 function isLayerWithId(value: unknown): value is LayerWithId {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "id" in value &&
-    typeof value.id === "string"
-  );
+  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string";
 }
 
 function extractNestedLayers(layer: unknown): unknown[] {

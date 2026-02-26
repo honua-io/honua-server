@@ -153,6 +153,78 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
   });
 
+  it("rewrites safe GraphicsLayer constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "graphics-layer.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import GraphicsLayer from '@arcgis/core/layers/GraphicsLayer';",
+        "const graphics = new GraphicsLayer({ id: 'graphics', visible: true, opacity: 0.9 });",
+        "void graphics;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["graphics-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { GraphicsLayerCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("const graphics = new GraphicsLayerCompat({ id: 'graphics', visible: true, opacity: 0.9 });");
+    expect(nextSource).not.toContain("@arcgis/core/layers/GraphicsLayer");
+  });
+
+  it("rewrites safe GroupLayer constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "group-layer.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import GroupLayer from '@arcgis/core/layers/GroupLayer';",
+        "const group = new GroupLayer({ id: 'group-1', layers: [{ id: 'child' }], visibilityMode: 'independent' });",
+        "void group;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["group-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { GroupLayerCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain(
+      "const group = new GroupLayerCompat({ id: 'group-1', layers: [{ id: 'child' }], visibilityMode: 'independent' });",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/layers/GroupLayer");
+  });
+
   it("rewrites constructors imported via named default alias", () => {
     const root = makeTempProject();
     const file = path.join(root, "default-alias.ts");

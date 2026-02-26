@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MapCompat, MapViewCompat } from "../src/index.js";
+import { CompatEventBus, MapCompat, MapViewCompat } from "../src/index.js";
 
 describe("MapCompat", () => {
   it("tracks layers through add and remove", () => {
@@ -224,5 +224,31 @@ describe("MapViewCompat", () => {
         mapPoint: { x: 100, y: 200 },
       },
     ]);
+  });
+
+  it("publishes popup/goTo/layer-view/destroy events to the shared event bus", async () => {
+    const eventBus = new CompatEventBus();
+    const events: string[] = [];
+    eventBus.onAny((event) => {
+      events.push(event.type);
+    });
+
+    const layer = { id: "layer-1" };
+    const view = new MapViewCompat({
+      map: new MapCompat({ layers: [layer], eventBus }),
+      eventBus,
+    });
+
+    await view.goTo({ center: [1, 2], zoom: 4 });
+    view.openPopup({ title: "Popup" });
+    await view.whenLayerView(layer);
+    view.closePopup();
+    view.destroy();
+
+    expect(events).toContain("view.go-to");
+    expect(events).toContain("popup.open");
+    expect(events).toContain("popup.close");
+    expect(events).toContain("view.layer-view-created");
+    expect(events).toContain("view.destroy");
   });
 });

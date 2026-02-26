@@ -3,6 +3,8 @@ import type {
   ApplyEditsRequest,
   ExportMapRequest,
   HonuaClientOptions,
+  MapIdentifyRequest,
+  MapLegendRequest,
   QueryFeaturesRequest,
   QueryMethod,
   QueryRelatedRecordsRequest,
@@ -35,6 +37,28 @@ function normalizeBBox(bbox: ExportMapRequest["bbox"]): string {
 
 function normalizeSize(size: ExportMapRequest["size"]): string {
   return Array.isArray(size) ? size.join(",") : size;
+}
+
+function normalizeLegendSize(size: NonNullable<MapLegendRequest["size"]>): string {
+  if (typeof size === "number") {
+    return String(size);
+  }
+  if (Array.isArray(size)) {
+    return size.join(",");
+  }
+  return size;
+}
+
+function normalizeIdentifyGeometry(geometry: MapIdentifyRequest["geometry"]): string {
+  return typeof geometry === "string" ? geometry : JSON.stringify(geometry);
+}
+
+function normalizeMapExtent(mapExtent: MapIdentifyRequest["mapExtent"]): string {
+  return Array.isArray(mapExtent) ? mapExtent.join(",") : mapExtent;
+}
+
+function normalizeImageDisplay(imageDisplay: MapIdentifyRequest["imageDisplay"]): string {
+  return Array.isArray(imageDisplay) ? imageDisplay.join(",") : imageDisplay;
 }
 
 export class HonuaClient {
@@ -198,6 +222,73 @@ export class HonuaClient {
     }
 
     const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/export`;
+    if (method === "GET") {
+      return this.requestJson("GET", `${path}?${params.toString()}`);
+    }
+
+    return this.requestJson("POST", path, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  }
+
+  public async getMapLegend(request: MapLegendRequest): Promise<unknown> {
+    const params = new URLSearchParams();
+    params.set("f", request.responseFormat ?? "json");
+    if (request.size !== undefined) {
+      params.set("size", normalizeLegendSize(request.size));
+    }
+    if (request.dynamicLayers !== undefined) {
+      params.set("dynamicLayers", request.dynamicLayers);
+    }
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/legend`;
+    return this.requestJson("GET", `${path}?${params.toString()}`);
+  }
+
+  public async identifyMap(request: MapIdentifyRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", request.responseFormat ?? "json");
+    params.set("geometry", normalizeIdentifyGeometry(request.geometry));
+    params.set("geometryType", request.geometryType ?? "esriGeometryPoint");
+    params.set("mapExtent", normalizeMapExtent(request.mapExtent));
+    params.set("imageDisplay", normalizeImageDisplay(request.imageDisplay));
+    params.set("returnGeometry", String(request.returnGeometry ?? true));
+    params.set("tolerance", String(request.tolerance ?? 3));
+
+    if (request.sr !== undefined) {
+      params.set("sr", String(request.sr));
+    }
+    if (request.layers !== undefined) {
+      params.set("layers", request.layers);
+    }
+    if (request.maxAllowableOffset !== undefined) {
+      params.set("maxAllowableOffset", String(request.maxAllowableOffset));
+    }
+    if (request.layerDefs !== undefined) {
+      params.set("layerDefs", request.layerDefs);
+    }
+    if (request.dynamicLayers !== undefined) {
+      params.set("dynamicLayers", request.dynamicLayers);
+    }
+    if (request.time !== undefined) {
+      params.set("time", request.time);
+    }
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/identify`;
     if (method === "GET") {
       return this.requestJson("GET", `${path}?${params.toString()}`);
     }

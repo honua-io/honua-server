@@ -177,6 +177,74 @@ describe("HonuaClient", () => {
     expect(requestedBody).toContain("time=2023-01-01%2C2023-01-31");
   });
 
+  it("gets map legend from MapServer/legend", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ layers: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.getMapLegend({
+      serviceId: "default",
+      size: [20, 20],
+      dynamicLayers: '[{"id":0}]',
+      extraParams: { locale: "en-US" },
+    });
+
+    expect(response).toEqual({ layers: [] });
+    expect(requestedInit?.method).toBe("GET");
+    expect(requestedUrl).toContain("/rest/services/default/MapServer/legend?");
+    expect(requestedUrl).toContain("f=json");
+    expect(requestedUrl).toContain("size=20%2C20");
+    expect(requestedUrl).toContain("dynamicLayers=%5B%7B%22id%22%3A0%7D%5D");
+    expect(requestedUrl).toContain("locale=en-US");
+  });
+
+  it("identifies map features through MapServer/identify", async () => {
+    let requestedBody = "";
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (_input, init) => {
+        requestedInit = init;
+        requestedBody = String(init?.body ?? "");
+        return new Response(JSON.stringify({ results: [{ layerId: 1 }] }), { status: 200 });
+      },
+    });
+
+    const response = await client.identifyMap({
+      serviceId: "default",
+      geometry: { x: -157.8, y: 21.3 },
+      mapExtent: [-180, -90, 180, 90],
+      imageDisplay: [1024, 768, 96],
+      tolerance: 6,
+      sr: 4326,
+      layers: "visible:0,1",
+      dynamicLayers: '[{"id":1}]',
+      method: "POST",
+      extraParams: { time: "2024-01-01,2024-12-31" },
+    });
+
+    expect(response).toEqual({ results: [{ layerId: 1 }] });
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedBody).toContain("f=json");
+    expect(requestedBody).toContain("geometry=%7B%22x%22%3A-157.8%2C%22y%22%3A21.3%7D");
+    expect(requestedBody).toContain("geometryType=esriGeometryPoint");
+    expect(requestedBody).toContain("mapExtent=-180%2C-90%2C180%2C90");
+    expect(requestedBody).toContain("imageDisplay=1024%2C768%2C96");
+    expect(requestedBody).toContain("sr=4326");
+    expect(requestedBody).toContain("layers=visible%3A0%2C1");
+    expect(requestedBody).toContain("dynamicLayers=%5B%7B%22id%22%3A1%7D%5D");
+    expect(requestedBody).toContain("time=2024-01-01%2C2024-12-31");
+  });
+
   it("throws HonuaHttpError for non-2xx responses", async () => {
     const client = new HonuaClient({
       baseUrl: "https://example.test",

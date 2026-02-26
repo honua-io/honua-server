@@ -11,6 +11,8 @@ const CJS_REQUIRE_MANUAL_REASON =
 
 export type CodemodConstructorKind =
   | "feature-layer"
+  | "graphics-layer"
+  | "group-layer"
   | "map-image-layer"
   | "map"
   | "map-view"
@@ -30,6 +32,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/layers/FeatureLayer",
       "@arcgis/core/layers/FeatureLayer.js",
+    ]),
+  },
+  {
+    kind: "graphics-layer",
+    compatSymbol: "GraphicsLayerCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/GraphicsLayer",
+      "@arcgis/core/layers/GraphicsLayer.js",
+    ]),
+  },
+  {
+    kind: "group-layer",
+    compatSymbol: "GroupLayerCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/GroupLayer",
+      "@arcgis/core/layers/GroupLayer.js",
     ]),
   },
   {
@@ -417,6 +435,8 @@ function buildModuleToKindLookup(
 function createEmptyByKindMetrics(): CodemodMetricsByKind {
   return {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -953,6 +973,10 @@ function isSafeConstructorCall(
   switch (kind) {
     case "feature-layer":
       return isSafeFeatureLayerCompatCall(node);
+    case "graphics-layer":
+      return isSafeGraphicsLayerCompatCall(node);
+    case "group-layer":
+      return isSafeGroupLayerCompatCall(node);
     case "map-image-layer":
       return isSafeMapImageLayerCompatCall(node);
     case "map":
@@ -1068,6 +1092,100 @@ function isSafeMapImageLayerCompatCall(
       ok: false,
       reason: "MapImageLayer options missing required url property; requires manual migration.",
     };
+  }
+
+  return { ok: true };
+}
+
+function isSafeGraphicsLayerCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "GraphicsLayer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "GraphicsLayer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["graphics", "id", "title", "visible", "opacity", "listMode"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "GraphicsLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "GraphicsLayer options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeGroupLayerCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "GroupLayer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "GroupLayer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "layers",
+    "id",
+    "title",
+    "visible",
+    "opacity",
+    "listMode",
+    "visibilityMode",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "GroupLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "GroupLayer options include unsupported properties; requires manual migration.",
+      };
+    }
   }
 
   return { ok: true };

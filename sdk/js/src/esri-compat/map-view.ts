@@ -1,8 +1,11 @@
+import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+
 export interface MapViewCompatOptions {
   map?: unknown;
   container?: unknown;
   center?: unknown;
   zoom?: number;
+  eventBus?: CompatEventBus;
 }
 
 export interface MapViewGoToTarget {
@@ -162,6 +165,7 @@ export class MapViewCompat {
   public container: unknown;
   public center: unknown;
   public zoom: number | undefined;
+  public readonly eventBus: CompatEventBus;
   public readonly popup: MapViewPopupCompat;
 
   private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
@@ -174,12 +178,15 @@ export class MapViewCompat {
     this.container = options.container;
     this.center = options.center;
     this.zoom = options.zoom;
+    this.eventBus =
+      options.eventBus ?? resolveCompatEventBus(options.map, options.container) ?? new CompatEventBus();
     this.popup = new MapViewPopupCompat((type, popupOptions) => {
       this.notifyWatchers("popup.visible", this.popup.visible);
       this.notifyWatchers("popup.features", this.popup.features);
       this.notifyWatchers("popup.location", this.popup.location);
       this.notifyWatchers("popup.title", this.popup.title);
       this.notifyWatchers("popup.content", this.popup.content);
+      this.eventBus.emit(type === "open" ? "popup.open" : "popup.close", popupOptions, this);
       this.emit(type === "open" ? "popup-open" : "popup-close", popupOptions);
     });
     this.eventListeners = new Map();
@@ -237,6 +244,7 @@ export class MapViewCompat {
       this.zoom = target.zoom;
       this.notifyWatchers("zoom", this.zoom);
     }
+    this.eventBus.emit("view.go-to", target, this);
     this.emit("go-to", target);
 
     return this;
@@ -258,6 +266,7 @@ export class MapViewCompat {
 
     const layerView = new MapViewLayerViewCompat(layer);
     this.layerViews.set(layer, layerView);
+    this.eventBus.emit("view.layer-view-created", { layer, layerView }, this);
     this.emit("layerview-create", { layer, layerView });
     return layerView;
   }
@@ -293,6 +302,7 @@ export class MapViewCompat {
   }
 
   public destroy(): void {
+    this.eventBus.emit("view.destroy", undefined, this);
     this.emit("destroy", undefined);
     for (const layerView of this.layerViews.values()) {
       layerView.destroy();

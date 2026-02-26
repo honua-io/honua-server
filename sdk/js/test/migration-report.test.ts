@@ -15,6 +15,8 @@ function createCodemodResult(): EsriCompatCodemodResult {
       manualCallSites: 1,
       byKind: {
         "feature-layer": { total: 2, autoMigrated: 1, manual: 1 },
+        "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
+        "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
         "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
         map: { total: 1, autoMigrated: 1, manual: 0 },
         "map-view": { total: 1, autoMigrated: 1, manual: 0 },
@@ -118,6 +120,8 @@ describe("buildJsMigrationReport", () => {
     });
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 1,
+      "graphics-layer": 0,
+      "group-layer": 0,
       "map-image-layer": 0,
       map: 0,
       "map-view": 0,
