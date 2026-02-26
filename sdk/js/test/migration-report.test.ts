@@ -24,6 +24,9 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "map-view": { total: 1, autoMigrated: 1, manual: 0 },
         "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
         "web-map": { total: 0, autoMigrated: 0, manual: 0 },
+        "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
+        "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -131,6 +134,9 @@ describe("buildJsMigrationReport", () => {
       "map-view": 0,
       "scene-view": 0,
       "web-map": 0,
+      "layer-list": 0,
+      "legend-widget": 0,
+      "popup-widget": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

@@ -263,6 +263,64 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/GroupLayer");
   });
 
+  it("rewrites safe LayerList/Legend/Popup widget constructors", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "widgets.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import LayerList from '@arcgis/core/widgets/LayerList';",
+        "import Legend from '@arcgis/core/widgets/Legend';",
+        "import Popup from '@arcgis/core/widgets/Popup';",
+        "const view = {};",
+        "const layerList = new LayerList({ view });",
+        "const legend = new Legend({ view });",
+        "const popup = new Popup({ view, dockEnabled: true });",
+        "void layerList;",
+        "void legend;",
+        "void popup;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["layer-list"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["legend-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["popup-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { LayerListCompat, LegendCompat, PopupCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("const layerList = new LayerListCompat({ view });");
+    expect(nextSource).toContain("const legend = new LegendCompat({ view });");
+    expect(nextSource).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
+  });
+
   it("rewrites deterministic constructors for esri-leaflet target", () => {
     const root = makeTempProject();
     const file = path.join(root, "esri-leaflet.ts");

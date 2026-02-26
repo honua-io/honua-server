@@ -112,6 +112,9 @@ describe("arcgis migration integration", () => {
       "map-view": 0,
       "scene-view": 0,
       "web-map": 0,
+      "layer-list": 0,
+      "legend-widget": 0,
+      "popup-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -429,6 +432,56 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/layers/GraphicsLayer");
     expect(migratedMain).not.toContain("@arcgis/core/layers/GroupLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
+  });
+
+  it("migrates map widgets (layer list, legend, popup) with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-widget-controls-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["layer-list"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["legend-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["popup-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { LayerListCompat, LegendCompat, MapCompat, MapViewCompat, PopupCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
+    expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
+    expect(migratedMain).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {

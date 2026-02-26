@@ -26,7 +26,10 @@ export type CodemodConstructorKind =
   | "map"
   | "map-view"
   | "scene-view"
-  | "web-map";
+  | "web-map"
+  | "layer-list"
+  | "legend-widget"
+  | "popup-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -99,6 +102,30 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/views/SceneView",
       "@arcgis/core/views/SceneView.js",
+    ]),
+  },
+  {
+    kind: "layer-list",
+    compatSymbol: "LayerListCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/LayerList",
+      "@arcgis/core/widgets/LayerList.js",
+    ]),
+  },
+  {
+    kind: "legend-widget",
+    compatSymbol: "LegendCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Legend",
+      "@arcgis/core/widgets/Legend.js",
+    ]),
+  },
+  {
+    kind: "popup-widget",
+    compatSymbol: "PopupCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Popup",
+      "@arcgis/core/widgets/Popup.js",
     ]),
   },
 ];
@@ -566,6 +593,9 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
     "web-map": { total: 0, autoMigrated: 0, manual: 0 },
+    "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
+    "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1215,6 +1245,12 @@ function isSafeConstructorCall(
       return isSafeSceneViewCompatCall(node);
     case "web-map":
       return isSafeWebMapCompatCall(node);
+    case "layer-list":
+      return isSafeLayerListCompatCall(node);
+    case "legend-widget":
+      return isSafeLegendWidgetCompatCall(node);
+    case "popup-widget":
+      return isSafePopupWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -1634,6 +1670,135 @@ function isSafeSceneViewCompatCall(
       return {
         ok: false,
         reason: "SceneView options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeLayerListCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "LayerList constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "LayerList constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "LayerList options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "LayerList options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeLegendWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Legend constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Legend constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "layers"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Legend options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Legend options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafePopupWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Popup constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Popup constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "autoOpenEnabled", "dockEnabled", "dockOptions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Popup options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Popup options include unsupported properties; requires manual migration.",
       };
     }
   }
