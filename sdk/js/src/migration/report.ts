@@ -102,7 +102,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion constructor call sites in safe-codemod scope",
+        "FeatureLayer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion constructor call sites in safe-codemod scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -146,6 +146,7 @@ function summarizeManualTodosByKind(
     "feature-table-widget": 0,
     "legend-widget": 0,
     "popup-widget": 0,
+    "popup-template": 0,
     "swipe-widget": 0,
     "print-widget": 0,
     "home-widget": 0,

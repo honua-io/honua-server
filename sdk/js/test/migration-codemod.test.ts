@@ -308,6 +308,43 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
+  it("rewrites safe PopupTemplate constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "popup-template.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import PopupTemplate from '@arcgis/core/PopupTemplate';",
+        "const template = new PopupTemplate({ title: '{NAME}', content: 'Parcel details', outFields: ['OBJECTID', 'NAME'] });",
+        "void template;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["popup-template"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { PopupTemplateCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain(
+      "const template = new PopupTemplateCompat({ title: '{NAME}', content: 'Parcel details', outFields: ['OBJECTID', 'NAME'] });",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/PopupTemplate");
+  });
+
   it("rewrites safe Feature constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "feature-widget.ts");

@@ -160,6 +160,8 @@ export type {
   PopupHandleCompat,
   PopupOpenOptionsCompat,
 } from "./esri-compat/popup.js";
+export { PopupTemplateCompat } from "./esri-compat/popup-template.js";
+export type { PopupTemplateCompatOptions } from "./esri-compat/popup-template.js";
 export { PrintCompat } from "./esri-compat/print.js";
 export type {
   PrintCompatOptions,

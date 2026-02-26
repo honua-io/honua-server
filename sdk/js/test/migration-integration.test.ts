@@ -123,6 +123,7 @@ describe("arcgis migration integration", () => {
       "feature-table-widget": 0,
       "legend-widget": 0,
       "popup-widget": 0,
+      "popup-template": 0,
       "swipe-widget": 0,
       "print-widget": 0,
       "home-widget": 0,
