@@ -4,6 +4,7 @@ import type {
   HonuaClientOptions,
   QueryFeaturesRequest,
   QueryMethod,
+  QueryRelatedRecordsRequest,
 } from "./types.js";
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -99,6 +100,42 @@ export class HonuaClient {
     }
     if (request.deletes !== undefined) {
       params.set("deletes", encodeFormValue(request.deletes));
+    }
+
+    return this.requestJson("POST", path, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  }
+
+  public async queryRelatedRecords(request: QueryRelatedRecordsRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", "json");
+    params.set("relationshipId", String(request.relationshipId));
+    if (request.objectIds !== undefined) {
+      params.set(
+        "objectIds",
+        Array.isArray(request.objectIds) ? request.objectIds.join(",") : String(request.objectIds),
+      );
+    }
+    params.set("where", request.where ?? "1=1");
+    params.set("outFields", normalizeOutFields(request.outFields));
+    params.set("returnGeometry", String(request.returnGeometry ?? true));
+
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path =
+      `/rest/services/${encodeURIComponent(request.serviceId)}` +
+      `/FeatureServer/${request.layerId}/queryRelatedRecords`;
+    if (method === "GET") {
+      return this.requestJson("GET", `${path}?${params.toString()}`);
     }
 
     return this.requestJson("POST", path, {

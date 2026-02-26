@@ -56,6 +56,39 @@ describe("HonuaClient", () => {
     expect(requestedBody).toContain("%22NAME%22");
   });
 
+  it("queries related records endpoint with expected params", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ relatedRecordGroups: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryRelatedRecords({
+      serviceId: "default",
+      layerId: 2,
+      relationshipId: 3,
+      objectIds: [1, 2],
+      where: "status = 'open'",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: false,
+    });
+
+    expect(response).toEqual({ relatedRecordGroups: [] });
+    expect(requestedUrl).toContain("/rest/services/default/FeatureServer/2/queryRelatedRecords?");
+    expect(requestedUrl).toContain("relationshipId=3");
+    expect(requestedUrl).toContain("objectIds=1%2C2");
+    expect(requestedUrl).toContain("where=status+%3D+%27open%27");
+    expect(requestedUrl).toContain("outFields=OBJECTID%2CNAME");
+    expect(requestedUrl).toContain("returnGeometry=false");
+    expect(requestedInit?.method).toBe("GET");
+  });
+
   it("throws HonuaHttpError for non-2xx responses", async () => {
     const client = new HonuaClient({
       baseUrl: "https://example.test",

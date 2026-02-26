@@ -314,4 +314,46 @@ describe("FeatureLayerCompat", () => {
 
     await expect(layer.queryExtent()).resolves.toEqual({ extent: null });
   });
+
+  it("maps queryRelatedFeatures to related records request", async () => {
+    let relatedRequest: unknown;
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      definitionExpression: "status = 1",
+      outFields: ["OBJECTID", "NAME"],
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryRelatedRecords(request: unknown): Promise<unknown> {
+          relatedRequest = request;
+          return Promise.resolve({ relatedRecordGroups: [{ objectId: 1, relatedRecords: [] }] });
+        }
+      })() as any,
+    });
+
+    const result = await layer.queryRelatedFeatures({
+      relationshipId: 4,
+      objectIds: [10, 11],
+      returnGeometry: false,
+    });
+
+    expect(result).toEqual({ relatedRecordGroups: [{ objectId: 1, relatedRecords: [] }] });
+    expect(JSON.stringify(relatedRequest)).toContain('"serviceId":"default"');
+    expect(JSON.stringify(relatedRequest)).toContain('"layerId":1000');
+    expect(JSON.stringify(relatedRequest)).toContain('"relationshipId":4');
+    expect(JSON.stringify(relatedRequest)).toContain('"objectIds":[10,11]');
+    expect(JSON.stringify(relatedRequest)).toContain('"where":"status = 1"');
+    expect(JSON.stringify(relatedRequest)).toContain('"outFields":["OBJECTID","NAME"]');
+    expect(JSON.stringify(relatedRequest)).toContain('"returnGeometry":false');
+  });
 });

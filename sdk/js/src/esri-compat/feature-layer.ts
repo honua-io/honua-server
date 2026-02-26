@@ -36,6 +36,16 @@ export interface FeatureLayerQueryCountOptions {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface FeatureLayerQueryRelatedFeaturesOptions {
+  relationshipId: number;
+  objectIds?: number[] | string;
+  where?: string;
+  outFields?: string | string[];
+  returnGeometry?: boolean;
+  method?: QueryMethod;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
 export interface FeatureLayerQueryExtentResult {
   extent: unknown | null;
   count?: number;
@@ -191,6 +201,20 @@ export class FeatureLayerCompat {
       updates: options.updates,
       deletes: options.deletes,
       rollbackOnFailure: options.rollbackOnFailure,
+    });
+  }
+
+  public queryRelatedFeatures(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+    return this.client.queryRelatedRecords({
+      serviceId: this.serviceId,
+      layerId: this.layerId,
+      relationshipId: options.relationshipId,
+      objectIds: options.objectIds,
+      where: options.where ?? this.definitionExpression,
+      outFields: options.outFields ?? this.outFields,
+      returnGeometry: options.returnGeometry,
+      method: options.method,
+      extraParams: options.extraParams,
     });
   }
 }
