@@ -191,3 +191,11 @@ export { evaluateMigrationGates } from "./migration/gating.js";
 export type { MigrationGateEvaluation, MigrationGateOptions } from "./migration/gating.js";
 export { runLayerReconciliation, summarizeLayerReconciliation } from "./migration/reconcile.js";
 export type { LayerReconciliationOptions, LayerReconciliationReport } from "./migration/reconcile.js";
+export { getJsParityMatrix, JS_PARITY_MATRIX, summarizeJsParityMatrix } from "./migration/parity-matrix.js";
+export type {
+  JsParityCategory,
+  JsParityMatrixEntry,
+  JsParityMatrixKind,
+  JsParityStatus,
+  JsParitySummary,
+} from "./migration/parity-matrix.js";

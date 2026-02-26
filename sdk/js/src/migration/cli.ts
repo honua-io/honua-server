@@ -10,9 +10,10 @@ import {
 import { buildJsMigrationReport } from "./report.js";
 import { evaluateMigrationGates } from "./gating.js";
 import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
+import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
 
 interface ParsedArgs {
-  command: "scan" | "codemod" | "reconcile";
+  command: "scan" | "codemod" | "reconcile" | "matrix";
   target: string;
   codemodTarget: CodemodTarget;
   write: boolean;
@@ -39,6 +40,8 @@ if (!parsed) {
 } else {
   if (parsed.command === "scan") {
     runScan(parsed.target, parsed.reportPath);
+  } else if (parsed.command === "matrix") {
+    runMatrix(parsed.reportPath);
   } else if (parsed.command === "reconcile") {
     void runReconcile(parsed).catch((error) => {
       process.stderr.write(`reconcileError=${error instanceof Error ? error.message : String(error)}\n`);
@@ -46,6 +49,29 @@ if (!parsed) {
     });
   } else {
     runCodemod(parsed);
+  }
+}
+
+function runMatrix(reportPath?: string): void {
+  const matrix = getJsParityMatrix();
+  const summary = summarizeJsParityMatrix(matrix);
+  process.stdout.write(
+    [
+      `entries=${matrix.length}`,
+      `honuaCompat=${summary.honuaCompat.compat}`,
+      `honuaAssisted=${summary.honuaCompat.assisted}`,
+      `honuaUnsupported=${summary.honuaCompat.unsupported}`,
+      `esriLeafletCompat=${summary.esriLeaflet.compat}`,
+      `esriLeafletAssisted=${summary.esriLeaflet.assisted}`,
+      `esriLeafletUnsupported=${summary.esriLeaflet.unsupported}`,
+    ].join(" "),
+  );
+  process.stdout.write("\n");
+  process.stdout.write(`${JSON.stringify({ summary, matrix }, null, 2)}\n`);
+
+  if (reportPath) {
+    fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
+    process.stdout.write(`reportWritten=${reportPath}\n`);
   }
 }
 
@@ -191,8 +217,11 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
 
   const maybeCommand = argv[0];
-  const command: "scan" | "codemod" | "reconcile" =
-    maybeCommand === "scan" || maybeCommand === "codemod" || maybeCommand === "reconcile"
+  const command: "scan" | "codemod" | "reconcile" | "matrix" =
+    maybeCommand === "scan" ||
+    maybeCommand === "codemod" ||
+    maybeCommand === "reconcile" ||
+    maybeCommand === "matrix"
       ? maybeCommand
       : "scan";
   const positional = command === maybeCommand ? argv.slice(1) : argv.slice(0);
@@ -415,12 +444,14 @@ function printUsage(): void {
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
       "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate matrix [--report <file>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",
+      "  node dist/src/migration/cli.js matrix --report parity-matrix.json",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
     ].join("\n"),

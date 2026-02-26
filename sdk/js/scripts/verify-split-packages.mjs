@@ -78,9 +78,11 @@ import {
 } from "@honua/sdk-esri-compat";
 import {
   buildJsMigrationReport,
+  getJsParityMatrix,
   runEsriCompatCodemod,
   runLayerReconciliation,
   scanArcGisUsage,
+  summarizeJsParityMatrix,
 } from "@honua/honua-migrate";
 
 if (typeof HonuaClient !== "function") throw new Error("HonuaClient export missing");
@@ -116,7 +118,9 @@ if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat expo
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
 if (typeof runEsriCompatCodemod !== "function") throw new Error("runEsriCompatCodemod export missing");
 if (typeof buildJsMigrationReport !== "function") throw new Error("buildJsMigrationReport export missing");
+if (typeof getJsParityMatrix !== "function") throw new Error("getJsParityMatrix export missing");
 if (typeof runLayerReconciliation !== "function") throw new Error("runLayerReconciliation export missing");
+if (typeof summarizeJsParityMatrix !== "function") throw new Error("summarizeJsParityMatrix export missing");
 
 console.log("splitPackageSmoke=ok");
 `.trimStart();

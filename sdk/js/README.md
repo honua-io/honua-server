@@ -15,6 +15,7 @@ This package currently provides:
 - ArcGIS usage scanner (`scanArcGisUsage`) for migration inventory and risk flags,
 - safe codemod runner (`runEsriCompatCodemod`) for migration-safe constructors across layers, views, widgets, and controls,
 - migration report builder with explicit manual TODOs and rewrite metric,
+- JS parity matrix artifact (`getJsParityMatrix` / `summarizeJsParityMatrix`) for `native/compat/assisted/unsupported` tracking across Honua compat and esri-leaflet targets,
 - service reconciliation helper (`runLayerReconciliation`) for feature-count, geometry-validity, and attribute-key checks,
 - unit tests for request mapping and URL parsing.
 
@@ -118,6 +119,9 @@ node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --rep
 
 # Safe codemod (write + inline TODO annotations for manual sites)
 node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json
+
+# Emit parity matrix JSON (for docs/CI dashboards)
+node dist/src/migration/cli.js matrix --report parity-matrix.json
 
 # Gate in CI (non-zero exit if migration constraints fail)
 node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3

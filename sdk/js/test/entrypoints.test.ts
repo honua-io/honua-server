@@ -39,9 +39,11 @@ import {
 import {
   buildJsMigrationReport,
   evaluateMigrationGates,
+  getJsParityMatrix,
   runLayerReconciliation,
   runEsriCompatCodemod,
   scanArcGisUsage,
+  summarizeJsParityMatrix,
 } from "../src/migration-entry.js";
 
 describe("entrypoint modules", () => {
@@ -91,6 +93,8 @@ describe("entrypoint modules", () => {
     expect(runEsriCompatCodemod).toBeTypeOf("function");
     expect(buildJsMigrationReport).toBeTypeOf("function");
     expect(evaluateMigrationGates).toBeTypeOf("function");
+    expect(getJsParityMatrix).toBeTypeOf("function");
     expect(runLayerReconciliation).toBeTypeOf("function");
+    expect(summarizeJsParityMatrix).toBeTypeOf("function");
   });
 });
