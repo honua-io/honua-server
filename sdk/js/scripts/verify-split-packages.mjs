@@ -53,6 +53,7 @@ import {
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
+  IdentifyCompat,
   LayerListCompat,
   LegendCompat,
   MapImageLayerCompat,
@@ -75,6 +76,7 @@ if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriR
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");
+if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export missing");
 if (typeof LayerListCompat !== "function") throw new Error("LayerListCompat export missing");
 if (typeof LegendCompat !== "function") throw new Error("LegendCompat export missing");
 if (typeof MapImageLayerCompat !== "function") throw new Error("MapImageLayerCompat export missing");

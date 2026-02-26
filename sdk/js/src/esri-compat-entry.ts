@@ -45,6 +45,14 @@ export type {
 } from "./esri-compat/map-image-layer.js";
 export { TileLayerCompat } from "./esri-compat/tile-layer.js";
 export type { TileLayerCompatOptions } from "./esri-compat/tile-layer.js";
+export { IdentifyCompat } from "./esri-compat/identify.js";
+export type {
+  IdentifyCompatLayerError,
+  IdentifyCompatLayerResult,
+  IdentifyCompatOptions,
+  IdentifyCompatRequest,
+  IdentifyCompatResult,
+} from "./esri-compat/identify.js";
 export { LayerListCompat } from "./esri-compat/layer-list.js";
 export type { LayerListCompatOptions, LayerListItemCompat } from "./esri-compat/layer-list.js";
 export { LegendCompat } from "./esri-compat/legend.js";

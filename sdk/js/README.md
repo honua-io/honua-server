@@ -7,6 +7,7 @@ This package currently provides:
 - core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
+- identify controller (`IdentifyCompat`) for cross-layer MapServer identify workflows with optional popup auto-open,
 - compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
 - request/auth migration bridge helpers (`createEsriRequestInterceptors`, `createArcGisTokenInterceptor`) plus core `HonuaClient` interceptor hooks (`before`/`after`/`error`),
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,

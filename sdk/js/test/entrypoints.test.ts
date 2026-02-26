@@ -9,6 +9,7 @@ import {
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
+  IdentifyCompat,
   LayerListCompat,
   LegendCompat,
   MapCompat,
@@ -42,6 +43,7 @@ describe("entrypoint modules", () => {
     expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
+    expect(IdentifyCompat).toBeTypeOf("function");
     expect(LayerListCompat).toBeTypeOf("function");
     expect(LegendCompat).toBeTypeOf("function");
     expect(MapCompat).toBeTypeOf("function");
