@@ -117,6 +117,35 @@ export class MapImageLayerCompat {
     this.opacity = opacity;
     this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
   }
+
+  public setSublayers(sublayers: readonly unknown[]): void {
+    this.sublayers = [...sublayers];
+    this.eventBus.emit("map-image-layer.sublayers-changed", { layerId: this.id }, this);
+  }
+
+  public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
+    this.minScale = normalizeScale(minScale);
+    this.maxScale = normalizeScale(maxScale);
+    this.eventBus.emit(
+      "map-image-layer.scale-range-changed",
+      { layerId: this.id, minScale: this.minScale, maxScale: this.maxScale },
+      this,
+    );
+  }
+
+  public setListMode(listMode: string): void {
+    this.listMode = listMode;
+    this.eventBus.emit("map-image-layer.list-mode-changed", { layerId: this.id, listMode }, this);
+  }
+
+  public setLegendEnabled(legendEnabled: boolean): void {
+    this.legendEnabled = legendEnabled;
+    this.eventBus.emit(
+      "map-image-layer.legend-enabled-changed",
+      { layerId: this.id, legendEnabled },
+      this,
+    );
+  }
 }
 
 function normalizeScale(scale: number | undefined): number {

@@ -83,6 +83,21 @@ export class TileLayerCompat {
     this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
   }
 
+  public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
+    this.minScale = normalizeScale(minScale);
+    this.maxScale = normalizeScale(maxScale);
+    this.eventBus.emit(
+      "tile-layer.scale-range-changed",
+      { layerId: this.id, minScale: this.minScale, maxScale: this.maxScale },
+      this,
+    );
+  }
+
+  public setListMode(listMode: string): void {
+    this.listMode = listMode;
+    this.eventBus.emit("tile-layer.list-mode-changed", { layerId: this.id, listMode }, this);
+  }
+
   public getTileUrl(level: number, row: number, col: number): string {
     return `${this.baseUrl}/rest/services/${encodeURIComponent(this.serviceId)}/MapServer/tile/${level}/${row}/${col}`;
   }

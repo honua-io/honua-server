@@ -52,15 +52,19 @@ describe("TileLayerCompat", () => {
 
     layer.setVisibility(false);
     layer.setOpacity(0.6);
+    layer.setScaleRange(6000, 0);
+    layer.setListMode("show");
 
     expect(layer.visible).toBe(false);
     expect(layer.opacity).toBe(0.6);
     expect(layer.id).toBe("tiles-1");
     expect(layer.title).toBe("Tiles");
-    expect(layer.minScale).toBe(24000);
-    expect(layer.maxScale).toBe(1200);
-    expect(layer.listMode).toBe("hide-children");
+    expect(layer.minScale).toBe(6000);
+    expect(layer.maxScale).toBe(0);
+    expect(layer.listMode).toBe("show");
     expect(events).toContain("layer.visibility-changed");
     expect(events).toContain("layer.opacity-changed");
+    expect(events).toContain("tile-layer.scale-range-changed");
+    expect(events).toContain("tile-layer.list-mode-changed");
   });
 });

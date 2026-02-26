@@ -136,14 +136,19 @@ describe("MapImageLayerCompat", () => {
 
     layer.setVisibility(false);
     layer.setOpacity(0.5);
+    layer.setSublayers([{ id: 1 }]);
+    layer.setScaleRange(8000, 0);
+    layer.setListMode("show");
+    layer.setLegendEnabled(true);
     expect(layer.visible).toBe(false);
     expect(layer.opacity).toBe(0.5);
+    expect(layer.sublayers).toEqual([{ id: 1 }]);
     expect(layer.id).toBe("default-map");
     expect(layer.title).toBe("Default Map");
-    expect(layer.minScale).toBe(12000);
+    expect(layer.minScale).toBe(8000);
     expect(layer.maxScale).toBe(0);
-    expect(layer.listMode).toBe("hide");
-    expect(layer.legendEnabled).toBe(false);
+    expect(layer.listMode).toBe("show");
+    expect(layer.legendEnabled).toBe(true);
 
     expect(requests).toHaveLength(3);
     expect(requests[0]).toMatchObject({
@@ -165,5 +170,9 @@ describe("MapImageLayerCompat", () => {
     });
     expect(events).toContain("layer.visibility-changed");
     expect(events).toContain("layer.opacity-changed");
+    expect(events).toContain("map-image-layer.sublayers-changed");
+    expect(events).toContain("map-image-layer.scale-range-changed");
+    expect(events).toContain("map-image-layer.list-mode-changed");
+    expect(events).toContain("map-image-layer.legend-enabled-changed");
   });
 });
