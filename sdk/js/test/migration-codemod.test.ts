@@ -265,6 +265,49 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
+  it("rewrites safe Feature constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-widget.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import Feature from '@arcgis/core/widgets/Feature';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
+        "const feature = new Feature({ view, container: 'feature-div', title: 'Selected', graphic: { attributes: { OBJECTID: 1 } } });",
+        "void feature;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain(
+      "new FeatureCompat({ view, container: 'feature-div', title: 'Selected', graphic: { attributes: { OBJECTID: 1 } } })",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Feature");
+  });
+
   it("rewrites safe Print constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "print.ts");

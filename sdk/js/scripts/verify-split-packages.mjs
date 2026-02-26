@@ -58,6 +58,7 @@ import {
   DirectionsCompat,
   EsriRequestInterceptorRegistry,
   EditorCompat,
+  FeatureCompat,
   ExpandCompat,
   FeatureLayerCompat,
   FeatureTableCompat,
@@ -103,6 +104,7 @@ if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createA
 if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
 if (typeof DirectionsCompat !== "function") throw new Error("DirectionsCompat export missing");
 if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
+if (typeof FeatureCompat !== "function") throw new Error("FeatureCompat export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof FeatureTableCompat !== "function") throw new Error("FeatureTableCompat export missing");
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");

@@ -14,6 +14,7 @@ import {
   DirectionsCompat,
   EsriRequestInterceptorRegistry,
   EditorCompat,
+  FeatureCompat,
   ExpandCompat,
   FeatureLayerCompat,
   FeatureTableCompat,
@@ -82,6 +83,7 @@ describe("entrypoint modules", () => {
     expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
     expect(DirectionsCompat).toBeTypeOf("function");
     expect(EditorCompat).toBeTypeOf("function");
+    expect(FeatureCompat).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(FeatureTableCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
