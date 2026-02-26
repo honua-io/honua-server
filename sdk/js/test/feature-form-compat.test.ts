@@ -7,6 +7,9 @@ describe("FeatureFormCompat", () => {
     const form = new FeatureFormCompat({
       feature: { attributes: { OBJECTID: 1, status: "Open" } },
       fieldConfig: [{ name: "status" }],
+      groupDisplay: "all",
+      headingLevel: 3,
+      visibleElements: { description: true },
     });
 
     form.setFeature({ attributes: { OBJECTID: 2, status: "Closed" } });
@@ -15,6 +18,9 @@ describe("FeatureFormCompat", () => {
     expect(result.valid).toBe(true);
     expect(result.values).toMatchObject({ status: "Closed" });
     expect(result.feature).toMatchObject({ attributes: { OBJECTID: 2 } });
+    expect(form.groupDisplay).toBe("all");
+    expect(form.headingLevel).toBe(3);
+    expect(form.visibleElements).toEqual({ description: true });
   });
 
   it("emits feature change and submit events", async () => {

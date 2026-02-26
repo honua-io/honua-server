@@ -13,6 +13,7 @@ export interface FeatureTableCompatOptions {
   attachmentsEnabled?: boolean;
   paginationEnabled?: boolean;
   editingEnabled?: boolean;
+  multiSortEnabled?: boolean;
   relatedRecordsEnabled?: boolean;
   objectIdField?: string;
   where?: string;
@@ -208,6 +209,7 @@ export class FeatureTableCompat {
   public attachmentsEnabled: boolean;
   public paginationEnabled: boolean;
   public editingEnabled: boolean;
+  public multiSortEnabled: boolean;
   public relatedRecordsEnabled: boolean;
   public readonly objectIdField: string;
   public state: FeatureTableStateCompat;
@@ -235,6 +237,7 @@ export class FeatureTableCompat {
     this.attachmentsEnabled = options.attachmentsEnabled ?? false;
     this.paginationEnabled = options.paginationEnabled ?? false;
     this.editingEnabled = options.editingEnabled ?? false;
+    this.multiSortEnabled = options.multiSortEnabled ?? false;
     this.relatedRecordsEnabled = options.relatedRecordsEnabled ?? false;
     this.objectIdField = options.objectIdField ?? "OBJECTID";
     this.state = "loading";

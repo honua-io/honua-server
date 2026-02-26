@@ -20,11 +20,12 @@ describe("FeatureTableCompat", () => {
       }),
     } as unknown as FeatureLayerCompat;
 
-    const table = new FeatureTableCompat({ layer, where: "1=1", eventBus });
+    const table = new FeatureTableCompat({ layer, where: "1=1", eventBus, multiSortEnabled: true });
     const rows = await table.refresh();
 
     expect(table.state).toBe("loaded");
     expect(table.size).toBe(2);
+    expect(table.multiSortEnabled).toBe(true);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ objectId: 1 });
     expect(rows[1]).toMatchObject({ objectId: 2 });

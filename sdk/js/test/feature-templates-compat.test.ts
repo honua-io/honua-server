@@ -25,6 +25,7 @@ describe("FeatureTemplatesCompat", () => {
     const templates = new FeatureTemplatesCompat({
       eventBus,
       filterFunction: (item) => item.id !== "skip",
+      groupBy: "layer",
     });
     templates.setTemplates([
       { id: "keep", name: "Keep" },
@@ -33,6 +34,7 @@ describe("FeatureTemplatesCompat", () => {
     templates.selectTemplate("keep");
 
     expect(templates.templates).toHaveLength(1);
+    expect(templates.groupBy).toBe("layer");
     expect(seenTypes).toContain("feature-templates.updated");
     expect(seenTypes).toContain("feature-templates.selected");
   });

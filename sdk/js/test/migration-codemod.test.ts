@@ -874,7 +874,9 @@ describe("runEsriCompatCodemod", () => {
         "  where: '1=1',",
         "  filterGeometry: { xmin: 0, ymin: 0, xmax: 1, ymax: 1 },",
         "  filterBySelectionEnabled: false,",
+        "  highlightIds: [1, 2],",
         "  tableTemplate: { columnTemplates: [{ type: 'field', fieldName: 'FACILITYID', autoWidth: true }] },",
+        "  multiSortEnabled: true,",
         "});",
         "void table;",
       ].join("\n"),
@@ -915,6 +917,8 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("const table = new FeatureTableCompat({");
     expect(nextSource).toContain("relatedRecordsEnabled: true");
     expect(nextSource).toContain("filterBySelectionEnabled: false");
+    expect(nextSource).toContain("highlightIds: [1, 2]");
+    expect(nextSource).toContain("multiSortEnabled: true");
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
@@ -1054,7 +1058,7 @@ describe("runEsriCompatCodemod", () => {
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "import FeatureForm from '@arcgis/core/widgets/FeatureForm';",
         "const layer = new FeatureLayer({ url: layerUrl });",
-        "const form = new FeatureForm({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }] });",
+        "const form = new FeatureForm({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }], groupDisplay: 'all', headingLevel: 3, visibleElements: { description: true } });",
         "void form;",
       ].join("\n"),
       "utf8",
@@ -1081,7 +1085,7 @@ describe("runEsriCompatCodemod", () => {
       'import { FeatureFormCompat, FeatureLayerCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain(
-      "new FeatureFormCompat({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }] })",
+      "new FeatureFormCompat({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }], groupDisplay: 'all', headingLevel: 3, visibleElements: { description: true } })",
     );
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureForm");
   });
@@ -1095,7 +1099,7 @@ describe("runEsriCompatCodemod", () => {
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "import FeatureTemplates from '@arcgis/core/widgets/FeatureTemplates';",
         "const layer = new FeatureLayer({ url: layerUrl });",
-        "const templates = new FeatureTemplates({ layerInfos: [{ layer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted' });",
+        "const templates = new FeatureTemplates({ layerInfos: [{ layer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted', groupBy: 'layer' });",
         "void templates;",
       ].join("\n"),
       "utf8",
@@ -1122,7 +1126,7 @@ describe("runEsriCompatCodemod", () => {
       'import { FeatureLayerCompat, FeatureTemplatesCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain(
-      "new FeatureTemplatesCompat({ layerInfos: [{ layer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted' })",
+      "new FeatureTemplatesCompat({ layerInfos: [{ layer }], container: 'feature-templates', filterFunction: (item) => item.name !== 'Restricted', groupBy: 'layer' })",
     );
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTemplates");
   });
@@ -1466,7 +1470,7 @@ describe("runEsriCompatCodemod", () => {
         "const view = {};",
         "const routeLayer = new RouteLayer({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
-        "const legend = new Legend({ view, container: 'legend-div' });",
+        "const legend = new Legend({ view, container: 'legend-div', includeHidden: true, autoRefresh: false });",
         "const popup = new Popup({ view, container: 'popup-div', dockEnabled: true });",
         "const home = new Home({ view, container: 'home-div' });",
         "const basemapToggle = new BasemapToggle({ view, container: 'basemap-div', nextBasemap: 'satellite' });",
@@ -1648,7 +1652,7 @@ describe("runEsriCompatCodemod", () => {
       "const routeLayer = new RouteLayerCompat({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
-    expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
+    expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div', includeHidden: true, autoRefresh: false });");
     expect(nextSource).toContain("const popup = new PopupCompat({ view, container: 'popup-div', dockEnabled: true });");
     expect(nextSource).toContain("const home = new HomeCompat({ view, container: 'home-div' });");
     expect(nextSource).toContain(

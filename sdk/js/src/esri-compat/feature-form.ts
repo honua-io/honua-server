@@ -6,6 +6,9 @@ export interface FeatureFormCompatOptions {
   container?: unknown;
   feature?: unknown;
   fieldConfig?: readonly unknown[];
+  groupDisplay?: string;
+  headingLevel?: number;
+  visibleElements?: unknown;
   eventBus?: CompatEventBus;
 }
 
@@ -22,6 +25,9 @@ export class FeatureFormCompat {
   public readonly eventBus: CompatEventBus;
   public feature: unknown;
   public fieldConfig: readonly unknown[];
+  public groupDisplay: string | undefined;
+  public headingLevel: number | undefined;
+  public visibleElements: unknown;
 
   public constructor(options: FeatureFormCompatOptions = {}) {
     this.view = options.view;
@@ -30,6 +36,9 @@ export class FeatureFormCompat {
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, options.layer) ?? new CompatEventBus();
     this.feature = options.feature;
     this.fieldConfig = options.fieldConfig ? [...options.fieldConfig] : [];
+    this.groupDisplay = options.groupDisplay;
+    this.headingLevel = options.headingLevel;
+    this.visibleElements = options.visibleElements;
   }
 
   public setFeature(feature: unknown): void {

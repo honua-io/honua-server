@@ -4061,6 +4061,7 @@ function isSafeFeatureTableWidgetCompatCall(
     "fieldConfigs",
     "editingEnabled",
     "multiSortEnabled",
+    "highlightIds",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -4154,7 +4155,7 @@ function isSafeLegendWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map", "layers", "container"]);
+  const allowed = new Set(["view", "map", "layers", "container", "includeHidden", "autoRefresh"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

@@ -11,6 +11,7 @@ export interface FeatureTemplatesCompatOptions {
   layerInfos?: readonly unknown[];
   container?: unknown;
   filterFunction?: ((item: FeatureTemplateItemCompat) => boolean) | undefined;
+  groupBy?: unknown;
   eventBus?: CompatEventBus;
 }
 
@@ -20,6 +21,7 @@ export class FeatureTemplatesCompat {
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly filterFunction: ((item: FeatureTemplateItemCompat) => boolean) | undefined;
+  public readonly groupBy: unknown;
   public templates: FeatureTemplateItemCompat[];
   public selectedTemplate: FeatureTemplateItemCompat | undefined;
 
@@ -28,6 +30,7 @@ export class FeatureTemplatesCompat {
     this.layerInfos = options.layerInfos ? [...options.layerInfos] : [];
     this.container = options.container;
     this.filterFunction = options.filterFunction;
+    this.groupBy = options.groupBy;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.templates = [];
     this.selectedTemplate = undefined;
