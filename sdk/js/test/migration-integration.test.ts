@@ -104,6 +104,7 @@ describe("arcgis migration integration", () => {
     });
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 0,
+      graphic: 0,
       "graphics-layer": 0,
       "group-layer": 0,
       "map-image-layer": 0,
@@ -475,6 +476,28 @@ describe("arcgis migration integration", () => {
     );
     expect(migratedMain).toContain("reactiveUtils.whenOnce(() => ready);");
     expect(migratedMain).not.toContain("@arcgis/core/core/reactiveUtils");
+  });
+
+  it("migrates graphic fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-graphic-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.graphic).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { GraphicCompat } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("const parcelGraphic = new GraphicCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/Graphic");
   });
 
   it("migrates feature table fixture with ready gating", () => {

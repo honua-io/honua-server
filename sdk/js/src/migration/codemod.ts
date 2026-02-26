@@ -21,6 +21,7 @@ export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
 export type CodemodConstructorKind =
   | "feature-layer"
+  | "graphic"
   | "graphics-layer"
   | "group-layer"
   | "map-image-layer"
@@ -81,6 +82,11 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
       "@arcgis/core/layers/FeatureLayer",
       "@arcgis/core/layers/FeatureLayer.js",
     ]),
+  },
+  {
+    kind: "graphic",
+    compatSymbol: "GraphicCompat",
+    arcGisModules: new Set(["@arcgis/core/Graphic", "@arcgis/core/Graphic.js"]),
   },
   {
     kind: "graphics-layer",
@@ -1029,6 +1035,7 @@ function buildModuleToKindLookup(
 function createEmptyByKindMetrics(): CodemodMetricsByKind {
   return {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    graphic: { total: 0, autoMigrated: 0, manual: 0 },
     "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1707,6 +1714,8 @@ function isSafeConstructorCall(
   switch (kind) {
     case "feature-layer":
       return isSafeFeatureLayerCompatCall(node);
+    case "graphic":
+      return isSafeGraphicCompatCall(node);
     case "graphics-layer":
       return isSafeGraphicsLayerCompatCall(node);
     case "group-layer":
@@ -1995,6 +2004,49 @@ function isSafeFeatureLayerCompatCall(
       ok: false,
       reason: "FeatureLayer options missing required url property; requires manual migration.",
     };
+  }
+
+  return { ok: true };
+}
+
+function isSafeGraphicCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Graphic constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Graphic constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["geometry", "symbol", "attributes", "popupTemplate", "layer"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Graphic options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Graphic options include unsupported properties; requires manual migration.",
+      };
+    }
   }
 
   return { ok: true };

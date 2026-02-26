@@ -82,6 +82,7 @@ describe("migration cli parity matrix", () => {
     };
 
     const featureLayer = report.matrix.find((row) => row.kind === "feature-layer");
+    const graphic = report.matrix.find((row) => row.kind === "graphic");
     const basemap = report.matrix.find((row) => row.kind === "basemap");
     const track = report.matrix.find((row) => row.kind === "track-widget");
     const routeTask = report.matrix.find((row) => row.kind === "route-task");
@@ -99,6 +100,7 @@ describe("migration cli parity matrix", () => {
     );
     const reactiveUtils = report.matrix.find((row) => row.kind === "reactive-utils");
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });

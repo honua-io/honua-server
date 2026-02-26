@@ -88,6 +88,8 @@ export type {
   GraphicsLayerCompatOptions,
   GraphicsLayerQueryResult,
 } from "./esri-compat/graphics-layer.js";
+export { GraphicCompat } from "./esri-compat/graphic.js";
+export type { GraphicCompatOptions } from "./esri-compat/graphic.js";
 export { GroupLayerCompat } from "./esri-compat/group-layer.js";
 export type { GroupLayerCompatOptions } from "./esri-compat/group-layer.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";

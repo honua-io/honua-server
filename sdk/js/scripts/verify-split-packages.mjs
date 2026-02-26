@@ -67,6 +67,7 @@ import {
   FeatureLayerCompat,
   FeatureTableCompat,
   FullscreenCompat,
+  GraphicCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
   HomeCompat,
@@ -136,6 +137,7 @@ if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export
 if (typeof ExpandCompat !== "function") throw new Error("ExpandCompat export missing");
 if (typeof FullscreenCompat !== "function") throw new Error("FullscreenCompat export missing");
 if (typeof ZoomCompat !== "function") throw new Error("ZoomCompat export missing");
+if (typeof GraphicCompat !== "function") throw new Error("GraphicCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");
 if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export missing");

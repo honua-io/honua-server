@@ -23,6 +23,7 @@ import {
   FeatureLayerCompat,
   FeatureTableCompat,
   FeatureTableHighlightIdsCompat,
+  GraphicCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
   HomeCompat,
@@ -89,6 +90,7 @@ describe("entrypoint modules", () => {
     expect(AttributionCompat).toBeTypeOf("function");
     expect(FullscreenCompat).toBeTypeOf("function");
     expect(ZoomCompat).toBeTypeOf("function");
+    expect(GraphicCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");
     expect(CoordinateConversionCompat).toBeTypeOf("function");

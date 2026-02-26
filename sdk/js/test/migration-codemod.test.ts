@@ -114,6 +114,46 @@ describe("runEsriCompatCodemod", () => {
     );
   });
 
+  it("rewrites safe Graphic constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "graphic.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Graphic from '@arcgis/core/Graphic';",
+        "const graphic = new Graphic({",
+        "  geometry: { x: -157.81, y: 21.30 },",
+        "  symbol: { type: 'simple-marker' },",
+        "  attributes: { OBJECTID: 10 },",
+        "  popupTemplate: { title: '{OBJECTID}' },",
+        "});",
+        "void graphic;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.graphic).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { GraphicCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new GraphicCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/Graphic");
+  });
+
   it("rewrites safe MapImageLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "map-image-layer.ts");
