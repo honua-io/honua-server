@@ -20,6 +20,11 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class LayerPublishingEndpoints
 {
+    private const int MaxSafeLayerPublishingMessageLength = 240;
+    private const string LayerPublishingValidationMessage = "Layer publishing request is invalid.";
+    private const string LayerPublishingConflictMessage = "Layer publishing operation conflicted with existing data.";
+    private const string LayerPublishingNotFoundMessage = "The requested resource was not found.";
+
     internal sealed class LayerPublishingEndpointsLog;
 
     public static void MapLayerPublishingEndpoints(this IEndpointRouteBuilder endpoints)
@@ -69,7 +74,7 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer list failed: {Message}", ex.Message);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
@@ -153,17 +158,17 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
         {
             logger.LogWarning(ex, "Layer publish conflict");
-            return TypedResults.Conflict(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.Conflict(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
         {
             logger.LogWarning(ex, "Layer publish not found");
-            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.NotFound(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer publish validation failed");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
@@ -230,7 +235,7 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer toggle failed");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
@@ -293,7 +298,7 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle failed");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
@@ -347,5 +352,48 @@ internal static class LayerPublishingEndpoints
         {
             logger.LogWarning(ex, "Failed to invalidate service catalog cache for {ServiceName}", serviceName);
         }
+    }
+
+    private static string GetSafeLayerPublishingMessage(LayerPublishingException exception)
+    {
+        var fallback = exception.ErrorKind switch
+        {
+            LayerPublishingErrorKind.Conflict => LayerPublishingConflictMessage,
+            LayerPublishingErrorKind.NotFound => LayerPublishingNotFoundMessage,
+            _ => LayerPublishingValidationMessage
+        };
+
+        return SanitizeLayerPublishingMessage(exception.Message, fallback);
+    }
+
+    private static string SanitizeLayerPublishingMessage(string? message, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return fallback;
+        }
+
+        var trimmed = message.Trim();
+        if (trimmed.Length > MaxSafeLayerPublishingMessageLength || ContainsUnsafeMessagePattern(trimmed))
+        {
+            return fallback;
+        }
+
+        return trimmed;
+    }
+
+    private static bool ContainsUnsafeMessagePattern(string message)
+    {
+        return message.Contains('\r') ||
+               message.Contains('\n') ||
+               message.Contains("BytePositionInLine", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("System.", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("StackTrace", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("SQLSTATE", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("ConnectionString", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("password", StringComparison.OrdinalIgnoreCase);
     }
 }

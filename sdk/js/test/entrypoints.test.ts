@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { HonuaClient, HonuaHttpError } from "../src/honua.js";
 import {
+  AttributionCompat,
   BasemapToggleCompat,
   BasemapGalleryCompat,
   BookmarksCompat,
@@ -19,6 +20,7 @@ import {
   LayerListCompat,
   LegendCompat,
   LocateCompat,
+  FullscreenCompat,
   MapCompat,
   MapImageLayerCompat,
   MapViewCompat,
@@ -27,6 +29,7 @@ import {
   SearchCompat,
   ScaleBarCompat,
   TileLayerCompat,
+  ZoomCompat,
   parseMapServiceUrl,
   SceneViewCompat,
   WebMapCompat,
@@ -53,6 +56,9 @@ describe("entrypoint modules", () => {
     expect(BookmarksCompat).toBeTypeOf("function");
     expect(CompassCompat).toBeTypeOf("function");
     expect(ExpandCompat).toBeTypeOf("function");
+    expect(AttributionCompat).toBeTypeOf("function");
+    expect(FullscreenCompat).toBeTypeOf("function");
+    expect(ZoomCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");
     expect(CompatEventBus).toBeTypeOf("function");

@@ -104,7 +104,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
         }
         catch (ResourceConflictException ex)
         {
-            return StandardErrorHelpers.CreateConflict(context, ex.Message);
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (Exception ex)
         {

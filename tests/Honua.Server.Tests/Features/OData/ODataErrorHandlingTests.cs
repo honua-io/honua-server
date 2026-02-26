@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -431,6 +432,40 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry payload details hidden")]
+    public async Task Create_InvalidGeometryPayload_DoesNotLeakParserDetails()
+    {
+        const string sentinel = "SENTINEL_GEOMETRY_PAYLOAD";
+        var payload = new
+        {
+            Geometry = new
+            {
+                type = "Point",
+                coordinates = sentinel
+            },
+            Attributes = new { name = "Test" }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            $"/odata/Layers({TestLayerId})/Features",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Be("Invalid geometry payload.");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain(sentinel);
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("PATCH /odata/Features({layerId},{objectId}) with invalid JSON")]
     public async Task Update_InvalidJson_ReturnsBadRequest()
     {
@@ -616,6 +651,62 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var responses = document.RootElement.GetProperty("responses");
         var firstResponse = responses[0];
         firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with too many requests")]
+    public async Task Batch_TooManyRequests_ReturnsBadRequest()
+    {
+        var requests = string.Join(
+            ',',
+            Enumerable.Range(1, 1001)
+                .Select(i => $$"""{"id":"{{i}}","method":"GET","url":"Features(0,1)"}"""));
+
+        var payload = $$"""{"requests":[{{requests}}]}""";
+
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Contain("maximum of 1000 operations");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with oversized multipart section")]
+    public async Task Batch_MultipartSectionTooLarge_ReturnsBadRequest()
+    {
+        const string boundary = "batch_oversized";
+        var oversizedBody = new string('a', 10 * 1024 * 1024 + 1);
+        var payload = string.Join("\r\n",
+        [
+            $"--{boundary}",
+            "Content-Type: application/http",
+            "Content-Transfer-Encoding: binary",
+            string.Empty,
+            "GET /odata/Features(0,1) HTTP/1.1",
+            "Accept: application/json",
+            string.Empty,
+            oversizedBody,
+            $"--{boundary}--",
+            string.Empty
+        ]);
+
+        var content = new StringContent(payload, Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
+
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Contain("maximum allowed size");
     }
 
     #endregion

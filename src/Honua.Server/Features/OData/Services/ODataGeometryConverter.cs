@@ -13,6 +13,8 @@ namespace Honua.Server.Features.OData.Services;
 /// </summary>
 internal static class ODataGeometryConverter
 {
+    private const string InvalidGeometryPayloadMessage = "Invalid geometry payload.";
+
     public static ODataSpatialGeometry? ConvertWkbToGeometry(
         IGeometryService geometryService,
         byte[]? wkb,
@@ -99,7 +101,7 @@ internal static class ODataGeometryConverter
         }
         catch (Exception ex) when (ex is ArgumentException or FormatException or JsonException or InvalidOperationException or NotSupportedException)
         {
-            return GeometryConversionResult.Failure(ex.Message);
+            return GeometryConversionResult.Failure(InvalidGeometryPayloadMessage);
         }
     }
 

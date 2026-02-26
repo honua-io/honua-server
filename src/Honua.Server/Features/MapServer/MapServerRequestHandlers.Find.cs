@@ -94,12 +94,6 @@ internal static partial class MapServerEndpoints
                 return protocolError;
             }
 
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
-            }
-
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             if (!TryParseLayerDefs(layerDefsValue, queryValidator, out var layerDefs, out var layerDefsError))
             {

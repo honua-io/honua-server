@@ -152,6 +152,26 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithMalformedTime_DoesNotLeakInputOrParserDetails()
+    {
+        const string sentinel = "MAP_TIME_SENTINEL";
+        var malformedTime = Uri.EscapeDataString($"not-a-time-{sentinel}");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&time={malformedTime}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid time parameter.");
+        content.Should().NotContain(sentinel);
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithLayerTimeOptions_ReturnsImageJson()
     {
         var layerTimeOptions = System.Uri.EscapeDataString(
@@ -188,12 +208,70 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithGdbVersion_ReturnsBadRequest()
+    public async Task MapServer_Export_WithGdbVersion_IgnoresParameter()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&gdbVersion=QA");
 
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Href.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithMalformedLayerDefs_DoesNotLeakJsonParserDetails()
+    {
+        var malformedLayerDefs = Uri.EscapeDataString("{\"0\":");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&layerDefs={malformedLayerDefs}");
+
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("layerDefs contains invalid JSON.");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithMalformedDynamicLayers_DoesNotLeakJsonParserDetails()
+    {
+        var malformedDynamicLayers = Uri.EscapeDataString("[{\"id\":");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&dynamicLayers={malformedDynamicLayers}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("dynamicLayers contains invalid JSON.");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithUnsupportedImageSr_DoesNotLeakTransformDetails()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=999999&size=256,256&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid spatial reference.");
+        content.Should().NotContain("999999");
+        content.Should().NotContain("NotSupportedException");
+        content.Should().NotContain("System.");
     }
 
     [IntegrationTest]
@@ -203,6 +281,23 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
+
+        identify.Should().NotBeNull();
+        identify!.Results.Should().NotBeNull();
+        identify.Results!.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_WithGdbVersion_IgnoresParameter()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json&gdbVersion=QA");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -260,6 +355,23 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&tolerance=abc&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_WithMalformedGeometryJson_DoesNotLeakParserDetails()
+    {
+        var malformedGeometry = Uri.EscapeDataString("{\"rings\":[1]}");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={malformedGeometry}&geometryType=esriGeometryPolygon&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Geometry parameter is invalid.");
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain("Supported types:");
     }
 
     [IntegrationTest]
@@ -441,6 +553,25 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             var content = await response.Content.ReadAsStringAsync();
             content.Should().Contain("\"results\"");
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    public async Task MapServer_Find_WithGdbVersion_DoesNotRejectParameter()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json&gdbVersion=QA");
+
+        var content = await response.Content.ReadAsStringAsync();
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            content.Should().NotContain("gdbVersion is not supported.");
+            return;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("\"results\"");
     }
 
     [IntegrationTest]

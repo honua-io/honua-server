@@ -791,6 +791,24 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_WithMalformedClassificationDef_DoesNotLeakJsonParserDetails()
+    {
+        var malformedClassificationDef = Uri.EscapeDataString("{\"type\":");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={malformedClassificationDef}");
+
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("classificationDef must be valid JSON.");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithSqlInjectionAttempt_Returns400()
     {
@@ -2131,6 +2149,26 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("editResults");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails()
+    {
+        var malformedRequest = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]""";
+        var content = new StringContent(malformedRequest, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
+            content);
+
+        response.Be400BadRequest();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Request body contains invalid JSON.");
+        responseContent.Should().NotContain("BytePositionInLine");
+        responseContent.Should().NotContain("LineNumber");
+        responseContent.Should().NotContain("System.Text.Json");
     }
 
     [IntegrationTest]

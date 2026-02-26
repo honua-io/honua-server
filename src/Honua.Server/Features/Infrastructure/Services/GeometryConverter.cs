@@ -64,7 +64,7 @@ internal sealed class GeometryConverter : IGeometryConverter
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
-            throw new ArgumentException($"Invalid WKB geometry format: {ex.Message}", ex);
+            throw new ArgumentException("Invalid WKB geometry format.", ex);
         }
     }
 
@@ -94,7 +94,7 @@ internal sealed class GeometryConverter : IGeometryConverter
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
-            throw new ArgumentException($"Invalid WKB geometry format: {ex.Message}", ex);
+            throw new ArgumentException("Invalid WKB geometry format.", ex);
         }
     }
 

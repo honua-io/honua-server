@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -17,11 +18,16 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     private const string TokenScope = "https://vault.azure.net/.default";
     private const string DefaultApiVersion = "7.4";
     private const string ClientName = "AzureKeyVault";
+    private const string ManagedIdentityClientName = "AzureManagedIdentityMetadata";
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly Regex _vaultNamePattern = new("^[A-Za-z0-9-]{3,24}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex _secretNamePattern = new("^[A-Za-z0-9-]{1,127}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex _secretVersionPattern = new("^[A-Za-z0-9]{1,64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Action<ILogger, Exception?> _logManagedIdentityTokenFailed =
         LoggerMessage.Define(LogLevel.Debug, new EventId(6402, "AzureManagedIdentityTokenRequestFailed"), "Azure Managed Identity token request failed");
 
     private readonly HttpClient _httpClient;
+    private readonly HttpClient _metadataClient;
     private readonly ILogger<AzureKeyVaultResolver> _logger;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
@@ -32,6 +38,7 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
     public AzureKeyVaultResolver(IHttpClientFactory httpClientFactory, ILogger<AzureKeyVaultResolver> logger)
     {
         _httpClient = httpClientFactory.CreateClient(ClientName);
+        _metadataClient = httpClientFactory.CreateClient(ManagedIdentityClientName);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -59,8 +66,8 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException($"Azure Key Vault request failed ({(int)response.StatusCode}): {body}");
+            throw new InvalidOperationException(
+                $"Azure Key Vault request failed with status code {(int)response.StatusCode}.");
         }
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -162,8 +169,8 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException($"Azure token request failed ({(int)response.StatusCode}): {body}");
+            throw new InvalidOperationException(
+                $"Azure token request failed with status code {(int)response.StatusCode}.");
         }
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -185,7 +192,7 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
 
         try
         {
-            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using var response = await _metadataClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
@@ -242,8 +249,13 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
 
     private static string BuildSecretUrl(string vaultName, string secretName, string? version)
     {
-        var versionSegment = string.IsNullOrWhiteSpace(version) ? string.Empty : $"/{version}";
-        return $"https://{vaultName}.vault.azure.net/secrets/{secretName}{versionSegment}?api-version={DefaultApiVersion}";
+        var escapedSecretName = Uri.EscapeDataString(secretName);
+        var escapedVersion = string.IsNullOrWhiteSpace(version)
+            ? null
+            : Uri.EscapeDataString(version);
+
+        var versionSegment = string.IsNullOrWhiteSpace(escapedVersion) ? string.Empty : $"/{escapedVersion}";
+        return $"https://{vaultName}.vault.azure.net/secrets/{escapedSecretName}{versionSegment}?api-version={DefaultApiVersion}";
     }
 
     private static (string VaultName, string SecretName, string? Version) ParseSecretReference(string secretRef)
@@ -258,8 +270,40 @@ internal sealed class AzureKeyVaultResolver : IConnectionSecretResolver, IDispos
         var vaultName = parts[0];
         var secretName = parts[1];
         var version = parts.Length == 3 ? parts[2] : null;
+
+        if (!IsValidVaultName(vaultName))
+        {
+            throw new ArgumentException("Invalid vault name in Azure secret reference.", nameof(secretRef));
+        }
+
+        if (!IsValidSecretName(secretName))
+        {
+            throw new ArgumentException("Invalid secret name in Azure secret reference.", nameof(secretRef));
+        }
+
+        if (!string.IsNullOrWhiteSpace(version) && !IsValidSecretVersion(version))
+        {
+            throw new ArgumentException("Invalid secret version in Azure secret reference.", nameof(secretRef));
+        }
+
         return (vaultName, secretName, version);
     }
+
+    internal static bool IsValidVaultName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !_vaultNamePattern.IsMatch(value))
+        {
+            return false;
+        }
+
+        return value[0] != '-' && value[^1] != '-';
+    }
+
+    internal static bool IsValidSecretName(string value) =>
+        !string.IsNullOrWhiteSpace(value) && _secretNamePattern.IsMatch(value);
+
+    internal static bool IsValidSecretVersion(string value) =>
+        !string.IsNullOrWhiteSpace(value) && _secretVersionPattern.IsMatch(value);
 
     private static string ExtractSecretValue(string content)
     {

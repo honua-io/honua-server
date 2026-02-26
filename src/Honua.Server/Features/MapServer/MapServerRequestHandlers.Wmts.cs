@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -16,6 +17,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.MapServer.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.MapServer;
 
@@ -138,14 +140,16 @@ internal static partial class MapServerEndpoints
                 return accessError;
             }
 
+            var wmtsMaxZoom = ResolveWmtsMaxZoom(context);
+
             if (string.Equals(requestType, "GetTile", StringComparison.OrdinalIgnoreCase))
             {
-                return await HandleWmtsGetTile(context, svcDef, serviceId, logger);
+                return await HandleWmtsGetTile(context, svcDef, serviceId, logger, wmtsMaxZoom);
             }
 
             if (string.Equals(requestType, "GetFeatureInfo", StringComparison.OrdinalIgnoreCase))
             {
-                return await HandleWmtsGetFeatureInfo(context, svcDef, serviceId, logger);
+                return await HandleWmtsGetFeatureInfo(context, svcDef, serviceId, logger, wmtsMaxZoom);
             }
 
             if (!string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
@@ -242,7 +246,7 @@ internal static partial class MapServerEndpoints
 
             MapServerLog.WmtsRequested(logger, serviceId, "GetCapabilities");
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var xml = BuildWmtsCapabilities(svcDef, serviceId, baseUrl, sections);
+            var xml = BuildWmtsCapabilities(svcDef, serviceId, baseUrl, sections, wmtsMaxZoom);
             return Results.Content(xml, responseMimeType);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -357,7 +361,8 @@ internal static partial class MapServerEndpoints
         HttpContext context,
         ServiceDefinition service,
         string serviceId,
-        ILogger logger)
+        ILogger logger,
+        int wmtsMaxZoom)
     {
         MapServerLog.WmtsRequested(logger, serviceId, "GetTile");
 
@@ -431,7 +436,7 @@ internal static partial class MapServerEndpoints
 
         if (!int.TryParse(tileMatrixValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileMatrix) ||
             tileMatrix < 0 ||
-            tileMatrix > WmtsMaxZoom)
+            tileMatrix > wmtsMaxZoom)
         {
             return CreateWmtsExceptionReport("InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
         }
@@ -456,7 +461,7 @@ internal static partial class MapServerEndpoints
             return CreateWmtsExceptionReport("InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
-        var maxTileIndex = (1 << tileMatrix) - 1;
+        var maxTileIndex = (1L << tileMatrix) - 1;
         if (tileRow > maxTileIndex)
         {
             return CreateWmtsExceptionReport("TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
@@ -490,7 +495,8 @@ internal static partial class MapServerEndpoints
         HttpContext context,
         ServiceDefinition service,
         string serviceId,
-        ILogger logger)
+        ILogger logger,
+        int wmtsMaxZoom)
     {
         MapServerLog.WmtsRequested(logger, serviceId, "GetFeatureInfo");
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -578,7 +584,7 @@ internal static partial class MapServerEndpoints
 
         if (!int.TryParse(tileMatrixValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileMatrix) ||
             tileMatrix < 0 ||
-            tileMatrix > WmtsMaxZoom)
+            tileMatrix > wmtsMaxZoom)
         {
             return CreateWmtsExceptionReport("InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
         }
@@ -603,7 +609,7 @@ internal static partial class MapServerEndpoints
             return CreateWmtsExceptionReport("InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
-        var maxTileIndex = (1 << tileMatrix) - 1;
+        var maxTileIndex = (1L << tileMatrix) - 1;
         if (tileRow > maxTileIndex)
         {
             return CreateWmtsExceptionReport("TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
@@ -680,7 +686,7 @@ internal static partial class MapServerEndpoints
             }
         }
 
-        var matrixWidth = 2.0 * WebMercatorOrigin / (1 << tileMatrix);
+        var matrixWidth = 2.0 * WebMercatorOrigin / (1L << tileMatrix);
         var tileMinX = -WebMercatorOrigin + (tileCol * matrixWidth);
         var tileMaxX = tileMinX + matrixWidth;
         var tileMaxY = WebMercatorOrigin - (tileRow * matrixWidth);
@@ -934,7 +940,8 @@ internal static partial class MapServerEndpoints
         ServiceDefinition service,
         string serviceId,
         string baseUrl,
-        WmtsCapabilitiesSections sections)
+        WmtsCapabilitiesSections sections,
+        int wmtsMaxZoom)
     {
         var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
@@ -1110,7 +1117,7 @@ internal static partial class MapServerEndpoints
                 sb.AppendLine("      <TileMatrixSetLink>");
                 sb.AppendLine("        <TileMatrixSet>WebMercatorQuad</TileMatrixSet>");
                 sb.AppendLine("        <TileMatrixSetLimits>");
-                for (var z = 0; z <= WmtsMaxZoom; z++)
+                for (var z = 0; z <= wmtsMaxZoom; z++)
                 {
                     var tileMatrixLimitMax = GetWmtsTileMatrixLimitMax(z);
                     sb.AppendLine("          <TileMatrixLimits>");
@@ -1144,9 +1151,9 @@ internal static partial class MapServerEndpoints
             sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
             sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
 
-            for (var z = 0; z <= WmtsMaxZoom; z++)
+            for (var z = 0; z <= wmtsMaxZoom; z++)
             {
-                var matrixSize = 1 << z;
+                var matrixSize = 1L << z;
                 var scaleDenominator = GetWmtsScaleDenominator(z);
 
                 sb.AppendLine("      <TileMatrix>");
@@ -1555,7 +1562,7 @@ internal static partial class MapServerEndpoints
 
     private static double GetWmtsScaleDenominator(int zoom)
     {
-        return WmtsGoogleMapsCompatibleScaleDenominator0 / (1 << zoom);
+        return WmtsGoogleMapsCompatibleScaleDenominator0 / (1L << zoom);
     }
 
     private static string FormatWmtsScaleDenominator(double value)
@@ -1570,7 +1577,14 @@ internal static partial class MapServerEndpoints
             return 0;
         }
 
-        return (1 << (tileMatrix - 1)) - 1;
+        return (int)((1L << (tileMatrix - 1)) - 1);
+    }
+
+    private static int ResolveWmtsMaxZoom(HttpContext context)
+    {
+        var configuredMaxZoom = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Tiles.MaxTileZoom
+            ?? WmtsMaxZoom;
+        return Math.Clamp(configuredMaxZoom, 0, TileMath.MaxSupportedZoomLevel);
     }
 
     private static bool IsWmtsCapabilitiesAcceptable(string acceptHeader)

@@ -380,7 +380,14 @@ internal static partial class ImportEndpoints
                 var uploadResult = await cloudStorage.UploadAsync(uploadRequest, cancellationToken);
                 if (!uploadResult.Success)
                 {
-                    await AdminResponseWriter.WriteErrorAsync(context, $"Failed to upload file to cloud storage: {uploadResult.ErrorMessage}",
+                    var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+                    Log.CloudUploadFailed(
+                        logger,
+                        safeFileName,
+                        uploadResult.ErrorMessage ?? "Unknown cloud upload failure");
+                    await AdminResponseWriter.WriteErrorAsync(
+                        context,
+                        "Failed to upload file to cloud storage.",
                         StatusCodes.Status500InternalServerError);
                     return;
                 }
@@ -822,6 +829,15 @@ internal static partial class ImportEndpoints
         /// <param name="exception">The exception that caused the failure.</param>
         [LoggerMessage(EventId = 3303, Level = LogLevel.Warning, Message = "Failed to cleanup cancelled import resources for {UploadId}")]
         public static partial void CleanupFailed(ILogger logger, string uploadId, Exception exception);
+
+        /// <summary>
+        /// Logs when cloud storage upload fails during import staging.
+        /// </summary>
+        /// <param name="logger">The logger instance.</param>
+        /// <param name="fileName">The sanitized file name.</param>
+        /// <param name="failureReason">Provider-specific failure reason.</param>
+        [LoggerMessage(EventId = 3304, Level = LogLevel.Warning, Message = "Cloud upload failed for import file {FileName}: {FailureReason}")]
+        public static partial void CloudUploadFailed(ILogger logger, string fileName, string failureReason);
     }
 
 }

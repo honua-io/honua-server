@@ -87,7 +87,7 @@ resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
   count     = var.enable_postgis ? 1 : 0
   name      = "azure.extensions"
   server_id = azurerm_postgresql_flexible_server.this.id
-  value     = "POSTGIS"
+  value     = "POSTGIS,POSTGIS_RASTER"
 }
 
 resource "azurerm_redis_cache" "this" {
@@ -173,12 +173,12 @@ resource "null_resource" "enable_postgis" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS on ${azurerm_postgresql_flexible_server.this.fqdn}" \
+      echo "Enabling PostGIS + PostGIS Raster on ${azurerm_postgresql_flexible_server.this.fqdn}" \
         && PGPASSWORD='${local.db_password}' psql \
           --host=${azurerm_postgresql_flexible_server.this.fqdn} \
           --username=${var.db_admin_username} \
           --dbname=${var.db_name} \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis;"
+          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
   }
 

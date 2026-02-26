@@ -13,6 +13,11 @@ public static class TileMath
     private const double WebMercatorExtent = SpatialConstants.WebMercatorExtent;
 
     /// <summary>
+    /// Maximum tile zoom level supported by core tile coordinate validation.
+    /// </summary>
+    public const int MaxSupportedZoomLevel = 24;
+
+    /// <summary>
     /// Gets the bounding box for a tile in Web Mercator coordinates (EPSG:3857)
     /// </summary>
     /// <param name="x">Tile X coordinate</param>
@@ -82,7 +87,7 @@ public static class TileMath
     /// <returns>True if coordinates are valid</returns>
     public static bool ValidateTileCoordinates(int x, int y, int z)
     {
-        if (z is < 0 or > 22)
+        if (z is < 0 or > MaxSupportedZoomLevel)
             return false;
 
         var maxTile = Math.Pow(2, z);
@@ -99,7 +104,7 @@ public static class TileMath
     /// <returns>True if coordinates are valid for WorldCRS84Quad</returns>
     public static bool ValidateTileCoordinatesGeographic(int x, int y, int z)
     {
-        if (z is < 0 or > 22)
+        if (z is < 0 or > MaxSupportedZoomLevel)
             return false;
 
         var maxCols = 2 * Math.Pow(2, z);

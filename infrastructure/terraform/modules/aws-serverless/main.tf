@@ -115,6 +115,17 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.lambda.id]
   }
 
+  dynamic "ingress" {
+    for_each = toset(var.db_additional_ingress_cidrs)
+    content {
+      description = "PostgreSQL additional CIDR ingress"
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+    }
+  }
+
   egress {
     description = "Outbound HTTPS"
     from_port   = 443
@@ -364,12 +375,12 @@ resource "null_resource" "enable_postgis" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS on ${module.rds.db_instance_address}" \
+      echo "Enabling PostGIS + PostGIS Raster on ${module.rds.db_instance_address}" \
         && PGPASSWORD='${local.db_password}' psql \
           --host=${module.rds.db_instance_address} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis;"
+          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
   }
 

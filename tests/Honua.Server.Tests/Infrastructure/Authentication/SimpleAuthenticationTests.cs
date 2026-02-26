@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Collection("Database")]
 public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
 {
+    private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long";
     private readonly ITestOutputHelper _output;
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
@@ -138,6 +139,7 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
+                builder.UseSetting("Security:ConnectionEncryption:MasterKey", TestEncryptionMasterKey);
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
@@ -151,6 +153,61 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
             });
 
         // Act & Assert - Startup should fail fast in production when DEV_AUTH is enabled.
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Configuration validation failed", exception.Message);
+    }
+
+    [Fact]
+    public void MissingConnectionEncryptionMasterKey_Production_ShouldBeRejected()
+    {
+        // Arrange - Production startup with no encryption key configuration.
+        using var factory = new TestWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
+                builder.UseSetting("Security:ConnectionEncryption:MasterKey", string.Empty);
+                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:redis"] = "localhost"
+                    });
+                });
+            });
+
+        // Act & Assert - Startup should fail fast when encryption key is missing.
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Configuration validation failed", exception.Message);
+    }
+
+    [Fact]
+    public void InvalidConnectionEncryptionSalt_Production_ShouldBeRejected()
+    {
+        // Arrange - Production startup with an invalid base64 encryption salt.
+        using var factory = new TestWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
+                builder.UseSetting("Security:ConnectionEncryption:MasterKey", TestEncryptionMasterKey);
+                builder.UseSetting("Security:ConnectionEncryption:Salt", "not-base64");
+                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+                builder.ConfigureAppConfiguration((context, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:honua"] = "Host=localhost;Database=test;Username=test;Password=test",
+                        ["ConnectionStrings:redis"] = "localhost"
+                    });
+                });
+            });
+
+        // Act & Assert - Startup should fail fast when encryption salt is invalid.
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
         Assert.Contains("Configuration validation failed", exception.Message);
     }

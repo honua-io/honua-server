@@ -48,12 +48,14 @@ public class TileMathTests
     [InlineData(1, 1, 1, true)]
     [InlineData(255, 255, 8, true)]
     [InlineData(1023, 1023, 10, true)]
+    [InlineData(0, 0, 23, true)]
+    [InlineData(0, 0, 24, true)]
     [InlineData(-1, 0, 1, false)]
     [InlineData(0, -1, 1, false)]
     [InlineData(2, 0, 1, false)] // x >= maxTile (2^1 = 2)
     [InlineData(0, 2, 1, false)] // y >= maxTile (2^1 = 2)
     [InlineData(0, 0, -1, false)] // negative zoom
-    [InlineData(0, 0, 23, false)] // zoom > 22
+    [InlineData(0, 0, 25, false)] // zoom > 24
     public void ValidateTileCoordinates_VariousInputs_ReturnsExpectedResult(int x, int y, int z, bool expected)
     {
         // Act

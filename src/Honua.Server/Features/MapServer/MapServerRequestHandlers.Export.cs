@@ -32,6 +32,11 @@ internal static partial class MapServerEndpoints
     private const int DefaultDpi = 96;
     private const int MaxFeaturesPerLayer = 10_000;
     private const string InvalidExportRequestMessage = "Invalid export request parameters.";
+    private const string InvalidLayerDefsJsonMessage = "layerDefs contains invalid JSON.";
+    private const string InvalidLayerTimeOptionsJsonMessage = "layerTimeOptions contains invalid JSON.";
+    private const string InvalidDynamicLayersJsonMessage = "dynamicLayers contains invalid JSON.";
+    private const string InvalidTimeParameterMessage = "Invalid time parameter.";
+    private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
 
     /// <summary>
     /// Handle MapServer export (map image generation) requests.
@@ -190,12 +195,6 @@ internal static partial class MapServerEndpoints
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
-            }
-
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
             }
 
             var timeValue = GetValue(values, "time");
@@ -791,12 +790,12 @@ internal static partial class MapServerEndpoints
             return ExtentTransformResult.Success(
                 CoordinateTransformer.TransformExtent(extent, fromSrid, toSrid));
         }
-        catch (NotSupportedException ex)
+        catch (NotSupportedException)
         {
             var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
             if (connectionProvider == null)
             {
-                return ExtentTransformResult.Failure(ex.Message);
+                return ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
             }
 
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -811,7 +810,7 @@ internal static partial class MapServerEndpoints
                 cancellationToken);
             return transformed.HasValue
                 ? ExtentTransformResult.Success(transformed.Value)
-                : ExtentTransformResult.Failure(ex.Message);
+                : ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
         }
     }
 
@@ -997,9 +996,9 @@ internal static partial class MapServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidLayerDefsJsonMessage;
             return false;
         }
     }
@@ -1185,9 +1184,9 @@ internal static partial class MapServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidLayerTimeOptionsJsonMessage;
             return false;
         }
     }
@@ -1305,9 +1304,9 @@ internal static partial class MapServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidDynamicLayersJsonMessage;
             return false;
         }
     }
@@ -1453,7 +1452,7 @@ internal static partial class MapServerEndpoints
 
         if (!FeatureServerTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
         {
-            error = $"Invalid time parameter: {effectiveTime}";
+            error = InvalidTimeParameterMessage;
             return false;
         }
 
@@ -1760,9 +1759,9 @@ internal static partial class MapServerEndpoints
                 {
                     temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(time, timeRelation, layer);
                 }
-                catch (ArgumentException ex)
+                catch (ArgumentException)
                 {
-                    error = $"Invalid time parameter: {ex.Message}";
+                    error = InvalidTimeParameterMessage;
                     return false;
                 }
             }

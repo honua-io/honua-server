@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AttributionCompat,
   BasemapToggleCompat,
   CompassCompat,
   CompatEventBus,
+  FullscreenCompat,
   HomeCompat,
   LocateCompat,
   MapCompat,
   MapViewCompat,
   ScaleBarCompat,
+  ZoomCompat,
 } from "../src/index.js";
 
 describe("common controls compat", () => {
@@ -100,5 +103,36 @@ describe("common controls compat", () => {
     expect(view.rotation).toBe(45);
     expect(compass.goToNorth()).toBe(0);
     expect(view.rotation).toBe(0);
+  });
+
+  it("ZoomCompat adjusts view zoom level", () => {
+    const view = new MapViewCompat({ zoom: 4 });
+    const zoom = new ZoomCompat({ view });
+
+    expect(zoom.zoomIn()).toBe(5);
+    expect(view.zoom).toBe(5);
+    expect(zoom.zoomOut(2)).toBe(3);
+    expect(view.zoom).toBe(3);
+  });
+
+  it("FullscreenCompat toggles active state", () => {
+    const fullscreen = new FullscreenCompat();
+
+    expect(fullscreen.active).toBe(false);
+    fullscreen.enter();
+    expect(fullscreen.active).toBe(true);
+    expect(fullscreen.toggle()).toBe(false);
+    expect(fullscreen.active).toBe(false);
+  });
+
+  it("AttributionCompat manages attribution text", () => {
+    const attribution = new AttributionCompat({ itemDelimiter: " • " });
+
+    attribution.addAttribution("Source A");
+    attribution.addAttribution("Source B");
+    expect(attribution.getText()).toBe("Source A • Source B");
+    expect(attribution.removeAttribution("Source A")).toBe(true);
+    expect(attribution.getText()).toBe("Source B");
+    expect(attribution.removeAttribution("Missing")).toBe(false);
   });
 });

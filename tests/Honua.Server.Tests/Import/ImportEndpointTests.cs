@@ -5,10 +5,13 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
@@ -454,6 +457,64 @@ public class ImportEndpointTests : IAsyncLifetime
 
         // Assert
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.ServiceUnavailable);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_WithCloudUploadFailure_DoesNotLeakInternalErrorDetails()
+    {
+        const string sensitiveError = "Cloud timeout: bucket=prod-internal secret=abc123";
+
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.Provider.Returns(CloudStorageProvider.AwsS3);
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(UploadResult.CreateFailure(sensitiveError)));
+
+        var isolatedFixture = new WebAppFixture().ReplaceService(cloudStorage);
+        await isolatedFixture.InitializeAsync();
+        try
+        {
+            var geoJsonContent = """
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [-122.4194, 37.7749]
+                        },
+                        "properties": {
+                            "name": "Cloud Upload Failure Test"
+                        }
+                    }
+                ]
+            }
+            """;
+
+            var content = new MultipartFormDataContent();
+            var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "File",
+                FileName = "cloud-failure.geojson"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent("cloud_failure_import_table"), "TableName");
+            content.Add(new StringContent("true"), "ForceBackground");
+
+            var response = await isolatedFixture.Client.PostAsync("/api/v1/admin/import/upload", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            responseBody.Should().Contain("Failed to upload file to cloud storage.");
+            responseBody.Should().NotContain(sensitiveError);
+            responseBody.Should().NotContain("secret=abc123");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

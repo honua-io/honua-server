@@ -68,6 +68,17 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_NegativeCollectionId_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/maps/collections/-1/map?f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
     public async Task GetCollectionMap_NonExistentCollection_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
@@ -109,6 +120,17 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Collection ID must be a valid integer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
+    public async Task GetMapTileSets_NegativeCollectionId_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/maps/collections/-1/map/tiles");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -176,6 +198,17 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Invalid collection IDs");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/map")]
+    public async Task GetDatasetMap_NegativeCollectionId_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/maps/map?collections=-1&bbox=-180,-90,180,90&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

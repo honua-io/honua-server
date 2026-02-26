@@ -76,17 +76,11 @@ Bind AMP alertmanager routes to SNS or managed Grafana notification policies.
 
 Authentication: Managed Identity with Azure Monitor workspace permissions. Define rule group ARM/Bicep/Terraform resources using expressions from `honua-core.yaml`. Use Action Groups for notification routing.
 
-### GCP (Managed Service for Prometheus)
-
-**Collector overlay**: `docs/alerting/gcp/collector-overlay.yaml`
-
-Authentication: Workload Identity (recommended). Create Cloud Monitoring alert policies from PromQL expressions in `honua-core.yaml` using `gcloud monitoring policies create`.
-
 ---
 
 ## Optional Self-Hosted Stack (Prometheus + Grafana)
 
-Use this only when you want self-hosted dashboards and alerts in Kubernetes. If you are on AWS/GCP/Azure managed monitoring, prefer the cloud-native path above.
+Use this only when you want self-hosted dashboards and alerts in Kubernetes. If you are on AWS/Azure managed monitoring, prefer the cloud-native path above.
 
 The Terraform module `infrastructure/terraform/modules/observability-stack` provisions:
 

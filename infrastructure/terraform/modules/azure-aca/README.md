@@ -12,7 +12,7 @@ module "honua" {
   location       = "eastus"
   image          = "ghcr.io/honua-io/honua-server:latest-aot"
   admin_password = var.honua_admin_password
-  enable_postgis = true  # Required — Honua needs PostGIS for migrations
+  enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
@@ -21,7 +21,7 @@ module "honua" {
 }
 ```
 
-> **PostGIS is required.** Set `enable_postgis = true` to enable the PostGIS extension via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the database. If you cannot run local-exec, enable PostGIS manually after apply.
+> **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` to enable both extensions via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the database. If you cannot run local-exec, enable both extensions manually after apply.
 
 ## Production example
 
@@ -86,7 +86,7 @@ module "honua" {
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
 | `container_memory` | 1.0 | Memory in GiB. |
 | `min_replicas` / `max_replicas` | 1 / 5 | Scaling range. Use min 2 for production. |
-| `enable_postgis` | **false** | Enable PostGIS extension. **Set to true.** |
+| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster extensions. **Set to true.** |
 | `db_sku_name` | `B_Standard_B1ms` | PostgreSQL SKU. Use `GP_Standard_*` for production. |
 | `db_storage_mb` | 32768 | Database storage in MB. |
 | `db_geo_redundant_backup_enabled` | true | Geo-redundant backups. |
@@ -118,6 +118,6 @@ See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database 
 
 ## After apply
 
-1. Verify PostGIS: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version();"`
+1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
 2. Health check: `curl -f https://<app-fqdn>/healthz/ready`
 3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)

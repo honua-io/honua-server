@@ -4,44 +4,40 @@
 
 * [Documentation Overview](README.md)
 * [User Journeys](user/USER_JOURNEYS.md)
+* [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
+* [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
 
-## API Documentation
+## Geospatial Data APIs
 
-### Geospatial Data APIs
 * [Protocols Overview](user/STANDARDS_APIS.md)
 * [API Examples](user/API_EXAMPLES.md)
 * [Integration Patterns](user/INTEGRATION_PATTERNS.md)
+* [Interactive API Specs](api-specs/README.md)
 
 ### Coverage Matrices
+
 * [FeatureServer Coverage](user/feature-server-matrix.md)
 * [MapServer Coverage](user/map-server-matrix.md)
+* [Geometry Service Coverage](user/specifications/geometry-service-coverage.md)
+* [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
+  * [Part 1 — Core](user/specifications/ogc-api-features-part1-core.md)
+  * [Part 2 — CRS](user/specifications/ogc-api-features-part2-crs.md)
+  * [Part 3 — Filtering](user/specifications/ogc-api-features-part3-filtering.md)
 * [OGC API Tiles Coverage](user/specifications/ogc-api-tiles-coverage.md)
 * [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
-* [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
-* [OGC API Features Part 1 Core](user/specifications/ogc-api-features-part1-core.md)
-* [OGC API Features Part 2 CRS](user/specifications/ogc-api-features-part2-crs.md)
-* [OGC API Features Part 3 Filtering](user/specifications/ogc-api-features-part3-filtering.md)
-* [Geometry Service Coverage](user/specifications/geometry-service-coverage.md)
 
-### Server Management API
+## Server Management
+
 * [Admin API Reference](user/CONTROL_PLANE_API.md)
+* [Admin UI](user/admin-ui.md)
 * [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md)
 * [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md)
-* [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
-
-### Interactive API Specs
-* [Interactive Documentation](api-specs/README.md)
-
-## User Guide
-
-* [User Guide Overview](user/README.md)
-* [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
-* [Admin UI](user/admin-ui.md)
 
 ## DevOps Guide
 
 * [DevOps Overview](devops/README.md)
 * [Infrastructure & Deployment](devops/infrastructure.md)
+* [Terraform Validation Runbook](devops/terraform-validation.md)
 * [Docker Compose Sample](devops/docker-compose.md)
 * [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md)
 * [Security](devops/security.md)
@@ -58,18 +54,22 @@
 * [K3d + Helm Development](contributor/development/k3d-helm.md)
 
 ### Architecture
+
 * [Architecture Overview](contributor/ARCHITECTURE.md)
 * [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md)
+* [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md)
 * [Architecture Review Criteria](contributor/architecture-criteria.md)
 * [ADRs](contributor/adr/README.md)
 * [Honua Manifesto](contributor/HONUA_MANIFESTO.md)
 
 ### Design Patterns
+
 * [Code Model Optimization](contributor/CODE_MODEL_OPTIMIZATION.md)
 * [GIS Crosscutting Concerns](contributor/GIS_CROSSCUTTING_CONCERNS.md)
 * [Adaptive Sampling](contributor/ADAPTIVE_SAMPLING.md)
 
 ### Testing
+
 * [TestKit (C#)](contributor/testkit.md)
 * [Python Integration Tests](contributor/testing-python.md)
 * [JavaScript Integration Tests](contributor/testing-javascript.md)
@@ -79,13 +79,16 @@
 * [Protocol Parity Audit (#305-#310)](contributor/PROTOCOL_PARITY_305_310_AUDIT.md)
 * [CITE OGC Features](contributor/cite-conformance-testing.md)
 * [CITE OGC Tiles](contributor/cite-tiles-conformance-testing.md)
+* [CITE OGC Maps](contributor/ogc-maps-conformance-testing.md)
 * [CITE WMS 1.3](contributor/cite-wms-conformance-testing.md)
 * [CITE WMTS 1.0](contributor/cite-wmts-conformance-testing.md)
 
 ### CI/CD
+
 * [CI Monitoring](contributor/CI_MONITORING.md)
 * [CI Workflows](contributor/ci-workflows.md)
 * [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
 * [Release Checklist](contributor/RELEASE_CHECKLIST.md)
+* [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)
 * [CodeCov Setup](contributor/CODECOV_SETUP.md)
 * [LLM Architecture Review](contributor/development/llm-review-setup.md)

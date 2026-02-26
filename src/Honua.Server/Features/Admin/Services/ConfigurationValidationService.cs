@@ -96,6 +96,10 @@ internal static class ConfigurationValidationService
             }
         }
 
+        ValidateHostValidationConfiguration(configuration, errors, warnings, isDevelopment);
+
+        ValidateConnectionEncryptionConfiguration(configuration, errors, warnings, isDevelopment);
+
         // Log configuration summary
         LogConfigurationSummary(configuration, logger);
 
@@ -329,6 +333,144 @@ internal static class ConfigurationValidationService
         }
     }
 
+    private static void ValidateConnectionEncryptionConfiguration(
+        IConfiguration configuration,
+        List<string> errors,
+        List<string> warnings,
+        bool isDevelopment)
+    {
+        var masterKey = configuration["Security:ConnectionEncryption:MasterKey"];
+        if (string.IsNullOrWhiteSpace(masterKey))
+        {
+            if (isDevelopment)
+            {
+                warnings.Add("Security:ConnectionEncryption:MasterKey is not configured. Secure connection encryption operations will fail until this value is set.");
+            }
+            else
+            {
+                errors.Add("Security__ConnectionEncryption__MasterKey is required in non-development environments.");
+            }
+
+            return;
+        }
+
+        if (masterKey.Length < 32)
+        {
+            const string message = "Security:ConnectionEncryption:MasterKey must be at least 32 characters long.";
+            if (isDevelopment)
+            {
+                warnings.Add(message);
+            }
+            else
+            {
+                errors.Add(message);
+            }
+        }
+
+        var salt = configuration["Security:ConnectionEncryption:Salt"];
+        if (string.IsNullOrWhiteSpace(salt))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = Convert.FromBase64String(salt);
+        }
+        catch (FormatException)
+        {
+            const string message = "Security:ConnectionEncryption:Salt must be a valid base64 string when configured.";
+            if (isDevelopment)
+            {
+                warnings.Add(message);
+            }
+            else
+            {
+                errors.Add(message);
+            }
+        }
+    }
+
+    private static void ValidateHostValidationConfiguration(
+        IConfiguration configuration,
+        List<string> errors,
+        List<string> warnings,
+        bool isDevelopment)
+    {
+        var hostValidationEnabled = configuration.GetValue<bool?>("HostValidation:Enabled") ?? !isDevelopment;
+        if (!hostValidationEnabled)
+        {
+            return;
+        }
+
+        if (HasConfiguredHostAllowlist(configuration) || HasValidPublicBaseUrl(configuration))
+        {
+            return;
+        }
+
+        const string message =
+            "Host validation is enabled, but no explicit host allowlist is configured. Set HostValidation__AllowedHosts (or AllowedHosts) or PUBLIC_BASE_URL to trusted hosts.";
+
+        var requireExplicitHosts = configuration.GetValue<bool>("HostValidation:RequireExplicitHosts");
+        if (!isDevelopment && requireExplicitHosts)
+        {
+            errors.Add(message);
+            return;
+        }
+
+        if (isDevelopment)
+        {
+            warnings.Add(message);
+        }
+        else
+        {
+            warnings.Add($"{message} Set HostValidation__RequireExplicitHosts=true to enforce this as a startup error.");
+        }
+    }
+
+    private static bool HasConfiguredHostAllowlist(IConfiguration configuration)
+    {
+        var configuredHosts = new List<string>();
+
+        var hostValidationAllowedHosts = configuration.GetSection("HostValidation:AllowedHosts").Get<string[]>();
+        if (hostValidationAllowedHosts != null)
+        {
+            configuredHosts.AddRange(hostValidationAllowedHosts);
+        }
+
+        var allowedHostsRaw = configuration["AllowedHosts"];
+        if (!string.IsNullOrWhiteSpace(allowedHostsRaw))
+        {
+            configuredHosts.AddRange(
+                allowedHostsRaw.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        return configuredHosts.Any(IsExplicitAllowedHost);
+    }
+
+    private static bool HasValidPublicBaseUrl(IConfiguration configuration)
+    {
+        var value = configuration["Public:BaseUrl"] ?? configuration["PUBLIC_BASE_URL"];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) &&
+               (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsExplicitAllowedHost(string? hostEntry)
+    {
+        if (string.IsNullOrWhiteSpace(hostEntry))
+        {
+            return false;
+        }
+
+        return !string.Equals(hostEntry.Trim(), "*", StringComparison.Ordinal);
+    }
+
     private static readonly FrozenSet<string> _knownPlaceholderPasswords = new[]
         {
             "CHANGE_ME_BEFORE_USE",
@@ -364,6 +506,7 @@ internal static class ConfigurationValidationService
         new Dictionary<string, FrozenSet<string>>(StringComparer.Ordinal)
         {
             ["HONUA_ADMIN_PASSWORD"] = _connectionSecretPrefixes,
+            ["Security:ConnectionEncryption:MasterKey"] = _connectionSecretPrefixes,
             ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
             ["ConnectionStrings:redis"] = _envOnlyPrefixes,
             ["Oidc:AzureAd:ClientSecret"] = _envOnlyPrefixes,

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -64,7 +65,10 @@ internal static partial class MapServerEndpoints
             .ToArray();
 
         var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-        var response = MapServiceToMapServerResponse(service with { Layers = visibleLayers }, limitsOptions.Query.MaxRecordCount);
+        var response = MapServiceToMapServerResponse(
+            service with { Layers = visibleLayers },
+            limitsOptions.Query.MaxRecordCount,
+            limitsOptions.Tiles.MaxTileZoom);
         return Results.Json(response, MapServerJsonContext.Default.MapServerResponse, contentType: "application/json");
     }
 
@@ -155,7 +159,10 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static MapServerResponse MapServiceToMapServerResponse(ServiceDefinition service, int maxRecordCount)
+    private static MapServerResponse MapServiceToMapServerResponse(
+        ServiceDefinition service,
+        int maxRecordCount,
+        int maxTileZoom)
     {
         var mapConfig = service.Metadata?.MapServer;
         var visibleFeatureLayers = service.Layers.Where(layer => layer.HasGeometry).ToArray();
@@ -203,22 +210,22 @@ internal static partial class MapServerEndpoints
                 Title = service.Name ?? "",
                 Comments = service.Description ?? ""
             },
-            TileInfo = BuildTileInfo()
+            TileInfo = BuildTileInfo(maxTileZoom)
         };
     }
 
-    private static TileInfo BuildTileInfo()
+    private static TileInfo BuildTileInfo(int maxTileZoom)
     {
         const double webMercatorOrigin = SpatialConstants.WebMercatorExtent;
         const int tileSize = 256;
-        const int maxZoom = 22;
         const double pixelSize = 0.00028;
 
-        var lods = new LevelOfDetail[maxZoom + 1];
-        for (var z = 0; z <= maxZoom; z++)
+        var effectiveMaxZoom = Math.Clamp(maxTileZoom, 0, TileMath.MaxSupportedZoomLevel);
+        var lods = new LevelOfDetail[effectiveMaxZoom + 1];
+        for (var z = 0; z <= effectiveMaxZoom; z++)
         {
-            var matrixSize = 1 << z;
-            var resolution = 2.0 * webMercatorOrigin / (tileSize * matrixSize);
+            var matrixSize = 1L << z;
+            var resolution = 2.0 * webMercatorOrigin / (tileSize * (double)matrixSize);
             var scale = resolution / pixelSize;
             lods[z] = new LevelOfDetail
             {

@@ -178,6 +178,29 @@ export interface CompassCompatOptions {
   eventBus?: CompatEventBus;
 }
 
+export interface ZoomCompatOptions {
+  view?: unknown;
+  container?: unknown;
+  eventBus?: CompatEventBus;
+  layout?: "vertical" | "horizontal";
+}
+
+export interface FullscreenCompatOptions {
+  view?: unknown;
+  container?: unknown;
+  element?: unknown;
+  eventBus?: CompatEventBus;
+}
+
+export interface AttributionCompatOptions {
+  view?: unknown;
+  map?: unknown;
+  container?: unknown;
+  eventBus?: CompatEventBus;
+  itemDelimiter?: string;
+  attributions?: readonly string[];
+}
+
 export class LocateCompat {
   public readonly view: unknown;
   public readonly container: unknown;
@@ -257,6 +280,125 @@ export class CompassCompat {
 
   public goToNorth(): number {
     return this.reset();
+  }
+}
+
+export class ZoomCompat {
+  public readonly view: unknown;
+  public readonly container: unknown;
+  public readonly eventBus: CompatEventBus;
+  public readonly layout: "vertical" | "horizontal";
+
+  public constructor(options: ZoomCompatOptions = {}) {
+    this.view = options.view;
+    this.container = options.container;
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.layout = options.layout ?? "vertical";
+  }
+
+  public zoomIn(step = 1): number | undefined {
+    return this.adjustZoom(Math.abs(step));
+  }
+
+  public zoomOut(step = 1): number | undefined {
+    return this.adjustZoom(-Math.abs(step));
+  }
+
+  private adjustZoom(delta: number): number | undefined {
+    if (!isRecord(this.view) || typeof this.view.zoom !== "number" || !Number.isFinite(this.view.zoom)) {
+      return undefined;
+    }
+
+    const next = this.view.zoom + delta;
+    this.view.zoom = next;
+    this.eventBus.emit("zoom.changed", { zoom: next, delta }, this);
+    return next;
+  }
+}
+
+export class FullscreenCompat {
+  public readonly view: unknown;
+  public readonly container: unknown;
+  public readonly element: unknown;
+  public readonly eventBus: CompatEventBus;
+  public active: boolean;
+
+  public constructor(options: FullscreenCompatOptions = {}) {
+    this.view = options.view;
+    this.container = options.container;
+    this.element = options.element;
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.active = false;
+  }
+
+  public enter(): void {
+    if (this.active) {
+      return;
+    }
+    this.active = true;
+    this.eventBus.emit("fullscreen.changed", { active: true }, this);
+  }
+
+  public exit(): void {
+    if (!this.active) {
+      return;
+    }
+    this.active = false;
+    this.eventBus.emit("fullscreen.changed", { active: false }, this);
+  }
+
+  public toggle(force?: boolean): boolean {
+    const next = force ?? !this.active;
+    if (next) {
+      this.enter();
+    } else {
+      this.exit();
+    }
+    return this.active;
+  }
+}
+
+export class AttributionCompat {
+  public readonly view: unknown;
+  public readonly map: unknown;
+  public readonly container: unknown;
+  public readonly eventBus: CompatEventBus;
+  public itemDelimiter: string;
+  public attributions: string[];
+
+  public constructor(options: AttributionCompatOptions = {}) {
+    this.view = options.view;
+    this.map = options.map ?? extractViewMap(options.view);
+    this.container = options.container;
+    this.eventBus =
+      options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
+    this.itemDelimiter = options.itemDelimiter ?? " | ";
+    this.attributions = options.attributions ? [...options.attributions] : [];
+  }
+
+  public addAttribution(value: string): void {
+    if (value.trim().length === 0) {
+      return;
+    }
+    this.attributions.push(value);
+    this.eventBus.emit("attribution.updated", { count: this.attributions.length }, this);
+  }
+
+  public removeAttribution(value: string): boolean {
+    const index = this.attributions.indexOf(value);
+    if (index < 0) {
+      return false;
+    }
+    this.attributions.splice(index, 1);
+    this.eventBus.emit("attribution.updated", { count: this.attributions.length }, this);
+    return true;
+  }
+
+  public getText(): string {
+    if (this.attributions.length === 0) {
+      return "";
+    }
+    return this.attributions.join(this.itemDelimiter);
   }
 }
 

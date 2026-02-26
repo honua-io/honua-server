@@ -28,21 +28,27 @@ export type {
   CompatEventSubscription,
 } from "./esri-compat/event-bus.js";
 export {
+  AttributionCompat,
   BasemapToggleCompat,
   CompassCompat,
+  FullscreenCompat,
   HomeCompat,
   LocateCompat,
   ScaleBarCompat,
+  ZoomCompat,
 } from "./esri-compat/controls.js";
 export type {
+  AttributionCompatOptions,
   BasemapToggleCompatOptions,
   CompassCompatOptions,
+  FullscreenCompatOptions,
   HomeCompatOptions,
   HomeViewpointCompat,
   LocateCompatOptions,
   LocatePositionCompat,
   ScaleBarCompatOptions,
   ScaleBarUnitCompat,
+  ZoomCompatOptions,
 } from "./esri-compat/controls.js";
 export { BasemapGalleryCompat } from "./esri-compat/basemap-gallery.js";
 export type { BasemapGalleryCompatOptions } from "./esri-compat/basemap-gallery.js";

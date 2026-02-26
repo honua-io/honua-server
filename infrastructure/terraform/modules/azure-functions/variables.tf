@@ -102,7 +102,7 @@ variable "db_geo_redundant_backup_enabled" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS via local-exec (requires psql + network access)."
+  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
   type        = bool
   default     = false
 }

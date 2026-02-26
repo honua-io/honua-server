@@ -67,7 +67,7 @@ AOT images start faster and use less memory. Use JIT only if you encounter AOT c
 ## Production checklist
 
 - [ ] Set `HONUA_ADMIN_PASSWORD` to a strong secret
-- [ ] Use a managed PostGIS database (RDS, Cloud SQL, Azure Flexible Server) or a hardened self-hosted instance
+- [ ] Use a managed PostGIS database (RDS, Azure Flexible Server) or a hardened self-hosted instance
 - [ ] Enable Redis for multi-node deployments
 - [ ] Terminate TLS at the ingress / load balancer
 - [ ] Configure OIDC if you need browser-based admin access — see [Security](security.md)
@@ -78,8 +78,15 @@ AOT images start faster and use less memory. Use JIT only if you encounter AOT c
 
 Before deploying with Terraform, create least-privilege service accounts. Bootstrap templates are in the `infrastructure/terraform/bootstrap/` directory for each cloud provider.
 
+## Terraform validation
+
+For AWS/Azure/Kubernetes integration testing (including Redis, PostGIS raster checks, scale checks, and auto-destroy defaults), use the on-demand runbook:
+
+- [Terraform Validation Runbook](terraform-validation.md)
+
 ## Related Docs
 
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md)
 - [Security](security.md)
 - [Monitoring](monitoring.md)
+- [Terraform Validation Runbook](terraform-validation.md)

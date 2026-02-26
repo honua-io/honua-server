@@ -4,19 +4,63 @@ variable "location" {
   default     = "eastus"
 }
 
+variable "environment" {
+  description = "Environment name used in resource naming."
+  type        = string
+  default     = "it"
+}
+
+variable "name_prefix" {
+  description = "Prefix used for resource names."
+  type        = string
+  default     = "honuafn"
+}
+
 variable "honua_admin_password" {
   description = "Admin API password for Honua."
   type        = string
   sensitive   = true
 }
 
+variable "db_admin_password" {
+  description = "PostgreSQL admin password. Set for deterministic integration tests."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "honua_image" {
   description = "Container image (Functions-compatible)."
   type        = string
+  default     = "ghcr.io/honua-io/honua-server:latest-aot"
 }
 
 variable "plan_sku_name" {
   description = "Function App plan SKU (EP* for Premium, Y1 for Consumption)."
   type        = string
   default     = "EP1"
+}
+
+variable "enable_postgis" {
+  description = "Enable PostGIS and PostGIS Raster during apply."
+  type        = bool
+  default     = true
+}
+
+variable "redis_enabled" {
+  description = "Provision Azure Cache for Redis."
+  type        = bool
+  default     = true
+}
+
+variable "skip_migrations" {
+  description = "Skip database migrations on startup."
+  type        = bool
+  default     = true
+}
+
+variable "tags" {
+  description = "Additional tags for resources."
+  type        = map(string)
+  default     = {}
 }

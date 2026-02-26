@@ -19,6 +19,8 @@ namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const string InvalidServiceApplyEditsJsonMessage = "Request body contains invalid JSON.";
+
     private static async Task<IResult> HandleApplyEdits(
         string serviceId,
         int layerId,
@@ -360,11 +362,11 @@ internal static partial class FeatureServerEndpoints
         {
             layerEdits = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid service applyEdits request",
-                [$"Invalid JSON: {ex.Message}"]);
+                [InvalidServiceApplyEditsJsonMessage]);
         }
 
         if (layerEdits == null || layerEdits.Length == 0)

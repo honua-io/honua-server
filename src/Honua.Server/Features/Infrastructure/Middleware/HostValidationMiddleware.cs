@@ -20,10 +20,11 @@ internal sealed class HostValidationMiddleware(
     private readonly bool _enabled = ResolveEnabled(configuration, environment);
     private readonly string[] _allowedHosts = ResolveAllowedHosts(configuration);
     private readonly string? _publicBaseUrlHost = ResolvePublicBaseUrlHost(configuration);
+    private readonly bool _allowNullLocalIpForLocalhost = environment.IsEnvironment("Test");
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!_enabled || IsRequestHostAllowed(context.Request.Host))
+        if (!_enabled || IsRequestHostAllowed(context, context.Request.Host))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -39,7 +40,7 @@ internal sealed class HostValidationMiddleware(
             .ConfigureAwait(false);
     }
 
-    private bool IsRequestHostAllowed(HostString requestHost)
+    private bool IsRequestHostAllowed(HttpContext context, HostString requestHost)
     {
         var host = requestHost.Host;
         if (string.IsNullOrWhiteSpace(host))
@@ -58,7 +59,7 @@ internal sealed class HostValidationMiddleware(
             return true;
         }
 
-        return IsFallbackAllowedHost(host);
+        return IsFallbackAllowedHost(context, host, _allowNullLocalIpForLocalhost);
     }
 
     private static bool IsAllowedByConfiguredHosts(string requestHost, IReadOnlyList<string> allowedHosts)
@@ -85,16 +86,62 @@ internal sealed class HostValidationMiddleware(
         return false;
     }
 
-    private static bool IsFallbackAllowedHost(string host)
+    private static bool IsFallbackAllowedHost(HttpContext context, string host, bool allowNullLocalIpForLocalhost)
     {
+        var localIp = context.Connection.LocalIpAddress;
+        var isInMemoryConnection = localIp == null && context.Connection.RemoteIpAddress == null;
+
         if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsLoopbackConnection(localIp) ||
+                   (allowNullLocalIpForLocalhost && localIp == null) ||
+                   isInMemoryConnection;
+        }
+
+        var normalized = host.Trim('[', ']');
+        if (!IPAddress.TryParse(normalized, out var requestedIp))
+        {
+            return false;
+        }
+
+        if (localIp == null)
+        {
+            if (isInMemoryConnection)
+            {
+                return IPAddress.IsLoopback(requestedIp);
+            }
+
+            return false;
+        }
+
+        if (IPAddress.IsLoopback(requestedIp) && IsLoopbackConnection(localIp))
         {
             return true;
         }
 
-        var normalized = host.Trim('[', ']');
-        return IPAddress.TryParse(normalized, out _);
+        requestedIp = NormalizeIpAddress(requestedIp);
+        localIp = NormalizeIpAddress(localIp);
+
+        if (localIp.Equals(IPAddress.Any) || localIp.Equals(IPAddress.IPv6Any))
+        {
+            return IPAddress.IsLoopback(requestedIp);
+        }
+
+        return requestedIp.Equals(localIp);
     }
+
+    private static bool IsLoopbackConnection(IPAddress? address)
+    {
+        if (address == null)
+        {
+            return false;
+        }
+
+        return IPAddress.IsLoopback(NormalizeIpAddress(address));
+    }
+
+    private static IPAddress NormalizeIpAddress(IPAddress address)
+        => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 
     private static bool ResolveEnabled(IConfiguration configuration, IHostEnvironment environment)
     {

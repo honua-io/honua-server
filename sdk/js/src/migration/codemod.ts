@@ -38,7 +38,10 @@ export type CodemodConstructorKind =
   | "basemap-gallery-widget"
   | "expand-widget"
   | "compass-widget"
-  | "bookmarks-widget";
+  | "bookmarks-widget"
+  | "fullscreen-widget"
+  | "zoom-widget"
+  | "attribution-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -207,6 +210,30 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Bookmarks",
       "@arcgis/core/widgets/Bookmarks.js",
+    ]),
+  },
+  {
+    kind: "fullscreen-widget",
+    compatSymbol: "FullscreenCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Fullscreen",
+      "@arcgis/core/widgets/Fullscreen.js",
+    ]),
+  },
+  {
+    kind: "zoom-widget",
+    compatSymbol: "ZoomCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Zoom",
+      "@arcgis/core/widgets/Zoom.js",
+    ]),
+  },
+  {
+    kind: "attribution-widget",
+    compatSymbol: "AttributionCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Attribution",
+      "@arcgis/core/widgets/Attribution.js",
     ]),
   },
 ];
@@ -686,6 +713,9 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "bookmarks-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "fullscreen-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "zoom-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "attribution-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1359,6 +1389,12 @@ function isSafeConstructorCall(
       return isSafeCompassWidgetCompatCall(node);
     case "bookmarks-widget":
       return isSafeBookmarksWidgetCompatCall(node);
+    case "fullscreen-widget":
+      return isSafeFullscreenWidgetCompatCall(node);
+    case "zoom-widget":
+      return isSafeZoomWidgetCompatCall(node);
+    case "attribution-widget":
+      return isSafeAttributionWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2294,6 +2330,135 @@ function isSafeBookmarksWidgetCompatCall(
       return {
         ok: false,
         reason: "Bookmarks options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeFullscreenWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Fullscreen constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Fullscreen constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "element"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Fullscreen options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Fullscreen options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeZoomWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Zoom constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Zoom constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "layout"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Zoom options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Zoom options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeAttributionWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Attribution constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Attribution constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container", "itemDelimiter", "attributions"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Attribution options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Attribution options include unsupported properties; requires manual migration.",
       };
     }
   }

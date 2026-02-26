@@ -231,6 +231,26 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features with malformed layer filter")]
+    public async Task Features_AllLayers_WithMalformedLayerFilter_DoesNotLeakParserDetails()
+    {
+        const string sentinel = "ODATA_LAYER_FILTER_SENTINEL";
+        var malformedFilter = Uri.EscapeDataString($"LayerId eq {sentinel}(");
+
+        var response = await _fixture.Client.GetAsync($"/odata/Features?$filter={malformedFilter}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("LayerId filter must be a valid OData expression that resolves to a single layer.");
+        content.Should().NotContain(sentinel);
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ReturnsXmlDocument()

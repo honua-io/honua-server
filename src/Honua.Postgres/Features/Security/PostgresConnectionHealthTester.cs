@@ -64,7 +64,7 @@ internal sealed class PostgresConnectionHealthTester : IConnectionHealthTester
         }
         catch (Exception ex)
         {
-            _logHealthCheckFailed(_logger, ex.Message, ex);
+            _logHealthCheckFailed(_logger, ex.GetType().Name, ex);
             return false;
         }
     }

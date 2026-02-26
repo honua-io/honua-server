@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcMaps.Handlers;
@@ -100,7 +101,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
@@ -137,7 +138,7 @@ public static partial class OgcMapsEndpoints
             var invalidCollections = new List<string>();
             foreach (var token in collectionTokens)
             {
-                if (int.TryParse(token, out var layerId))
+                if (TryParseNonNegativeCollectionId(token, out var layerId))
                 {
                     collectionIds.Add(layerId);
                 }
@@ -180,7 +181,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
@@ -203,7 +204,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
@@ -213,4 +214,10 @@ public static partial class OgcMapsEndpoints
 
     [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
     private static partial Regex StyleIdPattern();
+
+    private static bool TryParseNonNegativeCollectionId(string value, out int layerId)
+    {
+        var parsed = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);
+        return parsed && layerId >= 0;
+    }
 }

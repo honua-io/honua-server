@@ -29,6 +29,8 @@ internal sealed partial class OgcFilterProcessor
     private const string InvalidCqlFilterPrefix = "Invalid CQL filter";
     private const string FilterLangCql2Text = "cql2-text";
     private const string FilterLangCql2Json = "cql2-json";
+    private const string InvalidFilterProcessingMessage = "Invalid filter parameters.";
+    private const string InvalidCqlSyntaxMessage = "Syntax error in filter expression.";
 
     /// <summary>
     /// Result of filter processing operation.
@@ -228,7 +230,8 @@ internal sealed partial class OgcFilterProcessor
         }
         catch (Exception ex)
         {
-            return FilterProcessingResult.Failure($"Error processing filters: {ex.Message}");
+            FilterLog.FilterProcessingFailed(_logger, ex);
+            return FilterProcessingResult.Failure(InvalidFilterProcessingMessage);
         }
     }
 
@@ -751,6 +754,11 @@ internal sealed partial class OgcFilterProcessor
 
     private static string SanitizeCqlErrorMessage(string exceptionMessage)
     {
+        if (string.IsNullOrWhiteSpace(exceptionMessage))
+        {
+            return InvalidCqlSyntaxMessage;
+        }
+
         // Limit message length to prevent overly detailed exposure
         const int maxLength = 200;
 
@@ -764,13 +772,31 @@ internal sealed partial class OgcFilterProcessor
             message = message[..stackTraceIndex].Trim();
         }
 
+        // Parser diagnostics often include user-provided payload fragments and internal parser state.
+        if (message.Contains("BytePositionInLine", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Path:", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("JsonException", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("unexpected", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("position", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("column", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("line ", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("syntax", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("parse", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains('\'') ||
+            message.Contains('"'))
+        {
+            return InvalidCqlSyntaxMessage;
+        }
+
         // Truncate if too long
         if (message.Length > maxLength)
         {
             message = string.Concat(message.AsSpan(0, maxLength), "...");
         }
 
-        return message;
+        return string.IsNullOrWhiteSpace(message) ? InvalidCqlSyntaxMessage : message;
     }
 
     // Result classes
@@ -865,5 +891,9 @@ internal sealed partial class OgcFilterProcessor
         [LoggerMessage(EventId = 5470, Level = LogLevel.Warning,
             Message = "Axis swap failed for spatial filter geometry, returning original geometry")]
         public static partial void AxisSwapFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(EventId = 5471, Level = LogLevel.Warning,
+            Message = "Filter processing failed with an unexpected exception")]
+        public static partial void FilterProcessingFailed(ILogger logger, Exception exception);
     }
 }

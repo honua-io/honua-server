@@ -436,6 +436,29 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_InvalidTimeFormat_DoesNotLeakInputOrParserDetails()
+    {
+        const string sentinel = "LEAK_SENTINEL_TIME";
+        var encodedTime = Uri.EscapeDataString($"not-a-time-{sentinel}");
+        var serviceId = WebAppFixture.TestServiceId;
+        var layerId = WebAppFixture.TestLayerId;
+
+        var response = await _client.GetAsync(
+            $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid time parameter.");
+        content.Should().NotContain(sentinel);
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task GeoServicesQuery_TemporalFieldNotFound_ReturnsError()
     {
         // Arrange - Use a service/layer that doesn't have temporal fields

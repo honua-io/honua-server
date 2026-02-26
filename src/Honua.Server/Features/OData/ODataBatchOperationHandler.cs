@@ -27,6 +27,13 @@ internal sealed partial class ODataBatchOperationHandler(
     IETagService etagService,
     ILogger<ODataBatchOperationHandler> logger)
 {
+    private const int MaxBatchOperationCount = 1000;
+    private const int MaxApplicationHttpSectionBytes = 10 * 1024 * 1024;
+    private const string BatchTooManyOperationsMessage =
+        "Batch request exceeds the maximum of 1000 operations.";
+    private const string BatchOperationPayloadTooLargeMessage =
+        "Batch operation payload exceeds the maximum allowed size of 10485760 bytes.";
+
     private readonly ODataBatchDependencies _batchDependencies = batchDependencies ?? throw new ArgumentNullException(nameof(batchDependencies));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
@@ -123,6 +130,13 @@ internal sealed partial class ODataBatchOperationHandler(
             var requestModel = await request.ReadFromJsonAsync<ODataBatchRequest>(
                 ODataJsonContext.Default.ODataBatchRequest,
                 cancellationToken);
+
+            if (requestModel != null &&
+                !TryValidateBatchOperationCount(requestModel.Requests.Length, out var operationLimitError))
+            {
+                return (null, false, operationLimitError);
+            }
+
             return (requestModel, false, null);
         }
         catch (JsonException ex)
@@ -164,6 +178,11 @@ internal sealed partial class ODataBatchOperationHandler(
             var sectionContentType = GetSectionContentType(section);
             if (IsApplicationHttpContentType(sectionContentType))
             {
+                if (!TryValidateBatchOperationCount(requests.Count + 1, out var operationLimitError))
+                {
+                    return (null, operationLimitError);
+                }
+
                 var fallbackId = requestSequence.ToString(CultureInfo.InvariantCulture);
                 var parse = await ParseApplicationHttpSectionAsync(section, null, fallbackId, cancellationToken);
                 if (parse.Request == null)
@@ -184,7 +203,12 @@ internal sealed partial class ODataBatchOperationHandler(
             var groupId = $"changeset-{atomicitySequence.ToString(CultureInfo.InvariantCulture)}";
             atomicitySequence++;
 
-            var changeset = await ParseChangesetSectionAsync(section, groupId, requestSequence, cancellationToken);
+            var changeset = await ParseChangesetSectionAsync(
+                section,
+                groupId,
+                requestSequence,
+                requests.Count,
+                cancellationToken);
             if (changeset.Requests == null)
             {
                 return (null, changeset.Error);
@@ -201,6 +225,7 @@ internal sealed partial class ODataBatchOperationHandler(
         MultipartSection section,
         string atomicityGroup,
         int requestSequence,
+        int existingRequestCount,
         CancellationToken cancellationToken)
     {
         var sectionContentType = GetSectionContentType(section);
@@ -227,6 +252,11 @@ internal sealed partial class ODataBatchOperationHandler(
                 return (null, requestSequence, "Changeset can only contain application/http sections.");
             }
 
+            if (!TryValidateBatchOperationCount(existingRequestCount + requests.Count + 1, out var operationLimitError))
+            {
+                return (null, requestSequence, operationLimitError);
+            }
+
             var fallbackId = requestSequence.ToString(CultureInfo.InvariantCulture);
             var parse = await ParseApplicationHttpSectionAsync(changesetSection, atomicityGroup, fallbackId, cancellationToken);
             if (parse.Request == null)
@@ -249,11 +279,10 @@ internal sealed partial class ODataBatchOperationHandler(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var reader = new StreamReader(section.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        var payload = await reader.ReadToEndAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(payload))
+        var (payload, payloadError) = await ReadSectionPayloadAsync(section, cancellationToken);
+        if (payload == null)
         {
-            return (null, "application/http section payload is empty.");
+            return (null, payloadError);
         }
 
         var normalized = payload.Replace("\r\n", "\n", StringComparison.Ordinal);
@@ -331,6 +360,52 @@ internal sealed partial class ODataBatchOperationHandler(
             Body = body,
             AtomicityGroup = atomicityGroup
         }, null);
+    }
+
+    private static bool TryValidateBatchOperationCount(int requestCount, out string? error)
+    {
+        if (requestCount > MaxBatchOperationCount)
+        {
+            error = BatchTooManyOperationsMessage;
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static async Task<(string? Payload, string? Error)> ReadSectionPayloadAsync(
+        MultipartSection section,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        var totalBytesRead = 0L;
+
+        await using var memoryStream = new MemoryStream();
+        int bytesRead;
+        while ((bytesRead = await section.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
+        {
+            totalBytesRead += bytesRead;
+            if (totalBytesRead > MaxApplicationHttpSectionBytes)
+            {
+                return (null, BatchOperationPayloadTooLargeMessage);
+            }
+
+            await memoryStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+        }
+
+        if (memoryStream.Length == 0)
+        {
+            return (null, "application/http section payload is empty.");
+        }
+
+        memoryStream.Position = 0;
+        using var reader = new StreamReader(memoryStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        var payload = await reader.ReadToEndAsync(cancellationToken);
+
+        return string.IsNullOrWhiteSpace(payload)
+            ? (null, "application/http section payload is empty.")
+            : (payload, null);
     }
 
     private static string? GetSectionContentType(MultipartSection section)

@@ -2,18 +2,18 @@
 
 This guide covers Honua-specific requirements for designing database schemas that work optimally across all supported protocols (FeatureServer, MapServer, OGC API Features/Tiles, OData v4, Vector Tiles).
 
-## 🎯 **Honua-Specific Requirements**
+## Honua-Specific Requirements
 
 ### **1. Multi-Protocol Field Compatibility**
 Honua exposes your data through multiple APIs simultaneously. Your schema must work across all protocols:
 
-**✅ Required for All Protocols:**
+**Required for All Protocols:**
 - Integer primary key (required for FeatureServer)
 - Consistent field naming (snake_case recommended)
 - Single geometry column per table
 - Proper SRID specification
 
-**❌ Avoid These Patterns:**
+**Avoid These Patterns:**
 - Composite primary keys (breaks FeatureServer)
 - Field names with spaces or special characters
 - Multiple geometry columns (confuses protocol mapping)
@@ -29,7 +29,7 @@ Each protocol has specific requirements that affect your schema design:
 | **Geometry Types** | Single type per layer | Any | Any | Simplified preferred |
 | **Field Limits** | ~255 chars per field | No limit | No limit | Short names better |
 
-## 🗄️ **Honua Schema Requirements**
+## Honua Schema Requirements
 
 ### **Primary Key Pattern (Required)**
 ```sql
@@ -87,7 +87,7 @@ CREATE TABLE problematic_fields (
 );
 ```
 
-## 📊 **Protocol-Specific Considerations**
+## Protocol-Specific Considerations
 
 ### **FeatureServer Requirements**
 FeatureServer (Esri-compatible) has the strictest requirements:
@@ -101,12 +101,7 @@ CREATE TABLE esri_compatible (
     -- Business fields
     feature_name VARCHAR(255),
     feature_type VARCHAR(100),
-
-    -- Esri editor tracking pattern
-    created_user VARCHAR(255),
     created_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    last_edited_user VARCHAR(255),
-    last_edited_date TIMESTAMP WITH TIME ZONE,
 
     -- Geometry (Esri often uses 'shape')
     shape GEOMETRY(Polygon, 4326) NOT NULL
@@ -153,7 +148,7 @@ CREATE TABLE properties (
 | **JSONB** | esriFieldTypeString | object | Edm.String | string | Serialized as JSON string in FeatureServer |
 | **GEOMETRY** | esriGeometry | GeoJSON geometry | WKT string | MVT geometry | Protocol-specific encoding |
 
-## 🚀 **Honua Performance Optimization**
+## Honua Performance Optimization
 
 ### **Required Indexes for Honua**
 ```sql
@@ -178,7 +173,7 @@ FROM parcels;
 - Fewer vertices = smaller tile sizes
 - Consider pre-generalized geometry columns for different zoom levels
 
-## 🗺️ **Coordinate Reference Systems in Honua**
+## Coordinate Reference Systems in Honua
 
 ### **Recommended SRID Strategy**
 Honua works best with standard web-compatible coordinate systems:
@@ -202,7 +197,7 @@ CREATE TABLE web_features (
 - **3857 (Web Mercator)**: Optimized for Vector Tiles and web mapping
 - **Custom projections**: Work but may require client-side transformation
 
-## ⚠️ **Common Pitfalls to Avoid**
+## Common Pitfalls to Avoid
 
 ### **Field Name Conflicts**
 ```sql
@@ -247,7 +242,7 @@ geom = ST_SimplifyPreserveTopology(geom, 0.0001)
 WHERE ST_NPoints(geom) > 1000;
 ```
 
-## 🔗 **Integration with Honua Admin UI**
+## Integration with Honua Admin UI
 
 When using the Honua Admin UI to publish layers:
 
@@ -271,7 +266,7 @@ CREATE TABLE ready_for_honua (
 CREATE INDEX idx_ready_for_honua_geom ON ready_for_honua USING GIST (geom);
 ```
 
-## 🔗 **Next Steps**
+## Next Steps
 
 1. **[Admin UI](admin-ui.md)** - Connect to PostGIS and publish layers through the Admin UI
 3. **[Geospatial Data APIs](STANDARDS_APIS.md)** - Understand how your data is exposed through different protocols

@@ -75,7 +75,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Output formats:**
 - Metadata: `json` or `html`
-- Features: `geojson` (default), `json`, `gml`, `html`
+- Features: `geojson` (default), `json`, `html` (GML output available but not claimed as a conformance class)
 
 **Typical use cases:**
 - QGIS and open-source GIS tooling
@@ -143,6 +143,8 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- ?service=WMTS&request=GetTile
 |-- ?service=WMTS&request=GetFeatureInfo
 ```
+
+**Limitations:** WMTS currently supports WebMercatorQuad tile matrix set only.
 
 **Typical use cases:**
 - QGIS WMS/WMTS layer connections
@@ -217,19 +219,19 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 Protocol support is tracked per standard and operation. Use these docs to confirm supported behaviors:
 
-**GeoServices REST:**
+**GeoServices REST (Esri-compatible):**
 - [FeatureServer Coverage Matrix](feature-server-matrix.md) — aligned to [Esri REST Feature Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
 - [MapServer Coverage Matrix](map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
-- [Geometry Service Coverage](specifications/geometry-service-coverage.md)
+- [Geometry Service Coverage](specifications/geometry-service-coverage.md) — buffer, simplify, project, intersect, union, clip, difference, area, length
 
 **OGC API:**
 - [OGC API Features Coverage](specifications/ogc-api-features-coverage.md)
-- [Part 1 — Core](specifications/ogc-api-features-part1-core.md)
-- [Part 2 — CRS](specifications/ogc-api-features-part2-crs.md)
-- [Part 3 — Filtering](specifications/ogc-api-features-part3-filtering.md)
+  - [Part 1 — Core](specifications/ogc-api-features-part1-core.md)
+  - [Part 2 — CRS](specifications/ogc-api-features-part2-crs.md)
+  - [Part 3 — Filtering](specifications/ogc-api-features-part3-filtering.md)
 - [OGC API Tiles Coverage](specifications/ogc-api-tiles-coverage.md)
 
-**Enterprise data:**
+**OData v4:**
 - [OData v4 Coverage](specifications/odata-v4-coverage.md)
 
 **OGC CITE conformance (100% pass rate):**

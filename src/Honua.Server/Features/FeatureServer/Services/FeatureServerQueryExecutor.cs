@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.FeatureServer.Models;
+using Npgsql;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -59,7 +60,7 @@ internal sealed class FeatureServerQueryExecutor
         {
             throw new InvalidOperationException($"Invalid query format: {ex.Message}");
         }
-        catch (Exception ex) when (ex.Message.Contains("syntax") || ex.Message.Contains("SQL") || ex.Message.Contains("parse"))
+        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
             throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
         }

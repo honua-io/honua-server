@@ -253,7 +253,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             catch (ResourceConflictException ex)
             {
                 Log.ReplaceFeatureConflict(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateConflict(context, ex.Message);
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
             catch (ResourceNotFoundException)
             {
@@ -453,7 +453,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             catch (ResourceConflictException ex)
             {
                 Log.PatchFeatureConflict(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateConflict(context, ex.Message);
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
             catch (ResourceNotFoundException)
             {

@@ -46,6 +46,7 @@ try {
   const smokeScript = `
 import { HonuaClient } from "@honua/sdk";
 import {
+  AttributionCompat,
   BasemapToggleCompat,
   BasemapGalleryCompat,
   BookmarksCompat,
@@ -56,6 +57,7 @@ import {
   EsriRequestInterceptorRegistry,
   ExpandCompat,
   FeatureLayerCompat,
+  FullscreenCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
   HomeCompat,
@@ -70,6 +72,7 @@ import {
   SearchCompat,
   ScaleBarCompat,
   TileLayerCompat,
+  ZoomCompat,
 } from "@honua/sdk-esri-compat";
 import {
   buildJsMigrationReport,
@@ -89,9 +92,12 @@ if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCom
 if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");
 if (typeof BookmarksCompat !== "function") throw new Error("BookmarksCompat export missing");
 if (typeof CompassCompat !== "function") throw new Error("CompassCompat export missing");
+if (typeof AttributionCompat !== "function") throw new Error("AttributionCompat export missing");
 if (typeof LocateCompat !== "function") throw new Error("LocateCompat export missing");
 if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export missing");
 if (typeof ExpandCompat !== "function") throw new Error("ExpandCompat export missing");
+if (typeof FullscreenCompat !== "function") throw new Error("FullscreenCompat export missing");
+if (typeof ZoomCompat !== "function") throw new Error("ZoomCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");
 if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export missing");

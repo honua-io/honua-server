@@ -36,8 +36,8 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
         CoreSslMode.Allow => "allow",
         CoreSslMode.Prefer => "prefer",
         CoreSslMode.Require => "require",
-        CoreSslMode.VerifyCA => "verifyca",
-        CoreSslMode.VerifyFull => "verifyfull",
+        CoreSslMode.VerifyCA => "verify-ca",
+        CoreSslMode.VerifyFull => "verify-full",
         _ => mode.ToString().ToLowerInvariant()
     };
 
@@ -142,7 +142,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
 
             return connection;
         }
-        catch (Exception ex) when (ex.Message.Contains("duplicate key") || ex.Message.Contains("unique constraint"))
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             _logConnectionNameExists(_logger, connection.Name, null);
             throw new InvalidOperationException($"Connection name '{connection.Name}' already exists", ex);
@@ -421,7 +421,7 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
             DatabaseName = reader.GetString(5),              // database_name
             Username = reader.GetString(6),                  // username
             SslRequired = reader.GetBoolean(7),              // ssl_required
-            SslMode = Enum.Parse<CoreSslMode>(reader.GetString(8), true), // ssl_mode
+            SslMode = ParseSslMode(reader.GetString(8)), // ssl_mode
             ConnectionStringEncrypted = reader.IsDBNull(9) ? null : (byte[])reader[9], // connection_string_encrypted
             EncryptionKeyVersion = reader.GetInt32(10),      // encryption_key_version
             SecretRef = reader.IsDBNull(11) ? null : reader.GetString(11), // secret_ref
@@ -434,5 +434,18 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
             HealthStatus = Enum.Parse<ConnectionHealthStatus>(reader.GetString(18), true) // health_status
         };
     }
+
+    private static CoreSslMode ParseSslMode(string value) => value.ToLowerInvariant() switch
+    {
+        "disable" => CoreSslMode.Disable,
+        "allow" => CoreSslMode.Allow,
+        "prefer" => CoreSslMode.Prefer,
+        "require" => CoreSslMode.Require,
+        "verifyca" => CoreSslMode.VerifyCA,
+        "verify-ca" => CoreSslMode.VerifyCA,
+        "verifyfull" => CoreSslMode.VerifyFull,
+        "verify-full" => CoreSslMode.VerifyFull,
+        _ => throw new InvalidOperationException($"Unsupported SSL mode value '{value}' in secure connection registry.")
+    };
 
 }

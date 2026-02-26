@@ -12,6 +12,7 @@ using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -149,7 +150,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         {
             throw new InvalidOperationException($"Invalid related query format: {ex.Message}");
         }
-        catch (Exception ex) when (ex.Message.Contains("syntax") || ex.Message.Contains("SQL") || ex.Message.Contains("parse"))
+        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
             throw new InvalidOperationException($"Invalid related query syntax: {ex.Message}");
         }

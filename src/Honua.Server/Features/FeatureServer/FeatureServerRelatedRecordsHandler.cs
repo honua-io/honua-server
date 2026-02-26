@@ -205,12 +205,12 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
-            return StandardErrorHelpers.CreateNotFound(_httpContextAccessor.HttpContext!, ex.Message);
+            return StandardErrorHelpers.CreateFromException(_httpContextAccessor.HttpContext!, ex);
         }
         catch (Honua.Core.Exceptions.ValidationException ex)
         {
             FeatureServerLog.RelatedRecordsQueryFailed(_logger, serviceId, layerId, ex.Message, ex);
-            return StandardErrorHelpers.CreateBadRequest(_httpContextAccessor.HttpContext!, ex.Message);
+            return StandardErrorHelpers.CreateFromException(_httpContextAccessor.HttpContext!, ex);
         }
         catch (InvalidOperationException ex)
         {

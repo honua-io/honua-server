@@ -124,6 +124,12 @@ variable "db_publicly_accessible" {
   default     = false
 }
 
+variable "db_additional_ingress_cidrs" {
+  description = "Additional CIDRs allowed to access PostgreSQL (for controlled migration/PostGIS operations)."
+  type        = list(string)
+  default     = []
+}
+
 variable "db_multi_az" {
   description = "Enable Multi-AZ for RDS."
   type        = bool
@@ -137,7 +143,7 @@ variable "db_require_ssl" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS via local-exec (requires psql + network access)."
+  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
   type        = bool
   default     = false
 }

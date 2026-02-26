@@ -129,6 +129,27 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithMalformedCqlFilter_DoesNotLeakParserDetails()
+    {
+        const string sentinel = "CQL_SENTINEL";
+        var filter = $"name = '{sentinel}";
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?filter={Uri.EscapeDataString(filter)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonDocument.Parse(content);
+        var detail = problem.RootElement.GetProperty("detail").GetString();
+        content.Should().Contain("Invalid CQL filter");
+        detail.Should().NotContain(sentinel);
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithComplexCqlFilter_ReturnsFilteredFeatures()
     {
         // Act - Use a more complex CQL2-Text filter

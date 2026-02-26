@@ -162,24 +162,24 @@ internal static class ServiceCollectionExtensions
             {
                 limits = new Core.Features.Import.Domain.ImportLimits
                 {
-                    BatchSize = int.TryParse(section["BatchSize"], out var batchSize) ? batchSize : limits.BatchSize,
-                    MaxMemoryBytes = long.TryParse(section["MaxMemoryBytes"], out var maxMemory) ? maxMemory : limits.MaxMemoryBytes,
-                    BackgroundJobThresholdBytes = long.TryParse(section["BackgroundJobThresholdBytes"], out var bgThreshold) ? bgThreshold : limits.BackgroundJobThresholdBytes,
-                    MaxPreviewSizeBytes = long.TryParse(section["MaxPreviewSizeBytes"], out var previewSize) ? previewSize : limits.MaxPreviewSizeBytes,
-                    MaxPreviewFeatures = int.TryParse(section["MaxPreviewFeatures"], out var previewFeatures) ? previewFeatures : limits.MaxPreviewFeatures,
-                    StreamBufferSize = int.TryParse(section["StreamBufferSize"], out var bufferSize) ? bufferSize : limits.StreamBufferSize,
+                    BatchSize = ParsePositiveIntOrDefault(section["BatchSize"], limits.BatchSize),
+                    MaxMemoryBytes = ParsePositiveLongOrDefault(section["MaxMemoryBytes"], limits.MaxMemoryBytes),
+                    BackgroundJobThresholdBytes = ParsePositiveLongOrDefault(
+                        section["BackgroundJobThresholdBytes"],
+                        limits.BackgroundJobThresholdBytes),
+                    MaxPreviewSizeBytes = ParsePositiveLongOrDefault(section["MaxPreviewSizeBytes"], limits.MaxPreviewSizeBytes),
+                    MaxPreviewFeatures = ParsePositiveIntOrDefault(section["MaxPreviewFeatures"], limits.MaxPreviewFeatures),
+                    StreamBufferSize = ParsePositiveIntOrDefault(section["StreamBufferSize"], limits.StreamBufferSize),
                     UseTransactions = bool.TryParse(section["UseTransactions"], out var useTransactions) ? useTransactions : limits.UseTransactions,
                     ContinueOnError = bool.TryParse(section["ContinueOnError"], out var continueOnError) ? continueOnError : limits.ContinueOnError,
-                    MaxFeaturesPerFile = int.TryParse(section["MaxFeaturesPerFile"], out var maxFeatures) ? maxFeatures : limits.MaxFeaturesPerFile,
-                    MaxArchiveEntryBytes = long.TryParse(section["MaxArchiveEntryBytes"], out var maxArchiveEntryBytes) ? maxArchiveEntryBytes : limits.MaxArchiveEntryBytes,
-                    MaxArchiveExtractedBytes = long.TryParse(section["MaxArchiveExtractedBytes"], out var maxArchiveExtractedBytes) ? maxArchiveExtractedBytes : limits.MaxArchiveExtractedBytes,
-                    MaxArchiveCompressionRatio = double.TryParse(
+                    MaxFeaturesPerFile = ParseNonNegativeIntOrDefault(section["MaxFeaturesPerFile"], limits.MaxFeaturesPerFile),
+                    MaxArchiveEntryBytes = ParsePositiveLongOrDefault(section["MaxArchiveEntryBytes"], limits.MaxArchiveEntryBytes),
+                    MaxArchiveExtractedBytes = ParsePositiveLongOrDefault(
+                        section["MaxArchiveExtractedBytes"],
+                        limits.MaxArchiveExtractedBytes),
+                    MaxArchiveCompressionRatio = ParsePositiveDoubleOrDefault(
                         section["MaxArchiveCompressionRatio"],
-                        NumberStyles.Float,
-                        CultureInfo.InvariantCulture,
-                        out var maxArchiveCompressionRatio)
-                        ? maxArchiveCompressionRatio
-                        : limits.MaxArchiveCompressionRatio
+                        limits.MaxArchiveCompressionRatio)
                 };
             }
 
@@ -265,5 +265,33 @@ internal static class ServiceCollectionExtensions
         {
             throw new InvalidOperationException("Failed to resolve DefaultConnection via secret provider.", ex);
         }
+    }
+
+    private static int ParsePositiveIntOrDefault(string? value, int defaultValue)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : defaultValue;
+    }
+
+    private static int ParseNonNegativeIntOrDefault(string? value, int defaultValue)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0
+            ? parsed
+            : defaultValue;
+    }
+
+    private static long ParsePositiveLongOrDefault(string? value, long defaultValue)
+    {
+        return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : defaultValue;
+    }
+
+    private static double ParsePositiveDoubleOrDefault(string? value, double defaultValue)
+    {
+        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : defaultValue;
     }
 }

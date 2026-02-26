@@ -148,7 +148,7 @@ internal static class OgcTilesUtilities
         for (var z = minZoom; z <= maxZoom; z++)
         {
             var matrixSize = 1 << z;
-            var cellSize = (2.0 * WebMercatorExtent) / (DefaultTileSize * matrixSize);
+            var cellSize = (2.0 * WebMercatorExtent) / ((double)DefaultTileSize * matrixSize);
             var scaleDenominator = cellSize / PixelSizeMeters;
 
             tileMatrices.Add(new TileMatrix
@@ -208,9 +208,9 @@ internal static class OgcTilesUtilities
         for (var z = minZoom; z <= maxZoom; z++)
         {
             // WorldCRS84Quad: at zoom 0, 2 cols x 1 row covering the full globe
-            var numCols = (int)(2 * Math.Pow(2, z));
-            var numRows = (int)Math.Pow(2, z);
-            var cellSize = 180.0 / (DefaultTileSize * numRows);
+            var numRows = 1 << z;
+            var numCols = numRows * 2;
+            var cellSize = 180.0 / ((double)DefaultTileSize * numRows);
             var scaleDenominator = cellSize / DegreesPerPixel;
 
             tileMatrices.Add(new TileMatrix

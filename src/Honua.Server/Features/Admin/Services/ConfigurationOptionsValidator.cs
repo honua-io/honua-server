@@ -47,7 +47,7 @@ internal static class ConfigurationOptionsValidator
         }
         catch (Exception ex)
         {
-            errors.Add($"Configuration validation failed with exception: {ex.Message}");
+            errors.Add("Configuration validation failed due to an unexpected error. Check server logs for details.");
             ConfigurationLog.ConfigurationError(logger, ex.ToString(), ex);
         }
 
@@ -116,9 +116,9 @@ internal static class ConfigurationOptionsValidator
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errors.Add($"Failed to validate OIDC options: {ex.Message}");
+            errors.Add("Failed to validate OIDC options due to an unexpected error.");
         }
     }
 
@@ -143,9 +143,9 @@ internal static class ConfigurationOptionsValidator
                 errors.Add("Authentication:BasicCompatibility:RequireHttps must be true when Basic compatibility is enabled in production.");
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errors.Add($"Failed to validate API Key options: {ex.Message}");
+            errors.Add("Failed to validate API key options due to an unexpected error.");
         }
     }
 
@@ -165,9 +165,9 @@ internal static class ConfigurationOptionsValidator
                 errors.Add("PerformanceMonitoring:MemorySamplingInterval must be greater than zero");
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errors.Add($"Failed to validate Performance Monitoring options: {ex.Message}");
+            errors.Add("Failed to validate performance monitoring options due to an unexpected error.");
         }
     }
 
@@ -210,9 +210,9 @@ internal static class ConfigurationOptionsValidator
         {
             // AdaptiveSamplingOptions service not registered - skip validation
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            errors.Add($"Failed to validate Adaptive Sampling options: {ex.Message}");
+            errors.Add("Failed to validate adaptive sampling options due to an unexpected error.");
         }
     }
 }

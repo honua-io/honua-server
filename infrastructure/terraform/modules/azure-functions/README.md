@@ -12,7 +12,7 @@ module "honua" {
   location       = "eastus"
   image          = "ghcr.io/honua-io/honua-server:latest-aot"
   admin_password = var.honua_admin_password
-  enable_postgis = true  # Required — Honua needs PostGIS for migrations
+  enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
@@ -23,7 +23,7 @@ module "honua" {
 
 ## Prerequisites
 
-- **PostGIS**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to the database).
+- **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to the database).
 - **Migrations**: `skip_migrations` defaults to `true` for serverless. Run migrations out-of-band before first use.
 - **Custom container**: The image must be compatible with the Azure Functions custom handler model (`FUNCTIONS_WORKER_RUNTIME=custom`).
 
@@ -70,7 +70,7 @@ module "honua" {
 |----------|---------|-------------|
 | `image` | `ghcr.io/.../latest-aot` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
 | `plan_sku_name` | `EP1` | Premium (`EP1`–`EP3`) or Consumption (`Y1`). Premium recommended. |
-| `enable_postgis` | **false** | Enable PostGIS on database. **Set to true.** |
+| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on database. **Set to true.** |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `db_sku_name` | `B_Standard_B1ms` | PostgreSQL SKU. Use `GP_Standard_*` for production. |
 | `db_geo_redundant_backup_enabled` | true | Geo-redundant backups. |

@@ -27,6 +27,7 @@ internal static partial class MapServerEndpoints
 {
     private const int DefaultTolerance = 3;
     private const string InvalidIdentifyRequestMessage = "Invalid identify request parameters.";
+    private const string InvalidIdentifyGeometryMessage = "Geometry parameter is invalid.";
 
     private enum IdentifyLayerMode
     {
@@ -107,12 +108,6 @@ internal static partial class MapServerEndpoints
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     $"Output format '{responseFormat}' is not supported.");
-            }
-
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
             }
 
             if (string.IsNullOrWhiteSpace(geometryValue))
@@ -831,9 +826,9 @@ internal static partial class MapServerEndpoints
                     return false;
             }
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            error = ex.Message;
+            error = InvalidIdentifyGeometryMessage;
             return false;
         }
     }

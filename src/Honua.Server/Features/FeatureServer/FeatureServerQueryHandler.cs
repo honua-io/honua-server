@@ -47,6 +47,8 @@ internal sealed class FeatureServerQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<FeatureServerQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
+    private const string InvalidTimeParameterMessage = "Invalid time parameter.";
+    private const string InvalidOutStatisticsJsonMessage = "outStatistics must be a valid JSON array.";
 
     /// <summary>
     /// Executes a feature query operation with proper validation and formatting.
@@ -287,11 +289,11 @@ internal sealed class FeatureServerQueryHandler(
                 {
                     temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(validatedParams, layer);
                 }
-                catch (ArgumentException ex)
+                catch (ArgumentException)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
                         ErrorMessages.Validation.InvalidParameter,
-                        [$"Invalid time parameter: {ex.Message}"]);
+                        [InvalidTimeParameterMessage]);
                 }
             }
 
@@ -328,7 +330,7 @@ internal sealed class FeatureServerQueryHandler(
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
                         "Invalid outStatistics",
-                        [statsError ?? "outStatistics must be a valid JSON array."]);
+                        [statsError ?? InvalidOutStatisticsJsonMessage]);
                 }
 
                 ImmutableArray<string>? groupByFields = null;
@@ -544,7 +546,7 @@ internal sealed class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            return StandardErrorHelpers.CreateNotFound(context, ex.Message);
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (Honua.Core.Exceptions.ValidationException ex)
         {
@@ -556,7 +558,7 @@ internal sealed class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (InvalidOperationException ex)
         {
@@ -984,9 +986,9 @@ internal sealed class FeatureServerQueryHandler(
             definitions = defs.ToImmutableArray();
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = $"Invalid outStatistics JSON: {ex.Message}";
+            error = InvalidOutStatisticsJsonMessage;
             return false;
         }
     }

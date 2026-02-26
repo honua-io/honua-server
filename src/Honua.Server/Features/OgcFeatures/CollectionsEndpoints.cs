@@ -246,7 +246,8 @@ internal static class CollectionsEndpoints
         {
             throw;
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
+        catch (ArgumentException ex) when (ex.Message.Contains("parse", StringComparison.OrdinalIgnoreCase) ||
+                                           ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase))
         {
             OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
@@ -337,7 +338,8 @@ internal static class CollectionsEndpoints
         {
             throw;
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
+        catch (ArgumentException ex) when (ex.Message.Contains("parse", StringComparison.OrdinalIgnoreCase) ||
+                                           ex.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase))
         {
             OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");

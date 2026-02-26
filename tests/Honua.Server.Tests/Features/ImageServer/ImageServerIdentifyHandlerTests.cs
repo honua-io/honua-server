@@ -87,6 +87,79 @@ public class ImageServerIdentifyHandlerTests
 
     [UnitTest]
     [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_CommaGeometryWithExtraCoordinate_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new[] { CreateTestRasterInfo() });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest("10,20,30");
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_CommaGeometryExceedingLimit_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new[] { CreateTestRasterInfo() });
+
+        var oversizedGeometry = $"10,20,{new string('x', 1200)}";
+        var context = CreateImageServerContext();
+        var request = CreateRequest(oversizedGeometry);
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_InvalidSpatialReference_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new[] { CreateTestRasterInfo() });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest("10,20", sr: "invalid-srid");
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_UnsupportedGeometryType_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new[] { CreateTestRasterInfo() });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest("10,20", geometryType: "esriGeometryPolygon");
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
     public async Task IdentifyAsync_CommaCoordinates_ReturnsOk()
     {
         SetupSuccessfulIdentify();
@@ -192,10 +265,10 @@ public class ImageServerIdentifyHandlerTests
             });
     }
 
-    private static IdentifyRequest CreateRequest(string geometry, string? sr = null) => new()
+    private static IdentifyRequest CreateRequest(string geometry, string? sr = null, string? geometryType = "esriGeometryPoint") => new()
     {
         Geometry = geometry,
-        GeometryType = "esriGeometryPoint",
+        GeometryType = geometryType,
         Sr = sr,
         F = "json"
     };
