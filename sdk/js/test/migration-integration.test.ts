@@ -360,6 +360,56 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
   });
 
+  it("migrates await import default flow with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-await-import-default-app",
+    );
+
+    expect(scanReport.flags).toContain("dynamic-import-detected");
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 1,
+      ratio: 0,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 0,
+      denominator: 1,
+      ratio: 0,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      '(await import("@honua/sdk-esri-compat").then((m) => ({ default: m.MapCompat }))).default',
+    );
+    expect(migratedMain).toContain("return new MapCtor({");
+    expect(migratedMain).not.toContain('@arcgis/core/Map');
+  });
+
   it("reports assisted when .cjs require-style usage requires manual migration", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-assisted-require-app",
