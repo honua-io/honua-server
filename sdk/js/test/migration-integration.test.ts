@@ -204,6 +204,62 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
   });
 
+  it("migrates a hit-test sample app with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-hit-test-sample-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 3,
+      ratio: 0,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 0,
+      denominator: 3,
+      ratio: 0,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const trails = new FeatureLayerCompat({");
+    expect(migratedMain).toContain("const map = new MapCompat({");
+    expect(migratedMain).toContain("const view = new MapViewCompat({");
+    expect(migratedMain).toContain("const hit = await view.hitTest(event);");
+    expect(migratedMain).toContain("view.popup.open({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
+    expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
+  });
+
   it("reports assisted when require-style ArcGIS usage is auto-migrated but remains scan-unhandled", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-assisted-require-app",
