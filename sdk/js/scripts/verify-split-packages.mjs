@@ -73,6 +73,7 @@ import {
   MapImageLayerCompat,
   MapViewCompat,
   MapViewUiCompat,
+  PrintCompat,
   PopupCompat,
   RouteLayerCompat,
   RouteTaskCompat,
@@ -123,6 +124,7 @@ if (typeof LegendCompat !== "function") throw new Error("LegendCompat export mis
 if (typeof MapImageLayerCompat !== "function") throw new Error("MapImageLayerCompat export missing");
 if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export missing");
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
+if (typeof PrintCompat !== "function") throw new Error("PrintCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
 if (typeof RouteLayerCompat !== "function") throw new Error("RouteLayerCompat export missing");
 if (typeof RouteTaskCompat !== "function") throw new Error("RouteTaskCompat export missing");

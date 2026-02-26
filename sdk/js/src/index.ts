@@ -162,6 +162,13 @@ export type {
   PopupHandleCompat,
   PopupOpenOptionsCompat,
 } from "./esri-compat/popup.js";
+export { PrintCompat } from "./esri-compat/print.js";
+export type {
+  PrintCompatOptions,
+  PrintExecuteOptionsCompat,
+  PrintResultCompat,
+  PrintTemplateOptionsCompat,
+} from "./esri-compat/print.js";
 export { SceneViewCompat } from "./esri-compat/scene-view.js";
 export type { SceneViewCompatOptions } from "./esri-compat/scene-view.js";
 export { WebMapCompat } from "./esri-compat/web-map.js";

@@ -118,6 +118,7 @@ describe("arcgis migration integration", () => {
       "feature-table-widget": 0,
       "legend-widget": 0,
       "popup-widget": 0,
+      "print-widget": 0,
       "home-widget": 0,
       "basemap-toggle-widget": 0,
       "locate-widget": 0,
@@ -432,6 +433,42 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const table = new FeatureTableCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTable");
+  });
+
+  it("migrates print widget fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-print-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["print-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { MapCompat, MapViewCompat, PrintCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const printer = new PrintCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Print");
   });
 
   it("supports esri-leaflet codemod target for deterministic subset", () => {

@@ -265,6 +265,47 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
 
+  it("rewrites safe Print constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "print.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import Print from '@arcgis/core/widgets/Print';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
+        "const printer = new Print({ view, container: 'print-div', printServiceUrl: printUrl, templateOptions: { format: 'pdf', layout: 'a4-landscape' } });",
+        "void printer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["print-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { MapCompat, MapViewCompat, PrintCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new PrintCompat({ view, container: 'print-div', printServiceUrl: printUrl, templateOptions: { format: 'pdf', layout: 'a4-landscape' } })");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Print");
+  });
+
   it("rewrites safe GraphicsLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "graphics-layer.ts");
