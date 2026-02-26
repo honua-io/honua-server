@@ -87,4 +87,83 @@ describe("migration runtime smoke", () => {
       layerCount: 2,
     });
   });
+
+  it("executes migrated widget/control flow with shared mapview ui", { timeout: 20_000 }, async () => {
+    ensureBuiltCompatArtifacts();
+    const tempRoot = makeTempDir();
+    const file = path.join(tempRoot, "widgets.js");
+    const compatEntryPath = getCompatDistEntry();
+
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import LayerList from '@arcgis/core/widgets/LayerList';",
+        "import Legend from '@arcgis/core/widgets/Legend';",
+        "import Popup from '@arcgis/core/widgets/Popup';",
+        "import Search from '@arcgis/core/widgets/Search';",
+        "import BasemapGallery from '@arcgis/core/widgets/BasemapGallery';",
+        "import Compass from '@arcgis/core/widgets/Compass';",
+        "import Expand from '@arcgis/core/widgets/Expand';",
+        "import Bookmarks from '@arcgis/core/widgets/Bookmarks';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
+        "const layerList = new LayerList({ view, container: 'layer-list' });",
+        "const legend = new Legend({ view, container: 'legend' });",
+        "const popup = new Popup({ view, container: 'popup', dockEnabled: true });",
+        "const search = new Search({ view, container: 'search', includeDefaultSources: false });",
+        "const basemapGallery = new BasemapGallery({ view, container: 'gallery' });",
+        "const compass = new Compass({ view });",
+        "const expand = new Expand({ view, content: legend, expanded: false });",
+        "const bookmarks = new Bookmarks({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
+        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks], 'top-right');",
+        "export default {",
+        "  mapCtor: map.constructor.name,",
+        "  viewCtor: view.constructor.name,",
+        "  uiCount: view.ui.getComponents().length,",
+        "  widgetCtors: [",
+        "    layerList.constructor.name,",
+        "    legend.constructor.name,",
+        "    popup.constructor.name,",
+        "    search.constructor.name,",
+        "    basemapGallery.constructor.name,",
+        "    compass.constructor.name,",
+        "    expand.constructor.name,",
+        "    bookmarks.constructor.name,",
+        "  ],",
+        "  bookmarkCount: bookmarks.bookmarks.length,",
+        "};",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const codemodResult = runEsriCompatCodemod({
+      rootDir: tempRoot,
+      write: true,
+      compatImportPath: compatEntryPath,
+    });
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(10);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(10);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+
+    const migrated = await import(pathToFileURL(file).href);
+    expect(migrated.default).toEqual({
+      mapCtor: "MapCompat",
+      viewCtor: "MapViewCompat",
+      uiCount: 8,
+      widgetCtors: [
+        "LayerListCompat",
+        "LegendCompat",
+        "PopupCompat",
+        "SearchCompat",
+        "BasemapGalleryCompat",
+        "CompassCompat",
+        "ExpandCompat",
+        "BookmarksCompat",
+      ],
+      bookmarkCount: 1,
+    });
+  });
 });
