@@ -288,6 +288,7 @@ describe("runEsriCompatCodemod", () => {
         "import Editor from '@arcgis/core/widgets/Editor';",
         "import Track from '@arcgis/core/widgets/Track';",
         "import Measurement from '@arcgis/core/widgets/Measurement';",
+        "import TimeSlider from '@arcgis/core/widgets/TimeSlider';",
         "const view = {};",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div' });",
@@ -308,6 +309,7 @@ describe("runEsriCompatCodemod", () => {
         "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
         "const track = new Track({ view, container: 'track-div', goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
         "const measurement = new Measurement({ view, container: 'measurement-div', activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
+        "const timeSlider = new TimeSlider({ view, container: 'time-slider-div', mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -327,6 +329,7 @@ describe("runEsriCompatCodemod", () => {
         "void editor;",
         "void track;",
         "void measurement;",
+        "void timeSlider;",
       ].join("\n"),
       "utf8",
     );
@@ -338,8 +341,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(19);
-    expect(result.metrics.autoMigratedCallSites).toBe(19);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(20);
+    expect(result.metrics.autoMigratedCallSites).toBe(20);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -436,10 +439,15 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["time-slider-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MeasurementCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MeasurementCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
@@ -478,6 +486,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const measurement = new MeasurementCompat({ view, container: 'measurement-div', activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
     );
+    expect(nextSource).toContain(
+      "const timeSlider = new TimeSliderCompat({ view, container: 'time-slider-div', mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -497,6 +508,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Editor");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Track");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Measurement");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/TimeSlider");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

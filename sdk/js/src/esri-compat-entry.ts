@@ -140,6 +140,14 @@ export type {
   MeasurementResultCompat,
   MeasurementToolCompat,
 } from "./esri-compat/measurement.js";
+export { TimeSliderCompat } from "./esri-compat/time-slider.js";
+export type {
+  TimeExtentCompat,
+  TimeSliderCompatOptions,
+  TimeSliderIntervalUnitCompat,
+  TimeSliderModeCompat,
+  TimeSliderStopsCompat,
+} from "./esri-compat/time-slider.js";
 export { SketchCompat } from "./esri-compat/sketch.js";
 export type {
   SketchCompatOptions,

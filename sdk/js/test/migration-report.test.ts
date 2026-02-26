@@ -43,6 +43,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -169,6 +170,7 @@ describe("buildJsMigrationReport", () => {
       "editor-widget": 0,
       "track-widget": 0,
       "measurement-widget": 0,
+      "time-slider-widget": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

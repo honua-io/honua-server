@@ -19,6 +19,7 @@ import Sketch from "@arcgis/core/widgets/Sketch";
 import Editor from "@arcgis/core/widgets/Editor";
 import Track from "@arcgis/core/widgets/Track";
 import Measurement from "@arcgis/core/widgets/Measurement";
+import TimeSlider from "@arcgis/core/widgets/TimeSlider";
 
 const map = new Map({
   basemap: "streets",
@@ -70,6 +71,13 @@ const measurement = new Measurement({
   linearUnit: "kilometers",
   areaUnit: "square-kilometers",
 });
+const timeSlider = new TimeSlider({
+  view,
+  mode: "instant",
+  stops: {
+    values: ["2024-01-01T00:00:00.000Z", "2024-02-01T00:00:00.000Z"],
+  },
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -87,6 +95,7 @@ view.ui.add(sketch, "top-right");
 view.ui.add(editor, "top-right");
 view.ui.add(track, "top-left");
 view.ui.add(measurement, "bottom-right");
+view.ui.add(timeSlider, "bottom-left");
 
 popup.open({
   title: "Migration",
@@ -114,3 +123,4 @@ void sketch;
 void editor;
 void track;
 void measurement;
+void timeSlider;

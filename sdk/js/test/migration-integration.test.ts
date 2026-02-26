@@ -131,6 +131,7 @@ describe("arcgis migration integration", () => {
       "editor-widget": 0,
       "track-widget": 0,
       "measurement-widget": 0,
+      "time-slider-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -457,8 +458,8 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(21);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(21);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(22);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(22);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -565,12 +566,17 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["time-slider-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(report.readiness).toBe("ready");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, MeasurementCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, MeasurementCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
@@ -603,6 +609,11 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('activeTool: "distance"');
     expect(migratedMain).toContain('linearUnit: "kilometers"');
     expect(migratedMain).toContain('areaUnit: "square-kilometers"');
+    expect(migratedMain).toContain("const timeSlider = new TimeSliderCompat({");
+    expect(migratedMain).toContain('mode: "instant"');
+    expect(migratedMain).toContain(
+      'values: ["2024-01-01T00:00:00.000Z", "2024-02-01T00:00:00.000Z"]',
+    );
     expect(migratedMain).toContain('view.ui.add(layerList, "top-right");');
     expect(migratedMain).toContain('view.ui.add([legend, home], "top-left");');
     expect(migratedMain).toContain('view.ui.add(popup, { position: "manual", index: 0 });');
@@ -619,6 +630,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('view.ui.add(editor, "top-right");');
     expect(migratedMain).toContain('view.ui.add(track, "top-left");');
     expect(migratedMain).toContain('view.ui.add(measurement, "bottom-right");');
+    expect(migratedMain).toContain('view.ui.add(timeSlider, "bottom-left");');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
@@ -638,6 +650,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Editor");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Track");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Measurement");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/TimeSlider");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {

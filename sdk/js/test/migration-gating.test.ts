@@ -54,6 +54,7 @@ function createReport(): JsMigrationReport {
           "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
+          "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
         },
       },
       fileResults: [],
@@ -120,6 +121,7 @@ function createReport(): JsMigrationReport {
       "editor-widget": 0,
       "track-widget": 0,
       "measurement-widget": 0,
+      "time-slider-widget": 0,
     },
     manualTodoReasons: [],
     unhandledArcGisModules: [

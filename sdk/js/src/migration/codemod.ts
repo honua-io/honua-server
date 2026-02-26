@@ -45,7 +45,8 @@ export type CodemodConstructorKind =
   | "sketch-widget"
   | "editor-widget"
   | "track-widget"
-  | "measurement-widget";
+  | "measurement-widget"
+  | "time-slider-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -270,6 +271,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Measurement",
       "@arcgis/core/widgets/Measurement.js",
+    ]),
+  },
+  {
+    kind: "time-slider-widget",
+    compatSymbol: "TimeSliderCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/TimeSlider",
+      "@arcgis/core/widgets/TimeSlider.js",
     ]),
   },
 ];
@@ -756,6 +765,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1443,6 +1453,8 @@ function isSafeConstructorCall(
       return isSafeTrackWidgetCompatCall(node);
     case "measurement-widget":
       return isSafeMeasurementWidgetCompatCall(node);
+    case "time-slider-widget":
+      return isSafeTimeSliderWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2701,6 +2713,58 @@ function isSafeMeasurementWidgetCompatCall(
       return {
         ok: false,
         reason: "Measurement options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeTimeSliderWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TimeSlider constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TimeSlider constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "fullTimeExtent",
+    "timeExtent",
+    "stops",
+    "mode",
+    "loop",
+    "playRate",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TimeSlider options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "TimeSlider options include unsupported properties; requires manual migration.",
       };
     }
   }

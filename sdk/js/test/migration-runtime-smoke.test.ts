@@ -114,6 +114,7 @@ describe("migration runtime smoke", () => {
         "import Editor from '@arcgis/core/widgets/Editor';",
         "import Track from '@arcgis/core/widgets/Track';",
         "import Measurement from '@arcgis/core/widgets/Measurement';",
+        "import TimeSlider from '@arcgis/core/widgets/TimeSlider';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
         "const layerList = new LayerList({ view, container: 'layer-list' });",
@@ -131,7 +132,8 @@ describe("migration runtime smoke", () => {
         "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
         "const track = new Track({ view, goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
         "const measurement = new Measurement({ view, activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
-        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement], 'top-right');",
+        "const timeSlider = new TimeSlider({ view, mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
+        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement, timeSlider], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
@@ -152,6 +154,7 @@ describe("migration runtime smoke", () => {
         "    editor.constructor.name,",
         "    track.constructor.name,",
         "    measurement.constructor.name,",
+        "    timeSlider.constructor.name,",
         "  ],",
         "  bookmarkCount: bookmarks.bookmarks.length,",
         "};",
@@ -165,15 +168,15 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(17);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(17);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(18);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(18);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 15,
+      uiCount: 16,
       widgetCtors: [
         "LayerListCompat",
         "LegendCompat",
@@ -190,6 +193,7 @@ describe("migration runtime smoke", () => {
         "EditorCompat",
         "TrackCompat",
         "MeasurementCompat",
+        "TimeSliderCompat",
       ],
       bookmarkCount: 1,
     });
