@@ -59,6 +59,7 @@ import {
   EsriRequestInterceptorRegistry,
   EditorCompat,
   FeatureCompat,
+  FeatureFormCompat,
   ExpandCompat,
   FeatureLayerCompat,
   FeatureTableCompat,
@@ -105,6 +106,7 @@ if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriR
 if (typeof DirectionsCompat !== "function") throw new Error("DirectionsCompat export missing");
 if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
 if (typeof FeatureCompat !== "function") throw new Error("FeatureCompat export missing");
+if (typeof FeatureFormCompat !== "function") throw new Error("FeatureFormCompat export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof FeatureTableCompat !== "function") throw new Error("FeatureTableCompat export missing");
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");

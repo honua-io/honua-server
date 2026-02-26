@@ -31,6 +31,7 @@ export type CodemodConstructorKind =
   | "web-map"
   | "layer-list"
   | "feature-widget"
+  | "feature-form-widget"
   | "feature-table-widget"
   | "legend-widget"
   | "popup-widget"
@@ -159,6 +160,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Feature",
       "@arcgis/core/widgets/Feature.js",
+    ]),
+  },
+  {
+    kind: "feature-form-widget",
+    compatSymbol: "FeatureFormCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/FeatureForm",
+      "@arcgis/core/widgets/FeatureForm.js",
     ]),
   },
   {
@@ -822,6 +831,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "web-map": { total: 0, autoMigrated: 0, manual: 0 },
     "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-form-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1503,6 +1513,8 @@ function isSafeConstructorCall(
       return isSafeLayerListCompatCall(node);
     case "feature-widget":
       return isSafeFeatureWidgetCompatCall(node);
+    case "feature-form-widget":
+      return isSafeFeatureFormWidgetCompatCall(node);
     case "feature-table-widget":
       return isSafeFeatureTableWidgetCompatCall(node);
     case "legend-widget":
@@ -2161,6 +2173,58 @@ function isSafeFeatureWidgetCompatCall(
       return {
         ok: false,
         reason: "Feature options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureFormWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureForm constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureForm constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layer",
+    "container",
+    "feature",
+    "fieldConfig",
+    "groupDisplay",
+    "headingLevel",
+    "visibleElements",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureForm options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "FeatureForm options include unsupported properties; requires manual migration.",
       };
     }
   }

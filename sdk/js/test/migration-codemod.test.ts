@@ -308,6 +308,47 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Feature");
   });
 
+  it("rewrites safe FeatureForm constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-form.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import FeatureForm from '@arcgis/core/widgets/FeatureForm';",
+        "const layer = new FeatureLayer({ url: layerUrl });",
+        "const form = new FeatureForm({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }] });",
+        "void form;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-form-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureFormCompat, FeatureLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain(
+      "new FeatureFormCompat({ layer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }] })",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureForm");
+  });
+
   it("rewrites safe Print constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "print.ts");
