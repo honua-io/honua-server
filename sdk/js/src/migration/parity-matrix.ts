@@ -75,14 +75,6 @@ const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (
 
 const EXTRA_MATRIX_ROWS: readonly JsParityMatrixEntry[] = [
   {
-    kind: "track-widget",
-    category: "widget",
-    arcGisModule: "@arcgis/core/widgets/Track",
-    honuaCompat: "unsupported",
-    esriLeaflet: "unsupported",
-    notes: "not yet implemented in compat runtime",
-  },
-  {
     kind: "directions-widget",
     category: "widget",
     arcGisModule: "@arcgis/core/widgets/Directions",

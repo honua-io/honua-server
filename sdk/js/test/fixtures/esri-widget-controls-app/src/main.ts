@@ -17,6 +17,7 @@ import Zoom from "@arcgis/core/widgets/Zoom";
 import Attribution from "@arcgis/core/widgets/Attribution";
 import Sketch from "@arcgis/core/widgets/Sketch";
 import Editor from "@arcgis/core/widgets/Editor";
+import Track from "@arcgis/core/widgets/Track";
 
 const map = new Map({
   basemap: "streets",
@@ -56,6 +57,12 @@ const attribution = new Attribution({
 });
 const sketch = new Sketch({ view, layer: undefined, creationMode: "update" });
 const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ["create", "update"] });
+const track = new Track({
+  view,
+  goToLocationEnabled: true,
+  useHeadingEnabled: true,
+  rotationEnabled: true,
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -71,6 +78,7 @@ view.ui.add(zoom, "top-left");
 view.ui.add(attribution, "bottom-left");
 view.ui.add(sketch, "top-right");
 view.ui.add(editor, "top-right");
+view.ui.add(track, "top-left");
 
 popup.open({
   title: "Migration",
@@ -96,3 +104,4 @@ void zoom;
 void attribution;
 void sketch;
 void editor;
+void track;

@@ -130,6 +130,8 @@ export type {
   SearchSuggestionCompat,
   SuggestResponseCompat,
 } from "./esri-compat/search.js";
+export { TrackCompat } from "./esri-compat/track.js";
+export type { TrackCompatOptions, TrackPositionCompat } from "./esri-compat/track.js";
 export { SketchCompat } from "./esri-compat/sketch.js";
 export type {
   SketchCompatOptions,

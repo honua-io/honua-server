@@ -29,8 +29,8 @@ describe("JS parity matrix", () => {
       esriLeaflet: "assisted",
     });
     expect(track).toMatchObject({
-      honuaCompat: "unsupported",
-      esriLeaflet: "unsupported",
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
     });
   });
 

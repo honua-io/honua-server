@@ -8,7 +8,7 @@ This package currently provides:
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest` and `view.ui.add/remove/move/getComponents` compatibility,
 - identify controller (`IdentifyCompat`) for cross-layer MapServer identify workflows with optional popup auto-open,
-- compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
+- compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`, `TrackCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
 - common map controls (`HomeCompat`, `BasemapToggleCompat`, `LocateCompat`, `ScaleBarCompat`, `CompassCompat`, `FullscreenCompat`, `ZoomCompat`, `AttributionCompat`) wired to the same event bus for shared view state updates,
 - request/auth migration bridge helpers (`createEsriRequestInterceptors`, `createArcGisTokenInterceptor`) plus core `HonuaClient` interceptor hooks (`before`/`after`/`error`),
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
@@ -158,12 +158,13 @@ The codemod is intentionally conservative:
   - `new Attribution(...)` -> `new AttributionCompat(...)`
   - `new Sketch(...)` -> `new SketchCompat(...)`
   - `new Editor(...)` -> `new EditorCompat(...)`
+  - `new Track(...)` -> `new TrackCompat(...)`
 - alternate target (`--target esri-leaflet`) rewrites deterministic subset only:
   - `new FeatureLayer({ ... })` -> `HonuaEsriLeaflet.featureLayer({ ... })`
   - `new MapImageLayer({ ... })` -> `HonuaEsriLeaflet.dynamicMapLayer({ ... })`
   - `new TileLayer({ ... })` -> `HonuaEsriLeaflet.tiledMapLayer({ ... })`
   - dynamic imports for those modules -> `Promise.resolve({ default: HonuaEsriLeaflet.* })`
-  - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `GraphicsLayer`, `GroupLayer`, `LayerList`, `Legend`, `Popup`, `Home`, `BasemapToggle`, `Locate`, `ScaleBar`, `Search`, `BasemapGallery`, `Bookmarks`, `Expand`, `Compass`, `Fullscreen`, `Zoom`, `Attribution`, `Sketch`, `Editor`) are emitted as manual TODO/report entries
+  - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `GraphicsLayer`, `GroupLayer`, `LayerList`, `Legend`, `Popup`, `Home`, `BasemapToggle`, `Locate`, `ScaleBar`, `Search`, `BasemapGallery`, `Bookmarks`, `Expand`, `Compass`, `Fullscreen`, `Zoom`, `Attribution`, `Sketch`, `Editor`, `Track`) are emitted as manual TODO/report entries
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),
 - it skips complex constructors and records manual TODO entries in the report,
 - it keeps CommonJS `require(...)` constructor sites as manual TODOs (for example `.cjs` or `.js` files exporting via `module.exports`/`exports.*`),
@@ -178,7 +179,7 @@ The codemod is intentionally conservative:
   - `--max-manual-ratio <0..1>`
   - `--max-manual-intervention-ratio <0..1>`
 - CLI summary includes:
-  - per-type migration counts as `byKind=feature-layer:auto/manual/total,...,layer-list:auto/manual/total,legend-widget:auto/manual/total,popup-widget:auto/manual/total,home-widget:auto/manual/total,basemap-toggle-widget:auto/manual/total,locate-widget:auto/manual/total,scale-bar-widget:auto/manual/total,search-widget:auto/manual/total,basemap-gallery-widget:auto/manual/total,bookmarks-widget:auto/manual/total,expand-widget:auto/manual/total,compass-widget:auto/manual/total,fullscreen-widget:auto/manual/total,zoom-widget:auto/manual/total,attribution-widget:auto/manual/total,sketch-widget:auto/manual/total,editor-widget:auto/manual/total`,
+  - per-type migration counts as `byKind=feature-layer:auto/manual/total,...,layer-list:auto/manual/total,legend-widget:auto/manual/total,popup-widget:auto/manual/total,home-widget:auto/manual/total,basemap-toggle-widget:auto/manual/total,locate-widget:auto/manual/total,scale-bar-widget:auto/manual/total,search-widget:auto/manual/total,basemap-gallery-widget:auto/manual/total,bookmarks-widget:auto/manual/total,expand-widget:auto/manual/total,compass-widget:auto/manual/total,fullscreen-widget:auto/manual/total,zoom-widget:auto/manual/total,attribution-widget:auto/manual/total,sketch-widget:auto/manual/total,editor-widget:auto/manual/total,track-widget:auto/manual/total`,
   - grouped manual reasons,
   - unhandled ArcGIS module inventory (with `static-import` / `dynamic-import` / `require` usage style),
   - scanner flags include module-shape and risk hints (for example `commonjs-detected`, `scene-3d-detected`, `dynamic-import-detected`),

@@ -43,7 +43,8 @@ export type CodemodConstructorKind =
   | "zoom-widget"
   | "attribution-widget"
   | "sketch-widget"
-  | "editor-widget";
+  | "editor-widget"
+  | "track-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -252,6 +253,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Editor",
       "@arcgis/core/widgets/Editor.js",
+    ]),
+  },
+  {
+    kind: "track-widget",
+    compatSymbol: "TrackCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Track",
+      "@arcgis/core/widgets/Track.js",
     ]),
   },
 ];
@@ -736,6 +745,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "attribution-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1419,6 +1429,8 @@ function isSafeConstructorCall(
       return isSafeSketchWidgetCompatCall(node);
     case "editor-widget":
       return isSafeEditorWidgetCompatCall(node);
+    case "track-widget":
+      return isSafeTrackWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2583,6 +2595,57 @@ function isSafeEditorWidgetCompatCall(
       return {
         ok: false,
         reason: "Editor options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeTrackWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Track constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Track constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "tracking",
+    "goToLocationEnabled",
+    "useHeadingEnabled",
+    "rotationEnabled",
+    "scale",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Track options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Track options include unsupported properties; requires manual migration.",
       };
     }
   }

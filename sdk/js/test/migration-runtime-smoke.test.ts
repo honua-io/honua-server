@@ -112,6 +112,7 @@ describe("migration runtime smoke", () => {
         "import Attribution from '@arcgis/core/widgets/Attribution';",
         "import Sketch from '@arcgis/core/widgets/Sketch';",
         "import Editor from '@arcgis/core/widgets/Editor';",
+        "import Track from '@arcgis/core/widgets/Track';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
         "const layerList = new LayerList({ view, container: 'layer-list' });",
@@ -127,7 +128,8 @@ describe("migration runtime smoke", () => {
         "const attribution = new Attribution({ view, itemDelimiter: ' | ', attributions: ['Source A'] });",
         "const sketch = new Sketch({ view, layer: undefined, creationMode: 'update' });",
         "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
-        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor], 'top-right');",
+        "const track = new Track({ view, goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
+        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
@@ -146,6 +148,7 @@ describe("migration runtime smoke", () => {
         "    attribution.constructor.name,",
         "    sketch.constructor.name,",
         "    editor.constructor.name,",
+        "    track.constructor.name,",
         "  ],",
         "  bookmarkCount: bookmarks.bookmarks.length,",
         "};",
@@ -159,15 +162,15 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(15);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(15);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(16);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(16);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 13,
+      uiCount: 14,
       widgetCtors: [
         "LayerListCompat",
         "LegendCompat",
@@ -182,6 +185,7 @@ describe("migration runtime smoke", () => {
         "AttributionCompat",
         "SketchCompat",
         "EditorCompat",
+        "TrackCompat",
       ],
       bookmarkCount: 1,
     });
