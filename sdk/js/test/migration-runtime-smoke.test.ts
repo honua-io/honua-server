@@ -107,6 +107,9 @@ describe("migration runtime smoke", () => {
         "import Compass from '@arcgis/core/widgets/Compass';",
         "import Expand from '@arcgis/core/widgets/Expand';",
         "import Bookmarks from '@arcgis/core/widgets/Bookmarks';",
+        "import Fullscreen from '@arcgis/core/widgets/Fullscreen';",
+        "import Zoom from '@arcgis/core/widgets/Zoom';",
+        "import Attribution from '@arcgis/core/widgets/Attribution';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
         "const layerList = new LayerList({ view, container: 'layer-list' });",
@@ -117,7 +120,10 @@ describe("migration runtime smoke", () => {
         "const compass = new Compass({ view });",
         "const expand = new Expand({ view, content: legend, expanded: false });",
         "const bookmarks = new Bookmarks({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
-        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks], 'top-right');",
+        "const fullscreen = new Fullscreen({ view });",
+        "const zoom = new Zoom({ view, layout: 'vertical' });",
+        "const attribution = new Attribution({ view, itemDelimiter: ' | ', attributions: ['Source A'] });",
+        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
@@ -131,6 +137,9 @@ describe("migration runtime smoke", () => {
         "    compass.constructor.name,",
         "    expand.constructor.name,",
         "    bookmarks.constructor.name,",
+        "    fullscreen.constructor.name,",
+        "    zoom.constructor.name,",
+        "    attribution.constructor.name,",
         "  ],",
         "  bookmarkCount: bookmarks.bookmarks.length,",
         "};",
@@ -144,15 +153,15 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(10);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(10);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(13);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(13);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 8,
+      uiCount: 11,
       widgetCtors: [
         "LayerListCompat",
         "LegendCompat",
@@ -162,6 +171,9 @@ describe("migration runtime smoke", () => {
         "CompassCompat",
         "ExpandCompat",
         "BookmarksCompat",
+        "FullscreenCompat",
+        "ZoomCompat",
+        "AttributionCompat",
       ],
       bookmarkCount: 1,
     });

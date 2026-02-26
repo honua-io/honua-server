@@ -124,6 +124,9 @@ describe("arcgis migration integration", () => {
       "expand-widget": 0,
       "compass-widget": 0,
       "bookmarks-widget": 0,
+      "fullscreen-widget": 0,
+      "zoom-widget": 0,
+      "attribution-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -450,8 +453,8 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(14);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(14);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(17);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(17);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -523,12 +526,27 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["fullscreen-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["zoom-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["attribution-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(report.readiness).toBe("ready");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
@@ -542,6 +560,11 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const compass = new CompassCompat({ view });");
     expect(migratedMain).toContain("const expand = new ExpandCompat({ view, content: legend, expanded: false });");
     expect(migratedMain).toContain("const bookmarks = new BookmarksCompat({");
+    expect(migratedMain).toContain("const fullscreen = new FullscreenCompat({ view });");
+    expect(migratedMain).toContain('const zoom = new ZoomCompat({ view, layout: "vertical" });');
+    expect(migratedMain).toContain("const attribution = new AttributionCompat({");
+    expect(migratedMain).toContain('itemDelimiter: " | "');
+    expect(migratedMain).toContain('attributions: ["Source A"]');
     expect(migratedMain).toContain('view.ui.add(layerList, "top-right");');
     expect(migratedMain).toContain('view.ui.add([legend, home], "top-left");');
     expect(migratedMain).toContain('view.ui.add(popup, { position: "manual", index: 0 });');
@@ -551,6 +574,9 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('view.ui.add(compass, "top-left");');
     expect(migratedMain).toContain('view.ui.add(expand, "top-right");');
     expect(migratedMain).toContain('view.ui.add(bookmarks, "top-right");');
+    expect(migratedMain).toContain('view.ui.add(fullscreen, "top-left");');
+    expect(migratedMain).toContain('view.ui.add(zoom, "top-left");');
+    expect(migratedMain).toContain('view.ui.add(attribution, "bottom-left");');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
@@ -563,6 +589,9 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Compass");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Expand");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Bookmarks");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Fullscreen");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Zoom");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Attribution");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {

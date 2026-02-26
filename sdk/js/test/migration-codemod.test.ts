@@ -281,6 +281,9 @@ describe("runEsriCompatCodemod", () => {
         "import Compass from '@arcgis/core/widgets/Compass';",
         "import Expand from '@arcgis/core/widgets/Expand';",
         "import Bookmarks from '@arcgis/core/widgets/Bookmarks';",
+        "import Fullscreen from '@arcgis/core/widgets/Fullscreen';",
+        "import Zoom from '@arcgis/core/widgets/Zoom';",
+        "import Attribution from '@arcgis/core/widgets/Attribution';",
         "const view = {};",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div' });",
@@ -294,6 +297,9 @@ describe("runEsriCompatCodemod", () => {
         "const compass = new Compass({ view });",
         "const expand = new Expand({ view, content: legend, expanded: false });",
         "const bookmarks = new Bookmarks({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
+        "const fullscreen = new Fullscreen({ view, container: 'full-div' });",
+        "const zoom = new Zoom({ view, container: 'zoom-div', layout: 'vertical' });",
+        "const attribution = new Attribution({ view, container: 'attrib-div', itemDelimiter: ' | ', attributions: ['Source A'] });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -306,6 +312,9 @@ describe("runEsriCompatCodemod", () => {
         "void compass;",
         "void expand;",
         "void bookmarks;",
+        "void fullscreen;",
+        "void zoom;",
+        "void attribution;",
       ].join("\n"),
       "utf8",
     );
@@ -317,8 +326,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(12);
-    expect(result.metrics.autoMigratedCallSites).toBe(12);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(15);
+    expect(result.metrics.autoMigratedCallSites).toBe(15);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -380,10 +389,25 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["fullscreen-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["zoom-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["attribution-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
@@ -405,6 +429,11 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const bookmarks = new BookmarksCompat({ view, bookmarks: [{ name: 'Home', target: { center: [0, 0], zoom: 2 } }] });",
     );
+    expect(nextSource).toContain("const fullscreen = new FullscreenCompat({ view, container: 'full-div' });");
+    expect(nextSource).toContain("const zoom = new ZoomCompat({ view, container: 'zoom-div', layout: 'vertical' });");
+    expect(nextSource).toContain(
+      "const attribution = new AttributionCompat({ view, container: 'attrib-div', itemDelimiter: ' | ', attributions: ['Source A'] });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -417,6 +446,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Compass");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Expand");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Bookmarks");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Fullscreen");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Zoom");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Attribution");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

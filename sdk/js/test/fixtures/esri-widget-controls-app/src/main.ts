@@ -12,6 +12,9 @@ import BasemapGallery from "@arcgis/core/widgets/BasemapGallery";
 import Expand from "@arcgis/core/widgets/Expand";
 import Compass from "@arcgis/core/widgets/Compass";
 import Bookmarks from "@arcgis/core/widgets/Bookmarks";
+import Fullscreen from "@arcgis/core/widgets/Fullscreen";
+import Zoom from "@arcgis/core/widgets/Zoom";
+import Attribution from "@arcgis/core/widgets/Attribution";
 
 const map = new Map({
   basemap: "streets",
@@ -42,6 +45,13 @@ const bookmarks = new Bookmarks({
     },
   ],
 });
+const fullscreen = new Fullscreen({ view });
+const zoom = new Zoom({ view, layout: "vertical" });
+const attribution = new Attribution({
+  view,
+  itemDelimiter: " | ",
+  attributions: ["Source A"],
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -52,6 +62,9 @@ view.ui.add(basemapGallery, "top-right");
 view.ui.add(compass, "top-left");
 view.ui.add(expand, "top-right");
 view.ui.add(bookmarks, "top-right");
+view.ui.add(fullscreen, "top-left");
+view.ui.add(zoom, "top-left");
+view.ui.add(attribution, "bottom-left");
 
 popup.open({
   title: "Migration",
@@ -72,3 +85,6 @@ void basemapGallery;
 void compass;
 void expand;
 void bookmarks;
+void fullscreen;
+void zoom;
+void attribution;

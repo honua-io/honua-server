@@ -36,6 +36,9 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "bookmarks-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "fullscreen-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "zoom-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "attribution-widget": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -155,6 +158,9 @@ describe("buildJsMigrationReport", () => {
       "expand-widget": 0,
       "compass-widget": 0,
       "bookmarks-widget": 0,
+      "fullscreen-widget": 0,
+      "zoom-widget": 0,
+      "attribution-widget": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {
