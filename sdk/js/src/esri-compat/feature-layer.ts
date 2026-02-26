@@ -36,6 +36,11 @@ export interface FeatureLayerQueryCountOptions {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface FeatureLayerQueryExtentResult {
+  extent: unknown | null;
+  count?: number;
+}
+
 export class FeatureLayerCompat {
   public readonly url: string;
   public readonly serviceId: string;
@@ -149,6 +154,33 @@ export class FeatureLayerCompat {
 
     const features = extractFeatures(response);
     return features?.length ?? 0;
+  }
+
+  public async queryExtent(
+    options: FeatureLayerQueryCountOptions = {},
+  ): Promise<FeatureLayerQueryExtentResult> {
+    const response = await this.client.queryFeatures({
+      serviceId: this.serviceId,
+      layerId: this.layerId,
+      where: options.where ?? this.definitionExpression,
+      returnGeometry: false,
+      method: options.method,
+      extraParams: {
+        ...options.extraParams,
+        returnExtentOnly: true,
+      },
+    });
+
+    if (!isRecord(response)) {
+      return { extent: null };
+    }
+
+    const count =
+      typeof response.count === "number" && Number.isFinite(response.count) ? response.count : undefined;
+    return {
+      extent: response.extent ?? null,
+      count,
+    };
   }
 
   public applyEdits(options: FeatureLayerEditsOptions): Promise<unknown> {

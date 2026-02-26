@@ -249,4 +249,69 @@ describe("FeatureLayerCompat", () => {
     expect(fallbackCount).toBe(3);
     expect(JSON.stringify(firstRequest)).toContain('"returnCountOnly":true');
   });
+
+  it("supports queryExtent with returnExtentOnly passthrough", async () => {
+    let lastQuery: unknown;
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(request: unknown): Promise<unknown> {
+          lastQuery = request;
+          return Promise.resolve({
+            extent: {
+              xmin: -158,
+              ymin: 21,
+              xmax: -157,
+              ymax: 22,
+              spatialReference: { wkid: 4326 },
+            },
+            count: 9,
+          });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    const result = await layer.queryExtent({ where: "status = 'open'" });
+    expect(result).toEqual({
+      extent: {
+        xmin: -158,
+        ymin: 21,
+        xmax: -157,
+        ymax: 22,
+        spatialReference: { wkid: 4326 },
+      },
+      count: 9,
+    });
+    expect(JSON.stringify(lastQuery)).toContain('"where":"status = \'open\'"');
+    expect(JSON.stringify(lastQuery)).toContain('"returnExtentOnly":true');
+  });
+
+  it("returns null extent when queryExtent response shape is unknown", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [{}, {}] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    await expect(layer.queryExtent()).resolves.toEqual({ extent: null });
+  });
 });
