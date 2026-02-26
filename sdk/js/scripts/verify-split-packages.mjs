@@ -46,6 +46,7 @@ try {
   const smokeScript = `
 import { HonuaClient } from "@honua/sdk";
 import {
+  BasemapToggleCompat,
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
@@ -53,12 +54,15 @@ import {
   FeatureLayerCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
+  HomeCompat,
   IdentifyCompat,
   LayerListCompat,
   LegendCompat,
+  LocateCompat,
   MapImageLayerCompat,
   MapViewCompat,
   PopupCompat,
+  ScaleBarCompat,
   TileLayerCompat,
 } from "@honua/sdk-esri-compat";
 import {
@@ -74,6 +78,10 @@ if (typeof createEsriRequestInterceptors !== "function") throw new Error("create
 if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
 if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
+if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
+if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
+if (typeof LocateCompat !== "function") throw new Error("LocateCompat export missing");
+if (typeof ScaleBarCompat !== "function") throw new Error("ScaleBarCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");
 if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export missing");

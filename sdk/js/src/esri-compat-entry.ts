@@ -27,6 +27,21 @@ export type {
   CompatEventListener,
   CompatEventSubscription,
 } from "./esri-compat/event-bus.js";
+export {
+  BasemapToggleCompat,
+  HomeCompat,
+  LocateCompat,
+  ScaleBarCompat,
+} from "./esri-compat/controls.js";
+export type {
+  BasemapToggleCompatOptions,
+  HomeCompatOptions,
+  HomeViewpointCompat,
+  LocateCompatOptions,
+  LocatePositionCompat,
+  ScaleBarCompatOptions,
+  ScaleBarUnitCompat,
+} from "./esri-compat/controls.js";
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";
 export type {
   GraphicsLayerCompatOptions,
