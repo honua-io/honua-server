@@ -847,6 +847,56 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 
+  it("migrates layer-list actions fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-layer-list-actions-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["layer-list"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["popup-template"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { FeatureLayerCompat, LayerListCompat, MapCompat, MapViewCompat, PopupTemplateCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const layerList = new LayerListCompat({");
+    expect(migratedMain).toContain("listItemCreatedFunction: (event) => {");
+    expect(migratedMain).toContain('layerList.on("trigger-action", (event) => {');
+    expect(migratedMain).toContain("const popupTemplate = new PopupTemplateCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
+    expect(migratedMain).not.toContain("@arcgis/core/PopupTemplate");
+  });
+
   it("migrates map widgets and controls with ready gating", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-widget-controls-app",
