@@ -1,5 +1,5 @@
 import {
-  SUPPORTED_ARCGIS_MODULES,
+  isKindSupportedForTarget,
   SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
   type CodemodConstructorKind,
   type EsriCompatCodemodResult,
@@ -170,18 +170,19 @@ function summarizeUnhandledModules(
   scanReport: ArcGisScanReport,
   codemodResult: EsriCompatCodemodResult,
 ): ArcGisModuleSummary[] {
-  const supportedModules = new Set(SUPPORTED_ARCGIS_MODULES);
   const moduleCounts = new Map<string, number>();
 
   for (const hit of scanReport.imports) {
     const usageStyle = classifyUsageStyle(hit.importClause);
     const supportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
+    const moduleSupportedForTarget =
+      supportedKind !== undefined && isKindSupportedForTarget(supportedKind, codemodResult.target);
     const requireCoveredByCodemod =
       usageStyle === "require" &&
-      supportedKind !== undefined &&
+      moduleSupportedForTarget &&
       codemodResult.metrics.byKind[supportedKind].total > 0;
     const isHandledByCodemodScope =
-      supportedModules.has(hit.modulePath) && (usageStyle !== "require" || requireCoveredByCodemod);
+      moduleSupportedForTarget && (usageStyle !== "require" || requireCoveredByCodemod);
     if (isHandledByCodemodScope) {
       continue;
     }

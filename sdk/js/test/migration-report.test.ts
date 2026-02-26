@@ -215,4 +215,44 @@ describe("buildJsMigrationReport", () => {
       passed: false,
     });
   });
+
+  it("treats target-unsupported modules as unhandled for esri-leaflet mode", () => {
+    const codemodResult = {
+      ...createCodemodResult(),
+      target: "esri-leaflet" as const,
+    };
+    const scanReport: ArcGisScanReport = {
+      rootDir: "/tmp/app",
+      filesScanned: 1,
+      filesWithArcGisImports: 1,
+      imports: [
+        {
+          file: "/tmp/app/src/main.ts",
+          modulePath: "@arcgis/core/Map",
+          importClause: "Map",
+          symbols: ["Map"],
+        },
+        {
+          file: "/tmp/app/src/main.ts",
+          modulePath: "@arcgis/core/layers/MapImageLayer",
+          importClause: "MapImageLayer",
+          symbols: ["MapImageLayer"],
+        },
+      ],
+      symbolUsageCounts: {
+        Map: 1,
+        MapImageLayer: 1,
+      },
+      flags: [],
+    };
+
+    const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+    expect(report.unhandledArcGisModules).toEqual([
+      {
+        modulePath: "@arcgis/core/Map",
+        usageStyle: "static-import",
+        count: 1,
+      },
+    ]);
+  });
 });

@@ -94,6 +94,12 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   },
 ];
 
+const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> =
+  Object.freeze({
+    "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
+    "esri-leaflet": new Set(["feature-layer", "map-image-layer"] as const),
+  });
+
 export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
   Array.from(spec.arcGisModules),
 );
@@ -101,6 +107,10 @@ export const SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH: Readonly<Record<string, Codem
   Object.freeze(buildModuleToKindLookup(REWRITE_SPECS));
 
 const MODULE_TO_SPEC = buildModuleToSpecLookup(REWRITE_SPECS);
+
+export function isKindSupportedForTarget(kind: CodemodConstructorKind, target: CodemodTarget): boolean {
+  return TARGET_SUPPORTED_KINDS[target].has(kind);
+}
 
 interface TextEdit {
   start: number;

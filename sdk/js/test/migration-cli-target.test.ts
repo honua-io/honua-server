@@ -93,6 +93,7 @@ describe("migration cli target selection", () => {
     const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
       readiness: string;
       manualTodos: Array<{ kind: string; reason: string }>;
+      unhandledArcGisModules: Array<{ modulePath: string; usageStyle: string; count: number }>;
     };
     expect(report.readiness).toBe("assisted");
     expect(report.manualTodos).toEqual(
@@ -103,6 +104,15 @@ describe("migration cli target selection", () => {
       ]),
     );
     expect(report.manualTodos.some((todo) => todo.reason.includes("esri-leaflet mapping"))).toBe(true);
+    expect(report.unhandledArcGisModules).toEqual(
+      expect.arrayContaining([
+        {
+          modulePath: "@arcgis/core/Map",
+          usageStyle: "static-import",
+          count: 1,
+        },
+      ]),
+    );
   });
 
   it("fails fast for invalid --target values", () => {

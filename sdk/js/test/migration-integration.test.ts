@@ -347,6 +347,15 @@ describe("arcgis migration integration", () => {
     expect(report.codemodTarget).toBe("esri-leaflet");
     expect(report.readiness).toBe("assisted");
     expect(report.manualTodos.some((todo) => todo.kind === "map")).toBe(true);
+    expect(report.unhandledArcGisModules).toEqual(
+      expect.arrayContaining([
+        {
+          modulePath: "@arcgis/core/Map",
+          usageStyle: "static-import",
+          count: 1,
+        },
+      ]),
+    );
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
