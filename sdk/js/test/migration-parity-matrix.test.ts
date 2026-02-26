@@ -38,6 +38,7 @@ describe("JS parity matrix", () => {
     const query = matrix.find((row) => row.kind === "query");
     const oauthInfo = matrix.find((row) => row.kind === "oauth-info");
     const identityManager = matrix.find((row) => row.kind === "identity-manager");
+    const esriRequest = matrix.find((row) => row.kind === "esri-request");
     const esriConfig = matrix.find((row) => row.kind === "esri-config");
     const reactiveUtils = matrix.find((row) => row.kind === "reactive-utils");
 
@@ -118,6 +119,10 @@ describe("JS parity matrix", () => {
       esriLeaflet: "assisted",
     });
     expect(identityManager).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(esriRequest).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

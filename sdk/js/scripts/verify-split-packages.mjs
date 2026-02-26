@@ -59,6 +59,7 @@ import {
   createEsriRequestInterceptors,
   DirectionsCompat,
   esriConfig,
+  esriRequest,
   EsriRequestInterceptorRegistry,
   EditorCompat,
   FeatureCompat,
@@ -124,6 +125,7 @@ if (typeof createEsriRequestInterceptors !== "function") throw new Error("create
 if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
 if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
 if (typeof esriConfig !== "object") throw new Error("esriConfig export missing");
+if (typeof esriRequest !== "function") throw new Error("esriRequest export missing");
 if (typeof getEsriConfigHonuaInterceptors !== "function")
   throw new Error("getEsriConfigHonuaInterceptors export missing");
 if (typeof resetEsriConfig !== "function") throw new Error("resetEsriConfig export missing");

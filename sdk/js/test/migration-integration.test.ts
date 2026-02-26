@@ -155,6 +155,7 @@ describe("arcgis migration integration", () => {
       query: 0,
       "oauth-info": 0,
       "identity-manager": 0,
+      "esri-request": 0,
       "esri-config": 0,
       "reactive-utils": 0,
     });
@@ -618,6 +619,27 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('import { esriConfig } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("esriConfig.request.interceptors.push({");
     expect(migratedMain).not.toContain("@arcgis/core/config");
+  });
+
+  it("migrates esri-request fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-request-app");
+
+    expect(scanReport.flags).toEqual(["auth-or-request-customization-detected"]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["esri-request"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { esriRequest as request } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).not.toContain("@arcgis/core/request");
   });
 
   it("migrates oauth bootstrap fixture with ready gating", () => {

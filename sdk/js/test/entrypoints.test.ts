@@ -15,6 +15,7 @@ import {
   createEsriRequestInterceptors,
   DirectionsCompat,
   esriConfig,
+  esriRequest,
   EsriRequestInterceptorRegistry,
   EditorCompat,
   FeatureCompat,
@@ -109,6 +110,7 @@ describe("entrypoint modules", () => {
     expect(createArcGisTokenInterceptor).toBeTypeOf("function");
     expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
     expect(esriConfig).toBeTypeOf("object");
+    expect(esriRequest).toBeTypeOf("function");
     expect(getEsriConfigHonuaInterceptors).toBeTypeOf("function");
     expect(resetEsriConfig).toBeTypeOf("function");
     expect(identityManager).toBeTypeOf("object");

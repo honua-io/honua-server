@@ -113,6 +113,12 @@ export type {
   EsriRequestOptionsLike,
   EsriUrlPattern,
 } from "./esri-compat/request.js";
+export { esriRequest } from "./esri-compat/esri-request.js";
+export type {
+  EsriRequestCompatOptions,
+  EsriRequestCompatResponse,
+  EsriRequestResponseTypeCompat,
+} from "./esri-compat/esri-request.js";
 export {
   esriConfig,
   getEsriConfigHonuaInterceptors,

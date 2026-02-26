@@ -102,7 +102,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/Graphic/Point/SimpleLineSymbol/SimpleMarkerSymbol/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope",
+        "FeatureLayer/Graphic/Point/SimpleLineSymbol/SimpleMarkerSymbol/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriRequest/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -178,6 +178,7 @@ function summarizeManualTodosByKind(
     query: 0,
     "oauth-info": 0,
     "identity-manager": 0,
+    "esri-request": 0,
     "esri-config": 0,
     "reactive-utils": 0,
   };

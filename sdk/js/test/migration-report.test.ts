@@ -67,6 +67,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         query: { total: 0, autoMigrated: 0, manual: 0 },
         "oauth-info": { total: 0, autoMigrated: 0, manual: 0 },
         "identity-manager": { total: 0, autoMigrated: 0, manual: 0 },
+        "esri-request": { total: 0, autoMigrated: 0, manual: 0 },
         "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
         "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
       },
@@ -220,6 +221,7 @@ describe("buildJsMigrationReport", () => {
       query: 0,
       "oauth-info": 0,
       "identity-manager": 0,
+      "esri-request": 0,
       "esri-config": 0,
       "reactive-utils": 0,
     });

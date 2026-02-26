@@ -1918,6 +1918,76 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/config");
   });
 
+  it("rewrites esriRequest static imports to compat helpers", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-request.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import request from '@arcgis/core/request';",
+        "void request('https://example.test/rest/services/demo', { responseType: 'json' });",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["esri-request"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { esriRequest as request } from "@honua/sdk-esri-compat";');
+    expect(nextSource).not.toContain("@arcgis/core/request");
+  });
+
+  it("rewrites esriRequest dynamic imports to compat dynamic bridge", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-request-dynamic.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadRequest() {",
+        "  const module = await import('@arcgis/core/request.js');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["esri-request"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.esriRequest }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/request");
+  });
+
   it("rewrites safe OAuthInfo constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "oauth-info.ts");

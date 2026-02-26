@@ -20,6 +20,8 @@ const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON =
   "esriConfig import shape is unsupported for automatic migration.";
 const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
   "IdentityManager import shape is unsupported for automatic migration.";
+const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON =
+  "esriRequest import shape is unsupported for automatic migration.";
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
@@ -76,6 +78,7 @@ export type CodemodConstructorKind =
   | "query"
   | "oauth-info"
   | "identity-manager"
+  | "esri-request"
   | "esri-config"
   | "reactive-utils";
 
@@ -488,6 +491,11 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     ]),
   },
   {
+    kind: "esri-request",
+    compatSymbol: "esriRequest",
+    arcGisModules: new Set(["@arcgis/core/request", "@arcgis/core/request.js"]),
+  },
+  {
     kind: "esri-config",
     compatSymbol: "esriConfig",
     arcGisModules: new Set(["@arcgis/core/config", "@arcgis/core/config.js"]),
@@ -717,6 +725,18 @@ function codemodFile(
     findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
   const fileExtension = path.extname(file).toLowerCase();
   const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
+
+  const esriRequestImportRewrite = rewriteEsriRequestImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+  });
+  importEdits.push(...esriRequestImportRewrite.edits);
+  rewrittenKinds.push(...esriRequestImportRewrite.rewrittenKinds);
+  manualTodos.push(...esriRequestImportRewrite.manualTodos);
+  todoCommentEdits.push(...esriRequestImportRewrite.todoCommentEdits);
 
   const identityManagerImportRewrite = rewriteIdentityManagerImports({
     source,
@@ -1042,6 +1062,113 @@ function rewriteReactiveUtilsImports(options: {
     manualTodos,
     todoCommentEdits,
   };
+}
+
+function rewriteEsriRequestImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (!statement.importClause) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-request") {
+      continue;
+    }
+
+    const replacement = buildEsriRequestCompatImport(statement, options.sourceFile, options.compatImportPath);
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "esri-request",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON,
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[esri-request]: ${ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("esri-request");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildEsriRequestCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("esriRequest", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("esriRequest", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "esriRequest") {
+        specifiers.push(renderImportSpecifier("esriRequest", localName));
+        continue;
+      }
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("esriRequest");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
 }
 
 function rewriteIdentityManagerImports(options: {
@@ -1394,6 +1521,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     query: { total: 0, autoMigrated: 0, manual: 0 },
     "oauth-info": { total: 0, autoMigrated: 0, manual: 0 },
     "identity-manager": { total: 0, autoMigrated: 0, manual: 0 },
+    "esri-request": { total: 0, autoMigrated: 0, manual: 0 },
     "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
     "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
   };
@@ -2133,6 +2261,11 @@ function isSafeConstructorCall(
       return {
         ok: false,
         reason: "IdentityManager is not a constructor and requires import-based migration.",
+      };
+    case "esri-request":
+      return {
+        ok: false,
+        reason: "esriRequest is not a constructor and requires import-based migration.",
       };
     case "esri-config":
       return {

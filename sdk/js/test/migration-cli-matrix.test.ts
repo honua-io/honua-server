@@ -104,6 +104,7 @@ describe("migration cli parity matrix", () => {
     const query = report.matrix.find((row) => row.kind === "query");
     const oauthInfo = report.matrix.find((row) => row.kind === "oauth-info");
     const identityManager = report.matrix.find((row) => row.kind === "identity-manager");
+    const esriRequest = report.matrix.find((row) => row.kind === "esri-request");
     const esriConfig = report.matrix.find((row) => row.kind === "esri-config");
     const reactiveUtils = report.matrix.find((row) => row.kind === "reactive-utils");
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
@@ -125,6 +126,7 @@ describe("migration cli parity matrix", () => {
     expect(query).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(oauthInfo).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(identityManager).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(esriRequest).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(esriConfig).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(reactiveUtils).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
