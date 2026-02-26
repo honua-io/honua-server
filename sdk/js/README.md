@@ -8,7 +8,7 @@ This package currently provides:
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `RouteLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest` and `view.ui.add/remove/move/getComponents` compatibility,
 - identify controller (`IdentifyCompat`) for cross-layer MapServer identify workflows with optional popup auto-open,
-- compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`, `TrackCompat`, `MeasurementCompat`, `TimeSliderCompat`, `DirectionsCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
+- compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`, `TrackCompat`, `MeasurementCompat`, `TimeSliderCompat`, `DirectionsCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes, including popup feature-selection navigation and search source/result state helpers,
 - common map controls (`HomeCompat`, `BasemapToggleCompat`, `LocateCompat`, `ScaleBarCompat`, `CompassCompat`, `FullscreenCompat`, `ZoomCompat`, `AttributionCompat`) wired to the same event bus for shared view state updates,
 - request/auth migration bridge helpers (`createEsriRequestInterceptors`, `createArcGisTokenInterceptor`) plus core `HonuaClient` interceptor hooks (`before`/`after`/`error`),
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
@@ -160,11 +160,11 @@ The codemod is intentionally conservative:
   - `new LayerList(...)` -> `new LayerListCompat(...)` (supports `view`, `map`, `container`, `includeHidden`, `autoRefresh`, and `listItemCreatedFunction`)
   - `new Legend(...)` -> `new LegendCompat(...)` (supports `view`, `map`, `layers`, `container`, `includeHidden`, and `autoRefresh`)
   - `new Popup(...)` -> `new PopupCompat(...)`
-  - `new Home(...)` -> `new HomeCompat(...)`
+  - `new Home(...)` -> `new HomeCompat(...)` (supports `view`, `container`, and `viewpoint`)
   - `new BasemapToggle(...)` -> `new BasemapToggleCompat(...)`
-  - `new Locate(...)` -> `new LocateCompat(...)`
+  - `new Locate(...)` -> `new LocateCompat(...)` (supports `view`, `container`, `zoom`, and `locateProvider`)
   - `new ScaleBar(...)` -> `new ScaleBarCompat(...)`
-  - `new Search(...)` -> `new SearchCompat(...)`
+  - `new Search(...)` -> `new SearchCompat(...)` (supports `sources`, `includeDefaultSources`, `autoNavigate`, and `autoRefreshSources`)
   - `new BasemapGallery(...)` -> `new BasemapGalleryCompat(...)`
   - `new Bookmarks(...)` -> `new BookmarksCompat(...)`
   - `new Expand(...)` -> `new ExpandCompat(...)`
@@ -174,7 +174,7 @@ The codemod is intentionally conservative:
   - `new Attribution(...)` -> `new AttributionCompat(...)`
   - `new Sketch(...)` -> `new SketchCompat(...)`
   - `new Editor(...)` -> `new EditorCompat(...)`
-  - `new Track(...)` -> `new TrackCompat(...)`
+  - `new Track(...)` -> `new TrackCompat(...)` (supports `tracking`, `goToLocationEnabled`, `useHeadingEnabled`, `rotationEnabled`, `scale`, and `trackProvider`)
   - `new Measurement(...)` -> `new MeasurementCompat(...)`
   - `new TimeSlider(...)` -> `new TimeSliderCompat(...)`
   - `new Directions(...)` -> `new DirectionsCompat(...)`
