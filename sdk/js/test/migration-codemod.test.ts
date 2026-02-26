@@ -2107,8 +2107,8 @@ describe("runEsriCompatCodemod", () => {
         "import WebMap from '@arcgis/core/WebMap';",
         "const map = new Map({ basemap: 'streets', ground: 'world-elevation', tables: [tableLayer], spatialReference: { wkid: 3857 } });",
         "const view = new MapView({ map, zoom: 4, scale: 5000000, rotation: 10, extent: initialExtent, constraints: { minZoom: 2 }, padding: { left: 8 }, highlightOptions: { color: '#ff0' }, spatialReference: { wkid: 4326 } });",
-        "const scene = new SceneView({ map, viewingMode: 'global', qualityProfile: 'high' });",
-        "const webMap = new WebMap({ portalItem: { id: 'abc123' } });",
+        "const scene = new SceneView({ map, viewingMode: 'global', qualityProfile: 'high', scale: 4000000, rotation: 15, spatialReference: { wkid: 3857 }, popup: { dockEnabled: true } });",
+        "const webMap = new WebMap({ portalItem: { id: 'abc123' }, basemap: 'satellite', layers: [layerA], tables: [tableLayer], ground: 'world-elevation', spatialReference: { wkid: 3857 } });",
         "void map; void view; void scene; void webMap;",
       ].join("\n"),
       "utf8",
@@ -2164,9 +2164,15 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("highlightOptions: { color: '#ff0' }");
     expect(nextSource).toContain("spatialReference: { wkid: 4326 }");
     expect(nextSource).toContain(
-      "const scene = new SceneViewCompat({ map, viewingMode: 'global', qualityProfile: 'high' });",
+      "const scene = new SceneViewCompat({ map, viewingMode: 'global', qualityProfile: 'high', scale: 4000000, rotation: 15",
     );
-    expect(nextSource).toContain("const webMap = new WebMapCompat({ portalItem: { id: 'abc123' } });");
+    expect(nextSource).toContain("spatialReference: { wkid: 3857 }");
+    expect(nextSource).toContain("popup: { dockEnabled: true }");
+    expect(nextSource).toContain("const webMap = new WebMapCompat({ portalItem: { id: 'abc123' }");
+    expect(nextSource).toContain("basemap: 'satellite'");
+    expect(nextSource).toContain("layers: [layerA]");
+    expect(nextSource).toContain("tables: [tableLayer]");
+    expect(nextSource).toContain("ground: 'world-elevation'");
   });
 
   it("keeps complex constructor and reports manual TODO", () => {

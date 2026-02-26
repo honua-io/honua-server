@@ -3685,7 +3685,14 @@ function isSafeWebMapCompatCall(
     };
   }
 
-  const allowed = new Set(["portalItem", "basemap", "layers"]);
+  const allowed = new Set([
+    "portalItem",
+    "basemap",
+    "layers",
+    "ground",
+    "tables",
+    "spatialReference",
+  ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3728,7 +3735,23 @@ function isSafeSceneViewCompatCall(
     };
   }
 
-  const allowed = new Set(["map", "container", "center", "zoom", "camera", "qualityProfile", "viewingMode"]);
+  const allowed = new Set([
+    "map",
+    "container",
+    "center",
+    "zoom",
+    "scale",
+    "rotation",
+    "extent",
+    "constraints",
+    "padding",
+    "highlightOptions",
+    "spatialReference",
+    "popup",
+    "camera",
+    "qualityProfile",
+    "viewingMode",
+  ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
