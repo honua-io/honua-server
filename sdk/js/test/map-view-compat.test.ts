@@ -158,7 +158,15 @@ describe("MapViewCompat", () => {
     const layer = {
       id: "layer-1",
       queryFeatures(options: unknown) {
-        return Promise.resolve({ features: [{ id: "f-1", options }] });
+        return Promise.resolve({
+          features: [{ id: "f-1", options, attributes: { OBJECTID: 11 } }],
+        });
+      },
+      queryFeatureCount() {
+        return Promise.resolve(7);
+      },
+      queryObjectIds() {
+        return Promise.resolve([11, 12, 13]);
       },
     };
     const view = new MapViewCompat({ map: new MapCompat({ layers: [layer] }) });
@@ -188,11 +196,39 @@ describe("MapViewCompat", () => {
     layerViewA.setUpdating(true);
     expect(updatingValues).toEqual([true, false]);
 
-    const queryResult = await layerViewA.queryFeatures({ where: "1=1" });
-    expect(queryResult).toEqual({ features: [{ id: "f-1", options: { where: "1=1" } }] });
+    const hasAllFeaturesValues: unknown[] = [];
+    const hasAllFeaturesInViewValues: unknown[] = [];
+    layerViewA.watch("hasAllFeatures", (value) => {
+      hasAllFeaturesValues.push(value);
+    });
+    layerViewA.watch("hasAllFeaturesInView", (value) => {
+      hasAllFeaturesInViewValues.push(value);
+    });
+    layerViewA.setHasAllFeatures(false);
+    layerViewA.setHasAllFeaturesInView(false);
+    expect(hasAllFeaturesValues).toEqual([false]);
+    expect(hasAllFeaturesInViewValues).toEqual([false]);
 
-    const fallbackLayerView = await view.whenLayerView({ id: "layer-no-query" });
-    expect(await fallbackLayerView.queryFeatures()).toEqual({ features: [] });
+    const queryResult = await layerViewA.queryFeatures({ where: "1=1" });
+    expect(queryResult).toEqual({
+      features: [{ id: "f-1", options: { where: "1=1" }, attributes: { OBJECTID: 11 } }],
+    });
+    expect(await layerViewA.queryFeatureCount()).toBe(7);
+    expect(await layerViewA.queryObjectIds()).toEqual([11, 12, 13]);
+
+    const fallbackLayerView = await view.whenLayerView({
+      id: "layer-no-query",
+      queryFeatures() {
+        return Promise.resolve({
+          features: [{ attributes: { OBJECTID: 44 } }, { attributes: { objectId: 45 } }],
+        });
+      },
+    });
+    expect(await fallbackLayerView.queryFeatures()).toEqual({
+      features: [{ attributes: { OBJECTID: 44 } }, { attributes: { objectId: 45 } }],
+    });
+    expect(await fallbackLayerView.queryFeatureCount()).toBe(2);
+    expect(await fallbackLayerView.queryObjectIds()).toEqual([44, 45]);
   });
 
   it("supports toMap/toScreen and hitTest popup result bridge", async () => {
@@ -241,7 +277,11 @@ describe("MapViewCompat", () => {
 
     await view.goTo({ center: [1, 2], zoom: 4 });
     view.openPopup({ title: "Popup" });
-    await view.whenLayerView(layer);
+    const layerView = await view.whenLayerView(layer);
+    layerView.setUpdating(true);
+    layerView.setSuspended(true);
+    layerView.setHasAllFeatures(false);
+    layerView.setHasAllFeaturesInView(false);
     view.closePopup();
     view.destroy();
 
@@ -249,6 +289,10 @@ describe("MapViewCompat", () => {
     expect(events).toContain("popup.open");
     expect(events).toContain("popup.close");
     expect(events).toContain("view.layer-view-created");
+    expect(events).toContain("view.layer-view-updating-changed");
+    expect(events).toContain("view.layer-view-suspended-changed");
+    expect(events).toContain("view.layer-view-has-all-features-changed");
+    expect(events).toContain("view.layer-view-has-all-features-in-view-changed");
     expect(events).toContain("view.destroy");
   });
 });

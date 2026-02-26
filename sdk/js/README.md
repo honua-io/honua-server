@@ -67,6 +67,38 @@ CI publish workflow:
 - manual dry-run or publish via `Publish JS SDK Packages` workflow
 - tag-triggered publish uses tags in form `js-sdk-v<version>` and enforces tag/version match
 
+## Request/Auth Bridge
+
+```ts
+import {
+  HonuaClient,
+  createArcGisTokenInterceptor,
+  createEsriRequestInterceptors,
+} from "@honua/sdk-js";
+
+const client = new HonuaClient({
+  baseUrl: "https://example.test",
+  interceptors: [
+    ...createEsriRequestInterceptors([
+      {
+        urls: "/rest/services/default",
+        before: (params) => {
+          params.requestOptions.headers = {
+            ...(params.requestOptions.headers ?? {}),
+            "X-Migrated-By": "honua",
+          };
+        },
+      },
+    ]),
+    createArcGisTokenInterceptor({
+      applyTo: "/rest/services/default",
+      mode: "query",
+      getToken: async () => "arcgis-token-value",
+    }),
+  ],
+});
+```
+
 ## Migration CLI
 
 ```bash

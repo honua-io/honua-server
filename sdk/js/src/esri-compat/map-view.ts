@@ -97,14 +97,20 @@ export class MapViewLayerViewCompat {
   public readonly layer: unknown;
   public updating: boolean;
   public suspended: boolean;
+  public hasAllFeatures: boolean;
+  public hasAllFeaturesInView: boolean;
 
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly eventBus: CompatEventBus | undefined;
 
-  public constructor(layer: unknown) {
+  public constructor(layer: unknown, eventBus?: CompatEventBus) {
     this.layer = layer;
     this.updating = false;
     this.suspended = false;
+    this.hasAllFeatures = true;
+    this.hasAllFeaturesInView = true;
     this.watchListeners = new Map();
+    this.eventBus = eventBus;
   }
 
   public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle {
@@ -125,11 +131,29 @@ export class MapViewLayerViewCompat {
   public setUpdating(value: boolean): void {
     this.updating = value;
     this.notifyWatchers("updating", value);
+    this.eventBus?.emit("view.layer-view-updating-changed", { layer: this.layer, updating: value }, this);
   }
 
   public setSuspended(value: boolean): void {
     this.suspended = value;
     this.notifyWatchers("suspended", value);
+    this.eventBus?.emit("view.layer-view-suspended-changed", { layer: this.layer, suspended: value }, this);
+  }
+
+  public setHasAllFeatures(value: boolean): void {
+    this.hasAllFeatures = value;
+    this.notifyWatchers("hasAllFeatures", value);
+    this.eventBus?.emit("view.layer-view-has-all-features-changed", { layer: this.layer, hasAllFeatures: value }, this);
+  }
+
+  public setHasAllFeaturesInView(value: boolean): void {
+    this.hasAllFeaturesInView = value;
+    this.notifyWatchers("hasAllFeaturesInView", value);
+    this.eventBus?.emit(
+      "view.layer-view-has-all-features-in-view-changed",
+      { layer: this.layer, hasAllFeaturesInView: value },
+      this,
+    );
   }
 
   public async queryFeatures(options: unknown = {}): Promise<unknown> {
@@ -138,6 +162,43 @@ export class MapViewLayerViewCompat {
     }
 
     return { features: [] };
+  }
+
+  public async queryFeatureCount(options: unknown = {}): Promise<number> {
+    if (isQueryFeatureCountProvider(this.layer)) {
+      const count = await this.layer.queryFeatureCount(options);
+      return normalizeCount(count);
+    }
+
+    const result = await this.queryFeatures(options);
+    if (isFeatureCollection(result)) {
+      return result.features.length;
+    }
+
+    return 0;
+  }
+
+  public async queryObjectIds(options: unknown = {}): Promise<number[]> {
+    if (isQueryObjectIdsProvider(this.layer)) {
+      const ids = await this.layer.queryObjectIds(options);
+      return Array.isArray(ids)
+        ? ids.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+        : [];
+    }
+
+    const result = await this.queryFeatures(options);
+    if (!isFeatureCollection(result)) {
+      return [];
+    }
+
+    const ids: number[] = [];
+    for (const feature of result.features) {
+      const objectId = extractObjectId(feature);
+      if (typeof objectId === "number" && Number.isFinite(objectId)) {
+        ids.push(objectId);
+      }
+    }
+    return ids;
   }
 
   public destroy(): void {
@@ -158,6 +219,14 @@ export class MapViewLayerViewCompat {
 
 interface QueryFeaturesProvider {
   queryFeatures(options?: unknown): Promise<unknown> | unknown;
+}
+
+interface QueryFeatureCountProvider {
+  queryFeatureCount(options?: unknown): Promise<number> | number;
+}
+
+interface QueryObjectIdsProvider {
+  queryObjectIds(options?: unknown): Promise<number[]> | number[];
 }
 
 export class MapViewCompat {
@@ -264,7 +333,7 @@ export class MapViewCompat {
       return existing;
     }
 
-    const layerView = new MapViewLayerViewCompat(layer);
+    const layerView = new MapViewLayerViewCompat(layer, this.eventBus);
     this.layerViews.set(layer, layerView);
     this.eventBus.emit("view.layer-view-created", { layer, layerView }, this);
     this.emit("layerview-create", { layer, layerView });
@@ -351,6 +420,68 @@ function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider
     "queryFeatures" in value &&
     typeof value.queryFeatures === "function"
   );
+}
+
+function isQueryFeatureCountProvider(value: unknown): value is QueryFeatureCountProvider {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "queryFeatureCount" in value &&
+    typeof value.queryFeatureCount === "function"
+  );
+}
+
+function isQueryObjectIdsProvider(value: unknown): value is QueryObjectIdsProvider {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "queryObjectIds" in value &&
+    typeof value.queryObjectIds === "function"
+  );
+}
+
+function isFeatureCollection(value: unknown): value is { features: unknown[] } {
+  return typeof value === "object" && value !== null && "features" in value && Array.isArray(value.features);
+}
+
+function extractObjectId(feature: unknown): number | undefined {
+  if (typeof feature !== "object" || feature === null) {
+    return undefined;
+  }
+
+  if ("objectId" in feature && typeof feature.objectId === "number") {
+    return feature.objectId;
+  }
+
+  if ("attributes" in feature && typeof feature.attributes === "object" && feature.attributes !== null) {
+    if (
+      "OBJECTID" in feature.attributes &&
+      typeof feature.attributes.OBJECTID === "number" &&
+      Number.isFinite(feature.attributes.OBJECTID)
+    ) {
+      return feature.attributes.OBJECTID;
+    }
+    if (
+      "objectid" in feature.attributes &&
+      typeof feature.attributes.objectid === "number" &&
+      Number.isFinite(feature.attributes.objectid)
+    ) {
+      return feature.attributes.objectid;
+    }
+    if (
+      "objectId" in feature.attributes &&
+      typeof feature.attributes.objectId === "number" &&
+      Number.isFinite(feature.attributes.objectId)
+    ) {
+      return feature.attributes.objectId;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function extractGraphicLayer(value: unknown): unknown {
