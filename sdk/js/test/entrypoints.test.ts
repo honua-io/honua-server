@@ -30,6 +30,7 @@ import {
   GroupLayerCompat,
   HomeCompat,
   IdentifyCompat,
+  identityManager,
   LayerListCompat,
   LegendCompat,
   LocateCompat,
@@ -44,6 +45,7 @@ import {
   PrintCompat,
   PopupCompat,
   PopupTemplateCompat,
+  OAuthInfoCompat,
   QueryCompat,
   RouteLayerCompat,
   RouteTaskCompat,
@@ -105,6 +107,7 @@ describe("entrypoint modules", () => {
     expect(esriConfig).toBeTypeOf("object");
     expect(getEsriConfigHonuaInterceptors).toBeTypeOf("function");
     expect(resetEsriConfig).toBeTypeOf("function");
+    expect(identityManager).toBeTypeOf("object");
     expect(DirectionsCompat).toBeTypeOf("function");
     expect(EditorCompat).toBeTypeOf("function");
     expect(FeatureCompat).toBeTypeOf("function");
@@ -127,6 +130,7 @@ describe("entrypoint modules", () => {
     expect(DistanceMeasurement2DCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
     expect(PopupTemplateCompat).toBeTypeOf("function");
+    expect(OAuthInfoCompat).toBeTypeOf("function");
     expect(QueryCompat).toBeTypeOf("function");
     expect(RouteLayerCompat).toBeTypeOf("function");
     expect(RouteTaskCompat).toBeTypeOf("function");

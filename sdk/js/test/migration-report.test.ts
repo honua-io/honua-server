@@ -62,6 +62,8 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
         query: { total: 0, autoMigrated: 0, manual: 0 },
+        "oauth-info": { total: 0, autoMigrated: 0, manual: 0 },
+        "identity-manager": { total: 0, autoMigrated: 0, manual: 0 },
         "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
         "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
       },
@@ -210,6 +212,8 @@ describe("buildJsMigrationReport", () => {
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
       query: 0,
+      "oauth-info": 0,
+      "identity-manager": 0,
       "esri-config": 0,
       "reactive-utils": 0,
     });

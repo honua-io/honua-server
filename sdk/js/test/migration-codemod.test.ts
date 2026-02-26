@@ -1859,6 +1859,117 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/config");
   });
 
+  it("rewrites safe OAuthInfo constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "oauth-info.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import OAuthInfo from '@arcgis/core/identity/OAuthInfo';",
+        "const info = new OAuthInfo({",
+        "  appId: 'client-id',",
+        "  portalUrl: 'https://portal.example.test',",
+        "  popup: true,",
+        "});",
+        "void info;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["oauth-info"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { OAuthInfoCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new OAuthInfoCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/identity/OAuthInfo");
+  });
+
+  it("rewrites IdentityManager static imports to compat helpers", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "identity-manager.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import IdentityManager from '@arcgis/core/identity/IdentityManager';",
+        "IdentityManager.destroyCredentials();",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["identity-manager"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { identityManager as IdentityManager } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/identity/IdentityManager");
+  });
+
+  it("rewrites IdentityManager dynamic imports to compat dynamic bridge", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "identity-manager-dynamic.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadIdentityManager() {",
+        "  const module = await import('@arcgis/core/identity/IdentityManager.js');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["identity-manager"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.identityManager }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/identity/IdentityManager");
+  });
+
   it("rewrites reactiveUtils static imports to compat helpers", () => {
     const root = makeTempProject();
     const file = path.join(root, "reactive-utils.ts");

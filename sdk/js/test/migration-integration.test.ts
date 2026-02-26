@@ -150,6 +150,8 @@ describe("arcgis migration integration", () => {
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
       query: 0,
+      "oauth-info": 0,
+      "identity-manager": 0,
       "esri-config": 0,
       "reactive-utils": 0,
     });
@@ -568,6 +570,44 @@ describe("arcgis migration integration", () => {
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain('import { esriConfig } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("esriConfig.request.interceptors.push({");
+    expect(migratedMain).not.toContain("@arcgis/core/config");
+  });
+
+  it("migrates oauth bootstrap fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-oauth-app");
+
+    expect(scanReport.flags).toEqual(["auth-or-request-customization-detected"]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["oauth-info"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["identity-manager"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["esri-config"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { esriConfig, OAuthInfoCompat } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain(
+      'import { identityManager as IdentityManager } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const info = new OAuthInfoCompat({");
+    expect(migratedMain).toContain("IdentityManager.registerOAuthInfos([info]);");
+    expect(migratedMain).not.toContain("@arcgis/core/identity/OAuthInfo");
+    expect(migratedMain).not.toContain("@arcgis/core/identity/IdentityManager");
     expect(migratedMain).not.toContain("@arcgis/core/config");
   });
 

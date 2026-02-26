@@ -113,6 +113,13 @@ export {
   resetEsriConfig,
 } from "./esri-compat/esri-config.js";
 export type { EsriConfigCompat, EsriConfigRequestCompat } from "./esri-compat/esri-config.js";
+export { identityManager } from "./esri-compat/identity-manager.js";
+export type {
+  IdentityCredentialCompat,
+  IdentityTokenRegistrationCompat,
+} from "./esri-compat/identity-manager.js";
+export { OAuthInfoCompat } from "./esri-compat/oauth-info.js";
+export type { OAuthInfoCompatOptions } from "./esri-compat/oauth-info.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";

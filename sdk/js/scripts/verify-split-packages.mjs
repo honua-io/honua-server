@@ -74,6 +74,7 @@ import {
   GroupLayerCompat,
   HomeCompat,
   IdentifyCompat,
+  identityManager,
   LayerListCompat,
   LegendCompat,
   LocateCompat,
@@ -85,6 +86,7 @@ import {
   MapViewUiCompat,
   PrintCompat,
   PopupCompat,
+  OAuthInfoCompat,
   QueryCompat,
   reactiveUtils,
   resetEsriConfig,
@@ -122,6 +124,7 @@ if (typeof esriConfig !== "object") throw new Error("esriConfig export missing")
 if (typeof getEsriConfigHonuaInterceptors !== "function")
   throw new Error("getEsriConfigHonuaInterceptors export missing");
 if (typeof resetEsriConfig !== "function") throw new Error("resetEsriConfig export missing");
+if (typeof identityManager !== "object") throw new Error("identityManager export missing");
 if (typeof DirectionsCompat !== "function") throw new Error("DirectionsCompat export missing");
 if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
 if (typeof FeatureCompat !== "function") throw new Error("FeatureCompat export missing");
@@ -156,6 +159,7 @@ if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export m
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PrintCompat !== "function") throw new Error("PrintCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
+if (typeof OAuthInfoCompat !== "function") throw new Error("OAuthInfoCompat export missing");
 if (typeof QueryCompat !== "function") throw new Error("QueryCompat export missing");
 if (typeof reactiveUtils.watch !== "function") throw new Error("reactiveUtils export missing");
 if (typeof RouteLayerCompat !== "function") throw new Error("RouteLayerCompat export missing");

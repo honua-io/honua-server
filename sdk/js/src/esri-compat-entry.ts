@@ -46,6 +46,13 @@ export {
   resetEsriConfig,
 } from "./esri-compat/esri-config.js";
 export type { EsriConfigCompat, EsriConfigRequestCompat } from "./esri-compat/esri-config.js";
+export { identityManager } from "./esri-compat/identity-manager.js";
+export type {
+  IdentityCredentialCompat,
+  IdentityTokenRegistrationCompat,
+} from "./esri-compat/identity-manager.js";
+export { OAuthInfoCompat } from "./esri-compat/oauth-info.js";
+export type { OAuthInfoCompatOptions } from "./esri-compat/oauth-info.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,

@@ -18,6 +18,8 @@ const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON =
   "ReactiveUtils import shape is unsupported for automatic migration.";
 const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON =
   "esriConfig import shape is unsupported for automatic migration.";
+const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
+  "IdentityManager import shape is unsupported for automatic migration.";
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
@@ -69,6 +71,8 @@ export type CodemodConstructorKind =
   | "directions-widget"
   | "coordinate-conversion-widget"
   | "query"
+  | "oauth-info"
+  | "identity-manager"
   | "esri-config"
   | "reactive-utils";
 
@@ -444,6 +448,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     ]),
   },
   {
+    kind: "oauth-info",
+    compatSymbol: "OAuthInfoCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/identity/OAuthInfo",
+      "@arcgis/core/identity/OAuthInfo.js",
+    ]),
+  },
+  {
+    kind: "identity-manager",
+    compatSymbol: "identityManager",
+    arcGisModules: new Set([
+      "@arcgis/core/identity/IdentityManager",
+      "@arcgis/core/identity/IdentityManager.js",
+    ]),
+  },
+  {
     kind: "esri-config",
     compatSymbol: "esriConfig",
     arcGisModules: new Set(["@arcgis/core/config", "@arcgis/core/config.js"]),
@@ -673,6 +693,18 @@ function codemodFile(
     findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
   const fileExtension = path.extname(file).toLowerCase();
   const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
+
+  const identityManagerImportRewrite = rewriteIdentityManagerImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+  });
+  importEdits.push(...identityManagerImportRewrite.edits);
+  rewrittenKinds.push(...identityManagerImportRewrite.rewrittenKinds);
+  manualTodos.push(...identityManagerImportRewrite.manualTodos);
+  todoCommentEdits.push(...identityManagerImportRewrite.todoCommentEdits);
 
   const esriConfigImportRewrite = rewriteEsriConfigImports({
     source,
@@ -988,6 +1020,117 @@ function rewriteReactiveUtilsImports(options: {
   };
 }
 
+function rewriteIdentityManagerImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (!statement.importClause) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "identity-manager") {
+      continue;
+    }
+
+    const replacement = buildIdentityManagerCompatImport(
+      statement,
+      options.sourceFile,
+      options.compatImportPath,
+    );
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "identity-manager",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON,
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[identity-manager]: ${IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("identity-manager");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildIdentityManagerCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("identityManager", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("identityManager", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "identityManager") {
+        specifiers.push(renderImportSpecifier("identityManager", localName));
+        continue;
+      }
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("identityManager");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
 function rewriteEsriConfigImports(options: {
   source: string;
   sourceFile: ts.SourceFile;
@@ -1007,6 +1150,9 @@ function rewriteEsriConfigImports(options: {
 
   for (const statement of options.sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (!statement.importClause) {
       continue;
     }
     if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-config") {
@@ -1219,6 +1365,8 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
     query: { total: 0, autoMigrated: 0, manual: 0 },
+    "oauth-info": { total: 0, autoMigrated: 0, manual: 0 },
+    "identity-manager": { total: 0, autoMigrated: 0, manual: 0 },
     "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
     "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
   };
@@ -1946,6 +2094,13 @@ function isSafeConstructorCall(
       return isSafeCoordinateConversionWidgetCompatCall(node);
     case "query":
       return isSafeQueryCompatCall(node);
+    case "oauth-info":
+      return isSafeOAuthInfoCompatCall(node);
+    case "identity-manager":
+      return {
+        ok: false,
+        reason: "IdentityManager is not a constructor and requires import-based migration.",
+      };
     case "esri-config":
       return {
         ok: false,
@@ -4136,6 +4291,57 @@ function isSafeQueryCompatCall(
       return {
         ok: false,
         reason: "Query options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeOAuthInfoCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "OAuthInfo constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "OAuthInfo constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "appId",
+    "portalUrl",
+    "popup",
+    "flowType",
+    "expiration",
+    "authNamespace",
+    "preserveUrlHash",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "OAuthInfo options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "OAuthInfo options include unsupported properties; requires manual migration.",
       };
     }
   }
