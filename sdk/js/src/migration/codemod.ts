@@ -5057,6 +5057,7 @@ function isSafeTrackWidgetCompatCall(
     "useHeadingEnabled",
     "rotationEnabled",
     "scale",
+    "trackProvider",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {

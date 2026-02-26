@@ -77,6 +77,12 @@ const track = new Track({
   goToLocationEnabled: true,
   useHeadingEnabled: true,
   rotationEnabled: true,
+  trackProvider: async () => ({
+    coords: {
+      latitude: 21.3069,
+      longitude: -157.8583,
+    },
+  }),
 });
 const measurement = new Measurement({
   view,

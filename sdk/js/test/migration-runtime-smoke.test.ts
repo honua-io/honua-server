@@ -168,7 +168,7 @@ describe("migration runtime smoke", () => {
         "const attribution = new Attribution({ view, itemDelimiter: ' | ', attributions: ['Source A'] });",
         "const sketch = new Sketch({ view, layer: undefined, creationMode: 'update' });",
         "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
-        "const track = new Track({ view, goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
+        "const track = new Track({ view, goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true, trackProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
         "const distanceMeasurement2d = new DistanceMeasurement2D({ view, container: 'distance-2d', unit: 'kilometers' });",
         "const areaMeasurement2d = new AreaMeasurement2D({ view, container: 'area-2d', unit: 'square-kilometers' });",
         "const measurement = new Measurement({ view, activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",

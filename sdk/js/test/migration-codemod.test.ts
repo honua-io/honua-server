@@ -1486,7 +1486,7 @@ describe("runEsriCompatCodemod", () => {
         "const attribution = new Attribution({ view, container: 'attrib-div', itemDelimiter: ' | ', attributions: ['Source A'] });",
         "const sketch = new Sketch({ view, layer: undefined, creationMode: 'update' });",
         "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
-        "const track = new Track({ view, container: 'track-div', goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
+        "const track = new Track({ view, container: 'track-div', goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true, trackProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
         "const measurement = new Measurement({ view, container: 'measurement-div', activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
         "const timeSlider = new TimeSlider({ view, container: 'time-slider-div', mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
         "const directions = new Directions({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
@@ -1687,7 +1687,7 @@ describe("runEsriCompatCodemod", () => {
       "const editor = new EditorCompat({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
     );
     expect(nextSource).toContain(
-      "const track = new TrackCompat({ view, container: 'track-div', goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
+      "const track = new TrackCompat({ view, container: 'track-div', goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true, trackProvider: async () => ({ coords: { latitude: 21.3069, longitude: -157.8583 } }) });",
     );
     expect(nextSource).toContain(
       "const measurement = new MeasurementCompat({ view, container: 'measurement-div', activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",

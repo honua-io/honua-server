@@ -1509,6 +1509,9 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('goToLocationEnabled: true');
     expect(migratedMain).toContain('useHeadingEnabled: true');
     expect(migratedMain).toContain('rotationEnabled: true');
+    expect(migratedMain).toContain("trackProvider: async () => ({");
+    expect(migratedMain).toContain("latitude: 21.3069");
+    expect(migratedMain).toContain("longitude: -157.8583");
     expect(migratedMain).toContain("const routeLayer = new RouteLayerCompat({");
     expect(migratedMain).toContain("const directions = new DirectionsCompat({");
     expect(migratedMain).toContain("const coordinateConversion = new CoordinateConversionCompat({");
