@@ -410,6 +410,55 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain('@arcgis/core/Map');
   });
 
+  it("migrates related-feature query app flow with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-related-features-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 0,
+      denominator: 1,
+      ratio: 0,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 0,
+      denominator: 1,
+      ratio: 0,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { FeatureLayerCompat } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("const layer = new FeatureLayerCompat({");
+    expect(migratedMain).toContain("return layer.queryRelatedFeatures({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/FeatureLayer");
+  });
+
   it("reports assisted when .cjs require-style usage requires manual migration", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-assisted-require-app",
