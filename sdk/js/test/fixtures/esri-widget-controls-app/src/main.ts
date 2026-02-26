@@ -15,6 +15,8 @@ import Bookmarks from "@arcgis/core/widgets/Bookmarks";
 import Fullscreen from "@arcgis/core/widgets/Fullscreen";
 import Zoom from "@arcgis/core/widgets/Zoom";
 import Attribution from "@arcgis/core/widgets/Attribution";
+import Sketch from "@arcgis/core/widgets/Sketch";
+import Editor from "@arcgis/core/widgets/Editor";
 
 const map = new Map({
   basemap: "streets",
@@ -52,6 +54,8 @@ const attribution = new Attribution({
   itemDelimiter: " | ",
   attributions: ["Source A"],
 });
+const sketch = new Sketch({ view, layer: undefined, creationMode: "update" });
+const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ["create", "update"] });
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -65,6 +69,8 @@ view.ui.add(bookmarks, "top-right");
 view.ui.add(fullscreen, "top-left");
 view.ui.add(zoom, "top-left");
 view.ui.add(attribution, "bottom-left");
+view.ui.add(sketch, "top-right");
+view.ui.add(editor, "top-right");
 
 popup.open({
   title: "Migration",
@@ -88,3 +94,5 @@ void bookmarks;
 void fullscreen;
 void zoom;
 void attribution;
+void sketch;
+void editor;

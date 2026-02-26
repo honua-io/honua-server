@@ -200,4 +200,19 @@ describe("scanArcGisUsage", () => {
     const report = scanArcGisUsage(root);
     expect(report.flags).toContain("auth-or-request-customization-detected");
   });
+
+  it("flags unsupported advanced networking widget patterns", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "advanced.ts"),
+      [
+        "import Track from '@arcgis/core/widgets/Track';",
+        "void Track;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.flags).toContain("advanced-widget-or-networking-detected");
+  });
 });

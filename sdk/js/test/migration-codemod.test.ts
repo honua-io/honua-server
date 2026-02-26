@@ -284,6 +284,8 @@ describe("runEsriCompatCodemod", () => {
         "import Fullscreen from '@arcgis/core/widgets/Fullscreen';",
         "import Zoom from '@arcgis/core/widgets/Zoom';",
         "import Attribution from '@arcgis/core/widgets/Attribution';",
+        "import Sketch from '@arcgis/core/widgets/Sketch';",
+        "import Editor from '@arcgis/core/widgets/Editor';",
         "const view = {};",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div' });",
@@ -300,6 +302,8 @@ describe("runEsriCompatCodemod", () => {
         "const fullscreen = new Fullscreen({ view, container: 'full-div' });",
         "const zoom = new Zoom({ view, container: 'zoom-div', layout: 'vertical' });",
         "const attribution = new Attribution({ view, container: 'attrib-div', itemDelimiter: ' | ', attributions: ['Source A'] });",
+        "const sketch = new Sketch({ view, layer: undefined, creationMode: 'update' });",
+        "const editor = new Editor({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -315,6 +319,8 @@ describe("runEsriCompatCodemod", () => {
         "void fullscreen;",
         "void zoom;",
         "void attribution;",
+        "void sketch;",
+        "void editor;",
       ].join("\n"),
       "utf8",
     );
@@ -326,8 +332,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(15);
-    expect(result.metrics.autoMigratedCallSites).toBe(15);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(17);
+    expect(result.metrics.autoMigratedCallSites).toBe(17);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
       total: 1,
@@ -404,10 +410,20 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["sketch-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["editor-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
@@ -434,6 +450,12 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const attribution = new AttributionCompat({ view, container: 'attrib-div', itemDelimiter: ' | ', attributions: ['Source A'] });",
     );
+    expect(nextSource).toContain(
+      "const sketch = new SketchCompat({ view, layer: undefined, creationMode: 'update' });",
+    );
+    expect(nextSource).toContain(
+      "const editor = new EditorCompat({ view, layerInfos: [], allowedWorkflows: ['create', 'update'] });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -449,6 +471,8 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Fullscreen");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Zoom");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Attribution");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Sketch");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Editor");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

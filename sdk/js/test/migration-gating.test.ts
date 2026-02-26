@@ -50,6 +50,8 @@ function createReport(): JsMigrationReport {
           "fullscreen-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "zoom-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "attribution-widget": { total: 0, autoMigrated: 0, manual: 0 },
+          "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
+          "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
         },
       },
       fileResults: [],
@@ -112,6 +114,8 @@ function createReport(): JsMigrationReport {
       "fullscreen-widget": 0,
       "zoom-widget": 0,
       "attribution-widget": 0,
+      "sketch-widget": 0,
+      "editor-widget": 0,
     },
     manualTodoReasons: [],
     unhandledArcGisModules: [

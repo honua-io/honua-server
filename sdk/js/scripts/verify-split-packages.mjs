@@ -55,6 +55,7 @@ import {
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   EsriRequestInterceptorRegistry,
+  EditorCompat,
   ExpandCompat,
   FeatureLayerCompat,
   FullscreenCompat,
@@ -70,6 +71,7 @@ import {
   MapViewUiCompat,
   PopupCompat,
   SearchCompat,
+  SketchCompat,
   ScaleBarCompat,
   TileLayerCompat,
   ZoomCompat,
@@ -86,6 +88,7 @@ if (typeof CompatEventBus !== "function") throw new Error("CompatEventBus export
 if (typeof createEsriRequestInterceptors !== "function") throw new Error("createEsriRequestInterceptors export missing");
 if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
 if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
+if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
@@ -108,6 +111,7 @@ if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export m
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PopupCompat !== "function") throw new Error("PopupCompat export missing");
 if (typeof SearchCompat !== "function") throw new Error("SearchCompat export missing");
+if (typeof SketchCompat !== "function") throw new Error("SketchCompat export missing");
 if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat export missing");
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
 if (typeof runEsriCompatCodemod !== "function") throw new Error("runEsriCompatCodemod export missing");

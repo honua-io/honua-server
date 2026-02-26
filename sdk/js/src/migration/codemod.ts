@@ -41,7 +41,9 @@ export type CodemodConstructorKind =
   | "bookmarks-widget"
   | "fullscreen-widget"
   | "zoom-widget"
-  | "attribution-widget";
+  | "attribution-widget"
+  | "sketch-widget"
+  | "editor-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -234,6 +236,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Attribution",
       "@arcgis/core/widgets/Attribution.js",
+    ]),
+  },
+  {
+    kind: "sketch-widget",
+    compatSymbol: "SketchCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Sketch",
+      "@arcgis/core/widgets/Sketch.js",
+    ]),
+  },
+  {
+    kind: "editor-widget",
+    compatSymbol: "EditorCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Editor",
+      "@arcgis/core/widgets/Editor.js",
     ]),
   },
 ];
@@ -716,6 +734,8 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "fullscreen-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "zoom-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "attribution-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1395,6 +1415,10 @@ function isSafeConstructorCall(
       return isSafeZoomWidgetCompatCall(node);
     case "attribution-widget":
       return isSafeAttributionWidgetCompatCall(node);
+    case "sketch-widget":
+      return isSafeSketchWidgetCompatCall(node);
+    case "editor-widget":
+      return isSafeEditorWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2459,6 +2483,106 @@ function isSafeAttributionWidgetCompatCall(
       return {
         ok: false,
         reason: "Attribution options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSketchWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Sketch constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Sketch constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "layer",
+    "container",
+    "creationMode",
+    "updateOnGraphicClick",
+    "defaultCreateOptions",
+    "defaultUpdateOptions",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Sketch options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Sketch options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeEditorWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Editor constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Editor constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "layerInfos",
+    "allowedWorkflows",
+    "supportingWidgetDefaults",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Editor options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Editor options include unsupported properties; requires manual migration.",
       };
     }
   }

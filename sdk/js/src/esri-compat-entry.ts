@@ -130,3 +130,18 @@ export type {
   SearchSuggestionCompat,
   SuggestResponseCompat,
 } from "./esri-compat/search.js";
+export { SketchCompat } from "./esri-compat/sketch.js";
+export type {
+  SketchCompatOptions,
+  SketchCreateOptionsCompat,
+  SketchCreateResultCompat,
+  SketchCreationModeCompat,
+  SketchToolCompat,
+  SketchUpdateOptionsCompat,
+} from "./esri-compat/sketch.js";
+export { EditorCompat } from "./esri-compat/editor.js";
+export type {
+  EditorCompatOptions,
+  EditorLayerInfoCompat,
+  EditorWorkflowCompat,
+} from "./esri-compat/editor.js";

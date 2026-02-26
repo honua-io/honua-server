@@ -11,6 +11,7 @@ import {
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   EsriRequestInterceptorRegistry,
+  EditorCompat,
   ExpandCompat,
   FeatureLayerCompat,
   GraphicsLayerCompat,
@@ -27,6 +28,7 @@ import {
   MapViewUiCompat,
   PopupCompat,
   SearchCompat,
+  SketchCompat,
   ScaleBarCompat,
   TileLayerCompat,
   ZoomCompat,
@@ -65,6 +67,7 @@ describe("entrypoint modules", () => {
     expect(createEsriRequestInterceptors).toBeTypeOf("function");
     expect(createArcGisTokenInterceptor).toBeTypeOf("function");
     expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
+    expect(EditorCompat).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
     expect(IdentifyCompat).toBeTypeOf("function");
@@ -75,6 +78,7 @@ describe("entrypoint modules", () => {
     expect(MapViewCompat).toBeTypeOf("function");
     expect(MapViewUiCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
+    expect(SketchCompat).toBeTypeOf("function");
     expect(TileLayerCompat).toBeTypeOf("function");
     expect(parseMapServiceUrl).toBeTypeOf("function");
     expect(SceneViewCompat).toBeTypeOf("function");
