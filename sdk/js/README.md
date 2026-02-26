@@ -147,8 +147,8 @@ The codemod is intentionally conservative:
   - `new UniqueValueRenderer(...)` -> `new UniqueValueRendererCompat(...)`
   - `new GraphicsLayer(...)` -> `new GraphicsLayerCompat(...)`
   - `new GroupLayer(...)` -> `new GroupLayerCompat(...)`
-  - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `sublayers`, `opacity`, and `visible`)
-  - `new TileLayer({ url: ... })` -> `new TileLayerCompat({ url: ... })` (supports `opacity` and `visible`)
+  - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `id`, `title`, `sublayers`, `opacity`, `visible`, `minScale`, `maxScale`, `listMode`, and `legendEnabled`)
+  - `new TileLayer({ url: ... })` -> `new TileLayerCompat({ url: ... })` (supports `id`, `title`, `opacity`, `visible`, `minScale`, `maxScale`, and `listMode`)
   - `new RouteLayer(...)` -> `new RouteLayerCompat(...)`
   - `new Map(...)` -> `new MapCompat(...)` (supports `basemap`, `layers`, `ground`, `tables`, `portalItem`, and `spatialReference`)
   - `new MapView(...)` -> `new MapViewCompat(...)` (supports `map`, `container`, `center`, `zoom`, `scale`, `rotation`, `extent`, `constraints`, `padding`, `highlightOptions`, `spatialReference`, and `popup`)

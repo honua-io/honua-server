@@ -2310,9 +2310,9 @@ function isSafeConstructorCall(
     case "group-layer":
       return isSafeGroupLayerCompatCall(node);
     case "map-image-layer":
-      return isSafeMapImageLayerCompatCall(node);
+      return isSafeMapImageLayerCompatCall(node, target);
     case "tile-layer":
-      return isSafeTileLayerCompatCall(node);
+      return isSafeTileLayerCompatCall(node, target);
     case "route-layer":
       return isSafeRouteLayerCompatCall(node);
     case "route-task":
@@ -3351,6 +3351,7 @@ function isSafeUniqueValueRendererCompatCall(
 
 function isSafeMapImageLayerCompatCall(
   node: ts.NewExpression,
+  target: CodemodTarget,
 ): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length !== 1) {
@@ -3369,7 +3370,21 @@ function isSafeMapImageLayerCompatCall(
   }
 
   let hasUrlOption = false;
-  const allowed = new Set(["url", "sublayers", "opacity", "visible"]);
+  const allowed =
+    target === "honua-compat"
+      ? new Set([
+          "url",
+          "id",
+          "title",
+          "sublayers",
+          "opacity",
+          "visible",
+          "minScale",
+          "maxScale",
+          "listMode",
+          "legendEnabled",
+        ])
+      : new Set(["url", "sublayers", "opacity", "visible"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3403,6 +3418,7 @@ function isSafeMapImageLayerCompatCall(
 
 function isSafeTileLayerCompatCall(
   node: ts.NewExpression,
+  target: CodemodTarget,
 ): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length !== 1) {
@@ -3421,7 +3437,10 @@ function isSafeTileLayerCompatCall(
   }
 
   let hasUrlOption = false;
-  const allowed = new Set(["url", "opacity", "visible"]);
+  const allowed =
+    target === "honua-compat"
+      ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode"])
+      : new Set(["url", "opacity", "visible"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

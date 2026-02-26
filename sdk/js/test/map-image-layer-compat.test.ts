@@ -96,6 +96,12 @@ describe("MapImageLayerCompat", () => {
 
     const layer = new MapImageLayerCompat({
       url: "https://example.test/rest/services/default/MapServer",
+      id: "default-map",
+      title: "Default Map",
+      minScale: 12000,
+      maxScale: 0,
+      listMode: "hide",
+      legendEnabled: false,
       eventBus,
       client: new (class {
         public getMapServiceMetadata(): Promise<unknown> {
@@ -129,7 +135,15 @@ describe("MapImageLayerCompat", () => {
     ).toEqual({ results: [] });
 
     layer.setVisibility(false);
+    layer.setOpacity(0.5);
     expect(layer.visible).toBe(false);
+    expect(layer.opacity).toBe(0.5);
+    expect(layer.id).toBe("default-map");
+    expect(layer.title).toBe("Default Map");
+    expect(layer.minScale).toBe(12000);
+    expect(layer.maxScale).toBe(0);
+    expect(layer.listMode).toBe("hide");
+    expect(layer.legendEnabled).toBe(false);
 
     expect(requests).toHaveLength(3);
     expect(requests[0]).toMatchObject({
@@ -150,5 +164,6 @@ describe("MapImageLayerCompat", () => {
       },
     });
     expect(events).toContain("layer.visibility-changed");
+    expect(events).toContain("layer.opacity-changed");
   });
 });

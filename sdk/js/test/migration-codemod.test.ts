@@ -647,9 +647,15 @@ describe("runEsriCompatCodemod", () => {
         "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
         "const layer = new MapImageLayer({",
         "  url: serviceUrl,",
+        "  id: 'map-image',",
+        "  title: 'Map Image',",
         "  sublayers: [{ id: 0 }],",
         "  opacity: 0.8,",
         "  visible: true,",
+        "  minScale: 0,",
+        "  maxScale: 0,",
+        "  listMode: 'show',",
+        "  legendEnabled: false,",
         "});",
       ].join("\n"),
       "utf8",
@@ -674,6 +680,9 @@ describe("runEsriCompatCodemod", () => {
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import { MapImageLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("new MapImageLayerCompat({");
+    expect(nextSource).toContain("id: 'map-image'");
+    expect(nextSource).toContain("title: 'Map Image'");
+    expect(nextSource).toContain("legendEnabled: false");
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
   });
 
@@ -686,8 +695,13 @@ describe("runEsriCompatCodemod", () => {
         "import TileLayer from '@arcgis/core/layers/TileLayer';",
         "const layer = new TileLayer({",
         "  url: serviceUrl,",
+        "  id: 'tiles',",
+        "  title: 'Tiles',",
         "  opacity: 0.6,",
         "  visible: true,",
+        "  minScale: 25000,",
+        "  maxScale: 0,",
+        "  listMode: 'show',",
         "});",
       ].join("\n"),
       "utf8",
@@ -712,6 +726,9 @@ describe("runEsriCompatCodemod", () => {
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import { TileLayerCompat } from "@honua/sdk-esri-compat";');
     expect(nextSource).toContain("new TileLayerCompat({");
+    expect(nextSource).toContain("id: 'tiles'");
+    expect(nextSource).toContain("title: 'Tiles'");
+    expect(nextSource).toContain("listMode: 'show'");
     expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
   });
 
@@ -1752,6 +1769,55 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
     expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
+  });
+
+  it("keeps extended map image/tile options as manual TODOs for esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet-extended-options.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "import TileLayer from '@arcgis/core/layers/TileLayer';",
+        "const mil = new MapImageLayer({ url: mapUrl, legendEnabled: false });",
+        "const tiled = new TileLayer({ url: tileUrl, listMode: 'hide' });",
+        "void mil; void tiled;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: false,
+    });
+
+    expect(result.filesChanged).toBe(0);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(2);
+    expect(result.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 0,
+      manual: 1,
+    });
+    expect(result.metrics.byKind["tile-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 0,
+      manual: 1,
+    });
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "map-image-layer",
+          reason: "MapImageLayer options include unsupported properties; requires manual migration.",
+        }),
+        expect.objectContaining({
+          kind: "tile-layer",
+          reason: "TileLayer options include unsupported properties; requires manual migration.",
+        }),
+      ]),
+    );
   });
 
   it("keeps unsupported constructors as manual TODOs for esri-leaflet target", () => {

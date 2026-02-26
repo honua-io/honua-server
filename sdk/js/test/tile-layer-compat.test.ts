@@ -38,6 +38,11 @@ describe("TileLayerCompat", () => {
 
     const layer = new TileLayerCompat({
       url: "https://example.test/rest/services/tiles/MapServer",
+      id: "tiles-1",
+      title: "Tiles",
+      minScale: 24000,
+      maxScale: 1200,
+      listMode: "hide-children",
       eventBus,
     });
 
@@ -50,6 +55,11 @@ describe("TileLayerCompat", () => {
 
     expect(layer.visible).toBe(false);
     expect(layer.opacity).toBe(0.6);
+    expect(layer.id).toBe("tiles-1");
+    expect(layer.title).toBe("Tiles");
+    expect(layer.minScale).toBe(24000);
+    expect(layer.maxScale).toBe(1200);
+    expect(layer.listMode).toBe("hide-children");
     expect(events).toContain("layer.visibility-changed");
     expect(events).toContain("layer.opacity-changed");
   });
