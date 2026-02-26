@@ -132,6 +132,14 @@ export type {
 } from "./esri-compat/search.js";
 export { TrackCompat } from "./esri-compat/track.js";
 export type { TrackCompatOptions, TrackPositionCompat } from "./esri-compat/track.js";
+export { MeasurementCompat } from "./esri-compat/measurement.js";
+export type {
+  AreaUnitCompat,
+  LinearUnitCompat,
+  MeasurementCompatOptions,
+  MeasurementResultCompat,
+  MeasurementToolCompat,
+} from "./esri-compat/measurement.js";
 export { SketchCompat } from "./esri-compat/sketch.js";
 export type {
   SketchCompatOptions,

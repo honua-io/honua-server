@@ -53,6 +53,7 @@ function createReport(): JsMigrationReport {
           "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
           "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
+          "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
         },
       },
       fileResults: [],
@@ -118,6 +119,7 @@ function createReport(): JsMigrationReport {
       "sketch-widget": 0,
       "editor-widget": 0,
       "track-widget": 0,
+      "measurement-widget": 0,
     },
     manualTodoReasons: [],
     unhandledArcGisModules: [

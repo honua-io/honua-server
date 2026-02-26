@@ -22,6 +22,7 @@ import {
   LegendCompat,
   LocateCompat,
   FullscreenCompat,
+  MeasurementCompat,
   MapCompat,
   MapImageLayerCompat,
   MapViewCompat,
@@ -80,6 +81,7 @@ describe("entrypoint modules", () => {
     expect(MapImageLayerCompat).toBeTypeOf("function");
     expect(MapViewCompat).toBeTypeOf("function");
     expect(MapViewUiCompat).toBeTypeOf("function");
+    expect(MeasurementCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
     expect(SketchCompat).toBeTypeOf("function");
     expect(TrackCompat).toBeTypeOf("function");

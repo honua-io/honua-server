@@ -44,7 +44,8 @@ export type CodemodConstructorKind =
   | "attribution-widget"
   | "sketch-widget"
   | "editor-widget"
-  | "track-widget";
+  | "track-widget"
+  | "measurement-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -261,6 +262,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Track",
       "@arcgis/core/widgets/Track.js",
+    ]),
+  },
+  {
+    kind: "measurement-widget",
+    compatSymbol: "MeasurementCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Measurement",
+      "@arcgis/core/widgets/Measurement.js",
     ]),
   },
 ];
@@ -746,6 +755,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "sketch-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "editor-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1431,6 +1441,8 @@ function isSafeConstructorCall(
       return isSafeEditorWidgetCompatCall(node);
     case "track-widget":
       return isSafeTrackWidgetCompatCall(node);
+    case "measurement-widget":
+      return isSafeMeasurementWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
@@ -2646,6 +2658,49 @@ function isSafeTrackWidgetCompatCall(
       return {
         ok: false,
         reason: "Track options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeMeasurementWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Measurement constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Measurement constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "container", "activeTool", "linearUnit", "areaUnit"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Measurement options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Measurement options include unsupported properties; requires manual migration.",
       };
     }
   }

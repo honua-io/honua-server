@@ -18,6 +18,7 @@ import Attribution from "@arcgis/core/widgets/Attribution";
 import Sketch from "@arcgis/core/widgets/Sketch";
 import Editor from "@arcgis/core/widgets/Editor";
 import Track from "@arcgis/core/widgets/Track";
+import Measurement from "@arcgis/core/widgets/Measurement";
 
 const map = new Map({
   basemap: "streets",
@@ -63,6 +64,12 @@ const track = new Track({
   useHeadingEnabled: true,
   rotationEnabled: true,
 });
+const measurement = new Measurement({
+  view,
+  activeTool: "distance",
+  linearUnit: "kilometers",
+  areaUnit: "square-kilometers",
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -79,6 +86,7 @@ view.ui.add(attribution, "bottom-left");
 view.ui.add(sketch, "top-right");
 view.ui.add(editor, "top-right");
 view.ui.add(track, "top-left");
+view.ui.add(measurement, "bottom-right");
 
 popup.open({
   title: "Migration",
@@ -105,3 +113,4 @@ void attribution;
 void sketch;
 void editor;
 void track;
+void measurement;
