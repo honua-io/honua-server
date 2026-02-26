@@ -78,6 +78,9 @@ node dist/src/migration/cli.js codemod ./src --report migration-report.json
 # Safe codemod (write changes)
 node dist/src/migration/cli.js codemod ./src --write --report migration-report.json
 
+# Safe codemod (write changes targeting esri-leaflet for supported subset)
+node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json
+
 # Safe codemod (write + inline TODO annotations for manual sites)
 node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json
 
@@ -89,7 +92,7 @@ node dist/src/migration/cli.js reconcile --source-base-url https://source.exampl
 ```
 
 The codemod is intentionally conservative:
-- it rewrites safe constructors:
+- default target (`--target honua-compat`) rewrites safe constructors:
   - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `outFields` and `definitionExpression`)
   - `new GraphicsLayer(...)` -> `new GraphicsLayerCompat(...)`
   - `new GroupLayer(...)` -> `new GroupLayerCompat(...)`
@@ -98,6 +101,11 @@ The codemod is intentionally conservative:
   - `new MapView(...)` -> `new MapViewCompat(...)`
   - `new SceneView(...)` -> `new SceneViewCompat(...)`
   - `new WebMap(...)` -> `new WebMapCompat(...)`
+- alternate target (`--target esri-leaflet`) rewrites deterministic subset only:
+  - `new FeatureLayer({ ... })` -> `HonuaEsriLeaflet.featureLayer({ ... })`
+  - `new MapImageLayer({ ... })` -> `HonuaEsriLeaflet.dynamicMapLayer({ ... })`
+  - dynamic imports for those modules -> `Promise.resolve({ default: HonuaEsriLeaflet.* })`
+  - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `GraphicsLayer`, `GroupLayer`) are emitted as manual TODO/report entries
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),
 - it skips complex constructors and records manual TODO entries in the report,
 - it keeps CommonJS `require(...)` constructor sites as manual TODOs (for example `.cjs` or `.js` files exporting via `module.exports`/`exports.*`),

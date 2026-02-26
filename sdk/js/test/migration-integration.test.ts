@@ -22,7 +22,10 @@ function fixturePath(...parts: string[]): string {
   return path.join(fixturesDir, ...parts);
 }
 
-function runFixtureMigration(fixtureName: string): {
+function runFixtureMigration(
+  fixtureName: string,
+  codemodOptions: Partial<Parameters<typeof runEsriCompatCodemod>[0]> = {},
+): {
   workingCopy: string;
   scanReport: ReturnType<typeof scanArcGisUsage>;
   codemodResult: ReturnType<typeof runEsriCompatCodemod>;
@@ -38,6 +41,7 @@ function runFixtureMigration(fixtureName: string): {
     rootDir: workingCopy,
     write: true,
     compatImportPath: "@honua/sdk-esri-compat",
+    ...codemodOptions,
   });
   const report = buildJsMigrationReport(workingCopy, codemodResult, scanReport);
 
@@ -318,6 +322,35 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/MapImageLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
+  });
+
+  it("supports esri-leaflet codemod target for deterministic subset", () => {
+    const { workingCopy, report, codemodResult } = runFixtureMigration(
+      "esri-map-image-layer-app",
+      { target: "esri-leaflet" },
+    );
+
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(1);
+    expect(codemodResult.metrics.byKind["map-image-layer"]).toMatchObject({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind.map).toMatchObject({
+      total: 1,
+      autoMigrated: 0,
+      manual: 1,
+    });
+    expect(report.readiness).toBe("assisted");
+    expect(report.manualTodos.some((todo) => todo.kind === "map")).toBe(true);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(migratedMain).toContain("const parcels = HonuaEsriLeaflet.dynamicMapLayer({");
+    expect(migratedMain).toContain("new Map({");
   });
 
   it("migrates map + group-layer + graphics-layer fixture with ready gating", () => {

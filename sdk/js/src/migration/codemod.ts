@@ -5,9 +5,17 @@ import ts from "typescript";
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
+const ESRI_LEAFLET_IMPORT_PATH = "esri-leaflet";
+const ESRI_LEAFLET_NAMESPACE = "HonuaEsriLeaflet";
 const TODO_MARKER = "TODO(honua-migrate)";
 const CJS_REQUIRE_MANUAL_REASON =
   "CommonJS require constructors are not auto-migrated; convert the module to ESM and rerun.";
+const ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON =
+  "No deterministic esri-leaflet mapping for this constructor; requires manual migration.";
+const ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
+  "Dynamic import has no deterministic esri-leaflet mapping; requires manual migration.";
+
+export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
 export type CodemodConstructorKind =
   | "feature-layer"
@@ -159,6 +167,7 @@ export interface EsriCompatCodemodOptions {
   write?: boolean;
   compatImportPath?: string;
   annotateTodos?: boolean;
+  target?: CodemodTarget;
 }
 
 export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCompatCodemodResult {
@@ -166,6 +175,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
   const files = collectSourceFiles(rootDir);
   const compatImportPath = options.compatImportPath ?? DEFAULT_COMPAT_IMPORT_PATH;
   const annotateTodos = options.annotateTodos ?? false;
+  const target = options.target ?? "honua-compat";
 
   const metrics: CodemodMetrics = {
     totalCodemodScopedCallSites: 0,
@@ -178,7 +188,7 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
 
   for (const file of files) {
     const source = fs.readFileSync(file, "utf8");
-    const fileResult = codemodFile(file, source, compatImportPath, annotateTodos);
+    const fileResult = codemodFile(file, source, compatImportPath, annotateTodos, target);
 
     for (const kind of fileResult.rewrittenKinds) {
       metrics.byKind[kind].autoMigrated += 1;
@@ -248,6 +258,7 @@ function codemodFile(
   source: string,
   compatImportPath: string,
   annotateTodos: boolean,
+  target: CodemodTarget,
 ): {
   nextSource: string;
   rewrittenConstructors: number;
@@ -274,6 +285,9 @@ function codemodFile(
   const manualTodos: MigrationTodo[] = [];
   const todoCommentEdits: TextEdit[] = [];
   const requiredCompatSymbols = new Set<string>();
+  const requiresEsriLeafletImport = { value: false };
+  const esriLeafletNamespaceAlias =
+    findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
   const fileExtension = path.extname(file).toLowerCase();
   const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
 
@@ -287,12 +301,47 @@ function codemodFile(
       const modulePath = firstArg.text;
       const spec = MODULE_TO_SPEC.get(modulePath);
       if (spec) {
-        dynamicImportEdits.push({
-          start: node.getStart(sourceFile),
-          end: node.getEnd(),
-          text: buildCompatDynamicImportExpression(compatImportPath, spec.compatSymbol),
+        if (target === "honua-compat") {
+          dynamicImportEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: buildCompatDynamicImportExpression(compatImportPath, spec.compatSymbol),
+          });
+          rewrittenKinds.push(spec.kind);
+          return;
+        }
+
+        const targetExpression = buildEsriLeafletDynamicImportExpression(spec.kind, esriLeafletNamespaceAlias);
+        if (targetExpression) {
+          dynamicImportEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: targetExpression,
+          });
+          rewrittenKinds.push(spec.kind);
+          requiresEsriLeafletImport.value = true;
+          return;
+        }
+
+        const nodeStart = node.getStart(sourceFile);
+        const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+        manualTodos.push({
+          kind: spec.kind,
+          file,
+          line: location.line + 1,
+          column: location.character + 1,
+          reason: ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON,
         });
-        rewrittenKinds.push(spec.kind);
+        if (annotateTodos) {
+          const lineStart = findLineStartOffset(source, nodeStart);
+          if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+            todoCommentEdits.push({
+              start: lineStart,
+              end: lineStart,
+              text: `// ${TODO_MARKER}[${spec.kind}]: ${ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON}\n`,
+            });
+          }
+        }
       }
       return;
     }
@@ -332,14 +381,54 @@ function codemodFile(
 
     const safeCheck = isSafeConstructorCall(importBinding.kind, node);
     if (safeCheck.ok) {
-      const spec = specForKind(importBinding.kind);
-      requiredCompatSymbols.add(spec.compatSymbol);
-      constructorEdits.push({
-        start: rewriteTarget.start,
-        end: rewriteTarget.end,
-        text: spec.compatSymbol,
+      if (target === "honua-compat") {
+        const spec = specForKind(importBinding.kind);
+        requiredCompatSymbols.add(spec.compatSymbol);
+        constructorEdits.push({
+          start: rewriteTarget.start,
+          end: rewriteTarget.end,
+          text: spec.compatSymbol,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
+      const replacement = buildEsriLeafletConstructorExpression(
+        importBinding.kind,
+        node,
+        sourceFile,
+        esriLeafletNamespaceAlias,
+      );
+      if (replacement) {
+        constructorEdits.push({
+          start: node.getStart(sourceFile),
+          end: node.getEnd(),
+          text: replacement,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        requiresEsriLeafletImport.value = true;
+        return;
+      }
+
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: importBinding.kind,
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON,
       });
-      rewrittenKinds.push(importBinding.kind);
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[${importBinding.kind}]: ${ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON}\n`,
+          });
+        }
+      }
       return;
     }
 
@@ -385,21 +474,34 @@ function codemodFile(
   const removedArcGisImports = removeUnusedArcGisImports(file, transformed);
   transformed = removedArcGisImports.nextSource;
 
-  const compatSymbols = Array.from(requiredCompatSymbols).sort();
-  const compatImportResult = ensureCompatNamedImports(
-    file,
-    transformed,
-    compatSymbols,
-    compatImportPath,
-  );
-  transformed = compatImportResult.nextSource;
+  let addedCompatImport = false;
+  if (target === "honua-compat") {
+    const compatSymbols = Array.from(requiredCompatSymbols).sort();
+    const compatImportResult = ensureCompatNamedImports(
+      file,
+      transformed,
+      compatSymbols,
+      compatImportPath,
+    );
+    transformed = compatImportResult.nextSource;
+    addedCompatImport = compatImportResult.changed;
+  } else if (requiresEsriLeafletImport.value) {
+    const esriLeafletImportResult = ensureNamespaceImport(
+      file,
+      transformed,
+      ESRI_LEAFLET_IMPORT_PATH,
+      esriLeafletNamespaceAlias,
+    );
+    transformed = esriLeafletImportResult.nextSource;
+    addedCompatImport = esriLeafletImportResult.changed;
+  }
 
   return {
     nextSource: transformed,
     rewrittenConstructors: constructorEdits.length,
     rewrittenDynamicImports: dynamicImportEdits.length,
     rewrittenKinds,
-    addedCompatImport: compatImportResult.changed,
+    addedCompatImport,
     removedArcGisImports: removedArcGisImports.removedCount,
     annotatedTodoComments: todoCommentEdits.length,
     manualTodos: manualTodos.sort(compareTodos),
@@ -630,6 +732,68 @@ function ensureCompatNamedImports(
   };
 }
 
+function findNamespaceImportAlias(sourceFile: ts.SourceFile, importPath: string): string | undefined {
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (statement.moduleSpecifier.text !== importPath) {
+      continue;
+    }
+
+    const namedBindings = statement.importClause?.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+      return namedBindings.name.text;
+    }
+  }
+
+  return undefined;
+}
+
+function ensureNamespaceImport(
+  file: string,
+  source: string,
+  importPath: string,
+  namespaceAlias: string,
+): { nextSource: string; changed: boolean } {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (statement.moduleSpecifier.text !== importPath) {
+      continue;
+    }
+
+    const namedBindings = statement.importClause?.namedBindings;
+    if (namedBindings && ts.isNamespaceImport(namedBindings) && namedBindings.name.text === namespaceAlias) {
+      return { nextSource: source, changed: false };
+    }
+
+    const importLine = `import * as ${namespaceAlias} from "${importPath}";\n`;
+    const insertion = statement.getEnd();
+    return {
+      nextSource: `${source.slice(0, insertion)}\n${importLine}${source.slice(insertion)}`,
+      changed: true,
+    };
+  }
+
+  const insertionIndex = findImportInsertionIndex(sourceFile);
+  const importLine = `import * as ${namespaceAlias} from "${importPath}";`;
+  const prefix = source.slice(0, insertionIndex);
+  const suffix = source.slice(insertionIndex);
+  const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
+  const leading = needsLeadingNewline ? "\n" : "";
+  const needsTrailingNewline =
+    suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
+  const trailing = needsTrailingNewline ? "\n" : "";
+
+  return {
+    nextSource: `${prefix}${leading}${importLine}${trailing}${suffix}`,
+    changed: true,
+  };
+}
+
 function buildNamedImportText(
   importPath: string,
   defaultImport: string | undefined,
@@ -667,6 +831,44 @@ function isArcGisDynamicImportCall(node: ts.Node): node is ts.CallExpression {
 
 function buildCompatDynamicImportExpression(compatImportPath: string, compatSymbol: string): string {
   return `import("${compatImportPath}").then((m) => ({ default: m.${compatSymbol} }))`;
+}
+
+function buildEsriLeafletConstructorExpression(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+  namespaceAlias: string,
+): string | undefined {
+  const method = esriLeafletMethodForKind(kind);
+  if (!method) {
+    return undefined;
+  }
+
+  const argsText = node.arguments?.map((arg) => arg.getText(sourceFile)).join(", ") ?? "";
+  return `${namespaceAlias}.${method}(${argsText})`;
+}
+
+function buildEsriLeafletDynamicImportExpression(
+  kind: CodemodConstructorKind,
+  namespaceAlias: string,
+): string | undefined {
+  const method = esriLeafletMethodForKind(kind);
+  if (!method) {
+    return undefined;
+  }
+
+  return `Promise.resolve({ default: ${namespaceAlias}.${method} })`;
+}
+
+function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefined {
+  switch (kind) {
+    case "feature-layer":
+      return "featureLayer";
+    case "map-image-layer":
+      return "dynamicMapLayer";
+    default:
+      return undefined;
+  }
 }
 
 function removeUnusedArcGisImports(

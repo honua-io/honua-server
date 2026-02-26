@@ -225,6 +225,87 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/GroupLayer");
   });
 
+  it("rewrites deterministic constructors for esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "const fl = new FeatureLayer({ url: serviceUrl });",
+        "const mil = new MapImageLayer({ url: mapUrl, visible: true });",
+        "void fl; void mil;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(nextSource).toContain("const fl = HonuaEsriLeaflet.featureLayer({ url: serviceUrl });");
+    expect(nextSource).toContain(
+      "const mil = HonuaEsriLeaflet.dynamicMapLayer({ url: mapUrl, visible: true });",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
+    expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
+  });
+
+  it("keeps unsupported constructors as manual TODOs for esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "unsupported-for-esri-leaflet.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "const map = new Map({ basemap: 'streets' });",
+        "void map;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+      annotateTodos: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toHaveLength(1);
+    expect(result.manualTodos[0]?.kind).toBe("map");
+    expect(result.manualTodos[0]?.reason).toContain("esri-leaflet mapping");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new Map({ basemap: 'streets' })");
+    expect(nextSource).toContain("// TODO(honua-migrate)[map]:");
+    expect(nextSource).not.toContain("HonuaEsriLeaflet.");
+    expect(nextSource).toContain("@arcgis/core/Map");
+  });
+
   it("rewrites constructors imported via named default alias", () => {
     const root = makeTempProject();
     const file = path.join(root, "default-alias.ts");

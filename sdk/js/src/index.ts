@@ -71,6 +71,7 @@ export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
 export { runEsriCompatCodemod } from "./migration/codemod.js";
 export type {
   CodemodConstructorKind,
+  CodemodTarget,
   CodemodFileResult,
   CodemodKindMetrics,
   CodemodMetrics,

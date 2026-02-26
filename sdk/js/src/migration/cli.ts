@@ -2,7 +2,11 @@
 
 import fs from "node:fs";
 import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
-import { runEsriCompatCodemod, type CodemodMetricsByKind } from "./codemod.js";
+import {
+  runEsriCompatCodemod,
+  type CodemodMetricsByKind,
+  type CodemodTarget,
+} from "./codemod.js";
 import { buildJsMigrationReport } from "./report.js";
 import { evaluateMigrationGates } from "./gating.js";
 import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
@@ -10,6 +14,7 @@ import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcil
 interface ParsedArgs {
   command: "scan" | "codemod" | "reconcile";
   target: string;
+  codemodTarget: CodemodTarget;
   write: boolean;
   annotateTodos: boolean;
   failOnManual: boolean;
@@ -64,6 +69,7 @@ function runCodemod(args: ParsedArgs): void {
     write: args.write,
     compatImportPath: args.compatImportPath,
     annotateTodos: args.annotateTodos,
+    target: args.codemodTarget,
   });
   const report = buildJsMigrationReport(args.target, codemodResult, scanReport);
 
@@ -77,6 +83,7 @@ function runCodemod(args: ParsedArgs): void {
       `manualIntervention=${report.manualInterventionMetric.numerator}/${report.manualInterventionMetric.denominator}`,
       `writeMode=${args.write ? "enabled" : "dry-run"}`,
       `annotateTodos=${args.annotateTodos ? "enabled" : "disabled"}`,
+      `target=${args.codemodTarget}`,
       `readiness=${report.readiness}`,
       `byKind=${formatByKindMetrics(codemodResult.metrics.byKind)}`,
     ].join(" "),
@@ -179,6 +186,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       failOnManual: false,
       failOnUnhandled: false,
       failOnBlocked: false,
+      codemodTarget: "honua-compat",
     };
   }
 
@@ -191,6 +199,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
 
   let target: string | undefined;
   let reportPath: string | undefined;
+  let codemodTarget: CodemodTarget = "honua-compat";
   let write = false;
   let annotateTodos = false;
   let failOnManual = false;
@@ -279,6 +288,15 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       i += 1;
       continue;
     }
+    if (token === "--target") {
+      const next = positional[i + 1];
+      if (next !== "honua-compat" && next !== "esri-leaflet") {
+        return undefined;
+      }
+      codemodTarget = next;
+      i += 1;
+      continue;
+    }
     if (token === "--source-base-url") {
       const next = positional[i + 1];
       if (!next) {
@@ -358,6 +376,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     command,
     target: target ?? process.cwd(),
     write,
+    codemodTarget,
     annotateTodos,
     failOnManual,
     failOnUnhandled,
@@ -395,12 +414,13 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
+      "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
     ].join("\n"),
