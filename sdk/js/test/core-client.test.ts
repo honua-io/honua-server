@@ -89,6 +89,79 @@ describe("HonuaClient", () => {
     expect(requestedInit?.method).toBe("GET");
   });
 
+  it("exports map image metadata from MapServer using GET params", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ href: "/tmp/map.png", width: 256, height: 256 }), {
+          status: 200,
+        });
+      },
+    });
+
+    const response = await client.exportMap({
+      serviceId: "default",
+      bbox: [-180, -90, 180, 90],
+      size: [256, 256],
+      format: "png32",
+      transparent: true,
+      imageSr: 3857,
+      bboxSr: 4326,
+      backgroundColor: "255,255,255",
+    });
+
+    expect(response).toEqual({ href: "/tmp/map.png", width: 256, height: 256 });
+    expect(requestedUrl).toContain("/rest/services/default/MapServer/export?");
+    expect(requestedUrl).toContain("f=json");
+    expect(requestedUrl).toContain("bbox=-180%2C-90%2C180%2C90");
+    expect(requestedUrl).toContain("size=256%2C256");
+    expect(requestedUrl).toContain("format=png32");
+    expect(requestedUrl).toContain("transparent=true");
+    expect(requestedUrl).toContain("bboxSR=4326");
+    expect(requestedUrl).toContain("imageSR=3857");
+    expect(requestedUrl).toContain("backgroundColor=255%2C255%2C255");
+    expect(requestedInit?.method).toBe("GET");
+  });
+
+  it("exports map image metadata from MapServer using POST payload", async () => {
+    let requestedBody = "";
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (_input, init) => {
+        requestedInit = init;
+        requestedBody = String(init?.body ?? "");
+        return new Response(JSON.stringify({ href: "/tmp/map.png" }), {
+          status: 200,
+        });
+      },
+    });
+
+    const response = await client.exportMap({
+      serviceId: "default",
+      bbox: "-180,-90,180,90",
+      size: "512,512",
+      method: "POST",
+      responseFormat: "pjson",
+      extraParams: {
+        time: "2023-01-01,2023-01-31",
+      },
+    });
+
+    expect(response).toEqual({ href: "/tmp/map.png" });
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedBody).toContain("f=pjson");
+    expect(requestedBody).toContain("bbox=-180%2C-90%2C180%2C90");
+    expect(requestedBody).toContain("size=512%2C512");
+    expect(requestedBody).toContain("time=2023-01-01%2C2023-01-31");
+  });
+
   it("throws HonuaHttpError for non-2xx responses", async () => {
     const client = new HonuaClient({
       baseUrl: "https://example.test",

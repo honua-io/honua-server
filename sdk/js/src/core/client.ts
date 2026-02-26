@@ -1,6 +1,7 @@
 import { HonuaHttpError } from "./errors.js";
 import type {
   ApplyEditsRequest,
+  ExportMapRequest,
   HonuaClientOptions,
   QueryFeaturesRequest,
   QueryMethod,
@@ -26,6 +27,14 @@ function encodeFormValue(value: unknown): string {
     return String(value);
   }
   return JSON.stringify(value);
+}
+
+function normalizeBBox(bbox: ExportMapRequest["bbox"]): string {
+  return Array.isArray(bbox) ? bbox.join(",") : bbox;
+}
+
+function normalizeSize(size: ExportMapRequest["size"]): string {
+  return Array.isArray(size) ? size.join(",") : size;
 }
 
 export class HonuaClient {
@@ -134,6 +143,53 @@ export class HonuaClient {
     const path =
       `/rest/services/${encodeURIComponent(request.serviceId)}` +
       `/FeatureServer/${request.layerId}/queryRelatedRecords`;
+    if (method === "GET") {
+      return this.requestJson("GET", `${path}?${params.toString()}`);
+    }
+
+    return this.requestJson("POST", path, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  }
+
+  public async exportMap(request: ExportMapRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", request.responseFormat ?? "json");
+    params.set("bbox", normalizeBBox(request.bbox));
+    params.set("size", normalizeSize(request.size));
+    if (request.format !== undefined) {
+      params.set("format", request.format);
+    }
+    if (request.dpi !== undefined) {
+      params.set("dpi", String(request.dpi));
+    }
+    if (request.transparent !== undefined) {
+      params.set("transparent", String(request.transparent));
+    }
+    if (request.layers !== undefined) {
+      params.set("layers", request.layers);
+    }
+    if (request.bboxSr !== undefined) {
+      params.set("bboxSR", String(request.bboxSr));
+    }
+    if (request.imageSr !== undefined) {
+      params.set("imageSR", String(request.imageSr));
+    }
+    if (request.backgroundColor !== undefined) {
+      params.set("backgroundColor", request.backgroundColor);
+    }
+
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/export`;
     if (method === "GET") {
       return this.requestJson("GET", `${path}?${params.toString()}`);
     }

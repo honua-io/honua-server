@@ -4,7 +4,7 @@ Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 
 This package currently provides:
 
-- core HTTP client (`HonuaClient`) for FeatureServer and catalog operations,
+- core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `Map` layer collection helpers, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,

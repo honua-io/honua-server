@@ -22,6 +22,22 @@ export interface QueryRelatedRecordsRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface ExportMapRequest {
+  serviceId: string;
+  bbox: string | [number, number, number, number];
+  size: string | [number, number];
+  responseFormat?: "json" | "pjson";
+  format?: string;
+  dpi?: number;
+  transparent?: boolean;
+  layers?: string;
+  bboxSr?: string | number;
+  imageSr?: string | number;
+  backgroundColor?: string;
+  method?: QueryMethod;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
 export interface ApplyEditsRequest {
   serviceId: string;
   layerId: number;
