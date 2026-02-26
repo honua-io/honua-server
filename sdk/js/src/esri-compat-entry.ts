@@ -192,6 +192,8 @@ export type {
   TimeSliderModeCompat,
   TimeSliderStopsCompat,
 } from "./esri-compat/time-slider.js";
+export { TableListCompat } from "./esri-compat/table-list.js";
+export type { TableListCompatOptions } from "./esri-compat/table-list.js";
 export { SketchCompat } from "./esri-compat/sketch.js";
 export type {
   SketchCompatOptions,

@@ -433,6 +433,49 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Swipe");
   });
 
+  it("rewrites safe TableList constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "table-list.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import TableList from '@arcgis/core/widgets/TableList';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
+        "const tableList = new TableList({ view, container: 'table-list', tables: [{ id: 'parcels' }] });",
+        "void tableList;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["table-list-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { MapCompat, MapViewCompat, TableListCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain(
+      "new TableListCompat({ view, container: 'table-list', tables: [{ id: 'parcels' }] })",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/widgets/TableList");
+  });
+
   it("rewrites safe GraphicsLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "graphics-layer.ts");

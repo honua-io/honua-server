@@ -109,6 +109,7 @@ describe("migration runtime smoke", () => {
         "import LayerList from '@arcgis/core/widgets/LayerList';",
         "import Feature from '@arcgis/core/widgets/Feature';",
         "import FeatureForm from '@arcgis/core/widgets/FeatureForm';",
+        "import TableList from '@arcgis/core/widgets/TableList';",
         "import Legend from '@arcgis/core/widgets/Legend';",
         "import Popup from '@arcgis/core/widgets/Popup';",
         "import Search from '@arcgis/core/widgets/Search';",
@@ -134,6 +135,7 @@ describe("migration runtime smoke", () => {
         "map.add(routeLayer);",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
         "const layerList = new LayerList({ view, container: 'layer-list' });",
+        "const tableList = new TableList({ view, container: 'table-list', tables: [{ id: 'parcels' }] });",
         "const featureWidget = new Feature({ view, container: 'feature-widget', title: 'Selected', graphic: { attributes: { OBJECTID: 1 } } });",
         "const featureForm = new FeatureForm({ layer: routeLayer, container: 'feature-form', feature: { attributes: { OBJECTID: 1 } }, fieldConfig: [{ name: 'status' }] });",
         "const legend = new Legend({ view, container: 'legend' });",
@@ -155,13 +157,14 @@ describe("migration runtime smoke", () => {
         "const coordinateConversion = new CoordinateConversion({ view, mode: 'live', multipleConversionsEnabled: true, formats: ['lonlat', 'dms'] });",
         "const printer = new Print({ view, container: 'print', printServiceUrl: 'https://example.test/print', templateOptions: { format: 'pdf', layout: 'a4-landscape' } });",
         "const swipe = new Swipe({ view, container: 'swipe', position: 45, leadingLayers: [], trailingLayers: [] });",
-        "view.ui.add([layerList, featureWidget, featureForm, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
+        "view.ui.add([layerList, tableList, featureWidget, featureForm, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement, timeSlider, directions, coordinateConversion, printer, swipe], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
         "  uiCount: view.ui.getComponents().length,",
         "  widgetCtors: [",
         "    layerList.constructor.name,",
+        "    tableList.constructor.name,",
         "    featureWidget.constructor.name,",
         "    featureForm.constructor.name,",
         "    legend.constructor.name,",
@@ -197,17 +200,18 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(25);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(25);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(26);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(26);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 22,
+      uiCount: 23,
       widgetCtors: [
         "LayerListCompat",
+        "TableListCompat",
         "FeatureCompat",
         "FeatureFormCompat",
         "LegendCompat",

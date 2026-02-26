@@ -30,6 +30,7 @@ export type CodemodConstructorKind =
   | "scene-view"
   | "web-map"
   | "layer-list"
+  | "table-list-widget"
   | "feature-widget"
   | "feature-form-widget"
   | "feature-table-widget"
@@ -152,6 +153,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/LayerList",
       "@arcgis/core/widgets/LayerList.js",
+    ]),
+  },
+  {
+    kind: "table-list-widget",
+    compatSymbol: "TableListCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/TableList",
+      "@arcgis/core/widgets/TableList.js",
     ]),
   },
   {
@@ -830,6 +839,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
     "web-map": { total: 0, autoMigrated: 0, manual: 0 },
     "layer-list": { total: 0, autoMigrated: 0, manual: 0 },
+    "table-list-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-form-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1511,6 +1521,8 @@ function isSafeConstructorCall(
       return isSafeWebMapCompatCall(node);
     case "layer-list":
       return isSafeLayerListCompatCall(node);
+    case "table-list-widget":
+      return isSafeTableListWidgetCompatCall(node);
     case "feature-widget":
       return isSafeFeatureWidgetCompatCall(node);
     case "feature-form-widget":
@@ -2124,6 +2136,54 @@ function isSafeLayerListCompatCall(
       return {
         ok: false,
         reason: "LayerList options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeTableListWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TableList constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TableList constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "map",
+    "container",
+    "tables",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TableList options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "TableList options include unsupported properties; requires manual migration.",
       };
     }
   }

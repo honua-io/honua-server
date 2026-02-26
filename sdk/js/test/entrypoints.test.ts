@@ -40,6 +40,7 @@ import {
   SketchCompat,
   ScaleBarCompat,
   SwipeCompat,
+  TableListCompat,
   TrackCompat,
   TimeSliderCompat,
   TileLayerCompat,
@@ -102,6 +103,7 @@ describe("entrypoint modules", () => {
     expect(RouteLayerCompat).toBeTypeOf("function");
     expect(RouteTaskCompat).toBeTypeOf("function");
     expect(SwipeCompat).toBeTypeOf("function");
+    expect(TableListCompat).toBeTypeOf("function");
     expect(SketchCompat).toBeTypeOf("function");
     expect(TrackCompat).toBeTypeOf("function");
     expect(TimeSliderCompat).toBeTypeOf("function");

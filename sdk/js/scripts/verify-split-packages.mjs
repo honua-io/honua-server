@@ -83,6 +83,7 @@ import {
   SketchCompat,
   ScaleBarCompat,
   SwipeCompat,
+  TableListCompat,
   TrackCompat,
   TimeSliderCompat,
   TileLayerCompat,
@@ -137,6 +138,7 @@ if (typeof SearchCompat !== "function") throw new Error("SearchCompat export mis
 if (typeof SketchCompat !== "function") throw new Error("SketchCompat export missing");
 if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat export missing");
 if (typeof SwipeCompat !== "function") throw new Error("SwipeCompat export missing");
+if (typeof TableListCompat !== "function") throw new Error("TableListCompat export missing");
 if (typeof TrackCompat !== "function") throw new Error("TrackCompat export missing");
 if (typeof TimeSliderCompat !== "function") throw new Error("TimeSliderCompat export missing");
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
