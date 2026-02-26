@@ -1,6 +1,6 @@
 import http from "node:http";
 import path from "node:path";
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -80,41 +80,33 @@ afterAll(async () => {
 });
 
 describe("migration cli reconcile", () => {
-  it("returns exit code 0 when reconciliation checks pass", () => {
+  it("returns exit code 0 when reconciliation checks pass", async () => {
     ensureBuiltCliArtifacts();
-    const result = spawnSync(
-      "node",
-      [
-        "dist/src/migration/cli.js",
-        "reconcile",
-        "--source-base-url",
-        `${baseUrl}/source`,
-        "--source-service-id",
-        "parcels",
-        "--target-base-url",
-        `${baseUrl}/target`,
-        "--target-service-id",
-        "parcels",
-        "--layer-id",
-        "0",
-        "--sample-size",
-        "25",
-      ],
-      {
-        cwd: projectRoot(),
-        encoding: "utf8",
-      },
-    );
+    const result = await runCli([
+      "dist/src/migration/cli.js",
+      "reconcile",
+      "--source-base-url",
+      `${baseUrl}/source`,
+      "--source-service-id",
+      "parcels",
+      "--target-base-url",
+      `${baseUrl}/target`,
+      "--target-service-id",
+      "parcels",
+      "--layer-id",
+      "0",
+      "--sample-size",
+      "25",
+    ]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("passed=yes");
     expect(result.stdout).toContain("checks=feature-count:pass,geometry-validity:pass,attribute-keys:pass");
   });
 
-  it("returns exit code 2 when reconciliation checks fail", () => {
+  it("returns exit code 2 when reconciliation checks fail", async () => {
     ensureBuiltCliArtifacts();
-    const result = spawnSync(
-      "node",
+    const result = await runCli(
       [
         "dist/src/migration/cli.js",
         "reconcile",
@@ -134,12 +126,7 @@ describe("migration cli reconcile", () => {
         "/tmp/honua-reconcile-report.json",
       ],
       {
-        cwd: projectRoot(),
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          HONUA_RECONCILE_FAIL_MODE: "1",
-        },
+        HONUA_RECONCILE_FAIL_MODE: "1",
       },
     );
 
@@ -147,3 +134,37 @@ describe("migration cli reconcile", () => {
     expect(result.stdout).toContain("passed=yes");
   });
 });
+
+function runCli(
+  args: readonly string[],
+  envOverrides: Record<string, string> = {},
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("node", args, {
+      cwd: projectRoot(),
+      env: {
+        ...process.env,
+        ...envOverrides,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => reject(error));
+    child.on("close", (status) => {
+      resolve({
+        status,
+        stdout,
+        stderr,
+      });
+    });
+  });
+}

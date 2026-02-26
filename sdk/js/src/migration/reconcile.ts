@@ -169,6 +169,8 @@ async function fetchJson(
     method: "GET",
     headers: {
       Accept: "application/json",
+      // Prevent lingering keep-alive sockets from keeping CLI processes alive.
+      Connection: "close",
     },
   });
   const text = await response.text();
