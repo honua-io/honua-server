@@ -29,6 +29,14 @@ describe("SearchCompat", () => {
         },
       ],
     };
+    const sourceTwo = {
+      search: async ({ searchTerm }: { searchTerm: string }) => [
+        {
+          name: `Other: ${searchTerm}`,
+          location: { x: -157.95, y: 21.31 },
+        },
+      ],
+    };
 
     const search = new SearchCompat({
       view,
@@ -36,13 +44,34 @@ describe("SearchCompat", () => {
       sources: [source],
       includeDefaultSources: false,
     });
+    search.addSource(sourceTwo);
+    expect(search.sources).toEqual([source, sourceTwo]);
+    expect(search.removeSource(sourceTwo)).toBe(true);
+    expect(search.sources).toEqual([source]);
+    search.setSources([source, sourceTwo], { includeDefaultSources: false });
+    expect(search.sources).toEqual([source, sourceTwo]);
 
     const response = await search.search("honolulu");
     expect(response.searchTerm).toBe("honolulu");
-    expect(response.results).toHaveLength(1);
+    expect(response.results).toHaveLength(2);
     expect(response.results[0]).toMatchObject({ name: "Result: honolulu" });
+    expect(response.results[1]).toMatchObject({ name: "Other: honolulu" });
     expect(search.selectedResult).toMatchObject({ name: "Result: honolulu" });
+    expect(search.selectedResultIndex).toBe(0);
     expect(goToTargets).toEqual([{ x: -157.8583, y: 21.3069 }]);
+
+    expect(await search.selectResult(1)).toMatchObject({ name: "Other: honolulu" });
+    expect(search.selectedResultIndex).toBe(1);
+    expect(await search.previousResult()).toMatchObject({ name: "Result: honolulu" });
+    expect(search.selectedResultIndex).toBe(0);
+    expect(await search.nextResult()).toMatchObject({ name: "Other: honolulu" });
+    expect(search.selectedResultIndex).toBe(1);
+    expect(goToTargets).toEqual([
+      { x: -157.8583, y: 21.3069 },
+      { x: -157.95, y: 21.31 },
+      { x: -157.8583, y: 21.3069 },
+      { x: -157.95, y: 21.31 },
+    ]);
 
     const suggestResponse = await search.suggest("hono");
     expect(suggestResponse.suggestions).toEqual([{ text: "hono suggestion", source }]);
@@ -52,11 +81,14 @@ describe("SearchCompat", () => {
     expect(search.results).toEqual([]);
     expect(search.suggestions).toEqual([]);
     expect(search.selectedResult).toBeUndefined();
+    expect(search.selectedResultIndex).toBe(-1);
 
     expect(events).toContain("search.started");
     expect(events).toContain("search.completed");
     expect(events).toContain("search.navigated");
     expect(events).toContain("search.suggestions-updated");
+    expect(events).toContain("search.sources-changed");
+    expect(events).toContain("search.result-selected");
     expect(events).toContain("search.cleared");
   });
 
@@ -107,5 +139,6 @@ describe("SearchCompat", () => {
     expect(search.selectedResult).toMatchObject({
       name: "Central Park",
     });
+    expect(search.selectedResultIndex).toBe(0);
   });
 });

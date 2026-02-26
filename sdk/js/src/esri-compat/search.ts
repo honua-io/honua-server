@@ -55,6 +55,7 @@ export class SearchCompat {
   public results: SearchResultCompat[];
   public suggestions: SearchSuggestionCompat[];
   public selectedResult: SearchResultCompat | undefined;
+  public selectedResultIndex: number;
 
   public constructor(options: SearchCompatOptions = {}) {
     this.view = options.view;
@@ -70,6 +71,7 @@ export class SearchCompat {
     this.results = [];
     this.suggestions = [];
     this.selectedResult = undefined;
+    this.selectedResultIndex = -1;
   }
 
   public async search(termOrRequest: string | Partial<SearchRequestCompat>): Promise<SearchResponseCompat> {
@@ -99,6 +101,7 @@ export class SearchCompat {
 
     this.results = allResults;
     this.selectedResult = this.results[0];
+    this.selectedResultIndex = this.selectedResult ? 0 : -1;
     if (this.autoNavigate) {
       await this.navigateToSelectedResult();
     }
@@ -165,7 +168,84 @@ export class SearchCompat {
     this.results = [];
     this.suggestions = [];
     this.selectedResult = undefined;
+    this.selectedResultIndex = -1;
     this.eventBus.emit("search.cleared", undefined, this);
+  }
+
+  public setSources(
+    sources: readonly SearchSourceCompat[],
+    options: { includeDefaultSources?: boolean } = {},
+  ): void {
+    const includeDefaults = options.includeDefaultSources ?? this.includeDefaultSources;
+    this.sources = [
+      ...sources,
+      ...(includeDefaults ? resolveViewSearchSources(this.view) : []),
+    ];
+    this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+  }
+
+  public addSource(source: SearchSourceCompat): void {
+    this.sources.push(source);
+    this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+  }
+
+  public removeSource(source: SearchSourceCompat): boolean {
+    const index = this.sources.indexOf(source);
+    if (index < 0) {
+      return false;
+    }
+
+    this.sources.splice(index, 1);
+    this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+    return true;
+  }
+
+  public async selectResult(resultOrIndex: SearchResultCompat | number): Promise<SearchResultCompat | undefined> {
+    if (this.results.length === 0) {
+      return undefined;
+    }
+
+    const index =
+      typeof resultOrIndex === "number"
+        ? normalizeResultIndex(resultOrIndex, this.results.length)
+        : this.results.indexOf(resultOrIndex);
+    if (index < 0) {
+      return undefined;
+    }
+
+    this.selectedResultIndex = index;
+    this.selectedResult = this.results[index];
+    if (this.autoNavigate) {
+      await this.navigateToSelectedResult();
+    }
+
+    this.eventBus.emit(
+      "search.result-selected",
+      {
+        selectedResultIndex: this.selectedResultIndex,
+        selectedResult: this.selectedResult,
+      },
+      this,
+    );
+    return this.selectedResult;
+  }
+
+  public async nextResult(): Promise<SearchResultCompat | undefined> {
+    if (this.results.length === 0) {
+      return undefined;
+    }
+    const current = this.selectedResultIndex >= 0 ? this.selectedResultIndex : 0;
+    const next = Math.min(current + 1, this.results.length - 1);
+    return this.selectResult(next);
+  }
+
+  public async previousResult(): Promise<SearchResultCompat | undefined> {
+    if (this.results.length === 0) {
+      return undefined;
+    }
+    const current = this.selectedResultIndex >= 0 ? this.selectedResultIndex : 0;
+    const previous = Math.max(current - 1, 0);
+    return this.selectResult(previous);
   }
 
   private async navigateToSelectedResult(): Promise<void> {
@@ -271,6 +351,17 @@ function extractLayersFromMap(map: unknown): unknown[] {
     return [...map.layers];
   }
   return [];
+}
+
+function normalizeResultIndex(index: number, length: number): number {
+  if (!Number.isFinite(index)) {
+    return -1;
+  }
+  const normalized = Math.trunc(index);
+  if (normalized < 0 || normalized >= length) {
+    return -1;
+  }
+  return normalized;
 }
 
 function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider {
