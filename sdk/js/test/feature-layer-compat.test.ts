@@ -96,6 +96,13 @@ describe("FeatureLayerCompat", () => {
 
     await layer.load();
     expect(metadataCalls).toBe(1);
+
+    layer.refresh();
+    expect(layer.loaded).toBe(false);
+    expect(layer.metadata).toBeUndefined();
+
+    await layer.load();
+    expect(metadataCalls).toBe(2);
   });
 
   it("creates a default query object", () => {

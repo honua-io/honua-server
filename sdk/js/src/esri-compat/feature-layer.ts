@@ -96,6 +96,11 @@ export class FeatureLayerCompat {
     return layer;
   }
 
+  public refresh(): void {
+    this.loaded = false;
+    this.metadata = undefined;
+  }
+
   public createQuery(): FeatureLayerCreateQueryResult {
     return {
       where: this.definitionExpression ?? "1=1",
