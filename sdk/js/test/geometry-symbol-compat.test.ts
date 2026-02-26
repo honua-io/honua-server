@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   PointCompat,
+  SimpleFillSymbolCompat,
   SimpleLineSymbolCompat,
   SimpleMarkerSymbolCompat,
 } from "../src/index.js";
@@ -38,5 +39,12 @@ describe("geometry/symbol compat", () => {
 
     expect(outline.clone().toJSON()).toEqual(outline.toJSON());
     expect(marker.clone().toJSON()).toEqual(marker.toJSON());
+
+    const fill = new SimpleFillSymbolCompat({
+      style: "solid",
+      color: [255, 102, 0, 0.5],
+      outline,
+    });
+    expect(fill.clone().toJSON()).toEqual(fill.toJSON());
   });
 });

@@ -113,8 +113,15 @@ export { PointCompat } from "./esri-compat/point.js";
 export type { PointCompatOptions } from "./esri-compat/point.js";
 export { SimpleLineSymbolCompat } from "./esri-compat/simple-line-symbol.js";
 export type { SimpleLineSymbolCompatOptions } from "./esri-compat/simple-line-symbol.js";
+export { SimpleFillSymbolCompat } from "./esri-compat/simple-fill-symbol.js";
+export type { SimpleFillSymbolCompatOptions } from "./esri-compat/simple-fill-symbol.js";
 export { SimpleMarkerSymbolCompat } from "./esri-compat/simple-marker-symbol.js";
 export type { SimpleMarkerSymbolCompatOptions } from "./esri-compat/simple-marker-symbol.js";
+export { ClassBreaksRendererCompat } from "./esri-compat/class-breaks-renderer.js";
+export type {
+  ClassBreakInfoCompat,
+  ClassBreaksRendererCompatOptions,
+} from "./esri-compat/class-breaks-renderer.js";
 export { SimpleRendererCompat } from "./esri-compat/simple-renderer.js";
 export type { SimpleRendererCompatOptions } from "./esri-compat/simple-renderer.js";
 export { UniqueValueRendererCompat } from "./esri-compat/unique-value-renderer.js";

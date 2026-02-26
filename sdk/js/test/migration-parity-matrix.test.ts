@@ -22,6 +22,8 @@ describe("JS parity matrix", () => {
     const color = matrix.find((row) => row.kind === "color");
     const simpleLineSymbol = matrix.find((row) => row.kind === "simple-line-symbol");
     const simpleMarkerSymbol = matrix.find((row) => row.kind === "simple-marker-symbol");
+    const simpleFillSymbol = matrix.find((row) => row.kind === "simple-fill-symbol");
+    const classBreaksRenderer = matrix.find((row) => row.kind === "class-breaks-renderer");
     const simpleRenderer = matrix.find((row) => row.kind === "simple-renderer");
     const uniqueValueRenderer = matrix.find((row) => row.kind === "unique-value-renderer");
     const basemap = matrix.find((row) => row.kind === "basemap");
@@ -67,6 +69,14 @@ describe("JS parity matrix", () => {
       esriLeaflet: "assisted",
     });
     expect(simpleMarkerSymbol).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(simpleFillSymbol).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(classBreaksRenderer).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

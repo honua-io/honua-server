@@ -255,24 +255,32 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleMarkerSymbol");
   });
 
-  it("rewrites safe color/renderer constructors and removes ArcGIS imports", () => {
+  it("rewrites safe color/symbol/renderer constructors and removes ArcGIS imports", () => {
     const root = makeTempProject();
     const file = path.join(root, "renderers.ts");
     fs.writeFileSync(
       file,
       [
         "import Color from '@arcgis/core/Color';",
+        "import SimpleFillSymbol from '@arcgis/core/symbols/SimpleFillSymbol';",
+        "import ClassBreaksRenderer from '@arcgis/core/renderers/ClassBreaksRenderer';",
         "import SimpleRenderer from '@arcgis/core/renderers/SimpleRenderer';",
         "import UniqueValueRenderer from '@arcgis/core/renderers/UniqueValueRenderer';",
         "const color = new Color([255, 102, 0, 0.8]);",
-        "const simple = new SimpleRenderer({ symbol: { type: 'simple-fill', color } });",
+        "const fill = new SimpleFillSymbol({ style: 'solid', color, outline: { color: 'white', width: 1 } });",
+        "const simple = new SimpleRenderer({ symbol: fill });",
+        "const classBreaks = new ClassBreaksRenderer({",
+        "  field: 'population',",
+        "  minValue: 0,",
+        "  classBreakInfos: [{ minValue: 0, maxValue: 1000, symbol: fill, label: '0-1000' }],",
+        "});",
         "const unique = new UniqueValueRenderer({",
         "  field: 'status',",
         "  uniqueValueInfos: [",
         "    { value: 'open', label: 'Open', symbol: { type: 'simple-fill', color: 'green' } },",
         "  ],",
         "});",
-        "void color; void simple; void unique;",
+        "void color; void fill; void simple; void classBreaks; void unique;",
       ].join("\n"),
       "utf8",
     );
@@ -284,10 +292,20 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
-    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(result.metrics.autoMigratedCallSites).toBe(5);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind.color).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["simple-fill-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["class-breaks-renderer"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
@@ -304,13 +322,22 @@ describe("runEsriCompatCodemod", () => {
     });
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain(
-      'import { ColorCompat, SimpleRendererCompat, UniqueValueRendererCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(nextSource).toContain('from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("ColorCompat");
+    expect(nextSource).toContain("SimpleFillSymbolCompat");
+    expect(nextSource).toContain("ClassBreaksRendererCompat");
+    expect(nextSource).toContain("SimpleRendererCompat");
+    expect(nextSource).toContain("UniqueValueRendererCompat");
     expect(nextSource).toContain("new ColorCompat([255, 102, 0, 0.8])");
-    expect(nextSource).toContain("new SimpleRendererCompat({ symbol: { type: 'simple-fill', color } })");
+    expect(nextSource).toContain(
+      "new SimpleFillSymbolCompat({ style: 'solid', color, outline: { color: 'white', width: 1 } })",
+    );
+    expect(nextSource).toContain("new SimpleRendererCompat({ symbol: fill })");
+    expect(nextSource).toContain("new ClassBreaksRendererCompat({");
     expect(nextSource).toContain("new UniqueValueRendererCompat({");
     expect(nextSource).not.toContain("@arcgis/core/Color");
+    expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleFillSymbol");
+    expect(nextSource).not.toContain("@arcgis/core/renderers/ClassBreaksRenderer");
     expect(nextSource).not.toContain("@arcgis/core/renderers/SimpleRenderer");
     expect(nextSource).not.toContain("@arcgis/core/renderers/UniqueValueRenderer");
   });

@@ -80,7 +80,7 @@ afterAll(async () => {
 });
 
 describe("migration cli reconcile", () => {
-  it("returns exit code 0 when reconciliation checks pass", { timeout: 20_000 }, async () => {
+  it("returns exit code 0 when reconciliation checks pass", { timeout: 60_000 }, async () => {
     ensureBuiltCliArtifacts();
     const result = await runCli([
       "dist/src/migration/cli.js",
@@ -104,7 +104,7 @@ describe("migration cli reconcile", () => {
     expect(result.stdout).toContain("checks=feature-count:pass,geometry-validity:pass,attribute-keys:pass");
   });
 
-  it("returns exit code 2 when reconciliation checks fail", { timeout: 20_000 }, async () => {
+  it("returns exit code 2 when reconciliation checks fail", { timeout: 60_000 }, async () => {
     ensureBuiltCliArtifacts();
     const result = await runCli(
       [

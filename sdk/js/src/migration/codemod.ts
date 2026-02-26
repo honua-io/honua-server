@@ -32,6 +32,8 @@ export type CodemodConstructorKind =
   | "color"
   | "simple-line-symbol"
   | "simple-marker-symbol"
+  | "simple-fill-symbol"
+  | "class-breaks-renderer"
   | "simple-renderer"
   | "unique-value-renderer"
   | "graphics-layer"
@@ -130,6 +132,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/symbols/SimpleMarkerSymbol",
       "@arcgis/core/symbols/SimpleMarkerSymbol.js",
+    ]),
+  },
+  {
+    kind: "simple-fill-symbol",
+    compatSymbol: "SimpleFillSymbolCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/symbols/SimpleFillSymbol",
+      "@arcgis/core/symbols/SimpleFillSymbol.js",
+    ]),
+  },
+  {
+    kind: "class-breaks-renderer",
+    compatSymbol: "ClassBreaksRendererCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/renderers/ClassBreaksRenderer",
+      "@arcgis/core/renderers/ClassBreaksRenderer.js",
     ]),
   },
   {
@@ -1508,6 +1526,8 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     color: { total: 0, autoMigrated: 0, manual: 0 },
     "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-fill-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "class-breaks-renderer": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-renderer": { total: 0, autoMigrated: 0, manual: 0 },
     "unique-value-renderer": { total: 0, autoMigrated: 0, manual: 0 },
     "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
@@ -2204,6 +2224,10 @@ function isSafeConstructorCall(
       return isSafeSimpleLineSymbolCompatCall(node);
     case "simple-marker-symbol":
       return isSafeSimpleMarkerSymbolCompatCall(node);
+    case "simple-fill-symbol":
+      return isSafeSimpleFillSymbolCompatCall(node);
+    case "class-breaks-renderer":
+      return isSafeClassBreaksRendererCompatCall(node);
     case "simple-renderer":
       return isSafeSimpleRendererCompatCall(node);
     case "unique-value-renderer":
@@ -2718,6 +2742,105 @@ function isSafeSimpleMarkerSymbolCompatCall(
       return {
         ok: false,
         reason: "SimpleMarkerSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleFillSymbolCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleFillSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleFillSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["style", "color", "outline"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "SimpleFillSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "SimpleFillSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeClassBreaksRendererCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "ClassBreaksRenderer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "ClassBreaksRenderer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "field",
+    "normalizationField",
+    "normalizationTotal",
+    "minValue",
+    "defaultSymbol",
+    "defaultLabel",
+    "legendOptions",
+    "valueExpression",
+    "valueExpressionTitle",
+    "classBreakInfos",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "ClassBreaksRenderer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "ClassBreaksRenderer options include unsupported properties; requires manual migration.",
       };
     }
   }

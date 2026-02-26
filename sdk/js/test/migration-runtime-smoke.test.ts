@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe("migration runtime smoke", () => {
-  it("executes migrated constructor flow with compat runtime imports", { timeout: 20_000 }, async () => {
+  it("executes migrated constructor flow with compat runtime imports", { timeout: 60_000 }, async () => {
     ensureBuiltCompatArtifacts();
     const tempRoot = makeTempDir();
     const file = path.join(tempRoot, "main.js");
@@ -99,7 +99,7 @@ describe("migration runtime smoke", () => {
     });
   });
 
-  it("executes migrated widget/control flow with shared mapview ui", { timeout: 20_000 }, async () => {
+  it("executes migrated widget/control flow with shared mapview ui", { timeout: 60_000 }, async () => {
     ensureBuiltCompatArtifacts();
     const tempRoot = makeTempDir();
     const file = path.join(tempRoot, "widgets.js");

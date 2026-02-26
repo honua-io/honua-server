@@ -99,7 +99,9 @@ import {
   SearchCompat,
   SketchCompat,
   SimpleLineSymbolCompat,
+  SimpleFillSymbolCompat,
   SimpleMarkerSymbolCompat,
+  ClassBreaksRendererCompat,
   SimpleRendererCompat,
   ScaleBarCompat,
   SwipeCompat,
@@ -180,8 +182,12 @@ if (typeof SearchCompat !== "function") throw new Error("SearchCompat export mis
 if (typeof SketchCompat !== "function") throw new Error("SketchCompat export missing");
 if (typeof SimpleLineSymbolCompat !== "function")
   throw new Error("SimpleLineSymbolCompat export missing");
+if (typeof SimpleFillSymbolCompat !== "function")
+  throw new Error("SimpleFillSymbolCompat export missing");
 if (typeof SimpleMarkerSymbolCompat !== "function")
   throw new Error("SimpleMarkerSymbolCompat export missing");
+if (typeof ClassBreaksRendererCompat !== "function")
+  throw new Error("ClassBreaksRendererCompat export missing");
 if (typeof SimpleRendererCompat !== "function")
   throw new Error("SimpleRendererCompat export missing");
 if (typeof UniqueValueRendererCompat !== "function")

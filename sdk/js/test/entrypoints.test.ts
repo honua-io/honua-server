@@ -58,7 +58,9 @@ import {
   SearchCompat,
   SketchCompat,
   SimpleLineSymbolCompat,
+  SimpleFillSymbolCompat,
   SimpleMarkerSymbolCompat,
+  ClassBreaksRendererCompat,
   SimpleRendererCompat,
   ScaleBarCompat,
   SwipeCompat,
@@ -157,7 +159,9 @@ describe("entrypoint modules", () => {
     expect(SceneViewCompat).toBeTypeOf("function");
     expect(SearchCompat).toBeTypeOf("function");
     expect(SimpleLineSymbolCompat).toBeTypeOf("function");
+    expect(SimpleFillSymbolCompat).toBeTypeOf("function");
     expect(SimpleMarkerSymbolCompat).toBeTypeOf("function");
+    expect(ClassBreaksRendererCompat).toBeTypeOf("function");
     expect(SimpleRendererCompat).toBeTypeOf("function");
     expect(UniqueValueRendererCompat).toBeTypeOf("function");
     expect(WebMapCompat).toBeTypeOf("function");

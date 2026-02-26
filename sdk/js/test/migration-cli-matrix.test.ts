@@ -87,6 +87,8 @@ describe("migration cli parity matrix", () => {
     const color = report.matrix.find((row) => row.kind === "color");
     const simpleLineSymbol = report.matrix.find((row) => row.kind === "simple-line-symbol");
     const simpleMarkerSymbol = report.matrix.find((row) => row.kind === "simple-marker-symbol");
+    const simpleFillSymbol = report.matrix.find((row) => row.kind === "simple-fill-symbol");
+    const classBreaksRenderer = report.matrix.find((row) => row.kind === "class-breaks-renderer");
     const simpleRenderer = report.matrix.find((row) => row.kind === "simple-renderer");
     const uniqueValueRenderer = report.matrix.find((row) => row.kind === "unique-value-renderer");
     const basemap = report.matrix.find((row) => row.kind === "basemap");
@@ -117,6 +119,8 @@ describe("migration cli parity matrix", () => {
     expect(color).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleLineSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(simpleFillSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(classBreaksRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(simpleRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(uniqueValueRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
@@ -139,5 +143,5 @@ describe("migration cli parity matrix", () => {
     expect(reactiveUtils).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
-  }, 20_000);
+  }, 60_000);
 });

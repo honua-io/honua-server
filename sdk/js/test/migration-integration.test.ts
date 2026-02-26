@@ -109,6 +109,8 @@ describe("arcgis migration integration", () => {
       color: 0,
       "simple-line-symbol": 0,
       "simple-marker-symbol": 0,
+      "simple-fill-symbol": 0,
+      "class-breaks-renderer": 0,
       "simple-renderer": 0,
       "unique-value-renderer": 0,
       "graphics-layer": 0,
@@ -591,10 +593,20 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(5);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(5);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.color).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["simple-fill-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["class-breaks-renderer"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
@@ -613,11 +625,16 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
-    expect(migratedMain).toContain(
-      'import { ColorCompat, SimpleRendererCompat, UniqueValueRendererCompat } from "@honua/sdk-esri-compat";',
-    );
+    expect(migratedMain).toContain('from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("ColorCompat");
+    expect(migratedMain).toContain("SimpleFillSymbolCompat");
+    expect(migratedMain).toContain("ClassBreaksRendererCompat");
+    expect(migratedMain).toContain("SimpleRendererCompat");
+    expect(migratedMain).toContain("UniqueValueRendererCompat");
     expect(migratedMain).toContain("const baseColor = new ColorCompat([255, 102, 0, 0.8]);");
+    expect(migratedMain).toContain("const fill = new SimpleFillSymbolCompat({");
     expect(migratedMain).toContain("const simple = new SimpleRendererCompat({");
+    expect(migratedMain).toContain("const classBreaks = new ClassBreaksRendererCompat({");
     expect(migratedMain).toContain("const unique = new UniqueValueRendererCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/renderers/SimpleRenderer");
   });

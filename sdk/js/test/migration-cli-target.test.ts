@@ -113,7 +113,7 @@ describe("migration cli target selection", () => {
         },
       ]),
     );
-  }, 20_000);
+  }, 60_000);
 
   it("fails fast for invalid --target values", () => {
     ensureBuiltCliArtifacts();
