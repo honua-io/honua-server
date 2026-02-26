@@ -85,6 +85,12 @@ export type {
   MapViewScreenPoint,
 } from "./esri-compat/map-view.js";
 export { MapViewLayerViewCompat, MapViewPopupCompat } from "./esri-compat/map-view.js";
+export { PopupCompat } from "./esri-compat/popup.js";
+export type {
+  PopupCompatOptions,
+  PopupHandleCompat,
+  PopupOpenOptionsCompat,
+} from "./esri-compat/popup.js";
 export { SceneViewCompat } from "./esri-compat/scene-view.js";
 export type { SceneViewCompatOptions } from "./esri-compat/scene-view.js";
 export { WebMapCompat } from "./esri-compat/web-map.js";
