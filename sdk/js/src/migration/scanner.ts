@@ -141,13 +141,13 @@ function findArcGisImports(source: string, file: string): ArcGisImportHit[] {
   }
 
   const requireRegex =
-    /(?:\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*)?require\(["'](@arcgis\/core\/[^"']+)["']\)(?:\.default)?/g;
+    /(?:\b(?:const|let|var)\s+(?:([A-Za-z_$][A-Za-z0-9_$]*)|\{\s*default\s*:\s*([A-Za-z_$][A-Za-z0-9_$]*)[^}]*\})\s*=\s*)?require\(["'](@arcgis\/core\/[^"']+)["']\)(?:\.default)?/g;
   let requireMatch: RegExpExecArray | null = requireRegex.exec(source);
   while (requireMatch !== null) {
-    const localSymbol = requireMatch[1];
+    const localSymbol = requireMatch[1] ?? requireMatch[2];
     hits.push({
       file,
-      modulePath: requireMatch[2],
+      modulePath: requireMatch[3],
       importClause: "require(...)",
       symbols: localSymbol ? [localSymbol] : [],
     });

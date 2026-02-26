@@ -112,6 +112,32 @@ describe("scanArcGisUsage", () => {
     expect(report.flags).toEqual([]);
   });
 
+  it("captures destructured require default imports with local symbol usage", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "require-destructured.cjs"),
+      [
+        "const { default: MapCtor } = require('@arcgis/core/Map');",
+        "const map = new MapCtor({ basemap: 'streets' });",
+        "module.exports = { map };",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.imports).toEqual([
+      {
+        file: path.join(root, "require-destructured.cjs"),
+        modulePath: "@arcgis/core/Map",
+        importClause: "require(...)",
+        symbols: ["MapCtor"],
+      },
+    ]);
+    expect(report.symbolUsageCounts.MapCtor).toBeGreaterThan(0);
+    expect(report.filesWithArcGisImports).toBe(1);
+    expect(report.flags).toEqual([]);
+  });
+
   it("captures arcgis re-export declarations", () => {
     const root = makeTempProject();
     fs.writeFileSync(
