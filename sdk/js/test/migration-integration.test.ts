@@ -335,7 +335,7 @@ describe("arcgis migration integration", () => {
     expect(report.unhandledArcGisModules).toEqual([]);
     expect(report.readiness).toBe("assisted");
     expect(report.manualTodos).toHaveLength(1);
-    expect(report.manualTodos[0]?.reason).toContain("CommonJS (.cjs) require constructors");
+    expect(report.manualTodos[0]?.reason).toContain("CommonJS require constructors");
     expect(report.gates).toEqual([
       {
         gate: "no-manual-todos",
@@ -355,6 +355,58 @@ describe("arcgis migration integration", () => {
     ]);
 
     const source = fs.readFileSync(path.join(workingCopy, "src", "main.cjs"), "utf8");
+    expect(source).toContain('require("@arcgis/core/Map")');
+    expect(source).toContain("new Map({");
+    expect(source).toContain('basemap: "streets"');
+    expect(source).toContain("module.exports = { map };");
+    expect(source).not.toContain("@honua/sdk-esri-compat");
+  });
+
+  it("reports assisted when .js CommonJS require usage requires manual migration", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-assisted-require-js-cjs-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(0);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
+    expect(codemodResult.metrics.manualCallSites).toBe(1);
+    expect(report.manualRewriteMetric).toMatchObject({
+      numerator: 1,
+      denominator: 1,
+      ratio: 1,
+    });
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 1,
+      denominator: 1,
+      ratio: 1,
+      manualCodemodCallSites: 1,
+      unhandledUsageHits: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("assisted");
+    expect(report.manualTodos).toHaveLength(1);
+    expect(report.manualTodos[0]?.reason).toContain("CommonJS require constructors");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: false,
+        detail: "1 manual codemod-scoped call sites remain",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const source = fs.readFileSync(path.join(workingCopy, "src", "main.js"), "utf8");
     expect(source).toContain('require("@arcgis/core/Map")');
     expect(source).toContain("new Map({");
     expect(source).toContain('basemap: "streets"');

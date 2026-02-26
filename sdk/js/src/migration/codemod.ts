@@ -7,7 +7,7 @@ const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const DEFAULT_COMPAT_IMPORT_PATH = "@honua/sdk-esri-compat";
 const TODO_MARKER = "TODO(honua-migrate)";
 const CJS_REQUIRE_MANUAL_REASON =
-  "CommonJS (.cjs) require constructors are not auto-migrated; convert the module to ESM and rerun.";
+  "CommonJS require constructors are not auto-migrated; convert the module to ESM and rerun.";
 
 export type CodemodConstructorKind =
   | "feature-layer"
@@ -243,6 +243,7 @@ function codemodFile(
   const todoCommentEdits: TextEdit[] = [];
   const requiredCompatSymbols = new Set<string>();
   const fileExtension = path.extname(file).toLowerCase();
+  const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
 
   walk(sourceFile, (node) => {
     if (isArcGisDynamicImportCall(node)) {
@@ -274,7 +275,7 @@ function codemodFile(
     }
 
     const importBinding = rewriteTarget.binding;
-    if (fileExtension === ".cjs" && importBinding.sourceKind === "require") {
+    if (isCommonJsModule && importBinding.sourceKind === "require") {
       const nodeStart = node.getStart(sourceFile);
       const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
       manualTodos.push({
@@ -371,6 +372,10 @@ function codemodFile(
     annotatedTodoComments: todoCommentEdits.length,
     manualTodos: manualTodos.sort(compareTodos),
   };
+}
+
+function hasCommonJsExportMarkers(source: string): boolean {
+  return /\bmodule\.exports\b/.test(source) || /\bexports\.[A-Za-z_$][A-Za-z0-9_$]*\b/.test(source);
 }
 
 function buildModuleToSpecLookup(specs: readonly ConstructorRewriteSpec[]): Map<string, ConstructorRewriteSpec> {
