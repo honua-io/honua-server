@@ -204,25 +204,25 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/views/MapView");
   });
 
-  it("reports assisted when require-style ArcGIS usage remains unhandled without blocking flags", () => {
+  it("reports assisted when require-style ArcGIS usage is auto-migrated but remains scan-unhandled", () => {
     const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
       "esri-assisted-require-app",
     );
 
     expect(scanReport.flags).toEqual([]);
-    expect(codemodResult.filesChanged).toBe(0);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(0);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(0);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(report.manualRewriteMetric).toMatchObject({
       numerator: 0,
-      denominator: 0,
+      denominator: 1,
       ratio: 0,
     });
     expect(report.manualInterventionMetric).toMatchObject({
       numerator: 1,
-      denominator: 1,
-      ratio: 1,
+      denominator: 2,
+      ratio: 0.5,
       manualCodemodCallSites: 0,
       unhandledUsageHits: 1,
     });
@@ -253,9 +253,12 @@ describe("arcgis migration integration", () => {
     ]);
 
     const source = fs.readFileSync(path.join(workingCopy, "src", "main.cjs"), "utf8");
-    expect(source).toContain("require(\"@arcgis/core/Map\")");
-    expect(source).toContain("new Map({");
+    expect(source).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
+    expect(source).toContain("new MapCompat({");
     expect(source).toContain('basemap: "streets"');
+    expect(source).toContain("module.exports = { map };");
+    expect(source).not.toContain('@arcgis/core/Map');
+    expect(source).not.toContain("new Map({");
   });
 
   it("reports assisted for side-effect ArcGIS imports outside codemod scope", () => {

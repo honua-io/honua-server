@@ -412,6 +412,34 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
     }
   }
 
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+        continue;
+      }
+
+      const modulePath = extractModulePathFromRequireInitializer(declaration.initializer);
+      if (!modulePath) {
+        continue;
+      }
+
+      const spec = MODULE_TO_SPEC.get(modulePath);
+      if (!spec) {
+        continue;
+      }
+
+      result.push({
+        kind: spec.kind,
+        localName: declaration.name.text,
+        importStyle: "identifier",
+      });
+    }
+  }
+
   return result;
 }
 
@@ -600,6 +628,41 @@ function removeUnusedArcGisImports(
     });
   }
 
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) {
+      continue;
+    }
+
+    if (statement.declarationList.declarations.length !== 1) {
+      continue;
+    }
+
+    const declaration = statement.declarationList.declarations[0];
+    if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+      continue;
+    }
+
+    const modulePath = extractModulePathFromRequireInitializer(declaration.initializer);
+    if (!modulePath || !MODULE_TO_SPEC.has(modulePath)) {
+      continue;
+    }
+
+    const references = countIdentifierUsagesExcludingImportsAndDefinitions(
+      sourceFile,
+      declaration.name.text,
+    );
+    if (references > 0) {
+      continue;
+    }
+
+    const bounds = expandToFullLine(source, statement.getStart(sourceFile), statement.getEnd());
+    removals.push({
+      start: bounds.start,
+      end: bounds.end,
+      text: "",
+    });
+  }
+
   if (removals.length === 0) {
     return { nextSource: source, removedCount: 0 };
   }
@@ -608,6 +671,33 @@ function removeUnusedArcGisImports(
     nextSource: applyTextEdits(source, removals),
     removedCount: removals.length,
   };
+}
+
+function extractModulePathFromRequireInitializer(initializer: ts.Expression): string | undefined {
+  if (ts.isCallExpression(initializer) && initializer.arguments.length === 1) {
+    if (
+      ts.isIdentifier(initializer.expression) &&
+      initializer.expression.text === "require" &&
+      ts.isStringLiteral(initializer.arguments[0])
+    ) {
+      return initializer.arguments[0].text;
+    }
+    return undefined;
+  }
+
+  if (
+    ts.isPropertyAccessExpression(initializer) &&
+    initializer.name.text === "default" &&
+    ts.isCallExpression(initializer.expression) &&
+    initializer.expression.arguments.length === 1 &&
+    ts.isIdentifier(initializer.expression.expression) &&
+    initializer.expression.expression.text === "require" &&
+    ts.isStringLiteral(initializer.expression.arguments[0])
+  ) {
+    return initializer.expression.arguments[0].text;
+  }
+
+  return undefined;
 }
 
 function extractImportClauseLocalIdentifiers(importClause: ts.ImportClause): string[] {
@@ -649,6 +739,28 @@ function countIdentifierUsagesExcludingImports(sourceFile: ts.SourceFile, name: 
   return count;
 }
 
+function countIdentifierUsagesExcludingImportsAndDefinitions(
+  sourceFile: ts.SourceFile,
+  name: string,
+): number {
+  let count = 0;
+
+  walk(sourceFile, (node) => {
+    if (!ts.isIdentifier(node) || node.text !== name) {
+      return;
+    }
+    if (isInImportContext(node)) {
+      return;
+    }
+    if (isVariableDeclarationName(node)) {
+      return;
+    }
+    count += 1;
+  });
+
+  return count;
+}
+
 function isInImportContext(node: ts.Identifier): boolean {
   let current: ts.Node | undefined = node;
   while (current) {
@@ -664,6 +776,10 @@ function isInImportContext(node: ts.Identifier): boolean {
     current = current.parent;
   }
   return false;
+}
+
+function isVariableDeclarationName(node: ts.Identifier): boolean {
+  return ts.isVariableDeclaration(node.parent) && node.parent.name === node;
 }
 
 function expandToFullLine(source: string, start: number, end: number): { start: number; end: number } {
