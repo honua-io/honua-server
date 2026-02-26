@@ -25,6 +25,8 @@ export type {
   FeatureTableRowCompat,
   FeatureTableStateCompat,
 } from "./esri-compat/feature-table.js";
+export { FeatureSetCompat } from "./esri-compat/feature-set.js";
+export type { FeatureSetCompatOptions } from "./esri-compat/feature-set.js";
 export { parseFeatureLayerUrl, parseMapServiceUrl } from "./esri-compat/url.js";
 export type { ParsedFeatureLayerUrl, ParsedMapServiceUrl } from "./esri-compat/url.js";
 export {

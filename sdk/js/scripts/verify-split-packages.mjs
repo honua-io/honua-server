@@ -64,6 +64,7 @@ import {
   EditorCompat,
   FeatureCompat,
   FeatureFormCompat,
+  FeatureSetCompat,
   FeatureTemplatesCompat,
   ExpandCompat,
   FeatureLayerCompat,
@@ -134,6 +135,7 @@ if (typeof DirectionsCompat !== "function") throw new Error("DirectionsCompat ex
 if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
 if (typeof FeatureCompat !== "function") throw new Error("FeatureCompat export missing");
 if (typeof FeatureFormCompat !== "function") throw new Error("FeatureFormCompat export missing");
+if (typeof FeatureSetCompat !== "function") throw new Error("FeatureSetCompat export missing");
 if (typeof FeatureTemplatesCompat !== "function") throw new Error("FeatureTemplatesCompat export missing");
 if (typeof FeatureLayerCompat !== "function") throw new Error("FeatureLayerCompat export missing");
 if (typeof FeatureTableCompat !== "function") throw new Error("FeatureTableCompat export missing");

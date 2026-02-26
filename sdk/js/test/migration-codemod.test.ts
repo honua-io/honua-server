@@ -255,6 +255,46 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleMarkerSymbol");
   });
 
+  it("rewrites safe FeatureSet constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-set.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureSet from '@arcgis/core/rest/support/FeatureSet';",
+        "const set = new FeatureSet({",
+        "  fields: [{ name: 'OBJECTID', type: 'oid' }],",
+        "  features: [{ attributes: { OBJECTID: 1 } }],",
+        "  geometryType: 'esriGeometryPoint',",
+        "  objectIdFieldName: 'OBJECTID',",
+        "});",
+        "void set;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-set"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { FeatureSetCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new FeatureSetCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/rest/support/FeatureSet");
+  });
+
   it("rewrites safe MapImageLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "map-image-layer.ts");

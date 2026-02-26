@@ -48,6 +48,7 @@ export type CodemodConstructorKind =
   | "feature-templates-widget"
   | "feature-form-widget"
   | "feature-table-widget"
+  | "feature-set"
   | "legend-widget"
   | "popup-widget"
   | "popup-template"
@@ -248,6 +249,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/FeatureTable",
       "@arcgis/core/widgets/FeatureTable.js",
+    ]),
+  },
+  {
+    kind: "feature-set",
+    compatSymbol: "FeatureSetCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/rest/support/FeatureSet",
+      "@arcgis/core/rest/support/FeatureSet.js",
     ]),
   },
   {
@@ -1491,6 +1500,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "feature-templates-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-form-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "feature-set": { total: 0, autoMigrated: 0, manual: 0 },
     "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "popup-template": { total: 0, autoMigrated: 0, manual: 0 },
@@ -2199,6 +2209,8 @@ function isSafeConstructorCall(
       return isSafeFeatureFormWidgetCompatCall(node);
     case "feature-table-widget":
       return isSafeFeatureTableWidgetCompatCall(node);
+    case "feature-set":
+      return isSafeFeatureSetCompatCall(node);
     case "legend-widget":
       return isSafeLegendWidgetCompatCall(node);
     case "popup-widget":
@@ -3315,6 +3327,56 @@ function isSafeFeatureTableWidgetCompatCall(
       return {
         ok: false,
         reason: "FeatureTable options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeFeatureSetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "FeatureSet constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "FeatureSet constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "features",
+    "fields",
+    "geometryType",
+    "spatialReference",
+    "objectIdFieldName",
+    "displayFieldName",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "FeatureSet options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "FeatureSet options include unsupported properties; requires manual migration.",
       };
     }
   }

@@ -125,6 +125,7 @@ describe("arcgis migration integration", () => {
       "feature-templates-widget": 0,
       "feature-form-widget": 0,
       "feature-table-widget": 0,
+      "feature-set": 0,
       "legend-widget": 0,
       "popup-widget": 0,
       "popup-template": 0,
@@ -580,6 +581,28 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const symbol = new SimpleMarkerSymbolCompat({");
     expect(migratedMain).toContain("const graphic = new GraphicCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/geometry/Point");
+  });
+
+  it("migrates feature-set fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-feature-set-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["feature-set"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { FeatureSetCompat } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("const set = new FeatureSetCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/rest/support/FeatureSet");
   });
 
   it("migrates esri-config fixture with ready gating", () => {
