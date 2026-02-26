@@ -20,10 +20,19 @@ import Editor from "@arcgis/core/widgets/Editor";
 import Track from "@arcgis/core/widgets/Track";
 import Measurement from "@arcgis/core/widgets/Measurement";
 import TimeSlider from "@arcgis/core/widgets/TimeSlider";
+import RouteLayer from "@arcgis/core/layers/RouteLayer";
+import Directions from "@arcgis/core/widgets/Directions";
 
 const map = new Map({
   basemap: "streets",
 });
+const routeLayer = new RouteLayer({
+  stops: [
+    { name: "Start", location: [-157.0, 21.3] },
+    { name: "End", location: [-157.01, 21.31] },
+  ],
+});
+map.add(routeLayer);
 
 const view = new MapView({
   map,
@@ -78,6 +87,12 @@ const timeSlider = new TimeSlider({
     values: ["2024-01-01T00:00:00.000Z", "2024-02-01T00:00:00.000Z"],
   },
 });
+const directions = new Directions({
+  view,
+  layer: routeLayer,
+  useDefaultRouteLayer: false,
+  showSaveAsButton: false,
+});
 
 view.ui.add(layerList, "top-right");
 view.ui.add([legend, home], "top-left");
@@ -96,6 +111,7 @@ view.ui.add(editor, "top-right");
 view.ui.add(track, "top-left");
 view.ui.add(measurement, "bottom-right");
 view.ui.add(timeSlider, "bottom-left");
+view.ui.add(directions, "top-right");
 
 popup.open({
   title: "Migration",
@@ -124,3 +140,5 @@ void editor;
 void track;
 void measurement;
 void timeSlider;
+void routeLayer;
+void directions;

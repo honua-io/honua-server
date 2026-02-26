@@ -108,6 +108,7 @@ describe("arcgis migration integration", () => {
       "group-layer": 0,
       "map-image-layer": 0,
       "tile-layer": 0,
+      "route-layer": 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
@@ -132,6 +133,7 @@ describe("arcgis migration integration", () => {
       "track-widget": 0,
       "measurement-widget": 0,
       "time-slider-widget": 0,
+      "directions-widget": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
     expect(report.unhandledArcGisModules).toHaveLength(0);
@@ -458,8 +460,8 @@ describe("arcgis migration integration", () => {
 
     expect(scanReport.flags).toEqual([]);
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(22);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(22);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(24);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(24);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind.map).toEqual({
       total: 1,
@@ -467,6 +469,11 @@ describe("arcgis migration integration", () => {
       manual: 0,
     });
     expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["route-layer"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
@@ -571,12 +578,17 @@ describe("arcgis migration integration", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(codemodResult.metrics.byKind["directions-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
     expect(report.readiness).toBe("ready");
     expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, MeasurementCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, DirectionsCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, MeasurementCompat, PopupCompat, RouteLayerCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(migratedMain).toContain("const layerList = new LayerListCompat({ view });");
     expect(migratedMain).toContain("const legend = new LegendCompat({ view });");
@@ -605,6 +617,8 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('goToLocationEnabled: true');
     expect(migratedMain).toContain('useHeadingEnabled: true');
     expect(migratedMain).toContain('rotationEnabled: true');
+    expect(migratedMain).toContain("const routeLayer = new RouteLayerCompat({");
+    expect(migratedMain).toContain("const directions = new DirectionsCompat({");
     expect(migratedMain).toContain("const measurement = new MeasurementCompat({");
     expect(migratedMain).toContain('activeTool: "distance"');
     expect(migratedMain).toContain('linearUnit: "kilometers"');
@@ -631,6 +645,7 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('view.ui.add(track, "top-left");');
     expect(migratedMain).toContain('view.ui.add(measurement, "bottom-right");');
     expect(migratedMain).toContain('view.ui.add(timeSlider, "bottom-left");');
+    expect(migratedMain).toContain('view.ui.add(directions, "top-right");');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");
@@ -651,6 +666,8 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Track");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Measurement");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/TimeSlider");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/RouteLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/Directions");
   });
 
   it("migrates supported dynamic import usage with ready gating", () => {

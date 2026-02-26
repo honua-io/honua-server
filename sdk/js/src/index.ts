@@ -101,6 +101,17 @@ export type {
   IdentifyCompatRequest,
   IdentifyCompatResult,
 } from "./esri-compat/identify.js";
+export { RouteLayerCompat } from "./esri-compat/route-layer.js";
+export type {
+  RouteLayerCompatOptions,
+  RouteSolveResultCompat,
+  RouteStopCompat,
+} from "./esri-compat/route-layer.js";
+export { DirectionsCompat } from "./esri-compat/directions.js";
+export type {
+  DirectionsCompatOptions,
+  DirectionsSolveSummaryCompat,
+} from "./esri-compat/directions.js";
 export { LayerListCompat } from "./esri-compat/layer-list.js";
 export type { LayerListCompatOptions, LayerListItemCompat } from "./esri-compat/layer-list.js";
 export { LegendCompat } from "./esri-compat/legend.js";

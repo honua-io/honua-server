@@ -20,6 +20,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
         "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
         "tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
+        "route-layer": { total: 0, autoMigrated: 0, manual: 0 },
         map: { total: 1, autoMigrated: 1, manual: 0 },
         "map-view": { total: 1, autoMigrated: 1, manual: 0 },
         "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -44,6 +45,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
         "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
+        "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
       },
     },
     fileResults: [
@@ -147,6 +149,7 @@ describe("buildJsMigrationReport", () => {
       "group-layer": 0,
       "map-image-layer": 0,
       "tile-layer": 0,
+      "route-layer": 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
@@ -171,6 +174,7 @@ describe("buildJsMigrationReport", () => {
       "track-widget": 0,
       "measurement-widget": 0,
       "time-slider-widget": 0,
+      "directions-widget": 0,
     });
     expect(report.manualTodoReasons).toEqual([
       {

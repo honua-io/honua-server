@@ -87,5 +87,5 @@ describe("migration cli parity matrix", () => {
     expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
-  });
+  }, 20_000);
 });

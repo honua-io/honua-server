@@ -23,6 +23,7 @@ export type CodemodConstructorKind =
   | "group-layer"
   | "map-image-layer"
   | "tile-layer"
+  | "route-layer"
   | "map"
   | "map-view"
   | "scene-view"
@@ -46,7 +47,8 @@ export type CodemodConstructorKind =
   | "editor-widget"
   | "track-widget"
   | "measurement-widget"
-  | "time-slider-widget";
+  | "time-slider-widget"
+  | "directions-widget";
 
 interface ConstructorRewriteSpec {
   kind: CodemodConstructorKind;
@@ -93,6 +95,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/layers/TileLayer",
       "@arcgis/core/layers/TileLayer.js",
+    ]),
+  },
+  {
+    kind: "route-layer",
+    compatSymbol: "RouteLayerCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/RouteLayer",
+      "@arcgis/core/layers/RouteLayer.js",
     ]),
   },
   {
@@ -279,6 +289,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/TimeSlider",
       "@arcgis/core/widgets/TimeSlider.js",
+    ]),
+  },
+  {
+    kind: "directions-widget",
+    compatSymbol: "DirectionsCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Directions",
+      "@arcgis/core/widgets/Directions.js",
     ]),
   },
 ];
@@ -742,6 +760,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "route-layer": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -766,6 +785,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "track-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "measurement-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "time-slider-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
 
@@ -1407,6 +1427,8 @@ function isSafeConstructorCall(
       return isSafeMapImageLayerCompatCall(node);
     case "tile-layer":
       return isSafeTileLayerCompatCall(node);
+    case "route-layer":
+      return isSafeRouteLayerCompatCall(node);
     case "map":
       return isSafeMapCompatCall(node);
     case "map-view":
@@ -1455,9 +1477,64 @@ function isSafeConstructorCall(
       return isSafeMeasurementWidgetCompatCall(node);
     case "time-slider-widget":
       return isSafeTimeSliderWidgetCompatCall(node);
+    case "directions-widget":
+      return isSafeDirectionsWidgetCompatCall(node);
     default:
       return { ok: false, reason: "Unsupported ArcGIS constructor usage." };
   }
+}
+
+function isSafeRouteLayerCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "RouteLayer constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "RouteLayer constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "id",
+    "title",
+    "url",
+    "visible",
+    "opacity",
+    "listMode",
+    "stops",
+    "autoSolve",
+    "routeProvider",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "RouteLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "RouteLayer options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
 }
 
 function isSafeFeatureLayerCompatCall(
@@ -2765,6 +2842,57 @@ function isSafeTimeSliderWidgetCompatCall(
       return {
         ok: false,
         reason: "TimeSlider options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeDirectionsWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Directions constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Directions constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "layer",
+    "routeProvider",
+    "stops",
+    "useDefaultRouteLayer",
+    "showSaveAsButton",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Directions options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Directions options include unsupported properties; requires manual migration.",
       };
     }
   }

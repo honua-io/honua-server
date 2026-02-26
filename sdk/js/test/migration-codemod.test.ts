@@ -289,7 +289,10 @@ describe("runEsriCompatCodemod", () => {
         "import Track from '@arcgis/core/widgets/Track';",
         "import Measurement from '@arcgis/core/widgets/Measurement';",
         "import TimeSlider from '@arcgis/core/widgets/TimeSlider';",
+        "import RouteLayer from '@arcgis/core/layers/RouteLayer';",
+        "import Directions from '@arcgis/core/widgets/Directions';",
         "const view = {};",
+        "const routeLayer = new RouteLayer({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
         "const layerList = new LayerList({ view, container: 'layer-list-div' });",
         "const legend = new Legend({ view, container: 'legend-div' });",
         "const popup = new Popup({ view, container: 'popup-div', dockEnabled: true });",
@@ -310,6 +313,7 @@ describe("runEsriCompatCodemod", () => {
         "const track = new Track({ view, container: 'track-div', goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
         "const measurement = new Measurement({ view, container: 'measurement-div', activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
         "const timeSlider = new TimeSlider({ view, container: 'time-slider-div', mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
+        "const directions = new Directions({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -330,6 +334,8 @@ describe("runEsriCompatCodemod", () => {
         "void track;",
         "void measurement;",
         "void timeSlider;",
+        "void routeLayer;",
+        "void directions;",
       ].join("\n"),
       "utf8",
     );
@@ -341,10 +347,15 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(20);
-    expect(result.metrics.autoMigratedCallSites).toBe(20);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(22);
+    expect(result.metrics.autoMigratedCallSites).toBe(22);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["layer-list"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["route-layer"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
@@ -444,10 +455,18 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["directions-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MeasurementCompat, PopupCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, DirectionsCompat, EditorCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MeasurementCompat, PopupCompat, RouteLayerCompat, ScaleBarCompat, SearchCompat, SketchCompat, TimeSliderCompat, TrackCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain(
+      "const routeLayer = new RouteLayerCompat({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
     );
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
@@ -489,6 +508,9 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const timeSlider = new TimeSliderCompat({ view, container: 'time-slider-div', mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
     );
+    expect(nextSource).toContain(
+      "const directions = new DirectionsCompat({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -509,6 +531,8 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Track");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Measurement");
     expect(nextSource).not.toContain("@arcgis/core/widgets/TimeSlider");
+    expect(nextSource).not.toContain("@arcgis/core/layers/RouteLayer");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Directions");
   });
 
   it("rewrites deterministic constructors for esri-leaflet target", () => {

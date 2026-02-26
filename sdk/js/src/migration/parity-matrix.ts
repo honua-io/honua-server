@@ -8,9 +8,7 @@ export type JsParityCategory = "layer" | "view" | "widget" | "control";
 export type JsParityStatus = "native" | "compat" | "assisted" | "unsupported";
 export type JsParityMatrixKind =
   | CodemodConstructorKind
-  | "track-widget"
-  | "directions-widget"
-  | "route-layer";
+  | "route-task";
 
 export interface JsParityMatrixEntry {
   kind: JsParityMatrixKind;
@@ -45,6 +43,7 @@ const LAYER_KINDS = new Set<CodemodConstructorKind>([
   "group-layer",
   "map-image-layer",
   "tile-layer",
+  "route-layer",
 ]);
 
 const CANONICAL_MODULE_BY_KIND = buildCanonicalModuleMap();
@@ -75,20 +74,12 @@ const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (
 
 const EXTRA_MATRIX_ROWS: readonly JsParityMatrixEntry[] = [
   {
-    kind: "directions-widget",
+    kind: "route-task",
     category: "widget",
-    arcGisModule: "@arcgis/core/widgets/Directions",
+    arcGisModule: "@arcgis/core/rest/route/RouteTask",
     honuaCompat: "unsupported",
     esriLeaflet: "unsupported",
-    notes: "requires routing service and UI workflow design",
-  },
-  {
-    kind: "route-layer",
-    category: "layer",
-    arcGisModule: "@arcgis/core/layers/RouteLayer",
-    honuaCompat: "unsupported",
-    esriLeaflet: "unsupported",
-    notes: "requires route network service parity",
+    notes: "task-level route REST integration not yet in codemod scope",
   },
 ];
 

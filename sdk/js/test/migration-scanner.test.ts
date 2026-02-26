@@ -206,8 +206,8 @@ describe("scanArcGisUsage", () => {
     fs.writeFileSync(
       path.join(root, "advanced.ts"),
       [
-        "import Directions from '@arcgis/core/widgets/Directions';",
-        "void Directions;",
+        "import RouteTask from '@arcgis/core/rest/route/RouteTask';",
+        "void RouteTask;",
       ].join("\n"),
       "utf8",
     );

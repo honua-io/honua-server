@@ -10,6 +10,7 @@ import {
   CompatEventBus,
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
+  DirectionsCompat,
   EsriRequestInterceptorRegistry,
   EditorCompat,
   ExpandCompat,
@@ -28,6 +29,7 @@ import {
   MapViewCompat,
   MapViewUiCompat,
   PopupCompat,
+  RouteLayerCompat,
   SearchCompat,
   SketchCompat,
   ScaleBarCompat,
@@ -72,6 +74,7 @@ describe("entrypoint modules", () => {
     expect(createEsriRequestInterceptors).toBeTypeOf("function");
     expect(createArcGisTokenInterceptor).toBeTypeOf("function");
     expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
+    expect(DirectionsCompat).toBeTypeOf("function");
     expect(EditorCompat).toBeTypeOf("function");
     expect(GraphicsLayerCompat).toBeTypeOf("function");
     expect(GroupLayerCompat).toBeTypeOf("function");
@@ -84,6 +87,7 @@ describe("entrypoint modules", () => {
     expect(MapViewUiCompat).toBeTypeOf("function");
     expect(MeasurementCompat).toBeTypeOf("function");
     expect(PopupCompat).toBeTypeOf("function");
+    expect(RouteLayerCompat).toBeTypeOf("function");
     expect(SketchCompat).toBeTypeOf("function");
     expect(TrackCompat).toBeTypeOf("function");
     expect(TimeSliderCompat).toBeTypeOf("function");

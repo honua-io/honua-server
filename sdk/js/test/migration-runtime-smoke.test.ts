@@ -115,7 +115,11 @@ describe("migration runtime smoke", () => {
         "import Track from '@arcgis/core/widgets/Track';",
         "import Measurement from '@arcgis/core/widgets/Measurement';",
         "import TimeSlider from '@arcgis/core/widgets/TimeSlider';",
+        "import RouteLayer from '@arcgis/core/layers/RouteLayer';",
+        "import Directions from '@arcgis/core/widgets/Directions';",
         "const map = new Map({ basemap: 'streets' });",
+        "const routeLayer = new RouteLayer({ stops: [{ name: 'Start', location: [-157.0, 21.3] }, { name: 'End', location: [-157.01, 21.31] }] });",
+        "map.add(routeLayer);",
         "const view = new MapView({ map, center: [0, 0], zoom: 2 });",
         "const layerList = new LayerList({ view, container: 'layer-list' });",
         "const legend = new Legend({ view, container: 'legend' });",
@@ -133,7 +137,8 @@ describe("migration runtime smoke", () => {
         "const track = new Track({ view, goToLocationEnabled: true, useHeadingEnabled: true, rotationEnabled: true });",
         "const measurement = new Measurement({ view, activeTool: 'distance', linearUnit: 'kilometers', areaUnit: 'square-kilometers' });",
         "const timeSlider = new TimeSlider({ view, mode: 'instant', stops: { values: ['2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z'] } });",
-        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement, timeSlider], 'top-right');",
+        "const directions = new Directions({ view, layer: routeLayer, useDefaultRouteLayer: false, showSaveAsButton: false });",
+        "view.ui.add([layerList, legend, popup, search, basemapGallery, compass, expand, bookmarks, fullscreen, zoom, attribution, sketch, editor, track, measurement, timeSlider, directions], 'top-right');",
         "export default {",
         "  mapCtor: map.constructor.name,",
         "  viewCtor: view.constructor.name,",
@@ -155,7 +160,9 @@ describe("migration runtime smoke", () => {
         "    track.constructor.name,",
         "    measurement.constructor.name,",
         "    timeSlider.constructor.name,",
+        "    directions.constructor.name,",
         "  ],",
+        "  routeLayerCtor: routeLayer.constructor.name,",
         "  bookmarkCount: bookmarks.bookmarks.length,",
         "};",
       ].join("\n"),
@@ -168,15 +175,15 @@ describe("migration runtime smoke", () => {
       compatImportPath: compatEntryPath,
     });
     expect(codemodResult.filesChanged).toBe(1);
-    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(18);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(18);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(20);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(20);
     expect(codemodResult.metrics.manualCallSites).toBe(0);
 
     const migrated = await import(pathToFileURL(file).href);
     expect(migrated.default).toEqual({
       mapCtor: "MapCompat",
       viewCtor: "MapViewCompat",
-      uiCount: 16,
+      uiCount: 17,
       widgetCtors: [
         "LayerListCompat",
         "LegendCompat",
@@ -194,7 +201,9 @@ describe("migration runtime smoke", () => {
         "TrackCompat",
         "MeasurementCompat",
         "TimeSliderCompat",
+        "DirectionsCompat",
       ],
+      routeLayerCtor: "RouteLayerCompat",
       bookmarkCount: 1,
     });
   });
