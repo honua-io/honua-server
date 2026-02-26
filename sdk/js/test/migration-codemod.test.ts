@@ -277,13 +277,13 @@ describe("runEsriCompatCodemod", () => {
         "import Locate from '@arcgis/core/widgets/Locate';",
         "import ScaleBar from '@arcgis/core/widgets/ScaleBar';",
         "const view = {};",
-        "const layerList = new LayerList({ view });",
-        "const legend = new Legend({ view });",
-        "const popup = new Popup({ view, dockEnabled: true });",
-        "const home = new Home({ view });",
-        "const basemapToggle = new BasemapToggle({ view, nextBasemap: 'satellite' });",
-        "const locate = new Locate({ view });",
-        "const scaleBar = new ScaleBar({ view, unit: 'dual' });",
+        "const layerList = new LayerList({ view, container: 'layer-list-div' });",
+        "const legend = new Legend({ view, container: 'legend-div' });",
+        "const popup = new Popup({ view, container: 'popup-div', dockEnabled: true });",
+        "const home = new Home({ view, container: 'home-div' });",
+        "const basemapToggle = new BasemapToggle({ view, container: 'basemap-div', nextBasemap: 'satellite' });",
+        "const locate = new Locate({ view, container: 'locate-div' });",
+        "const scaleBar = new ScaleBar({ view, container: 'scale-div', unit: 'dual' });",
         "void layerList;",
         "void legend;",
         "void popup;",
@@ -345,13 +345,15 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       'import { BasemapToggleCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, PopupCompat, ScaleBarCompat } from "@honua/sdk-esri-compat";',
     );
-    expect(nextSource).toContain("const layerList = new LayerListCompat({ view });");
-    expect(nextSource).toContain("const legend = new LegendCompat({ view });");
-    expect(nextSource).toContain("const popup = new PopupCompat({ view, dockEnabled: true });");
-    expect(nextSource).toContain("const home = new HomeCompat({ view });");
-    expect(nextSource).toContain("const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: 'satellite' });");
-    expect(nextSource).toContain("const locate = new LocateCompat({ view });");
-    expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, unit: 'dual' });");
+    expect(nextSource).toContain("const layerList = new LayerListCompat({ view, container: 'layer-list-div' });");
+    expect(nextSource).toContain("const legend = new LegendCompat({ view, container: 'legend-div' });");
+    expect(nextSource).toContain("const popup = new PopupCompat({ view, container: 'popup-div', dockEnabled: true });");
+    expect(nextSource).toContain("const home = new HomeCompat({ view, container: 'home-div' });");
+    expect(nextSource).toContain(
+      "const basemapToggle = new BasemapToggleCompat({ view, container: 'basemap-div', nextBasemap: 'satellite' });",
+    );
+    expect(nextSource).toContain("const locate = new LocateCompat({ view, container: 'locate-div' });");
+    expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, container: 'scale-div', unit: 'dual' });");
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");

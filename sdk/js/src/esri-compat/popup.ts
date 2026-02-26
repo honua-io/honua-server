@@ -2,6 +2,7 @@ import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } f
 
 export interface PopupCompatOptions {
   view?: unknown;
+  container?: unknown;
   eventBus?: CompatEventBus;
   autoOpenEnabled?: boolean;
   dockEnabled?: boolean;
@@ -21,6 +22,7 @@ export interface PopupHandleCompat {
 
 export class PopupCompat {
   public readonly view: unknown;
+  public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public visible: boolean;
   public location: unknown;
@@ -37,6 +39,7 @@ export class PopupCompat {
 
   public constructor(options: PopupCompatOptions = {}) {
     this.view = options.view;
+    this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.visible = false;
     this.location = undefined;

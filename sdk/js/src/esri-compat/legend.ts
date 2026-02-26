@@ -4,6 +4,7 @@ export interface LegendCompatOptions {
   view?: unknown;
   map?: unknown;
   layers?: readonly unknown[];
+  container?: unknown;
   eventBus?: CompatEventBus;
   includeHidden?: boolean;
   autoRefresh?: boolean;
@@ -28,6 +29,7 @@ export interface LegendLayerGroupCompat {
 export class LegendCompat {
   public readonly view: unknown;
   public readonly map: unknown;
+  public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly includeHidden: boolean;
   public items: LegendLayerGroupCompat[];
@@ -39,6 +41,7 @@ export class LegendCompat {
   public constructor(options: LegendCompatOptions = {}) {
     this.view = options.view;
     this.map = options.map ?? extractMapFromView(options.view);
+    this.container = options.container;
     this.explicitLayers = options.layers;
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(this.view, this.map, options.layers) ?? new CompatEventBus();

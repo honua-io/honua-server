@@ -25,6 +25,11 @@ const basemapToggle = new BasemapToggle({ view, nextBasemap: "satellite" });
 const locate = new Locate({ view });
 const scaleBar = new ScaleBar({ view, unit: "dual" });
 
+view.ui.add(layerList, "top-right");
+view.ui.add([legend, home], "top-left");
+view.ui.add(popup, { position: "manual", index: 0 });
+view.ui.add([basemapToggle, locate, scaleBar], "bottom-right");
+
 popup.open({
   title: "Migration",
   content: "Widget constructors should migrate to compat classes",

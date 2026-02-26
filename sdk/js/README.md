@@ -6,7 +6,7 @@ This package currently provides:
 
 - core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
-  including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
+  including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest` and `view.ui.add/remove/move/getComponents` compatibility,
 - identify controller (`IdentifyCompat`) for cross-layer MapServer identify workflows with optional popup auto-open,
 - compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
 - common map controls (`HomeCompat`, `BasemapToggleCompat`, `LocateCompat`, `ScaleBarCompat`) wired to the same event bus for shared view state updates,

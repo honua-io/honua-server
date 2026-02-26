@@ -507,6 +507,10 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain('const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: "satellite" });');
     expect(migratedMain).toContain("const locate = new LocateCompat({ view });");
     expect(migratedMain).toContain('const scaleBar = new ScaleBarCompat({ view, unit: "dual" });');
+    expect(migratedMain).toContain('view.ui.add(layerList, "top-right");');
+    expect(migratedMain).toContain('view.ui.add([legend, home], "top-left");');
+    expect(migratedMain).toContain('view.ui.add(popup, { position: "manual", index: 0 });');
+    expect(migratedMain).toContain('view.ui.add([basemapToggle, locate, scaleBar], "bottom-right");');
     expect(migratedMain).not.toContain("@arcgis/core/widgets/LayerList");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Legend");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/Popup");

@@ -2,6 +2,7 @@ import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } f
 
 export interface HomeCompatOptions {
   view?: unknown;
+  container?: unknown;
   eventBus?: CompatEventBus;
   viewpoint?: HomeViewpointCompat;
 }
@@ -13,11 +14,13 @@ export interface HomeViewpointCompat {
 
 export class HomeCompat {
   public readonly view: unknown;
+  public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public viewpoint: HomeViewpointCompat;
 
   public constructor(options: HomeCompatOptions = {}) {
     this.view = options.view;
+    this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.viewpoint = options.viewpoint ?? {
       center: extractViewCenter(options.view),
@@ -52,6 +55,7 @@ export class HomeCompat {
 export interface BasemapToggleCompatOptions {
   view?: unknown;
   map?: unknown;
+  container?: unknown;
   nextBasemap?: unknown;
   eventBus?: CompatEventBus;
 }
@@ -59,6 +63,7 @@ export interface BasemapToggleCompatOptions {
 export class BasemapToggleCompat {
   public readonly view: unknown;
   public readonly map: unknown;
+  public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public activeBasemap: unknown;
   public nextBasemap: unknown;
@@ -66,6 +71,7 @@ export class BasemapToggleCompat {
   public constructor(options: BasemapToggleCompatOptions = {}) {
     this.view = options.view;
     this.map = options.map ?? extractViewMap(options.view);
+    this.container = options.container;
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
     this.activeBasemap = extractMapBasemap(this.map);
@@ -98,12 +104,14 @@ export type ScaleBarUnitCompat = "metric" | "imperial" | "dual";
 
 export interface ScaleBarCompatOptions {
   view?: unknown;
+  container?: unknown;
   unit?: ScaleBarUnitCompat;
   eventBus?: CompatEventBus;
 }
 
 export class ScaleBarCompat {
   public readonly view: unknown;
+  public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public unit: ScaleBarUnitCompat;
   public scale: number | undefined;
@@ -113,6 +121,7 @@ export class ScaleBarCompat {
 
   public constructor(options: ScaleBarCompatOptions = {}) {
     this.view = options.view;
+    this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.unit = options.unit ?? "metric";
     this.scale = undefined;
@@ -149,6 +158,7 @@ export class ScaleBarCompat {
 
 export interface LocateCompatOptions {
   view?: unknown;
+  container?: unknown;
   eventBus?: CompatEventBus;
   zoom?: number;
   locateProvider?: () => Promise<LocatePositionCompat>;
@@ -164,6 +174,7 @@ export interface LocatePositionCompat {
 
 export class LocateCompat {
   public readonly view: unknown;
+  public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly zoom: number | undefined;
 
@@ -171,6 +182,7 @@ export class LocateCompat {
 
   public constructor(options: LocateCompatOptions = {}) {
     this.view = options.view;
+    this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.zoom = options.zoom;
     this.locateProvider = options.locateProvider ?? getDefaultLocateProvider();

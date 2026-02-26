@@ -1747,7 +1747,7 @@ function isSafeLayerListCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map"]);
+  const allowed = new Set(["view", "map", "container"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -1790,7 +1790,7 @@ function isSafeLegendWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map", "layers"]);
+  const allowed = new Set(["view", "map", "layers", "container"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -1833,7 +1833,7 @@ function isSafePopupWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "autoOpenEnabled", "dockEnabled", "dockOptions"]);
+  const allowed = new Set(["view", "container", "autoOpenEnabled", "dockEnabled", "dockOptions"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -1876,7 +1876,7 @@ function isSafeHomeWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view"]);
+  const allowed = new Set(["view", "container"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -1919,7 +1919,7 @@ function isSafeBasemapToggleWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map", "nextBasemap"]);
+  const allowed = new Set(["view", "map", "container", "nextBasemap"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -1962,7 +1962,7 @@ function isSafeLocateWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view"]);
+  const allowed = new Set(["view", "container"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -2005,7 +2005,7 @@ function isSafeScaleBarWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "unit"]);
+  const allowed = new Set(["view", "container", "unit"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

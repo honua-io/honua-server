@@ -50,6 +50,19 @@ export interface MapViewHitTestResult {
   results: MapViewHitTestResultItem[];
 }
 
+export type MapViewUiPosition = "manual" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | string;
+
+export interface MapViewUiAddOptions {
+  position?: MapViewUiPosition;
+  index?: number;
+}
+
+export interface MapViewUiComponentRecord {
+  component: unknown;
+  position: MapViewUiPosition;
+  index: number;
+}
+
 type PopupChangeType = "open" | "close";
 
 export class MapViewPopupCompat {
@@ -229,6 +242,197 @@ interface QueryObjectIdsProvider {
   queryObjectIds(options?: unknown): Promise<number[]> | number[];
 }
 
+export class MapViewUiCompat {
+  private readonly eventBus: CompatEventBus;
+  private readonly onChanged:
+    | ((components: readonly MapViewUiComponentRecord[]) => void)
+    | undefined;
+  private readonly componentsInternal: MapViewUiComponentRecord[];
+
+  public constructor(
+    eventBus: CompatEventBus,
+    onChanged?: (components: readonly MapViewUiComponentRecord[]) => void,
+  ) {
+    this.eventBus = eventBus;
+    this.onChanged = onChanged;
+    this.componentsInternal = [];
+  }
+
+  public get components(): readonly MapViewUiComponentRecord[] {
+    return this.componentsInternal.map((record) => ({ ...record }));
+  }
+
+  public add(
+    componentOrComponents: unknown | readonly unknown[],
+    positionOrOptions: MapViewUiPosition | MapViewUiAddOptions = "manual",
+  ): void {
+    if (Array.isArray(componentOrComponents)) {
+      for (const component of componentOrComponents) {
+        this.add(component, positionOrOptions);
+      }
+      return;
+    }
+
+    const component = componentOrComponents;
+    const options = normalizeUiOptions(positionOrOptions);
+    const existingIndex = this.findComponentIndex(component);
+    if (existingIndex >= 0) {
+      this.componentsInternal.splice(existingIndex, 1);
+    }
+
+    const insertIndex = normalizeUiIndex(options.index, this.componentsInternal.length);
+    const record: MapViewUiComponentRecord = {
+      component,
+      position: options.position,
+      index: insertIndex,
+    };
+    this.componentsInternal.splice(insertIndex, 0, record);
+    this.reindexComponents();
+    this.eventBus.emit(
+      "view.ui.component-added",
+      {
+        component,
+        position: record.position,
+        index: record.index,
+      },
+      this,
+    );
+    this.notifyChanged();
+  }
+
+  public remove(componentOrId: unknown): boolean {
+    const index = this.findComponentIndex(componentOrId);
+    if (index < 0) {
+      return false;
+    }
+
+    const [removed] = this.componentsInternal.splice(index, 1);
+    this.reindexComponents();
+    this.eventBus.emit(
+      "view.ui.component-removed",
+      {
+        component: removed?.component,
+        position: removed?.position,
+      },
+      this,
+    );
+    this.notifyChanged();
+    return true;
+  }
+
+  public removeAll(): void {
+    if (this.componentsInternal.length === 0) {
+      return;
+    }
+
+    const removedComponents = this.componentsInternal.map((record) => record.component);
+    this.componentsInternal.length = 0;
+    this.eventBus.emit(
+      "view.ui.components-cleared",
+      {
+        count: removedComponents.length,
+      },
+      this,
+    );
+    this.notifyChanged();
+  }
+
+  public empty(position: MapViewUiPosition): void {
+    const previous = this.componentsInternal.length;
+    const remaining = this.componentsInternal.filter((record) => record.position !== position);
+    if (remaining.length === previous) {
+      return;
+    }
+
+    this.componentsInternal.length = 0;
+    this.componentsInternal.push(...remaining);
+    this.reindexComponents();
+    this.eventBus.emit(
+      "view.ui.position-cleared",
+      {
+        position,
+        remainingCount: this.componentsInternal.length,
+      },
+      this,
+    );
+    this.notifyChanged();
+  }
+
+  public move(
+    componentOrId: unknown,
+    positionOrOptions: MapViewUiPosition | MapViewUiAddOptions,
+  ): boolean {
+    const index = this.findComponentIndex(componentOrId);
+    if (index < 0) {
+      return false;
+    }
+
+    const [record] = this.componentsInternal.splice(index, 1);
+    const options = normalizeUiOptions(positionOrOptions);
+    const insertIndex = normalizeUiIndex(options.index, this.componentsInternal.length);
+    const movedRecord: MapViewUiComponentRecord = {
+      component: record!.component,
+      position: options.position,
+      index: insertIndex,
+    };
+    this.componentsInternal.splice(insertIndex, 0, movedRecord);
+    this.reindexComponents();
+    this.eventBus.emit(
+      "view.ui.component-moved",
+      {
+        component: movedRecord.component,
+        position: movedRecord.position,
+        index: movedRecord.index,
+      },
+      this,
+    );
+    this.notifyChanged();
+    return true;
+  }
+
+  public find(componentOrId: unknown): unknown {
+    const index = this.findComponentIndex(componentOrId);
+    return index < 0 ? undefined : this.componentsInternal[index]?.component;
+  }
+
+  public getComponents(position?: MapViewUiPosition): unknown[] {
+    if (position === undefined) {
+      return this.componentsInternal.map((record) => record.component);
+    }
+    return this.componentsInternal
+      .filter((record) => record.position === position)
+      .map((record) => record.component);
+  }
+
+  private findComponentIndex(componentOrId: unknown): number {
+    if (typeof componentOrId === "string") {
+      for (let i = 0; i < this.componentsInternal.length; i += 1) {
+        const component = this.componentsInternal[i]?.component;
+        if (isRecord(component) && component.id === componentOrId) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    return this.componentsInternal.findIndex((record) => record.component === componentOrId);
+  }
+
+  private reindexComponents(): void {
+    for (let i = 0; i < this.componentsInternal.length; i += 1) {
+      const existing = this.componentsInternal[i];
+      if (!existing) {
+        continue;
+      }
+      existing.index = i;
+    }
+  }
+
+  private notifyChanged(): void {
+    this.onChanged?.(this.components);
+  }
+}
+
 export class MapViewCompat {
   public map: unknown;
   public container: unknown;
@@ -236,6 +440,7 @@ export class MapViewCompat {
   public zoom: number | undefined;
   public readonly eventBus: CompatEventBus;
   public readonly popup: MapViewPopupCompat;
+  public readonly ui: MapViewUiCompat;
 
   private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
@@ -257,6 +462,9 @@ export class MapViewCompat {
       this.notifyWatchers("popup.content", this.popup.content);
       this.eventBus.emit(type === "open" ? "popup.open" : "popup.close", popupOptions, this);
       this.emit(type === "open" ? "popup-open" : "popup-close", popupOptions);
+    });
+    this.ui = new MapViewUiCompat(this.eventBus, (components) => {
+      this.notifyWatchers("ui.components", components);
     });
     this.eventListeners = new Map();
     this.watchListeners = new Map();
@@ -373,6 +581,7 @@ export class MapViewCompat {
   public destroy(): void {
     this.eventBus.emit("view.destroy", undefined, this);
     this.emit("destroy", undefined);
+    this.ui.removeAll();
     for (const layerView of this.layerViews.values()) {
       layerView.destroy();
     }
@@ -411,6 +620,31 @@ export class MapViewCompat {
       listener(value);
     }
   }
+}
+
+function normalizeUiOptions(input: MapViewUiPosition | MapViewUiAddOptions): Required<MapViewUiAddOptions> {
+  if (typeof input === "string") {
+    return {
+      position: input,
+      index: Number.NaN,
+    };
+  }
+
+  const position =
+    typeof input.position === "string" && input.position.length > 0 ? input.position : "manual";
+  const index =
+    typeof input.index === "number" && Number.isFinite(input.index) ? Math.trunc(input.index) : Number.NaN;
+  return {
+    position,
+    index,
+  };
+}
+
+function normalizeUiIndex(index: number, length: number): number {
+  if (!Number.isFinite(index)) {
+    return length;
+  }
+  return Math.min(Math.max(index, 0), length);
 }
 
 function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider {
@@ -492,4 +726,8 @@ function extractGraphicLayer(value: unknown): unknown {
     return undefined;
   }
   return value.layer;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null;
 }

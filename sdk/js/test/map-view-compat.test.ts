@@ -154,6 +154,42 @@ describe("MapViewCompat", () => {
     expect(popupEvents[1]).toEqual({ type: "close", event: undefined });
   });
 
+  it("supports ui component add/remove/move/find helpers", () => {
+    const view = new MapViewCompat();
+    const componentCountSnapshots: number[] = [];
+    view.watch("ui.components", (value) => {
+      componentCountSnapshots.push(Array.isArray(value) ? value.length : -1);
+    });
+
+    const layerList = { id: "layer-list" };
+    const legend = { id: "legend" };
+    const popup = { id: "popup" };
+
+    view.ui.add(layerList, "top-right");
+    view.ui.add([legend, popup], { position: "top-left" });
+
+    expect(view.ui.getComponents()).toEqual([layerList, legend, popup]);
+    expect(view.ui.getComponents("top-right")).toEqual([layerList]);
+    expect(view.ui.getComponents("top-left")).toEqual([legend, popup]);
+    expect(view.ui.find(layerList)).toBe(layerList);
+    expect(view.ui.find("legend")).toBe(legend);
+    expect(view.ui.find("missing")).toBeUndefined();
+
+    expect(view.ui.move("layer-list", { position: "bottom-left", index: 0 })).toBe(true);
+    expect(view.ui.getComponents("bottom-left")).toEqual([layerList]);
+
+    expect(view.ui.remove("popup")).toBe(true);
+    expect(view.ui.remove("popup")).toBe(false);
+    expect(view.ui.getComponents("top-left")).toEqual([legend]);
+
+    view.ui.empty("top-left");
+    expect(view.ui.getComponents("top-left")).toEqual([]);
+
+    view.ui.removeAll();
+    expect(view.ui.getComponents()).toEqual([]);
+    expect(componentCountSnapshots).toEqual([1, 2, 3, 3, 2, 1, 0]);
+  });
+
   it("supports whenLayerView bridge and layer view query/watch helpers", async () => {
     const layer = {
       id: "layer-1",
@@ -277,6 +313,10 @@ describe("MapViewCompat", () => {
 
     await view.goTo({ center: [1, 2], zoom: 4 });
     view.openPopup({ title: "Popup" });
+    view.ui.add({ id: "layer-list" }, "top-right");
+    view.ui.remove("layer-list");
+    view.ui.add({ id: "legend" }, "top-right");
+    view.ui.move("legend", "bottom-left");
     const layerView = await view.whenLayerView(layer);
     layerView.setUpdating(true);
     layerView.setSuspended(true);
@@ -293,6 +333,10 @@ describe("MapViewCompat", () => {
     expect(events).toContain("view.layer-view-suspended-changed");
     expect(events).toContain("view.layer-view-has-all-features-changed");
     expect(events).toContain("view.layer-view-has-all-features-in-view-changed");
+    expect(events).toContain("view.ui.component-added");
+    expect(events).toContain("view.ui.component-removed");
+    expect(events).toContain("view.ui.component-moved");
+    expect(events).toContain("view.ui.components-cleared");
     expect(events).toContain("view.destroy");
   });
 });

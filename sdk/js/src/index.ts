@@ -106,8 +106,11 @@ export type {
   MapViewMapPoint,
   MapViewPopupOpenOptions,
   MapViewScreenPoint,
+  MapViewUiAddOptions,
+  MapViewUiComponentRecord,
+  MapViewUiPosition,
 } from "./esri-compat/map-view.js";
-export { MapViewLayerViewCompat, MapViewPopupCompat } from "./esri-compat/map-view.js";
+export { MapViewLayerViewCompat, MapViewPopupCompat, MapViewUiCompat } from "./esri-compat/map-view.js";
 export { PopupCompat } from "./esri-compat/popup.js";
 export type {
   PopupCompatOptions,

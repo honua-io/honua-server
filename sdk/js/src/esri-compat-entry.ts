@@ -76,7 +76,12 @@ export type {
   LegendItemCompat,
   LegendLayerGroupCompat,
 } from "./esri-compat/legend.js";
-export { MapViewCompat, MapViewLayerViewCompat, MapViewPopupCompat } from "./esri-compat/map-view.js";
+export {
+  MapViewCompat,
+  MapViewLayerViewCompat,
+  MapViewPopupCompat,
+  MapViewUiCompat,
+} from "./esri-compat/map-view.js";
 export type {
   MapViewCompatOptions,
   MapViewGoToTarget,
@@ -87,6 +92,9 @@ export type {
   MapViewMapPoint,
   MapViewPopupOpenOptions,
   MapViewScreenPoint,
+  MapViewUiAddOptions,
+  MapViewUiComponentRecord,
+  MapViewUiPosition,
 } from "./esri-compat/map-view.js";
 export { PopupCompat } from "./esri-compat/popup.js";
 export type {
