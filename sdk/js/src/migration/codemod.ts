@@ -22,6 +22,7 @@ export type CodemodConstructorKind =
   | "graphics-layer"
   | "group-layer"
   | "map-image-layer"
+  | "tile-layer"
   | "map"
   | "map-view"
   | "scene-view"
@@ -67,6 +68,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     ]),
   },
   {
+    kind: "tile-layer",
+    compatSymbol: "TileLayerCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/TileLayer",
+      "@arcgis/core/layers/TileLayer.js",
+    ]),
+  },
+  {
     kind: "map",
     compatSymbol: "MapCompat",
     arcGisModules: new Set(["@arcgis/core/Map", "@arcgis/core/Map.js"]),
@@ -97,7 +106,7 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
 const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> =
   Object.freeze({
     "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
-    "esri-leaflet": new Set(["feature-layer", "map-image-layer"] as const),
+    "esri-leaflet": new Set(["feature-layer", "map-image-layer", "tile-layer"] as const),
   });
 
 export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
@@ -552,6 +561,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
+    "tile-layer": { total: 0, autoMigrated: 0, manual: 0 },
     map: { total: 0, autoMigrated: 0, manual: 0 },
     "map-view": { total: 0, autoMigrated: 0, manual: 0 },
     "scene-view": { total: 0, autoMigrated: 0, manual: 0 },
@@ -878,6 +888,8 @@ function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefi
       return "featureLayer";
     case "map-image-layer":
       return "dynamicMapLayer";
+    case "tile-layer":
+      return "tiledMapLayer";
     default:
       return undefined;
   }
@@ -1193,6 +1205,8 @@ function isSafeConstructorCall(
       return isSafeGroupLayerCompatCall(node);
     case "map-image-layer":
       return isSafeMapImageLayerCompatCall(node);
+    case "tile-layer":
+      return isSafeTileLayerCompatCall(node);
     case "map":
       return isSafeMapCompatCall(node);
     case "map-view":
@@ -1305,6 +1319,58 @@ function isSafeMapImageLayerCompatCall(
     return {
       ok: false,
       reason: "MapImageLayer options missing required url property; requires manual migration.",
+    };
+  }
+
+  return { ok: true };
+}
+
+function isSafeTileLayerCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TileLayer constructor is not a single object-literal argument.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TileLayer constructor argument is not an object literal.",
+    };
+  }
+
+  let hasUrlOption = false;
+  const allowed = new Set(["url", "opacity", "visible"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TileLayer options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (name === "url") {
+      hasUrlOption = true;
+    }
+
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "TileLayer options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  if (!hasUrlOption) {
+    return {
+      ok: false,
+      reason: "TileLayer options missing required url property; requires manual migration.",
     };
   }
 

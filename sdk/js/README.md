@@ -5,7 +5,7 @@ Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 This package currently provides:
 
 - core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
-- Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
+- Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/identify()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`,
 - compat widgets/components (`LayerListCompat`, `LegendCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes,
 - request/auth migration bridge helpers (`createEsriRequestInterceptors`, `createArcGisTokenInterceptor`) plus core `HonuaClient` interceptor hooks (`before`/`after`/`error`),
@@ -130,6 +130,7 @@ The codemod is intentionally conservative:
   - `new GraphicsLayer(...)` -> `new GraphicsLayerCompat(...)`
   - `new GroupLayer(...)` -> `new GroupLayerCompat(...)`
   - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `sublayers`, `opacity`, and `visible`)
+  - `new TileLayer({ url: ... })` -> `new TileLayerCompat({ url: ... })` (supports `opacity` and `visible`)
   - `new Map(...)` -> `new MapCompat(...)`
   - `new MapView(...)` -> `new MapViewCompat(...)`
   - `new SceneView(...)` -> `new SceneViewCompat(...)`
@@ -137,6 +138,7 @@ The codemod is intentionally conservative:
 - alternate target (`--target esri-leaflet`) rewrites deterministic subset only:
   - `new FeatureLayer({ ... })` -> `HonuaEsriLeaflet.featureLayer({ ... })`
   - `new MapImageLayer({ ... })` -> `HonuaEsriLeaflet.dynamicMapLayer({ ... })`
+  - `new TileLayer({ ... })` -> `HonuaEsriLeaflet.tiledMapLayer({ ... })`
   - dynamic imports for those modules -> `Promise.resolve({ default: HonuaEsriLeaflet.* })`
   - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `GraphicsLayer`, `GroupLayer`) are emitted as manual TODO/report entries
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),

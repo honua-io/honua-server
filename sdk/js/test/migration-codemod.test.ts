@@ -153,6 +153,44 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
   });
 
+  it("rewrites safe TileLayer constructor and removes ArcGIS import", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "tile-layer.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import TileLayer from '@arcgis/core/layers/TileLayer';",
+        "const layer = new TileLayer({",
+        "  url: serviceUrl,",
+        "  opacity: 0.6,",
+        "  visible: true,",
+        "});",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["tile-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { TileLayerCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("new TileLayerCompat({");
+    expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
+  });
+
   it("rewrites safe GraphicsLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "graphics-layer.ts");
@@ -233,9 +271,11 @@ describe("runEsriCompatCodemod", () => {
       [
         "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
         "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "import TileLayer from '@arcgis/core/layers/TileLayer';",
         "const fl = new FeatureLayer({ url: serviceUrl });",
         "const mil = new MapImageLayer({ url: mapUrl, visible: true });",
-        "void fl; void mil;",
+        "const tiled = new TileLayer({ url: tileUrl, opacity: 0.4 });",
+        "void fl; void mil; void tiled;",
       ].join("\n"),
       "utf8",
     );
@@ -247,8 +287,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(2);
-    expect(result.metrics.autoMigratedCallSites).toBe(2);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind["feature-layer"]).toEqual({
       total: 1,
@@ -260,6 +300,11 @@ describe("runEsriCompatCodemod", () => {
       autoMigrated: 1,
       manual: 0,
     });
+    expect(result.metrics.byKind["tile-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
@@ -267,8 +312,12 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain(
       "const mil = HonuaEsriLeaflet.dynamicMapLayer({ url: mapUrl, visible: true });",
     );
+    expect(nextSource).toContain(
+      "const tiled = HonuaEsriLeaflet.tiledMapLayer({ url: tileUrl, opacity: 0.4 });",
+    );
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
     expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
+    expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
   });
 
   it("keeps unsupported constructors as manual TODOs for esri-leaflet target", () => {

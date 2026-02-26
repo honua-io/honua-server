@@ -107,6 +107,7 @@ describe("arcgis migration integration", () => {
       "graphics-layer": 0,
       "group-layer": 0,
       "map-image-layer": 0,
+      "tile-layer": 0,
       map: 0,
       "map-view": 0,
       "scene-view": 0,
@@ -321,6 +322,33 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const parcels = new MapImageLayerCompat({");
     expect(migratedMain).toContain("const map = new MapCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/layers/MapImageLayer");
+    expect(migratedMain).not.toContain("@arcgis/core/Map");
+  });
+
+  it("migrates tile layer app flow with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-tile-layer-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(2);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["tile-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { MapCompat, TileLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const tiled = new TileLayerCompat({");
+    expect(migratedMain).toContain("const map = new MapCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/TileLayer");
     expect(migratedMain).not.toContain("@arcgis/core/Map");
   });
 

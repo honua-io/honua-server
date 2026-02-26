@@ -56,6 +56,7 @@ import {
   LegendCompat,
   MapImageLayerCompat,
   MapViewCompat,
+  TileLayerCompat,
 } from "@honua/sdk-esri-compat";
 import {
   buildJsMigrationReport,
@@ -75,6 +76,7 @@ if (typeof LayerListCompat !== "function") throw new Error("LayerListCompat expo
 if (typeof LegendCompat !== "function") throw new Error("LegendCompat export missing");
 if (typeof MapImageLayerCompat !== "function") throw new Error("MapImageLayerCompat export missing");
 if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export missing");
+if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat export missing");
 if (typeof scanArcGisUsage !== "function") throw new Error("scanArcGisUsage export missing");
 if (typeof runEsriCompatCodemod !== "function") throw new Error("runEsriCompatCodemod export missing");
 if (typeof buildJsMigrationReport !== "function") throw new Error("buildJsMigrationReport export missing");
