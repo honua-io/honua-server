@@ -102,7 +102,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/Graphic/Point/Polyline/Polygon/Extent/SpatialReference/Color/SimpleLineSymbol/SimpleMarkerSymbol/SimpleFillSymbol/ClassBreaksRenderer/SimpleRenderer/UniqueValueRenderer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/FeatureSet/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriRequest/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope",
+        "FeatureLayer/Graphic/Point/Polyline/Polygon/Extent/SpatialReference/Color/SimpleLineSymbol/SimpleMarkerSymbol/PictureMarkerSymbol/TextSymbol/LabelClass/SimpleFillSymbol/ClassBreaksRenderer/SimpleRenderer/UniqueValueRenderer/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/FeatureSet/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriRequest/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -136,6 +136,9 @@ function summarizeManualTodosByKind(
     color: 0,
     "simple-line-symbol": 0,
     "simple-marker-symbol": 0,
+    "picture-marker-symbol": 0,
+    "text-symbol": 0,
+    "label-class": 0,
     "simple-fill-symbol": 0,
     "class-breaks-renderer": 0,
     "simple-renderer": 0,

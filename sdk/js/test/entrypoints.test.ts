@@ -64,6 +64,9 @@ import {
   SimpleLineSymbolCompat,
   SimpleFillSymbolCompat,
   SimpleMarkerSymbolCompat,
+  PictureMarkerSymbolCompat,
+  TextSymbolCompat,
+  LabelClassCompat,
   ClassBreaksRendererCompat,
   SimpleRendererCompat,
   ScaleBarCompat,
@@ -169,6 +172,9 @@ describe("entrypoint modules", () => {
     expect(SimpleLineSymbolCompat).toBeTypeOf("function");
     expect(SimpleFillSymbolCompat).toBeTypeOf("function");
     expect(SimpleMarkerSymbolCompat).toBeTypeOf("function");
+    expect(PictureMarkerSymbolCompat).toBeTypeOf("function");
+    expect(TextSymbolCompat).toBeTypeOf("function");
+    expect(LabelClassCompat).toBeTypeOf("function");
     expect(ClassBreaksRendererCompat).toBeTypeOf("function");
     expect(SimpleRendererCompat).toBeTypeOf("function");
     expect(UniqueValueRendererCompat).toBeTypeOf("function");

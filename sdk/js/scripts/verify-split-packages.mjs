@@ -105,6 +105,9 @@ import {
   SimpleLineSymbolCompat,
   SimpleFillSymbolCompat,
   SimpleMarkerSymbolCompat,
+  PictureMarkerSymbolCompat,
+  TextSymbolCompat,
+  LabelClassCompat,
   ClassBreaksRendererCompat,
   SimpleRendererCompat,
   ScaleBarCompat,
@@ -195,6 +198,12 @@ if (typeof SimpleFillSymbolCompat !== "function")
   throw new Error("SimpleFillSymbolCompat export missing");
 if (typeof SimpleMarkerSymbolCompat !== "function")
   throw new Error("SimpleMarkerSymbolCompat export missing");
+if (typeof PictureMarkerSymbolCompat !== "function")
+  throw new Error("PictureMarkerSymbolCompat export missing");
+if (typeof TextSymbolCompat !== "function")
+  throw new Error("TextSymbolCompat export missing");
+if (typeof LabelClassCompat !== "function")
+  throw new Error("LabelClassCompat export missing");
 if (typeof ClassBreaksRendererCompat !== "function")
   throw new Error("ClassBreaksRendererCompat export missing");
 if (typeof SimpleRendererCompat !== "function")

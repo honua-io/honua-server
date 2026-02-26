@@ -359,6 +359,97 @@ describe("runEsriCompatCodemod", () => {
     );
   });
 
+  it("rewrites safe labeling/symbol constructors and removes ArcGIS imports", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "labeling.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import PictureMarkerSymbol from '@arcgis/core/symbols/PictureMarkerSymbol';",
+        "import TextSymbol from '@arcgis/core/symbols/TextSymbol';",
+        "import LabelClass from '@arcgis/core/layers/support/LabelClass';",
+        "const marker = new PictureMarkerSymbol({ url: 'https://example.test/marker.png', width: 20, height: 20, opacity: 0.9 });",
+        "const text = new TextSymbol({ text: 'Parcel', color: '#111', haloColor: '#fff', haloSize: 1 });",
+        "const labels = new LabelClass({ labelExpressionInfo: { expression: '$feature.NAME' }, symbol: text, where: \"status = 'active'\" });",
+        "void marker; void text; void labels;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["picture-marker-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["text-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["label-class"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("PictureMarkerSymbolCompat");
+    expect(nextSource).toContain("TextSymbolCompat");
+    expect(nextSource).toContain("LabelClassCompat");
+    expect(nextSource).not.toContain("@arcgis/core/symbols/PictureMarkerSymbol");
+    expect(nextSource).not.toContain("@arcgis/core/symbols/TextSymbol");
+    expect(nextSource).not.toContain("@arcgis/core/layers/support/LabelClass");
+  });
+
+  it("creates manual TODO for unsupported label class options", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "label-class-manual.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import LabelClass from '@arcgis/core/layers/support/LabelClass';",
+        "const labels = new LabelClass({ labelExpressionInfo: { expression: '$feature.NAME' }, deconflictionStrategy: 'none' });",
+        "void labels;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: false,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(0);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.metrics.byKind["label-class"]).toEqual({
+      total: 1,
+      autoMigrated: 0,
+      manual: 1,
+    });
+    expect(result.manualTodos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "label-class",
+          reason: "LabelClass options include unsupported properties; requires manual migration.",
+        }),
+      ]),
+    );
+  });
+
   it("rewrites safe color/symbol/renderer constructors and removes ArcGIS imports", () => {
     const root = makeTempProject();
     const file = path.join(root, "renderers.ts");

@@ -113,6 +113,9 @@ describe("arcgis migration integration", () => {
       color: 0,
       "simple-line-symbol": 0,
       "simple-marker-symbol": 0,
+      "picture-marker-symbol": 0,
+      "text-symbol": 0,
+      "label-class": 0,
       "simple-fill-symbol": 0,
       "class-breaks-renderer": 0,
       "simple-renderer": 0,
@@ -635,6 +638,42 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).not.toContain("@arcgis/core/geometry/Extent");
     expect(migratedMain).not.toContain("@arcgis/core/geometry/Polyline");
     expect(migratedMain).not.toContain("@arcgis/core/geometry/Polygon");
+  });
+
+  it("migrates labeling fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-labeling-app");
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["picture-marker-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["text-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["label-class"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("PictureMarkerSymbolCompat");
+    expect(migratedMain).toContain("TextSymbolCompat");
+    expect(migratedMain).toContain("LabelClassCompat");
+    expect(migratedMain).not.toContain("@arcgis/core/symbols/PictureMarkerSymbol");
+    expect(migratedMain).not.toContain("@arcgis/core/symbols/TextSymbol");
+    expect(migratedMain).not.toContain("@arcgis/core/layers/support/LabelClass");
   });
 
   it("migrates color/renderer fixture with ready gating", () => {

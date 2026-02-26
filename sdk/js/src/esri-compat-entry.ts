@@ -125,6 +125,12 @@ export { SimpleFillSymbolCompat } from "./esri-compat/simple-fill-symbol.js";
 export type { SimpleFillSymbolCompatOptions } from "./esri-compat/simple-fill-symbol.js";
 export { SimpleMarkerSymbolCompat } from "./esri-compat/simple-marker-symbol.js";
 export type { SimpleMarkerSymbolCompatOptions } from "./esri-compat/simple-marker-symbol.js";
+export { PictureMarkerSymbolCompat } from "./esri-compat/picture-marker-symbol.js";
+export type { PictureMarkerSymbolCompatOptions } from "./esri-compat/picture-marker-symbol.js";
+export { TextSymbolCompat } from "./esri-compat/text-symbol.js";
+export type { TextSymbolCompatOptions } from "./esri-compat/text-symbol.js";
+export { LabelClassCompat } from "./esri-compat/label-class.js";
+export type { LabelClassCompatOptions } from "./esri-compat/label-class.js";
 export { ClassBreaksRendererCompat } from "./esri-compat/class-breaks-renderer.js";
 export type {
   ClassBreakInfoCompat,

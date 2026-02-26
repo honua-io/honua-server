@@ -36,6 +36,9 @@ export type CodemodConstructorKind =
   | "color"
   | "simple-line-symbol"
   | "simple-marker-symbol"
+  | "picture-marker-symbol"
+  | "text-symbol"
+  | "label-class"
   | "simple-fill-symbol"
   | "class-breaks-renderer"
   | "simple-renderer"
@@ -159,6 +162,27 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/symbols/SimpleMarkerSymbol",
       "@arcgis/core/symbols/SimpleMarkerSymbol.js",
+    ]),
+  },
+  {
+    kind: "picture-marker-symbol",
+    compatSymbol: "PictureMarkerSymbolCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/symbols/PictureMarkerSymbol",
+      "@arcgis/core/symbols/PictureMarkerSymbol.js",
+    ]),
+  },
+  {
+    kind: "text-symbol",
+    compatSymbol: "TextSymbolCompat",
+    arcGisModules: new Set(["@arcgis/core/symbols/TextSymbol", "@arcgis/core/symbols/TextSymbol.js"]),
+  },
+  {
+    kind: "label-class",
+    compatSymbol: "LabelClassCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/layers/support/LabelClass",
+      "@arcgis/core/layers/support/LabelClass.js",
     ]),
   },
   {
@@ -1557,6 +1581,9 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     color: { total: 0, autoMigrated: 0, manual: 0 },
     "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "picture-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "text-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "label-class": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-fill-symbol": { total: 0, autoMigrated: 0, manual: 0 },
     "class-breaks-renderer": { total: 0, autoMigrated: 0, manual: 0 },
     "simple-renderer": { total: 0, autoMigrated: 0, manual: 0 },
@@ -2263,6 +2290,12 @@ function isSafeConstructorCall(
       return isSafeSimpleLineSymbolCompatCall(node);
     case "simple-marker-symbol":
       return isSafeSimpleMarkerSymbolCompatCall(node);
+    case "picture-marker-symbol":
+      return isSafePictureMarkerSymbolCompatCall(node);
+    case "text-symbol":
+      return isSafeTextSymbolCompatCall(node);
+    case "label-class":
+      return isSafeLabelClassCompatCall(node);
     case "simple-fill-symbol":
       return isSafeSimpleFillSymbolCompatCall(node);
     case "class-breaks-renderer":
@@ -2964,6 +2997,136 @@ function isSafeSimpleMarkerSymbolCompatCall(
       return {
         ok: false,
         reason: "SimpleMarkerSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafePictureMarkerSymbolCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "PictureMarkerSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "PictureMarkerSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["url", "width", "height", "xoffset", "yoffset", "angle", "opacity"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "PictureMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "PictureMarkerSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeTextSymbolCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "TextSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "TextSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["text", "color", "haloColor", "haloSize", "font", "xoffset", "yoffset", "angle"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "TextSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "TextSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeLabelClassCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "LabelClass constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "LabelClass constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["labelExpressionInfo", "symbol", "where", "minScale", "maxScale"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "LabelClass options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "LabelClass options include unsupported properties; requires manual migration.",
       };
     }
   }
