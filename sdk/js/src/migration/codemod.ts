@@ -44,6 +44,7 @@ export type CodemodConstructorKind =
   | "locate-widget"
   | "scale-bar-widget"
   | "search-widget"
+  | "basemap-layer-list-widget"
   | "basemap-gallery-widget"
   | "expand-widget"
   | "compass-widget"
@@ -266,6 +267,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Search",
       "@arcgis/core/widgets/Search.js",
+    ]),
+  },
+  {
+    kind: "basemap-layer-list-widget",
+    compatSymbol: "BasemapLayerListCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/BasemapLayerList",
+      "@arcgis/core/widgets/BasemapLayerList.js",
     ]),
   },
   {
@@ -862,6 +871,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "locate-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "scale-bar-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "search-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "basemap-layer-list-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "basemap-gallery-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "expand-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "compass-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1559,6 +1569,8 @@ function isSafeConstructorCall(
       return isSafeScaleBarWidgetCompatCall(node);
     case "search-widget":
       return isSafeSearchWidgetCompatCall(node);
+    case "basemap-layer-list-widget":
+      return isSafeBasemapLayerListWidgetCompatCall(node);
     case "basemap-gallery-widget":
       return isSafeBasemapGalleryWidgetCompatCall(node);
     case "expand-widget":
@@ -2799,6 +2811,49 @@ function isSafeSearchWidgetCompatCall(
       return {
         ok: false,
         reason: "Search options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeBasemapLayerListWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "BasemapLayerList constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "BasemapLayerList constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["view", "map", "container"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "BasemapLayerList options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "BasemapLayerList options include unsupported properties; requires manual migration.",
       };
     }
   }

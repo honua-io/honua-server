@@ -49,6 +49,7 @@ import {
   AttributionCompat,
   BasemapToggleCompat,
   BasemapGalleryCompat,
+  BasemapLayerListCompat,
   BookmarksCompat,
   CompassCompat,
   CompatEventBus,
@@ -115,6 +116,7 @@ if (typeof FeatureTableCompat !== "function") throw new Error("FeatureTableCompa
 if (typeof HomeCompat !== "function") throw new Error("HomeCompat export missing");
 if (typeof BasemapToggleCompat !== "function") throw new Error("BasemapToggleCompat export missing");
 if (typeof BasemapGalleryCompat !== "function") throw new Error("BasemapGalleryCompat export missing");
+if (typeof BasemapLayerListCompat !== "function") throw new Error("BasemapLayerListCompat export missing");
 if (typeof BookmarksCompat !== "function") throw new Error("BookmarksCompat export missing");
 if (typeof CompassCompat !== "function") throw new Error("CompassCompat export missing");
 if (typeof AttributionCompat !== "function") throw new Error("AttributionCompat export missing");

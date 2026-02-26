@@ -5,6 +5,7 @@ import {
   AttributionCompat,
   BasemapToggleCompat,
   BasemapGalleryCompat,
+  BasemapLayerListCompat,
   BookmarksCompat,
   CompassCompat,
   CompatEventBus,
@@ -71,6 +72,7 @@ describe("entrypoint modules", () => {
     expect(HomeCompat).toBeTypeOf("function");
     expect(BasemapToggleCompat).toBeTypeOf("function");
     expect(BasemapGalleryCompat).toBeTypeOf("function");
+    expect(BasemapLayerListCompat).toBeTypeOf("function");
     expect(BookmarksCompat).toBeTypeOf("function");
     expect(CompassCompat).toBeTypeOf("function");
     expect(ExpandCompat).toBeTypeOf("function");

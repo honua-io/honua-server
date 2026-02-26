@@ -129,6 +129,7 @@ describe("arcgis migration integration", () => {
       "locate-widget": 0,
       "scale-bar-widget": 0,
       "search-widget": 0,
+      "basemap-layer-list-widget": 0,
       "basemap-gallery-widget": 0,
       "expand-widget": 0,
       "compass-widget": 0,
@@ -572,6 +573,42 @@ describe("arcgis migration integration", () => {
     );
     expect(migratedMain).toContain("const templates = new FeatureTemplatesCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/widgets/FeatureTemplates");
+  });
+
+  it("migrates basemap layer list fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-basemap-layer-list-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(3);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["basemap-layer-list-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { BasemapLayerListCompat, MapCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const basemapLayerList = new BasemapLayerListCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/widgets/BasemapLayerList");
   });
 
   it("migrates print widget fixture with ready gating", () => {
