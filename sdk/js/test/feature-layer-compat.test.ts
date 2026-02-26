@@ -408,6 +408,7 @@ describe("FeatureLayerCompat", () => {
   it("preserves common display options and emits event bus lifecycle changes", async () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];
+    const capturedQueries: unknown[] = [];
     eventBus.onAny((event) => {
       events.push(event.type);
     });
@@ -435,7 +436,8 @@ describe("FeatureLayerCompat", () => {
           return Promise.resolve({ id: 1000 });
         }
 
-        public queryFeatures(): Promise<unknown> {
+        public queryFeatures(request: unknown): Promise<unknown> {
+          capturedQueries.push(request);
           return Promise.resolve({ features: [] });
         }
 
@@ -465,6 +467,12 @@ describe("FeatureLayerCompat", () => {
     layer.setRenderer({ type: "class-breaks" });
     layer.setPopupTemplate({ title: "Updated" });
     layer.setLabelingInfo([{ where: "status = 'open'" }]);
+    layer.setDefinitionExpression("status = 5");
+    layer.setOutFields(["OBJECTID"]);
+    layer.setLabelsVisible(true);
+    layer.setScaleRange(6000, 0);
+    layer.setLegendEnabled(true);
+    await layer.queryFeatures();
     layer.refresh();
 
     expect(layer.visible).toBe(true);
@@ -472,12 +480,25 @@ describe("FeatureLayerCompat", () => {
     expect(layer.renderer).toEqual({ type: "class-breaks" });
     expect(layer.popupTemplate).toEqual({ title: "Updated" });
     expect(layer.labelingInfo).toEqual([{ where: "status = 'open'" }]);
+    expect(layer.definitionExpression).toBe("status = 5");
+    expect(layer.outFields).toEqual(["OBJECTID"]);
+    expect(layer.labelsVisible).toBe(true);
+    expect(layer.minScale).toBe(6000);
+    expect(layer.maxScale).toBe(0);
+    expect(layer.legendEnabled).toBe(true);
+    expect(JSON.stringify(capturedQueries[0])).toContain('"where":"status = 5"');
+    expect(JSON.stringify(capturedQueries[0])).toContain('"outFields":["OBJECTID"]');
     expect(events).toContain("feature-layer.loaded");
     expect(events).toContain("layer.visibility-changed");
     expect(events).toContain("layer.opacity-changed");
     expect(events).toContain("feature-layer.renderer-changed");
     expect(events).toContain("feature-layer.popup-template-changed");
     expect(events).toContain("feature-layer.labeling-changed");
+    expect(events).toContain("feature-layer.definition-expression-changed");
+    expect(events).toContain("feature-layer.out-fields-changed");
+    expect(events).toContain("feature-layer.labels-visible-changed");
+    expect(events).toContain("feature-layer.scale-range-changed");
+    expect(events).toContain("feature-layer.legend-enabled-changed");
     expect(events).toContain("feature-layer.refreshed");
   });
 });

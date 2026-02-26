@@ -92,8 +92,8 @@ export class FeatureLayerCompat {
   public title: string | undefined;
   public readonly serviceId: string;
   public readonly layerId: number;
-  public readonly outFields: string[] | undefined;
-  public readonly definitionExpression: string | undefined;
+  public outFields: string[] | undefined;
+  public definitionExpression: string | undefined;
   public renderer: unknown;
   public popupTemplate: unknown;
   public labelingInfo: unknown[];
@@ -203,6 +203,41 @@ export class FeatureLayerCompat {
   public setLabelingInfo(labelingInfo: readonly unknown[]): void {
     this.labelingInfo = [...labelingInfo];
     this.eventBus.emit("feature-layer.labeling-changed", { layerId: this.id }, this);
+  }
+
+  public setDefinitionExpression(definitionExpression: string | undefined): void {
+    this.definitionExpression = definitionExpression;
+    this.eventBus.emit(
+      "feature-layer.definition-expression-changed",
+      { layerId: this.id, definitionExpression },
+      this,
+    );
+  }
+
+  public setOutFields(outFields: string | readonly string[] | undefined): void {
+    this.outFields =
+      outFields === undefined ? undefined : Array.isArray(outFields) ? [...outFields] : [outFields];
+    this.eventBus.emit("feature-layer.out-fields-changed", { layerId: this.id, outFields: this.outFields }, this);
+  }
+
+  public setLabelsVisible(labelsVisible: boolean): void {
+    this.labelsVisible = labelsVisible;
+    this.eventBus.emit("feature-layer.labels-visible-changed", { layerId: this.id, labelsVisible }, this);
+  }
+
+  public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
+    this.minScale = normalizeScale(minScale);
+    this.maxScale = normalizeScale(maxScale);
+    this.eventBus.emit(
+      "feature-layer.scale-range-changed",
+      { layerId: this.id, minScale: this.minScale, maxScale: this.maxScale },
+      this,
+    );
+  }
+
+  public setLegendEnabled(legendEnabled: boolean): void {
+    this.legendEnabled = legendEnabled;
+    this.eventBus.emit("feature-layer.legend-enabled-changed", { layerId: this.id, legendEnabled }, this);
   }
 
   public createQuery(): FeatureLayerCreateQueryResult {
