@@ -7,6 +7,15 @@ export interface LayerListCompatOptions {
   eventBus?: CompatEventBus;
   includeHidden?: boolean;
   autoRefresh?: boolean;
+  listItemCreatedFunction?: (event: LayerListListItemCreatedEventCompat) => void;
+}
+
+export interface LayerListActionCompat {
+  id: string;
+  title?: string;
+  className?: string;
+  icon?: string;
+  value?: unknown;
 }
 
 export interface LayerListItemCompat {
@@ -14,8 +23,36 @@ export interface LayerListItemCompat {
   title: string;
   visible: boolean;
   layer: unknown;
+  actionsSections: LayerListActionCompat[][];
   children: LayerListItemCompat[];
 }
+
+export interface LayerListListItemCreatedEventCompat {
+  item: LayerListItemCompat;
+}
+
+export interface LayerListTriggerActionEventCompat {
+  action: LayerListActionCompat;
+  actionId: string;
+  item: LayerListItemCompat;
+  layer: unknown;
+}
+
+export interface LayerListUpdatedEventCompat {
+  itemCount: number;
+}
+
+export interface LayerListHandleCompat {
+  remove(): void;
+}
+
+interface LayerListEventPayloadByType {
+  "trigger-action": LayerListTriggerActionEventCompat;
+  updated: LayerListUpdatedEventCompat;
+}
+
+type LayerListEventTypeCompat = keyof LayerListEventPayloadByType;
+type LayerListListenerCompat = (event: any) => void;
 
 export class LayerListCompat {
   public readonly view: unknown;
@@ -26,6 +63,8 @@ export class LayerListCompat {
   public items: LayerListItemCompat[];
 
   private readonly autoRefresh: boolean;
+  private readonly listItemCreatedFunction: ((event: LayerListListItemCreatedEventCompat) => void) | undefined;
+  private readonly listenersByType: Map<LayerListEventTypeCompat, Set<LayerListListenerCompat>>;
   private subscriptions: CompatEventSubscription[];
 
   public constructor(options: LayerListCompatOptions = {}) {
@@ -36,7 +75,9 @@ export class LayerListCompat {
       options.eventBus ?? resolveCompatEventBus(this.view, this.map) ?? new CompatEventBus();
     this.includeHidden = options.includeHidden ?? false;
     this.autoRefresh = options.autoRefresh ?? true;
+    this.listItemCreatedFunction = options.listItemCreatedFunction;
     this.items = [];
+    this.listenersByType = new Map();
     this.subscriptions = [];
 
     if (this.autoRefresh) {
@@ -71,7 +112,15 @@ export class LayerListCompat {
     this.items = rootLayers
       .map((layer, index) => toLayerListItem(layer, this.includeHidden, index))
       .filter((item): item is LayerListItemCompat => item !== undefined);
-    this.eventBus.emit("layer-list.updated", { itemCount: this.items.length }, this);
+    if (this.listItemCreatedFunction) {
+      for (const item of this.items) {
+        applyListItemCreated(item, this.listItemCreatedFunction);
+      }
+    }
+
+    const updateEvent: LayerListUpdatedEventCompat = { itemCount: this.items.length };
+    this.eventBus.emit("layer-list.updated", updateEvent, this);
+    this.emit("updated", updateEvent);
     return this.items;
   }
 
@@ -88,10 +137,69 @@ export class LayerListCompat {
     return true;
   }
 
+  public setItemActions(
+    layerOrId: unknown | string,
+    actionsSections: readonly (readonly LayerListActionCompat[])[],
+  ): boolean {
+    const item = this.findItem(layerOrId);
+    if (!item) {
+      return false;
+    }
+
+    item.actionsSections = normalizeActionSections(actionsSections);
+    const updateEvent: LayerListUpdatedEventCompat = { itemCount: this.items.length };
+    this.eventBus.emit("layer-list.updated", updateEvent, this);
+    this.emit("updated", updateEvent);
+    return true;
+  }
+
+  public triggerAction(actionId: string, layerOrId?: unknown | string): boolean {
+    const item =
+      layerOrId === undefined ? this.items[0] : this.findItem(layerOrId);
+    if (!item) {
+      return false;
+    }
+
+    const action = findActionById(item.actionsSections, actionId);
+    if (!action) {
+      return false;
+    }
+
+    const event: LayerListTriggerActionEventCompat = {
+      action,
+      actionId: action.id,
+      item,
+      layer: item.layer,
+    };
+    this.eventBus.emit("layer-list.trigger-action", event, this);
+    this.emit("trigger-action", event);
+    return true;
+  }
+
+  public on<TType extends LayerListEventTypeCompat>(
+    type: TType,
+    listener: (event: LayerListEventPayloadByType[TType]) => void,
+  ): LayerListHandleCompat {
+    let listeners = this.listenersByType.get(type);
+    if (!listeners) {
+      listeners = new Set();
+      this.listenersByType.set(type, listeners);
+    }
+
+    const untypedListener = listener as LayerListListenerCompat;
+    listeners.add(untypedListener);
+    return {
+      remove: () => {
+        listeners?.delete(untypedListener);
+      },
+    };
+  }
+
   public destroy(): void {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.remove();
     }
+    this.listenersByType.clear();
   }
 
   private findLayer(layerOrId: unknown | string): unknown {
@@ -100,6 +208,28 @@ export class LayerListCompat {
       return findLayerByReference(rootLayers, layerOrId);
     }
     return findLayerById(rootLayers, layerOrId);
+  }
+
+  private findItem(layerOrId: unknown | string): LayerListItemCompat | undefined {
+    if (typeof layerOrId !== "string") {
+      return findItemByLayer(this.items, layerOrId);
+    }
+    return findItemById(this.items, layerOrId);
+  }
+
+  private emit(type: LayerListEventTypeCompat, event: unknown): void {
+    const listeners = this.listenersByType.get(type);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      try {
+        listener(event);
+      } catch {
+        // Listener errors should not break widget compatibility flow.
+      }
+    }
   }
 }
 
@@ -139,8 +269,75 @@ function toLayerListItem(
     title: toLayerTitle(layer, index),
     visible: toVisible(layer),
     layer,
+    actionsSections: [],
     children,
   };
+}
+
+function applyListItemCreated(
+  item: LayerListItemCompat,
+  callback: (event: LayerListListItemCreatedEventCompat) => void,
+): void {
+  callback({ item });
+  for (const child of item.children) {
+    applyListItemCreated(child, callback);
+  }
+}
+
+function normalizeActionSections(
+  actionsSections: readonly (readonly LayerListActionCompat[])[],
+): LayerListActionCompat[][] {
+  return actionsSections.map((section) =>
+    section
+      .filter((action) => typeof action.id === "string" && action.id.trim().length > 0)
+      .map((action) => ({ ...action })),
+  );
+}
+
+function findActionById(
+  actionsSections: readonly (readonly LayerListActionCompat[])[],
+  actionId: string,
+): LayerListActionCompat | undefined {
+  for (const section of actionsSections) {
+    for (const action of section) {
+      if (action.id === actionId) {
+        return action;
+      }
+    }
+  }
+  return undefined;
+}
+
+function findItemByLayer(
+  items: readonly LayerListItemCompat[],
+  layer: unknown,
+): LayerListItemCompat | undefined {
+  for (const item of items) {
+    if (item.layer === layer) {
+      return item;
+    }
+    const nested = findItemByLayer(item.children, layer);
+    if (nested) {
+      return nested;
+    }
+  }
+  return undefined;
+}
+
+function findItemById(
+  items: readonly LayerListItemCompat[],
+  id: string,
+): LayerListItemCompat | undefined {
+  for (const item of items) {
+    if (item.id === id) {
+      return item;
+    }
+    const nested = findItemById(item.children, id);
+    if (nested) {
+      return nested;
+    }
+  }
+  return undefined;
 }
 
 function findLayerByReference(layers: readonly unknown[], target: unknown): unknown {

@@ -124,6 +124,10 @@ describe("GroupLayerCompat", () => {
 describe("LayerListCompat", () => {
   it("builds a TOC model, toggles visibility, and auto-refreshes on map events", async () => {
     const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
     const map = new MapCompat({ eventBus });
 
     const layerA = { id: "a", title: "A", visible: true };
@@ -132,17 +136,45 @@ describe("LayerListCompat", () => {
 
     map.addMany([layerA, nested]);
 
-    const layerList = new LayerListCompat({ map, eventBus });
+    const layerList = new LayerListCompat({
+      map,
+      eventBus,
+      listItemCreatedFunction: ({ item }) => {
+        if (item.id === "a") {
+          item.actionsSections = [[{ id: "zoom-to", title: "Zoom To" }]];
+        }
+        if (item.id === "nested") {
+          item.actionsSections = [[{ id: "open-details", title: "Open Details" }]];
+        }
+      },
+    });
+    const triggered: unknown[] = [];
+    layerList.on("trigger-action", (event) => {
+      triggered.push(event);
+    });
     await layerList.load();
 
     expect(layerList.items).toHaveLength(2);
     expect(layerList.items[1]?.children[0]).toMatchObject({ id: "nested", title: "Nested" });
+    expect(layerList.triggerAction("zoom-to", "a")).toBe(true);
+    expect(layerList.triggerAction("open-details", "nested")).toBe(true);
 
     expect(layerList.toggle("a", false)).toBe(true);
     expect(layerA.visible).toBe(false);
 
     map.add(layerB);
     expect(layerList.items.some((item) => item.id === "b")).toBe(true);
+    expect(layerList.setItemActions("b", [[{ id: "open-metadata", title: "Open Metadata" }]])).toBe(true);
+    expect(layerList.triggerAction("open-metadata", "b")).toBe(true);
+    expect(layerList.triggerAction("missing-action", "b")).toBe(false);
+
+    expect(triggered).toHaveLength(3);
+    expect(triggered[0]).toMatchObject({ actionId: "zoom-to", layer: layerA });
+    expect(triggered[1]).toMatchObject({
+      actionId: "open-details",
+      item: { id: "nested" },
+    });
+    expect(eventTypes).toContain("layer-list.trigger-action");
 
     layerList.destroy();
   });

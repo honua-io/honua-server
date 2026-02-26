@@ -2234,7 +2234,7 @@ function isSafeLayerListCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "map", "container"]);
+  const allowed = new Set(["view", "map", "container", "listItemCreatedFunction"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {

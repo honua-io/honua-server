@@ -127,7 +127,15 @@ export type {
   CoordinateFormatCompat,
 } from "./esri-compat/coordinate-conversion.js";
 export { LayerListCompat } from "./esri-compat/layer-list.js";
-export type { LayerListCompatOptions, LayerListItemCompat } from "./esri-compat/layer-list.js";
+export type {
+  LayerListActionCompat,
+  LayerListCompatOptions,
+  LayerListHandleCompat,
+  LayerListItemCompat,
+  LayerListListItemCreatedEventCompat,
+  LayerListTriggerActionEventCompat,
+  LayerListUpdatedEventCompat,
+} from "./esri-compat/layer-list.js";
 export { LegendCompat } from "./esri-compat/legend.js";
 export type {
   LegendCompatOptions,

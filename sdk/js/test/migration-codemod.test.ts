@@ -345,6 +345,49 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/PopupTemplate");
   });
 
+  it("rewrites LayerList constructor when listItemCreatedFunction is present", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "layer-list-actions.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import LayerList from '@arcgis/core/widgets/LayerList';",
+        "const view = {};",
+        "const layerList = new LayerList({",
+        "  view,",
+        "  container: 'layer-list',",
+        "  listItemCreatedFunction: (event) => {",
+        "    event.item.actionsSections = [[{ id: 'zoom-to', title: 'Zoom To' }]];",
+        "  },",
+        "});",
+        "void layerList;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["layer-list"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { LayerListCompat } from "@honua/sdk-esri-compat";');
+    expect(nextSource).toContain("const layerList = new LayerListCompat({");
+    expect(nextSource).toContain("listItemCreatedFunction: (event) => {");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
+  });
+
   it("rewrites safe Feature constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "feature-widget.ts");
