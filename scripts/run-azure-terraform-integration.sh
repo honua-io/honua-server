@@ -9,8 +9,8 @@ STACK="both"
 LOCATION="${AZURE_LOCATION:-eastus}"
 ENVIRONMENT="${AZURE_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AZURE_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
-ACA_IMAGE="${HONUA_ACA_IMAGE:-ghcr.io/honua-io/honua-server:latest-aot}"
-FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-ghcr.io/honua-io/honua-server:latest-aot}"
+ACA_IMAGE="${HONUA_ACA_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
+FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
 ACA_PREVIOUS_IMAGE="${HONUA_ACA_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PREVIOUS_IMAGE="${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PLAN_SKU="${HONUA_FUNCTIONS_PLAN_SKU:-EP1}"
@@ -36,6 +36,11 @@ PLAN_ARTIFACT_DIR="${HONUA_TF_PLAN_ARTIFACT_DIR:-}"
 ALLOW_DESTROY_PLAN="${HONUA_ALLOW_DESTROY_PLAN:-false}"
 TTL_HOURS="${HONUA_TTL_HOURS:-8}"
 VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-az-$(date -u +%Y%m%d%H%M%S)}"
+DB_FIREWALL_START_IP="${HONUA_AZURE_DB_FIREWALL_START_IP:-}"
+DB_FIREWALL_END_IP="${HONUA_AZURE_DB_FIREWALL_END_IP:-}"
+EXISTING_DB_FQDN="${HONUA_AZURE_EXISTING_DB_FQDN:-}"
+EXISTING_DB_CONNECTION_STRING="${HONUA_AZURE_EXISTING_DB_CONNECTION_STRING:-}"
+EXISTING_REDIS_CONNECTION_STRING="${HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING:-}"
 
 TEMP_TF_ROOT=""
 ACA_APPLIED=false
@@ -67,6 +72,9 @@ Options:
   --max-ready-seconds <n>             Ready SLO threshold (default: 600)
   --max-load-error-rate <percent>     Max allowed load error rate (default: 0)
   --max-run-cost-usd <n>              Max allowed estimated run cost (0 disables cap)
+  --existing-db-fqdn <fqdn>           Reuse existing PostgreSQL server FQDN
+  --existing-db-connection <string>   Reuse existing PostgreSQL connection string
+  --existing-redis-connection <str>   Reuse existing Redis connection string
   --plan-artifact-dir <path>          Directory to persist plan artifacts
   --allow-destroy-plan                Allow plans containing resource destroys
   --ttl-hours <n>                     TTL tag value for provisioned resources (default: 8)
@@ -193,6 +201,18 @@ parse_args() {
         MAX_RUN_COST_USD="$2"
         shift 2
         ;;
+      --existing-db-fqdn)
+        EXISTING_DB_FQDN="$2"
+        shift 2
+        ;;
+      --existing-db-connection)
+        EXISTING_DB_CONNECTION_STRING="$2"
+        shift 2
+        ;;
+      --existing-redis-connection)
+        EXISTING_REDIS_CONNECTION_STRING="$2"
+        shift 2
+        ;;
       --plan-artifact-dir)
         PLAN_ARTIFACT_DIR="$2"
         shift 2
@@ -278,6 +298,11 @@ run_tf() {
     -e TF_VAR_honua_image \
     -e TF_VAR_enable_postgis \
     -e TF_VAR_redis_enabled \
+    -e TF_VAR_redis_connection_string \
+    -e TF_VAR_existing_db_fqdn \
+    -e TF_VAR_existing_db_connection_string \
+    -e TF_VAR_db_firewall_start_ip \
+    -e TF_VAR_db_firewall_end_ip \
     -e TF_VAR_min_replicas \
     -e TF_VAR_max_replicas \
     -e TF_VAR_key_vault_default_action \
@@ -354,7 +379,38 @@ plan_apply() {
 
   run_tf -chdir="$root" plan -input=false -no-color -out="$plan_file"
   analyze_plan "$root" "$plan_file" "$label"
-  run_tf -chdir="$root" apply -input=false -auto-approve -no-color "$plan_file"
+  run_tf_apply_with_token_retry "$root" "$plan_file"
+}
+
+run_tf_apply_with_token_retry() {
+  local root="$1"
+  local plan_file="$2"
+  local attempt
+  local apply_log
+  local exit_code
+
+  for attempt in 1 2; do
+    apply_log="$(mktemp)"
+
+    set +e
+    run_tf -chdir="$root" apply -input=false -auto-approve -no-color "$plan_file" 2>&1 | tee "$apply_log"
+    exit_code=${PIPESTATUS[0]}
+    set -e
+
+    if [[ "$exit_code" -eq 0 ]]; then
+      rm -f "$apply_log"
+      return 0
+    fi
+
+    if grep -q "ExpiredAuthenticationToken" "$apply_log" && [[ "$attempt" -lt 2 ]]; then
+      log_warn "Terraform apply failed with ExpiredAuthenticationToken; retrying apply once"
+      rm -f "$apply_log"
+      continue
+    fi
+
+    rm -f "$apply_log"
+    return "$exit_code"
+  done
 }
 
 wait_for_ready() {
@@ -632,6 +688,11 @@ verify_redis_exists() {
   local resource_group="$1"
   local count
 
+  if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    log_info "Using existing Redis connection string; skipping Azure Redis resource check"
+    return 0
+  fi
+
   count="$(run_az redis list -g "$resource_group" --query "length(@)" -o tsv)"
   if [[ -z "$count" || "$count" == "0" ]]; then
     log_error "Redis instance not found in resource group: $resource_group"
@@ -743,6 +804,18 @@ assert_cost_guardrail() {
   exit 1
 }
 
+validate_existing_resource_inputs() {
+  if [[ -n "$EXISTING_DB_FQDN" && -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    log_error "--existing-db-connection is required when --existing-db-fqdn is provided"
+    exit 1
+  fi
+
+  if [[ -z "$EXISTING_DB_FQDN" && -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    log_error "--existing-db-fqdn is required when --existing-db-connection is provided"
+    exit 1
+  fi
+}
+
 run_quota_preflight() {
   local usage_json
   local current
@@ -773,6 +846,34 @@ run_quota_preflight() {
   log_info "Azure quota preflight passed (cores current=${current:-unknown}, limit=${limit:-unknown}, required=+$required)"
 }
 
+detect_db_firewall_ips() {
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    DB_FIREWALL_START_IP=""
+    DB_FIREWALL_END_IP=""
+    log_info "Using existing DB connection string; skipping DB firewall configuration"
+    return
+  fi
+
+  if [[ -n "$DB_FIREWALL_START_IP" && -z "$DB_FIREWALL_END_IP" ]]; then
+    log_error "HONUA_AZURE_DB_FIREWALL_END_IP must be set when HONUA_AZURE_DB_FIREWALL_START_IP is provided"
+    exit 1
+  fi
+
+  if [[ -z "$DB_FIREWALL_START_IP" && -n "$DB_FIREWALL_END_IP" ]]; then
+    log_error "HONUA_AZURE_DB_FIREWALL_START_IP must be set when HONUA_AZURE_DB_FIREWALL_END_IP is provided"
+    exit 1
+  fi
+
+  if [[ -n "$DB_FIREWALL_START_IP" && -n "$DB_FIREWALL_END_IP" ]]; then
+    log_info "Using provided DB firewall range: $DB_FIREWALL_START_IP - $DB_FIREWALL_END_IP"
+    return
+  fi
+
+  DB_FIREWALL_START_IP="0.0.0.0"
+  DB_FIREWALL_END_IP="255.255.255.255"
+  log_warn "No DB firewall range provided; using open DB firewall range for this ephemeral validation run"
+}
+
 set_common_tf_vars() {
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -782,6 +883,11 @@ set_common_tf_vars() {
   export TF_VAR_db_admin_password="$HONUA_DB_PASSWORD"
   export TF_VAR_enable_postgis="true"
   export TF_VAR_redis_enabled="true"
+  export TF_VAR_redis_connection_string="$EXISTING_REDIS_CONNECTION_STRING"
+  export TF_VAR_existing_db_fqdn="$EXISTING_DB_FQDN"
+  export TF_VAR_existing_db_connection_string="$EXISTING_DB_CONNECTION_STRING"
+  export TF_VAR_db_firewall_start_ip="$DB_FIREWALL_START_IP"
+  export TF_VAR_db_firewall_end_ip="$DB_FIREWALL_END_IP"
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 
@@ -855,6 +961,8 @@ apply_aca_stack() {
   set_aca_tf_vars
 
   run_tf -chdir=examples/azure init -input=false -no-color
+  # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
+  ACA_APPLIED=true
 
   if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
     if [[ -z "$ACA_PREVIOUS_IMAGE" || "$ACA_PREVIOUS_IMAGE" == "$ACA_IMAGE" ]]; then
@@ -915,8 +1023,6 @@ apply_aca_stack() {
     fi
   fi
 
-  ACA_APPLIED=true
-
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
     assert_idempotent_plan "examples/azure"
   fi
@@ -934,6 +1040,8 @@ apply_functions_stack() {
   set_functions_tf_vars
 
   run_tf -chdir=examples/azure-functions init -input=false -no-color
+  # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
+  FUNCTIONS_APPLIED=true
 
   if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
     if [[ -z "$FUNCTIONS_PREVIOUS_IMAGE" || "$FUNCTIONS_PREVIOUS_IMAGE" == "$FUNCTIONS_IMAGE" ]]; then
@@ -976,8 +1084,6 @@ apply_functions_stack() {
     run_functions_checks "$url" "$db_fqdn" "$resource_group"
   fi
 
-  FUNCTIONS_APPLIED=true
-
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
     assert_idempotent_plan "examples/azure-functions"
   fi
@@ -1006,6 +1112,25 @@ destroy_functions_stack() {
   run_tf -chdir=examples/azure-functions destroy -input=false -auto-approve -no-color || log_warn "Functions destroy encountered errors"
 }
 
+delete_rg_if_exists() {
+  local resource_group="$1"
+
+  if run_az group show -n "$resource_group" >/dev/null 2>&1; then
+    log_warn "Janitor submitting resource group delete for $resource_group"
+    run_az group delete --name "$resource_group" --yes --no-wait || log_warn "Failed to submit delete for $resource_group"
+  fi
+}
+
+janitor_delete_resource_groups() {
+  if [[ "$STACK" == "aca" || "$STACK" == "both" ]]; then
+    delete_rg_if_exists "${ACA_NAME_PREFIX}-${ENVIRONMENT}-rg"
+  fi
+
+  if [[ "$STACK" == "functions" || "$STACK" == "both" ]]; then
+    delete_rg_if_exists "${FUNCTIONS_NAME_PREFIX}-${ENVIRONMENT}-rg"
+  fi
+}
+
 verify_no_leaks() {
   local count
   local i
@@ -1030,6 +1155,7 @@ cleanup() {
   if [[ "$AUTO_DESTROY" == "true" ]]; then
     destroy_functions_stack
     destroy_aca_stack
+    janitor_delete_resource_groups
     verify_no_leaks || exit_code=1
   else
     log_warn "Auto-destroy disabled; resources were left in Azure"
@@ -1059,8 +1185,10 @@ main() {
     HONUA_DB_PASSWORD
 
   normalize_identifiers
+  validate_existing_resource_inputs
   assert_cost_guardrail
   run_quota_preflight
+  detect_db_firewall_ips
   build_tf_image_if_needed
   prepare_tf_workspace
 
@@ -1073,6 +1201,13 @@ main() {
   log_info "Environment: $ENVIRONMENT"
   log_info "ACA prefix: $ACA_NAME_PREFIX"
   log_info "Functions prefix: $FUNCTIONS_NAME_PREFIX"
+  log_info "DB firewall range: $DB_FIREWALL_START_IP - $DB_FIREWALL_END_IP"
+  if [[ -n "$EXISTING_DB_FQDN" ]]; then
+    log_info "Reusing existing DB FQDN: $EXISTING_DB_FQDN"
+  fi
+  if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    log_info "Reusing existing Redis connection string"
+  fi
   log_info "Ready SLO seconds: $READY_SLO_SECONDS"
   log_info "Max load error rate: ${MAX_LOAD_ERROR_RATE_PERCENT}%"
 

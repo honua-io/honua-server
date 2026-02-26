@@ -86,6 +86,10 @@ Optional image override secrets:
   - `HONUA_SKIP_IDEMPOTENCY`
   - `HONUA_SKIP_PROTOCOL_CHECKS`
   - `HONUA_SKIP_SCALE_CHECK`
+- Optional existing dependency reuse (faster/cheaper validation runs):
+  - `HONUA_AZURE_EXISTING_DB_FQDN`
+  - `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING`
+  - `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`
 - Drift:
   - `HONUA_DRIFT_ROOTS`
   - `HONUA_DRIFT_VAR_FILES`
@@ -112,6 +116,11 @@ Local script entry points:
 
 ```bash
 ./scripts/run-azure-terraform-integration.sh --stack both
+./scripts/run-azure-terraform-integration.sh \
+  --stack aca \
+  --existing-db-fqdn mypg.postgres.database.azure.com \
+  --existing-db-connection "Host=mypg.postgres.database.azure.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
+  --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False"
 ./scripts/run-aws-terraform-integration.sh --stack both
 ./scripts/run-k8s-terraform-integration.sh
 ./scripts/run-aks-terraform-integration.sh

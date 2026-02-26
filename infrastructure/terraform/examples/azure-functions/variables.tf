@@ -29,10 +29,23 @@ variable "db_admin_password" {
   default     = null
 }
 
+variable "existing_db_fqdn" {
+  description = "Optional existing PostgreSQL FQDN to reuse."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Optional existing PostgreSQL connection string to reuse."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "honua_image" {
   description = "Container image (Functions-compatible)."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
+  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "plan_sku_name" {
@@ -51,6 +64,25 @@ variable "redis_enabled" {
   description = "Provision Azure Cache for Redis."
   type        = bool
   default     = true
+}
+
+variable "redis_connection_string" {
+  description = "Optional existing Redis connection string to reuse."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "db_firewall_start_ip" {
+  description = "Optional PostgreSQL firewall start IP."
+  type        = string
+  default     = ""
+}
+
+variable "db_firewall_end_ip" {
+  description = "Optional PostgreSQL firewall end IP."
+  type        = string
+  default     = ""
 }
 
 variable "skip_migrations" {

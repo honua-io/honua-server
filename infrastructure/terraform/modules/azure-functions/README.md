@@ -10,7 +10,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "ghcr.io/honua-io/honua-server:latest-aot"
+  image          = "ghcr.io/honua-io/honua-server:latest"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -68,13 +68,15 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | `ghcr.io/.../latest-aot` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
+| `image` | `ghcr.io/.../latest` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
 | `plan_sku_name` | `EP1` | Premium (`EP1`–`EP3`) or Consumption (`Y1`). Premium recommended. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on database. **Set to true.** |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
+| `existing_db_connection_string` + `existing_db_fqdn` | `""` | Reuse an existing PostgreSQL server and skip DB creation/bootstrap. |
 | `db_sku_name` | `B_Standard_B1ms` | PostgreSQL SKU. Use `GP_Standard_*` for production. |
 | `db_geo_redundant_backup_enabled` | true | Geo-redundant backups. |
 | `redis_enabled` | true | Provision Azure Cache for Redis. |
+| `redis_connection_string` | `""` | Reuse an existing Redis instance instead of provisioning one. |
 | `app_insights_enabled` | true | Enable Application Insights. |
 
 See `variables.tf` for the complete list.

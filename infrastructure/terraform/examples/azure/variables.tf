@@ -29,10 +29,23 @@ variable "db_admin_password" {
   default     = null
 }
 
+variable "existing_db_fqdn" {
+  description = "Optional existing PostgreSQL FQDN to reuse."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Optional existing PostgreSQL connection string to reuse."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "honua_image" {
   description = "Container image to deploy."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
+  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "enable_postgis" {
@@ -45,6 +58,13 @@ variable "redis_enabled" {
   description = "Provision Azure Cache for Redis."
   type        = bool
   default     = true
+}
+
+variable "redis_connection_string" {
+  description = "Optional existing Redis connection string to reuse."
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "min_replicas" {
@@ -63,6 +83,18 @@ variable "key_vault_default_action" {
   description = "Key Vault network ACL default action (Allow is useful for local integration tests)."
   type        = string
   default     = "Allow"
+}
+
+variable "db_firewall_start_ip" {
+  description = "Optional PostgreSQL firewall start IP."
+  type        = string
+  default     = ""
+}
+
+variable "db_firewall_end_ip" {
+  description = "Optional PostgreSQL firewall end IP."
+  type        = string
+  default     = ""
 }
 
 variable "tags" {

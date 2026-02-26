@@ -16,6 +16,14 @@ locals {
     ManagedBy   = "terraform"
   }, var.tags)
   storage_account_name = substr(replace(lower("${var.name_prefix}${var.environment}${random_string.storage_suffix.result}"), "-", ""), 0, 24)
+  db_use_existing      = var.existing_db_connection_string != ""
+}
+
+check "existing_db_inputs" {
+  assert {
+    condition     = (var.existing_db_fqdn == "" && var.existing_db_connection_string == "") || (var.existing_db_fqdn != "" && var.existing_db_connection_string != "")
+    error_message = "existing_db_fqdn and existing_db_connection_string must be set together."
+  }
 }
 
 resource "azurerm_resource_group" "this" {
@@ -44,15 +52,16 @@ resource "azurerm_service_plan" "this" {
 }
 
 resource "random_password" "db" {
-  count            = var.db_admin_password == null ? 1 : 0
+  count            = var.db_admin_password == null && !local.db_use_existing ? 1 : 0
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?"
 }
 
 locals {
-  db_password          = var.db_admin_password != null ? var.db_admin_password : random_password.db[0].result
-  db_connection_string = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
+  db_password          = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  db_server_fqdn       = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
+  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_enabled        = var.redis_enabled || var.redis_connection_string != ""
   redis_create         = var.redis_enabled && var.redis_connection_string == ""
   redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
@@ -61,6 +70,7 @@ locals {
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
 resource "azurerm_postgresql_flexible_server" "this" {
   #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
+  count                  = local.db_use_existing ? 0 : 1
   name                   = "${local.name}-pg"
   resource_group_name    = azurerm_resource_group.this.name
   location               = azurerm_resource_group.this.location
@@ -76,17 +86,27 @@ resource "azurerm_postgresql_flexible_server" "this" {
   tags = local.tags
 }
 
+resource "azurerm_postgresql_flexible_server_firewall_rule" "validation" {
+  count = !local.db_use_existing && var.db_public_network_access && var.db_firewall_start_ip != "" && var.db_firewall_end_ip != "" ? 1 : 0
+
+  name             = "validation-access"
+  server_id        = azurerm_postgresql_flexible_server.this[0].id
+  start_ip_address = var.db_firewall_start_ip
+  end_ip_address   = var.db_firewall_end_ip
+}
+
 resource "azurerm_postgresql_flexible_server_database" "this" {
+  count     = local.db_use_existing ? 0 : 1
   name      = var.db_name
-  server_id = azurerm_postgresql_flexible_server.this.id
+  server_id = azurerm_postgresql_flexible_server.this[0].id
   charset   = "UTF8"
   collation = "en_US.utf8"
 }
 
 resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
-  count     = var.enable_postgis ? 1 : 0
+  count     = !local.db_use_existing && var.enable_postgis ? 1 : 0
   name      = "azure.extensions"
-  server_id = azurerm_postgresql_flexible_server.this.id
+  server_id = azurerm_postgresql_flexible_server.this[0].id
   value     = "POSTGIS,POSTGIS_RASTER"
 }
 
@@ -164,23 +184,43 @@ resource "azurerm_linux_function_app" "this" {
 }
 
 resource "null_resource" "enable_postgis" {
-  count = var.enable_postgis ? 1 : 0
+  count = !local.db_use_existing && var.enable_postgis ? 1 : 0
 
   triggers = {
-    db_endpoint = azurerm_postgresql_flexible_server.this.fqdn
+    db_endpoint = local.db_server_fqdn
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS + PostGIS Raster on ${azurerm_postgresql_flexible_server.this.fqdn}" \
-        && PGPASSWORD='${local.db_password}' psql \
-          --host=${azurerm_postgresql_flexible_server.this.fqdn} \
+      echo "Waiting for PostgreSQL readiness on ${local.db_server_fqdn}"
+      for attempt in $(seq 1 30); do
+        if PGCONNECT_TIMEOUT=5 PGPASSWORD='${local.db_password}' psql \
+          --host=${local.db_server_fqdn} \
           --username=${var.db_admin_username} \
           --dbname=${var.db_name} \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+          --command="SELECT 1;" >/dev/null 2>&1; then
+          break
+        fi
+        if [ "$attempt" -eq 30 ]; then
+          echo "PostgreSQL readiness check failed after 30 attempts" >&2
+          exit 1
+        fi
+        sleep 10
+      done
+
+      echo "Enabling PostGIS + PostGIS Raster on ${local.db_server_fqdn}"
+      PGCONNECT_TIMEOUT=5 PGPASSWORD='${local.db_password}' psql \
+        --host=${local.db_server_fqdn} \
+        --username=${var.db_admin_username} \
+        --dbname=${var.db_name} \
+        --set=ON_ERROR_STOP=1 \
+        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
   }
 
-  depends_on = [azurerm_postgresql_flexible_server_database.this]
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.this,
+    azurerm_postgresql_flexible_server_firewall_rule.validation
+  ]
 }

@@ -10,7 +10,7 @@ output "container_app_fqdn" {
 
 output "database_fqdn" {
   description = "PostgreSQL server FQDN."
-  value       = azurerm_postgresql_flexible_server.this.fqdn
+  value       = local.db_server_fqdn
   sensitive   = true
 }
 

@@ -10,7 +10,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "ghcr.io/honua-io/honua-server:latest-aot"
+  image          = "ghcr.io/honua-io/honua-server:latest"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -36,7 +36,7 @@ module "honua" {
   # Container
   image            = "ghcr.io/honua-io/honua-server:v1.2.3-aot"  # Pin to a release AOT tag
   container_cpu    = 1.0     # 1 vCPU
-  container_memory = 2.0     # 2 GiB
+  container_memory = "2Gi"
   min_replicas     = 2       # Minimum 2 for HA
   max_replicas     = 10
 
@@ -82,15 +82,17 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | `ghcr.io/.../latest-aot` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
+| `image` | `ghcr.io/.../latest` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
-| `container_memory` | 1.0 | Memory in GiB. |
+| `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |
 | `min_replicas` / `max_replicas` | 1 / 5 | Scaling range. Use min 2 for production. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster extensions. **Set to true.** |
+| `existing_db_connection_string` + `existing_db_fqdn` | `""` | Reuse an existing PostgreSQL server and skip DB creation/bootstrap. |
 | `db_sku_name` | `B_Standard_B1ms` | PostgreSQL SKU. Use `GP_Standard_*` for production. |
 | `db_storage_mb` | 32768 | Database storage in MB. |
 | `db_geo_redundant_backup_enabled` | true | Geo-redundant backups. |
 | `redis_enabled` | true | Provision Azure Cache for Redis. |
+| `redis_connection_string` | `""` | Reuse an existing Redis instance instead of provisioning one. |
 | `redis_sku_name` | `Standard` | Redis SKU (Basic, Standard, Premium). |
 | `key_vault_default_action` | `Deny` | Key Vault network ACL default. |
 | `enable_ingress` | true | Expose Container App via external ingress. |

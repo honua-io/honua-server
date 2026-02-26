@@ -7,7 +7,7 @@ output "function_app_url" {
 }
 
 output "db_fqdn" {
-  value     = azurerm_postgresql_flexible_server.this.fqdn
+  value     = local.db_server_fqdn
   sensitive = true
 }
 
