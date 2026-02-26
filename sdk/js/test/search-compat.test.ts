@@ -90,6 +90,8 @@ describe("SearchCompat", () => {
     expect(events).toContain("search.sources-changed");
     expect(events).toContain("search.result-selected");
     expect(events).toContain("search.cleared");
+
+    search.destroy();
   });
 
   it("builds default layer-backed sources from view map", async () => {
@@ -120,8 +122,9 @@ describe("SearchCompat", () => {
         ],
       }),
     };
+    const map = new MapCompat({ layers: [layer] });
     const view = new MapViewCompat({
-      map: new MapCompat({ layers: [layer] }),
+      map,
       center: [-157.8, 21.3],
       zoom: 4,
     });
@@ -140,5 +143,27 @@ describe("SearchCompat", () => {
       name: "Central Park",
     });
     expect(search.selectedResultIndex).toBe(0);
+
+    const nextLayer = {
+      id: "landmarks",
+      title: "Landmarks",
+      queryFeatures: async () => ({
+        features: [
+          {
+            attributes: {
+              NAME: "Diamond Head",
+            },
+            geometry: {
+              x: -157.805,
+              y: 21.262,
+            },
+          },
+        ],
+      }),
+    };
+    map.add(nextLayer);
+    expect(search.sources.length).toBeGreaterThanOrEqual(2);
+
+    search.destroy();
   });
 });

@@ -1476,7 +1476,7 @@ describe("runEsriCompatCodemod", () => {
         "const basemapToggle = new BasemapToggle({ view, container: 'basemap-div', nextBasemap: 'satellite' });",
         "const locate = new Locate({ view, container: 'locate-div' });",
         "const scaleBar = new ScaleBar({ view, container: 'scale-div', unit: 'dual' });",
-        "const search = new Search({ view, container: 'search-div', includeDefaultSources: false });",
+        "const search = new Search({ view, container: 'search-div', includeDefaultSources: false, autoRefreshSources: false });",
         "const basemapGallery = new BasemapGallery({ view, container: 'gallery-div', autoRefresh: false });",
         "const compass = new Compass({ view });",
         "const expand = new Expand({ view, content: legend, expanded: false });",
@@ -1661,7 +1661,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("const locate = new LocateCompat({ view, container: 'locate-div' });");
     expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, container: 'scale-div', unit: 'dual' });");
     expect(nextSource).toContain(
-      "const search = new SearchCompat({ view, container: 'search-div', includeDefaultSources: false });",
+      "const search = new SearchCompat({ view, container: 'search-div', includeDefaultSources: false, autoRefreshSources: false });",
     );
     expect(nextSource).toContain(
       "const basemapGallery = new BasemapGalleryCompat({ view, container: 'gallery-div', autoRefresh: false });",

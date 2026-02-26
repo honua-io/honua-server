@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
 
 export interface SearchCompatOptions {
   view?: unknown;
@@ -7,6 +7,7 @@ export interface SearchCompatOptions {
   sources?: readonly SearchSourceCompat[];
   includeDefaultSources?: boolean;
   autoNavigate?: boolean;
+  autoRefreshSources?: boolean;
 }
 
 export interface SearchRequestCompat {
@@ -49,7 +50,8 @@ export class SearchCompat {
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly autoNavigate: boolean;
-  public readonly includeDefaultSources: boolean;
+  public includeDefaultSources: boolean;
+  public readonly autoRefreshSources: boolean;
   public sources: SearchSourceCompat[];
   public searchTerm: string;
   public results: SearchResultCompat[];
@@ -57,21 +59,26 @@ export class SearchCompat {
   public selectedResult: SearchResultCompat | undefined;
   public selectedResultIndex: number;
 
+  private readonly subscriptions: CompatEventSubscription[];
+  private customSources: SearchSourceCompat[];
+
   public constructor(options: SearchCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.autoNavigate = options.autoNavigate ?? true;
     this.includeDefaultSources = options.includeDefaultSources ?? true;
-    this.sources = [
-      ...(options.sources ?? []),
-      ...(this.includeDefaultSources ? resolveViewSearchSources(options.view) : []),
-    ];
+    this.autoRefreshSources = options.autoRefreshSources ?? true;
+    this.customSources = [...(options.sources ?? [])];
+    this.sources = [];
     this.searchTerm = "";
     this.results = [];
     this.suggestions = [];
     this.selectedResult = undefined;
     this.selectedResultIndex = -1;
+    this.subscriptions = [];
+    this.refreshSourceSubscriptions();
+    this.rebuildSources(false);
   }
 
   public async search(termOrRequest: string | Partial<SearchRequestCompat>): Promise<SearchResponseCompat> {
@@ -177,26 +184,25 @@ export class SearchCompat {
     options: { includeDefaultSources?: boolean } = {},
   ): void {
     const includeDefaults = options.includeDefaultSources ?? this.includeDefaultSources;
-    this.sources = [
-      ...sources,
-      ...(includeDefaults ? resolveViewSearchSources(this.view) : []),
-    ];
-    this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+    this.includeDefaultSources = includeDefaults;
+    this.customSources = [...sources];
+    this.refreshSourceSubscriptions();
+    this.rebuildSources(true);
   }
 
   public addSource(source: SearchSourceCompat): void {
-    this.sources.push(source);
-    this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+    this.customSources.push(source);
+    this.rebuildSources(true);
   }
 
   public removeSource(source: SearchSourceCompat): boolean {
-    const index = this.sources.indexOf(source);
+    const index = this.customSources.indexOf(source);
     if (index < 0) {
       return false;
     }
 
-    this.sources.splice(index, 1);
-    this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+    this.customSources.splice(index, 1);
+    this.rebuildSources(true);
     return true;
   }
 
@@ -248,6 +254,12 @@ export class SearchCompat {
     return this.selectResult(previous);
   }
 
+  public destroy(): void {
+    for (const subscription of this.subscriptions.splice(0)) {
+      subscription.remove();
+    }
+  }
+
   private async navigateToSelectedResult(): Promise<void> {
     if (!this.selectedResult) {
       return;
@@ -263,6 +275,45 @@ export class SearchCompat {
 
     await this.view.goTo(target);
     this.eventBus.emit("search.navigated", { target }, this);
+  }
+
+  private rebuildSources(emitChange: boolean): void {
+    this.sources = [
+      ...this.customSources,
+      ...(this.includeDefaultSources ? resolveViewSearchSources(this.view) : []),
+    ];
+    if (emitChange) {
+      this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
+    }
+  }
+
+  private refreshSourceSubscriptions(): void {
+    for (const subscription of this.subscriptions.splice(0)) {
+      subscription.remove();
+    }
+
+    if (!this.includeDefaultSources || !this.autoRefreshSources) {
+      return;
+    }
+
+    const refreshEvents = [
+      "map.layer-added",
+      "map.layer-removed",
+      "map.layers-added",
+      "map.layers-cleared",
+      "map.layer-reordered",
+      "group-layer.layer-added",
+      "group-layer.layer-removed",
+      "group-layer.layers-added",
+      "group-layer.layers-cleared",
+    ] as const;
+    for (const eventType of refreshEvents) {
+      this.subscriptions.push(
+        this.eventBus.on(eventType, () => {
+          this.rebuildSources(true);
+        }),
+      );
+    }
   }
 }
 

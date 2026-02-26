@@ -4555,7 +4555,14 @@ function isSafeSearchWidgetCompatCall(
     };
   }
 
-  const allowed = new Set(["view", "container", "sources", "includeDefaultSources", "autoNavigate"]);
+  const allowed = new Set([
+    "view",
+    "container",
+    "sources",
+    "includeDefaultSources",
+    "autoNavigate",
+    "autoRefreshSources",
+  ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
