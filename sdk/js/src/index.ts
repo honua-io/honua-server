@@ -183,6 +183,8 @@ export type {
   SearchSuggestionCompat,
   SuggestResponseCompat,
 } from "./esri-compat/search.js";
+export { SwipeCompat } from "./esri-compat/swipe.js";
+export type { SwipeCompatOptions } from "./esri-compat/swipe.js";
 export { TrackCompat } from "./esri-compat/track.js";
 export type { TrackCompatOptions, TrackPositionCompat } from "./esri-compat/track.js";
 export { MeasurementCompat } from "./esri-compat/measurement.js";

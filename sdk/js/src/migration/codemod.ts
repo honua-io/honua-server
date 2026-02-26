@@ -33,6 +33,7 @@ export type CodemodConstructorKind =
   | "feature-table-widget"
   | "legend-widget"
   | "popup-widget"
+  | "swipe-widget"
   | "print-widget"
   | "home-widget"
   | "basemap-toggle-widget"
@@ -173,6 +174,14 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     arcGisModules: new Set([
       "@arcgis/core/widgets/Popup",
       "@arcgis/core/widgets/Popup.js",
+    ]),
+  },
+  {
+    kind: "swipe-widget",
+    compatSymbol: "SwipeCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/widgets/Swipe",
+      "@arcgis/core/widgets/Swipe.js",
     ]),
   },
   {
@@ -806,6 +815,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "feature-table-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "legend-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "popup-widget": { total: 0, autoMigrated: 0, manual: 0 },
+    "swipe-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "print-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "home-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "basemap-toggle-widget": { total: 0, autoMigrated: 0, manual: 0 },
@@ -1487,6 +1497,8 @@ function isSafeConstructorCall(
       return isSafeLegendWidgetCompatCall(node);
     case "popup-widget":
       return isSafePopupWidgetCompatCall(node);
+    case "swipe-widget":
+      return isSafeSwipeWidgetCompatCall(node);
     case "print-widget":
       return isSafePrintWidgetCompatCall(node);
     case "home-widget":
@@ -2229,6 +2241,55 @@ function isSafePopupWidgetCompatCall(
       return {
         ok: false,
         reason: "Popup options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSwipeWidgetCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Swipe constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Swipe constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set([
+    "view",
+    "container",
+    "leadingLayers",
+    "trailingLayers",
+    "position",
+  ]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Swipe options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Swipe options include unsupported properties; requires manual migration.",
       };
     }
   }
