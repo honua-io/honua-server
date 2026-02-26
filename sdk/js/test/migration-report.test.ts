@@ -17,6 +17,9 @@ function createCodemodResult(): EsriCompatCodemodResult {
       byKind: {
         "feature-layer": { total: 2, autoMigrated: 1, manual: 1 },
         graphic: { total: 0, autoMigrated: 0, manual: 0 },
+        "point-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+        "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+        "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
         "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
         "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
         "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
@@ -167,6 +170,9 @@ describe("buildJsMigrationReport", () => {
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 1,
       graphic: 0,
+      "point-geometry": 0,
+      "simple-line-symbol": 0,
+      "simple-marker-symbol": 0,
       "graphics-layer": 0,
       "group-layer": 0,
       "map-image-layer": 0,

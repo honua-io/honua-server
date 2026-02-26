@@ -26,6 +26,9 @@ export type CodemodTarget = "honua-compat" | "esri-leaflet";
 export type CodemodConstructorKind =
   | "feature-layer"
   | "graphic"
+  | "point-geometry"
+  | "simple-line-symbol"
+  | "simple-marker-symbol"
   | "graphics-layer"
   | "group-layer"
   | "map-image-layer"
@@ -95,6 +98,27 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     kind: "graphic",
     compatSymbol: "GraphicCompat",
     arcGisModules: new Set(["@arcgis/core/Graphic", "@arcgis/core/Graphic.js"]),
+  },
+  {
+    kind: "point-geometry",
+    compatSymbol: "PointCompat",
+    arcGisModules: new Set(["@arcgis/core/geometry/Point", "@arcgis/core/geometry/Point.js"]),
+  },
+  {
+    kind: "simple-line-symbol",
+    compatSymbol: "SimpleLineSymbolCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/symbols/SimpleLineSymbol",
+      "@arcgis/core/symbols/SimpleLineSymbol.js",
+    ]),
+  },
+  {
+    kind: "simple-marker-symbol",
+    compatSymbol: "SimpleMarkerSymbolCompat",
+    arcGisModules: new Set([
+      "@arcgis/core/symbols/SimpleMarkerSymbol",
+      "@arcgis/core/symbols/SimpleMarkerSymbol.js",
+    ]),
   },
   {
     kind: "graphics-layer",
@@ -1320,6 +1344,9 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
   return {
     "feature-layer": { total: 0, autoMigrated: 0, manual: 0 },
     graphic: { total: 0, autoMigrated: 0, manual: 0 },
+    "point-geometry": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-line-symbol": { total: 0, autoMigrated: 0, manual: 0 },
+    "simple-marker-symbol": { total: 0, autoMigrated: 0, manual: 0 },
     "graphics-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "group-layer": { total: 0, autoMigrated: 0, manual: 0 },
     "map-image-layer": { total: 0, autoMigrated: 0, manual: 0 },
@@ -2004,6 +2031,12 @@ function isSafeConstructorCall(
       return isSafeFeatureLayerCompatCall(node);
     case "graphic":
       return isSafeGraphicCompatCall(node);
+    case "point-geometry":
+      return isSafePointGeometryCompatCall(node);
+    case "simple-line-symbol":
+      return isSafeSimpleLineSymbolCompatCall(node);
+    case "simple-marker-symbol":
+      return isSafeSimpleMarkerSymbolCompatCall(node);
     case "graphics-layer":
       return isSafeGraphicsLayerCompatCall(node);
     case "group-layer":
@@ -2347,6 +2380,137 @@ function isSafeGraphicCompatCall(
       return {
         ok: false,
         reason: "Graphic options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafePointGeometryCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "Point constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "Point constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["x", "y", "z", "m", "spatialReference"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason: "Point options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "Point options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleLineSymbolCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleLineSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleLineSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["style", "color", "width"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "SimpleLineSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "SimpleLineSymbol options include unsupported properties; requires manual migration.",
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function isSafeSimpleMarkerSymbolCompatCall(
+  node: ts.NewExpression,
+): { ok: true } | { ok: false; reason: string } {
+  const args = node.arguments;
+  if (!args || args.length === 0) {
+    return { ok: true };
+  }
+  if (args.length !== 1) {
+    return {
+      ok: false,
+      reason: "SimpleMarkerSymbol constructor has more than one argument; requires manual migration.",
+    };
+  }
+
+  const [arg] = args;
+  if (!ts.isObjectLiteralExpression(arg)) {
+    return {
+      ok: false,
+      reason: "SimpleMarkerSymbol constructor argument is not an object literal.",
+    };
+  }
+
+  const allowed = new Set(["style", "color", "size", "outline"]);
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) {
+      return {
+        ok: false,
+        reason:
+          "SimpleMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
+      };
+    }
+
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      return {
+        ok: false,
+        reason: "SimpleMarkerSymbol options include unsupported properties; requires manual migration.",
       };
     }
   }

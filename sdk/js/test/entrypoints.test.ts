@@ -46,6 +46,7 @@ import {
   PopupCompat,
   PopupTemplateCompat,
   OAuthInfoCompat,
+  PointCompat,
   QueryCompat,
   RouteLayerCompat,
   RouteTaskCompat,
@@ -53,6 +54,8 @@ import {
   resetEsriConfig,
   SearchCompat,
   SketchCompat,
+  SimpleLineSymbolCompat,
+  SimpleMarkerSymbolCompat,
   ScaleBarCompat,
   SwipeCompat,
   TableListCompat,
@@ -97,6 +100,7 @@ describe("entrypoint modules", () => {
     expect(FullscreenCompat).toBeTypeOf("function");
     expect(ZoomCompat).toBeTypeOf("function");
     expect(GraphicCompat).toBeTypeOf("function");
+    expect(PointCompat).toBeTypeOf("function");
     expect(LocateCompat).toBeTypeOf("function");
     expect(ScaleBarCompat).toBeTypeOf("function");
     expect(CoordinateConversionCompat).toBeTypeOf("function");
@@ -144,6 +148,8 @@ describe("entrypoint modules", () => {
     expect(parseMapServiceUrl).toBeTypeOf("function");
     expect(SceneViewCompat).toBeTypeOf("function");
     expect(SearchCompat).toBeTypeOf("function");
+    expect(SimpleLineSymbolCompat).toBeTypeOf("function");
+    expect(SimpleMarkerSymbolCompat).toBeTypeOf("function");
     expect(WebMapCompat).toBeTypeOf("function");
     expect(watch).toBeTypeOf("function");
     expect(when).toBeTypeOf("function");

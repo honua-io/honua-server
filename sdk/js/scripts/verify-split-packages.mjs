@@ -87,6 +87,7 @@ import {
   PrintCompat,
   PopupCompat,
   OAuthInfoCompat,
+  PointCompat,
   QueryCompat,
   reactiveUtils,
   resetEsriConfig,
@@ -94,6 +95,8 @@ import {
   RouteTaskCompat,
   SearchCompat,
   SketchCompat,
+  SimpleLineSymbolCompat,
+  SimpleMarkerSymbolCompat,
   ScaleBarCompat,
   SwipeCompat,
   TableListCompat,
@@ -149,6 +152,7 @@ if (typeof ExpandCompat !== "function") throw new Error("ExpandCompat export mis
 if (typeof FullscreenCompat !== "function") throw new Error("FullscreenCompat export missing");
 if (typeof ZoomCompat !== "function") throw new Error("ZoomCompat export missing");
 if (typeof GraphicCompat !== "function") throw new Error("GraphicCompat export missing");
+if (typeof PointCompat !== "function") throw new Error("PointCompat export missing");
 if (typeof GraphicsLayerCompat !== "function") throw new Error("GraphicsLayerCompat export missing");
 if (typeof GroupLayerCompat !== "function") throw new Error("GroupLayerCompat export missing");
 if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export missing");
@@ -166,6 +170,10 @@ if (typeof RouteLayerCompat !== "function") throw new Error("RouteLayerCompat ex
 if (typeof RouteTaskCompat !== "function") throw new Error("RouteTaskCompat export missing");
 if (typeof SearchCompat !== "function") throw new Error("SearchCompat export missing");
 if (typeof SketchCompat !== "function") throw new Error("SketchCompat export missing");
+if (typeof SimpleLineSymbolCompat !== "function")
+  throw new Error("SimpleLineSymbolCompat export missing");
+if (typeof SimpleMarkerSymbolCompat !== "function")
+  throw new Error("SimpleMarkerSymbolCompat export missing");
 if (typeof TileLayerCompat !== "function") throw new Error("TileLayerCompat export missing");
 if (typeof SwipeCompat !== "function") throw new Error("SwipeCompat export missing");
 if (typeof TableListCompat !== "function") throw new Error("TableListCompat export missing");

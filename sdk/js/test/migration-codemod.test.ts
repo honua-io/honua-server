@@ -196,6 +196,65 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/rest/support/Query");
   });
 
+  it("rewrites safe geometry/symbol constructors and removes ArcGIS imports", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "geometry-symbol.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Point from '@arcgis/core/geometry/Point';",
+        "import SimpleLineSymbol from '@arcgis/core/symbols/SimpleLineSymbol';",
+        "import SimpleMarkerSymbol from '@arcgis/core/symbols/SimpleMarkerSymbol';",
+        "const point = new Point({ x: -157.81, y: 21.30, spatialReference: { wkid: 4326 } });",
+        "const outline = new SimpleLineSymbol({ style: 'solid', color: 'white', width: 1 });",
+        "const symbol = new SimpleMarkerSymbol({ style: 'circle', color: 'orange', size: 12, outline });",
+        "void point; void outline; void symbol;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["point-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["simple-line-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["simple-marker-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { PointCompat, SimpleLineSymbolCompat, SimpleMarkerSymbolCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new PointCompat({ x: -157.81, y: 21.30, spatialReference: { wkid: 4326 } })");
+    expect(nextSource).toContain(
+      "new SimpleLineSymbolCompat({ style: 'solid', color: 'white', width: 1 })",
+    );
+    expect(nextSource).toContain(
+      "new SimpleMarkerSymbolCompat({ style: 'circle', color: 'orange', size: 12, outline })",
+    );
+    expect(nextSource).not.toContain("@arcgis/core/geometry/Point");
+    expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleLineSymbol");
+    expect(nextSource).not.toContain("@arcgis/core/symbols/SimpleMarkerSymbol");
+  });
+
   it("rewrites safe MapImageLayer constructor and removes ArcGIS import", () => {
     const root = makeTempProject();
     const file = path.join(root, "map-image-layer.ts");

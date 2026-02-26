@@ -99,6 +99,12 @@ export type {
 } from "./esri-compat/graphics-layer.js";
 export { GraphicCompat } from "./esri-compat/graphic.js";
 export type { GraphicCompatOptions } from "./esri-compat/graphic.js";
+export { PointCompat } from "./esri-compat/point.js";
+export type { PointCompatOptions } from "./esri-compat/point.js";
+export { SimpleLineSymbolCompat } from "./esri-compat/simple-line-symbol.js";
+export type { SimpleLineSymbolCompatOptions } from "./esri-compat/simple-line-symbol.js";
+export { SimpleMarkerSymbolCompat } from "./esri-compat/simple-marker-symbol.js";
+export type { SimpleMarkerSymbolCompatOptions } from "./esri-compat/simple-marker-symbol.js";
 export { GroupLayerCompat } from "./esri-compat/group-layer.js";
 export type { GroupLayerCompatOptions } from "./esri-compat/group-layer.js";
 export { MapCompat } from "./esri-compat/map.js";

@@ -105,6 +105,9 @@ describe("arcgis migration integration", () => {
     expect(report.manualTodosByKind).toEqual({
       "feature-layer": 0,
       graphic: 0,
+      "point-geometry": 0,
+      "simple-line-symbol": 0,
+      "simple-marker-symbol": 0,
       "graphics-layer": 0,
       "group-layer": 0,
       "map-image-layer": 0,
@@ -532,6 +535,50 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const parcels = new FeatureLayerCompat({");
     expect(migratedMain).toContain("const query = new QueryCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/rest/support/Query");
+  });
+
+  it("migrates geometry/symbol fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration(
+      "esri-graphic-symbols-app",
+    );
+
+    expect(scanReport.flags).toEqual([]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(4);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(4);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind.graphic).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["point-geometry"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["simple-line-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(codemodResult.metrics.byKind["simple-marker-symbol"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.readiness).toBe("ready");
+    expect(report.unhandledArcGisModules).toEqual([]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain(
+      'import { GraphicCompat, PointCompat, SimpleLineSymbolCompat, SimpleMarkerSymbolCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(migratedMain).toContain("const geometry = new PointCompat({");
+    expect(migratedMain).toContain("const outline = new SimpleLineSymbolCompat({");
+    expect(migratedMain).toContain("const symbol = new SimpleMarkerSymbolCompat({");
+    expect(migratedMain).toContain("const graphic = new GraphicCompat({");
+    expect(migratedMain).not.toContain("@arcgis/core/geometry/Point");
   });
 
   it("migrates esri-config fixture with ready gating", () => {

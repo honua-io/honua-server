@@ -18,6 +18,9 @@ describe("JS parity matrix", () => {
     const matrix = getJsParityMatrix();
     const featureLayer = matrix.find((row) => row.kind === "feature-layer");
     const graphic = matrix.find((row) => row.kind === "graphic");
+    const point = matrix.find((row) => row.kind === "point-geometry");
+    const simpleLineSymbol = matrix.find((row) => row.kind === "simple-line-symbol");
+    const simpleMarkerSymbol = matrix.find((row) => row.kind === "simple-marker-symbol");
     const basemap = matrix.find((row) => row.kind === "basemap");
     const map = matrix.find((row) => row.kind === "map");
     const track = matrix.find((row) => row.kind === "track-widget");
@@ -43,6 +46,18 @@ describe("JS parity matrix", () => {
       esriLeaflet: "compat",
     });
     expect(graphic).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(point).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(simpleLineSymbol).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "assisted",
+    });
+    expect(simpleMarkerSymbol).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "assisted",
     });

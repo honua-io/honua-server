@@ -102,7 +102,7 @@ export function buildJsMigrationReport(
       denominator,
       ratio,
       scope:
-        "FeatureLayer/Graphic/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope",
+        "FeatureLayer/Graphic/Point/SimpleLineSymbol/SimpleMarkerSymbol/GraphicsLayer/GroupLayer/MapImageLayer/TileLayer/RouteLayer/RouteTask/Basemap/Map/MapView/SceneView/WebMap/LayerList/TableList/Feature/FeatureTemplates/FeatureForm/FeatureTable/Legend/Popup/PopupTemplate/Swipe/Print/Home/BasemapToggle/Locate/ScaleBar/Search/BasemapLayerList/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution/Sketch/Editor/Track/DistanceMeasurement2D/AreaMeasurement2D/Measurement/TimeSlider/Directions/CoordinateConversion/Query/OAuthInfo/IdentityManager/EsriConfig/ReactiveUtils codemod-scoped usage in safe migration scope",
     },
     manualInterventionMetric: {
       numerator: interventionNumerator,
@@ -128,6 +128,9 @@ function summarizeManualTodosByKind(
   const summary: Record<CodemodConstructorKind, number> = {
     "feature-layer": 0,
     graphic: 0,
+    "point-geometry": 0,
+    "simple-line-symbol": 0,
+    "simple-marker-symbol": 0,
     "graphics-layer": 0,
     "group-layer": 0,
     "map-image-layer": 0,
