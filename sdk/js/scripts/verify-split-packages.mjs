@@ -58,6 +58,7 @@ import {
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   DirectionsCompat,
+  esriConfig,
   EsriRequestInterceptorRegistry,
   EditorCompat,
   FeatureCompat,
@@ -67,6 +68,7 @@ import {
   FeatureLayerCompat,
   FeatureTableCompat,
   FullscreenCompat,
+  getEsriConfigHonuaInterceptors,
   GraphicCompat,
   GraphicsLayerCompat,
   GroupLayerCompat,
@@ -85,6 +87,7 @@ import {
   PopupCompat,
   QueryCompat,
   reactiveUtils,
+  resetEsriConfig,
   RouteLayerCompat,
   RouteTaskCompat,
   SearchCompat,
@@ -115,6 +118,10 @@ if (typeof CoordinateConversionCompat !== "function") throw new Error("Coordinat
 if (typeof createEsriRequestInterceptors !== "function") throw new Error("createEsriRequestInterceptors export missing");
 if (typeof createArcGisTokenInterceptor !== "function") throw new Error("createArcGisTokenInterceptor export missing");
 if (typeof EsriRequestInterceptorRegistry !== "function") throw new Error("EsriRequestInterceptorRegistry export missing");
+if (typeof esriConfig !== "object") throw new Error("esriConfig export missing");
+if (typeof getEsriConfigHonuaInterceptors !== "function")
+  throw new Error("getEsriConfigHonuaInterceptors export missing");
+if (typeof resetEsriConfig !== "function") throw new Error("resetEsriConfig export missing");
 if (typeof DirectionsCompat !== "function") throw new Error("DirectionsCompat export missing");
 if (typeof EditorCompat !== "function") throw new Error("EditorCompat export missing");
 if (typeof FeatureCompat !== "function") throw new Error("FeatureCompat export missing");

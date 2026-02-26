@@ -14,6 +14,7 @@ import {
   createArcGisTokenInterceptor,
   createEsriRequestInterceptors,
   DirectionsCompat,
+  esriConfig,
   EsriRequestInterceptorRegistry,
   EditorCompat,
   FeatureCompat,
@@ -24,6 +25,7 @@ import {
   FeatureTableCompat,
   FeatureTableHighlightIdsCompat,
   GraphicCompat,
+  getEsriConfigHonuaInterceptors,
   GraphicsLayerCompat,
   GroupLayerCompat,
   HomeCompat,
@@ -46,6 +48,7 @@ import {
   RouteLayerCompat,
   RouteTaskCompat,
   reactiveUtils,
+  resetEsriConfig,
   SearchCompat,
   SketchCompat,
   ScaleBarCompat,
@@ -99,6 +102,9 @@ describe("entrypoint modules", () => {
     expect(createEsriRequestInterceptors).toBeTypeOf("function");
     expect(createArcGisTokenInterceptor).toBeTypeOf("function");
     expect(EsriRequestInterceptorRegistry).toBeTypeOf("function");
+    expect(esriConfig).toBeTypeOf("object");
+    expect(getEsriConfigHonuaInterceptors).toBeTypeOf("function");
+    expect(resetEsriConfig).toBeTypeOf("function");
     expect(DirectionsCompat).toBeTypeOf("function");
     expect(EditorCompat).toBeTypeOf("function");
     expect(FeatureCompat).toBeTypeOf("function");

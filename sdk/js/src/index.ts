@@ -107,6 +107,12 @@ export type {
   EsriRequestOptionsLike,
   EsriUrlPattern,
 } from "./esri-compat/request.js";
+export {
+  esriConfig,
+  getEsriConfigHonuaInterceptors,
+  resetEsriConfig,
+} from "./esri-compat/esri-config.js";
+export type { EsriConfigCompat, EsriConfigRequestCompat } from "./esri-compat/esri-config.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatOptions } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";

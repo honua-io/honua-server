@@ -16,6 +16,8 @@ const ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
   "Dynamic import has no deterministic esri-leaflet mapping; requires manual migration.";
 const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON =
   "ReactiveUtils import shape is unsupported for automatic migration.";
+const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON =
+  "esriConfig import shape is unsupported for automatic migration.";
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
@@ -67,6 +69,7 @@ export type CodemodConstructorKind =
   | "directions-widget"
   | "coordinate-conversion-widget"
   | "query"
+  | "esri-config"
   | "reactive-utils";
 
 interface ConstructorRewriteSpec {
@@ -441,6 +444,11 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
     ]),
   },
   {
+    kind: "esri-config",
+    compatSymbol: "esriConfig",
+    arcGisModules: new Set(["@arcgis/core/config", "@arcgis/core/config.js"]),
+  },
+  {
     kind: "reactive-utils",
     compatSymbol: "reactiveUtils",
     arcGisModules: new Set([
@@ -665,6 +673,18 @@ function codemodFile(
     findNamespaceImportAlias(sourceFile, ESRI_LEAFLET_IMPORT_PATH) ?? ESRI_LEAFLET_NAMESPACE;
   const fileExtension = path.extname(file).toLowerCase();
   const isCommonJsModule = fileExtension === ".cjs" || hasCommonJsExportMarkers(source);
+
+  const esriConfigImportRewrite = rewriteEsriConfigImports({
+    source,
+    sourceFile,
+    file,
+    compatImportPath,
+    annotateTodos,
+  });
+  importEdits.push(...esriConfigImportRewrite.edits);
+  rewrittenKinds.push(...esriConfigImportRewrite.rewrittenKinds);
+  manualTodos.push(...esriConfigImportRewrite.manualTodos);
+  todoCommentEdits.push(...esriConfigImportRewrite.todoCommentEdits);
 
   const reactiveUtilsImportRewrite = rewriteReactiveUtilsImports({
     source,
@@ -968,6 +988,115 @@ function rewriteReactiveUtilsImports(options: {
   };
 }
 
+function rewriteEsriConfigImports(options: {
+  source: string;
+  sourceFile: ts.SourceFile;
+  file: string;
+  compatImportPath: string;
+  annotateTodos: boolean;
+}): {
+  edits: TextEdit[];
+  rewrittenKinds: CodemodConstructorKind[];
+  manualTodos: MigrationTodo[];
+  todoCommentEdits: TextEdit[];
+} {
+  const edits: TextEdit[] = [];
+  const rewrittenKinds: CodemodConstructorKind[] = [];
+  const manualTodos: MigrationTodo[] = [];
+  const todoCommentEdits: TextEdit[] = [];
+
+  for (const statement of options.sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    if (MODULE_TO_SPEC.get(statement.moduleSpecifier.text)?.kind !== "esri-config") {
+      continue;
+    }
+
+    const replacement = buildEsriConfigCompatImport(statement, options.sourceFile, options.compatImportPath);
+    if (!replacement) {
+      const nodeStart = statement.getStart(options.sourceFile);
+      const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: "esri-config",
+        file: options.file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON,
+      });
+
+      if (options.annotateTodos) {
+        const lineStart = findLineStartOffset(options.source, nodeStart);
+        if (shouldInsertTodoComment(options.source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[esri-config]: ${ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON}\n`,
+          });
+        }
+      }
+      continue;
+    }
+
+    edits.push({
+      start: statement.getStart(options.sourceFile),
+      end: statement.getEnd(),
+      text: replacement,
+    });
+    rewrittenKinds.push("esri-config");
+  }
+
+  return {
+    edits,
+    rewrittenKinds,
+    manualTodos,
+    todoCommentEdits,
+  };
+}
+
+function buildEsriConfigCompatImport(
+  statement: ts.ImportDeclaration,
+  sourceFile: ts.SourceFile,
+  compatImportPath: string,
+): string | undefined {
+  const importClause = statement.importClause;
+  if (!importClause) {
+    return undefined;
+  }
+
+  const specifiers: string[] = [];
+  if (importClause.name) {
+    specifiers.push(renderImportSpecifier("esriConfig", importClause.name.text));
+  }
+
+  const namedBindings = importClause.namedBindings;
+  if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+    specifiers.push(renderImportSpecifier("esriConfig", namedBindings.name.text));
+  } else if (namedBindings && ts.isNamedImports(namedBindings)) {
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const localName = element.name.text;
+      if (importedName === "default" || importedName === "esriConfig") {
+        specifiers.push(renderImportSpecifier("esriConfig", localName));
+        continue;
+      }
+      if (importedName === "resetEsriConfig" || importedName === "getEsriConfigHonuaInterceptors") {
+        specifiers.push(renderImportSpecifier(importedName, localName));
+        continue;
+      }
+
+      return undefined;
+    }
+  }
+
+  const uniqueSpecifiers = Array.from(new Set(specifiers));
+  if (uniqueSpecifiers.length === 0) {
+    uniqueSpecifiers.push("esriConfig");
+  }
+
+  return `import { ${uniqueSpecifiers.join(", ")} } from "${compatImportPath}";`;
+}
+
 function buildReactiveUtilsCompatImport(
   statement: ts.ImportDeclaration,
   sourceFile: ts.SourceFile,
@@ -1090,6 +1219,7 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
     "directions-widget": { total: 0, autoMigrated: 0, manual: 0 },
     "coordinate-conversion-widget": { total: 0, autoMigrated: 0, manual: 0 },
     query: { total: 0, autoMigrated: 0, manual: 0 },
+    "esri-config": { total: 0, autoMigrated: 0, manual: 0 },
     "reactive-utils": { total: 0, autoMigrated: 0, manual: 0 },
   };
 }
@@ -1816,6 +1946,11 @@ function isSafeConstructorCall(
       return isSafeCoordinateConversionWidgetCompatCall(node);
     case "query":
       return isSafeQueryCompatCall(node);
+    case "esri-config":
+      return {
+        ok: false,
+        reason: "esriConfig is not a constructor and requires import-based migration.",
+      };
     case "reactive-utils":
       return {
         ok: false,

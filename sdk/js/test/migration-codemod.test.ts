@@ -1789,6 +1789,76 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
   });
 
+  it("rewrites esriConfig static imports to compat helpers", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-config.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import esriConfig from '@arcgis/core/config';",
+        "esriConfig.apiKey = token;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["esri-config"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain('import { esriConfig } from "@honua/sdk-esri-compat";');
+    expect(nextSource).not.toContain("@arcgis/core/config");
+  });
+
+  it("rewrites esriConfig dynamic imports to compat dynamic bridge", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-config-dynamic.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "export async function loadConfig() {",
+        "  const module = await import('@arcgis/core/config.js');",
+        "  return module.default;",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["esri-config"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.esriConfig }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/config");
+  });
+
   it("rewrites reactiveUtils static imports to compat helpers", () => {
     const root = makeTempProject();
     const file = path.join(root, "reactive-utils.ts");

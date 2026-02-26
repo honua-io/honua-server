@@ -40,6 +40,12 @@ export type {
   EsriRequestOptionsLike,
   EsriUrlPattern,
 } from "./esri-compat/request.js";
+export {
+  esriConfig,
+  getEsriConfigHonuaInterceptors,
+  resetEsriConfig,
+} from "./esri-compat/esri-config.js";
+export type { EsriConfigCompat, EsriConfigRequestCompat } from "./esri-compat/esri-config.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,

@@ -150,6 +150,7 @@ describe("arcgis migration integration", () => {
       "directions-widget": 0,
       "coordinate-conversion-widget": 0,
       query: 0,
+      "esri-config": 0,
       "reactive-utils": 0,
     });
     expect(report.manualTodoReasons).toHaveLength(0);
@@ -529,6 +530,45 @@ describe("arcgis migration integration", () => {
     expect(migratedMain).toContain("const parcels = new FeatureLayerCompat({");
     expect(migratedMain).toContain("const query = new QueryCompat({");
     expect(migratedMain).not.toContain("@arcgis/core/rest/support/Query");
+  });
+
+  it("migrates esri-config fixture with ready gating", () => {
+    const { workingCopy, scanReport, report, codemodResult } = runFixtureMigration("esri-config-app");
+
+    expect(scanReport.flags).toEqual(["auth-or-request-customization-detected"]);
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.metrics.byKind["esri-config"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(report.unhandledArcGisModules).toEqual([]);
+    expect(report.readiness).toBe("ready");
+    expect(report.gates).toEqual([
+      {
+        gate: "no-manual-todos",
+        passed: true,
+        detail: "all codemod-scoped call sites auto-migrated",
+      },
+      {
+        gate: "no-unhandled-modules",
+        passed: true,
+        detail: "all discovered ArcGIS modules are in codemod scope",
+      },
+      {
+        gate: "no-blocking-flags",
+        passed: true,
+        detail: "no blocking migration flags detected",
+      },
+    ]);
+
+    const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
+    expect(migratedMain).toContain('import { esriConfig } from "@honua/sdk-esri-compat";');
+    expect(migratedMain).toContain("esriConfig.request.interceptors.push({");
+    expect(migratedMain).not.toContain("@arcgis/core/config");
   });
 
   it("migrates feature table fixture with ready gating", () => {

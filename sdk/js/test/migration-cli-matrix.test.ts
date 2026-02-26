@@ -99,6 +99,7 @@ describe("migration cli parity matrix", () => {
       (row) => row.kind === "area-measurement-2d-widget",
     );
     const query = report.matrix.find((row) => row.kind === "query");
+    const esriConfig = report.matrix.find((row) => row.kind === "esri-config");
     const reactiveUtils = report.matrix.find((row) => row.kind === "reactive-utils");
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
@@ -114,6 +115,7 @@ describe("migration cli parity matrix", () => {
     expect(distanceMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(areaMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(query).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(esriConfig).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(reactiveUtils).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
