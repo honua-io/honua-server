@@ -822,15 +822,16 @@ export class MapViewCompat {
     this.watchListeners.clear();
   }
 
-  private emit(eventName: string, payload: unknown): void {
+  public emit(eventName: string, payload?: unknown): boolean {
     const listeners = this.eventListeners.get(eventName);
-    if (!listeners) {
-      return;
+    if (!listeners || listeners.size === 0) {
+      return false;
     }
 
     for (const listener of listeners) {
       listener(payload);
     }
+    return true;
   }
 
   private notifyWatchers(propertyName: string, value: unknown): void {

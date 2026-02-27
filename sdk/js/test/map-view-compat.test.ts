@@ -321,6 +321,22 @@ describe("MapViewCompat", () => {
     expect(events).toEqual([{ zoom: 4, center: [10, 20], scale: 2500000, rotation: 20 }]);
   });
 
+  it("supports public emit dispatch for event listeners", () => {
+    const view = new MapViewCompat();
+    const clicks: unknown[] = [];
+
+    const handle = view.on("click", (event) => {
+      clicks.push(event);
+    });
+
+    expect(view.emit("click", { x: 10, y: 20 })).toBe(true);
+    expect(clicks).toEqual([{ x: 10, y: 20 }]);
+
+    handle.remove();
+    expect(view.emit("click", { x: 30, y: 40 })).toBe(false);
+    expect(clicks).toEqual([{ x: 10, y: 20 }]);
+  });
+
   it("supports direct state mutators and emits change events", () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];
