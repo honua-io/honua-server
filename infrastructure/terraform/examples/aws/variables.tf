@@ -29,6 +29,19 @@ variable "db_password" {
   default     = null
 }
 
+variable "existing_db_endpoint" {
+  description = "Existing PostgreSQL endpoint to reuse."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Existing PostgreSQL connection string to reuse."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "honua_image" {
   description = "Container image to deploy to ECS."
   type        = string
@@ -57,6 +70,13 @@ variable "redis_enabled" {
   description = "Provision ElastiCache Redis."
   type        = bool
   default     = true
+}
+
+variable "redis_connection_string" {
+  description = "Existing Redis connection string to reuse."
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "desired_count" {

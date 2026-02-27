@@ -137,6 +137,19 @@ variable "db_require_ssl" {
   default     = true
 }
 
+variable "existing_db_endpoint" {
+  description = "Existing PostgreSQL endpoint to reuse. Set with existing_db_connection_string."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Existing PostgreSQL connection string to reuse. Set with existing_db_endpoint."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "allow_public_ingress_cidrs" {
   description = "DEPRECATED: use allow_https_ingress_cidrs and allow_http_ingress_cidrs."
   type        = list(string)

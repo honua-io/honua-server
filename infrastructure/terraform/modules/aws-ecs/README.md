@@ -110,10 +110,13 @@ route53_zone_id = "Z1234567890ABC"
 | `container_memory` | 1024 | Fargate memory in MiB. |
 | `desired_count` | 1 | Number of tasks. Use 2+ for production. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
+| `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
+| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
 | `db_multi_az` | false | Enable Multi-AZ failover. Recommended for production. |
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
+| `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
 | `redis_node_type` | `cache.t3.micro` | ElastiCache node type. |
 | `alb_certificate_arn` | `""` | ACM certificate ARN. Falls back to HTTP if empty. |
 | `waf_web_acl_arn` | `""` | WAFv2 Web ACL ARN for the ALB. |

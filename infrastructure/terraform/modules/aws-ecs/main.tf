@@ -13,6 +13,7 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
+  db_use_existing     = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   use_managed_cert    = var.domain_name != "" && var.route53_zone_id != ""
   use_https           = var.alb_certificate_arn != "" || local.use_managed_cert
   https_ingress_cidrs = length(var.allow_public_ingress_cidrs) > 0 ? var.allow_public_ingress_cidrs : var.allow_https_ingress_cidrs
@@ -22,6 +23,16 @@ locals {
   redis_create        = var.redis_enabled && var.redis_connection_string == ""
   redis_auth_token    = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+}
+
+check "existing_db_inputs" {
+  assert {
+    condition = (
+      (var.existing_db_endpoint == "" && var.existing_db_connection_string == "") ||
+      (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
+    )
+    error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
+  }
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -109,7 +120,7 @@ resource "aws_security_group" "ecs" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
+    cidr_blocks = local.db_use_existing ? ["0.0.0.0/0"] : [module.vpc.vpc_cidr_block]
   }
 
   egress {
@@ -136,6 +147,7 @@ resource "aws_security_group" "ecs" {
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to the RDS instance.
 resource "aws_security_group" "rds" {
+  count = local.db_use_existing ? 0 : 1
   #checkov:skip=CKV2_AWS_5: Security group is attached via the RDS module.
   name_prefix = "${local.name}-rds-"
   description = "RDS security group"
@@ -501,7 +513,7 @@ resource "aws_iam_role_policy_attachment" "task_secrets" {
 }
 
 resource "random_password" "db" {
-  count            = var.db_password == null ? 1 : 0
+  count            = var.db_password == null && !local.db_use_existing ? 1 : 0
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?."
@@ -547,8 +559,10 @@ resource "aws_kms_alias" "honua" {
 }
 
 locals {
-  db_password          = var.db_password != null ? var.db_password : random_password.db[0].result
+  db_password          = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
   db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
+  db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
+  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
   kms_key_arn          = var.kms_key_arn != "" ? var.kms_key_arn : aws_kms_key.honua[0].arn
   alb_logs_bucket_name = var.alb_access_logs_bucket_name != "" ? var.alb_access_logs_bucket_name : "${local.name}-alb-logs-${random_id.alb_logs_suffix.hex}"
   certificate_arn      = var.alb_certificate_arn != "" ? var.alb_certificate_arn : (local.use_managed_cert ? aws_acm_certificate_validation.this[0].certificate_arn : "")
@@ -559,6 +573,7 @@ locals {
 #checkov:skip=CKV_AWS_133: Backup retention is configured in this module call.
 #checkov:skip=CKV_AWS_304: Secret rotation is handled outside this module.
 module "rds" {
+  count = local.db_use_existing ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV_AWS_133: Backup retention is configured in this module call.
   #checkov:skip=CKV_AWS_304: Secret rotation is handled outside this module.
@@ -582,7 +597,7 @@ module "rds" {
   password = local.db_password
   port     = 5432
 
-  vpc_security_group_ids = [aws_security_group.rds.id]
+  vpc_security_group_ids = local.db_use_existing ? [] : [aws_security_group.rds[0].id]
   subnet_ids             = module.vpc.private_subnets
 
   publicly_accessible = var.db_publicly_accessible
@@ -605,7 +620,7 @@ resource "aws_secretsmanager_secret" "db_connection" {
 
 resource "aws_secretsmanager_secret_version" "db_connection" {
   secret_id     = aws_secretsmanager_secret.db_connection.id
-  secret_string = "Host=${module.rds.db_instance_address};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
+  secret_string = local.db_connection_string
 }
 
 #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
@@ -729,18 +744,18 @@ data "aws_iam_policy_document" "ecs_task_assume" {
 }
 
 resource "null_resource" "enable_postgis" {
-  count = var.enable_postgis ? 1 : 0
+  count = var.enable_postgis && !local.db_use_existing ? 1 : 0
 
   triggers = {
-    db_endpoint = module.rds.db_instance_address
+    db_endpoint = local.db_endpoint
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS + PostGIS Raster on ${module.rds.db_instance_address}" \
+      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}" \
         && PGPASSWORD='${local.db_password}' psql \
-          --host=${module.rds.db_instance_address} \
+          --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
           --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"

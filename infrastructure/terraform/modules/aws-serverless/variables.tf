@@ -142,6 +142,19 @@ variable "db_require_ssl" {
   default     = true
 }
 
+variable "existing_db_endpoint" {
+  description = "Existing PostgreSQL endpoint to reuse. Set with existing_db_connection_string."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Existing PostgreSQL connection string to reuse. Set with existing_db_endpoint."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "enable_postgis" {
   description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
   type        = bool

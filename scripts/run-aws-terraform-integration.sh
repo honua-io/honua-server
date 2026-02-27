@@ -29,6 +29,9 @@ READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
 MAX_LOAD_ERROR_RATE_PERCENT="${HONUA_MAX_LOAD_ERROR_RATE_PERCENT:-0}"
 MAX_RUN_COST_USD="${HONUA_MAX_RUN_COST_USD:-0}"
 DB_INGRESS_CIDR="${HONUA_AWS_DB_INGRESS_CIDR:-}"
+EXISTING_DB_ENDPOINT="${HONUA_AWS_EXISTING_DB_ENDPOINT:-}"
+EXISTING_DB_CONNECTION_STRING="${HONUA_AWS_EXISTING_DB_CONNECTION_STRING:-}"
+EXISTING_REDIS_CONNECTION_STRING="${HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING:-}"
 TF_IMAGE="${HONUA_TERRAFORM_IMAGE:-honua-terraform-psql:1.8.5}"
 AWS_CLI_IMAGE="${HONUA_AWS_CLI_IMAGE:-amazon/aws-cli:2.17.61}"
 PLAN_ARTIFACT_DIR="${HONUA_TF_PLAN_ARTIFACT_DIR:-}"
@@ -62,6 +65,9 @@ Options:
   --serverless-previous-image <image>  Previous serverless image for upgrade/rollback validation
   --upgrade-rollback                   Enable upgrade/rollback validation sequence
   --db-ingress-cidr <cidr>             CIDR allowed to reach RDS for PostGIS enablement
+  --existing-db-endpoint <endpoint>    Reuse existing PostgreSQL endpoint
+  --existing-db-connection <string>    Reuse existing PostgreSQL connection string
+  --existing-redis-connection <str>    Reuse existing Redis connection string
   --timeout-seconds <n>                Health wait timeout per stack (default: 900)
   --max-ready-seconds <n>              Ready SLO threshold (default: 600)
   --max-load-error-rate <percent>      Max allowed load error rate (default: 0)
@@ -85,6 +91,9 @@ Required environment variables:
 
 Optional environment variables:
   AWS_SESSION_TOKEN
+  HONUA_AWS_EXISTING_DB_ENDPOINT
+  HONUA_AWS_EXISTING_DB_CONNECTION_STRING
+  HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING
 USAGE
 }
 
@@ -158,6 +167,18 @@ parse_args() {
         ;;
       --db-ingress-cidr)
         DB_INGRESS_CIDR="$2"
+        shift 2
+        ;;
+      --existing-db-endpoint)
+        EXISTING_DB_ENDPOINT="$2"
+        shift 2
+        ;;
+      --existing-db-connection)
+        EXISTING_DB_CONNECTION_STRING="$2"
+        shift 2
+        ;;
+      --existing-redis-connection)
+        EXISTING_REDIS_CONNECTION_STRING="$2"
         shift 2
         ;;
       --timeout-seconds)
@@ -245,6 +266,12 @@ normalize_identifiers() {
 }
 
 detect_db_ingress_cidr() {
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    DB_INGRESS_CIDR=""
+    log_info "Using existing DB connection string; skipping DB ingress CIDR detection"
+    return
+  fi
+
   if [[ -n "$DB_INGRESS_CIDR" ]]; then
     return
   fi
@@ -288,10 +315,13 @@ run_tf() {
     -e TF_VAR_name_prefix \
     -e TF_VAR_honua_admin_password \
     -e TF_VAR_db_password \
+    -e TF_VAR_existing_db_endpoint \
+    -e TF_VAR_existing_db_connection_string \
     -e TF_VAR_honua_image \
     -e TF_VAR_honua_image_uri \
     -e TF_VAR_enable_postgis \
     -e TF_VAR_redis_enabled \
+    -e TF_VAR_redis_connection_string \
     -e TF_VAR_db_publicly_accessible \
     -e TF_VAR_db_additional_ingress_cidrs \
     -e TF_VAR_desired_count \
@@ -365,19 +395,64 @@ plan_apply() {
 
   run_tf -chdir="$root" plan -input=false -no-color -out="$plan_file"
   analyze_plan "$root" "$plan_file" "$label"
-  run_tf -chdir="$root" apply -input=false -auto-approve -no-color "$plan_file"
+  run_tf_apply_with_auth_retry "$root" "$plan_file"
+}
+
+run_tf_apply_with_auth_retry() {
+  local root="$1"
+  local plan_file="$2"
+  local attempt
+  local apply_log
+  local exit_code
+
+  for attempt in 1 2; do
+    apply_log="$(mktemp)"
+
+    set +e
+    run_tf -chdir="$root" apply -input=false -auto-approve -no-color "$plan_file" 2>&1 | tee "$apply_log"
+    exit_code=${PIPESTATUS[0]}
+    set -e
+
+    if [[ "$exit_code" -eq 0 ]]; then
+      rm -f "$apply_log"
+      return 0
+    fi
+
+    if grep -Eq "ExpiredToken|ExpiredTokenException|RequestExpired" "$apply_log" && [[ "$attempt" -lt 2 ]]; then
+      log_warn "Terraform apply failed due to expired AWS credentials; retrying apply once"
+      rm -f "$apply_log"
+      continue
+    fi
+
+    rm -f "$apply_log"
+    return "$exit_code"
+  done
+}
+
+normalize_base_url() {
+  local base_url="${1%/}"
+  if [[ "$base_url" =~ ^https?:// ]]; then
+    printf '%s\n' "$base_url"
+    return
+  fi
+
+  printf 'https://%s\n' "$base_url"
 }
 
 wait_for_ready() {
   local base_url="$1"
   local timeout="$2"
-  local ready_url="${base_url%/}/healthz/ready"
+  local normalized_base
+  local ready_url
   local start_epoch
   local elapsed
 
+  normalized_base="$(normalize_base_url "$base_url")"
+  ready_url="${normalized_base}/healthz/ready"
+
   start_epoch="$(date +%s)"
   while true; do
-    if curl -fsS --max-time 20 "$ready_url" >/dev/null; then
+    if curl -fsSL --max-time 20 "$ready_url" >/dev/null; then
       elapsed=$(( $(date +%s) - start_epoch ))
       if (( elapsed > READY_SLO_SECONDS )); then
         log_error "Ready SLO failed: ${elapsed}s exceeds ${READY_SLO_SECONDS}s ($ready_url)"
@@ -400,16 +475,20 @@ run_load_probe() {
   local base_url="$1"
   local requests="$2"
   local concurrency="$3"
-  local target_url="${base_url%/}/healthz/ready"
+  local normalized_base
+  local target_url
   local fail_file
   local failures
   local error_rate
+
+  normalized_base="$(normalize_base_url "$base_url")"
+  target_url="${normalized_base}/healthz/ready"
 
   fail_file="$(mktemp)"
 
   for ((i = 1; i <= requests; i++)); do
     (
-      if ! curl -fsS --max-time 20 "$target_url" >/dev/null; then
+      if ! curl -fsSL --max-time 20 "$target_url" >/dev/null; then
         echo "1" >> "$fail_file"
       fi
     ) &
@@ -466,14 +545,16 @@ assert_idempotent_plan() {
 
 verify_protocol_endpoints() {
   local base_url="$1"
-  local normalized="${base_url%/}"
+  local normalized
   local status
 
-  curl -fsS --max-time 20 "${normalized}/rest/services?f=pjson" >/dev/null
-  curl -fsS --max-time 20 "${normalized}/ogc/features" >/dev/null
-  curl -fsS --max-time 20 "${normalized}/odata" >/dev/null
+  normalized="$(normalize_base_url "$base_url")"
 
-  status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
+  curl -fsSL --max-time 20 "${normalized}/rest/services?f=pjson" >/dev/null
+  curl -fsSL --max-time 20 "${normalized}/ogc/features" >/dev/null
+  curl -fsSL --max-time 20 "${normalized}/odata" >/dev/null
+
+  status="$(curl -sSL -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
     log_error "Expected unauthenticated admin endpoint to return 401/403, got $status"
     return 1
@@ -530,7 +611,7 @@ run_db_sql() {
 run_admin_api_crud_smoke() {
   local base_url="$1"
   local db_host="$2"
-  local normalized="${base_url%/}"
+  local normalized
   local suffix
   local table_name
   local layer_name
@@ -545,6 +626,8 @@ run_admin_api_crud_smoke() {
   local publish_layer_payload
   local create_connection_response
   local publish_layer_response
+
+  normalized="$(normalize_base_url "$base_url")"
 
   suffix="$(date -u +%m%d%H%M%S)$RANDOM"
   table_name="smoke_${suffix}"
@@ -569,7 +652,7 @@ run_admin_api_crud_smoke() {
     run_db_sql "$db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$service_name")';" || true
 
     if [[ -n "$connection_id" ]]; then
-      curl -sS --max-time 20 -X DELETE \
+      curl -sSL --max-time 20 -X DELETE \
         -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
         "${normalized}/api/v1/admin/connections/${connection_id}" >/dev/null || true
     fi
@@ -593,7 +676,7 @@ run_admin_api_crud_smoke() {
 JSON
 )"
 
-  create_connection_response="$(curl -fsS --max-time 20 -X POST \
+  create_connection_response="$(curl -fsSL --max-time 20 -X POST \
     -H "Content-Type: application/json" \
     -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
     -d "$create_connection_payload" \
@@ -610,7 +693,7 @@ JSON
 JSON
 )"
 
-  publish_layer_response="$(curl -fsS --max-time 20 -X POST \
+  publish_layer_response="$(curl -fsSL --max-time 20 -X POST \
     -H "Content-Type: application/json" \
     -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
     -d "$publish_layer_payload" \
@@ -623,7 +706,7 @@ JSON
   fi
 
   query_url="${normalized}/rest/services/${service_name}/FeatureServer/${layer_id}/query?where=1%3D1&outFields=id,name,population&f=pjson"
-  query_response="$(curl -fsS --max-time 20 "$query_url")"
+  query_response="$(curl -fsSL --max-time 20 "$query_url")"
 
   if command -v jq >/dev/null 2>&1; then
     feature_count="$(printf '%s' "$query_response" | jq -r '(.features // []) | length' 2>/dev/null || echo 0)"
@@ -767,6 +850,18 @@ run_quota_preflight() {
   log_info "AWS quota preflight passed (EC2 regional vCPU quota=${quota:-unknown}, required~$required)"
 }
 
+validate_existing_resource_inputs() {
+  if [[ -n "$EXISTING_DB_ENDPOINT" && -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    log_error "--existing-db-connection is required when --existing-db-endpoint is provided"
+    exit 1
+  fi
+
+  if [[ -z "$EXISTING_DB_ENDPOINT" && -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    log_error "--existing-db-endpoint is required when --existing-db-connection is provided"
+    exit 1
+  fi
+}
+
 set_common_tf_vars() {
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -776,10 +871,17 @@ set_common_tf_vars() {
   export TF_VAR_environment="$ENVIRONMENT"
   export TF_VAR_honua_admin_password="$HONUA_ADMIN_PASSWORD"
   export TF_VAR_db_password="$HONUA_DB_PASSWORD"
+  export TF_VAR_existing_db_endpoint="$EXISTING_DB_ENDPOINT"
+  export TF_VAR_existing_db_connection_string="$EXISTING_DB_CONNECTION_STRING"
   export TF_VAR_enable_postgis="true"
   export TF_VAR_redis_enabled="true"
+  export TF_VAR_redis_connection_string="$EXISTING_REDIS_CONNECTION_STRING"
   export TF_VAR_db_publicly_accessible="true"
-  export TF_VAR_db_additional_ingress_cidrs="[\"$DB_INGRESS_CIDR\"]"
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    export TF_VAR_db_additional_ingress_cidrs="[]"
+  else
+    export TF_VAR_db_additional_ingress_cidrs="[\"$DB_INGRESS_CIDR\"]"
+  fi
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 
@@ -862,9 +964,13 @@ apply_ecs_stack() {
     cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
     service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
 
-    if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
-      log_error "Redis endpoint was empty for ECS stack"
-      return 1
+    if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+      log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
+    else
+      if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
+        log_error "Redis endpoint was empty for ECS stack"
+        return 1
+      fi
     fi
 
     run_ecs_checks "$url" "$db_endpoint"
@@ -903,9 +1009,13 @@ apply_ecs_stack() {
     cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
     service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
 
-    if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
-      log_error "Redis endpoint was empty for ECS stack"
-      return 1
+    if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+      log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
+    else
+      if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
+        log_error "Redis endpoint was empty for ECS stack"
+        return 1
+      fi
     fi
 
     run_ecs_checks "$url" "$db_endpoint"
@@ -1076,6 +1186,7 @@ main() {
     HONUA_ADMIN_PASSWORD \
     HONUA_DB_PASSWORD
 
+  validate_existing_resource_inputs
   normalize_identifiers
   detect_db_ingress_cidr
   assert_cost_guardrail

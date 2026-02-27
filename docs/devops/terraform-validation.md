@@ -90,6 +90,9 @@ Optional image override secrets:
   - `HONUA_AZURE_EXISTING_DB_FQDN`
   - `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING`
   - `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`
+  - `HONUA_AWS_EXISTING_DB_ENDPOINT`
+  - `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`
+  - `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`
 - Drift:
   - `HONUA_DRIFT_ROOTS`
   - `HONUA_DRIFT_VAR_FILES`
@@ -122,6 +125,11 @@ Local script entry points:
   --existing-db-connection "Host=mypg.postgres.database.azure.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
   --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False"
 ./scripts/run-aws-terraform-integration.sh --stack both
+./scripts/run-aws-terraform-integration.sh \
+  --stack ecs \
+  --existing-db-endpoint mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com \
+  --existing-db-connection "Host=mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
+  --existing-redis-connection "mycache.xxxxxx.use1.cache.amazonaws.com:6379,password=***,ssl=true"
 ./scripts/run-k8s-terraform-integration.sh
 ./scripts/run-aks-terraform-integration.sh
 ./scripts/run-eks-terraform-integration.sh

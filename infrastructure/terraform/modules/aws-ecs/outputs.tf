@@ -20,7 +20,7 @@ output "ecs_service_name" {
 
 output "db_endpoint" {
   description = "RDS endpoint address."
-  value       = module.rds.db_instance_address
+  value       = local.db_endpoint
   sensitive   = true
 }
 
