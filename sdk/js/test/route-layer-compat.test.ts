@@ -3,6 +3,43 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, RouteLayerCompat } from "../src/index.js";
 
 describe("RouteLayerCompat", () => {
+  it("supports lifecycle loading and watch handles", async () => {
+    const layer = new RouteLayerCompat({
+      stops: [
+        { location: [0, 0] },
+        { location: [1, 1] },
+      ],
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const solvingValues: unknown[] = [];
+    const routeValues: unknown[] = [];
+
+    const loadStatusHandle = layer.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const solvingHandle = layer.watch("solving", (value) => {
+      solvingValues.push(value);
+    });
+    const routeHandle = layer.watch("route", (value) => {
+      routeValues.push(value);
+    });
+
+    await layer.when();
+    const solved = await layer.solve();
+    layer.clearStops();
+
+    loadStatusHandle.remove();
+    solvingHandle.remove();
+    routeHandle.remove();
+
+    expect(layer.loaded).toBe(true);
+    expect(layer.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(solvingValues).toEqual([true, false]);
+    expect(routeValues).toEqual([solved, undefined]);
+  });
+
   it("solves a route from stops and emits lifecycle events", async () => {
     const eventBus = new CompatEventBus();
     const seenTypes: string[] = [];

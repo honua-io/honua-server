@@ -195,6 +195,8 @@ export type {
 export { RouteLayerCompat } from "./esri-compat/route-layer.js";
 export type {
   RouteLayerCompatOptions,
+  RouteLayerHandleCompat,
+  RouteLayerLoadStatusCompat,
   RouteSolveResultCompat,
   RouteStopCompat,
 } from "./esri-compat/route-layer.js";
