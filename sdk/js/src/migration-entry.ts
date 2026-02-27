@@ -36,3 +36,14 @@ export type {
   JsParityStatus,
   JsParitySummary,
 } from "./migration/parity-matrix.js";
+export {
+  getJsRuntimeParityMatrix,
+  JS_RUNTIME_PARITY_MATRIX,
+  summarizeJsRuntimeParity,
+} from "./migration/runtime-matrix.js";
+export type {
+  JsRuntimeParityEntry,
+  JsRuntimeParityStatus,
+  JsRuntimeParitySurface,
+  JsRuntimeParitySummary,
+} from "./migration/runtime-matrix.js";

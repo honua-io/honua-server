@@ -12,9 +12,10 @@ import { buildJsMigrationReport } from "./report.js";
 import { evaluateMigrationGates } from "./gating.js";
 import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
 import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
+import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
 
 interface ParsedArgs {
-  command: "scan" | "codemod" | "reconcile" | "matrix" | "fixtures";
+  command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures";
   target: string;
   codemodTarget: CodemodTarget;
   write: boolean;
@@ -113,6 +114,8 @@ if (!parsed) {
     runScan(parsed.target, parsed.reportPath);
   } else if (parsed.command === "matrix") {
     runMatrix(parsed.reportPath);
+  } else if (parsed.command === "runtime-matrix") {
+    runRuntimeMatrix(parsed.reportPath);
   } else if (parsed.command === "fixtures") {
     runFixtures(parsed);
   } else if (parsed.command === "reconcile") {
@@ -128,6 +131,29 @@ if (!parsed) {
 function runMatrix(reportPath?: string): void {
   const matrix = getJsParityMatrix();
   const summary = summarizeJsParityMatrix(matrix);
+  process.stdout.write(
+    [
+      `entries=${matrix.length}`,
+      `honuaCompat=${summary.honuaCompat.compat}`,
+      `honuaAssisted=${summary.honuaCompat.assisted}`,
+      `honuaUnsupported=${summary.honuaCompat.unsupported}`,
+      `esriLeafletCompat=${summary.esriLeaflet.compat}`,
+      `esriLeafletAssisted=${summary.esriLeaflet.assisted}`,
+      `esriLeafletUnsupported=${summary.esriLeaflet.unsupported}`,
+    ].join(" "),
+  );
+  process.stdout.write("\n");
+  process.stdout.write(`${JSON.stringify({ summary, matrix }, null, 2)}\n`);
+
+  if (reportPath) {
+    fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
+    process.stdout.write(`reportWritten=${reportPath}\n`);
+  }
+}
+
+function runRuntimeMatrix(reportPath?: string): void {
+  const matrix = getJsRuntimeParityMatrix();
+  const summary = summarizeJsRuntimeParity(matrix);
   process.stdout.write(
     [
       `entries=${matrix.length}`,
@@ -518,11 +544,12 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
 
   const maybeCommand = argv[0];
-  const command: "scan" | "codemod" | "reconcile" | "matrix" | "fixtures" =
+  const command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" =
     maybeCommand === "scan" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
     maybeCommand === "matrix" ||
+    maybeCommand === "runtime-matrix" ||
     maybeCommand === "fixtures"
       ? maybeCommand
       : "scan";
@@ -767,6 +794,7 @@ function printUsage(): void {
       "  honua-migrate [scan] <path> [--report <file>]",
       "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
+      "  honua-migrate runtime-matrix [--report <file>]",
       "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "",
@@ -775,6 +803,7 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",
       "  node dist/src/migration/cli.js matrix --report parity-matrix.json",
+      "  node dist/src/migration/cli.js runtime-matrix --report runtime-parity-matrix.json",
       "  node dist/src/migration/cli.js fixtures --report real-sample-metrics.json",
       "  node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",

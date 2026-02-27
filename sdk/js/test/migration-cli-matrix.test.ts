@@ -188,4 +188,58 @@ describe("migration cli parity matrix", () => {
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
   }, 60_000);
+
+  it("prints and writes the runtime parity matrix artifact", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const reportPath = path.join(root, "runtime-parity.json");
+
+    const result = runCli(["runtime-matrix", "--report", reportPath], getProjectRoot());
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("entries=");
+    expect(result.stdout).toContain("esriLeafletAssisted=");
+    expect(result.stdout).toContain(`reportWritten=${reportPath}`);
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      summary: {
+        honuaCompat: Record<string, number>;
+        esriLeaflet: Record<string, number>;
+      };
+      matrix: Array<{
+        surface: string;
+        capability: string;
+        arcGisJsApi: string;
+        honuaCompat: string;
+        esriLeaflet: string;
+      }>;
+    };
+
+    expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
+    expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
+
+    const queryFeatures = report.matrix.find(
+      (entry) => entry.capability === "query-features" && entry.surface === "feature-layer",
+    );
+    const mapImageFind = report.matrix.find(
+      (entry) => entry.capability === "find" && entry.surface === "map-image-layer",
+    );
+    const viewGoTo = report.matrix.find(
+      (entry) => entry.capability === "navigation-go-to" && entry.surface === "map-view",
+    );
+
+    expect(queryFeatures).toMatchObject({
+      arcGisJsApi: "FeatureLayer.queryFeatures",
+      honuaCompat: "compat",
+    });
+    expect(mapImageFind).toMatchObject({
+      arcGisJsApi: "MapImageLayer.find",
+      honuaCompat: "compat",
+    });
+    expect(viewGoTo).toMatchObject({
+      arcGisJsApi: "MapView.goTo",
+      honuaCompat: "compat",
+    });
+  }, 60_000);
 });
