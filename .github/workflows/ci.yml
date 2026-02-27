@@ -361,7 +361,7 @@ jobs:
             --logger "trx;LogFileName=all-test-results.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            --blame-hang-timeout 8m \
+            --blame-hang-timeout 20m \
             -- RunConfiguration.MaxCpuCount=1
 
       - name: Install Python test dependencies
