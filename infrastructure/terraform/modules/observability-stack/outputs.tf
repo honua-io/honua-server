@@ -27,7 +27,7 @@ output "grafana_admin_secret_keys" {
   description = "Secret data keys for Grafana admin credentials."
   value = {
     username = "admin-user"
-    password = "admin-password"
+    password = "admin-pass"
   }
 }
 
