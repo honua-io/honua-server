@@ -343,17 +343,25 @@ export { MeasurementCompat } from "./esri-compat/measurement.js";
 export type {
   AreaUnitCompat,
   LinearUnitCompat,
+  MeasurementHandleCompat,
+  MeasurementLoadStatusCompat,
   MeasurementCompatOptions,
   MeasurementResultCompat,
   MeasurementToolCompat,
 } from "./esri-compat/measurement.js";
 export { AreaMeasurement2DCompat, DistanceMeasurement2DCompat } from "./esri-compat/measurement-2d.js";
 export type {
+  AreaMeasurement2DHandleCompat,
+  AreaMeasurement2DLoadStatusCompat,
   AreaMeasurement2DCompatOptions,
+  DistanceMeasurement2DHandleCompat,
+  DistanceMeasurement2DLoadStatusCompat,
   DistanceMeasurement2DCompatOptions,
 } from "./esri-compat/measurement-2d.js";
 export { TimeSliderCompat } from "./esri-compat/time-slider.js";
 export type {
+  TimeSliderHandleCompat,
+  TimeSliderLoadStatusCompat,
   TimeExtentCompat,
   TimeSliderCompatOptions,
   TimeSliderIntervalUnitCompat,

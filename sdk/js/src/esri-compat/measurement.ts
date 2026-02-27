@@ -23,27 +23,79 @@ export interface MeasurementResultCompat {
   unit: LinearUnitCompat | AreaUnitCompat;
 }
 
+export type MeasurementLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface MeasurementHandleCompat {
+  remove(): void;
+}
+
 export class MeasurementCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: MeasurementLoadStatusCompat;
   public activeTool: MeasurementToolCompat | undefined;
   public linearUnit: LinearUnitCompat;
   public areaUnit: AreaUnitCompat;
   public lastMeasurement: MeasurementResultCompat | undefined;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: MeasurementCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.activeTool = options.activeTool;
     this.linearUnit = options.linearUnit ?? "meters";
     this.areaUnit = options.areaUnit ?? "square-meters";
     this.lastMeasurement = undefined;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<MeasurementCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("measurement.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("measurement.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: MeasurementCompat) => void): Promise<MeasurementCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): MeasurementHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public start(tool: MeasurementToolCompat): void {
     this.activeTool = tool;
+    this.notifyWatchers("activeTool", this.activeTool);
     this.eventBus.emit("measurement.started", { tool }, this);
   }
 
@@ -53,11 +105,13 @@ export class MeasurementCompat {
     }
     const tool = this.activeTool;
     this.activeTool = undefined;
+    this.notifyWatchers("activeTool", this.activeTool);
     this.eventBus.emit("measurement.stopped", { tool }, this);
   }
 
   public clear(): void {
     this.lastMeasurement = undefined;
+    this.notifyWatchers("lastMeasurement", this.lastMeasurement);
     this.eventBus.emit("measurement.cleared", undefined, this);
   }
 
@@ -70,6 +124,7 @@ export class MeasurementCompat {
       unit: this.linearUnit,
     };
     this.lastMeasurement = result;
+    this.notifyWatchers("lastMeasurement", this.lastMeasurement);
     this.eventBus.emit("measurement.updated", result, this);
     return result;
   }
@@ -83,8 +138,24 @@ export class MeasurementCompat {
       unit: this.areaUnit,
     };
     this.lastMeasurement = result;
+    this.notifyWatchers("lastMeasurement", this.lastMeasurement);
     this.eventBus.emit("measurement.updated", result, this);
     return result;
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

@@ -39,10 +39,18 @@ export interface TimeSliderCompatOptions {
   playRate?: number;
 }
 
+export type TimeSliderLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface TimeSliderHandleCompat {
+  remove(): void;
+}
+
 export class TimeSliderCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: TimeSliderLoadStatusCompat;
   public readonly mode: TimeSliderModeCompat;
   public readonly loop: boolean;
   public readonly playRate: number;
@@ -52,11 +60,14 @@ export class TimeSliderCompat {
   public playing: boolean;
 
   private stopIndex: number;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: TimeSliderCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.mode = options.mode ?? "instant";
     this.loop = options.loop ?? false;
     this.playRate = options.playRate ?? 1000;
@@ -68,6 +79,46 @@ export class TimeSliderCompat {
     this.timeExtent = parseTimeExtent(options.timeExtent) ?? this.fullTimeExtent;
     this.playing = false;
     this.stopIndex = 0;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<TimeSliderCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("timeslider.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("timeslider.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: TimeSliderCompat) => void): Promise<TimeSliderCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): TimeSliderHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public setTimeExtent(timeExtent: TimeExtentCompat): void {
@@ -75,6 +126,7 @@ export class TimeSliderCompat {
       start: new Date(timeExtent.start.getTime()),
       end: new Date(timeExtent.end.getTime()),
     };
+    this.notifyWatchers("timeExtent", this.timeExtent);
     this.eventBus.emit("timeslider.updated", { timeExtent: this.timeExtent }, this);
   }
 
@@ -83,6 +135,7 @@ export class TimeSliderCompat {
       return;
     }
     this.playing = true;
+    this.notifyWatchers("playing", this.playing);
     this.eventBus.emit("timeslider.play", { playRate: this.playRate }, this);
   }
 
@@ -91,6 +144,7 @@ export class TimeSliderCompat {
       return;
     }
     this.playing = false;
+    this.notifyWatchers("playing", this.playing);
     this.eventBus.emit("timeslider.stop", undefined, this);
   }
 
@@ -148,6 +202,21 @@ export class TimeSliderCompat {
     };
     this.setTimeExtent(shifted);
     return this.timeExtent;
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
