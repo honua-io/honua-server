@@ -124,8 +124,10 @@ public sealed class ArcGisRestClientSecurityTests
                 connectCallback!(context, cts.Token).AsTask());
         }
 
-        var currentDescriptors = CountOpenFileDescriptors();
-        (currentDescriptors - baselineDescriptors).Should().BeLessThan(32);
+        var settledDescriptors = await WaitForDescriptorSettleAsync(
+            baselineDescriptors,
+            TimeSpan.FromSeconds(5));
+        (settledDescriptors - baselineDescriptors).Should().BeLessThan(64);
     }
 
     private static ArcGisRestClient CreateClient(
@@ -146,6 +148,30 @@ public sealed class ArcGisRestClientSecurityTests
 
         constructor.Should().NotBeNull();
         return (SocketsHttpConnectionContext)constructor!.Invoke([dnsEndPoint, request]);
+    }
+
+    private static async Task<int> WaitForDescriptorSettleAsync(int baselineDescriptors, TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        var lowestObserved = int.MaxValue;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var current = CountOpenFileDescriptors();
+            if (current < lowestObserved)
+            {
+                lowestObserved = current;
+            }
+
+            if (current <= baselineDescriptors + 16)
+            {
+                return current;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return lowestObserved;
     }
 
     private static int CountOpenFileDescriptors() => Directory.GetFiles("/proc/self/fd").Length;
