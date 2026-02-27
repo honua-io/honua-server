@@ -104,7 +104,11 @@ export type {
 export { BasemapCompat } from "./esri-compat/basemap.js";
 export type { BasemapCompatOptions, BasemapLoadStatusCompat } from "./esri-compat/basemap.js";
 export { BasemapLayerListCompat } from "./esri-compat/basemap-layer-list.js";
-export type { BasemapLayerListCompatOptions } from "./esri-compat/basemap-layer-list.js";
+export type {
+  BasemapLayerListCompatOptions,
+  BasemapLayerListHandleCompat,
+  BasemapLayerListLoadStatusCompat,
+} from "./esri-compat/basemap-layer-list.js";
 export { BookmarksCompat } from "./esri-compat/bookmarks.js";
 export type {
   BookmarkCompatItem,
@@ -113,7 +117,11 @@ export type {
   BookmarksLoadStatusCompat,
 } from "./esri-compat/bookmarks.js";
 export { ExpandCompat } from "./esri-compat/expand.js";
-export type { ExpandCompatOptions } from "./esri-compat/expand.js";
+export type {
+  ExpandCompatOptions,
+  ExpandHandleCompat,
+  ExpandLoadStatusCompat,
+} from "./esri-compat/expand.js";
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";
 export type {
   GraphicsLayerCompatOptions,
