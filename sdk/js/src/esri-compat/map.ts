@@ -12,6 +12,10 @@ export interface MapCompatOptions {
 
 export type MapLoadStatusCompat = "not-loaded" | "loading" | "loaded";
 
+export interface MapCompatHandle {
+  remove(): void;
+}
+
 export class MapCompat {
   public basemap: unknown;
   public ground: unknown;
@@ -21,6 +25,7 @@ export class MapCompat {
   public loaded: boolean;
   public loadStatus: MapLoadStatusCompat;
   public readonly eventBus: CompatEventBus;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private readonly layersInternal: unknown[];
 
   public constructor(options: MapCompatOptions = {}) {
@@ -33,6 +38,7 @@ export class MapCompat {
     this.loadStatus = "not-loaded";
     this.layersInternal = Array.isArray(options.layers) ? [...options.layers] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.layers) ?? new CompatEventBus();
+    this.watchListeners = new Map();
   }
 
   public async load(): Promise<MapCompat> {
@@ -41,9 +47,12 @@ export class MapCompat {
     }
 
     this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.eventBus.emit("map.loading", { layerCount: this.layersInternal.length }, this);
     this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
     this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.eventBus.emit("map.loaded", { layerCount: this.layersInternal.length }, this);
     return this;
   }
@@ -54,6 +63,21 @@ export class MapCompat {
       callback(map);
     }
     return map;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): MapCompatHandle {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public get layers(): readonly unknown[] {
@@ -72,12 +96,16 @@ export class MapCompat {
   public add(layer: unknown, index?: number): void {
     if (index === undefined) {
       this.layersInternal.push(layer);
+      this.notifyWatchers("layers", this.layers);
+      this.notifyWatchers("allLayers", this.allLayers);
       this.eventBus.emit("map.layer-added", { layer, index: this.layersInternal.length - 1 }, this);
       return;
     }
 
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, layer);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("map.layer-added", { layer, index: insertAt }, this);
   }
 
@@ -89,12 +117,16 @@ export class MapCompat {
     if (index === undefined) {
       const startIndex = this.layersInternal.length;
       this.layersInternal.push(...layers);
+      this.notifyWatchers("layers", this.layers);
+      this.notifyWatchers("allLayers", this.allLayers);
       this.eventBus.emit("map.layers-added", { layers: [...layers], index: startIndex }, this);
       return;
     }
 
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, ...layers);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("map.layers-added", { layers: [...layers], index: insertAt }, this);
   }
 
@@ -105,6 +137,8 @@ export class MapCompat {
     }
 
     this.layersInternal.splice(index, 1);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("map.layer-removed", { layer, index }, this);
     return true;
   }
@@ -122,6 +156,8 @@ export class MapCompat {
   public removeAll(): void {
     const removedLayers = [...this.layersInternal];
     this.layersInternal.length = 0;
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("map.layers-cleared", { layers: removedLayers }, this);
   }
 
@@ -134,6 +170,8 @@ export class MapCompat {
     this.layersInternal.splice(existingIndex, 1);
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, layer);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("map.layer-reordered", { layer, fromIndex: existingIndex, toIndex: insertAt }, this);
     return true;
   }
@@ -150,22 +188,37 @@ export class MapCompat {
 
   public setBasemap(basemap: unknown): void {
     this.basemap = basemap;
+    this.notifyWatchers("basemap", this.basemap);
     this.eventBus.emit("map.basemap-changed", { basemap }, this);
   }
 
   public setGround(ground: unknown): void {
     this.ground = ground;
+    this.notifyWatchers("ground", this.ground);
     this.eventBus.emit("map.ground-changed", { ground }, this);
   }
 
   public setTables(tables: readonly unknown[]): void {
     this.tables = [...tables];
+    this.notifyWatchers("tables", this.tables);
     this.eventBus.emit("map.tables-changed", { tables: this.tables }, this);
   }
 
   public setSpatialReference(spatialReference: unknown): void {
     this.spatialReference = spatialReference;
+    this.notifyWatchers("spatialReference", this.spatialReference);
     this.eventBus.emit("map.spatial-reference-changed", { spatialReference }, this);
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

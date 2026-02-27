@@ -166,7 +166,7 @@ export type {
 export { OAuthInfoCompat } from "./esri-compat/oauth-info.js";
 export type { OAuthInfoCompatOptions } from "./esri-compat/oauth-info.js";
 export { MapCompat } from "./esri-compat/map.js";
-export type { MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
+export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
 export type {
   MapImageLayerIdentifyOptions,

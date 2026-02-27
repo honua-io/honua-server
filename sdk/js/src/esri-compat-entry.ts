@@ -147,7 +147,7 @@ export type {
 export { GroupLayerCompat } from "./esri-compat/group-layer.js";
 export type { GroupLayerCompatOptions, GroupLayerLoadStatusCompat } from "./esri-compat/group-layer.js";
 export { MapCompat } from "./esri-compat/map.js";
-export type { MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
+export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
 export type {
   MapImageLayerIdentifyOptions,

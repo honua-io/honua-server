@@ -46,6 +46,43 @@ describe("MapCompat", () => {
     expect(map.remove(layerA)).toBe(false);
   });
 
+  it("supports watch handles for map property changes", async () => {
+    const map = new MapCompat({
+      basemap: "streets",
+      layers: [],
+    });
+
+    const basemapValues: unknown[] = [];
+    const layerCounts: number[] = [];
+    const loadStatusValues: unknown[] = [];
+
+    const basemapHandle = map.watch("basemap", (value) => {
+      basemapValues.push(value);
+    });
+    const layersHandle = map.watch("layers", (value) => {
+      layerCounts.push(Array.isArray(value) ? value.length : -1);
+    });
+    const loadStatusHandle = map.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+
+    map.setBasemap("satellite");
+    map.add({ id: "layer-1" });
+    await map.load();
+
+    basemapHandle.remove();
+    layersHandle.remove();
+    loadStatusHandle.remove();
+
+    map.setBasemap("topographic");
+    map.add({ id: "layer-2" });
+
+    expect(basemapValues).toEqual(["satellite"]);
+    expect(layerCounts).toEqual([1]);
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(map.loadStatus).toBe("loaded");
+  });
+
   it("supports indexed layer operations and id-based lookup", () => {
     const layerA = { id: "a" };
     const layerB = { id: "b" };
