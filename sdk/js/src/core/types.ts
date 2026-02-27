@@ -96,6 +96,27 @@ export interface MapIdentifyRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export interface MapFindRequest {
+  serviceId: string;
+  searchText: string;
+  contains?: boolean;
+  searchFields?: string | string[];
+  layers?: string;
+  sr?: string | number;
+  layerDefs?: string;
+  returnGeometry?: boolean;
+  maxAllowableOffset?: number;
+  dynamicLayers?: string;
+  returnZ?: boolean;
+  returnM?: boolean;
+  gdbVersion?: string;
+  time?: string;
+  relationParam?: string;
+  responseFormat?: "json" | "pjson";
+  method?: QueryMethod;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
 export interface HonuaRawRequest {
   path: string;
   method?: QueryMethod;

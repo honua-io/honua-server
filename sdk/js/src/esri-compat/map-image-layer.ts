@@ -1,5 +1,10 @@
 import { HonuaClient } from "../core/client.js";
-import type { ExportMapRequest, MapIdentifyRequest, MapLegendRequest } from "../core/types.js";
+import type {
+  ExportMapRequest,
+  MapFindRequest,
+  MapIdentifyRequest,
+  MapLegendRequest,
+} from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
 import { parseMapServiceUrl } from "./url.js";
 
@@ -21,6 +26,7 @@ export interface MapImageLayerCompatOptions {
 export interface MapImageLayerExportOptions extends Omit<ExportMapRequest, "serviceId"> {}
 export interface MapImageLayerLegendOptions extends Omit<MapLegendRequest, "serviceId"> {}
 export interface MapImageLayerIdentifyOptions extends Omit<MapIdentifyRequest, "serviceId"> {}
+export interface MapImageLayerFindOptions extends Omit<MapFindRequest, "serviceId"> {}
 
 export type MapImageLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
 
@@ -139,6 +145,13 @@ export class MapImageLayerCompat {
 
   public identify(options: MapImageLayerIdentifyOptions): Promise<unknown> {
     return this.client.identifyMap({
+      ...options,
+      serviceId: this.serviceId,
+    });
+  }
+
+  public find(options: MapImageLayerFindOptions): Promise<unknown> {
+    return this.client.findMap({
       ...options,
       serviceId: this.serviceId,
     });

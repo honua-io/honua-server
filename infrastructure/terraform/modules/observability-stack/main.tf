@@ -130,8 +130,8 @@ resource "kubernetes_secret_v1" "grafana_admin" {
   }
 
   data = {
-    "admin-user"     = var.grafana_admin_user
-    "admin-pass"     = random_password.grafana_admin.result
+    "admin-user" = var.grafana_admin_user
+    "admin-pass" = random_password.grafana_admin.result
   }
 
   depends_on = [kubernetes_namespace_v1.this]

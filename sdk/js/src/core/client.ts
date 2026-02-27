@@ -9,6 +9,7 @@ import type {
   HonuaRequestInterceptor,
   HonuaRequestMutation,
   HonuaResponseContext,
+  MapFindRequest,
   MapIdentifyRequest,
   MapLegendRequest,
   QueryFeaturesRequest,
@@ -79,6 +80,13 @@ function normalizeMapExtent(mapExtent: MapIdentifyRequest["mapExtent"]): string 
 
 function normalizeImageDisplay(imageDisplay: MapIdentifyRequest["imageDisplay"]): string {
   return Array.isArray(imageDisplay) ? imageDisplay.join(",") : imageDisplay;
+}
+
+function normalizeSearchFields(searchFields: MapFindRequest["searchFields"]): string {
+  if (!searchFields) {
+    return "";
+  }
+  return Array.isArray(searchFields) ? searchFields.join(",") : searchFields;
 }
 
 export class HonuaClient {
@@ -329,6 +337,67 @@ export class HonuaClient {
     }
 
     const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/identify`;
+    if (method === "GET") {
+      return this.requestJson("GET", `${path}?${params.toString()}`);
+    }
+
+    return this.requestJson("POST", path, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  }
+
+  public async findMap(request: MapFindRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", request.responseFormat ?? "json");
+    params.set("searchText", request.searchText);
+    params.set("contains", String(request.contains ?? true));
+    if (request.searchFields !== undefined) {
+      params.set("searchFields", normalizeSearchFields(request.searchFields));
+    }
+    if (request.layers !== undefined) {
+      params.set("layers", request.layers);
+    }
+    if (request.sr !== undefined) {
+      params.set("sr", String(request.sr));
+    }
+    if (request.layerDefs !== undefined) {
+      params.set("layerDefs", request.layerDefs);
+    }
+    if (request.returnGeometry !== undefined) {
+      params.set("returnGeometry", String(request.returnGeometry));
+    }
+    if (request.maxAllowableOffset !== undefined) {
+      params.set("maxAllowableOffset", String(request.maxAllowableOffset));
+    }
+    if (request.dynamicLayers !== undefined) {
+      params.set("dynamicLayers", request.dynamicLayers);
+    }
+    if (request.returnZ !== undefined) {
+      params.set("returnZ", String(request.returnZ));
+    }
+    if (request.returnM !== undefined) {
+      params.set("returnM", String(request.returnM));
+    }
+    if (request.gdbVersion !== undefined) {
+      params.set("gdbVersion", request.gdbVersion);
+    }
+    if (request.time !== undefined) {
+      params.set("time", request.time);
+    }
+    if (request.relationParam !== undefined) {
+      params.set("relationParam", request.relationParam);
+    }
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/find`;
     if (method === "GET") {
       return this.requestJson("GET", `${path}?${params.toString()}`);
     }

@@ -135,7 +135,7 @@ describe("MapImageLayerCompat", () => {
     expect(JSON.stringify(exportRequest)).toContain('"format":"png32"');
   });
 
-  it("maps legend and identify helpers with serviceId and emits visibility events", async () => {
+  it("maps legend/find/identify helpers with serviceId and emits visibility events", async () => {
     const requests: Array<{ kind: string; payload: unknown }> = [];
     const events: string[] = [];
     const eventBus = new CompatEventBus();
@@ -170,11 +170,23 @@ describe("MapImageLayerCompat", () => {
           requests.push({ kind: "identify", payload: request });
           return Promise.resolve({ results: [] });
         }
+
+        public findMap(request: unknown): Promise<unknown> {
+          requests.push({ kind: "find", payload: request });
+          return Promise.resolve({ results: [{ value: "Parcels" }] });
+        }
       })() as any,
     });
 
     expect(await layer.getLegend({ size: 18 })).toEqual({ layers: [] });
     expect(await layer.legend({ dynamicLayers: '[{"id":1}]' })).toEqual({ layers: [] });
+    expect(
+      await layer.find({
+        searchText: "Parcels",
+        searchFields: ["NAME"],
+        layers: "all:0,1",
+      }),
+    ).toEqual({ results: [{ value: "Parcels" }] });
     expect(
       await layer.identify({
         geometry: { x: 1, y: 2 },
@@ -199,7 +211,7 @@ describe("MapImageLayerCompat", () => {
     expect(layer.listMode).toBe("show");
     expect(layer.legendEnabled).toBe(true);
 
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
     expect(requests[0]).toMatchObject({
       kind: "legend",
       payload: { serviceId: "default", size: 18 },
@@ -209,6 +221,15 @@ describe("MapImageLayerCompat", () => {
       payload: { serviceId: "default", dynamicLayers: '[{"id":1}]' },
     });
     expect(requests[2]).toMatchObject({
+      kind: "find",
+      payload: {
+        serviceId: "default",
+        searchText: "Parcels",
+        searchFields: ["NAME"],
+        layers: "all:0,1",
+      },
+    });
+    expect(requests[3]).toMatchObject({
       kind: "identify",
       payload: {
         serviceId: "default",

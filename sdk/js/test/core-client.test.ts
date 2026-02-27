@@ -245,6 +245,47 @@ describe("HonuaClient", () => {
     expect(requestedBody).toContain("time=2024-01-01%2C2024-12-31");
   });
 
+  it("finds map features through MapServer/find", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ results: [{ layerId: 0, value: "Parcels" }] }), {
+          status: 200,
+        });
+      },
+    });
+
+    const response = await client.findMap({
+      serviceId: "default",
+      searchText: "Parcels",
+      contains: false,
+      searchFields: ["NAME", "ALIAS"],
+      layers: "all:0,1",
+      sr: 3857,
+      returnGeometry: true,
+      dynamicLayers: '[{"id":1}]',
+      extraParams: { time: "2024-01-01,2024-12-31" },
+    });
+
+    expect(response).toEqual({ results: [{ layerId: 0, value: "Parcels" }] });
+    expect(requestedInit?.method).toBe("GET");
+    expect(requestedUrl).toContain("/rest/services/default/MapServer/find?");
+    expect(requestedUrl).toContain("f=json");
+    expect(requestedUrl).toContain("searchText=Parcels");
+    expect(requestedUrl).toContain("contains=false");
+    expect(requestedUrl).toContain("searchFields=NAME%2CALIAS");
+    expect(requestedUrl).toContain("layers=all%3A0%2C1");
+    expect(requestedUrl).toContain("sr=3857");
+    expect(requestedUrl).toContain("returnGeometry=true");
+    expect(requestedUrl).toContain("dynamicLayers=%5B%7B%22id%22%3A1%7D%5D");
+    expect(requestedUrl).toContain("time=2024-01-01%2C2024-12-31");
+  });
+
   it("supports raw request helper for custom endpoints", async () => {
     let requestedUrl: string | undefined;
     let requestedInit: RequestInit | undefined;

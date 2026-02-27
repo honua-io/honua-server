@@ -262,6 +262,7 @@ export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./e
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
 export type {
   MapImageLayerHandleCompat,
+  MapImageLayerFindOptions,
   MapImageLayerIdentifyOptions,
   MapImageLayerCompatOptions,
   MapImageLayerExportOptions,
