@@ -93,6 +93,17 @@ export interface MapViewHitTestResult {
   results: MapViewHitTestResultItem[];
 }
 
+export interface MapViewLayerViewHighlightOptions {
+  name?: string;
+}
+
+export interface MapViewLayerViewHighlightRecord {
+  targets: unknown[];
+  options: MapViewLayerViewHighlightOptions;
+}
+
+export interface MapViewLayerViewHighlightHandle extends MapViewHandle {}
+
 export type MapViewUiPosition = "manual" | "top-left" | "top-right" | "bottom-left" | "bottom-right" | string;
 
 export interface MapViewUiAddOptions {
@@ -228,6 +239,8 @@ export class MapViewLayerViewCompat {
 
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private readonly eventBus: CompatEventBus | undefined;
+  private readonly highlightsInternal: Map<number, MapViewLayerViewHighlightRecord>;
+  private nextHighlightId: number;
 
   public constructor(layer: unknown, eventBus?: CompatEventBus) {
     this.layer = layer;
@@ -237,6 +250,15 @@ export class MapViewLayerViewCompat {
     this.hasAllFeaturesInView = true;
     this.watchListeners = new Map();
     this.eventBus = eventBus;
+    this.highlightsInternal = new Map();
+    this.nextHighlightId = 1;
+  }
+
+  public get highlights(): readonly MapViewLayerViewHighlightRecord[] {
+    return Array.from(this.highlightsInternal.values()).map((record) => ({
+      targets: [...record.targets],
+      options: { ...record.options },
+    }));
   }
 
   public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle {
@@ -327,8 +349,68 @@ export class MapViewLayerViewCompat {
     return ids;
   }
 
+  public highlight(
+    target: unknown | readonly unknown[],
+    options: MapViewLayerViewHighlightOptions = {},
+  ): MapViewLayerViewHighlightHandle {
+    const id = this.nextHighlightId;
+    this.nextHighlightId += 1;
+    const record: MapViewLayerViewHighlightRecord = {
+      targets: normalizeHighlightTargets(target),
+      options: { ...options },
+    };
+    this.highlightsInternal.set(id, record);
+    this.notifyWatchers("highlights", this.highlights);
+    this.eventBus?.emit(
+      "view.layer-view-highlight-added",
+      {
+        layer: this.layer,
+        targets: [...record.targets],
+        options: { ...record.options },
+        count: this.highlightsInternal.size,
+      },
+      this,
+    );
+
+    return {
+      remove: () => {
+        this.removeHighlight(id);
+      },
+    };
+  }
+
   public destroy(): void {
+    if (this.highlightsInternal.size > 0) {
+      this.highlightsInternal.clear();
+      this.notifyWatchers("highlights", this.highlights);
+      this.eventBus?.emit(
+        "view.layer-view-highlights-cleared",
+        { layer: this.layer, count: 0 },
+        this,
+      );
+    }
     this.watchListeners.clear();
+  }
+
+  private removeHighlight(id: number): boolean {
+    const record = this.highlightsInternal.get(id);
+    if (!record) {
+      return false;
+    }
+
+    this.highlightsInternal.delete(id);
+    this.notifyWatchers("highlights", this.highlights);
+    this.eventBus?.emit(
+      "view.layer-view-highlight-removed",
+      {
+        layer: this.layer,
+        targets: [...record.targets],
+        options: { ...record.options },
+        count: this.highlightsInternal.size,
+      },
+      this,
+    );
+    return true;
   }
 
   private notifyWatchers(propertyName: string, value: unknown): void {
@@ -1225,6 +1307,13 @@ function normalizeFeatureIndex(index: number, length: number): number {
     return -1;
   }
   return normalized;
+}
+
+function normalizeHighlightTargets(target: unknown | readonly unknown[]): unknown[] {
+  if (Array.isArray(target)) {
+    return [...target];
+  }
+  return [target];
 }
 
 function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider {

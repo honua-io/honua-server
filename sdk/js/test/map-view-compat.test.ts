@@ -549,16 +549,34 @@ describe("MapViewCompat", () => {
 
     const hasAllFeaturesValues: unknown[] = [];
     const hasAllFeaturesInViewValues: unknown[] = [];
+    const highlightCounts: number[] = [];
     layerViewA.watch("hasAllFeatures", (value) => {
       hasAllFeaturesValues.push(value);
     });
     layerViewA.watch("hasAllFeaturesInView", (value) => {
       hasAllFeaturesInViewValues.push(value);
     });
+    layerViewA.watch("highlights", (value) => {
+      highlightCounts.push(Array.isArray(value) ? value.length : -1);
+    });
     layerViewA.setHasAllFeatures(false);
     layerViewA.setHasAllFeaturesInView(false);
     expect(hasAllFeaturesValues).toEqual([false]);
     expect(hasAllFeaturesInViewValues).toEqual([false]);
+
+    const highlightA = layerViewA.highlight({ attributes: { OBJECTID: 101 } });
+    const highlightB = layerViewA.highlight(
+      [{ attributes: { OBJECTID: 102 } }, { attributes: { OBJECTID: 103 } }],
+      { name: "selection" },
+    );
+    expect(layerViewA.highlights).toHaveLength(2);
+    highlightA.remove();
+    expect(layerViewA.highlights).toHaveLength(1);
+    highlightA.remove();
+    expect(layerViewA.highlights).toHaveLength(1);
+    highlightB.remove();
+    expect(layerViewA.highlights).toHaveLength(0);
+    expect(highlightCounts).toEqual([1, 2, 1, 0]);
 
     const queryResult = await layerViewA.queryFeatures({ where: "1=1" });
     expect(queryResult).toEqual({
@@ -633,10 +651,12 @@ describe("MapViewCompat", () => {
     view.ui.add({ id: "legend" }, "top-right");
     view.ui.move("legend", "bottom-left");
     const layerView = await view.whenLayerView(layer);
+    const highlight = layerView.highlight({ attributes: { OBJECTID: 1 } }, { name: "hover" });
     layerView.setUpdating(true);
     layerView.setSuspended(true);
     layerView.setHasAllFeatures(false);
     layerView.setHasAllFeaturesInView(false);
+    highlight.remove();
     view.closePopup();
     view.destroy();
 
@@ -648,6 +668,8 @@ describe("MapViewCompat", () => {
     expect(events).toContain("view.layer-view-suspended-changed");
     expect(events).toContain("view.layer-view-has-all-features-changed");
     expect(events).toContain("view.layer-view-has-all-features-in-view-changed");
+    expect(events).toContain("view.layer-view-highlight-added");
+    expect(events).toContain("view.layer-view-highlight-removed");
     expect(events).toContain("view.ui.component-added");
     expect(events).toContain("view.ui.component-removed");
     expect(events).toContain("view.ui.component-moved");
