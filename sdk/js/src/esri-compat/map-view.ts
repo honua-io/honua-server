@@ -17,11 +17,43 @@ export interface MapViewCompatOptions {
 }
 
 export interface MapViewGoToTarget {
+  target?: unknown;
   center?: unknown;
   zoom?: number;
   scale?: number;
   rotation?: number;
   extent?: unknown;
+}
+
+export interface MapViewGoToPointLike {
+  x?: number;
+  y?: number;
+  longitude?: number;
+  latitude?: number;
+  spatialReference?: unknown;
+}
+
+export interface MapViewGoToExtentLike {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+  spatialReference?: unknown;
+}
+
+export type MapViewGoToInput =
+  | MapViewGoToTarget
+  | MapViewGoToPointLike
+  | MapViewGoToExtentLike
+  | readonly [number, number]
+  | readonly unknown[]
+  | Record<string, unknown>;
+
+export interface MapViewGoToOptions {
+  animate?: boolean;
+  duration?: number;
+  speedFactor?: number;
+  easing?: string;
 }
 
 export interface MapViewHandle {
@@ -626,24 +658,26 @@ export class MapViewCompat {
     };
   }
 
-  public async goTo(target: MapViewGoToTarget): Promise<MapViewCompat> {
-    if (target.center !== undefined) {
-      this.setCenter(target.center);
+  public async goTo(target: MapViewGoToInput, options: MapViewGoToOptions = {}): Promise<MapViewCompat> {
+    const normalizedTarget = normalizeGoToTarget(target);
+    if (normalizedTarget.center !== undefined) {
+      this.setCenter(normalizedTarget.center);
     }
-    if (target.zoom !== undefined) {
-      this.setZoom(target.zoom);
+    if (normalizedTarget.zoom !== undefined) {
+      this.setZoom(normalizedTarget.zoom);
     }
-    if (target.scale !== undefined) {
-      this.setScale(target.scale);
+    if (normalizedTarget.scale !== undefined) {
+      this.setScale(normalizedTarget.scale);
     }
-    if (target.rotation !== undefined) {
-      this.setRotation(target.rotation);
+    if (normalizedTarget.rotation !== undefined) {
+      this.setRotation(normalizedTarget.rotation);
     }
-    if (target.extent !== undefined) {
-      this.setExtent(target.extent);
+    if (normalizedTarget.extent !== undefined) {
+      this.setExtent(normalizedTarget.extent);
     }
-    this.eventBus.emit("view.go-to", target, this);
-    this.emit("go-to", target);
+    const payload = hasGoToOptions(options) ? { target, options } : target;
+    this.eventBus.emit("view.go-to", payload, this);
+    this.emit("go-to", payload);
 
     return this;
   }
@@ -811,6 +845,350 @@ export class MapViewCompat {
   }
 }
 
+interface MapViewExtentBounds {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+  spatialReference?: unknown;
+}
+
+const GEOMETRY_SEQUENCE_KEYS = ["points", "path", "paths", "ring", "rings"] as const;
+
+function normalizeGoToTarget(target: MapViewGoToInput): MapViewGoToTarget {
+  const normalized: MapViewGoToTarget = {};
+  const targetRecord = asRecord(target);
+
+  if (targetRecord !== undefined) {
+    if ("target" in targetRecord && targetRecord.target !== undefined) {
+      mergeGoToTarget(normalized, normalizeGoToTarget(targetRecord.target as MapViewGoToInput));
+    }
+    if (targetRecord.center !== undefined) {
+      normalized.center = targetRecord.center;
+    }
+    const zoom = normalizeFiniteNumber(targetRecord.zoom);
+    if (zoom !== undefined) {
+      normalized.zoom = zoom;
+    }
+    const scale = normalizeFiniteNumber(targetRecord.scale);
+    if (scale !== undefined) {
+      normalized.scale = scale;
+    }
+    const rotation = normalizeFiniteNumber(targetRecord.rotation);
+    if (rotation !== undefined) {
+      normalized.rotation = rotation;
+    }
+    if (targetRecord.extent !== undefined) {
+      normalized.extent = targetRecord.extent;
+    }
+  }
+
+  if (normalized.center === undefined) {
+    const derivedCenter = extractGoToCenter(target);
+    if (derivedCenter !== undefined) {
+      normalized.center = derivedCenter;
+    }
+  }
+
+  if (normalized.extent === undefined) {
+    const derivedExtent = extractGoToExtent(target);
+    if (derivedExtent !== undefined) {
+      normalized.extent = derivedExtent;
+    }
+  }
+
+  if (normalized.center === undefined && normalized.extent !== undefined) {
+    const centerFromExtent = extractExtentCenter(normalized.extent);
+    if (centerFromExtent !== undefined) {
+      normalized.center = centerFromExtent;
+    }
+  }
+
+  return normalized;
+}
+
+function mergeGoToTarget(target: MapViewGoToTarget, source: MapViewGoToTarget): void {
+  if (source.center !== undefined) {
+    target.center = source.center;
+  }
+  if (source.zoom !== undefined) {
+    target.zoom = source.zoom;
+  }
+  if (source.scale !== undefined) {
+    target.scale = source.scale;
+  }
+  if (source.rotation !== undefined) {
+    target.rotation = source.rotation;
+  }
+  if (source.extent !== undefined) {
+    target.extent = source.extent;
+  }
+}
+
+function hasGoToOptions(options: MapViewGoToOptions): boolean {
+  return (
+    options.animate !== undefined ||
+    options.duration !== undefined ||
+    options.speedFactor !== undefined ||
+    options.easing !== undefined
+  );
+}
+
+function extractGoToCenter(value: unknown, visited: Set<object> = new Set()): unknown {
+  if (isCoordinatePair(value)) {
+    return [value[0], value[1]];
+  }
+
+  if (Array.isArray(value)) {
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (visited.has(value)) {
+    return undefined;
+  }
+  visited.add(value);
+
+  if ("target" in value && value.target !== undefined) {
+    const nestedCenter = extractGoToCenter(value.target, visited);
+    if (nestedCenter !== undefined) {
+      return nestedCenter;
+    }
+  }
+
+  if ("geometry" in value && value.geometry !== undefined) {
+    const nestedCenter = extractGoToCenter(value.geometry, visited);
+    if (nestedCenter !== undefined) {
+      return nestedCenter;
+    }
+  }
+
+  return extractPointCenterFromRecord(value);
+}
+
+function extractGoToExtent(value: unknown): MapViewGoToExtentLike | undefined {
+  if (!shouldDeriveExtentFromTarget(value)) {
+    return undefined;
+  }
+
+  const bounds = collectBounds(value);
+  return bounds ? toExtentLike(bounds) : undefined;
+}
+
+function shouldDeriveExtentFromTarget(value: unknown, visited: Set<object> = new Set()): boolean {
+  if (isExtentLike(value)) {
+    return true;
+  }
+
+  if (isCoordinatePair(value)) {
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (visited.has(value)) {
+    return false;
+  }
+  visited.add(value);
+
+  if ("target" in value && value.target !== undefined && shouldDeriveExtentFromTarget(value.target, visited)) {
+    return true;
+  }
+
+  if ("geometry" in value && value.geometry !== undefined && shouldDeriveExtentFromTarget(value.geometry, visited)) {
+    return true;
+  }
+
+  return hasCoordinateSequences(value);
+}
+
+function collectBounds(value: unknown, visited: Set<object> = new Set()): MapViewExtentBounds | undefined {
+  if (isExtentLike(value)) {
+    return {
+      xmin: value.xmin,
+      ymin: value.ymin,
+      xmax: value.xmax,
+      ymax: value.ymax,
+      spatialReference: value.spatialReference,
+    };
+  }
+
+  if (isCoordinatePair(value)) {
+    return createBoundsFromPoint(value[0], value[1]);
+  }
+
+  if (Array.isArray(value)) {
+    let bounds: MapViewExtentBounds | undefined;
+    for (const item of value) {
+      bounds = mergeBounds(bounds, collectBounds(item, visited));
+    }
+    return bounds;
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  if (visited.has(value)) {
+    return undefined;
+  }
+  visited.add(value);
+
+  let bounds: MapViewExtentBounds | undefined;
+
+  if ("target" in value && value.target !== undefined) {
+    bounds = mergeBounds(bounds, collectBounds(value.target, visited));
+  }
+
+  if ("geometry" in value && value.geometry !== undefined) {
+    bounds = mergeBounds(bounds, collectBounds(value.geometry, visited));
+  }
+
+  const point = extractPointFromRecord(value);
+  if (point !== undefined) {
+    bounds = mergeBounds(bounds, createBoundsFromPoint(point.x, point.y, point.spatialReference));
+  }
+
+  for (const key of GEOMETRY_SEQUENCE_KEYS) {
+    if (key in value) {
+      bounds = mergeBounds(bounds, collectBounds(value[key], visited));
+    }
+  }
+
+  return bounds;
+}
+
+function hasCoordinateSequences(value: Record<string, any>): boolean {
+  return GEOMETRY_SEQUENCE_KEYS.some((key) => key in value && Array.isArray(value[key]));
+}
+
+function extractPointCenterFromRecord(value: Record<string, any>): MapViewMapPoint | undefined {
+  const point = extractPointFromRecord(value);
+  if (point === undefined) {
+    return undefined;
+  }
+  return {
+    x: point.x,
+    y: point.y,
+    spatialReference: point.spatialReference,
+  };
+}
+
+function extractPointFromRecord(
+  value: Record<string, any>,
+): { x: number; y: number; spatialReference?: unknown } | undefined {
+  const x = normalizeFiniteNumber(value.x);
+  const y = normalizeFiniteNumber(value.y);
+  if (x !== undefined && y !== undefined) {
+    return {
+      x,
+      y,
+      spatialReference: value.spatialReference,
+    };
+  }
+
+  const longitude = normalizeFiniteNumber(value.longitude);
+  const latitude = normalizeFiniteNumber(value.latitude);
+  if (longitude !== undefined && latitude !== undefined) {
+    return {
+      x: longitude,
+      y: latitude,
+      spatialReference: value.spatialReference,
+    };
+  }
+
+  return undefined;
+}
+
+function normalizeFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function createBoundsFromPoint(x: number, y: number, spatialReference?: unknown): MapViewExtentBounds {
+  return {
+    xmin: x,
+    ymin: y,
+    xmax: x,
+    ymax: y,
+    spatialReference,
+  };
+}
+
+function mergeBounds(
+  current: MapViewExtentBounds | undefined,
+  next: MapViewExtentBounds | undefined,
+): MapViewExtentBounds | undefined {
+  if (next === undefined) {
+    return current;
+  }
+  if (current === undefined) {
+    return next;
+  }
+
+  return {
+    xmin: Math.min(current.xmin, next.xmin),
+    ymin: Math.min(current.ymin, next.ymin),
+    xmax: Math.max(current.xmax, next.xmax),
+    ymax: Math.max(current.ymax, next.ymax),
+    spatialReference: current.spatialReference ?? next.spatialReference,
+  };
+}
+
+function toExtentLike(bounds: MapViewExtentBounds): MapViewGoToExtentLike {
+  return {
+    xmin: bounds.xmin,
+    ymin: bounds.ymin,
+    xmax: bounds.xmax,
+    ymax: bounds.ymax,
+    spatialReference: bounds.spatialReference,
+  };
+}
+
+function extractExtentCenter(extent: unknown): MapViewMapPoint | undefined {
+  if (!isExtentLike(extent)) {
+    return undefined;
+  }
+  return {
+    x: (extent.xmin + extent.xmax) / 2,
+    y: (extent.ymin + extent.ymax) / 2,
+    spatialReference: extent.spatialReference,
+  };
+}
+
+function isCoordinatePair(value: unknown): value is readonly [number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 2 &&
+    typeof value[0] === "number" &&
+    Number.isFinite(value[0]) &&
+    typeof value[1] === "number" &&
+    Number.isFinite(value[1])
+  );
+}
+
+function isExtentLike(value: unknown): value is MapViewGoToExtentLike {
+  return (
+    isRecord(value) &&
+    typeof value.xmin === "number" &&
+    Number.isFinite(value.xmin) &&
+    typeof value.ymin === "number" &&
+    Number.isFinite(value.ymin) &&
+    typeof value.xmax === "number" &&
+    Number.isFinite(value.xmax) &&
+    typeof value.ymax === "number" &&
+    Number.isFinite(value.ymax)
+  );
+}
+
 function normalizeUiOptions(input: MapViewUiPosition | MapViewUiAddOptions): Required<MapViewUiAddOptions> {
   if (typeof input === "string") {
     return {
@@ -931,6 +1309,13 @@ function extractGraphicLayer(value: unknown): unknown {
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null;
+}
+
+function asRecord(value: unknown): Record<string, any> | undefined {
+  if (!isRecord(value) || Array.isArray(value)) {
+    return undefined;
+  }
+  return value;
 }
 
 function extractPopupOptions(popup: unknown): MapViewPopupCompatOptions {

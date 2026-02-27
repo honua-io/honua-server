@@ -141,6 +141,70 @@ describe("MapViewCompat", () => {
     expect(view.spatialReference).toBeUndefined();
   });
 
+  it("normalizes common ArcGIS goTo target shapes", async () => {
+    const view = new MapViewCompat();
+    const events: unknown[] = [];
+    view.on("go-to", (event) => {
+      events.push(event);
+    });
+
+    await view.goTo({
+      geometry: {
+        x: 10,
+        y: 20,
+        spatialReference: { wkid: 4326 },
+      },
+    });
+    expect(view.center).toEqual({ x: 10, y: 20, spatialReference: { wkid: 4326 } });
+
+    await view.goTo({
+      geometry: {
+        paths: [
+          [
+            [0, 0],
+            [4, 6],
+            [2, -2],
+          ],
+        ],
+      },
+    });
+    expect(view.extent).toEqual({
+      xmin: 0,
+      ymin: -2,
+      xmax: 4,
+      ymax: 6,
+      spatialReference: undefined,
+    });
+    expect(view.center).toEqual({ x: 2, y: 2, spatialReference: undefined });
+
+    await view.goTo(
+      [
+        { geometry: { x: -3, y: 5 } },
+        { geometry: { x: 7, y: 9 } },
+      ],
+      { animate: false, duration: 1200 },
+    );
+    expect(view.extent).toEqual({
+      xmin: -3,
+      ymin: 5,
+      xmax: 7,
+      ymax: 9,
+      spatialReference: undefined,
+    });
+    expect(view.center).toEqual({ x: 2, y: 7, spatialReference: undefined });
+
+    await view.goTo([30, 40]);
+    expect(view.center).toEqual([30, 40]);
+
+    expect(events).toContainEqual({
+      target: [
+        { geometry: { x: -3, y: 5 } },
+        { geometry: { x: 7, y: 9 } },
+      ],
+      options: { animate: false, duration: 1200 },
+    });
+  });
+
   it("supports watch and on handles", async () => {
     const view = new MapViewCompat({
       zoom: 2,

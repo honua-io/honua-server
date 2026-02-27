@@ -231,6 +231,10 @@ export type {
 export { MapViewCompat } from "./esri-compat/map-view.js";
 export type {
   MapViewCompatOptions,
+  MapViewGoToExtentLike,
+  MapViewGoToInput,
+  MapViewGoToOptions,
+  MapViewGoToPointLike,
   MapViewGoToTarget,
   MapViewHandle,
   MapViewHitTestEvent,
