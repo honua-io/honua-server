@@ -1218,8 +1218,8 @@ describe("arcgis migration integration", () => {
 
     expect(codemodResult.filesChanged).toBe(1);
     expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(2);
-    expect(codemodResult.metrics.autoMigratedCallSites).toBe(1);
-    expect(codemodResult.metrics.manualCallSites).toBe(1);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(2);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
     expect(codemodResult.metrics.byKind["map-image-layer"]).toMatchObject({
       total: 1,
       autoMigrated: 1,
@@ -1227,26 +1227,19 @@ describe("arcgis migration integration", () => {
     });
     expect(codemodResult.metrics.byKind.map).toMatchObject({
       total: 1,
-      autoMigrated: 0,
-      manual: 1,
+      autoMigrated: 1,
+      manual: 0,
     });
     expect(report.codemodTarget).toBe("esri-leaflet");
-    expect(report.readiness).toBe("assisted");
-    expect(report.manualTodos.some((todo) => todo.kind === "map")).toBe(true);
-    expect(report.unhandledArcGisModules).toEqual(
-      expect.arrayContaining([
-        {
-          modulePath: "@arcgis/core/Map",
-          usageStyle: "static-import",
-          count: 1,
-        },
-      ]),
-    );
+    expect(report.readiness).toBe("ready");
+    expect(report.manualTodos).toEqual([]);
+    expect(report.unhandledArcGisModules).toEqual([]);
 
     const migratedMain = fs.readFileSync(path.join(workingCopy, "src", "main.ts"), "utf8");
     expect(migratedMain).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(migratedMain).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
     expect(migratedMain).toContain("const parcels = HonuaEsriLeaflet.dynamicMapLayer({");
-    expect(migratedMain).toContain("new Map({");
+    expect(migratedMain).toContain("new MapCompat({");
   });
 
   it("migrates map + group-layer + graphics-layer fixture with ready gating", () => {

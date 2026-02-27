@@ -23,6 +23,31 @@ const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
 const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON =
   "esriRequest import shape is unsupported for automatic migration.";
 
+const ESRI_LEAFLET_NATIVE_KINDS = new Set<CodemodConstructorKind>([
+  "feature-layer",
+  "map-image-layer",
+  "tile-layer",
+]);
+const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
+  "map",
+  "map-view",
+  "layer-list",
+  "legend-widget",
+  "popup-widget",
+  "search-widget",
+  "home-widget",
+  "basemap-toggle-widget",
+  "locate-widget",
+  "scale-bar-widget",
+  "basemap-gallery-widget",
+  "expand-widget",
+  "compass-widget",
+  "bookmarks-widget",
+  "fullscreen-widget",
+  "zoom-widget",
+  "attribution-widget",
+]);
+
 export type CodemodTarget = "honua-compat" | "esri-leaflet";
 
 export type CodemodConstructorKind =
@@ -615,7 +640,10 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
 const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> =
   Object.freeze({
     "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
-    "esri-leaflet": new Set(["feature-layer", "map-image-layer", "tile-layer"] as const),
+    "esri-leaflet": new Set([
+      ...ESRI_LEAFLET_NATIVE_KINDS,
+      ...ESRI_LEAFLET_COMPAT_FALLBACK_KINDS,
+    ]),
   });
 
 export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
@@ -908,6 +936,18 @@ function codemodFile(
           return;
         }
 
+        const fallbackSymbol = esriLeafletCompatFallbackSymbolForKind(spec.kind);
+        if (fallbackSymbol) {
+          dynamicImportEdits.push({
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            text: buildCompatDynamicImportExpression(compatImportPath, fallbackSymbol),
+          });
+          rewrittenKinds.push(spec.kind);
+          requiredCompatSymbols.add(fallbackSymbol);
+          return;
+        }
+
         const nodeStart = node.getStart(sourceFile);
         const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
         manualTodos.push({
@@ -995,6 +1035,18 @@ function codemodFile(
         return;
       }
 
+      const fallbackSymbol = esriLeafletCompatFallbackSymbolForKind(importBinding.kind);
+      if (fallbackSymbol) {
+        requiredCompatSymbols.add(fallbackSymbol);
+        constructorEdits.push({
+          start: rewriteTarget.start,
+          end: rewriteTarget.end,
+          text: fallbackSymbol,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
       const nodeStart = node.getStart(sourceFile);
       const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
       manualTodos.push({
@@ -1062,8 +1114,8 @@ function codemodFile(
   transformed = removedArcGisImports.nextSource;
 
   let addedCompatImport = false;
-  if (target === "honua-compat") {
-    const compatSymbols = Array.from(requiredCompatSymbols).sort();
+  const compatSymbols = Array.from(requiredCompatSymbols).sort();
+  if (compatSymbols.length > 0) {
     const compatImportResult = ensureCompatNamedImports(
       file,
       transformed,
@@ -1072,7 +1124,8 @@ function codemodFile(
     );
     transformed = compatImportResult.nextSource;
     addedCompatImport = compatImportResult.changed;
-  } else if (requiresEsriLeafletImport.value) {
+  }
+  if (target === "esri-leaflet" && requiresEsriLeafletImport.value) {
     const esriLeafletImportResult = ensureNamespaceImport(
       file,
       transformed,
@@ -1080,7 +1133,7 @@ function codemodFile(
       esriLeafletNamespaceAlias,
     );
     transformed = esriLeafletImportResult.nextSource;
-    addedCompatImport = esriLeafletImportResult.changed;
+    addedCompatImport = addedCompatImport || esriLeafletImportResult.changed;
   }
 
   return {
@@ -1956,6 +2009,10 @@ function buildEsriLeafletDynamicImportExpression(
 }
 
 function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefined {
+  if (!ESRI_LEAFLET_NATIVE_KINDS.has(kind)) {
+    return undefined;
+  }
+
   switch (kind) {
     case "feature-layer":
       return "featureLayer";
@@ -1966,6 +2023,15 @@ function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefi
     default:
       return undefined;
   }
+}
+
+function esriLeafletCompatFallbackSymbolForKind(
+  kind: CodemodConstructorKind,
+): string | undefined {
+  if (!ESRI_LEAFLET_COMPAT_FALLBACK_KINDS.has(kind)) {
+    return undefined;
+  }
+  return specForKind(kind).compatSymbol;
 }
 
 function removeUnusedArcGisImports(

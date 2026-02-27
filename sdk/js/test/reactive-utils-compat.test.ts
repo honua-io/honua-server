@@ -61,6 +61,28 @@ describe("reactiveUtils compat", () => {
     expect(seen).toEqual([true, true]);
   });
 
+  it("fires when() initial callback once per truthy period", async () => {
+    let enabled = true;
+    const seen: boolean[] = [];
+
+    const handle = when(
+      () => enabled,
+      (next) => {
+        seen.push(next);
+      },
+      { initial: true, intervalMs: 1 },
+    );
+
+    await sleep(8);
+    enabled = false;
+    await sleep(5);
+    enabled = true;
+    await sleep(5);
+    handle.remove();
+
+    expect(seen).toEqual([true, true]);
+  });
+
   it("resolves whenOnce and exposes object helper", async () => {
     let state = 0;
 

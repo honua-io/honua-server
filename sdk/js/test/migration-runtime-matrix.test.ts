@@ -18,6 +18,12 @@ describe("JS runtime parity matrix", () => {
     const mapViewGoTo = matrix.find(
       (entry) => entry.surface === "map-view" && entry.capability === "navigation-go-to",
     );
+    const navigationWidgets = matrix.find(
+      (entry) => entry.surface === "widget" && entry.capability === "navigation-widgets",
+    );
+    const commonControls = matrix.find(
+      (entry) => entry.surface === "control" && entry.capability === "common-map-controls",
+    );
 
     expect(featureLayerQuery).toMatchObject({
       arcGisJsApi: "FeatureLayer.queryFeatures",
@@ -30,6 +36,17 @@ describe("JS runtime parity matrix", () => {
     expect(mapViewGoTo).toMatchObject({
       arcGisJsApi: "MapView.goTo",
       honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(navigationWidgets).toMatchObject({
+      arcGisJsApi: "BasemapGallery/Bookmarks/Expand",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(commonControls).toMatchObject({
+      arcGisJsApi: "Home/BasemapToggle/Locate/ScaleBar/Compass/Fullscreen/Zoom/Attribution",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
     });
   });
 

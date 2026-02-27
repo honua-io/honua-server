@@ -92,6 +92,40 @@ describe("FeatureTableCompat", () => {
     expect(seenTypes).toContain("feature-table.refreshed");
   });
 
+  it("keeps latest rows when concurrent refresh calls resolve out of order", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    const firstResponse = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    let queryCount = 0;
+    const layer = {
+      queryFeatures: async () => {
+        queryCount += 1;
+        if (queryCount === 1) {
+          return firstResponse;
+        }
+        return {
+          features: [{ attributes: { OBJECTID: 2, name: "newest" }, geometry: null }],
+        };
+      },
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer });
+
+    const firstRefresh = table.refresh();
+    const secondRefresh = table.refresh();
+    await secondRefresh;
+    resolveFirst?.({
+      features: [{ attributes: { OBJECTID: 1, name: "stale" }, geometry: null }],
+    });
+    await firstRefresh;
+
+    expect(table.loadStatus).toBe("loaded");
+    expect(table.rows).toHaveLength(1);
+    expect(table.rows[0]).toMatchObject({ objectId: 2, attributes: { name: "newest" } });
+  });
+
   it("tracks highlightIds collection changes and selection state", () => {
     const eventBus = new CompatEventBus();
     const seenChanges: unknown[] = [];

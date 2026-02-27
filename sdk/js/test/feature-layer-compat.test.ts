@@ -105,6 +105,38 @@ describe("FeatureLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("sets failed loadStatus when metadata loading fails", async () => {
+    const errors: unknown[] = [];
+    const eventBus = new CompatEventBus();
+    eventBus.on("feature-layer.failed", (event) => {
+      errors.push(event.payload);
+    });
+
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/7",
+      eventBus,
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.reject(new Error("boom"));
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    await expect(layer.load()).rejects.toThrow("boom");
+    expect(layer.loaded).toBe(false);
+    expect(layer.metadata).toBeUndefined();
+    expect(layer.loadStatus).toBe("failed");
+    expect(errors).toHaveLength(1);
+  });
+
   it("exposes metadata field helpers for schema lookup", async () => {
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/1000",

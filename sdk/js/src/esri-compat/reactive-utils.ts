@@ -83,8 +83,10 @@ export function when<TValue>(
 ): ReactiveUtilsHandleCompat {
   let active = true;
   let seenTruthy = false;
+  let hasEvaluated = false;
   const intervalMs = normalizeInterval(options.intervalMs);
   const once = options.once ?? false;
+  const initial = options.initial ?? true;
 
   const evaluate = (): void => {
     if (!active) {
@@ -101,10 +103,13 @@ export function when<TValue>(
     const truthy = Boolean(value);
     if (!truthy) {
       seenTruthy = false;
+      hasEvaluated = true;
       return;
     }
 
-    if (options.initial || !seenTruthy) {
+    const isFirstEvaluation = !hasEvaluated;
+    const shouldNotify = !seenTruthy && (!isFirstEvaluation || initial);
+    if (shouldNotify) {
       callback(value);
       if (once) {
         remove();
@@ -113,6 +118,7 @@ export function when<TValue>(
     }
 
     seenTruthy = true;
+    hasEvaluated = true;
   };
 
   const timer = setInterval(evaluate, intervalMs);

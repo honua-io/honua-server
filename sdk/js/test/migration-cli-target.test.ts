@@ -86,7 +86,7 @@ afterEach(() => {
 });
 
 describe("migration cli target selection", () => {
-  it("runs codemod with --target esri-leaflet and emits report/manual TODOs", () => {
+  it("runs codemod with --target esri-leaflet and emits a deterministic mixed mapping report", () => {
     ensureBuiltCliArtifacts();
     const root = makeTempDir();
     const appFile = path.join(root, "app.ts");
@@ -111,38 +111,24 @@ describe("migration cli target selection", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("target=esri-leaflet");
-    expect(result.stdout).toContain("manual=1");
+    expect(result.stdout).toContain("manual=0");
     expect(fs.existsSync(reportPath)).toBe(true);
 
     const migrated = fs.readFileSync(appFile, "utf8");
     expect(migrated).toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(migrated).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
     expect(migrated).toContain("const layer = HonuaEsriLeaflet.featureLayer({ url: serviceUrl });");
-    expect(migrated).toContain("const map = new Map({ basemap: 'streets' });");
-    expect(migrated).toContain("// TODO(honua-migrate)[map]:");
+    expect(migrated).toContain("const map = new MapCompat({ basemap: 'streets' });");
+    expect(migrated).not.toContain("// TODO(honua-migrate)[map]:");
 
     const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
       readiness: string;
       manualTodos: Array<{ kind: string; reason: string }>;
       unhandledArcGisModules: Array<{ modulePath: string; usageStyle: string; count: number }>;
     };
-    expect(report.readiness).toBe("assisted");
-    expect(report.manualTodos).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "map",
-        }),
-      ]),
-    );
-    expect(report.manualTodos.some((todo) => todo.reason.includes("esri-leaflet mapping"))).toBe(true);
-    expect(report.unhandledArcGisModules).toEqual(
-      expect.arrayContaining([
-        {
-          modulePath: "@arcgis/core/Map",
-          usageStyle: "static-import",
-          count: 1,
-        },
-      ]),
-    );
+    expect(report.readiness).toBe("ready");
+    expect(report.manualTodos).toEqual([]);
+    expect(report.unhandledArcGisModules).toEqual([]);
   }, 60_000);
 
   it("fails fast for invalid --target values", () => {
@@ -153,5 +139,5 @@ describe("migration cli target selection", () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("Usage:");
-  });
+  }, 60_000);
 });

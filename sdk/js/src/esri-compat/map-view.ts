@@ -445,7 +445,7 @@ export class MapViewLayerViewCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeListener(() => listener(value));
     }
   }
 }
@@ -988,7 +988,7 @@ export class MapViewCompat {
     }
 
     for (const listener of listeners) {
-      listener(payload);
+      safeInvokeListener(() => listener(payload));
     }
     return true;
   }
@@ -1000,7 +1000,7 @@ export class MapViewCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeListener(() => listener(value));
     }
   }
 }
@@ -1488,6 +1488,14 @@ function extractGraphicLayer(value: unknown): unknown {
     return undefined;
   }
   return value.layer;
+}
+
+function safeInvokeListener(invoke: () => void): void {
+  try {
+    invoke();
+  } catch {
+    // Listener errors should not break compatibility flow.
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

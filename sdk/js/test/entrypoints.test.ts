@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createHonuaOgcFeatures,
   createHonuaService,
   HonuaClient,
   HonuaFeatureLayer,
   HonuaHttpError,
   HonuaMapService,
+  HonuaOgcFeatureCollection,
+  HonuaOgcFeatures,
   HonuaService,
 } from "../src/honua.js";
 import {
@@ -108,7 +111,10 @@ describe("entrypoint modules", () => {
     expect(HonuaService).toBeTypeOf("function");
     expect(HonuaFeatureLayer).toBeTypeOf("function");
     expect(HonuaMapService).toBeTypeOf("function");
+    expect(HonuaOgcFeatures).toBeTypeOf("function");
+    expect(HonuaOgcFeatureCollection).toBeTypeOf("function");
     expect(createHonuaService).toBeTypeOf("function");
+    expect(createHonuaOgcFeatures).toBeTypeOf("function");
   });
 
   it("exposes esri-compat entrypoint", () => {

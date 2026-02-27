@@ -226,4 +226,32 @@ describe("migration cli fixtures metrics", () => {
     expect(result.stdout).toContain("gatingFailures:");
     expect(result.stdout).toContain("Manual call sites detected");
   }, 60_000);
+
+  it("passes strict fixture gates for deterministic esri-leaflet subset", () => {
+    ensureBuiltCliArtifacts();
+
+    const result = runCli(
+      [
+        "fixtures",
+        "--target",
+        "esri-leaflet",
+        "--fixtures",
+        "esri-real-sample-ops-center-app",
+        "--fail-on-manual",
+        "--fail-on-unhandled",
+        "--fail-on-blocked",
+        "--max-manual-ratio",
+        "0",
+        "--max-manual-intervention-ratio",
+        "0",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixturesGate=pass");
+    expect(result.stdout).toContain("target=esri-leaflet");
+    expect(result.stdout).toContain("manual=0");
+    expect(result.stdout).toContain("unhandled=0");
+  }, 60_000);
 });

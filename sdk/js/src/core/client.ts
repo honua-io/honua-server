@@ -12,6 +12,14 @@ import type {
   MapFindRequest,
   MapIdentifyRequest,
   MapLegendRequest,
+  OgcCollectionRequest,
+  OgcCreateItemRequest,
+  OgcDeleteItemRequest,
+  OgcItemRequest,
+  OgcItemsRequest,
+  OgcMetadataRequest,
+  OgcPatchItemRequest,
+  OgcReplaceItemRequest,
   QueryFeaturesRequest,
   QueryMethod,
   QueryRelatedRecordsRequest,
@@ -19,6 +27,7 @@ import type {
 import {
   HonuaFeatureLayer,
   HonuaMapService,
+  HonuaOgcFeatures,
   HonuaService,
 } from "./surfaces.js";
 
@@ -137,6 +146,12 @@ export class HonuaClient {
     });
   }
 
+  public ogcFeatures(): HonuaOgcFeatures {
+    return new HonuaOgcFeatures({
+      client: this,
+    });
+  }
+
   public async listServices(format: "json" | "pjson" = "json"): Promise<unknown> {
     const query = new URLSearchParams({ f: format });
     return this.requestJson("GET", `/rest/services?${query.toString()}`);
@@ -166,6 +181,146 @@ export class HonuaClient {
       "GET",
       `/rest/services/${encodeURIComponent(serviceId)}/FeatureServer/${layerId}?${query.toString()}`,
     );
+  }
+
+  public async getFeatureServiceMetadata(serviceId: string): Promise<unknown> {
+    const query = new URLSearchParams({ f: "json" });
+    return this.requestJson(
+      "GET",
+      `/rest/services/${encodeURIComponent(serviceId)}/FeatureServer?${query.toString()}`,
+    );
+  }
+
+  public async getOgcFeaturesLanding(request: OgcMetadataRequest = {}): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    return this.requestJson("GET", `/ogc/features?${params.toString()}`);
+  }
+
+  public async getOgcFeaturesConformance(request: OgcMetadataRequest = {}): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    return this.requestJson("GET", `/ogc/features/conformance?${params.toString()}`);
+  }
+
+  public async listOgcCollections(request: OgcMetadataRequest = {}): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    return this.requestJson("GET", `/ogc/features/collections?${params.toString()}`);
+  }
+
+  public async getOgcCollection(request: OgcCollectionRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}`;
+    return this.requestJson("GET", `${path}?${params.toString()}`);
+  }
+
+  public async getOgcQueryables(request: OgcCollectionRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/queryables`;
+    return this.requestJson("GET", `${path}?${params.toString()}`);
+  }
+
+  public async listOgcItems(request: OgcItemsRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    if (request.limit !== undefined) {
+      params.set("limit", String(request.limit));
+    }
+    if (request.offset !== undefined) {
+      params.set("offset", String(request.offset));
+    }
+    if (request.bbox !== undefined) {
+      params.set("bbox", request.bbox);
+    }
+    if (request.datetime !== undefined) {
+      params.set("datetime", request.datetime);
+    }
+    if (request.filter !== undefined) {
+      params.set("filter", request.filter);
+    }
+    if (request.ids !== undefined) {
+      params.set("ids", normalizeCsv(request.ids));
+    }
+    if (request.properties !== undefined) {
+      params.set("properties", normalizeCsv(request.properties));
+    }
+    if (request.sortby !== undefined) {
+      params.set("sortby", request.sortby);
+    }
+    if (request.crs !== undefined) {
+      params.set("crs", request.crs);
+    }
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/items`;
+    return this.requestJson("GET", `${path}?${params.toString()}`);
+  }
+
+  public async getOgcItem(request: OgcItemRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    if (request.crs !== undefined) {
+      params.set("crs", request.crs);
+    }
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
+      `/items/${encodeURIComponent(String(request.featureId))}`;
+    return this.requestJson("GET", `${path}?${params.toString()}`);
+  }
+
+  public async createOgcItem(request: OgcCreateItemRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/items`;
+    return this.requestJson("POST", `${path}?${params.toString()}`, {
+      headers: mergeHeaders(
+        { "Content-Type": "application/geo+json" },
+        request.headers,
+      ),
+      body: JSON.stringify(request.feature),
+    });
+  }
+
+  public async replaceOgcItem(request: OgcReplaceItemRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    if (request.crs !== undefined) {
+      params.set("crs", request.crs);
+    }
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
+      `/items/${encodeURIComponent(String(request.featureId))}`;
+    return this.requestJson("PUT", `${path}?${params.toString()}`, {
+      headers: mergeHeaders(
+        { "Content-Type": "application/geo+json" },
+        request.headers,
+      ),
+      body: JSON.stringify(request.feature),
+    });
+  }
+
+  public async patchOgcItem(request: OgcPatchItemRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    if (request.crs !== undefined) {
+      params.set("crs", request.crs);
+    }
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
+      `/items/${encodeURIComponent(String(request.featureId))}`;
+    return this.requestJson("PATCH", `${path}?${params.toString()}`, {
+      headers: mergeHeaders(
+        { "Content-Type": "application/merge-patch+json" },
+        request.headers,
+      ),
+      body: JSON.stringify(request.patch),
+    });
+  }
+
+  public async deleteOgcItem(request: OgcDeleteItemRequest): Promise<unknown> {
+    const params = createOgcMetadataParams(request);
+    if (request.crs !== undefined) {
+      params.set("crs", request.crs);
+    }
+    const path =
+      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
+      `/items/${encodeURIComponent(String(request.featureId))}`;
+    return this.requestJson("DELETE", `${path}?${params.toString()}`);
   }
 
   public async getMapServiceMetadata(serviceId: string): Promise<unknown> {
@@ -438,7 +593,7 @@ export class HonuaClient {
   }
 
   private async requestJson(
-    method: "GET" | "POST",
+    method: QueryMethod,
     path: string,
     init?: RequestInit,
   ): Promise<unknown> {
@@ -459,22 +614,32 @@ export class HonuaClient {
 
     request = await this.applyBeforeInterceptors(request);
 
+    let response: Response;
     try {
-      const response = await this.fetchFn(request.url, {
+      response = await this.fetchFn(request.url, {
         ...request.init,
         method: request.method,
       });
-      await this.applyAfterInterceptors({ request: cloneRequestContext(request), response });
-
-      const body = await parseResponseBody(response);
-      if (!response.ok) {
-        throw this.toHttpError(response.status, body);
-      }
-      return body;
     } catch (error) {
       await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
       throw error;
     }
+
+    const body = await parseResponseBody(response.clone());
+    if (!response.ok) {
+      const httpError = this.toHttpError(response.status, body);
+      await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: httpError });
+      throw httpError;
+    }
+
+    try {
+      await this.applyAfterInterceptors(cloneRequestContext(request), response);
+    } catch (error) {
+      await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
+      throw error;
+    }
+
+    return body;
   }
 
   private async applyBeforeInterceptors(request: HonuaRequestContext): Promise<HonuaRequestContext> {
@@ -489,8 +654,12 @@ export class HonuaClient {
     return next;
   }
 
-  private async applyAfterInterceptors(context: HonuaResponseContext): Promise<void> {
+  private async applyAfterInterceptors(request: HonuaRequestContext, response: Response): Promise<void> {
     for (const interceptor of this.interceptors) {
+      const context: HonuaResponseContext = {
+        request: cloneRequestContext(request),
+        response: response.clone(),
+      };
       await interceptor.after?.(context);
     }
   }
@@ -533,7 +702,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 }
 
 function isObject(value: unknown): value is Record<string, any> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function applyRequestMutation(
@@ -603,4 +772,26 @@ function mergeHeaders(...headersList: Array<HeadersInit | undefined>): Record<st
     }
   }
   return merged;
+}
+
+function createOgcMetadataParams(
+  request: OgcMetadataRequest,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("f", request.responseFormat ?? "json");
+  if (request.extraParams) {
+    for (const [key, value] of Object.entries(request.extraParams)) {
+      params.set(key, String(value));
+    }
+  }
+  return params;
+}
+
+function normalizeCsv(
+  value: string | readonly (string | number)[],
+): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return Array.from(value).join(",");
 }

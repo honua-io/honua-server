@@ -228,6 +228,7 @@ export class FeatureTableCompat {
   public readonly highlightIds: FeatureTableHighlightIdsCompat;
   public rows: readonly FeatureTableRowCompat[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private refreshRevision: number;
 
   public get size(): number {
     return this.rows.length;
@@ -262,6 +263,7 @@ export class FeatureTableCompat {
     this.highlightIds = new FeatureTableHighlightIdsCompat(options.highlightIds);
     this.rows = [];
     this.watchListeners = new Map();
+    this.refreshRevision = 0;
 
     this.highlightIds.on("change", (event) => {
       this.notifyWatchers("highlightIds", this.highlightIds.toArray());
@@ -309,6 +311,7 @@ export class FeatureTableCompat {
   }
 
   public async refresh(): Promise<readonly FeatureTableRowCompat[]> {
+    const refreshRevision = this.nextRefreshRevision();
     if (this.loadStatus !== "loading") {
       this.loadStatus = "loading";
       this.notifyWatchers("loadStatus", this.loadStatus);
@@ -339,6 +342,9 @@ export class FeatureTableCompat {
         where: this.where,
         returnGeometry: true,
       });
+      if (refreshRevision !== this.refreshRevision) {
+        return this.rows;
+      }
       this.rows = extractRows(response, this.objectIdField);
       this.notifyWatchers("rows", this.rows);
       this.notifyWatchers("size", this.size);
@@ -352,6 +358,9 @@ export class FeatureTableCompat {
       this.eventBus.emit("feature-table.refreshed", { rowCount: this.rows.length }, this);
       return this.rows;
     } catch (error) {
+      if (refreshRevision !== this.refreshRevision) {
+        return this.rows;
+      }
       this.state = "error";
       this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
@@ -428,6 +437,11 @@ export class FeatureTableCompat {
     for (const listener of listeners) {
       listener(value);
     }
+  }
+
+  private nextRefreshRevision(): number {
+    this.refreshRevision += 1;
+    return this.refreshRevision;
   }
 }
 

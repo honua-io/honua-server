@@ -72,5 +72,12 @@ describe("GroupLayerCompat", () => {
     expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
     expect(loadedValues).toHaveLength(watchSnapshot.loaded);
     expect(layerCounts).toHaveLength(watchSnapshot.layers);
+
+    layer.setOpacity(Number.NaN);
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-1);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(5);
+    expect(layer.opacity).toBe(1);
   });
 });

@@ -100,7 +100,9 @@ export class PopupCompat {
     const viewPopup = resolveViewPopup(this.view);
     if (viewPopup) {
       viewPopup.open(options);
-      this.syncFromViewPopup();
+      if (!isSynchronizedWithViewPopup(this, viewPopup)) {
+        this.syncFromViewPopup();
+      }
       return;
     }
 
@@ -122,7 +124,9 @@ export class PopupCompat {
     const viewPopup = resolveViewPopup(this.view);
     if (viewPopup) {
       viewPopup.close();
-      this.syncFromViewPopup();
+      if (!isSynchronizedWithViewPopup(this, viewPopup)) {
+        this.syncFromViewPopup();
+      }
       return;
     }
 
@@ -238,6 +242,14 @@ export class PopupCompat {
       return;
     }
 
+    const previousVisible = this.visible;
+    const previousLocation = this.location;
+    const previousFeatures = this.features;
+    const previousTitle = this.title;
+    const previousContent = this.content;
+    const previousSelectedFeature = this.selectedFeature;
+    const previousSelectedFeatureIndex = this.selectedFeatureIndex;
+
     this.visible = viewPopup.visible;
     this.location = viewPopup.location;
     this.features = [...viewPopup.features];
@@ -251,13 +263,28 @@ export class PopupCompat {
     if (this.selectedFeatureIndex < 0) {
       this.selectedFeatureIndex = this.features.length > 0 ? 0 : -1;
     }
-    this.notifyWatchers("visible", this.visible);
-    this.notifyWatchers("location", this.location);
-    this.notifyWatchers("features", this.features);
-    this.notifyWatchers("title", this.title);
-    this.notifyWatchers("content", this.content);
-    this.notifyWatchers("selectedFeature", this.selectedFeature);
-    this.notifyWatchers("selectedFeatureIndex", this.selectedFeatureIndex);
+
+    if (!Object.is(previousVisible, this.visible)) {
+      this.notifyWatchers("visible", this.visible);
+    }
+    if (!Object.is(previousLocation, this.location)) {
+      this.notifyWatchers("location", this.location);
+    }
+    if (!arraysShallowEqual(previousFeatures, this.features)) {
+      this.notifyWatchers("features", this.features);
+    }
+    if (!Object.is(previousTitle, this.title)) {
+      this.notifyWatchers("title", this.title);
+    }
+    if (!Object.is(previousContent, this.content)) {
+      this.notifyWatchers("content", this.content);
+    }
+    if (!Object.is(previousSelectedFeature, this.selectedFeature)) {
+      this.notifyWatchers("selectedFeature", this.selectedFeature);
+    }
+    if (!Object.is(previousSelectedFeatureIndex, this.selectedFeatureIndex)) {
+      this.notifyWatchers("selectedFeatureIndex", this.selectedFeatureIndex);
+    }
   }
 
   private applySelection(index: number): void {
@@ -336,4 +363,37 @@ function normalizeFeatureIndex(index: number, length: number): number {
     return -1;
   }
   return normalized;
+}
+
+function arraysShallowEqual(left: readonly unknown[], right: readonly unknown[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (!Object.is(left[index], right[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isSynchronizedWithViewPopup(widget: PopupCompat, viewPopup: ViewPopupLike): boolean {
+  const selectedFeature =
+    viewPopup.selectedFeature ?? (viewPopup.features.length > 0 ? viewPopup.features[0] : undefined);
+  const selectedFeatureIndex =
+    typeof viewPopup.selectedFeatureIndex === "number"
+      ? normalizeFeatureIndex(viewPopup.selectedFeatureIndex, viewPopup.features.length)
+      : viewPopup.features.findIndex((feature) => Object.is(feature, selectedFeature));
+  const normalizedSelectedFeatureIndex =
+    selectedFeatureIndex < 0 ? (viewPopup.features.length > 0 ? 0 : -1) : selectedFeatureIndex;
+
+  return (
+    Object.is(widget.visible, viewPopup.visible) &&
+    Object.is(widget.location, viewPopup.location) &&
+    arraysShallowEqual(widget.features, viewPopup.features) &&
+    Object.is(widget.title, viewPopup.title) &&
+    Object.is(widget.content, viewPopup.content) &&
+    Object.is(widget.selectedFeature, selectedFeature) &&
+    Object.is(widget.selectedFeatureIndex, normalizedSelectedFeatureIndex)
+  );
 }

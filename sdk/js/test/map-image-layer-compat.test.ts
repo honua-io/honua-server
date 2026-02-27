@@ -106,6 +106,30 @@ describe("MapImageLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("sets failed loadStatus when metadata loading fails", async () => {
+    const failures: unknown[] = [];
+    const eventBus = new CompatEventBus();
+    eventBus.on("map-image-layer.failed", (event) => {
+      failures.push(event.payload);
+    });
+
+    const layer = new MapImageLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      eventBus,
+      client: new (class {
+        public getMapServiceMetadata(): Promise<unknown> {
+          return Promise.reject(new Error("metadata-failed"));
+        }
+      })() as any,
+    });
+
+    await expect(layer.load()).rejects.toThrow("metadata-failed");
+    expect(layer.loaded).toBe(false);
+    expect(layer.metadata).toBeUndefined();
+    expect(layer.loadStatus).toBe("failed");
+    expect(failures).toHaveLength(1);
+  });
+
   it("maps exportImage to map export request with serviceId", async () => {
     let exportRequest: unknown;
     const layer = new MapImageLayerCompat({
@@ -220,6 +244,13 @@ describe("MapImageLayerCompat", () => {
     expect(layer.maxScale).toBe(0);
     expect(layer.listMode).toBe("show");
     expect(layer.legendEnabled).toBe(true);
+
+    layer.setOpacity(Number.NaN);
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-4);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(8);
+    expect(layer.opacity).toBe(1);
 
     expect(requests).toHaveLength(4);
     expect(requests[0]).toMatchObject({

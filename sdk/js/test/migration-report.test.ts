@@ -349,9 +349,9 @@ describe("buildJsMigrationReport", () => {
       imports: [
         {
           file: "/tmp/app/src/main.ts",
-          modulePath: "@arcgis/core/Map",
-          importClause: "Map",
-          symbols: ["Map"],
+          modulePath: "@arcgis/core/rest/route/RouteTask",
+          importClause: "RouteTask",
+          symbols: ["RouteTask"],
         },
         {
           file: "/tmp/app/src/main.ts",
@@ -361,7 +361,7 @@ describe("buildJsMigrationReport", () => {
         },
       ],
       symbolUsageCounts: {
-        Map: 1,
+        RouteTask: 1,
         MapImageLayer: 1,
       },
       flags: [],
@@ -370,7 +370,7 @@ describe("buildJsMigrationReport", () => {
     const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
     expect(report.unhandledArcGisModules).toEqual([
       {
-        modulePath: "@arcgis/core/Map",
+        modulePath: "@arcgis/core/rest/route/RouteTask",
         usageStyle: "static-import",
         count: 1,
       },

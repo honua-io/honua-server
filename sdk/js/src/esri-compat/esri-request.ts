@@ -53,11 +53,20 @@ function appendQuery(
     return urlText;
   }
 
-  const url = new URL(urlText);
+  const hashIndex = urlText.indexOf("#");
+  const hash = hashIndex >= 0 ? urlText.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? urlText.slice(0, hashIndex) : urlText;
+
+  const queryIndex = withoutHash.indexOf("?");
+  const path = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+  const existingQuery = queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : "";
+  const url = new URLSearchParams(existingQuery);
   for (const [key, value] of Object.entries(query)) {
-    url.searchParams.set(key, String(value));
+    url.set(key, String(value));
   }
-  return url.toString();
+  const nextQuery = url.toString();
+  const withQuery = nextQuery.length > 0 ? `${path}?${nextQuery}` : path;
+  return `${withQuery}${hash}`;
 }
 
 async function parseResponseBody(

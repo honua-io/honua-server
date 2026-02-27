@@ -332,4 +332,282 @@ describe("HonuaClient", () => {
       message: "HTTP 404: Layer not found",
     });
   });
+
+  it("queries features using POST form payload", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryFeatures({
+      serviceId: "default",
+      layerId: 4,
+      where: "status = 'open'",
+      outFields: ["OBJECTID"],
+      returnGeometry: false,
+      method: "POST",
+      extraParams: { resultRecordCount: 50 },
+    });
+
+    expect(response).toEqual({ features: [] });
+    expect(requestedUrl).toBe("https://example.test/rest/services/default/FeatureServer/4/query");
+    expect(requestedInit?.method).toBe("POST");
+    expect(String(requestedInit?.body ?? "")).toContain("where=status+%3D+%27open%27");
+    expect(String(requestedInit?.body ?? "")).toContain("outFields=OBJECTID");
+    expect(String(requestedInit?.body ?? "")).toContain("returnGeometry=false");
+    expect(String(requestedInit?.body ?? "")).toContain("resultRecordCount=50");
+  });
+
+  it("applies apiKey and bearerToken constructor headers", async () => {
+    let requestedHeaders: HeadersInit | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      apiKey: "api-key-1",
+      bearerToken: "token-1",
+      fetchFn: async (_input, init) => {
+        requestedHeaders = init?.headers;
+        return new Response(JSON.stringify({ services: [] }), { status: 200 });
+      },
+    });
+
+    await client.listServices();
+    expect(requestedHeaders).toMatchObject({
+      "X-API-Key": "api-key-1",
+      Authorization: "Bearer token-1",
+      Accept: "application/json",
+    });
+  });
+
+  it("calls expected listServices and getLayerMetadata URLs", async () => {
+    const requestedUrls: string[] = [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrls.push(String(input));
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    });
+
+    await client.listServices("pjson");
+    await client.getLayerMetadata("default", 12);
+
+    expect(requestedUrls[0]).toBe("https://example.test/rest/services?f=pjson");
+    expect(requestedUrls[1]).toBe("https://example.test/rest/services/default/FeatureServer/12?f=json");
+  });
+
+  it("encodes special characters in serviceId paths", async () => {
+    let requestedUrl: string | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "Public Works/Utilities & More",
+      layerId: 0,
+    });
+
+    expect(requestedUrl).toContain(
+      "/rest/services/Public%20Works%2FUtilities%20%26%20More/FeatureServer/0/query?",
+    );
+  });
+
+  it("returns empty object for empty responses and raw text for non-JSON responses", async () => {
+    const responses = [
+      new Response("", { status: 200 }),
+      new Response("plain text", { status: 200 }),
+    ];
+    let responseIndex = 0;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async () => {
+        const response = responses[responseIndex];
+        responseIndex += 1;
+        return response ?? new Response("", { status: 200 });
+      },
+    });
+
+    await expect(client.listServices()).resolves.toEqual({});
+    await expect(client.listServices()).resolves.toEqual({ raw: "plain text" });
+  });
+
+  it("uses fallback HTTP error message for array response bodies", async () => {
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async () => new Response(JSON.stringify([{ message: "array-body-error" }]), { status: 400 }),
+    });
+
+    await expect(client.listServices()).rejects.toMatchObject({
+      name: "HonuaHttpError",
+      statusCode: 400,
+      message: "HTTP 400: Request failed",
+    });
+  });
+
+  it("routes network errors through error interceptors", async () => {
+    const intercepted: unknown[] = [];
+    const networkError = new Error("network-down");
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          error: (context) => {
+            intercepted.push(context.error);
+          },
+        },
+      ],
+      fetchFn: async () => {
+        throw networkError;
+      },
+    });
+
+    await expect(client.listServices()).rejects.toThrow("network-down");
+    expect(intercepted).toEqual([networkError]);
+  });
+
+  it("calls OGC metadata endpoints with explicit response formats", async () => {
+    const requestedUrls: string[] = [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrls.push(String(input));
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    });
+
+    await client.getOgcFeaturesLanding({ responseFormat: "json" });
+    await client.getOgcFeaturesConformance({ responseFormat: "json" });
+    await client.listOgcCollections({ responseFormat: "json" });
+    await client.getOgcCollection({ collectionId: "0", responseFormat: "json" });
+    await client.getOgcQueryables({ collectionId: "0", responseFormat: "schemajson" });
+
+    expect(requestedUrls[0]).toBe("https://example.test/ogc/features?f=json");
+    expect(requestedUrls[1]).toBe("https://example.test/ogc/features/conformance?f=json");
+    expect(requestedUrls[2]).toBe("https://example.test/ogc/features/collections?f=json");
+    expect(requestedUrls[3]).toBe("https://example.test/ogc/features/collections/0?f=json");
+    expect(requestedUrls[4]).toBe("https://example.test/ogc/features/collections/0/queryables?f=schemajson");
+  });
+
+  it("calls OGC items endpoints with filter/query parameters", async () => {
+    const requestedUrls: string[] = [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrls.push(String(input));
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.listOgcItems({
+      collectionId: 3,
+      limit: 10,
+      offset: 20,
+      bbox: "-180,-90,180,90",
+      datetime: "2025-01-01/2025-12-31",
+      filter: "name = 'A'",
+      ids: [1, 2, 3],
+      properties: ["name", "category"],
+      sortby: "-name",
+      crs: "EPSG:4326",
+      responseFormat: "geojson",
+    });
+    await client.getOgcItem({
+      collectionId: 3,
+      featureId: "abc-1",
+      crs: "EPSG:3857",
+      responseFormat: "geojson",
+    });
+
+    expect(requestedUrls[0]).toContain("/ogc/features/collections/3/items?");
+    expect(requestedUrls[0]).toContain("f=geojson");
+    expect(requestedUrls[0]).toContain("limit=10");
+    expect(requestedUrls[0]).toContain("offset=20");
+    expect(requestedUrls[0]).toContain("bbox=-180%2C-90%2C180%2C90");
+    expect(requestedUrls[0]).toContain("datetime=2025-01-01%2F2025-12-31");
+    expect(requestedUrls[0]).toContain("filter=name+%3D+%27A%27");
+    expect(requestedUrls[0]).toContain("ids=1%2C2%2C3");
+    expect(requestedUrls[0]).toContain("properties=name%2Ccategory");
+    expect(requestedUrls[0]).toContain("sortby=-name");
+    expect(requestedUrls[0]).toContain("crs=EPSG%3A4326");
+    expect(requestedUrls[1]).toContain("/ogc/features/collections/3/items/abc-1?");
+    expect(requestedUrls[1]).toContain("f=geojson");
+    expect(requestedUrls[1]).toContain("crs=EPSG%3A3857");
+  });
+
+  it("supports OGC item CRUD methods", async () => {
+    const calls: Array<{ url: string; method: string; body: string | undefined; headers: HeadersInit | undefined }> =
+      [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        calls.push({
+          url: String(input),
+          method: String(init?.method ?? "GET"),
+          body: typeof init?.body === "string" ? init.body : undefined,
+          headers: init?.headers,
+        });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    });
+
+    await client.createOgcItem({
+      collectionId: "3",
+      feature: { type: "Feature", properties: { name: "A" } },
+      responseFormat: "json",
+    });
+    await client.replaceOgcItem({
+      collectionId: "3",
+      featureId: "1",
+      feature: { type: "Feature", properties: { name: "B" } },
+      responseFormat: "json",
+    });
+    await client.patchOgcItem({
+      collectionId: "3",
+      featureId: "1",
+      patch: { properties: { name: "C" } },
+      responseFormat: "json",
+    });
+    await client.deleteOgcItem({
+      collectionId: "3",
+      featureId: "1",
+      responseFormat: "json",
+    });
+
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+    });
+    expect(calls[0]?.url).toContain("/ogc/features/collections/3/items?f=json");
+    expect(String(calls[0]?.body ?? "")).toContain('"name":"A"');
+    expect(calls[0]?.headers).toMatchObject({ "Content-Type": "application/geo+json" });
+
+    expect(calls[1]).toMatchObject({
+      method: "PUT",
+    });
+    expect(calls[1]?.url).toContain("/ogc/features/collections/3/items/1?f=json");
+    expect(String(calls[1]?.body ?? "")).toContain('"name":"B"');
+    expect(calls[1]?.headers).toMatchObject({ "Content-Type": "application/geo+json" });
+
+    expect(calls[2]).toMatchObject({
+      method: "PATCH",
+    });
+    expect(calls[2]?.url).toContain("/ogc/features/collections/3/items/1?f=json");
+    expect(String(calls[2]?.body ?? "")).toContain('"name":"C"');
+    expect(calls[2]?.headers).toMatchObject({ "Content-Type": "application/merge-patch+json" });
+
+    expect(calls[3]).toMatchObject({
+      method: "DELETE",
+    });
+    expect(calls[3]?.url).toContain("/ogc/features/collections/3/items/1?f=json");
+  });
 });

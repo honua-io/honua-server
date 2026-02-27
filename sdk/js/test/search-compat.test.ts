@@ -183,10 +183,13 @@ describe("SearchCompat", () => {
   });
 
   it("builds default layer-backed sources from view map", async () => {
+    const layerQueries: unknown[] = [];
     const layer = {
       id: "places",
       title: "Places",
-      queryFeatures: async () => ({
+      queryFeatures: async (options?: unknown) => {
+        layerQueries.push(options);
+        return {
         features: [
           {
             attributes: {
@@ -208,7 +211,8 @@ describe("SearchCompat", () => {
             },
           },
         ],
-      }),
+        };
+      },
     };
     const map = new MapCompat({ layers: [layer] });
     const view = new MapViewCompat({
@@ -221,8 +225,10 @@ describe("SearchCompat", () => {
       view,
     });
     const response = await search.search("park");
+    const suggestions = await search.suggest("park");
 
     expect(response.results).toHaveLength(1);
+    expect(suggestions.suggestions).toHaveLength(1);
     expect(response.results[0]).toMatchObject({
       name: "Central Park",
       location: { x: -157.858, y: 21.307 },
@@ -231,6 +237,16 @@ describe("SearchCompat", () => {
       name: "Central Park",
     });
     expect(search.selectedResultIndex).toBe(0);
+    expect(layerQueries).toHaveLength(1);
+    expect(layerQueries[0]).toMatchObject({
+      where: "1=1",
+      outFields: ["*"],
+      returnGeometry: true,
+      extraParams: {
+        resultOffset: 0,
+        resultRecordCount: 200,
+      },
+    });
 
     const nextLayer = {
       id: "landmarks",
@@ -251,6 +267,210 @@ describe("SearchCompat", () => {
     };
     map.add(nextLayer);
     expect(search.sources.length).toBeGreaterThanOrEqual(2);
+
+    search.destroy();
+  });
+
+  it("uses server-side field filtering for default sources when fields are available", async () => {
+    const layerQueries: unknown[] = [];
+    const layer = {
+      id: "places",
+      title: "Places",
+      objectIdField: "OBJECTID",
+      displayField: "NAME",
+      outFields: ["OBJECTID", "NAME", "CITY"],
+      fields: [
+        { name: "OBJECTID", type: "esriFieldTypeOID" },
+        { name: "NAME", type: "esriFieldTypeString" },
+        { name: "CITY", type: "esriFieldTypeString" },
+        { name: "POPULATION", type: "esriFieldTypeInteger" },
+      ],
+      queryFeatures: async (options?: unknown) => {
+        layerQueries.push(options);
+        return {
+          features: [
+            {
+              attributes: {
+                OBJECTID: 1,
+                NAME: "Central Park",
+                CITY: "Honolulu",
+              },
+              geometry: { x: -157.858, y: 21.307 },
+            },
+            {
+              attributes: {
+                OBJECTID: 2,
+                NAME: "Harbor",
+                CITY: "Kailua",
+              },
+              geometry: { x: -157.73, y: 21.39 },
+            },
+          ],
+        };
+      },
+    };
+    const map = new MapCompat({ layers: [layer] });
+    const view = new MapViewCompat({ map });
+
+    const search = new SearchCompat({ view });
+    const response = await search.search("park");
+
+    expect(response.results).toHaveLength(1);
+    expect(layerQueries).toHaveLength(1);
+    const firstQuery = layerQueries[0] as Record<string, unknown>;
+    expect(typeof firstQuery.where).toBe("string");
+    expect(firstQuery.where).toContain("UPPER(NAME) LIKE '%PARK%'");
+    expect(firstQuery.where).toContain("UPPER(CITY) LIKE '%PARK%'");
+    expect(firstQuery.where).not.toContain("POPULATION");
+    expect(firstQuery.outFields).toEqual(expect.arrayContaining(["NAME", "CITY", "OBJECTID"]));
+    expect(firstQuery.outFields).not.toEqual(["*"]);
+    expect(firstQuery.extraParams).toEqual({
+      resultOffset: 0,
+      resultRecordCount: 200,
+    });
+
+    search.destroy();
+  });
+
+  it("falls back to broad default search query when optimized where filtering fails", async () => {
+    const layerQueries: unknown[] = [];
+    const layer = {
+      id: "places",
+      fields: [{ name: "NAME", type: "esriFieldTypeString" }],
+      queryFeatures: async (options?: unknown) => {
+        layerQueries.push(options);
+        const query = options as Record<string, unknown>;
+        if (typeof query.where === "string" && query.where !== "1=1") {
+          throw new Error("invalid where");
+        }
+        return {
+          features: [
+            {
+              attributes: { NAME: "Fallback Park" },
+              geometry: { x: 0, y: 0 },
+            },
+            {
+              attributes: { NAME: "Fallback Beach" },
+              geometry: { x: 1, y: 1 },
+            },
+          ],
+        };
+      },
+    };
+    const map = new MapCompat({ layers: [layer] });
+    const view = new MapViewCompat({ map });
+
+    const search = new SearchCompat({ view });
+    const parkResponse = await search.search("park");
+    const beachResponse = await search.search("beach");
+
+    expect(parkResponse.results).toHaveLength(1);
+    expect(beachResponse.results).toHaveLength(1);
+    expect(layerQueries).toHaveLength(3);
+    expect((layerQueries[0] as Record<string, unknown>).where).not.toBe("1=1");
+    expect((layerQueries[1] as Record<string, unknown>).where).toBe("1=1");
+    expect((layerQueries[2] as Record<string, unknown>).where).toBe("1=1");
+    expect((layerQueries[1] as Record<string, unknown>).outFields).toEqual(["*"]);
+
+    search.destroy();
+  });
+
+  it("applies configurable default source limits", async () => {
+    const layerQueries: unknown[] = [];
+    const layer = {
+      id: "places",
+      queryFeatures: async (options?: unknown) => {
+        layerQueries.push(options);
+        return {
+          features: [
+            { attributes: { NAME: "A Park" }, geometry: { x: 0, y: 0 } },
+            { attributes: { NAME: "B Park" }, geometry: { x: 1, y: 1 } },
+            { attributes: { NAME: "C Park" }, geometry: { x: 2, y: 2 } },
+            { attributes: { NAME: "D Park" }, geometry: { x: 3, y: 3 } },
+          ],
+        };
+      },
+    };
+    const map = new MapCompat({ layers: [layer] });
+    const view = new MapViewCompat({ map });
+
+    const search = new SearchCompat({
+      view,
+      defaultSourceMaxFeatureCandidates: 3,
+      defaultSourceMaxResults: 1,
+      defaultSourceMaxSuggestions: 1,
+    });
+
+    const response = await search.search("park");
+    const suggestions = await search.suggest("park");
+
+    expect(response.results).toHaveLength(1);
+    expect(suggestions.suggestions).toHaveLength(1);
+    expect(layerQueries[0]).toMatchObject({
+      extraParams: {
+        resultRecordCount: 3,
+      },
+    });
+  });
+
+  it("builds default layer-backed sources from OGC collection-style layers", async () => {
+    const layerQueries: unknown[] = [];
+    const layer = {
+      id: "trails",
+      title: "Trails",
+      collectionId: "trails",
+      items: async (options?: unknown) => {
+        layerQueries.push(options);
+        return {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: {
+                name: "Makai Trail",
+                category: "Coastal",
+              },
+              geometry: {
+                type: "Point",
+                coordinates: [-157.8583, 21.3069],
+              },
+            },
+            {
+              type: "Feature",
+              properties: {
+                name: "Downtown Loop",
+                category: "Urban",
+              },
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [-157.9, 21.31],
+                  [-157.89, 21.32],
+                ],
+              },
+            },
+          ],
+        };
+      },
+    };
+    const map = new MapCompat({ layers: [layer] });
+    const view = new MapViewCompat({ map });
+    const search = new SearchCompat({ view });
+
+    const response = await search.search("makai");
+    const suggestions = await search.suggest("makai");
+
+    expect(response.results).toHaveLength(1);
+    expect(response.results[0]).toMatchObject({
+      name: "Makai Trail",
+      location: { x: -157.8583, y: 21.3069 },
+    });
+    expect(suggestions.suggestions).toHaveLength(1);
+    expect(suggestions.suggestions[0]).toMatchObject({ text: "Makai Trail" });
+    expect(layerQueries).toHaveLength(1);
+    expect(layerQueries[0]).toEqual({
+      limit: 200,
+    });
 
     search.destroy();
   });

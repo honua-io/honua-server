@@ -29,6 +29,24 @@ variable "db_admin_password" {
   default     = null
 }
 
+variable "db_sku_name" {
+  description = "SKU for PostgreSQL Flexible Server."
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "db_storage_mb" {
+  description = "Storage (MB) for PostgreSQL Flexible Server."
+  type        = number
+  default     = 32768
+}
+
+variable "db_public_network_access" {
+  description = "Enable public network access to PostgreSQL for validation runs."
+  type        = bool
+  default     = true
+}
+
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster during apply."
   type        = bool
@@ -37,6 +55,30 @@ variable "enable_postgis" {
 
 variable "redis_enabled" {
   description = "Provision Azure Cache for Redis."
+  type        = bool
+  default     = true
+}
+
+variable "redis_sku_name" {
+  description = "Redis SKU."
+  type        = string
+  default     = "Basic"
+}
+
+variable "redis_family" {
+  description = "Redis family."
+  type        = string
+  default     = "C"
+}
+
+variable "redis_capacity" {
+  description = "Redis capacity."
+  type        = number
+  default     = 0
+}
+
+variable "redis_public_network_access_enabled" {
+  description = "Enable Redis public network access for validation runs."
   type        = bool
   default     = true
 }

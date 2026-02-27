@@ -58,8 +58,10 @@ jobs:
           npm run test:migration:real-samples
           npm run gate:migration:real-samples
           npm run gate:migration:demo-target
+          npm run gate:migration:esri-leaflet-target
           npm run demo:migration:incident
           npm run demo:migration:incident:live
+          npm run matrix:parity
           npm run matrix:runtime
           npx playwright install --with-deps chromium
           npm run test:playwright:migration

@@ -35,6 +35,13 @@ describe("JS parity matrix", () => {
     const uniqueValueRenderer = matrix.find((row) => row.kind === "unique-value-renderer");
     const basemap = matrix.find((row) => row.kind === "basemap");
     const map = matrix.find((row) => row.kind === "map");
+    const mapView = matrix.find((row) => row.kind === "map-view");
+    const homeWidget = matrix.find((row) => row.kind === "home-widget");
+    const basemapGalleryWidget = matrix.find((row) => row.kind === "basemap-gallery-widget");
+    const layerList = matrix.find((row) => row.kind === "layer-list");
+    const legendWidget = matrix.find((row) => row.kind === "legend-widget");
+    const popupWidget = matrix.find((row) => row.kind === "popup-widget");
+    const searchWidget = matrix.find((row) => row.kind === "search-widget");
     const track = matrix.find((row) => row.kind === "track-widget");
     const routeTask = matrix.find((row) => row.kind === "route-task");
     const swipe = matrix.find((row) => row.kind === "swipe-widget");
@@ -129,7 +136,35 @@ describe("JS parity matrix", () => {
     });
     expect(map).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
+    });
+    expect(mapView).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(homeWidget).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(basemapGalleryWidget).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(layerList).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(legendWidget).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(popupWidget).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(searchWidget).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
     });
     expect(track).toMatchObject({
       honuaCompat: "compat",

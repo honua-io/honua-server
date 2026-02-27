@@ -223,9 +223,9 @@ export class RouteLayerCompat {
   }
 
   public setOpacity(opacity: number): void {
-    this.opacity = opacity;
+    this.opacity = normalizeOpacity(opacity);
     this.notifyWatchers("opacity", this.opacity);
-    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
+    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity: this.opacity }, this);
   }
 
   private notifyWatchers(propertyName: string, value: unknown): void {
@@ -279,6 +279,13 @@ function haversineDistanceMeters(a: [number, number], b: [number, number]): numb
 
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
+}
+
+function normalizeOpacity(opacity: number): number {
+  if (!Number.isFinite(opacity)) {
+    return 1;
+  }
+  return Math.min(Math.max(opacity, 0), 1);
 }
 
 function normalizeInsertIndex(index: number, length: number): number {

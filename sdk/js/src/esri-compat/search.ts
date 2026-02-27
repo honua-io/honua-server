@@ -8,6 +8,9 @@ export interface SearchCompatOptions {
   includeDefaultSources?: boolean;
   autoNavigate?: boolean;
   autoRefreshSources?: boolean;
+  defaultSourceMaxFeatureCandidates?: number;
+  defaultSourceMaxResults?: number;
+  defaultSourceMaxSuggestions?: number;
 }
 
 export interface SearchRequestCompat {
@@ -51,6 +54,10 @@ export interface SearchHandleCompat {
   remove(): void;
 }
 
+const DEFAULT_SEARCH_SOURCE_MAX_FEATURE_CANDIDATES = 200;
+const DEFAULT_SEARCH_SOURCE_MAX_RESULTS = 10;
+const DEFAULT_SEARCH_SOURCE_MAX_SUGGESTIONS = 5;
+
 export class SearchCompat {
   public readonly view: unknown;
   public readonly container: unknown;
@@ -66,6 +73,9 @@ export class SearchCompat {
   public suggestions: SearchSuggestionCompat[];
   public selectedResult: SearchResultCompat | undefined;
   public selectedResultIndex: number;
+  public readonly defaultSourceMaxFeatureCandidates: number;
+  public readonly defaultSourceMaxResults: number;
+  public readonly defaultSourceMaxSuggestions: number;
 
   private readonly subscriptions: CompatEventSubscription[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
@@ -87,6 +97,18 @@ export class SearchCompat {
     this.suggestions = [];
     this.selectedResult = undefined;
     this.selectedResultIndex = -1;
+    this.defaultSourceMaxFeatureCandidates = normalizeSearchLimit(
+      options.defaultSourceMaxFeatureCandidates,
+      DEFAULT_SEARCH_SOURCE_MAX_FEATURE_CANDIDATES,
+    );
+    this.defaultSourceMaxResults = normalizeSearchLimit(
+      options.defaultSourceMaxResults,
+      DEFAULT_SEARCH_SOURCE_MAX_RESULTS,
+    );
+    this.defaultSourceMaxSuggestions = normalizeSearchLimit(
+      options.defaultSourceMaxSuggestions,
+      DEFAULT_SEARCH_SOURCE_MAX_SUGGESTIONS,
+    );
     this.subscriptions = [];
     this.watchListeners = new Map();
     this.refreshSourceSubscriptions();
@@ -346,7 +368,13 @@ export class SearchCompat {
   private rebuildSources(emitChange: boolean): void {
     this.sources = [
       ...this.customSources,
-      ...(this.includeDefaultSources ? resolveViewSearchSources(this.view) : []),
+      ...(this.includeDefaultSources
+        ? resolveViewSearchSources(this.view, {
+            maxFeatureCandidates: this.defaultSourceMaxFeatureCandidates,
+            maxResults: this.defaultSourceMaxResults,
+            maxSuggestions: this.defaultSourceMaxSuggestions,
+          })
+        : []),
     ];
     this.notifyWatchers("sources", this.sources);
     if (emitChange) {
@@ -402,64 +430,443 @@ interface GoToProvider {
 interface QueryFeaturesProvider {
   id?: unknown;
   title?: unknown;
+  outFields?: unknown;
+  objectIdField?: unknown;
+  displayField?: unknown;
+  metadata?: unknown;
+  fields?: unknown;
+  listFields?(): readonly Record<string, unknown>[];
   queryFeatures(options?: unknown): Promise<unknown> | unknown;
+}
+
+interface OgcItemsProvider {
+  id?: unknown;
+  title?: unknown;
+  collectionId?: unknown;
+  items(options?: unknown): Promise<unknown> | unknown;
+}
+
+interface SearchSourceLimits {
+  maxFeatureCandidates: number;
+  maxResults: number;
+  maxSuggestions: number;
+}
+
+type SearchLayerProvider = QueryFeaturesProvider | OgcItemsProvider;
+
+interface LayerSearchFieldConfig {
+  searchableFields: string[];
+  outFields: string[];
 }
 
 function isGoToProvider(value: unknown): value is GoToProvider {
   return isRecord(value) && typeof value.goTo === "function";
 }
 
-function resolveViewSearchSources(view: unknown): SearchSourceCompat[] {
+function resolveViewSearchSources(view: unknown, limits: SearchSourceLimits): SearchSourceCompat[] {
   const map = extractMapFromView(view);
   const layers = extractLayersFromMap(map);
   const sources: SearchSourceCompat[] = [];
   for (const layer of layers) {
-    if (!isQueryFeaturesProvider(layer)) {
+    if (isQueryFeaturesProvider(layer)) {
+      let fieldSearchConfig = resolveLayerSearchFieldConfig(layer);
+      let fieldSearchUnsupported = false;
+      const source = buildLayerSearchSource(layer, limits, async (normalizedTerm) => {
+        if (!fieldSearchUnsupported && fieldSearchConfig.searchableFields.length === 0) {
+          fieldSearchConfig = resolveLayerSearchFieldConfig(layer);
+        }
+
+        const fallbackQueryOptions = createFallbackLayerSearchQueryOptions(limits.maxFeatureCandidates);
+        const optimizedQueryOptions =
+          !fieldSearchUnsupported && fieldSearchConfig.searchableFields.length > 0
+            ? createOptimizedLayerSearchQueryOptions(
+                fieldSearchConfig,
+                normalizedTerm,
+                limits.maxFeatureCandidates,
+              )
+            : undefined;
+
+        let response: unknown;
+        if (optimizedQueryOptions) {
+          try {
+            response = await layer.queryFeatures(optimizedQueryOptions);
+          } catch {
+            fieldSearchUnsupported = true;
+            response = await layer.queryFeatures(fallbackQueryOptions);
+          }
+        } else {
+          response = await layer.queryFeatures(fallbackQueryOptions);
+        }
+
+        return extractFeatures(response);
+      });
+      sources.push(source);
       continue;
     }
 
-    const source: SearchSourceCompat = {
-      search: async ({ searchTerm }) => {
-        const normalizedTerm = searchTerm.trim().toLowerCase();
-        if (!normalizedTerm) {
-          return [];
-        }
+    if (!isOgcItemsProvider(layer)) {
+      continue;
+    }
 
-        const response = await layer.queryFeatures({
-          where: "1=1",
-          outFields: ["*"],
-          returnGeometry: true,
-        });
-        const features = extractFeatures(response);
-        const matches: SearchResultCompat[] = [];
-        for (const feature of features) {
-          if (!featureMatchesTerm(feature, normalizedTerm)) {
-            continue;
-          }
-          const name = describeFeature(feature, layer, matches.length);
-          matches.push({
-            name,
-            feature,
-            location: extractFeatureLocation(feature),
-            source: layer,
-          });
-          if (matches.length >= 10) {
-            break;
-          }
-        }
-        return matches;
-      },
-      suggest: async ({ searchTerm }) => {
-        const response = await source.search({ searchTerm });
-        return response.slice(0, 5).map((result) => ({
-          text: result.name,
-          source: layer,
-        }));
-      },
-    };
+    const source = buildLayerSearchSource(layer, limits, async () => {
+      const response = await layer.items({
+        limit: limits.maxFeatureCandidates,
+      });
+      return extractFeatures(response);
+    });
     sources.push(source);
   }
   return sources;
+}
+
+function buildLayerSearchSource(
+  layer: SearchLayerProvider,
+  limits: SearchSourceLimits,
+  resolveFeatures: (normalizedTerm: string) => Promise<unknown[]>,
+): SearchSourceCompat {
+  let lastSearchTerm: string | undefined;
+  let lastSearchResults: SearchResultCompat[] = [];
+  let lastSearchPromise: Promise<SearchResultCompat[]> | undefined;
+
+  const executeSearch = async (searchTerm: string): Promise<SearchResultCompat[]> => {
+    const normalizedTerm = searchTerm.trim().toLowerCase();
+    if (!normalizedTerm) {
+      lastSearchTerm = undefined;
+      lastSearchResults = [];
+      lastSearchPromise = undefined;
+      return [];
+    }
+
+    if (lastSearchTerm === normalizedTerm && lastSearchPromise) {
+      return lastSearchPromise;
+    }
+    if (lastSearchTerm === normalizedTerm && lastSearchResults.length > 0) {
+      return [...lastSearchResults];
+    }
+
+    const inFlight = (async (): Promise<SearchResultCompat[]> => {
+      const features = await resolveFeatures(normalizedTerm);
+      const matches: SearchResultCompat[] = [];
+      for (const feature of features) {
+        if (!featureMatchesTerm(feature, normalizedTerm)) {
+          continue;
+        }
+        const name = describeFeature(feature, layer, matches.length);
+        matches.push({
+          name,
+          feature,
+          location: extractFeatureLocation(feature),
+          source: layer,
+        });
+        if (matches.length >= limits.maxResults) {
+          break;
+        }
+      }
+      lastSearchTerm = normalizedTerm;
+      lastSearchResults = matches;
+      return [...matches];
+    })();
+
+    lastSearchTerm = normalizedTerm;
+    lastSearchPromise = inFlight;
+    try {
+      return await inFlight;
+    } finally {
+      if (lastSearchPromise === inFlight) {
+        lastSearchPromise = undefined;
+      }
+    }
+  };
+
+  return {
+    search: async ({ searchTerm }) => executeSearch(searchTerm),
+    suggest: async ({ searchTerm }) => {
+      const response = await executeSearch(searchTerm);
+      return response.slice(0, limits.maxSuggestions).map((result) => ({
+        text: result.name,
+        source: layer,
+      }));
+    },
+  };
+}
+
+const COMMON_SEARCH_FIELD_NAMES = [
+  "name",
+  "title",
+  "label",
+  "description",
+  "city",
+  "state",
+  "county",
+  "address",
+] as const;
+const MAX_SERVER_SEARCH_FIELDS = 6;
+const MAX_SERVER_OUT_FIELDS = 16;
+
+function createFallbackLayerSearchQueryOptions(maxFeatureCandidates: number): Record<string, unknown> {
+  return {
+    where: "1=1",
+    outFields: ["*"],
+    returnGeometry: true,
+    extraParams: {
+      resultOffset: 0,
+      resultRecordCount: maxFeatureCandidates,
+    },
+  };
+}
+
+function createOptimizedLayerSearchQueryOptions(
+  config: LayerSearchFieldConfig,
+  normalizedTerm: string,
+  maxFeatureCandidates: number,
+): Record<string, unknown> {
+  return {
+    where: createSearchWhereClause(config.searchableFields, normalizedTerm),
+    outFields: config.outFields,
+    returnGeometry: true,
+    extraParams: {
+      resultOffset: 0,
+      resultRecordCount: maxFeatureCandidates,
+    },
+  };
+}
+
+function createSearchWhereClause(searchableFields: readonly string[], normalizedTerm: string): string {
+  const escapedTerm = escapeSqlLiteral(normalizedTerm.toUpperCase());
+  return searchableFields.map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%'`).join(" OR ");
+}
+
+function resolveLayerSearchFieldConfig(layer: QueryFeaturesProvider): LayerSearchFieldConfig {
+  const fieldDefinitions = resolveLayerFieldDefinitions(layer);
+  const searchableFields = resolveSearchableFieldNames(layer, fieldDefinitions);
+  const outFields = resolveSearchOutFields(layer, searchableFields, fieldDefinitions);
+  return {
+    searchableFields,
+    outFields,
+  };
+}
+
+interface LayerFieldDefinition {
+  name: string;
+  type: string | undefined;
+}
+
+function resolveLayerFieldDefinitions(layer: QueryFeaturesProvider): LayerFieldDefinition[] {
+  const fromListFields = resolveLayerFieldsFromListFields(layer);
+  if (fromListFields.length > 0) {
+    return fromListFields;
+  }
+  return resolveLayerFieldsFromProperty(layer);
+}
+
+function resolveLayerFieldsFromListFields(layer: QueryFeaturesProvider): LayerFieldDefinition[] {
+  if (typeof layer.listFields !== "function") {
+    return [];
+  }
+
+  let fields: readonly Record<string, unknown>[];
+  try {
+    fields = layer.listFields();
+  } catch {
+    return [];
+  }
+
+  return normalizeLayerFieldDefinitions(fields);
+}
+
+function resolveLayerFieldsFromProperty(layer: QueryFeaturesProvider): LayerFieldDefinition[] {
+  if (!Array.isArray(layer.fields)) {
+    return [];
+  }
+  return normalizeLayerFieldDefinitions(layer.fields);
+}
+
+function normalizeLayerFieldDefinitions(values: readonly unknown[]): LayerFieldDefinition[] {
+  const definitions: LayerFieldDefinition[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!isRecord(value) || typeof value.name !== "string") {
+      continue;
+    }
+
+    const normalizedName = normalizeFieldIdentifier(value.name);
+    if (!normalizedName) {
+      continue;
+    }
+    const normalizedKey = normalizedName.toLowerCase();
+    if (seen.has(normalizedKey)) {
+      continue;
+    }
+
+    seen.add(normalizedKey);
+    definitions.push({
+      name: normalizedName,
+      type: typeof value.type === "string" ? value.type : undefined,
+    });
+  }
+  return definitions;
+}
+
+function resolveSearchableFieldNames(
+  layer: QueryFeaturesProvider,
+  fieldDefinitions: readonly LayerFieldDefinition[],
+): string[] {
+  const stringFields = fieldDefinitions.filter((field) => isStringFieldType(field.type)).map((field) => field.name);
+  const searchable = new Set<string>();
+  const addIfAvailable = (fieldName: string | undefined): void => {
+    if (!fieldName) {
+      return;
+    }
+    const available = fieldDefinitions.find((definition) => definition.name.toLowerCase() === fieldName.toLowerCase());
+    if (!available) {
+      return;
+    }
+    searchable.add(available.name);
+  };
+
+  addIfAvailable(resolveLayerDisplayField(layer));
+  for (const commonName of COMMON_SEARCH_FIELD_NAMES) {
+    addIfAvailable(commonName);
+  }
+
+  for (const fieldName of stringFields) {
+    searchable.add(fieldName);
+    if (searchable.size >= MAX_SERVER_SEARCH_FIELDS) {
+      break;
+    }
+  }
+
+  if (searchable.size > 0) {
+    return Array.from(searchable).slice(0, MAX_SERVER_SEARCH_FIELDS);
+  }
+
+  for (const outField of resolveLayerOutFields(layer)) {
+    const normalizedOutField = normalizeFieldIdentifier(outField);
+    if (!normalizedOutField || normalizedOutField === "*") {
+      continue;
+    }
+    searchable.add(normalizedOutField);
+    if (searchable.size >= MAX_SERVER_SEARCH_FIELDS) {
+      break;
+    }
+  }
+
+  return Array.from(searchable);
+}
+
+function resolveSearchOutFields(
+  layer: QueryFeaturesProvider,
+  searchableFields: readonly string[],
+  fieldDefinitions: readonly LayerFieldDefinition[],
+): string[] {
+  const outFields = new Set<string>();
+  for (const field of searchableFields) {
+    outFields.add(field);
+  }
+
+  const addIfAvailable = (fieldName: string | undefined): void => {
+    if (!fieldName) {
+      return;
+    }
+    const available = fieldDefinitions.find((definition) => definition.name.toLowerCase() === fieldName.toLowerCase());
+    if (!available) {
+      return;
+    }
+    outFields.add(available.name);
+  };
+
+  addIfAvailable(resolveLayerDisplayField(layer));
+  addIfAvailable(resolveLayerObjectIdField(layer));
+  for (const commonName of COMMON_SEARCH_FIELD_NAMES) {
+    addIfAvailable(commonName);
+  }
+
+  const requestedOutFields = resolveLayerOutFields(layer);
+  if (requestedOutFields.includes("*")) {
+    return ["*"];
+  }
+  for (const field of requestedOutFields) {
+    const normalizedField = normalizeFieldIdentifier(field);
+    if (!normalizedField || normalizedField === "*") {
+      continue;
+    }
+    outFields.add(normalizedField);
+    if (outFields.size >= MAX_SERVER_OUT_FIELDS) {
+      break;
+    }
+  }
+
+  const resolved = Array.from(outFields).slice(0, MAX_SERVER_OUT_FIELDS);
+  return resolved.length > 0 ? resolved : ["*"];
+}
+
+function resolveLayerOutFields(layer: QueryFeaturesProvider): string[] {
+  if (typeof layer.outFields === "string") {
+    return [layer.outFields];
+  }
+  if (Array.isArray(layer.outFields)) {
+    return layer.outFields.filter((value): value is string => typeof value === "string");
+  }
+  return [];
+}
+
+function resolveLayerDisplayField(layer: QueryFeaturesProvider): string | undefined {
+  const fromLayer = normalizeFieldIdentifier(typeof layer.displayField === "string" ? layer.displayField : undefined);
+  if (fromLayer) {
+    return fromLayer;
+  }
+  if (!isRecord(layer.metadata)) {
+    return undefined;
+  }
+  return normalizeFieldIdentifier(
+    typeof layer.metadata.displayField === "string" ? layer.metadata.displayField : undefined,
+  );
+}
+
+function resolveLayerObjectIdField(layer: QueryFeaturesProvider): string | undefined {
+  const fromLayer = normalizeFieldIdentifier(typeof layer.objectIdField === "string" ? layer.objectIdField : undefined);
+  if (fromLayer) {
+    return fromLayer;
+  }
+  if (!isRecord(layer.metadata)) {
+    return undefined;
+  }
+  if (typeof layer.metadata.objectIdField === "string") {
+    return normalizeFieldIdentifier(layer.metadata.objectIdField);
+  }
+  return undefined;
+}
+
+function normalizeFieldIdentifier(fieldName: string | undefined): string | undefined {
+  if (typeof fieldName !== "string") {
+    return undefined;
+  }
+  const trimmed = fieldName.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (trimmed === "*") {
+    return "*";
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_$.]*$/.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function isStringFieldType(type: string | undefined): boolean {
+  if (!type) {
+    return true;
+  }
+  const normalized = type.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return true;
+  }
+  return normalized.includes("string") || normalized.includes("text");
+}
+
+function escapeSqlLiteral(value: string): string {
+  return value.replace(/'/g, "''");
 }
 
 function extractMapFromView(view: unknown): unknown {
@@ -497,6 +904,17 @@ function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider
   return isRecord(value) && typeof value.queryFeatures === "function";
 }
 
+function isOgcItemsProvider(value: unknown): value is OgcItemsProvider {
+  return isRecord(value) && typeof value.items === "function";
+}
+
+function normalizeSearchLimit(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(1, Math.trunc(value));
+}
+
 function extractFeatures(response: unknown): unknown[] {
   if (!isRecord(response) || !Array.isArray(response.features)) {
     return [];
@@ -505,11 +923,12 @@ function extractFeatures(response: unknown): unknown[] {
 }
 
 function featureMatchesTerm(feature: unknown, normalizedTerm: string): boolean {
-  if (!isRecord(feature) || !isRecord(feature.attributes)) {
+  const properties = resolveFeatureProperties(feature);
+  if (!properties) {
     return false;
   }
 
-  for (const value of Object.values(feature.attributes)) {
+  for (const value of Object.values(properties)) {
     if (value === null || value === undefined) {
       continue;
     }
@@ -521,10 +940,11 @@ function featureMatchesTerm(feature: unknown, normalizedTerm: string): boolean {
   return false;
 }
 
-function describeFeature(feature: unknown, layer: QueryFeaturesProvider, index: number): string {
-  if (isRecord(feature) && isRecord(feature.attributes)) {
+function describeFeature(feature: unknown, layer: SearchLayerProvider, index: number): string {
+  const properties = resolveFeatureProperties(feature);
+  if (properties) {
     for (const key of ["name", "Name", "NAME", "title", "Title", "TITLE"]) {
-      const value = feature.attributes[key];
+      const value = properties[key];
       if (typeof value === "string" && value.trim().length > 0) {
         return value;
       }
@@ -550,7 +970,52 @@ function extractFeatureLocation(feature: unknown): unknown {
   if (typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y)) {
     return { x, y };
   }
+
+  const point = extractPointFromGeoJsonGeometry(feature.geometry);
+  if (point) {
+    return point;
+  }
   return feature.geometry;
+}
+
+function resolveFeatureProperties(feature: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(feature)) {
+    return undefined;
+  }
+  if (isRecord(feature.attributes)) {
+    return feature.attributes;
+  }
+  if (isRecord(feature.properties)) {
+    return feature.properties;
+  }
+  return undefined;
+}
+
+function extractPointFromGeoJsonGeometry(geometry: Record<string, unknown>): { x: number; y: number } | undefined {
+  const coordinates = extractPointCoordinates(geometry.coordinates);
+  if (!coordinates) {
+    return undefined;
+  }
+  return {
+    x: coordinates[0],
+    y: coordinates[1],
+  };
+}
+
+function extractPointCoordinates(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const first = value[0];
+  const second = value[1];
+  if (typeof first === "number" && Number.isFinite(first) && typeof second === "number" && Number.isFinite(second)) {
+    return [first, second];
+  }
+
+  if (Array.isArray(first)) {
+    return extractPointCoordinates(first);
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

@@ -1783,6 +1783,187 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
   });
 
+  it("rewrites map/view/widget constructors to compat fallbacks for esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet-compat-fallbacks.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "import MapView from '@arcgis/core/views/MapView';",
+        "import LayerList from '@arcgis/core/widgets/LayerList';",
+        "import Legend from '@arcgis/core/widgets/Legend';",
+        "import Popup from '@arcgis/core/widgets/Popup';",
+        "import Search from '@arcgis/core/widgets/Search';",
+        "import Home from '@arcgis/core/widgets/Home';",
+        "import BasemapToggle from '@arcgis/core/widgets/BasemapToggle';",
+        "import Locate from '@arcgis/core/widgets/Locate';",
+        "import ScaleBar from '@arcgis/core/widgets/ScaleBar';",
+        "import BasemapGallery from '@arcgis/core/widgets/BasemapGallery';",
+        "import Expand from '@arcgis/core/widgets/Expand';",
+        "import Compass from '@arcgis/core/widgets/Compass';",
+        "import Bookmarks from '@arcgis/core/widgets/Bookmarks';",
+        "import Fullscreen from '@arcgis/core/widgets/Fullscreen';",
+        "import Zoom from '@arcgis/core/widgets/Zoom';",
+        "import Attribution from '@arcgis/core/widgets/Attribution';",
+        "const map = new Map({ basemap: 'streets' });",
+        "const view = new MapView({ map, container: 'viewDiv', center: [0, 0], zoom: 4 });",
+        "const layerList = new LayerList({ view });",
+        "const legend = new Legend({ view });",
+        "const popup = new Popup({ view });",
+        "const search = new Search({ view, includeDefaultSources: false });",
+        "const home = new Home({ view });",
+        "const basemapToggle = new BasemapToggle({ view, nextBasemap: 'satellite' });",
+        "const locate = new Locate({ view });",
+        "const scaleBar = new ScaleBar({ view, unit: 'dual' });",
+        "const basemapGallery = new BasemapGallery({ view });",
+        "const expand = new Expand({ view, content: legend });",
+        "const compass = new Compass({ view });",
+        "const bookmarks = new Bookmarks({ view });",
+        "const fullscreen = new Fullscreen({ view });",
+        "const zoom = new Zoom({ view });",
+        "const attribution = new Attribution({ view });",
+        "void map; void view; void layerList; void legend; void popup; void search; void home; void basemapToggle; void locate; void scaleBar; void basemapGallery; void expand; void compass; void bookmarks; void fullscreen; void zoom; void attribution;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(17);
+    expect(result.metrics.autoMigratedCallSites).toBe(17);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind.map).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["layer-list"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["legend-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["popup-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["search-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["home-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["basemap-toggle-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["locate-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["scale-bar-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["basemap-gallery-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["expand-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["compass-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["bookmarks-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["fullscreen-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["zoom-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["attribution-widget"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
+    expect(nextSource).toContain("const view = new MapViewCompat({ map, container: 'viewDiv', center: [0, 0], zoom: 4 });");
+    expect(nextSource).toContain("const layerList = new LayerListCompat({ view });");
+    expect(nextSource).toContain("const legend = new LegendCompat({ view });");
+    expect(nextSource).toContain("const popup = new PopupCompat({ view });");
+    expect(nextSource).toContain("const search = new SearchCompat({ view, includeDefaultSources: false });");
+    expect(nextSource).toContain("const home = new HomeCompat({ view });");
+    expect(nextSource).toContain("const basemapToggle = new BasemapToggleCompat({ view, nextBasemap: 'satellite' });");
+    expect(nextSource).toContain("const locate = new LocateCompat({ view });");
+    expect(nextSource).toContain("const scaleBar = new ScaleBarCompat({ view, unit: 'dual' });");
+    expect(nextSource).toContain("const basemapGallery = new BasemapGalleryCompat({ view });");
+    expect(nextSource).toContain("const expand = new ExpandCompat({ view, content: legend });");
+    expect(nextSource).toContain("const compass = new CompassCompat({ view });");
+    expect(nextSource).toContain("const bookmarks = new BookmarksCompat({ view });");
+    expect(nextSource).toContain("const fullscreen = new FullscreenCompat({ view });");
+    expect(nextSource).toContain("const zoom = new ZoomCompat({ view });");
+    expect(nextSource).toContain("const attribution = new AttributionCompat({ view });");
+    expect(nextSource).not.toContain("@arcgis/core/Map");
+    expect(nextSource).not.toContain("@arcgis/core/views/MapView");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Search");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Home");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/BasemapToggle");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Locate");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/ScaleBar");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/BasemapGallery");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Expand");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Compass");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Bookmarks");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Fullscreen");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Zoom");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Attribution");
+  });
+
   it("keeps extended map image/tile options as manual TODOs for esri-leaflet target", () => {
     const root = makeTempProject();
     const file = path.join(root, "esri-leaflet-extended-options.ts");
@@ -1838,9 +2019,9 @@ describe("runEsriCompatCodemod", () => {
     fs.writeFileSync(
       file,
       [
-        "import Map from '@arcgis/core/Map';",
-        "const map = new Map({ basemap: 'streets' });",
-        "void map;",
+        "import RouteTask from '@arcgis/core/rest/route/RouteTask';",
+        "const routeTask = new RouteTask({ url: routeServiceUrl });",
+        "void routeTask;",
       ].join("\n"),
       "utf8",
     );
@@ -1857,14 +2038,14 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.autoMigratedCallSites).toBe(0);
     expect(result.metrics.manualCallSites).toBe(1);
     expect(result.manualTodos).toHaveLength(1);
-    expect(result.manualTodos[0]?.kind).toBe("map");
+    expect(result.manualTodos[0]?.kind).toBe("route-task");
     expect(result.manualTodos[0]?.reason).toContain("esri-leaflet mapping");
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain("new Map({ basemap: 'streets' })");
-    expect(nextSource).toContain("// TODO(honua-migrate)[map]:");
+    expect(nextSource).toContain("new RouteTask({ url: routeServiceUrl })");
+    expect(nextSource).toContain("// TODO(honua-migrate)[route-task]:");
     expect(nextSource).not.toContain("HonuaEsriLeaflet.");
-    expect(nextSource).toContain("@arcgis/core/Map");
+    expect(nextSource).toContain("@arcgis/core/rest/route/RouteTask");
   });
 
   it("rewrites constructors imported via named default alias", () => {
@@ -2738,8 +2919,8 @@ describe("runEsriCompatCodemod", () => {
     fs.writeFileSync(
       file,
       [
-        "export async function loadMapCtor() {",
-        "  const module = await import('@arcgis/core/Map');",
+        "export async function loadRouteTaskCtor() {",
+        "  const module = await import('@arcgis/core/rest/route/RouteTask');",
         "  return module.default;",
         "}",
       ].join("\n"),
@@ -2757,12 +2938,12 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.autoMigratedCallSites).toBe(0);
     expect(result.metrics.manualCallSites).toBe(1);
     expect(result.manualTodos[0]).toMatchObject({
-      kind: "map",
+      kind: "route-task",
     });
     expect(result.manualTodos[0]?.reason).toContain("Dynamic import");
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain("@arcgis/core/Map");
-    expect(nextSource).toContain("// TODO(honua-migrate)[map]:");
+    expect(nextSource).toContain("@arcgis/core/rest/route/RouteTask");
+    expect(nextSource).toContain("// TODO(honua-migrate)[route-task]:");
   });
 });

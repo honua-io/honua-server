@@ -386,6 +386,33 @@ describe("MapViewCompat", () => {
     expect(clicks).toEqual([{ x: 10, y: 20 }]);
   });
 
+  it("isolates listener errors during emit and watch notifications", () => {
+    const view = new MapViewCompat({ map: { id: "map-1" } });
+    const clicks: unknown[] = [];
+    const mapValues: unknown[] = [];
+
+    view.on("click", () => {
+      throw new Error("click-listener-failed");
+    });
+    view.on("click", (event) => {
+      clicks.push(event);
+    });
+
+    view.watch("map", () => {
+      throw new Error("watch-listener-failed");
+    });
+    view.watch("map", (value) => {
+      mapValues.push(value);
+    });
+
+    expect(() => view.emit("click", { x: 1, y: 2 })).not.toThrow();
+    expect(clicks).toEqual([{ x: 1, y: 2 }]);
+
+    expect(() => view.destroy()).not.toThrow();
+    expect(mapValues).toEqual([undefined]);
+    expect(view.map).toBeUndefined();
+  });
+
   it("supports direct state mutators and emits change events", () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];

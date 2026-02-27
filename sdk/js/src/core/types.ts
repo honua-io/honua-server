@@ -1,4 +1,4 @@
-export type QueryMethod = "GET" | "POST";
+export type QueryMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface HonuaRequestContext {
   url: string;
@@ -142,3 +142,48 @@ export interface HonuaClientOptions {
   fetchFn?: typeof fetch;
   interceptors?: readonly HonuaRequestInterceptor[];
 }
+
+export type OgcResponseFormat = "json" | "html" | "geojson" | "gml" | "csv" | "schemajson" | "schema+json";
+
+export interface OgcMetadataRequest {
+  responseFormat?: OgcResponseFormat | string;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface OgcCollectionRequest extends OgcMetadataRequest {
+  collectionId: string | number;
+}
+
+export interface OgcItemsRequest extends OgcCollectionRequest {
+  limit?: number;
+  offset?: number;
+  bbox?: string;
+  datetime?: string;
+  filter?: string;
+  ids?: string | readonly (string | number)[];
+  properties?: string | readonly string[];
+  sortby?: string;
+  crs?: string;
+}
+
+export interface OgcItemRequest extends OgcCollectionRequest {
+  featureId: string | number;
+  crs?: string;
+}
+
+export interface OgcCreateItemRequest extends OgcCollectionRequest {
+  feature: unknown;
+  headers?: HeadersInit;
+}
+
+export interface OgcReplaceItemRequest extends OgcItemRequest {
+  feature: unknown;
+  headers?: HeadersInit;
+}
+
+export interface OgcPatchItemRequest extends OgcItemRequest {
+  patch: unknown;
+  headers?: HeadersInit;
+}
+
+export interface OgcDeleteItemRequest extends OgcItemRequest {}

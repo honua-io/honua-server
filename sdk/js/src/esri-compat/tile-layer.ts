@@ -15,7 +15,7 @@ export interface TileLayerCompatOptions {
   eventBus?: CompatEventBus;
 }
 
-export type TileLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+export type TileLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded" | "failed";
 
 export interface TileLayerHandleCompat {
   remove(): void;
@@ -65,13 +65,24 @@ export class TileLayerCompat {
       this.loadStatus = "loading";
       this.notifyWatchers("loadStatus", this.loadStatus);
       this.eventBus.emit("tile-layer.loading", { serviceId: this.serviceId, id: this.id }, this);
-      this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
-      this.notifyWatchers("metadata", this.metadata);
-      this.loaded = true;
-      this.notifyWatchers("loaded", this.loaded);
-      this.loadStatus = "loaded";
-      this.notifyWatchers("loadStatus", this.loadStatus);
-      this.eventBus.emit("tile-layer.loaded", { serviceId: this.serviceId, id: this.id }, this);
+      try {
+        this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
+        this.notifyWatchers("metadata", this.metadata);
+        this.loaded = true;
+        this.notifyWatchers("loaded", this.loaded);
+        this.loadStatus = "loaded";
+        this.notifyWatchers("loadStatus", this.loadStatus);
+        this.eventBus.emit("tile-layer.loaded", { serviceId: this.serviceId, id: this.id }, this);
+      } catch (error) {
+        this.metadata = undefined;
+        this.notifyWatchers("metadata", this.metadata);
+        this.loaded = false;
+        this.notifyWatchers("loaded", this.loaded);
+        this.loadStatus = "failed";
+        this.notifyWatchers("loadStatus", this.loadStatus);
+        this.eventBus.emit("tile-layer.failed", { serviceId: this.serviceId, id: this.id, error }, this);
+        throw error;
+      }
     }
     return this;
   }
@@ -116,9 +127,9 @@ export class TileLayerCompat {
   }
 
   public setOpacity(opacity: number): void {
-    this.opacity = opacity;
+    this.opacity = normalizeOpacity(opacity);
     this.notifyWatchers("opacity", this.opacity);
-    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
+    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity: this.opacity }, this);
   }
 
   public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
@@ -160,4 +171,11 @@ function normalizeScale(scale: number | undefined): number {
     return 0;
   }
   return Math.max(0, Math.trunc(scale));
+}
+
+function normalizeOpacity(opacity: number): number {
+  if (!Number.isFinite(opacity)) {
+    return 1;
+  }
+  return Math.min(Math.max(opacity, 0), 1);
 }

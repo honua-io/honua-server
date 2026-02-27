@@ -40,4 +40,26 @@ describe("esriRequest compat", () => {
 
     expect(result.data).toBe("ok");
   });
+
+  it("supports relative URLs when query params are provided", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await esriRequest("/rest/services/demo/FeatureServer/0/query", {
+      query: {
+        f: "json",
+        where: "1=1",
+      },
+    });
+
+    const calledUrl = String((fetchMock.mock.calls as unknown[][])[0]?.[0]);
+    expect(calledUrl.startsWith("/rest/services/demo/FeatureServer/0/query?")).toBe(true);
+    expect(calledUrl).toContain("f=json");
+    expect(calledUrl).toContain("where=1%3D1");
+  });
 });

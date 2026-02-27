@@ -183,9 +183,9 @@ export class GroupLayerCompat {
   }
 
   public setOpacity(opacity: number): void {
-    this.opacity = opacity;
+    this.opacity = normalizeOpacity(opacity);
     this.notifyWatchers("opacity", this.opacity);
-    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
+    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity: this.opacity }, this);
   }
 
   public destroy(): void {
@@ -236,4 +236,11 @@ function isLayerWithChildren(value: unknown): value is LayerWithChildren {
 function normalizeInsertIndex(index: number, length: number): number {
   const sanitized = Number.isFinite(index) ? Math.trunc(index) : length;
   return Math.min(Math.max(sanitized, 0), length);
+}
+
+function normalizeOpacity(opacity: number): number {
+  if (!Number.isFinite(opacity)) {
+    return 1;
+  }
+  return Math.min(Math.max(opacity, 0), 1);
 }

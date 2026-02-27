@@ -69,6 +69,12 @@ describe("RouteLayerCompat", () => {
     layer.addStop({ location: [0, 0] });
     layer.addStops([{ location: [1, 1] }, { location: [2, 2] }]);
     expect(layer.stops).toHaveLength(3);
+    layer.setOpacity(Number.NaN);
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-9);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(4);
+    expect(layer.opacity).toBe(1);
     layer.clearStops();
     expect(layer.stops).toHaveLength(0);
   });

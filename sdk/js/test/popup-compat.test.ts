@@ -50,6 +50,14 @@ describe("PopupCompat", () => {
     const eventBus = new CompatEventBus();
     const view = new MapViewCompat({ eventBus });
     const widget = new PopupCompat({ view, eventBus });
+    const visibleValues: unknown[] = [];
+    const featureValues: unknown[] = [];
+    widget.watch("visible", (value) => {
+      visibleValues.push(value);
+    });
+    widget.watch("features", (value) => {
+      featureValues.push(value);
+    });
 
     view.openPopup({
       location: [1, 2],
@@ -65,6 +73,8 @@ describe("PopupCompat", () => {
     expect(widget.features).toEqual([{ id: 101 }, { id: 202 }]);
     expect(widget.selectedFeature).toEqual({ id: 101 });
     expect(widget.selectedFeatureIndex).toBe(0);
+    expect(visibleValues).toEqual([true]);
+    expect(featureValues).toEqual([[{ id: 101 }, { id: 202 }]]);
 
     expect(widget.next()).toEqual({ id: 202 });
     expect(widget.selectedFeature).toEqual({ id: 202 });
@@ -122,6 +132,87 @@ describe("PopupCompat", () => {
     expect(events).toContain("popup.open");
     expect(events).toContain("popup.close");
     expect(events).toContain("popup.selected-feature-changed");
+
+    widget.destroy();
+  });
+
+  it("synchronizes with plain view popup objects without relying on event bus bridge events", () => {
+    const popupState: {
+      visible: boolean;
+      location: unknown;
+      features: unknown[];
+      selectedFeature: unknown;
+      selectedFeatureIndex: number;
+      title: string | undefined;
+      content: unknown;
+      open(options?: {
+        location?: unknown;
+        features?: readonly unknown[];
+        title?: string;
+        content?: unknown;
+      }): void;
+      close(): void;
+    } = {
+      visible: false,
+      location: undefined,
+      features: [],
+      selectedFeature: undefined,
+      selectedFeatureIndex: -1,
+      title: undefined,
+      content: undefined,
+      open: () => {
+        // Initialized below to keep state mutation typed without `this`.
+      },
+      close: () => {
+        // Initialized below to keep state mutation typed without `this`.
+      },
+    };
+    popupState.open = (options = {}) => {
+      popupState.visible = true;
+      popupState.location = options.location;
+      popupState.features = options.features ? [...options.features] : [];
+      popupState.selectedFeature = popupState.features[0];
+      popupState.selectedFeatureIndex = popupState.features.length > 0 ? 0 : -1;
+      popupState.title = options.title;
+      popupState.content = options.content;
+    };
+    popupState.close = () => {
+      popupState.visible = false;
+      popupState.location = undefined;
+      popupState.features = [];
+      popupState.selectedFeature = undefined;
+      popupState.selectedFeatureIndex = -1;
+      popupState.title = undefined;
+      popupState.content = undefined;
+    };
+
+    const view = {
+      popup: popupState,
+    };
+
+    const widget = new PopupCompat({ view });
+    widget.open({
+      location: { x: -157.85, y: 21.3 },
+      title: "Plain View Popup",
+      content: "Synced",
+      features: [{ id: 1 }, { id: 2 }],
+    });
+
+    expect(widget.visible).toBe(true);
+    expect(widget.location).toEqual({ x: -157.85, y: 21.3 });
+    expect(widget.title).toBe("Plain View Popup");
+    expect(widget.content).toBe("Synced");
+    expect(widget.features).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(widget.selectedFeature).toEqual({ id: 1 });
+    expect(widget.selectedFeatureIndex).toBe(0);
+
+    widget.close();
+
+    expect(widget.visible).toBe(false);
+    expect(widget.location).toBeUndefined();
+    expect(widget.features).toEqual([]);
+    expect(widget.selectedFeature).toBeUndefined();
+    expect(widget.selectedFeatureIndex).toBe(-1);
 
     widget.destroy();
   });

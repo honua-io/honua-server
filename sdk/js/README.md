@@ -5,10 +5,11 @@ Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 This package currently provides:
 
 - core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
+- first-class OGC API Features client/wrappers (`client.ogcFeatures()`) for landing page, conformance, collections, queryables, items, and item CRUD,
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `RouteLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
   including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()/addAttachment()/updateAttachment()/listFields()/getField()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/find()/identify()/findSublayerById()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`/`takeScreenshot()` and `view.ui.add/remove/move/getComponents` compatibility,
 - identify controller (`IdentifyCompat`) for cross-layer MapServer identify workflows with optional popup auto-open,
-- compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`, `TrackCompat`, `MeasurementCompat`, `TimeSliderCompat`, `DirectionsCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes, including popup feature-selection navigation and search source/result state helpers,
+- compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`, `TrackCompat`, `MeasurementCompat`, `TimeSliderCompat`, `DirectionsCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes, including popup feature-selection navigation and search source/result state helpers (default search sources support both ArcGIS `queryFeatures` layers and OGC collection-style `items()` layers),
 - common map controls (`HomeCompat`, `BasemapToggleCompat`, `LocateCompat`, `ScaleBarCompat`, `CompassCompat`, `FullscreenCompat`, `ZoomCompat`, `AttributionCompat`) wired to the same event bus for shared view state updates,
 - request/auth migration bridge helpers (`createEsriRequestInterceptors`, `createArcGisTokenInterceptor`) plus core `HonuaClient` interceptor hooks (`before`/`after`/`error`),
 - URL parsing helpers for ArcGIS FeatureLayer endpoint detection,
@@ -106,6 +107,36 @@ const client = new HonuaClient({
 });
 ```
 
+## OGC API Features (Honua-first)
+
+```ts
+import { HonuaClient } from "@honua/sdk-js/honua";
+
+const client = new HonuaClient({ baseUrl: "https://example.test" });
+const ogc = client.ogcFeatures();
+
+const collections = await ogc.collections();
+const parcels = ogc.collection("0");
+const items = await parcels.items({ limit: 100, filter: "status = 'active'" });
+const feature = await parcels.item({ featureId: "123" });
+```
+
+## Mixed Esri + OGC in one app
+
+```ts
+import { HonuaClient } from "@honua/sdk-js/honua";
+
+const client = new HonuaClient({ baseUrl: "https://example.test" });
+
+const parcelsLayer = client.service("transport").featureLayer(0);
+const parcelsOgc = client.ogcFeatures().collection("parcels");
+
+const [features, items] = await Promise.all([
+  parcelsLayer.queryFeatures({ where: "status = 'active'", outFields: ["OBJECTID"] }),
+  parcelsOgc.items({ limit: 50 }),
+]);
+```
+
 ## Migration CLI
 
 ```bash
@@ -197,12 +228,20 @@ The codemod is intentionally conservative:
   - `new Measurement(...)` -> `new MeasurementCompat(...)`
   - `new TimeSlider(...)` -> `new TimeSliderCompat(...)`
   - `new Directions(...)` -> `new DirectionsCompat(...)`
-- alternate target (`--target esri-leaflet`) rewrites deterministic subset only:
+- alternate target (`--target esri-leaflet`) rewrites deterministic subset plus selected compat fallbacks:
   - `new FeatureLayer({ ... })` -> `HonuaEsriLeaflet.featureLayer({ ... })`
   - `new MapImageLayer({ ... })` -> `HonuaEsriLeaflet.dynamicMapLayer({ ... })`
   - `new TileLayer({ ... })` -> `HonuaEsriLeaflet.tiledMapLayer({ ... })`
+  - `new Map({ ... })` -> `new MapCompat({ ... })`
+  - `new MapView({ ... })` -> `new MapViewCompat({ ... })`
+  - `new LayerList({ ... })` -> `new LayerListCompat({ ... })`
+  - `new Legend({ ... })` -> `new LegendCompat({ ... })`
+  - `new Popup({ ... })` -> `new PopupCompat({ ... })`
+  - `new Search({ ... })` -> `new SearchCompat({ ... })`
+  - `new Home/BasemapToggle/Locate/ScaleBar/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution(...)` -> corresponding `*Compat` constructor
   - dynamic imports for those modules -> `Promise.resolve({ default: HonuaEsriLeaflet.* })`
-  - non-deterministic APIs (for example `Map`, `MapView`, `SceneView`, `WebMap`, `Polyline`, `Polygon`, `Extent`, `SpatialReference`, `Color`, `PictureMarkerSymbol`, `TextSymbol`, `LabelClass`, `SimpleFillSymbol`, `ClassBreaksRenderer`, `SimpleRenderer`, `UniqueValueRenderer`, `GraphicsLayer`, `GroupLayer`, `LayerList`, `Legend`, `Popup`, `Home`, `BasemapToggle`, `Locate`, `ScaleBar`, `Search`, `BasemapGallery`, `Bookmarks`, `Expand`, `Compass`, `Fullscreen`, `Zoom`, `Attribution`, `Sketch`, `Editor`, `Track`, `Measurement`, `TimeSlider`, `RouteLayer`, `Directions`) are emitted as manual TODO/report entries
+  - dynamic imports for compat fallback modules -> `import("@honua/sdk-esri-compat").then((m) => ({ default: m.*Compat }))`
+  - non-deterministic APIs (for example `SceneView`, `WebMap`, `Polyline`, `Polygon`, `Extent`, `SpatialReference`, `Color`, `PictureMarkerSymbol`, `TextSymbol`, `LabelClass`, `SimpleFillSymbol`, `ClassBreaksRenderer`, `SimpleRenderer`, `UniqueValueRenderer`, `GraphicsLayer`, `GroupLayer`, `Sketch`, `Editor`, `Track`, `Measurement`, `TimeSlider`, `RouteLayer`, `Directions`) are emitted as manual TODO/report entries
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),
 - it skips complex constructors and records manual TODO entries in the report,
 - it keeps CommonJS `require(...)` constructor sites as manual TODOs (for example `.cjs` or `.js` files exporting via `module.exports`/`exports.*`),

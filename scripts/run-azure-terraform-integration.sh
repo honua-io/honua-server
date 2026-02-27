@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 STACK="both"
-LOCATION="${AZURE_LOCATION:-eastus}"
+LOCATION="${AZURE_LOCATION:-westus}"
 ENVIRONMENT="${AZURE_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AZURE_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
 ACA_IMAGE="${HONUA_ACA_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
@@ -42,6 +42,13 @@ EXISTING_DB_FQDN="${HONUA_AZURE_EXISTING_DB_FQDN:-}"
 EXISTING_DB_CONNECTION_STRING="${HONUA_AZURE_EXISTING_DB_CONNECTION_STRING:-}"
 EXISTING_REDIS_CONNECTION_STRING="${HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING:-}"
 AUTO_PROVISION_DATA_STACK=true
+DATA_DB_SKU_NAME="${HONUA_AZURE_DATA_DB_SKU_NAME:-B_Standard_B1ms}"
+DATA_DB_STORAGE_MB="${HONUA_AZURE_DATA_DB_STORAGE_MB:-32768}"
+DATA_DB_PUBLIC_NETWORK_ACCESS="${HONUA_AZURE_DATA_DB_PUBLIC_NETWORK_ACCESS:-true}"
+DATA_REDIS_SKU_NAME="${HONUA_AZURE_DATA_REDIS_SKU_NAME:-Basic}"
+DATA_REDIS_FAMILY="${HONUA_AZURE_DATA_REDIS_FAMILY:-C}"
+DATA_REDIS_CAPACITY="${HONUA_AZURE_DATA_REDIS_CAPACITY:-0}"
+DATA_REDIS_PUBLIC_NETWORK_ACCESS_ENABLED="${HONUA_AZURE_DATA_REDIS_PUBLIC_NETWORK_ACCESS_ENABLED:-true}"
 
 TEMP_TF_ROOT=""
 DATA_APPLIED=false
@@ -66,7 +73,7 @@ first and then feeds those outputs into ACA/Functions validation applies.
 
 Options:
   --stack <aca|functions|both>        Stack to test (default: both)
-  --location <azure-region>           Azure region (default: eastus)
+  --location <azure-region>           Azure region (default: westus)
   --environment <name>                Environment suffix in names (default: it)
   --name-prefix-base <prefix>         Base prefix for generated resource names
   --aca-image <image>                 ACA image tag
@@ -79,6 +86,11 @@ Options:
   --max-ready-seconds <n>             Ready SLO threshold (default: 600)
   --max-load-error-rate <percent>     Max allowed load error rate (default: 0)
   --max-run-cost-usd <n>              Max allowed estimated run cost (0 disables cap)
+  --data-db-sku <name>                Azure data stack PostgreSQL SKU (default: B_Standard_B1ms)
+  --data-db-storage-mb <n>            Azure data stack PostgreSQL storage in MB (default: 32768)
+  --data-redis-sku <Basic|Standard>   Azure data stack Redis SKU (default: Basic)
+  --data-redis-family <char>          Azure data stack Redis family (default: C)
+  --data-redis-capacity <n>           Azure data stack Redis capacity (default: 0)
   --existing-db-fqdn <fqdn>           Reuse existing PostgreSQL server FQDN
   --existing-db-connection <string>   Reuse existing PostgreSQL connection string
   --existing-redis-connection <str>   Reuse existing Redis connection string
@@ -209,6 +221,26 @@ parse_args() {
         MAX_RUN_COST_USD="$2"
         shift 2
         ;;
+      --data-db-sku)
+        DATA_DB_SKU_NAME="$2"
+        shift 2
+        ;;
+      --data-db-storage-mb)
+        DATA_DB_STORAGE_MB="$2"
+        shift 2
+        ;;
+      --data-redis-sku)
+        DATA_REDIS_SKU_NAME="$2"
+        shift 2
+        ;;
+      --data-redis-family)
+        DATA_REDIS_FAMILY="$2"
+        shift 2
+        ;;
+      --data-redis-capacity)
+        DATA_REDIS_CAPACITY="$2"
+        shift 2
+        ;;
       --existing-db-fqdn)
         EXISTING_DB_FQDN="$2"
         shift 2
@@ -303,9 +335,16 @@ run_tf() {
     -e TF_VAR_name_prefix \
     -e TF_VAR_honua_admin_password \
     -e TF_VAR_db_admin_password \
+    -e TF_VAR_db_sku_name \
+    -e TF_VAR_db_storage_mb \
+    -e TF_VAR_db_public_network_access \
     -e TF_VAR_honua_image \
     -e TF_VAR_enable_postgis \
     -e TF_VAR_redis_enabled \
+    -e TF_VAR_redis_sku_name \
+    -e TF_VAR_redis_family \
+    -e TF_VAR_redis_capacity \
+    -e TF_VAR_redis_public_network_access_enabled \
     -e TF_VAR_redis_connection_string \
     -e TF_VAR_existing_db_fqdn \
     -e TF_VAR_existing_db_connection_string \
@@ -946,6 +985,13 @@ set_aca_tf_vars() {
 
   unset TF_VAR_plan_sku_name
   unset TF_VAR_skip_migrations
+  unset TF_VAR_db_sku_name
+  unset TF_VAR_db_storage_mb
+  unset TF_VAR_db_public_network_access
+  unset TF_VAR_redis_sku_name
+  unset TF_VAR_redis_family
+  unset TF_VAR_redis_capacity
+  unset TF_VAR_redis_public_network_access_enabled
 }
 
 set_functions_tf_vars() {
@@ -958,12 +1004,26 @@ set_functions_tf_vars() {
   unset TF_VAR_min_replicas
   unset TF_VAR_max_replicas
   unset TF_VAR_key_vault_default_action
+  unset TF_VAR_db_sku_name
+  unset TF_VAR_db_storage_mb
+  unset TF_VAR_db_public_network_access
+  unset TF_VAR_redis_sku_name
+  unset TF_VAR_redis_family
+  unset TF_VAR_redis_capacity
+  unset TF_VAR_redis_public_network_access_enabled
 }
 
 set_data_tf_vars() {
   set_common_tf_vars
   export TF_VAR_name_prefix="$DATA_NAME_PREFIX"
   export TF_VAR_key_vault_default_action="Allow"
+  export TF_VAR_db_sku_name="$DATA_DB_SKU_NAME"
+  export TF_VAR_db_storage_mb="$DATA_DB_STORAGE_MB"
+  export TF_VAR_db_public_network_access="$DATA_DB_PUBLIC_NETWORK_ACCESS"
+  export TF_VAR_redis_sku_name="$DATA_REDIS_SKU_NAME"
+  export TF_VAR_redis_family="$DATA_REDIS_FAMILY"
+  export TF_VAR_redis_capacity="$DATA_REDIS_CAPACITY"
+  export TF_VAR_redis_public_network_access_enabled="$DATA_REDIS_PUBLIC_NETWORK_ACCESS_ENABLED"
 
   unset TF_VAR_honua_image
   unset TF_VAR_plan_sku_name
@@ -1323,6 +1383,8 @@ main() {
   log_info "Region: $LOCATION"
   log_info "Environment: $ENVIRONMENT"
   log_info "Data prefix: $DATA_NAME_PREFIX"
+  log_info "Data DB SKU/storage: $DATA_DB_SKU_NAME / ${DATA_DB_STORAGE_MB}MB"
+  log_info "Data Redis SKU/family/capacity: $DATA_REDIS_SKU_NAME/$DATA_REDIS_FAMILY/$DATA_REDIS_CAPACITY"
   log_info "ACA prefix: $ACA_NAME_PREFIX"
   log_info "Functions prefix: $FUNCTIONS_NAME_PREFIX"
   log_info "DB firewall range: $DB_FIREWALL_START_IP - $DB_FIREWALL_END_IP"

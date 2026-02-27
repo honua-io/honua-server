@@ -69,6 +69,86 @@ describe("HonuaClient request interceptors", () => {
     await expect(client.listServices()).rejects.toBeInstanceOf(HonuaHttpError);
     expect(interceptedError).toBeInstanceOf(HonuaHttpError);
   });
+
+  it("does not run after interceptors for HTTP error responses", async () => {
+    const afterStatuses: number[] = [];
+    const errors: unknown[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: (context) => {
+            afterStatuses.push(context.response.status);
+          },
+          error: (context) => {
+            errors.push(context.error);
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ error: { message: "failed" } }), {
+          status: 500,
+        }),
+    });
+
+    await expect(client.listServices()).rejects.toBeInstanceOf(HonuaHttpError);
+    expect(afterStatuses).toEqual([]);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("lets after interceptors read response body without consuming client parsing", async () => {
+    const afterBodies: unknown[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: async (context) => {
+            afterBodies.push(await context.response.json());
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ services: [{ name: "demo" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    const response = await client.listServices();
+    expect(afterBodies).toEqual([{ services: [{ name: "demo" }] }]);
+    expect(response).toEqual({ services: [{ name: "demo" }] });
+  });
+
+  it("clones responses so multiple after interceptors can read body streams", async () => {
+    const afterTexts: string[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: async (context) => {
+            afterTexts.push(await context.response.text());
+          },
+        },
+        {
+          after: async (context) => {
+            afterTexts.push(await context.response.text());
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ services: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    const response = await client.listServices();
+    expect(afterTexts).toEqual(['{"services":[]}', '{"services":[]}']);
+    expect(response).toEqual({ services: [] });
+  });
 });
 
 describe("esri-style request bridge", () => {
@@ -176,5 +256,35 @@ describe("esri-style request bridge", () => {
     handle.remove();
     await client.queryFeatures({ serviceId: "default", layerId: 0 });
     expect(requestedHeaders[2]).not.toMatchObject({ "X-Registry": "on" });
+  });
+
+  it("applies global regex url patterns consistently across repeated requests", async () => {
+    const requestedHeaders: HeadersInit[] = [];
+    const [bridge] = createEsriRequestInterceptors([
+      {
+        urls: /FeatureServer\/0\/query/g,
+        before: (params) => {
+          params.requestOptions.headers = {
+            ...(params.requestOptions.headers ?? {}),
+            "X-Global-RegExp": "matched",
+          };
+        },
+      },
+    ]);
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [bridge],
+      fetchFn: async (_input, init) => {
+        requestedHeaders.push(init?.headers ?? {});
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+
+    expect(requestedHeaders[0]).toMatchObject({ "X-Global-RegExp": "matched" });
+    expect(requestedHeaders[1]).toMatchObject({ "X-Global-RegExp": "matched" });
   });
 });

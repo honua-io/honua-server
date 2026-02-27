@@ -69,5 +69,12 @@ describe("GraphicsLayerCompat", () => {
     expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
     expect(loadedValues).toHaveLength(watchSnapshot.loaded);
     expect(graphicCounts).toHaveLength(watchSnapshot.graphics);
+
+    layer.setOpacity(Number.NaN);
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-3);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(3);
+    expect(layer.opacity).toBe(1);
   });
 });

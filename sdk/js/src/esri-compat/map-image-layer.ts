@@ -29,7 +29,7 @@ export interface MapImageLayerIdentifyOptions extends Omit<MapIdentifyRequest, "
 export interface MapImageLayerFindOptions extends Omit<MapFindRequest, "serviceId"> {}
 export type MapImageLayerSublayerLookupId = number | string;
 
-export type MapImageLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+export type MapImageLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded" | "failed";
 
 export interface MapImageLayerHandleCompat {
   remove(): void;
@@ -81,13 +81,24 @@ export class MapImageLayerCompat {
       this.loadStatus = "loading";
       this.notifyWatchers("loadStatus", this.loadStatus);
       this.eventBus.emit("map-image-layer.loading", { serviceId: this.serviceId, id: this.id }, this);
-      this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
-      this.notifyWatchers("metadata", this.metadata);
-      this.loaded = true;
-      this.notifyWatchers("loaded", this.loaded);
-      this.loadStatus = "loaded";
-      this.notifyWatchers("loadStatus", this.loadStatus);
-      this.eventBus.emit("map-image-layer.loaded", { serviceId: this.serviceId, id: this.id }, this);
+      try {
+        this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
+        this.notifyWatchers("metadata", this.metadata);
+        this.loaded = true;
+        this.notifyWatchers("loaded", this.loaded);
+        this.loadStatus = "loaded";
+        this.notifyWatchers("loadStatus", this.loadStatus);
+        this.eventBus.emit("map-image-layer.loaded", { serviceId: this.serviceId, id: this.id }, this);
+      } catch (error) {
+        this.metadata = undefined;
+        this.notifyWatchers("metadata", this.metadata);
+        this.loaded = false;
+        this.notifyWatchers("loaded", this.loaded);
+        this.loadStatus = "failed";
+        this.notifyWatchers("loadStatus", this.loadStatus);
+        this.eventBus.emit("map-image-layer.failed", { serviceId: this.serviceId, id: this.id, error }, this);
+        throw error;
+      }
     }
     return this;
   }
@@ -169,9 +180,9 @@ export class MapImageLayerCompat {
   }
 
   public setOpacity(opacity: number): void {
-    this.opacity = opacity;
+    this.opacity = normalizeOpacity(opacity);
     this.notifyWatchers("opacity", this.opacity);
-    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
+    this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity: this.opacity }, this);
   }
 
   public setSublayers(sublayers: readonly unknown[]): void {
@@ -234,6 +245,13 @@ function normalizeScale(scale: number | undefined): number {
     return 0;
   }
   return Math.max(0, Math.trunc(scale));
+}
+
+function normalizeOpacity(opacity: number): number {
+  if (!Number.isFinite(opacity)) {
+    return 1;
+  }
+  return Math.min(Math.max(opacity, 0), 1);
 }
 
 function normalizeSublayerId(id: MapImageLayerSublayerLookupId): number | undefined {
