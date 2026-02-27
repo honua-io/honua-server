@@ -11,6 +11,8 @@ export interface GroupLayerCompatOptions {
   eventBus?: CompatEventBus;
 }
 
+export type GroupLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
 export class GroupLayerCompat {
   public readonly type: "group";
   public id: string | undefined;
@@ -19,6 +21,8 @@ export class GroupLayerCompat {
   public opacity: number;
   public listMode: "show" | "hide";
   public visibilityMode: "independent" | "inherited" | "exclusive";
+  public loaded: boolean;
+  public loadStatus: GroupLayerLoadStatusCompat;
   public readonly eventBus: CompatEventBus;
   private readonly layersInternal: unknown[];
 
@@ -30,8 +34,31 @@ export class GroupLayerCompat {
     this.opacity = options.opacity ?? 1;
     this.listMode = options.listMode ?? "show";
     this.visibilityMode = options.visibilityMode ?? "independent";
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.layersInternal = Array.isArray(options.layers) ? [...options.layers] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.layers) ?? new CompatEventBus();
+  }
+
+  public async load(): Promise<GroupLayerCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.eventBus.emit("group-layer.loading", { layerId: this.id }, this);
+    this.loaded = true;
+    this.loadStatus = "loaded";
+    this.eventBus.emit("group-layer.loaded", { layerId: this.id }, this);
+    return this;
+  }
+
+  public async when(callback?: (layer: GroupLayerCompat) => void): Promise<GroupLayerCompat> {
+    const layer = await this.load();
+    if (callback) {
+      callback(layer);
+    }
+    return layer;
   }
 
   public get layers(): readonly unknown[] {

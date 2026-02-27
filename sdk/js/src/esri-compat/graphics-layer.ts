@@ -14,6 +14,8 @@ export interface GraphicsLayerQueryResult {
   features: unknown[];
 }
 
+export type GraphicsLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
 export class GraphicsLayerCompat {
   public readonly type: "graphics";
   public id: string | undefined;
@@ -21,6 +23,8 @@ export class GraphicsLayerCompat {
   public visible: boolean;
   public opacity: number;
   public listMode: "show" | "hide";
+  public loaded: boolean;
+  public loadStatus: GraphicsLayerLoadStatusCompat;
   public readonly eventBus: CompatEventBus;
   private readonly graphicsInternal: unknown[];
 
@@ -31,8 +35,31 @@ export class GraphicsLayerCompat {
     this.visible = options.visible ?? true;
     this.opacity = options.opacity ?? 1;
     this.listMode = options.listMode ?? "show";
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.graphicsInternal = Array.isArray(options.graphics) ? [...options.graphics] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.graphics) ?? new CompatEventBus();
+  }
+
+  public async load(): Promise<GraphicsLayerCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.eventBus.emit("graphics-layer.loading", { layerId: this.id }, this);
+    this.loaded = true;
+    this.loadStatus = "loaded";
+    this.eventBus.emit("graphics-layer.loaded", { layerId: this.id }, this);
+    return this;
+  }
+
+  public async when(callback?: (layer: GraphicsLayerCompat) => void): Promise<GraphicsLayerCompat> {
+    const layer = await this.load();
+    if (callback) {
+      callback(layer);
+    }
+    return layer;
   }
 
   public get graphics(): readonly unknown[] {
