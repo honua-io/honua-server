@@ -306,6 +306,26 @@ export class FeatureLayerCompat {
     this.eventBus.emit("feature-layer.legend-enabled-changed", { layerId: this.id, legendEnabled }, this);
   }
 
+  public listFields(): readonly Record<string, unknown>[] {
+    return extractFieldDefinitions(this.metadata);
+  }
+
+  public getField(fieldName: string): Record<string, unknown> | undefined {
+    const normalizedFieldName = fieldName.trim().toLowerCase();
+    if (normalizedFieldName.length === 0) {
+      return undefined;
+    }
+
+    return this.listFields().find((field) => {
+      const candidate = field.name;
+      return typeof candidate === "string" && candidate.trim().toLowerCase() === normalizedFieldName;
+    });
+  }
+
+  public hasField(fieldName: string): boolean {
+    return this.getField(fieldName) !== undefined;
+  }
+
   public createQuery(): FeatureLayerCreateQueryResult {
     return {
       where: this.definitionExpression ?? "1=1",
@@ -571,6 +591,26 @@ function extractObjectId(feature: unknown): number | undefined {
   }
 
   return undefined;
+}
+
+function extractFieldDefinitions(metadata: unknown): Record<string, unknown>[] {
+  if (!isRecord(metadata)) {
+    return [];
+  }
+
+  const fields = metadata.fields;
+  if (!Array.isArray(fields)) {
+    return [];
+  }
+
+  const records: Record<string, unknown>[] = [];
+  for (const field of fields) {
+    if (!isRecord(field)) {
+      continue;
+    }
+    records.push({ ...field });
+  }
+  return records;
 }
 
 function buildAttachmentFormData(options: {

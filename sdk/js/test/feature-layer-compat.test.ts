@@ -105,6 +105,50 @@ describe("FeatureLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("exposes metadata field helpers for schema lookup", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({
+            id: 1000,
+            fields: [
+              { name: "OBJECTID", type: "esriFieldTypeOID" },
+              { name: "Name", type: "esriFieldTypeString" },
+            ],
+          });
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    await layer.load();
+
+    expect(layer.hasField("objectid")).toBe(true);
+    expect(layer.hasField("NAME")).toBe(true);
+    expect(layer.hasField("missing")).toBe(false);
+    expect(layer.getField("name")).toEqual({
+      name: "Name",
+      type: "esriFieldTypeString",
+    });
+    expect(layer.getField("")).toBeUndefined();
+
+    const fields = layer.listFields();
+    expect(fields).toEqual([
+      { name: "OBJECTID", type: "esriFieldTypeOID" },
+      { name: "Name", type: "esriFieldTypeString" },
+    ]);
+    (fields as Array<Record<string, unknown>>).push({ name: "MUTATED" });
+    expect(layer.listFields()).toHaveLength(2);
+  });
+
   it("supports watch handles for lifecycle and property mutations", async () => {
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/0",
