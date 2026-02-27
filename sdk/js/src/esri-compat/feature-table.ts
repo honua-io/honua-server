@@ -234,7 +234,7 @@ export class FeatureTableCompat {
   }
 
   public get loaded(): boolean {
-    return this.loadStatus === "loaded";
+    return this.loadStatus === "loaded" || this.state === "loaded";
   }
 
   public constructor(options: FeatureTableCompatOptions = {}) {
@@ -293,7 +293,6 @@ export class FeatureTableCompat {
     await this.refresh();
     return this;
   }
-
   public watch(propertyName: string, listener: (value: unknown) => void): FeatureTableHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
