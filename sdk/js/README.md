@@ -44,6 +44,7 @@ npm test
 npm run test:playwright
 npm run scan:arcgis -- ../../path/to/arcgis-app
 npm run migrate:arcgis -- ../../path/to/arcgis-app --write --report migration-report.json
+npm run report:migration:real-samples
 npm run build:split-packages
 ```
 
@@ -122,6 +123,12 @@ node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report m
 
 # Emit parity matrix JSON (for docs/CI dashboards)
 node dist/src/migration/cli.js matrix --report parity-matrix.json
+
+# Generate readiness metrics for bundled complex real-sample fixtures
+node dist/src/migration/cli.js fixtures --report reports/real-sample-metrics.json
+
+# Limit fixture metrics to a subset and esri-leaflet target mode
+node dist/src/migration/cli.js fixtures --target esri-leaflet --fixtures esri-real-sample-network-app --report reports/network-metrics.json
 
 # Gate in CI (non-zero exit if migration constraints fail)
 node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3

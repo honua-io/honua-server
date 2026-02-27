@@ -32,6 +32,7 @@
     "test:migration:real-samples": "vitest run test/migration-real-sample-runtime.test.ts",
     "test:playwright": "npm run build --silent && playwright test",
     "test:playwright:migration": "npm run build --silent && playwright test test/playwright/migration-browser-smoke.spec.mjs test/playwright/migration-browser-real-sample.spec.mjs",
+    "report:migration:real-samples": "npm run build --silent && node dist/src/migration/cli.js fixtures --report reports/real-sample-metrics.json",
     "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js scan",
     "migrate:arcgis": "npm run build --silent && node dist/src/migration/cli.js codemod"
   },

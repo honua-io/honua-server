@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
 import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 import {
   runEsriCompatCodemod,
@@ -13,7 +14,7 @@ import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcil
 import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
 
 interface ParsedArgs {
-  command: "scan" | "codemod" | "reconcile" | "matrix";
+  command: "scan" | "codemod" | "reconcile" | "matrix" | "fixtures";
   target: string;
   codemodTarget: CodemodTarget;
   write: boolean;
@@ -31,7 +32,62 @@ interface ParsedArgs {
   targetServiceId?: string;
   layerId?: number;
   sampleSize?: number;
+  fixtureNames?: string[];
 }
+
+interface FixtureMetricSnapshot {
+  fixture: string;
+  rootDir: string;
+  readiness: "ready" | "assisted" | "blocked";
+  scanSummary: string;
+  flags: string[];
+  totalCallSites: number;
+  autoMigratedCallSites: number;
+  manualCallSites: number;
+  manualRewrite: {
+    numerator: number;
+    denominator: number;
+    ratio: number;
+  };
+  manualIntervention: {
+    numerator: number;
+    denominator: number;
+    ratio: number;
+    unhandledUsageHits: number;
+  };
+  gates: string;
+}
+
+interface FixtureMetricsSummary {
+  fixtureCount: number;
+  ready: number;
+  assisted: number;
+  blocked: number;
+  totalCallSites: number;
+  autoMigratedCallSites: number;
+  manualCallSites: number;
+  manualRewriteNumerator: number;
+  manualRewriteDenominator: number;
+  manualRewriteRatio: number;
+  manualInterventionNumerator: number;
+  manualInterventionDenominator: number;
+  manualInterventionRatio: number;
+}
+
+interface FixtureMetricsReport {
+  codemodTarget: CodemodTarget;
+  fixturesRoot: string;
+  fixtureNames: string[];
+  generatedAt: string;
+  summary: FixtureMetricsSummary;
+  fixtures: FixtureMetricSnapshot[];
+}
+
+const DEFAULT_REAL_SAMPLE_FIXTURE_NAMES = [
+  "esri-real-sample-ops-center-app",
+  "esri-real-sample-editing-app",
+  "esri-real-sample-network-app",
+] as const;
 
 const parsed = parseArgs(process.argv.slice(2));
 if (!parsed) {
@@ -42,6 +98,8 @@ if (!parsed) {
     runScan(parsed.target, parsed.reportPath);
   } else if (parsed.command === "matrix") {
     runMatrix(parsed.reportPath);
+  } else if (parsed.command === "fixtures") {
+    runFixtures(parsed);
   } else if (parsed.command === "reconcile") {
     void runReconcile(parsed).catch((error) => {
       process.stderr.write(`reconcileError=${error instanceof Error ? error.message : String(error)}\n`);
@@ -86,6 +144,164 @@ function runScan(target: string, reportPath?: string): void {
     fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
+}
+
+function runFixtures(args: ParsedArgs): void {
+  const fixturesRoot = args.target;
+  const fixtureNames =
+    args.fixtureNames && args.fixtureNames.length > 0
+      ? [...args.fixtureNames]
+      : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
+  const report = buildFixtureMetricsReport(fixturesRoot, fixtureNames, args.codemodTarget);
+
+  process.stdout.write(
+    [
+      `fixtures=${report.summary.fixtureCount}`,
+      `ready=${report.summary.ready}`,
+      `assisted=${report.summary.assisted}`,
+      `blocked=${report.summary.blocked}`,
+      `autoMigrated=${report.summary.autoMigratedCallSites}`,
+      `manual=${report.summary.manualCallSites}`,
+      `manualRewrite=${report.summary.manualRewriteNumerator}/${report.summary.manualRewriteDenominator}`,
+      `manualIntervention=${report.summary.manualInterventionNumerator}/${report.summary.manualInterventionDenominator}`,
+      `target=${report.codemodTarget}`,
+    ].join(" "),
+  );
+  process.stdout.write("\n");
+  process.stdout.write(`${formatFixtureMetricsTable(report.fixtures)}\n`);
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+
+  if (args.reportPath) {
+    fs.mkdirSync(path.dirname(args.reportPath), { recursive: true });
+    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  }
+}
+
+function buildFixtureMetricsReport(
+  fixturesRoot: string,
+  fixtureNames: readonly string[],
+  codemodTarget: CodemodTarget,
+): FixtureMetricsReport {
+  const fixtures = fixtureNames.map((fixtureName) =>
+    buildFixtureMetricSnapshot(fixturesRoot, fixtureName, codemodTarget),
+  );
+
+  const summary = summarizeFixtureMetrics(fixtures);
+  return {
+    codemodTarget,
+    fixturesRoot,
+    fixtureNames: [...fixtureNames],
+    generatedAt: new Date().toISOString(),
+    summary,
+    fixtures,
+  };
+}
+
+function buildFixtureMetricSnapshot(
+  fixturesRoot: string,
+  fixtureName: string,
+  codemodTarget: CodemodTarget,
+): FixtureMetricSnapshot {
+  const rootDir = path.join(fixturesRoot, fixtureName);
+  if (!fs.existsSync(rootDir)) {
+    throw new Error(`Fixture directory does not exist: ${rootDir}`);
+  }
+
+  const scanReport = scanArcGisUsage(rootDir);
+  const codemodResult = runEsriCompatCodemod({
+    rootDir,
+    write: false,
+    annotateTodos: false,
+    target: codemodTarget,
+  });
+  const report = buildJsMigrationReport(rootDir, codemodResult, scanReport);
+
+  return {
+    fixture: fixtureName,
+    rootDir,
+    readiness: report.readiness,
+    scanSummary: report.scanSummary,
+    flags: [...report.scanReport.flags],
+    totalCallSites: codemodResult.metrics.totalCodemodScopedCallSites,
+    autoMigratedCallSites: codemodResult.metrics.autoMigratedCallSites,
+    manualCallSites: codemodResult.metrics.manualCallSites,
+    manualRewrite: {
+      numerator: report.manualRewriteMetric.numerator,
+      denominator: report.manualRewriteMetric.denominator,
+      ratio: report.manualRewriteMetric.ratio,
+    },
+    manualIntervention: {
+      numerator: report.manualInterventionMetric.numerator,
+      denominator: report.manualInterventionMetric.denominator,
+      ratio: report.manualInterventionMetric.ratio,
+      unhandledUsageHits: report.manualInterventionMetric.unhandledUsageHits,
+    },
+    gates: formatGateResults(report.gates),
+  };
+}
+
+function summarizeFixtureMetrics(
+  fixtures: readonly FixtureMetricSnapshot[],
+): FixtureMetricsSummary {
+  const ready = fixtures.filter((fixture) => fixture.readiness === "ready").length;
+  const assisted = fixtures.filter((fixture) => fixture.readiness === "assisted").length;
+  const blocked = fixtures.filter((fixture) => fixture.readiness === "blocked").length;
+  const totalCallSites = fixtures.reduce((sum, fixture) => sum + fixture.totalCallSites, 0);
+  const autoMigratedCallSites = fixtures.reduce(
+    (sum, fixture) => sum + fixture.autoMigratedCallSites,
+    0,
+  );
+  const manualCallSites = fixtures.reduce((sum, fixture) => sum + fixture.manualCallSites, 0);
+  const manualRewriteNumerator = fixtures.reduce(
+    (sum, fixture) => sum + fixture.manualRewrite.numerator,
+    0,
+  );
+  const manualRewriteDenominator = fixtures.reduce(
+    (sum, fixture) => sum + fixture.manualRewrite.denominator,
+    0,
+  );
+  const manualInterventionNumerator = fixtures.reduce(
+    (sum, fixture) => sum + fixture.manualIntervention.numerator,
+    0,
+  );
+  const manualInterventionDenominator = fixtures.reduce(
+    (sum, fixture) => sum + fixture.manualIntervention.denominator,
+    0,
+  );
+
+  return {
+    fixtureCount: fixtures.length,
+    ready,
+    assisted,
+    blocked,
+    totalCallSites,
+    autoMigratedCallSites,
+    manualCallSites,
+    manualRewriteNumerator,
+    manualRewriteDenominator,
+    manualRewriteRatio:
+      manualRewriteDenominator === 0 ? 0 : manualRewriteNumerator / manualRewriteDenominator,
+    manualInterventionNumerator,
+    manualInterventionDenominator,
+    manualInterventionRatio:
+      manualInterventionDenominator === 0
+        ? 0
+        : manualInterventionNumerator / manualInterventionDenominator,
+  };
+}
+
+function formatFixtureMetricsTable(fixtures: readonly FixtureMetricSnapshot[]): string {
+  const rows = [
+    "| fixture | readiness | auto/manual/total | rewrite ratio | intervention ratio | flags |",
+    "| --- | --- | --- | --- | --- | --- |",
+  ];
+  for (const fixture of fixtures) {
+    rows.push(
+      `| ${fixture.fixture} | ${fixture.readiness} | ${fixture.autoMigratedCallSites}/${fixture.manualCallSites}/${fixture.totalCallSites} | ${fixture.manualRewrite.numerator}/${fixture.manualRewrite.denominator} (${fixture.manualRewrite.ratio.toFixed(3)}) | ${fixture.manualIntervention.numerator}/${fixture.manualIntervention.denominator} (${fixture.manualIntervention.ratio.toFixed(3)}) | ${fixture.flags.join(",") || "none"} |`,
+    );
+  }
+  return rows.join("\n");
 }
 
 function runCodemod(args: ParsedArgs): void {
@@ -217,16 +433,18 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
 
   const maybeCommand = argv[0];
-  const command: "scan" | "codemod" | "reconcile" | "matrix" =
+  const command: "scan" | "codemod" | "reconcile" | "matrix" | "fixtures" =
     maybeCommand === "scan" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
-    maybeCommand === "matrix"
+    maybeCommand === "matrix" ||
+    maybeCommand === "fixtures"
       ? maybeCommand
       : "scan";
   const positional = command === maybeCommand ? argv.slice(1) : argv.slice(0);
 
   let target: string | undefined;
+  let fixtureNames: string[] | undefined;
   let reportPath: string | undefined;
   let codemodTarget: CodemodTarget = "honua-compat";
   let write = false;
@@ -326,6 +544,22 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       i += 1;
       continue;
     }
+    if (token === "--fixtures") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      const parsedFixtures = next
+        .split(",")
+        .map((fixture) => fixture.trim())
+        .filter((fixture) => fixture.length > 0);
+      if (parsedFixtures.length === 0) {
+        return undefined;
+      }
+      fixtureNames = parsedFixtures;
+      i += 1;
+      continue;
+    }
     if (token === "--source-base-url") {
       const next = positional[i + 1];
       if (!next) {
@@ -403,7 +637,9 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
 
   return {
     command,
-    target: target ?? process.cwd(),
+    target:
+      target ??
+      (command === "fixtures" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
     write,
     codemodTarget,
     annotateTodos,
@@ -420,6 +656,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     targetServiceId,
     layerId,
     sampleSize,
+    fixtureNames,
   };
 }
 
@@ -445,6 +682,7 @@ function printUsage(): void {
       "  honua-migrate [scan] <path> [--report <file>]",
       "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
+      "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "",
       "Examples:",
@@ -452,6 +690,7 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js codemod ./src --write --annotate-todos --report migration-report.json",
       "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",
       "  node dist/src/migration/cli.js matrix --report parity-matrix.json",
+      "  node dist/src/migration/cli.js fixtures --report real-sample-metrics.json",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
     ].join("\n"),
