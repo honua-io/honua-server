@@ -120,6 +120,7 @@ jobs:
           )
 
       - name: Incident demo live migration pipeline (optional)
+        continue-on-error: true
         env:
           HONUA_DEMO_TARGET_BASE_URL: ${{ secrets.HONUA_DEMO_TARGET_BASE_URL }}
           HONUA_DEMO_ADMIN_API_KEY: ${{ secrets.HONUA_DEMO_ADMIN_API_KEY }}
