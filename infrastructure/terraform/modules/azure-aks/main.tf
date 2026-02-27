@@ -23,13 +23,13 @@ resource "azurerm_kubernetes_cluster" "this" {
   kubernetes_version = var.kubernetes_version != "" ? var.kubernetes_version : null
 
   default_node_pool {
-    name                = "system"
-    vm_size             = var.node_vm_size
-    node_count          = var.auto_scaling_enabled ? null : var.node_count
-    os_disk_size_gb     = var.node_os_disk_size_gb
+    name                 = "system"
+    vm_size              = var.node_vm_size
+    node_count           = var.auto_scaling_enabled ? null : var.node_count
+    os_disk_size_gb      = var.node_os_disk_size_gb
     auto_scaling_enabled = var.auto_scaling_enabled
-    min_count           = var.auto_scaling_enabled ? var.node_min_count : null
-    max_count           = var.auto_scaling_enabled ? var.node_max_count : null
+    min_count            = var.auto_scaling_enabled ? var.node_min_count : null
+    max_count            = var.auto_scaling_enabled ? var.node_max_count : null
   }
 
   identity {

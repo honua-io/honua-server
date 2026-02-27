@@ -56,9 +56,9 @@ module "eks" {
   cluster_name    = "${local.name}-eks"
   cluster_version = var.cluster_version
 
-  cluster_endpoint_public_access       = var.cluster_endpoint_public_access
-  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
-  cluster_endpoint_private_access      = true
+  cluster_endpoint_public_access           = var.cluster_endpoint_public_access
+  cluster_endpoint_public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
+  cluster_endpoint_private_access          = true
   enable_cluster_creator_admin_permissions = true
 
   cluster_encryption_config = {

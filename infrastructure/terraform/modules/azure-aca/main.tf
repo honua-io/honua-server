@@ -308,9 +308,9 @@ resource "azurerm_container_app" "this" {
         path      = "/healthz/live"
         port      = var.container_port
 
-        initial_delay    = 10
-        interval_seconds = 30
-        timeout          = 5
+        initial_delay           = 10
+        interval_seconds        = 30
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -319,8 +319,8 @@ resource "azurerm_container_app" "this" {
         path      = "/healthz/ready"
         port      = var.container_port
 
-        interval_seconds = 10
-        timeout          = 5
+        interval_seconds        = 10
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -329,8 +329,8 @@ resource "azurerm_container_app" "this" {
         path      = "/healthz/ready"
         port      = var.container_port
 
-        interval_seconds = 10
-        timeout          = 5
+        interval_seconds        = 10
+        timeout                 = 5
         failure_count_threshold = 10
       }
     }

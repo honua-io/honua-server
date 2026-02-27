@@ -379,16 +379,23 @@ jobs:
           docker compose -f .devcontainer/docker-compose.emulators.yml ps
           exit 1
 
-      - name: Run .NET Tests
-        timeout-minutes: 60
+      - name: Build .NET test binaries
+        timeout-minutes: 20
         run: |
           dotnet build Honua.sln \
             --no-restore \
             --configuration Release \
             -m:1
+
+      - name: Install Playwright dependencies for .NET tests
+        timeout-minutes: 10
+        run: |
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps chromium
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install chromium
 
+      - name: Run .NET Tests (Admin/Core/Postgres)
+        timeout-minutes: 20
+        run: |
           dotnet test tests/Honua.Admin.Tests/Honua.Admin.Tests.csproj \
             --no-build \
             --no-restore \
@@ -434,6 +441,9 @@ jobs:
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
 
+      - name: Run .NET Tests (Server)
+        timeout-minutes: 20
+        run: |
           dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
@@ -443,6 +453,9 @@ jobs:
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
 
+      - name: Run .NET Tests (Architecture)
+        timeout-minutes: 10
+        run: |
           dotnet test tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
             --no-build \
             --no-restore \
