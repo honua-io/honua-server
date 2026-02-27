@@ -3,6 +3,58 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, TrackCompat } from "../src/index.js";
 
 describe("TrackCompat", () => {
+  it("supports when() and watch() lifecycle/tracking state", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+    const track = new TrackCompat({
+      eventBus,
+      trackProvider: async () => ({
+        coords: {
+          latitude: 0,
+          longitude: 0,
+        },
+      }),
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const trackingValues: unknown[] = [];
+    const loadStatusHandle = track.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const trackingHandle = track.watch("tracking", (value) => {
+      trackingValues.push(value);
+    });
+
+    let callbackWidget: TrackCompat | undefined;
+    const widget = await track.when((resolvedWidget) => {
+      callbackWidget = resolvedWidget;
+    });
+    await track.start();
+    track.stop();
+
+    loadStatusHandle.remove();
+    trackingHandle.remove();
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      tracking: trackingValues.length,
+    };
+    await track.start();
+
+    expect(widget).toBe(track);
+    expect(callbackWidget).toBe(track);
+    expect(track.loaded).toBe(true);
+    expect(track.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(trackingValues).toEqual([true, false]);
+    expect(seenTypes).toContain("track.loading");
+    expect(seenTypes).toContain("track.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(trackingValues).toHaveLength(watchSnapshot.tracking);
+  });
+
   it("tracks a location and updates view center/rotation", async () => {
     const eventBus = new CompatEventBus();
     const seenTypes: string[] = [];

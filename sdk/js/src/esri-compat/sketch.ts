@@ -32,6 +32,12 @@ export interface SketchCreateResultCompat {
   graphic?: unknown;
 }
 
+export type SketchLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface SketchHandleCompat {
+  remove(): void;
+}
+
 export class SketchCompat {
   public readonly view: unknown;
   public readonly layer: unknown;
@@ -41,11 +47,14 @@ export class SketchCompat {
   public readonly creationMode: SketchCreationModeCompat;
   public readonly defaultCreateOptions: Partial<SketchCreateOptionsCompat>;
   public readonly defaultUpdateOptions: Partial<SketchUpdateOptionsCompat>;
+  public loaded: boolean;
+  public loadStatus: SketchLoadStatusCompat;
   public state: "ready" | "active";
   public activeTool: SketchToolCompat | undefined;
   public activeCreateOptions: Partial<SketchCreateOptionsCompat> | undefined;
   public activeUpdateGraphics: unknown[];
   public activeUpdateOptions: Partial<SketchUpdateOptionsCompat> | undefined;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: SketchCompatOptions = {}) {
     this.view = options.view;
@@ -56,20 +65,65 @@ export class SketchCompat {
     this.creationMode = options.creationMode ?? "single";
     this.defaultCreateOptions = { ...(options.defaultCreateOptions ?? {}) };
     this.defaultUpdateOptions = { ...(options.defaultUpdateOptions ?? {}) };
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.state = "ready";
     this.activeTool = undefined;
     this.activeCreateOptions = undefined;
     this.activeUpdateGraphics = [];
     this.activeUpdateOptions = undefined;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<SketchCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("sketch.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("sketch.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: SketchCompat) => void): Promise<SketchCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): SketchHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public create(tool: SketchToolCompat, options?: Partial<SketchCreateOptionsCompat>): void {
     this.state = "active";
+    this.notifyWatchers("state", this.state);
     this.activeTool = tool;
+    this.notifyWatchers("activeTool", this.activeTool);
     this.activeCreateOptions = {
       ...this.defaultCreateOptions,
       ...(options ?? {}),
     };
+    this.notifyWatchers("activeCreateOptions", this.activeCreateOptions);
     this.eventBus.emit(
       "sketch.create-started",
       {
@@ -126,10 +180,12 @@ export class SketchCompat {
   ): readonly unknown[] {
     const normalizedGraphics = normalizeGraphicsInput(graphics);
     this.activeUpdateGraphics = [...normalizedGraphics];
+    this.notifyWatchers("activeUpdateGraphics", this.activeUpdateGraphics);
     this.activeUpdateOptions = {
       ...this.defaultUpdateOptions,
       ...(options ?? {}),
     };
+    this.notifyWatchers("activeUpdateOptions", this.activeUpdateOptions);
     this.eventBus.emit(
       "sketch.update-started",
       {
@@ -166,6 +222,7 @@ export class SketchCompat {
       this.activeUpdateGraphics = this.activeUpdateGraphics.filter(
         (graphic) => !targets.some((target) => target === graphic),
       );
+      this.notifyWatchers("activeUpdateGraphics", this.activeUpdateGraphics);
     }
     return removed;
   }
@@ -173,14 +230,34 @@ export class SketchCompat {
   public reset(): void {
     this.clearActiveState();
     this.activeUpdateGraphics = [];
+    this.notifyWatchers("activeUpdateGraphics", this.activeUpdateGraphics);
     this.activeUpdateOptions = undefined;
+    this.notifyWatchers("activeUpdateOptions", this.activeUpdateOptions);
     this.eventBus.emit("sketch.reset", undefined, this);
   }
 
   private clearActiveState(): void {
     this.state = "ready";
+    this.notifyWatchers("state", this.state);
     this.activeTool = undefined;
+    this.notifyWatchers("activeTool", this.activeTool);
     this.activeCreateOptions = undefined;
+    this.notifyWatchers("activeCreateOptions", this.activeCreateOptions);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

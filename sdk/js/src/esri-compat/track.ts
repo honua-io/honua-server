@@ -23,16 +23,25 @@ export interface TrackCompatOptions {
   trackProvider?: () => Promise<TrackPositionCompat>;
 }
 
+export type TrackLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface TrackHandleCompat {
+  remove(): void;
+}
+
 export class TrackCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: TrackLoadStatusCompat;
   public tracking: boolean;
   public readonly goToLocationEnabled: boolean;
   public readonly useHeadingEnabled: boolean;
   public readonly rotationEnabled: boolean;
   public readonly scale: number | undefined;
   public position: TrackPositionCompat | undefined;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   private readonly trackProvider: () => Promise<TrackPositionCompat>;
 
@@ -40,6 +49,8 @@ export class TrackCompat {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.tracking = options.tracking ?? false;
     this.goToLocationEnabled = options.goToLocationEnabled ?? true;
     this.useHeadingEnabled = options.useHeadingEnabled ?? false;
@@ -47,15 +58,57 @@ export class TrackCompat {
     this.scale = options.scale;
     this.position = undefined;
     this.trackProvider = options.trackProvider ?? getDefaultTrackProvider();
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<TrackCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("track.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("track.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: TrackCompat) => void): Promise<TrackCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): TrackHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public async start(): Promise<TrackPositionCompat> {
     this.tracking = true;
+    this.notifyWatchers("tracking", this.tracking);
     this.eventBus.emit("track.start", undefined, this);
 
     try {
       const position = await this.trackProvider();
       this.position = position;
+      this.notifyWatchers("position", this.position);
       const center: [number, number] = [position.coords.longitude, position.coords.latitude];
 
       if (this.goToLocationEnabled) {
@@ -93,6 +146,7 @@ export class TrackCompat {
       return position;
     } catch (error) {
       this.tracking = false;
+      this.notifyWatchers("tracking", this.tracking);
       this.eventBus.emit("track.error", { error }, this);
       throw error;
     }
@@ -103,6 +157,7 @@ export class TrackCompat {
       return;
     }
     this.tracking = false;
+    this.notifyWatchers("tracking", this.tracking);
     this.eventBus.emit("track.stop", undefined, this);
   }
 
@@ -115,6 +170,21 @@ export class TrackCompat {
 
     await this.start();
     return this.tracking;
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

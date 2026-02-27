@@ -3,6 +3,50 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, EditorCompat } from "../src/index.js";
 
 describe("EditorCompat", () => {
+  it("supports when() and watch() lifecycle and workflow state", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+
+    const editor = new EditorCompat({ eventBus });
+    const loadStatusValues: unknown[] = [];
+    const workflowValues: unknown[] = [];
+    const loadStatusHandle = editor.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const workflowHandle = editor.watch("activeWorkflow", (value) => {
+      workflowValues.push(value);
+    });
+
+    let callbackWidget: EditorCompat | undefined;
+    const widget = await editor.when((resolvedWidget) => {
+      callbackWidget = resolvedWidget;
+    });
+    editor.startUpdateWorkflowAtFeatureSelection();
+    editor.stopWorkflow();
+
+    loadStatusHandle.remove();
+    workflowHandle.remove();
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      workflow: workflowValues.length,
+    };
+    editor.startUpdateWorkflowAtFeatureSelection();
+
+    expect(widget).toBe(editor);
+    expect(callbackWidget).toBe(editor);
+    expect(editor.loaded).toBe(true);
+    expect(editor.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(workflowValues).toEqual(["update", undefined]);
+    expect(seenTypes).toContain("editor.loading");
+    expect(seenTypes).toContain("editor.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(workflowValues).toHaveLength(watchSnapshot.workflow);
+  });
+
   it("starts and stops workflows while emitting lifecycle events", () => {
     const eventBus = new CompatEventBus();
     const seenTypes: string[] = [];

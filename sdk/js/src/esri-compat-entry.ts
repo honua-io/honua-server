@@ -325,9 +325,18 @@ export type {
   SuggestResponseCompat,
 } from "./esri-compat/search.js";
 export { SwipeCompat } from "./esri-compat/swipe.js";
-export type { SwipeCompatOptions } from "./esri-compat/swipe.js";
+export type {
+  SwipeCompatOptions,
+  SwipeHandleCompat,
+  SwipeLoadStatusCompat,
+} from "./esri-compat/swipe.js";
 export { TrackCompat } from "./esri-compat/track.js";
-export type { TrackCompatOptions, TrackPositionCompat } from "./esri-compat/track.js";
+export type {
+  TrackCompatOptions,
+  TrackHandleCompat,
+  TrackLoadStatusCompat,
+  TrackPositionCompat,
+} from "./esri-compat/track.js";
 export { MeasurementCompat } from "./esri-compat/measurement.js";
 export type {
   AreaUnitCompat,
@@ -358,18 +367,26 @@ export type {
   TimeSliderStopsCompat,
 } from "./esri-compat/time-slider.js";
 export { TableListCompat } from "./esri-compat/table-list.js";
-export type { TableListCompatOptions } from "./esri-compat/table-list.js";
+export type {
+  TableListCompatOptions,
+  TableListHandleCompat,
+  TableListLoadStatusCompat,
+} from "./esri-compat/table-list.js";
 export { SketchCompat } from "./esri-compat/sketch.js";
 export type {
   SketchCompatOptions,
   SketchCreateOptionsCompat,
   SketchCreateResultCompat,
   SketchCreationModeCompat,
+  SketchHandleCompat,
+  SketchLoadStatusCompat,
   SketchToolCompat,
   SketchUpdateOptionsCompat,
 } from "./esri-compat/sketch.js";
 export { EditorCompat } from "./esri-compat/editor.js";
 export type {
+  EditorHandleCompat,
+  EditorLoadStatusCompat,
   EditorCompatOptions,
   EditorLayerInfoCompat,
   EditorWorkflowCompat,

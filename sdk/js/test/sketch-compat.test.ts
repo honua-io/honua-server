@@ -3,6 +3,51 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, GraphicsLayerCompat, SketchCompat } from "../src/index.js";
 
 describe("SketchCompat", () => {
+  it("supports when() and watch() lifecycle and state updates", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+
+    const sketch = new SketchCompat({ eventBus });
+    const loadStatusValues: unknown[] = [];
+    const stateValues: unknown[] = [];
+    const loadStatusHandle = sketch.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const stateHandle = sketch.watch("state", (value) => {
+      stateValues.push(value);
+    });
+
+    let callbackWidget: SketchCompat | undefined;
+    const widget = await sketch.when((resolvedWidget) => {
+      callbackWidget = resolvedWidget;
+    });
+    sketch.create("point");
+    sketch.cancel();
+
+    loadStatusHandle.remove();
+    stateHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      state: stateValues.length,
+    };
+    sketch.create("point");
+
+    expect(widget).toBe(sketch);
+    expect(callbackWidget).toBe(sketch);
+    expect(sketch.loaded).toBe(true);
+    expect(sketch.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(stateValues).toEqual(["active", "ready"]);
+    expect(seenTypes).toContain("sketch.loading");
+    expect(seenTypes).toContain("sketch.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(stateValues).toHaveLength(watchSnapshot.state);
+  });
+
   it("tracks create/update/delete flows and emits events on the shared event bus", () => {
     const eventBus = new CompatEventBus();
     const seenTypes: string[] = [];

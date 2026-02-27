@@ -20,25 +20,76 @@ export interface EditorCompatOptions {
   supportingWidgetDefaults?: Record<string, unknown>;
 }
 
+export type EditorLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface EditorHandleCompat {
+  remove(): void;
+}
+
 export class EditorCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: EditorLoadStatusCompat;
   public layerInfos: EditorLayerInfoCompat[];
   public allowedWorkflows: EditorWorkflowCompat[];
   public supportingWidgetDefaults: Record<string, unknown>;
   public activeWorkflow: EditorWorkflowCompat | undefined;
   public selectedFeature: unknown;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: EditorCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.layerInfos = [...(options.layerInfos ?? [])];
     this.allowedWorkflows = [...(options.allowedWorkflows ?? ["create", "update"])];
     this.supportingWidgetDefaults = { ...(options.supportingWidgetDefaults ?? {}) };
     this.activeWorkflow = undefined;
     this.selectedFeature = undefined;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<EditorCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("editor.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("editor.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: EditorCompat) => void): Promise<EditorCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): EditorHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public startCreateWorkflowAtFeatureTypeSelection(layer?: unknown): boolean {
@@ -47,7 +98,9 @@ export class EditorCompat {
     }
 
     this.activeWorkflow = "create";
+    this.notifyWatchers("activeWorkflow", this.activeWorkflow);
     this.selectedFeature = undefined;
+    this.notifyWatchers("selectedFeature", this.selectedFeature);
     this.eventBus.emit(
       "editor.workflow-started",
       {
@@ -65,6 +118,7 @@ export class EditorCompat {
     }
 
     this.activeWorkflow = "update";
+    this.notifyWatchers("activeWorkflow", this.activeWorkflow);
     this.eventBus.emit(
       "editor.workflow-started",
       {
@@ -82,6 +136,7 @@ export class EditorCompat {
     }
 
     this.selectedFeature = feature;
+    this.notifyWatchers("selectedFeature", this.selectedFeature);
     this.eventBus.emit("editor.feature-selected", { feature }, this);
     return true;
   }
@@ -107,6 +162,7 @@ export class EditorCompat {
     }
     if (this.selectedFeature === targetFeature) {
       this.selectedFeature = undefined;
+      this.notifyWatchers("selectedFeature", this.selectedFeature);
     }
     return removed;
   }
@@ -118,8 +174,25 @@ export class EditorCompat {
 
     const workflow = this.activeWorkflow;
     this.activeWorkflow = undefined;
+    this.notifyWatchers("activeWorkflow", this.activeWorkflow);
     this.selectedFeature = undefined;
+    this.notifyWatchers("selectedFeature", this.selectedFeature);
     this.eventBus.emit("editor.workflow-stopped", { workflow }, this);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
