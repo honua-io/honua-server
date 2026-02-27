@@ -387,6 +387,63 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     }
 
     [UnitTest]
+    public async Task GetPresignedUrlAsync_WithRelativeBasePath_ShouldReturnAbsoluteFileUrl()
+    {
+        // Arrange
+        var relativeBasePath = Path.Combine("tmp", $"honua-relative-{Guid.NewGuid():N}");
+        var storage = CreateStorage(relativeBasePath);
+
+        try
+        {
+            var content = "relative base path content"u8.ToArray();
+            using var stream = new MemoryStream(content);
+            var uploadResult = await storage.UploadAsync(new FileUploadRequest
+            {
+                Content = stream,
+                FileName = "relative.txt",
+                ContentType = "text/plain",
+                SizeBytes = content.Length
+            });
+
+            // Act
+            var url = await storage.GetPresignedUrlAsync(uploadResult.File!.FileId);
+
+            // Assert
+            url.Should().NotBeNullOrEmpty();
+            Uri.TryCreate(url, UriKind.Absolute, out var uri).Should().BeTrue();
+            uri!.Scheme.Should().Be(Uri.UriSchemeFile);
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(Path.GetFullPath(relativeBasePath));
+        }
+    }
+
+    [UnitTest]
+    public async Task GetPresignedUploadUrlAsync_WithRelativeBasePath_ShouldReturnAbsoluteFileUrl()
+    {
+        // Arrange
+        var relativeBasePath = Path.Combine("tmp", $"honua-relative-{Guid.NewGuid():N}");
+        var storage = CreateStorage(relativeBasePath);
+
+        try
+        {
+            // Act
+            var result = await storage.GetPresignedUploadUrlAsync("relative-upload.txt", "text/plain");
+
+            // Assert
+            result.Should().NotBeNull();
+            Uri.TryCreate(result!.Value.Url, UriKind.Absolute, out var uri).Should().BeTrue();
+            uri!.Scheme.Should().Be(Uri.UriSchemeFile);
+            result.Value.FileId.Should().NotBeNullOrWhiteSpace();
+        }
+        finally
+        {
+            DeleteDirectoryIfExists(Path.GetFullPath(relativeBasePath));
+        }
+    }
+
+    [UnitTest]
     public async Task UploadAsync_WithTimeToLive_ShouldSetExpiration()
     {
         // Arrange
@@ -478,6 +535,27 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         };
 
         return await _storage.UploadAsync(request);
+    }
+
+    private static LocalFileStorage CreateStorage(string basePath)
+    {
+        var options = Options.Create(new LocalStorageOptions
+        {
+            BasePath = basePath,
+            CreateDirectoryIfNotExists = true
+        });
+        var progressStore = Substitute.For<IUploadProgressStore>();
+        return new LocalFileStorage(options, NullLogger<LocalFileStorage>.Instance, progressStore);
+    }
+
+    private static void DeleteDirectoryIfExists(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+
+        Directory.Delete(path, recursive: true);
     }
 
     private static BatchFileItem CreateBatchFileItem(string fileName, string contentType, string content)

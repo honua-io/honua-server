@@ -29,6 +29,7 @@ module "honua" {
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
+    AllowedHosts         = "*"
   }
 }
 

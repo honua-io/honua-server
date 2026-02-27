@@ -49,6 +49,98 @@ public sealed class SecretResolverErrorSanitizationTests
 
     [SecurityTest]
     [Fact]
+    public async Task AwsSecretsManagerResolver_MalformedOptionEncoding_ThrowsArgumentExceptionWithoutNetworkCall()
+    {
+        var secretsClientCalled = false;
+        using var environmentScope = new EnvironmentVariableScope(
+            ("AWS_ACCESS_KEY_ID", "AKIA_TEST_ACCESS_KEY"),
+            ("AWS_SECRET_ACCESS_KEY", "test-secret-key"),
+            ("AWS_REGION", "us-east-1"),
+            ("AWS_DEFAULT_REGION", null),
+            ("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", null),
+            ("AWS_CONTAINER_CREDENTIALS_FULL_URI", null),
+            ("AWS_CONTAINER_AUTHORIZATION_TOKEN", null));
+
+        var httpClientFactory = new StubHttpClientFactory(new Dictionary<string, HttpClient>(StringComparer.Ordinal)
+        {
+            ["AwsSecretsManager"] = CreateHttpClient(new DelegateHttpMessageHandler(_ =>
+            {
+                secretsClientCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"SecretString\":\"unused\"}", Encoding.UTF8, "application/json")
+                };
+            })),
+            ["AwsMetadata"] = CreateHttpClient(new DelegateHttpMessageHandler(_ =>
+                throw new InvalidOperationException("Metadata endpoint should not be used when environment credentials are set.")))
+        });
+
+        using var resolver = new AwsSecretsManagerResolver(httpClientFactory, NullLogger<AwsSecretsManagerResolver>.Instance);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            resolver.ResolveConnectionStringAsync("aws:secretsmanager:my-secret?versionStage=%zz"));
+
+        exception.Message.Should().Contain("malformed option encoding");
+        secretsClientCalled.Should().BeFalse();
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task AwsSecretsManagerResolver_CanResolveSecretAsync_MalformedOptionEncoding_ReturnsFalse()
+    {
+        using var environmentScope = new EnvironmentVariableScope(
+            ("AWS_REGION", "us-east-1"),
+            ("AWS_DEFAULT_REGION", null));
+
+        var httpClientFactory = new StubHttpClientFactory(new Dictionary<string, HttpClient>(StringComparer.Ordinal)
+        {
+            ["AwsSecretsManager"] = CreateHttpClient(new DelegateHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            ["AwsMetadata"] = CreateHttpClient(new DelegateHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)))
+        });
+
+        using var resolver = new AwsSecretsManagerResolver(httpClientFactory, NullLogger<AwsSecretsManagerResolver>.Instance);
+
+        var canResolve = await resolver.CanResolveSecretAsync("aws:secretsmanager:my-secret?versionId=%zz");
+
+        canResolve.Should().BeFalse();
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task AwsSecretsManagerResolver_InvalidSecretBinaryBase64_ThrowsSanitizedInvalidOperation()
+    {
+        const string malformedBinaryPayload = "{\"SecretBinary\":\"%%%\"}";
+        using var environmentScope = new EnvironmentVariableScope(
+            ("AWS_ACCESS_KEY_ID", "AKIA_TEST_ACCESS_KEY"),
+            ("AWS_SECRET_ACCESS_KEY", "test-secret-key"),
+            ("AWS_REGION", "us-east-1"),
+            ("AWS_DEFAULT_REGION", null),
+            ("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", null),
+            ("AWS_CONTAINER_CREDENTIALS_FULL_URI", null),
+            ("AWS_CONTAINER_AUTHORIZATION_TOKEN", null));
+
+        var httpClientFactory = new StubHttpClientFactory(new Dictionary<string, HttpClient>(StringComparer.Ordinal)
+        {
+            ["AwsSecretsManager"] = CreateHttpClient(new DelegateHttpMessageHandler(_ =>
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(malformedBinaryPayload, Encoding.UTF8, "application/json")
+                })),
+            ["AwsMetadata"] = CreateHttpClient(new DelegateHttpMessageHandler(_ =>
+                throw new InvalidOperationException("Metadata endpoint should not be used when environment credentials are set.")))
+        });
+
+        using var resolver = new AwsSecretsManagerResolver(httpClientFactory, NullLogger<AwsSecretsManagerResolver>.Instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveConnectionStringAsync("aws:secretsmanager:my-secret"));
+
+        exception.Message.Should().Contain("not valid base64");
+        exception.Message.Should().NotContain(malformedBinaryPayload);
+    }
+
+    [SecurityTest]
+    [Fact]
     public async Task AzureKeyVaultResolver_SecretRequestFailure_DoesNotExposeResponseBody()
     {
         const string sensitiveBody = "{\"error\":\"connectionString=leaked-value\"}";

@@ -317,11 +317,19 @@ internal static partial class MapServerEndpoints
                 return Results.StatusCode(StatusCodes.Status406NotAcceptable);
             }
 
+            if (!TryUnescapeWmtsValue(segments[0], out var capabilitiesVersion))
+            {
+                return CreateWmtsExceptionReport(
+                    "InvalidParameterValue",
+                    "request",
+                    "WMTS RESTful path contains malformed percent-encoding.");
+            }
+
             ApplyWmtsSyntheticQuery(context, new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["SERVICE"] = "WMTS",
                 ["REQUEST"] = "GetCapabilities",
-                ["VERSION"] = Uri.UnescapeDataString(segments[0])
+                ["VERSION"] = capabilitiesVersion
             });
 
             return await HandleWmts(context);
@@ -332,12 +340,23 @@ internal static partial class MapServerEndpoints
             return Results.NotFound();
         }
 
-        var layerValue = Uri.UnescapeDataString(segments[0]);
-        var styleValue = Uri.UnescapeDataString(segments[1]);
-        var tileMatrixSetValue = Uri.UnescapeDataString(segments[2]);
-        var tileMatrixValue = Uri.UnescapeDataString(segments[3]);
-        var tileRowValue = Uri.UnescapeDataString(segments[4]);
-        var (tileColValue, tileFormatMimeType) = ParseWmtsResourceSegment(segments[5], WmsPngMimeType, ParseWmtsTileFormatFromExtension);
+        if (!TryUnescapeWmtsValue(segments[0], out var layerValue) ||
+            !TryUnescapeWmtsValue(segments[1], out var styleValue) ||
+            !TryUnescapeWmtsValue(segments[2], out var tileMatrixSetValue) ||
+            !TryUnescapeWmtsValue(segments[3], out var tileMatrixValue) ||
+            !TryUnescapeWmtsValue(segments[4], out var tileRowValue) ||
+            !TryParseWmtsResourceSegment(
+                segments[5],
+                WmsPngMimeType,
+                ParseWmtsTileFormatFromExtension,
+                out var tileColValue,
+                out var tileFormatMimeType))
+        {
+            return CreateWmtsExceptionReport(
+                "InvalidParameterValue",
+                "request",
+                "WMTS RESTful path contains malformed percent-encoding.");
+        }
 
         var queryValues = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -354,8 +373,19 @@ internal static partial class MapServerEndpoints
 
         if (segments.Length >= 8)
         {
-            var pixelJ = Uri.UnescapeDataString(segments[6]);
-            var (pixelI, infoFormatMimeType) = ParseWmtsResourceSegment(segments[7], WmsPlainTextMimeType, ParseWmtsFeatureInfoFormatFromExtension);
+            if (!TryUnescapeWmtsValue(segments[6], out var pixelJ) ||
+                !TryParseWmtsResourceSegment(
+                    segments[7],
+                    WmsPlainTextMimeType,
+                    ParseWmtsFeatureInfoFormatFromExtension,
+                    out var pixelI,
+                    out var infoFormatMimeType))
+            {
+                return CreateWmtsExceptionReport(
+                    "InvalidParameterValue",
+                    "request",
+                    "WMTS RESTful path contains malformed percent-encoding.");
+            }
 
             queryValues["REQUEST"] = "GetFeatureInfo";
             queryValues["J"] = pixelJ;
@@ -1353,13 +1383,21 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
-            var key = Uri.UnescapeDataString(pair[..separatorIndex]);
+            if (!TryUnescapeWmtsValue(pair[..separatorIndex], out var key))
+            {
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(key))
             {
                 continue;
             }
 
-            var value = Uri.UnescapeDataString(pair[(separatorIndex + 1)..]);
+            if (!TryUnescapeWmtsValue(pair[(separatorIndex + 1)..], out var value))
+            {
+                continue;
+            }
+
             yield return new KeyValuePair<string, string?>(key, value);
         }
     }
@@ -1712,26 +1750,93 @@ internal static partial class MapServerEndpoints
         context.Request.QueryString = new QueryString(sb.ToString());
     }
 
-    private static (string value, string format) ParseWmtsResourceSegment(
+    private static bool TryParseWmtsResourceSegment(
         string segment,
         string defaultFormat,
-        Func<string, string> extensionToFormat)
+        Func<string, string> extensionToFormat,
+        out string value,
+        out string format)
     {
-        var decoded = Uri.UnescapeDataString(segment);
+        value = string.Empty;
+        format = defaultFormat;
+
+        if (!TryUnescapeWmtsValue(segment, out var decoded))
+        {
+            return false;
+        }
+
         if (decoded.Length == 0)
         {
-            return (string.Empty, defaultFormat);
+            return true;
         }
 
         var lastDot = decoded.LastIndexOf('.');
         if (lastDot <= 0 || lastDot == decoded.Length - 1)
         {
-            return (decoded, defaultFormat);
+            value = decoded;
+            return true;
         }
 
-        var value = decoded[..lastDot];
+        value = decoded[..lastDot];
         var extension = decoded[(lastDot + 1)..];
-        return (value, extensionToFormat(extension));
+        format = extensionToFormat(extension);
+        return true;
+    }
+
+    private static bool TryUnescapeWmtsValue(string value, out string decoded)
+    {
+        decoded = string.Empty;
+
+        if (ContainsMalformedEscapeSequence(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            decoded = Uri.UnescapeDataString(value);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsMalformedEscapeSequence(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] != '%')
+            {
+                continue;
+            }
+
+            if (i + 2 >= value.Length)
+            {
+                return true;
+            }
+
+            if (!IsHexDigit(value[i + 1]) || !IsHexDigit(value[i + 2]))
+            {
+                return true;
+            }
+
+            i += 2;
+        }
+
+        return false;
+    }
+
+    private static bool IsHexDigit(char c)
+    {
+        return (c >= '0' && c <= '9')
+            || (c >= 'A' && c <= 'F')
+            || (c >= 'a' && c <= 'f');
     }
 
     private static string ParseWmtsTileFormatFromExtension(string extension)

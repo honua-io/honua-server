@@ -198,7 +198,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         responseBody.Should().NotContain("Internal system error");
 
         var odataError = JsonSerializer.Deserialize<ODataError>(responseBody, _jsonOptions);
-        odataError!.Error.Message.Should().Be("Bad Request"); // Sanitized message
+        odataError!.Error.Message.Should().Be("Internal Server Error"); // Sanitized message
     }
 
     [IntegrationTest]

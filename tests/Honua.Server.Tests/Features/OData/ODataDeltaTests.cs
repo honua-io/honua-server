@@ -96,6 +96,34 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Query_WithOutOfRangeDeltaTokenTicks_ReturnsBadRequest()
+    {
+        // Encodes payload: "9223372036854775807|0"
+        const string outOfRangeToken = "OTIyMzM3MjAzNjg1NDc3NTgwN3ww";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$deltatoken={outOfRangeToken}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Query_WithNegativeDeltaTokenLayerId_ReturnsBadRequest()
+    {
+        // Encodes payload: "1000|-1"
+        const string negativeLayerToken = "MTAwMHwtMQ";
+
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$deltatoken={negativeLayerToken}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_DeltaLinkNotPresentOnIntermediatePages()
     {
         // Request with pagination that produces multiple pages

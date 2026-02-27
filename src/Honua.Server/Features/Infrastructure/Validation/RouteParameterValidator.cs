@@ -161,8 +161,26 @@ internal sealed class RouteParameterValidator : IRouteParameterValidator
             return ValidationResult<string>.Failure("Feature ID is too long (maximum 100 characters)");
         }
 
-        // URL decode the feature ID
-        var decodedFeatureId = Uri.UnescapeDataString(featureId);
+        var decodedFeatureId = featureId;
+
+        // Treat malformed escape sequences as literal content so downstream ID parsing
+        // can return protocol-consistent not-found responses instead of surfacing errors.
+        if (!ContainsMalformedEscapeSequence(featureId))
+        {
+            try
+            {
+                // URL decode the feature ID
+                decodedFeatureId = Uri.UnescapeDataString(featureId);
+            }
+            catch (ArgumentException)
+            {
+                decodedFeatureId = featureId;
+            }
+            catch (UriFormatException)
+            {
+                decodedFeatureId = featureId;
+            }
+        }
 
         // Check for dangerous characters in the decoded value
         if (ContainsDangerousCharacters(decodedFeatureId))
@@ -254,6 +272,38 @@ internal sealed class RouteParameterValidator : IRouteParameterValidator
         // Must start with letter or underscore, contain only alphanumeric, hyphens, underscores
         return identifier.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_') &&
                (char.IsLetter(identifier[0]) || identifier[0] == '_');
+    }
+
+    private static bool ContainsMalformedEscapeSequence(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] != '%')
+            {
+                continue;
+            }
+
+            if (i + 2 >= value.Length)
+            {
+                return true;
+            }
+
+            if (!IsHexDigit(value[i + 1]) || !IsHexDigit(value[i + 2]))
+            {
+                return true;
+            }
+
+            i += 2;
+        }
+
+        return false;
+    }
+
+    private static bool IsHexDigit(char c)
+    {
+        return (c >= '0' && c <= '9')
+            || (c >= 'A' && c <= 'F')
+            || (c >= 'a' && c <= 'f');
     }
 
     /// <summary>

@@ -339,7 +339,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
 
         var fullPath = Path.Combine(_basePath, cloudFile.StoragePath);
-        return Task.FromResult<string?>(new Uri(fullPath).AbsoluteUri);
+        return Task.FromResult<string?>(ToAbsoluteFileUri(fullPath));
     }
 
     /// <inheritdoc />
@@ -366,7 +366,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
 
         return Task.FromResult<(string Url, string FileId)?>(
-            (new Uri(fullPath).AbsoluteUri, fileId));
+            (ToAbsoluteFileUri(fullPath), fileId));
     }
 
     /// <inheritdoc />
@@ -472,6 +472,12 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         ValidateFolderPath(folder);
 
         return Path.Combine(folder, storageName);
+    }
+
+    private static string ToAbsoluteFileUri(string path)
+    {
+        var absolutePath = Path.GetFullPath(path);
+        return new Uri(absolutePath).AbsoluteUri;
     }
 
     private static void ValidateFolderPath(string folder)

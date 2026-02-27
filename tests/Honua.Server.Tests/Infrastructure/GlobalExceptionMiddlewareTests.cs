@@ -63,6 +63,8 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new ValidationException("Field 'name' is required.", ["Missing required field: name"]);
                                 if (path.Contains("throw-unavailable"))
                                     throw new ServiceUnavailableException("Database connection failed", 30);
+                                if (path.Contains("throw-auth-invalid"))
+                                    throw new InvalidOperationException("IDX20803: Unable to obtain configuration from issuer metadata endpoint.");
                                 if (path.Contains("throw-general"))
                                     throw new InvalidOperationException("Something went wrong");
                                 if (path.Contains("throw-unhandled"))
@@ -104,6 +106,23 @@ public class GlobalExceptionMiddlewareTests : IDisposable
     {
         // Act
         var response = await _client.GetAsync("/throw-unauthorized");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Unauthorized");
+        problemDetails.GetProperty("detail").GetString().Should().Be("Authentication is required to access this resource.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(401);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_IdentityModelInvalidOperation_Returns401Unauthorized()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-auth-invalid");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -222,7 +241,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/odata/throw-general");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Headers.Should().ContainKey("OData-Version");
         response.Headers.GetValues("OData-Version").First().Should().Be("4.0");
 
@@ -257,14 +276,14 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/rest/services/throw-general");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         var content = await response.Content.ReadAsStringAsync();
         var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
 
         error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(400);
-        error.Error.Message.Should().Be("Bad Request");
+        error!.Error.Code.Should().Be(500);
+        error.Error.Message.Should().Be("Internal Server Error");
     }
 
     [Fact]
@@ -274,15 +293,15 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/ogc/features/throw-general");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync();
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
-        problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
-        problemDetails.GetProperty("detail").GetString().Should().Be("The requested operation is not valid in the current state.");
-        problemDetails.GetProperty("status").GetInt32().Should().Be(400);
+        problemDetails.GetProperty("title").GetString().Should().Be("Internal Server Error");
+        problemDetails.GetProperty("detail").GetString().Should().Be("An unexpected error occurred while processing the request.");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(500);
     }
 
     [Fact]

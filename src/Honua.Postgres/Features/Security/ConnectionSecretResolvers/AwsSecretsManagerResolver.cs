@@ -117,7 +117,16 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             return Task.FromResult(false);
         }
 
-        var secretId = ParseSecretOptions(secretIdWithOptions).SecretId;
+        string secretId;
+        try
+        {
+            secretId = ParseSecretOptions(secretIdWithOptions).SecretId;
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(false);
+        }
+
         var region = TryResolveRegion(secretId);
         if (string.IsNullOrWhiteSpace(region))
         {
@@ -279,7 +288,18 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         if (root.TryGetProperty("SecretBinary", out var secretBinaryElement) &&
             secretBinaryElement.ValueKind == JsonValueKind.String)
         {
-            var decoded = Convert.FromBase64String(secretBinaryElement.GetString()!);
+            byte[] decoded;
+            try
+            {
+                decoded = Convert.FromBase64String(secretBinaryElement.GetString()!);
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidOperationException(
+                    "AWS secret binary payload is not valid base64.",
+                    ex);
+            }
+
             return SecretValueExtractor.ExtractValue(Encoding.UTF8.GetString(decoded));
         }
 
@@ -308,7 +328,13 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             }
 
             var key = kvp[0];
-            var value = Uri.UnescapeDataString(kvp[1]);
+            if (!TryUnescapeSecretOptionValue(kvp[1], out var value))
+            {
+                throw new ArgumentException(
+                    "AWS secret reference contains malformed option encoding.",
+                    nameof(secretIdWithOptions));
+            }
+
             if (key.Equals("versionStage", StringComparison.OrdinalIgnoreCase))
             {
                 versionStage = value;
@@ -320,6 +346,62 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         }
 
         return (secretId, versionStage, versionId);
+    }
+
+    private static bool TryUnescapeSecretOptionValue(string value, out string decoded)
+    {
+        decoded = string.Empty;
+
+        if (ContainsMalformedEscapeSequence(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            decoded = Uri.UnescapeDataString(value);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsMalformedEscapeSequence(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] != '%')
+            {
+                continue;
+            }
+
+            if (i + 2 >= value.Length)
+            {
+                return true;
+            }
+
+            if (!IsHexDigit(value[i + 1]) || !IsHexDigit(value[i + 2]))
+            {
+                return true;
+            }
+
+            i += 2;
+        }
+
+        return false;
+    }
+
+    private static bool IsHexDigit(char c)
+    {
+        return (c >= '0' && c <= '9')
+            || (c >= 'A' && c <= 'F')
+            || (c >= 'a' && c <= 'f');
     }
 
     private static string ResolveRegion(string secretId)
