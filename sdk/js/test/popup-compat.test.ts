@@ -50,6 +50,10 @@ describe("PopupCompat", () => {
     const eventBus = new CompatEventBus();
     const view = new MapViewCompat({ eventBus });
     const widget = new PopupCompat({ view, eventBus });
+    const visibleValues: unknown[] = [];
+    widget.watch("visible", (value) => {
+      visibleValues.push(value);
+    });
 
     view.openPopup({
       location: [1, 2],
@@ -65,6 +69,7 @@ describe("PopupCompat", () => {
     expect(widget.features).toEqual([{ id: 101 }, { id: 202 }]);
     expect(widget.selectedFeature).toEqual({ id: 101 });
     expect(widget.selectedFeatureIndex).toBe(0);
+    expect(visibleValues).toEqual([true]);
 
     expect(widget.next()).toEqual({ id: 202 });
     expect(widget.selectedFeature).toEqual({ id: 202 });
@@ -78,6 +83,7 @@ describe("PopupCompat", () => {
     expect(widget.visible).toBe(false);
     expect(widget.features).toEqual([]);
     expect(widget.selectedFeatureIndex).toBe(-1);
+    expect(visibleValues[visibleValues.length - 1]).toBe(false);
   });
 
   it("supports standalone open/close with watch listeners and event emissions", () => {

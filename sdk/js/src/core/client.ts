@@ -437,12 +437,13 @@ export class HonuaClient {
         ...request.init,
         method: request.method,
       });
-      await this.applyAfterInterceptors({ request: cloneRequestContext(request), response });
-
-      const body = await parseResponseBody(response);
       if (!response.ok) {
+        const body = await parseResponseBody(response);
         throw this.toHttpError(response.status, body);
       }
+
+      await this.applyAfterInterceptors({ request: cloneRequestContext(request), response });
+      const body = await parseResponseBody(response);
       return body;
     } catch (error) {
       await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
@@ -464,7 +465,10 @@ export class HonuaClient {
 
   private async applyAfterInterceptors(context: HonuaResponseContext): Promise<void> {
     for (const interceptor of this.interceptors) {
-      await interceptor.after?.(context);
+      await interceptor.after?.({
+        request: cloneRequestContext(context.request),
+        response: context.response.clone(),
+      });
     }
   }
 
@@ -506,7 +510,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 }
 
 function isObject(value: unknown): value is Record<string, any> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function applyRequestMutation(

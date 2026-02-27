@@ -104,7 +104,7 @@ export function when<TValue>(
       return;
     }
 
-    if (options.initial || !seenTruthy) {
+    if (!seenTruthy) {
       callback(value);
       if (once) {
         remove();

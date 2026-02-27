@@ -163,4 +163,41 @@ describe("FeatureTableCompat", () => {
       relatedRecordGroups: [{ objectId: 1 }],
     });
   });
+
+  it("keeps latest refresh rows when concurrent refresh calls race", async () => {
+    let callCount = 0;
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    let resolveSecond: ((value: unknown) => void) | undefined;
+
+    const layer = {
+      queryFeatures: () =>
+        new Promise((resolve) => {
+          callCount += 1;
+          if (callCount === 1) {
+            resolveFirst = resolve;
+            return;
+          }
+          resolveSecond = resolve;
+        }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer });
+    const firstRefresh = table.refresh();
+    const secondRefresh = table.refresh();
+
+    resolveSecond?.({
+      features: [{ attributes: { OBJECTID: 2, name: "latest" }, geometry: null }],
+    });
+    await secondRefresh;
+
+    resolveFirst?.({
+      features: [{ attributes: { OBJECTID: 1, name: "stale" }, geometry: null }],
+    });
+    await firstRefresh;
+
+    expect(table.rows).toEqual([
+      { objectId: 2, attributes: { OBJECTID: 2, name: "latest" }, geometry: null },
+    ]);
+    expect(table.size).toBe(1);
+  });
 });

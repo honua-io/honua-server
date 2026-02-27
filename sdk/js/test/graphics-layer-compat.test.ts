@@ -70,4 +70,16 @@ describe("GraphicsLayerCompat", () => {
     expect(loadedValues).toHaveLength(watchSnapshot.loaded);
     expect(graphicCounts).toHaveLength(watchSnapshot.graphics);
   });
+
+  it("normalizes opacity to finite values in range [0, 1]", () => {
+    const layer = new GraphicsLayerCompat({
+      opacity: Number.POSITIVE_INFINITY,
+    });
+
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-2);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(3);
+    expect(layer.opacity).toBe(1);
+  });
 });

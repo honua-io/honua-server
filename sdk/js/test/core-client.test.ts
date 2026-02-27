@@ -33,6 +33,39 @@ describe("HonuaClient", () => {
     expect(requestedInit?.method).toBe("GET");
   });
 
+  it("queries features using POST form payload", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+    let requestedBody = "";
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        requestedBody = String(init?.body ?? "");
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryFeatures({
+      serviceId: "default",
+      layerId: 1000,
+      where: "OBJECTID > 1",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: false,
+      method: "POST",
+    });
+
+    expect(response).toEqual({ features: [] });
+    expect(requestedUrl).toBe("https://example.test/rest/services/default/FeatureServer/1000/query");
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedBody).toContain("f=json");
+    expect(requestedBody).toContain("where=OBJECTID+%3E+1");
+    expect(requestedBody).toContain("outFields=OBJECTID%2CNAME");
+    expect(requestedBody).toContain("returnGeometry=false");
+  });
+
   it("retrieves map service metadata", async () => {
     let requestedUrl: string | undefined;
     const client = new HonuaClient({
@@ -315,6 +348,91 @@ describe("HonuaClient", () => {
     expect(requestedInit?.method).toBe("POST");
     expect(requestedInit?.headers).toMatchObject({ "X-Debug": "1" });
     expect(requestedInit?.body).toBe("where=1%3D1");
+  });
+
+  it("sends api key and bearer headers by default", async () => {
+    let requestedHeaders: HeadersInit | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      apiKey: "api-key-1",
+      bearerToken: "bearer-1",
+      fetchFn: async (_input, init) => {
+        requestedHeaders = init?.headers;
+        return new Response(JSON.stringify({ services: [] }), { status: 200 });
+      },
+    });
+
+    await client.listServices();
+    expect(requestedHeaders).toMatchObject({
+      Accept: "application/json",
+      "X-API-Key": "api-key-1",
+      Authorization: "Bearer bearer-1",
+    });
+  });
+
+  it("builds listServices/getLayerMetadata URLs and encodes special service ids", async () => {
+    const requestedUrls: string[] = [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrls.push(String(input));
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    });
+
+    await client.listServices();
+    await client.getLayerMetadata("my service/2026", 3);
+
+    expect(requestedUrls[0]).toBe("https://example.test/rest/services?f=json");
+    expect(requestedUrls[1]).toBe(
+      "https://example.test/rest/services/my%20service%2F2026/FeatureServer/3?f=json",
+    );
+  });
+
+  it("handles empty and non-json payload parsing", async () => {
+    let call = 0;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async () => {
+        call += 1;
+        if (call === 1) {
+          return new Response("", { status: 200 });
+        }
+        return new Response("not-json", { status: 200, headers: { "content-type": "text/plain" } });
+      },
+    });
+
+    await expect(client.listServices()).resolves.toEqual({});
+    await expect(client.listServices()).resolves.toEqual({ raw: "not-json" });
+  });
+
+  it("preserves array error payload detail via fallback message", async () => {
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async () =>
+        new Response(JSON.stringify([{ message: "array-message" }]), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    await expect(client.listServices()).rejects.toMatchObject({
+      name: "HonuaHttpError",
+      statusCode: 400,
+      message: "HTTP 400: Request failed",
+      body: [{ message: "array-message" }],
+    });
+  });
+
+  it("propagates network errors from fetch", async () => {
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async () => {
+        throw new Error("network unreachable");
+      },
+    });
+
+    await expect(client.listServices()).rejects.toThrow("network unreachable");
   });
 
   it("throws HonuaHttpError for non-2xx responses", async () => {

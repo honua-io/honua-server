@@ -46,6 +46,7 @@ export class LegendCompat {
   private readonly autoRefresh: boolean;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private subscriptions: CompatEventSubscription[];
+  private refreshSequence: number;
 
   public constructor(options: LegendCompatOptions = {}) {
     this.view = options.view;
@@ -61,6 +62,7 @@ export class LegendCompat {
     this.items = [];
     this.watchListeners = new Map();
     this.subscriptions = [];
+    this.refreshSequence = 0;
 
     if (this.autoRefresh) {
       this.subscriptions.push(this.eventBus.on("map.layer-added", () => void this.refresh()));
@@ -118,6 +120,7 @@ export class LegendCompat {
   }
 
   public async refresh(): Promise<readonly LegendLayerGroupCompat[]> {
+    const refreshId = ++this.refreshSequence;
     const layers = this.resolveLegendLayers();
     const groups: LegendLayerGroupCompat[] = [];
     for (const layer of layers) {
@@ -135,6 +138,10 @@ export class LegendCompat {
         title: toLayerTitle(layer, groups.length),
         entries,
       });
+    }
+
+    if (refreshId !== this.refreshSequence) {
+      return this.items;
     }
 
     this.items = groups;

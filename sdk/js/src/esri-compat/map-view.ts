@@ -988,7 +988,11 @@ export class MapViewCompat {
     }
 
     for (const listener of listeners) {
-      listener(payload);
+      try {
+        listener(payload);
+      } catch {
+        // Listener errors should not break compatibility flow or skip sibling listeners.
+      }
     }
     return true;
   }
@@ -1000,7 +1004,11 @@ export class MapViewCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      try {
+        listener(value);
+      } catch {
+        // Watcher errors should not break compatibility flow or skip sibling watchers.
+      }
     }
   }
 }

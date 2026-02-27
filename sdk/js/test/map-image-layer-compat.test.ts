@@ -106,6 +106,30 @@ describe("MapImageLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("marks loadStatus failed when metadata load throws and can recover on retry", async () => {
+    let attempts = 0;
+    const layer = new MapImageLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      client: new (class {
+        public getMapServiceMetadata(): Promise<unknown> {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.reject(new Error("map metadata unavailable"));
+          }
+          return Promise.resolve({ mapName: "default" });
+        }
+      })() as any,
+    });
+
+    await expect(layer.load()).rejects.toThrow("map metadata unavailable");
+    expect(layer.loaded).toBe(false);
+    expect(layer.loadStatus).toBe("failed");
+
+    await expect(layer.load()).resolves.toBe(layer);
+    expect(layer.loaded).toBe(true);
+    expect(layer.loadStatus).toBe("loaded");
+  });
+
   it("maps exportImage to map export request with serviceId", async () => {
     let exportRequest: unknown;
     const layer = new MapImageLayerCompat({
@@ -254,5 +278,20 @@ describe("MapImageLayerCompat", () => {
     expect(events).toContain("map-image-layer.scale-range-changed");
     expect(events).toContain("map-image-layer.list-mode-changed");
     expect(events).toContain("map-image-layer.legend-enabled-changed");
+  });
+
+  it("normalizes opacity to finite values in range [0, 1]", () => {
+    const layer = new MapImageLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      opacity: Number.POSITIVE_INFINITY,
+    });
+
+    expect(layer.opacity).toBe(1);
+
+    layer.setOpacity(-5);
+    expect(layer.opacity).toBe(0);
+
+    layer.setOpacity(10);
+    expect(layer.opacity).toBe(1);
   });
 });

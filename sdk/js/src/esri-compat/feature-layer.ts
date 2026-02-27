@@ -101,7 +101,7 @@ export interface FeatureLayerQueryExtentResult {
   count?: number;
 }
 
-export type FeatureLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+export type FeatureLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded" | "failed";
 
 export interface FeatureLayerHandleCompat {
   remove(): void;
@@ -174,17 +174,30 @@ export class FeatureLayerCompat {
         { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
         this,
       );
-      this.metadata = await this.client.getLayerMetadata(this.serviceId, this.layerId);
-      this.notifyWatchers("metadata", this.metadata);
-      this.loaded = true;
-      this.notifyWatchers("loaded", this.loaded);
-      this.loadStatus = "loaded";
-      this.notifyWatchers("loadStatus", this.loadStatus);
-      this.eventBus.emit(
-        "feature-layer.loaded",
-        { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
-        this,
-      );
+      try {
+        this.metadata = await this.client.getLayerMetadata(this.serviceId, this.layerId);
+        this.notifyWatchers("metadata", this.metadata);
+        this.loaded = true;
+        this.notifyWatchers("loaded", this.loaded);
+        this.loadStatus = "loaded";
+        this.notifyWatchers("loadStatus", this.loadStatus);
+        this.eventBus.emit(
+          "feature-layer.loaded",
+          { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
+          this,
+        );
+      } catch (error) {
+        this.loaded = false;
+        this.notifyWatchers("loaded", this.loaded);
+        this.loadStatus = "failed";
+        this.notifyWatchers("loadStatus", this.loadStatus);
+        this.eventBus.emit(
+          "feature-layer.load-error",
+          { serviceId: this.serviceId, layerId: this.layerId, id: this.id, error },
+          this,
+        );
+        throw error;
+      }
     }
     return this;
   }

@@ -78,6 +78,30 @@ describe("TileLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("marks loadStatus failed when metadata load throws and can recover on retry", async () => {
+    let attempts = 0;
+    const layer = new TileLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      client: new (class {
+        public getMapServiceMetadata(): Promise<unknown> {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.reject(new Error("tile metadata unavailable"));
+          }
+          return Promise.resolve({ mapName: "default" });
+        }
+      })() as any,
+    });
+
+    await expect(layer.load()).rejects.toThrow("tile metadata unavailable");
+    expect(layer.loaded).toBe(false);
+    expect(layer.loadStatus).toBe("failed");
+
+    await expect(layer.load()).resolves.toBe(layer);
+    expect(layer.loaded).toBe(true);
+    expect(layer.loadStatus).toBe("loaded");
+  });
+
   it("provides tile URL and emits visibility/opacity events", () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];
@@ -115,5 +139,20 @@ describe("TileLayerCompat", () => {
     expect(events).toContain("layer.opacity-changed");
     expect(events).toContain("tile-layer.scale-range-changed");
     expect(events).toContain("tile-layer.list-mode-changed");
+  });
+
+  it("normalizes opacity to finite values in range [0, 1]", () => {
+    const layer = new TileLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      opacity: Number.NaN,
+    });
+
+    expect(layer.opacity).toBe(1);
+
+    layer.setOpacity(-1);
+    expect(layer.opacity).toBe(0);
+
+    layer.setOpacity(4);
+    expect(layer.opacity).toBe(1);
   });
 });

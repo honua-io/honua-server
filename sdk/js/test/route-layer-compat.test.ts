@@ -72,4 +72,16 @@ describe("RouteLayerCompat", () => {
     layer.clearStops();
     expect(layer.stops).toHaveLength(0);
   });
+
+  it("normalizes opacity to finite values in range [0, 1]", () => {
+    const layer = new RouteLayerCompat({
+      opacity: Number.NEGATIVE_INFINITY,
+    });
+
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-1);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(8);
+    expect(layer.opacity).toBe(1);
+  });
 });

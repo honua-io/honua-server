@@ -183,10 +183,13 @@ describe("SearchCompat", () => {
   });
 
   it("builds default layer-backed sources from view map", async () => {
+    const queryRequests: unknown[] = [];
     const layer = {
       id: "places",
       title: "Places",
-      queryFeatures: async () => ({
+      queryFeatures: async (request: unknown) => {
+        queryRequests.push(request);
+        return {
         features: [
           {
             attributes: {
@@ -208,7 +211,8 @@ describe("SearchCompat", () => {
             },
           },
         ],
-      }),
+      };
+      },
     };
     const map = new MapCompat({ layers: [layer] });
     const view = new MapViewCompat({
@@ -231,6 +235,16 @@ describe("SearchCompat", () => {
       name: "Central Park",
     });
     expect(search.selectedResultIndex).toBe(0);
+    expect(queryRequests).toHaveLength(1);
+    expect(queryRequests[0]).toMatchObject({
+      returnGeometry: true,
+      extraParams: {
+        num: 50,
+        resultRecordCount: 50,
+      },
+    });
+    expect(String((queryRequests[0] as { where?: unknown }).where)).toContain("park");
+    expect(String((queryRequests[0] as { where?: unknown }).where)).not.toBe("1=1");
 
     const nextLayer = {
       id: "landmarks",

@@ -264,9 +264,17 @@ function matchesPattern(url: string, pattern: EsriUrlPattern | readonly EsriUrlP
   }
 
   const patterns = Array.isArray(pattern) ? pattern : [pattern];
-  return patterns.some((candidate) =>
-    typeof candidate === "string" ? url.includes(candidate) : candidate.test(url),
-  );
+  return patterns.some((candidate) => {
+    if (typeof candidate === "string") {
+      return url.includes(candidate);
+    }
+
+    // Reset lastIndex so global/sticky regex patterns do not alternate matches across calls.
+    candidate.lastIndex = 0;
+    const matches = candidate.test(url);
+    candidate.lastIndex = 0;
+    return matches;
+  });
 }
 
 function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {

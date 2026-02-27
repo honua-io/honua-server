@@ -73,4 +73,16 @@ describe("GroupLayerCompat", () => {
     expect(loadedValues).toHaveLength(watchSnapshot.loaded);
     expect(layerCounts).toHaveLength(watchSnapshot.layers);
   });
+
+  it("normalizes opacity to finite values in range [0, 1]", () => {
+    const layer = new GroupLayerCompat({
+      opacity: Number.NaN,
+    });
+
+    expect(layer.opacity).toBe(1);
+    layer.setOpacity(-0.5);
+    expect(layer.opacity).toBe(0);
+    layer.setOpacity(4);
+    expect(layer.opacity).toBe(1);
+  });
 });

@@ -100,7 +100,6 @@ export class PopupCompat {
     const viewPopup = resolveViewPopup(this.view);
     if (viewPopup) {
       viewPopup.open(options);
-      this.syncFromViewPopup();
       return;
     }
 
@@ -122,7 +121,6 @@ export class PopupCompat {
     const viewPopup = resolveViewPopup(this.view);
     if (viewPopup) {
       viewPopup.close();
-      this.syncFromViewPopup();
       return;
     }
 

@@ -61,6 +61,28 @@ describe("reactiveUtils compat", () => {
     expect(seen).toEqual([true, true]);
   });
 
+  it("does not repeatedly fire when() with initial=true while condition stays truthy", async () => {
+    let ready = true;
+    const seen: boolean[] = [];
+
+    const handle = when(
+      () => ready,
+      (next) => {
+        seen.push(next);
+      },
+      { initial: true, intervalMs: 1 },
+    );
+
+    await sleep(10);
+    ready = false;
+    await sleep(5);
+    ready = true;
+    await sleep(5);
+    handle.remove();
+
+    expect(seen).toEqual([true, true]);
+  });
+
   it("resolves whenOnce and exposes object helper", async () => {
     let state = 0;
 

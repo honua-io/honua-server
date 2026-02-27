@@ -105,6 +105,38 @@ describe("FeatureLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("marks loadStatus failed when metadata load throws and can recover on retry", async () => {
+    let attempts = 0;
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.reject(new Error("metadata unavailable"));
+          }
+          return Promise.resolve({ id: 1000 });
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    await expect(layer.load()).rejects.toThrow("metadata unavailable");
+    expect(layer.loaded).toBe(false);
+    expect(layer.loadStatus).toBe("failed");
+
+    await expect(layer.load()).resolves.toBe(layer);
+    expect(layer.loaded).toBe(true);
+    expect(layer.loadStatus).toBe("loaded");
+  });
+
   it("exposes metadata field helpers for schema lookup", async () => {
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/1000",

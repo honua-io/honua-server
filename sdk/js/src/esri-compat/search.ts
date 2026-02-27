@@ -405,6 +405,39 @@ interface QueryFeaturesProvider {
   queryFeatures(options?: unknown): Promise<unknown> | unknown;
 }
 
+const DEFAULT_SOURCE_QUERY_LIMIT = 50;
+const DEFAULT_SOURCE_MATCH_LIMIT = 10;
+const DEFAULT_SOURCE_SUGGEST_LIMIT = 5;
+const DEFAULT_SOURCE_SEARCH_FIELDS = [
+  "NAME",
+  "Name",
+  "name",
+  "TITLE",
+  "Title",
+  "title",
+  "LABEL",
+  "Label",
+  "label",
+  "DESCRIPTION",
+  "Description",
+  "description",
+  "CITY",
+  "City",
+  "city",
+  "TYPE",
+  "Type",
+  "type",
+] as const;
+const DEFAULT_SOURCE_OUT_FIELDS = Array.from(
+  new Set<string>([
+    ...DEFAULT_SOURCE_SEARCH_FIELDS,
+    "OBJECTID",
+    "objectid",
+    "ObjectId",
+    "id",
+  ]),
+);
+
 function isGoToProvider(value: unknown): value is GoToProvider {
   return isRecord(value) && typeof value.goTo === "function";
 }
@@ -425,11 +458,7 @@ function resolveViewSearchSources(view: unknown): SearchSourceCompat[] {
           return [];
         }
 
-        const response = await layer.queryFeatures({
-          where: "1=1",
-          outFields: ["*"],
-          returnGeometry: true,
-        });
+        const response = await queryDefaultSourceFeatures(layer, normalizedTerm);
         const features = extractFeatures(response);
         const matches: SearchResultCompat[] = [];
         for (const feature of features) {
@@ -443,7 +472,7 @@ function resolveViewSearchSources(view: unknown): SearchSourceCompat[] {
             location: extractFeatureLocation(feature),
             source: layer,
           });
-          if (matches.length >= 10) {
+          if (matches.length >= DEFAULT_SOURCE_MATCH_LIMIT) {
             break;
           }
         }
@@ -451,7 +480,7 @@ function resolveViewSearchSources(view: unknown): SearchSourceCompat[] {
       },
       suggest: async ({ searchTerm }) => {
         const response = await source.search({ searchTerm });
-        return response.slice(0, 5).map((result) => ({
+        return response.slice(0, DEFAULT_SOURCE_SUGGEST_LIMIT).map((result) => ({
           text: result.name,
           source: layer,
         }));
@@ -551,6 +580,46 @@ function extractFeatureLocation(feature: unknown): unknown {
     return { x, y };
   }
   return feature.geometry;
+}
+
+async function queryDefaultSourceFeatures(
+  layer: QueryFeaturesProvider,
+  normalizedTerm: string,
+): Promise<unknown> {
+  const extraParams = {
+    num: DEFAULT_SOURCE_QUERY_LIMIT,
+    resultRecordCount: DEFAULT_SOURCE_QUERY_LIMIT,
+  };
+  const narrowedWhere = buildDefaultSourceWhereClause(normalizedTerm);
+
+  try {
+    return await layer.queryFeatures({
+      where: narrowedWhere,
+      outFields: DEFAULT_SOURCE_OUT_FIELDS,
+      returnGeometry: true,
+      extraParams,
+    });
+  } catch {
+    // Fallback keeps server-side result count bounded to avoid unbounded full-layer fetches.
+    return layer.queryFeatures({
+      where: "1=1",
+      outFields: DEFAULT_SOURCE_OUT_FIELDS,
+      returnGeometry: true,
+      extraParams,
+    });
+  }
+}
+
+function buildDefaultSourceWhereClause(normalizedTerm: string): string {
+  const escapedLike = escapeSqlLiteral(normalizedTerm).replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const searchValue = `%${escapedLike}%`;
+  return DEFAULT_SOURCE_SEARCH_FIELDS.map(
+    (fieldName) => `UPPER(${fieldName}) LIKE UPPER('${searchValue}')`,
+  ).join(" OR ");
+}
+
+function escapeSqlLiteral(value: string): string {
+  return value.replace(/'/g, "''");
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

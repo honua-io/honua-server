@@ -156,4 +156,39 @@ describe("LegendCompat", () => {
     });
     expect(seenTypes).toContain("legend.updated");
   });
+
+  it("keeps the latest refresh result when concurrent refresh calls race", async () => {
+    let callCount = 0;
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    let resolveSecond: ((value: unknown) => void) | undefined;
+
+    const layer = {
+      getLegend: () =>
+        new Promise((resolve) => {
+          callCount += 1;
+          if (callCount === 1) {
+            resolveFirst = resolve;
+            return;
+          }
+          resolveSecond = resolve;
+        }),
+    };
+
+    const legend = new LegendCompat({ layers: [layer], autoRefresh: false });
+    const firstRefresh = legend.refresh();
+    const secondRefresh = legend.refresh();
+
+    resolveSecond?.({
+      layers: [{ layerId: 1, layerName: "Layer", legend: [{ label: "newest" }] }],
+    });
+    await secondRefresh;
+
+    resolveFirst?.({
+      layers: [{ layerId: 1, layerName: "Layer", legend: [{ label: "stale" }] }],
+    });
+    await firstRefresh;
+
+    expect(legend.items).toHaveLength(1);
+    expect(legend.items[0].entries[0].label).toBe("newest");
+  });
 });

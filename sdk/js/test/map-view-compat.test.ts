@@ -764,4 +764,32 @@ describe("MapViewCompat", () => {
     expect(events).toContain("view.ui.components-cleared");
     expect(events).toContain("view.destroy");
   });
+
+  it("isolates watcher/event listener errors so sibling listeners still run", async () => {
+    const view = new MapViewCompat({
+      center: [0, 0],
+    });
+    const emitted: unknown[] = [];
+    const watched: unknown[] = [];
+
+    view.on("go-to", () => {
+      throw new Error("listener failed");
+    });
+    view.on("go-to", (event) => {
+      emitted.push(event);
+    });
+
+    view.watch("center", () => {
+      throw new Error("watch failed");
+    });
+    view.watch("center", (value) => {
+      watched.push(value);
+    });
+
+    await view.goTo({ center: [10, 20] });
+    view.destroy();
+
+    expect(emitted).toEqual([{ center: [10, 20] }]);
+    expect(watched).toContainEqual([10, 20]);
+  });
 });

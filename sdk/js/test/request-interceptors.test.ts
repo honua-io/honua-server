@@ -69,6 +69,80 @@ describe("HonuaClient request interceptors", () => {
     await expect(client.listServices()).rejects.toBeInstanceOf(HonuaHttpError);
     expect(interceptedError).toBeInstanceOf(HonuaHttpError);
   });
+
+  it("calls error interceptors for network failures", async () => {
+    let interceptedError: unknown;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          error: (context) => {
+            interceptedError = context.error;
+          },
+        },
+      ],
+      fetchFn: async () => {
+        throw new Error("socket closed");
+      },
+    });
+
+    await expect(client.listServices()).rejects.toThrow("socket closed");
+    expect(interceptedError).toBeInstanceOf(Error);
+    expect((interceptedError as Error).message).toBe("socket closed");
+  });
+
+  it("keeps response body readable after an after interceptor consumes its clone", async () => {
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: async (context) => {
+            await context.response.text();
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ services: [{ name: "default" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    await expect(client.listServices()).resolves.toEqual({
+      services: [{ name: "default" }],
+    });
+  });
+
+  it("does not run after interceptors for non-2xx responses and invokes error once", async () => {
+    const calls = {
+      after: 0,
+      error: 0,
+    };
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: () => {
+            calls.after += 1;
+          },
+          error: () => {
+            calls.error += 1;
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ error: { message: "bad request" } }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    await expect(client.listServices()).rejects.toBeInstanceOf(HonuaHttpError);
+    expect(calls.after).toBe(0);
+    expect(calls.error).toBe(1);
+  });
 });
 
 describe("esri-style request bridge", () => {
@@ -144,6 +218,36 @@ describe("esri-style request bridge", () => {
 
     expect(requestedUrls[0]).toContain("token=query-token");
     expect(requestedHeaders[0]).toMatchObject({ Authorization: "Bearer bearer-token" });
+  });
+
+  it("matches global regex url patterns consistently across repeated requests", async () => {
+    const requestedUrls: string[] = [];
+    const requestedHeaders: HeadersInit[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        createArcGisTokenInterceptor({
+          applyTo: /FeatureServer\/0\/query/g,
+          getToken: () => "stable-token",
+          mode: "bearer",
+        }),
+      ],
+      fetchFn: async (input, init) => {
+        requestedUrls.push(String(input));
+        requestedHeaders.push(init?.headers ?? {});
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+
+    expect(requestedUrls).toHaveLength(3);
+    for (const headers of requestedHeaders) {
+      expect(headers).toMatchObject({ Authorization: "Bearer stable-token" });
+    }
   });
 
   it("supports dynamic interceptor add/remove via registry bridge", async () => {
