@@ -3,6 +3,94 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, MapCompat, MapViewCompat, SearchCompat } from "../src/index.js";
 
 describe("SearchCompat", () => {
+  it("supports when() and watch() for load and search state changes", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+
+    const source = {
+      search: async ({ searchTerm }: { searchTerm: string }) => [
+        {
+          name: `Result: ${searchTerm}`,
+          location: { x: -157.8583, y: 21.3069 },
+        },
+      ],
+    };
+
+    const search = new SearchCompat({
+      eventBus,
+      sources: [source],
+      includeDefaultSources: false,
+      autoNavigate: false,
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const sourceValues: unknown[] = [];
+    const searchTermValues: unknown[] = [];
+    const selectedResultIndexValues: unknown[] = [];
+
+    const loadStatusHandle = search.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = search.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const sourceHandle = search.watch("sources", (value) => {
+      sourceValues.push(value);
+    });
+    const searchTermHandle = search.watch("searchTerm", (value) => {
+      searchTermValues.push(value);
+    });
+    const selectedResultIndexHandle = search.watch("selectedResultIndex", (value) => {
+      selectedResultIndexValues.push(value);
+    });
+
+    let callbackWidget: SearchCompat | undefined;
+    const widget = await search.when((resolvedWidget) => {
+      callbackWidget = resolvedWidget;
+    });
+
+    await search.search("honolulu");
+    search.clear();
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    sourceHandle.remove();
+    searchTermHandle.remove();
+    selectedResultIndexHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      sources: sourceValues.length,
+      searchTerm: searchTermValues.length,
+      selectedResultIndex: selectedResultIndexValues.length,
+    };
+    await search.search("waikiki");
+
+    expect(widget).toBe(search);
+    expect(callbackWidget).toBe(search);
+    expect(search.loaded).toBe(true);
+    expect(search.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(sourceValues).toHaveLength(1);
+    expect(Array.isArray(sourceValues[0])).toBe(true);
+    expect((sourceValues[0] as unknown[]).length).toBe(1);
+    expect(searchTermValues).toEqual(["honolulu", ""]);
+    expect(selectedResultIndexValues).toEqual([0, -1]);
+    expect(seenTypes).toContain("search.loading");
+    expect(seenTypes).toContain("search.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(sourceValues).toHaveLength(watchSnapshot.sources);
+    expect(searchTermValues).toHaveLength(watchSnapshot.searchTerm);
+    expect(selectedResultIndexValues).toHaveLength(watchSnapshot.selectedResultIndex);
+  });
+
   it("supports custom sources with search/suggest/clear and emits lifecycle events", async () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];

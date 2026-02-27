@@ -278,6 +278,8 @@ export type { WebMapCompatOptions } from "./esri-compat/web-map.js";
 export { SearchCompat } from "./esri-compat/search.js";
 export type {
   SearchCompatOptions,
+  SearchHandleCompat,
+  SearchLoadStatusCompat,
   SearchRequestCompat,
   SearchResponseCompat,
   SearchResultCompat,

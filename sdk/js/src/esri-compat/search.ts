@@ -45,6 +45,12 @@ export interface SearchSourceCompat {
   ): Promise<readonly SearchSuggestionCompat[]> | readonly SearchSuggestionCompat[];
 }
 
+export type SearchLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface SearchHandleCompat {
+  remove(): void;
+}
+
 export class SearchCompat {
   public readonly view: unknown;
   public readonly container: unknown;
@@ -52,6 +58,8 @@ export class SearchCompat {
   public readonly autoNavigate: boolean;
   public includeDefaultSources: boolean;
   public readonly autoRefreshSources: boolean;
+  public loaded: boolean;
+  public loadStatus: SearchLoadStatusCompat;
   public sources: SearchSourceCompat[];
   public searchTerm: string;
   public results: SearchResultCompat[];
@@ -60,6 +68,7 @@ export class SearchCompat {
   public selectedResultIndex: number;
 
   private readonly subscriptions: CompatEventSubscription[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private customSources: SearchSourceCompat[];
 
   public constructor(options: SearchCompatOptions = {}) {
@@ -69,6 +78,8 @@ export class SearchCompat {
     this.autoNavigate = options.autoNavigate ?? true;
     this.includeDefaultSources = options.includeDefaultSources ?? true;
     this.autoRefreshSources = options.autoRefreshSources ?? true;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.customSources = [...(options.sources ?? [])];
     this.sources = [];
     this.searchTerm = "";
@@ -77,8 +88,49 @@ export class SearchCompat {
     this.selectedResult = undefined;
     this.selectedResultIndex = -1;
     this.subscriptions = [];
+    this.watchListeners = new Map();
     this.refreshSourceSubscriptions();
     this.rebuildSources(false);
+  }
+
+  public async load(): Promise<SearchCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("search.loading", undefined, this);
+    this.rebuildSources(false);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("search.loaded", { sourceCount: this.sources.length }, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: SearchCompat) => void): Promise<SearchCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): SearchHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public async search(termOrRequest: string | Partial<SearchRequestCompat>): Promise<SearchResponseCompat> {
@@ -89,6 +141,7 @@ export class SearchCompat {
           ? termOrRequest.searchTerm
           : "";
     this.searchTerm = searchTerm;
+    this.notifyWatchers("searchTerm", this.searchTerm);
     this.eventBus.emit("search.started", { searchTerm }, this);
 
     const allResults: SearchResultCompat[] = [];
@@ -107,8 +160,11 @@ export class SearchCompat {
     }
 
     this.results = allResults;
+    this.notifyWatchers("results", this.results);
     this.selectedResult = this.results[0];
+    this.notifyWatchers("selectedResult", this.selectedResult);
     this.selectedResultIndex = this.selectedResult ? 0 : -1;
+    this.notifyWatchers("selectedResultIndex", this.selectedResultIndex);
     if (this.autoNavigate) {
       await this.navigateToSelectedResult();
     }
@@ -156,6 +212,7 @@ export class SearchCompat {
     }
 
     this.suggestions = suggestions;
+    this.notifyWatchers("suggestions", this.suggestions);
     this.eventBus.emit(
       "search.suggestions-updated",
       {
@@ -172,10 +229,15 @@ export class SearchCompat {
 
   public clear(): void {
     this.searchTerm = "";
+    this.notifyWatchers("searchTerm", this.searchTerm);
     this.results = [];
+    this.notifyWatchers("results", this.results);
     this.suggestions = [];
+    this.notifyWatchers("suggestions", this.suggestions);
     this.selectedResult = undefined;
+    this.notifyWatchers("selectedResult", this.selectedResult);
     this.selectedResultIndex = -1;
+    this.notifyWatchers("selectedResultIndex", this.selectedResultIndex);
     this.eventBus.emit("search.cleared", undefined, this);
   }
 
@@ -185,6 +247,7 @@ export class SearchCompat {
   ): void {
     const includeDefaults = options.includeDefaultSources ?? this.includeDefaultSources;
     this.includeDefaultSources = includeDefaults;
+    this.notifyWatchers("includeDefaultSources", this.includeDefaultSources);
     this.customSources = [...sources];
     this.refreshSourceSubscriptions();
     this.rebuildSources(true);
@@ -220,7 +283,9 @@ export class SearchCompat {
     }
 
     this.selectedResultIndex = index;
+    this.notifyWatchers("selectedResultIndex", this.selectedResultIndex);
     this.selectedResult = this.results[index];
+    this.notifyWatchers("selectedResult", this.selectedResult);
     if (this.autoNavigate) {
       await this.navigateToSelectedResult();
     }
@@ -258,6 +323,7 @@ export class SearchCompat {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.remove();
     }
+    this.watchListeners.clear();
   }
 
   private async navigateToSelectedResult(): Promise<void> {
@@ -282,6 +348,7 @@ export class SearchCompat {
       ...this.customSources,
       ...(this.includeDefaultSources ? resolveViewSearchSources(this.view) : []),
     ];
+    this.notifyWatchers("sources", this.sources);
     if (emitChange) {
       this.eventBus.emit("search.sources-changed", { sourceCount: this.sources.length }, this);
     }
@@ -313,6 +380,17 @@ export class SearchCompat {
           this.rebuildSources(true);
         }),
       );
+    }
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
     }
   }
 }
