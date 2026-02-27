@@ -45,6 +45,7 @@ jobs:
           npm run typecheck
           npm test
           npm run test:migration:real-samples
+          npm run gate:migration:real-samples
           npx playwright install --with-deps chromium
           npm run test:playwright:migration
           npm run verify:split-packages

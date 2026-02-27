@@ -77,6 +77,11 @@ describe("migration cli fixtures metrics", () => {
         totalCallSites: number;
         autoMigratedCallSites: number;
         manualCallSites: number;
+        unhandledUsageHits: number;
+      };
+      gates: {
+        passed: boolean;
+        failures: string[];
       };
       fixtures: Array<{
         fixture: string;
@@ -97,6 +102,9 @@ describe("migration cli fixtures metrics", () => {
     expect(report.summary.totalCallSites).toBeGreaterThan(0);
     expect(report.summary.autoMigratedCallSites).toBe(report.summary.totalCallSites);
     expect(report.summary.manualCallSites).toBe(0);
+    expect(report.summary.unhandledUsageHits).toBe(0);
+    expect(report.gates.passed).toBe(true);
+    expect(report.gates.failures).toEqual([]);
     expect(report.fixtures).toHaveLength(3);
     expect(report.fixtures.every((fixture) => fixture.readiness === "ready")).toBe(true);
     expect(report.fixtures.every((fixture) => fixture.manualCallSites === 0)).toBe(true);
@@ -142,5 +150,49 @@ describe("migration cli fixtures metrics", () => {
     expect(report.fixtures).toEqual([
       expect.objectContaining({ fixture: "esri-real-sample-network-app" }),
     ]);
+  }, 60_000);
+
+  it("passes strict fixture gates for honua-compat target", () => {
+    ensureBuiltCliArtifacts();
+
+    const result = runCli(
+      [
+        "fixtures",
+        "--fail-on-manual",
+        "--fail-on-unhandled",
+        "--fail-on-blocked",
+        "--max-manual-ratio",
+        "0",
+        "--max-manual-intervention-ratio",
+        "0",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixturesGate=pass");
+  }, 60_000);
+
+  it("fails fixture gates when manual migration remains", () => {
+    ensureBuiltCliArtifacts();
+
+    const result = runCli(
+      [
+        "fixtures",
+        "--target",
+        "esri-leaflet",
+        "--fixtures",
+        "esri-real-sample-network-app",
+        "--fail-on-manual",
+        "--max-manual-ratio",
+        "0",
+      ],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stdout).toContain("fixturesGate=fail");
+    expect(result.stdout).toContain("gatingFailures:");
+    expect(result.stdout).toContain("Manual call sites detected");
   }, 60_000);
 });

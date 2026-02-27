@@ -105,6 +105,9 @@ jobs:
       - name: Real sample migration runtime gate
         run: npm run test:migration:real-samples
 
+      - name: Real sample migration readiness gate
+        run: npm run gate:migration:real-samples
+
       - name: Install Playwright browser (Chromium)
         run: npx playwright install --with-deps chromium
 

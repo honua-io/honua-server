@@ -66,6 +66,7 @@ interface FixtureMetricsSummary {
   totalCallSites: number;
   autoMigratedCallSites: number;
   manualCallSites: number;
+  unhandledUsageHits: number;
   manualRewriteNumerator: number;
   manualRewriteDenominator: number;
   manualRewriteRatio: number;
@@ -74,12 +75,26 @@ interface FixtureMetricsSummary {
   manualInterventionRatio: number;
 }
 
+interface FixtureMetricsGateOptions {
+  failOnManual: boolean;
+  failOnUnhandled: boolean;
+  failOnBlocked: boolean;
+  maxManualRatio?: number;
+  maxManualInterventionRatio?: number;
+}
+
+interface FixtureMetricsGateEvaluation extends FixtureMetricsGateOptions {
+  passed: boolean;
+  failures: string[];
+}
+
 interface FixtureMetricsReport {
   codemodTarget: CodemodTarget;
   fixturesRoot: string;
   fixtureNames: string[];
   generatedAt: string;
   summary: FixtureMetricsSummary;
+  gates: FixtureMetricsGateEvaluation;
   fixtures: FixtureMetricSnapshot[];
 }
 
@@ -152,7 +167,13 @@ function runFixtures(args: ParsedArgs): void {
     args.fixtureNames && args.fixtureNames.length > 0
       ? [...args.fixtureNames]
       : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
-  const report = buildFixtureMetricsReport(fixturesRoot, fixtureNames, args.codemodTarget);
+  const report = buildFixtureMetricsReport(fixturesRoot, fixtureNames, args.codemodTarget, {
+    failOnManual: args.failOnManual,
+    failOnUnhandled: args.failOnUnhandled,
+    failOnBlocked: args.failOnBlocked,
+    maxManualRatio: args.maxManualRatio,
+    maxManualInterventionRatio: args.maxManualInterventionRatio,
+  });
 
   process.stdout.write(
     [
@@ -162,6 +183,7 @@ function runFixtures(args: ParsedArgs): void {
       `blocked=${report.summary.blocked}`,
       `autoMigrated=${report.summary.autoMigratedCallSites}`,
       `manual=${report.summary.manualCallSites}`,
+      `unhandled=${report.summary.unhandledUsageHits}`,
       `manualRewrite=${report.summary.manualRewriteNumerator}/${report.summary.manualRewriteDenominator}`,
       `manualIntervention=${report.summary.manualInterventionNumerator}/${report.summary.manualInterventionDenominator}`,
       `target=${report.codemodTarget}`,
@@ -169,6 +191,13 @@ function runFixtures(args: ParsedArgs): void {
   );
   process.stdout.write("\n");
   process.stdout.write(`${formatFixtureMetricsTable(report.fixtures)}\n`);
+  process.stdout.write(`fixturesGate=${report.gates.passed ? "pass" : "fail"}\n`);
+  if (!report.gates.passed) {
+    process.stdout.write("gatingFailures:\n");
+    for (const failure of report.gates.failures) {
+      process.stdout.write(`- ${failure}\n`);
+    }
+  }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
   if (args.reportPath) {
@@ -176,24 +205,31 @@ function runFixtures(args: ParsedArgs): void {
     fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${args.reportPath}\n`);
   }
+
+  if (!report.gates.passed) {
+    process.exitCode = 2;
+  }
 }
 
 function buildFixtureMetricsReport(
   fixturesRoot: string,
   fixtureNames: readonly string[],
   codemodTarget: CodemodTarget,
+  gateOptions: FixtureMetricsGateOptions,
 ): FixtureMetricsReport {
   const fixtures = fixtureNames.map((fixtureName) =>
     buildFixtureMetricSnapshot(fixturesRoot, fixtureName, codemodTarget),
   );
 
   const summary = summarizeFixtureMetrics(fixtures);
+  const gates = evaluateFixtureMetricsGates(summary, fixtures, gateOptions);
   return {
     codemodTarget,
     fixturesRoot,
     fixtureNames: [...fixtureNames],
     generatedAt: new Date().toISOString(),
     summary,
+    gates,
     fixtures,
   };
 }
@@ -269,6 +305,10 @@ function summarizeFixtureMetrics(
     (sum, fixture) => sum + fixture.manualIntervention.denominator,
     0,
   );
+  const unhandledUsageHits = fixtures.reduce(
+    (sum, fixture) => sum + fixture.manualIntervention.unhandledUsageHits,
+    0,
+  );
 
   return {
     fixtureCount: fixtures.length,
@@ -278,6 +318,7 @@ function summarizeFixtureMetrics(
     totalCallSites,
     autoMigratedCallSites,
     manualCallSites,
+    unhandledUsageHits,
     manualRewriteNumerator,
     manualRewriteDenominator,
     manualRewriteRatio:
@@ -302,6 +343,50 @@ function formatFixtureMetricsTable(fixtures: readonly FixtureMetricSnapshot[]): 
     );
   }
   return rows.join("\n");
+}
+
+function evaluateFixtureMetricsGates(
+  summary: FixtureMetricsSummary,
+  fixtures: readonly FixtureMetricSnapshot[],
+  options: FixtureMetricsGateOptions,
+): FixtureMetricsGateEvaluation {
+  const failures: string[] = [];
+  if (options.failOnManual && summary.manualCallSites > 0) {
+    failures.push(`Manual call sites detected (${summary.manualCallSites}).`);
+  }
+  if (options.failOnUnhandled && summary.unhandledUsageHits > 0) {
+    failures.push(`Unhandled ArcGIS module usage detected (${summary.unhandledUsageHits}).`);
+  }
+  if (options.failOnBlocked && summary.blocked > 0) {
+    const blockedFixtures = fixtures
+      .filter((fixture) => fixture.readiness === "blocked")
+      .map((fixture) => fixture.fixture);
+    failures.push(
+      `Blocked fixture readiness detected (${summary.blocked}): ${blockedFixtures.join(", ") || "unknown"}.`,
+    );
+  }
+  if (
+    options.maxManualRatio !== undefined &&
+    summary.manualRewriteRatio > options.maxManualRatio
+  ) {
+    failures.push(
+      `Manual rewrite ratio ${summary.manualRewriteRatio.toFixed(3)} exceeds max ${options.maxManualRatio.toFixed(3)}.`,
+    );
+  }
+  if (
+    options.maxManualInterventionRatio !== undefined &&
+    summary.manualInterventionRatio > options.maxManualInterventionRatio
+  ) {
+    failures.push(
+      `Manual intervention ratio ${summary.manualInterventionRatio.toFixed(3)} exceeds max ${options.maxManualInterventionRatio.toFixed(3)}.`,
+    );
+  }
+
+  return {
+    ...options,
+    passed: failures.length === 0,
+    failures,
+  };
 }
 
 function runCodemod(args: ParsedArgs): void {
@@ -682,7 +767,7 @@ function printUsage(): void {
       "  honua-migrate [scan] <path> [--report <file>]",
       "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
-      "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>]",
+      "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
       "",
       "Examples:",
@@ -691,6 +776,7 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json",
       "  node dist/src/migration/cli.js matrix --report parity-matrix.json",
       "  node dist/src/migration/cli.js fixtures --report real-sample-metrics.json",
+      "  node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
     ].join("\n"),
