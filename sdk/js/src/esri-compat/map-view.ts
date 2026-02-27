@@ -60,6 +60,8 @@ export interface MapViewHandle {
   remove(): void;
 }
 
+export type MapViewLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
 export interface MapViewPopupOpenOptions {
   location?: unknown;
   features?: readonly unknown[];
@@ -631,6 +633,8 @@ export class MapViewUiCompat {
 export class MapViewCompat {
   public map: unknown;
   public container: unknown;
+  public loaded: boolean;
+  public loadStatus: MapViewLoadStatusCompat;
   public center: unknown;
   public zoom: number | undefined;
   public scale: number | undefined;
@@ -652,6 +656,8 @@ export class MapViewCompat {
   public constructor(options: MapViewCompatOptions = {}) {
     this.map = options.map;
     this.container = options.container;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.center = options.center;
     this.zoom = options.zoom;
     this.scale = options.scale;
@@ -696,8 +702,25 @@ export class MapViewCompat {
     this.readyPromise = Promise.resolve(this);
   }
 
+  public async load(): Promise<MapViewCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("view.loading", undefined, this);
+    await this.readyPromise;
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("view.loaded", undefined, this);
+    return this;
+  }
+
   public async when(callback?: (view: MapViewCompat) => void): Promise<MapViewCompat> {
-    const view = await this.readyPromise;
+    const view = await this.load();
     if (callback) {
       callback(view);
     }
@@ -900,6 +923,10 @@ export class MapViewCompat {
     this.notifyWatchers("highlightOptions", this.highlightOptions);
     this.spatialReference = undefined;
     this.notifyWatchers("spatialReference", this.spatialReference);
+    this.loaded = false;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "not-loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.eventListeners.clear();
     this.watchListeners.clear();
   }

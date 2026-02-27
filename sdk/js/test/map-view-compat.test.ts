@@ -148,6 +148,50 @@ describe("MapCompat", () => {
 });
 
 describe("MapViewCompat", () => {
+  it("supports load/when lifecycle state and watch handles", async () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const view = new MapViewCompat({ eventBus });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+
+    const loadStatusHandle = view.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = view.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+
+    let callbackView: MapViewCompat | undefined;
+    const ready = await view.when((resolvedView) => {
+      callbackView = resolvedView;
+    });
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+    };
+    await view.load();
+
+    expect(ready).toBe(view);
+    expect(callbackView).toBe(view);
+    expect(view.loaded).toBe(true);
+    expect(view.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(eventTypes).toContain("view.loading");
+    expect(eventTypes).toContain("view.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+  });
+
   it("supports when() and goTo() state updates", async () => {
     const map = new MapCompat();
     const view = new MapViewCompat({
@@ -170,6 +214,8 @@ describe("MapViewCompat", () => {
     });
     expect(ready).toBe(view);
     expect(callbackView).toBe(view);
+    expect(view.loaded).toBe(true);
+    expect(view.loadStatus).toBe("loaded");
     expect(view.map).toBe(map);
     expect(view.zoom).toBe(3);
     expect(view.scale).toBe(5000000);

@@ -244,6 +244,7 @@ export type {
   MapViewLayerViewHighlightHandle,
   MapViewLayerViewHighlightOptions,
   MapViewLayerViewHighlightRecord,
+  MapViewLoadStatusCompat,
   MapViewMapPoint,
   MapViewPopupOpenOptions,
   MapViewScreenPoint,
