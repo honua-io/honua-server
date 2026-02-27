@@ -9,16 +9,25 @@ export interface BasemapGalleryCompatOptions {
   autoRefresh?: boolean;
 }
 
+export type BasemapGalleryLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface BasemapGalleryHandleCompat {
+  remove(): void;
+}
+
 export class BasemapGalleryCompat {
   public readonly view: unknown;
   public readonly map: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly autoRefresh: boolean;
+  public loaded: boolean;
+  public loadStatus: BasemapGalleryLoadStatusCompat;
   public source: unknown[];
   public activeBasemap: unknown;
 
   private readonly subscriptions: CompatEventSubscription[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: BasemapGalleryCompatOptions = {}) {
     this.view = options.view;
@@ -27,14 +36,18 @@ export class BasemapGalleryCompat {
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
     this.autoRefresh = options.autoRefresh ?? true;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.source = Array.isArray(options.source) ? [...options.source] : [];
     this.activeBasemap = extractMapBasemap(this.map);
     this.subscriptions = [];
+    this.watchListeners = new Map();
 
     if (this.autoRefresh) {
       this.subscriptions.push(
         this.eventBus.on("map.basemap-changed", (event) => {
           this.activeBasemap = extractPayloadBasemap(event.payload);
+          this.notifyWatchers("activeBasemap", this.activeBasemap);
           this.eventBus.emit(
             "basemap-gallery.active-basemap-changed",
             { basemap: this.activeBasemap },
@@ -45,12 +58,53 @@ export class BasemapGalleryCompat {
     }
   }
 
+  public async load(): Promise<BasemapGalleryCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("basemap-gallery.loading", undefined, this);
+    this.refresh();
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("basemap-gallery.loaded", { basemapCount: this.source.length }, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: BasemapGalleryCompat) => void): Promise<BasemapGalleryCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): BasemapGalleryHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+
+    listeners.add(listener);
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
   public get basemaps(): readonly unknown[] {
     return this.source;
   }
 
   public setBasemaps(basemaps: readonly unknown[]): void {
     this.source = [...basemaps];
+    this.notifyWatchers("source", this.source);
     this.eventBus.emit("basemap-gallery.updated", { basemapCount: this.source.length }, this);
   }
 
@@ -62,6 +116,7 @@ export class BasemapGalleryCompat {
 
     setMapBasemap(this.map, basemap, this.eventBus, this);
     this.activeBasemap = basemap;
+    this.notifyWatchers("activeBasemap", this.activeBasemap);
     this.eventBus.emit("basemap-gallery.selected", { basemap }, this);
     this.eventBus.emit("basemap.toggle", { activeBasemap: basemap }, this);
     return basemap;
@@ -69,6 +124,7 @@ export class BasemapGalleryCompat {
 
   public refresh(): unknown {
     this.activeBasemap = extractMapBasemap(this.map);
+    this.notifyWatchers("activeBasemap", this.activeBasemap);
     this.eventBus.emit(
       "basemap-gallery.active-basemap-changed",
       { basemap: this.activeBasemap },
@@ -81,6 +137,7 @@ export class BasemapGalleryCompat {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.remove();
     }
+    this.watchListeners.clear();
   }
 
   private resolveBasemap(basemapOrId: unknown): unknown {
@@ -98,6 +155,17 @@ export class BasemapGalleryCompat {
     }
 
     return undefined;
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

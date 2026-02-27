@@ -96,13 +96,22 @@ export type {
   ZoomCompatOptions,
 } from "./esri-compat/controls.js";
 export { BasemapGalleryCompat } from "./esri-compat/basemap-gallery.js";
-export type { BasemapGalleryCompatOptions } from "./esri-compat/basemap-gallery.js";
+export type {
+  BasemapGalleryCompatOptions,
+  BasemapGalleryHandleCompat,
+  BasemapGalleryLoadStatusCompat,
+} from "./esri-compat/basemap-gallery.js";
 export { BasemapCompat } from "./esri-compat/basemap.js";
 export type { BasemapCompatOptions, BasemapLoadStatusCompat } from "./esri-compat/basemap.js";
 export { BasemapLayerListCompat } from "./esri-compat/basemap-layer-list.js";
 export type { BasemapLayerListCompatOptions } from "./esri-compat/basemap-layer-list.js";
 export { BookmarksCompat } from "./esri-compat/bookmarks.js";
-export type { BookmarkCompatItem, BookmarksCompatOptions } from "./esri-compat/bookmarks.js";
+export type {
+  BookmarkCompatItem,
+  BookmarksCompatOptions,
+  BookmarksHandleCompat,
+  BookmarksLoadStatusCompat,
+} from "./esri-compat/bookmarks.js";
 export { ExpandCompat } from "./esri-compat/expand.js";
 export type { ExpandCompatOptions } from "./esri-compat/expand.js";
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";

@@ -3,6 +3,64 @@ import { describe, expect, it } from "vitest";
 import { BasemapGalleryCompat, CompatEventBus, MapCompat, MapViewCompat } from "../src/index.js";
 
 describe("BasemapGalleryCompat", () => {
+  it("supports when() and watch() for lifecycle and active basemap updates", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+    const map = new MapCompat({ basemap: "streets", eventBus });
+    const gallery = new BasemapGalleryCompat({
+      map,
+      eventBus,
+      source: [{ id: "streets" }, { id: "imagery" }],
+      autoRefresh: false,
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const activeBasemapValues: unknown[] = [];
+    const loadStatusHandle = gallery.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = gallery.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const activeBasemapHandle = gallery.watch("activeBasemap", (value) => {
+      activeBasemapValues.push(value);
+    });
+
+    let callbackWidget: BasemapGalleryCompat | undefined;
+    const widget = await gallery.when((resolvedWidget) => {
+      callbackWidget = resolvedWidget;
+    });
+    gallery.select("imagery");
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    activeBasemapHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      activeBasemap: activeBasemapValues.length,
+    };
+    gallery.select("streets");
+
+    expect(widget).toBe(gallery);
+    expect(callbackWidget).toBe(gallery);
+    expect(gallery.loaded).toBe(true);
+    expect(gallery.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(activeBasemapValues).toEqual(["streets", { id: "imagery" }]);
+    expect(seenTypes).toContain("basemap-gallery.loading");
+    expect(seenTypes).toContain("basemap-gallery.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(activeBasemapValues).toHaveLength(watchSnapshot.activeBasemap);
+  });
+
   it("selects basemap by id/title and updates map basemap", () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];
