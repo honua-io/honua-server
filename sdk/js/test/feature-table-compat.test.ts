@@ -4,6 +4,49 @@ import { CompatEventBus, FeatureTableCompat } from "../src/index.js";
 import { FeatureLayerCompat } from "../src/esri-compat/feature-layer.js";
 
 describe("FeatureTableCompat", () => {
+  it("supports when() and watch() for state/rows/filter changes", async () => {
+    const layer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 10, name: "Sample" }, geometry: { x: 0, y: 0 } }],
+      }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer, where: "1=1" });
+    const stateValues: unknown[] = [];
+    const sizeValues: unknown[] = [];
+    const whereValues: unknown[] = [];
+
+    const stateHandle = table.watch("state", (value) => {
+      stateValues.push(value);
+    });
+    const sizeHandle = table.watch("size", (value) => {
+      sizeValues.push(value);
+    });
+    const whereHandle = table.watch("where", (value) => {
+      whereValues.push(value);
+    });
+
+    let callbackTable: FeatureTableCompat | undefined;
+    const readyTable = await table.when((resolvedTable) => {
+      callbackTable = resolvedTable;
+    });
+    table.setWhere("status = 'active'");
+
+    stateHandle.remove();
+    sizeHandle.remove();
+    whereHandle.remove();
+
+    table.setWhere("status = 'inactive'");
+
+    expect(readyTable).toBe(table);
+    expect(callbackTable).toBe(table);
+    expect(table.loaded).toBe(true);
+    expect(stateValues).toEqual(["loading", "loaded"]);
+    expect(sizeValues).toEqual([1]);
+    expect(whereValues).toEqual(["status = 'active'"]);
+    expect(table.where).toBe("status = 'inactive'");
+  });
+
   it("refreshes rows from layer query and emits state/refresh events", async () => {
     const eventBus = new CompatEventBus();
     const seenTypes: string[] = [];

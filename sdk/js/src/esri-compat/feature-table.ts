@@ -36,6 +36,10 @@ export interface FeatureTableHighlightIdsHandleCompat {
   remove(): void;
 }
 
+export interface FeatureTableHandleCompat {
+  remove(): void;
+}
+
 export interface FeatureTableQueryRelatedRecordsOptions {
   relationshipId: number;
   objectIds?: readonly number[] | string;
@@ -221,9 +225,14 @@ export class FeatureTableCompat {
   public fieldConfigs: unknown;
   public readonly highlightIds: FeatureTableHighlightIdsCompat;
   public rows: readonly FeatureTableRowCompat[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public get size(): number {
     return this.rows.length;
+  }
+
+  public get loaded(): boolean {
+    return this.state === "loaded";
   }
 
   public constructor(options: FeatureTableCompatOptions = {}) {
@@ -249,8 +258,10 @@ export class FeatureTableCompat {
     this.fieldConfigs = options.fieldConfigs;
     this.highlightIds = new FeatureTableHighlightIdsCompat(options.highlightIds);
     this.rows = [];
+    this.watchListeners = new Map();
 
     this.highlightIds.on("change", (event) => {
+      this.notifyWatchers("highlightIds", this.highlightIds.toArray());
       this.eventBus.emit(
         "feature-table.selection-changed",
         {
@@ -263,13 +274,42 @@ export class FeatureTableCompat {
     });
   }
 
+  public async when(callback?: (table: FeatureTableCompat) => void): Promise<FeatureTableCompat> {
+    if (this.state === "loading") {
+      await this.refresh();
+    }
+    if (callback) {
+      callback(this);
+    }
+    return this;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): FeatureTableHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
   public async refresh(): Promise<readonly FeatureTableRowCompat[]> {
     this.state = "loading";
+    this.notifyWatchers("state", this.state);
     this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
 
     if (!this.layer) {
       this.rows = [];
+      this.notifyWatchers("rows", this.rows);
+      this.notifyWatchers("size", this.size);
       this.state = "loaded";
+      this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
       this.eventBus.emit("feature-table.refreshed", { rowCount: 0 }, this);
       return this.rows;
@@ -281,12 +321,16 @@ export class FeatureTableCompat {
         returnGeometry: true,
       });
       this.rows = extractRows(response, this.objectIdField);
+      this.notifyWatchers("rows", this.rows);
+      this.notifyWatchers("size", this.size);
       this.state = "loaded";
+      this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
       this.eventBus.emit("feature-table.refreshed", { rowCount: this.rows.length }, this);
       return this.rows;
     } catch (error) {
       this.state = "error";
+      this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
       throw error;
     }
@@ -294,11 +338,13 @@ export class FeatureTableCompat {
 
   public setWhere(where: string): void {
     this.where = where;
+    this.notifyWatchers("where", this.where);
     this.eventBus.emit("feature-table.filter-changed", { where }, this);
   }
 
   public setFilterGeometry(filterGeometry: unknown): void {
     this.filterGeometry = filterGeometry;
+    this.notifyWatchers("filterGeometry", this.filterGeometry);
     this.eventBus.emit("feature-table.filter-geometry-changed", { filterGeometry }, this);
   }
 
@@ -344,6 +390,17 @@ export class FeatureTableCompat {
       method: options.method,
       extraParams: options.extraParams,
     });
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
