@@ -29,7 +29,9 @@
     "pack:split-packages": "npm run build:split-packages --silent && npm pack ./dist/packages/honua-sdk && npm pack ./dist/packages/honua-sdk-esri-compat && npm pack ./dist/packages/honua-migrate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:migration:real-samples": "vitest run test/migration-real-sample-runtime.test.ts",
     "test:playwright": "npm run build --silent && playwright test",
+    "test:playwright:migration": "npm run build --silent && playwright test test/playwright/migration-browser-smoke.spec.mjs test/playwright/migration-browser-real-sample.spec.mjs",
     "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js scan",
     "migrate:arcgis": "npm run build --silent && node dist/src/migration/cli.js codemod"
   },

@@ -102,11 +102,14 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      - name: Real sample migration runtime gate
+        run: npm run test:migration:real-samples
+
       - name: Install Playwright browser (Chromium)
         run: npx playwright install --with-deps chromium
 
       - name: Browser migration smoke test
-        run: npm run test:playwright
+        run: npm run test:playwright:migration
 
       - name: Split package verification
         run: npm run verify:split-packages
