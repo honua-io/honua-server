@@ -100,6 +100,7 @@ interface FixtureMetricsReport {
 }
 
 const DEFAULT_REAL_SAMPLE_FIXTURE_NAMES = [
+  "esri-real-sample-incident-command-app",
   "esri-real-sample-ops-center-app",
   "esri-real-sample-editing-app",
   "esri-real-sample-network-app",

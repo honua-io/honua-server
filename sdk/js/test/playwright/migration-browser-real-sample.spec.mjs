@@ -101,9 +101,9 @@ async function getServerUrl(server) {
   return `http://127.0.0.1:${address.port}`;
 }
 
-test("migrated complex ops-center sample executes in browser runtime", async ({ page }) => {
+async function runMigratedFixtureBrowserSmoke(page, options) {
   const projectRoot = getProjectRoot();
-  const fixtureFile = fixtureMainPath(projectRoot, "esri-real-sample-ops-center-app");
+  const fixtureFile = fixtureMainPath(projectRoot, options.fixtureName);
   const tempRoot = createTempRoot();
   const appRoot = path.join(tempRoot, "app");
   const appMain = path.join(appRoot, "main.js");
@@ -119,8 +119,8 @@ test("migrated complex ops-center sample executes in browser runtime", async ({ 
   });
 
   expect(codemodResult.filesChanged).toBe(1);
-  expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(16);
-  expect(codemodResult.metrics.autoMigratedCallSites).toBe(16);
+  expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(options.expectedCallSites);
+  expect(codemodResult.metrics.autoMigratedCallSites).toBe(options.expectedCallSites);
   expect(codemodResult.metrics.manualCallSites).toBe(0);
 
   const pageErrors = [];
@@ -142,23 +142,67 @@ test("migrated complex ops-center sample executes in browser runtime", async ({ 
 
     expect(migrationError).toBeNull();
     expect(pageErrors).toEqual([]);
-    expect(migrationResult).toMatchObject({
-      mapCtor: "MapCompat",
-      viewCtor: "MapViewCompat",
-      layerCtor: "FeatureLayerCompat",
-      uiCount: 13,
-      popupBefore: { id: "parcel-1" },
-      popupAfterNext: { id: "parcel-2" },
-      toggledBasemapId: "satellite",
-      locateLongitude: -157.857,
-      locateLatitude: 21.307,
-      searchResultCount: 2,
-      searchSelectedResult: "Parcel honua-B",
-    });
-    expect(migrationResult.scaleText).toContain("1:");
-    expect(migrationResult.scaleText).toContain("/");
+    options.assertResult(migrationResult);
   } finally {
     await new Promise((resolve) => server.close(() => resolve(undefined)));
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+test("migrated complex ops-center sample executes in browser runtime", async ({ page }) => {
+  await runMigratedFixtureBrowserSmoke(page, {
+    fixtureName: "esri-real-sample-ops-center-app",
+    expectedCallSites: 16,
+    assertResult: (migrationResult) => {
+      expect(migrationResult).toMatchObject({
+        mapCtor: "MapCompat",
+        viewCtor: "MapViewCompat",
+        layerCtor: "FeatureLayerCompat",
+        uiCount: 13,
+        popupBefore: { id: "parcel-1" },
+        popupAfterNext: { id: "parcel-2" },
+        toggledBasemapId: "satellite",
+        locateLongitude: -157.857,
+        locateLatitude: 21.307,
+        searchResultCount: 2,
+        searchSelectedResult: "Parcel honua-B",
+      });
+      expect(migrationResult.scaleText).toContain("1:");
+      expect(migrationResult.scaleText).toContain("/");
+    },
+  });
+});
+
+test("migrated incident command demo sample executes in browser runtime", async ({ page }) => {
+  await runMigratedFixtureBrowserSmoke(page, {
+    fixtureName: "esri-real-sample-incident-command-app",
+    expectedCallSites: 28,
+    assertResult: (migrationResult) => {
+      expect(migrationResult).toMatchObject({
+        mapCtor: "MapCompat",
+        viewCtor: "MapViewCompat",
+        layerCtors: [
+          "FeatureLayerCompat",
+          "FeatureLayerCompat",
+          "MapImageLayerCompat",
+          "TileLayerCompat",
+          "RouteLayerCompat",
+        ],
+        layerListActionTriggered: true,
+        foundLayerId: "incidents-layer",
+        popupSelectedId: "incident-2",
+        selectedTemplateName: "Open Incident",
+        formStatus: "active-response",
+        routeTaskCount: 1,
+        directionsStopCount: 2,
+        activeBasemapId: "dark-gray",
+        foundSublayerId: 2,
+      });
+      expect(migrationResult.uiCount).toBeGreaterThanOrEqual(19);
+      expect(migrationResult.measuredDistanceMeters).toBeGreaterThan(0);
+      expect(migrationResult.printUrl).toContain("https://example.test/print");
+      expect(migrationResult.printUrl).toContain("title=Incident+Command+Board");
+      expect(migrationResult.primaryConversionText).toContain(",");
+    },
+  });
 });

@@ -46,6 +46,7 @@ npm run scan:arcgis -- ../../path/to/arcgis-app
 npm run migrate:arcgis -- ../../path/to/arcgis-app --write --report migration-report.json
 npm run report:migration:real-samples
 npm run gate:migration:real-samples
+npm run gate:migration:demo-target
 npm run matrix:runtime
 npm run build:split-packages
 ```
@@ -134,6 +135,9 @@ node dist/src/migration/cli.js fixtures --report reports/real-sample-metrics.jso
 
 # Enforce strict readiness gates for bundled real-sample fixtures
 node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/real-sample-metrics.json
+
+# Enforce strict readiness gates for the demo target fixture only
+node dist/src/migration/cli.js fixtures --fixtures esri-real-sample-incident-command-app --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/demo-target-metrics.json
 
 # Limit fixture metrics to a subset and esri-leaflet target mode
 node dist/src/migration/cli.js fixtures --target esri-leaflet --fixtures esri-real-sample-network-app --report reports/network-metrics.json

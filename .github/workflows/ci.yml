@@ -108,6 +108,9 @@ jobs:
       - name: Real sample migration readiness gate
         run: npm run gate:migration:real-samples
 
+      - name: Demo target migration gate
+        run: npm run gate:migration:demo-target
+
       - name: Runtime parity matrix artifact
         run: npm run matrix:runtime
 
@@ -125,6 +128,7 @@ jobs:
         with:
           name: js-migration-artifacts
           path: |
+            sdk/js/reports/demo-target-metrics.json
             sdk/js/reports/real-sample-metrics.json
             sdk/js/reports/runtime-parity-matrix.json
 

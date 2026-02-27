@@ -238,6 +238,95 @@ describe("migration real sample runtime", () => {
     expect(String(output.printUrl)).toContain("https://example.test/print");
     expect(String(output.printUrl)).toContain("title=Network+Demo");
   });
+
+  it("migrates and executes incident command sample", { timeout: 60_000 }, async () => {
+    const { codemodResult, report, output } = await migrateAndRunFixture(
+      "esri-real-sample-incident-command-app",
+    );
+
+    expect(codemodResult.filesChanged).toBe(1);
+    expect(codemodResult.metrics.totalCodemodScopedCallSites).toBe(28);
+    expect(codemodResult.metrics.autoMigratedCallSites).toBe(28);
+    expect(codemodResult.metrics.manualCallSites).toBe(0);
+    expect(codemodResult.manualTodos).toEqual([]);
+    expect(report.manualInterventionMetric).toMatchObject({
+      numerator: 0,
+      denominator: 28,
+      ratio: 0,
+      manualCodemodCallSites: 0,
+      unhandledUsageHits: 0,
+    });
+    expect(report.gates.find((gate) => gate.gate === "no-manual-todos")?.passed).toBe(true);
+    expect(report.gates.find((gate) => gate.gate === "no-unhandled-modules")?.passed).toBe(true);
+
+    expect(output).toMatchObject({
+      mapCtor: "MapCompat",
+      viewCtor: "MapViewCompat",
+      layerCtors: [
+        "FeatureLayerCompat",
+        "FeatureLayerCompat",
+        "MapImageLayerCompat",
+        "TileLayerCompat",
+        "RouteLayerCompat",
+      ],
+      widgetCtors: [
+        "LayerListCompat",
+        "LegendCompat",
+        "PopupCompat",
+        "SearchCompat",
+        "ExpandCompat",
+        "BookmarksCompat",
+        "FeatureFormCompat",
+        "FeatureTemplatesCompat",
+        "FeatureTableCompat",
+        "SketchCompat",
+        "EditorCompat",
+        "TrackCompat",
+        "MeasurementCompat",
+        "TimeSliderCompat",
+        "DirectionsCompat",
+        "CoordinateConversionCompat",
+        "PrintCompat",
+        "BasemapGalleryCompat",
+        "BasemapLayerListCompat",
+      ],
+      layerListActionTriggered: true,
+      foundLayerId: "incidents-layer",
+      popupSelectedId: "incident-2",
+      selectedTemplateName: "Open Incident",
+      formStatus: "active-response",
+      highlightCount: 2,
+      sketchState: "ready",
+      sketchCompletionState: "complete",
+      createWorkflowStarted: true,
+      updateWorkflowStarted: true,
+      directionsStopCount: 2,
+      queryWhere: "priority = 'high'",
+      activeBasemapId: "dark-gray",
+      foundSublayerId: 2,
+      searchResultCount: 2,
+      searchSelectedResult: "Incident IC-B",
+    });
+
+    if (!isRecord(output)) {
+      throw new Error("Expected incident command sample output to be an object.");
+    }
+    expect(output.uiCount).toBeGreaterThanOrEqual(19);
+    expect(output.layerListCount).toBeGreaterThanOrEqual(4);
+    expect(output.trackedLatitude).toBeCloseTo(21.3075, 4);
+    expect(output.trackedLongitude).toBeCloseTo(-157.8565, 4);
+    expect(output.measuredDistanceMeters).toBeGreaterThan(0);
+    expect(output.routeTaskCount).toBe(1);
+    expect(output.routeTaskDistance).toBeGreaterThan(0);
+    expect(output.directionsPathPoints).toBeGreaterThan(1);
+    expect(output.basemapBaseLayerCount).toBe(1);
+    expect(output.sublayerCount).toBe(2);
+    expect(Array.isArray(output.conversions)).toBe(true);
+    expect(output.conversions).toEqual(["lonlat", "dms"]);
+    expect(String(output.primaryConversionText)).toContain(",");
+    expect(String(output.printUrl)).toContain("https://example.test/print");
+    expect(String(output.printUrl)).toContain("title=Incident+Command+Board");
+  });
 });
 
 function isRecord(value: unknown): value is Record<string, any> {

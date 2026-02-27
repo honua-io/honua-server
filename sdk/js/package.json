@@ -32,6 +32,8 @@
     "test:migration:real-samples": "vitest run test/migration-real-sample-runtime.test.ts",
     "test:playwright": "npm run build --silent && playwright test",
     "test:playwright:migration": "npm run build --silent && playwright test test/playwright/migration-browser-smoke.spec.mjs test/playwright/migration-browser-real-sample.spec.mjs",
+    "report:migration:demo-target": "npm run build --silent && node dist/src/migration/cli.js fixtures --fixtures esri-real-sample-incident-command-app --report reports/demo-target-metrics.json",
+    "gate:migration:demo-target": "npm run build --silent && node dist/src/migration/cli.js fixtures --fixtures esri-real-sample-incident-command-app --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/demo-target-metrics.json",
     "report:migration:real-samples": "npm run build --silent && node dist/src/migration/cli.js fixtures --report reports/real-sample-metrics.json",
     "gate:migration:real-samples": "npm run build --silent && node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/real-sample-metrics.json",
     "matrix:runtime": "npm run build --silent && node dist/src/migration/cli.js runtime-matrix --report reports/runtime-parity-matrix.json",
