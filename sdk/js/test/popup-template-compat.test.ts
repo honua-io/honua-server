@@ -3,6 +3,49 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, PopupTemplateCompat } from "../src/index.js";
 
 describe("PopupTemplateCompat", () => {
+  it("supports when() and watch() for lifecycle state", async () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const template = new PopupTemplateCompat({ eventBus });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const loadStatusHandle = template.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = template.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+
+    let callbackTemplate: PopupTemplateCompat | undefined;
+    const resolved = await template.when((readyTemplate) => {
+      callbackTemplate = readyTemplate;
+    });
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+    };
+
+    await template.load();
+
+    expect(resolved).toBe(template);
+    expect(callbackTemplate).toBe(template);
+    expect(template.loaded).toBe(true);
+    expect(template.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(eventTypes).toContain("popup-template.loading");
+    expect(eventTypes).toContain("popup-template.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+  });
+
   it("stores template options and defensively copies option arrays", () => {
     const eventBus = new CompatEventBus();
     const fieldInfos = [{ fieldName: "OBJECTID" }];
@@ -36,6 +79,7 @@ describe("PopupTemplateCompat", () => {
   it("updates provided properties and emits popup-template.updated", () => {
     const eventBus = new CompatEventBus();
     const events: unknown[] = [];
+    const outFieldsValues: unknown[] = [];
     eventBus.on("popup-template.updated", (event) => {
       events.push(event);
     });
@@ -46,21 +90,34 @@ describe("PopupTemplateCompat", () => {
       outFields: ["OBJECTID"],
       eventBus,
     });
+    const outFieldsHandle = template.watch("outFields", (value) => {
+      outFieldsValues.push(value);
+    });
 
     template.update({
       content: "After",
       outFields: ["NAME"],
     });
+    outFieldsHandle.remove();
+    const watchSnapshot = {
+      outFields: outFieldsValues.length,
+    };
+
+    template.update({
+      outFields: ["UPDATED_AGAIN"],
+    });
 
     expect(template.title).toBe("Initial");
     expect(template.content).toBe("After");
-    expect(template.outFields).toEqual(["NAME"]);
-    expect(events).toHaveLength(1);
+    expect(template.outFields).toEqual(["UPDATED_AGAIN"]);
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
       type: "popup-template.updated",
       payload: undefined,
       source: template,
     });
+    expect(outFieldsValues).toEqual([["NAME"]]);
+    expect(outFieldsValues).toHaveLength(watchSnapshot.outFields);
   });
 
   it("clones with equivalent values and shared event bus", () => {

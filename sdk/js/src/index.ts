@@ -211,7 +211,11 @@ export type {
   IdentityTokenRegistrationCompat,
 } from "./esri-compat/identity-manager.js";
 export { OAuthInfoCompat } from "./esri-compat/oauth-info.js";
-export type { OAuthInfoCompatOptions } from "./esri-compat/oauth-info.js";
+export type {
+  OAuthInfoCompatOptions,
+  OAuthInfoHandleCompat,
+  OAuthInfoLoadStatusCompat,
+} from "./esri-compat/oauth-info.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
@@ -325,7 +329,11 @@ export type {
   PopupOpenOptionsCompat,
 } from "./esri-compat/popup.js";
 export { PopupTemplateCompat } from "./esri-compat/popup-template.js";
-export type { PopupTemplateCompatOptions } from "./esri-compat/popup-template.js";
+export type {
+  PopupTemplateCompatOptions,
+  PopupTemplateHandleCompat,
+  PopupTemplateLoadStatusCompat,
+} from "./esri-compat/popup-template.js";
 export { reactiveUtils, watch, when, whenOnce } from "./esri-compat/reactive-utils.js";
 export type {
   ReactiveUtilsHandleCompat,
