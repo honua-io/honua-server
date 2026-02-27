@@ -146,6 +146,7 @@ function runMatrix(reportPath?: string): void {
   process.stdout.write(`${JSON.stringify({ summary, matrix }, null, 2)}\n`);
 
   if (reportPath) {
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }
@@ -169,6 +170,7 @@ function runRuntimeMatrix(reportPath?: string): void {
   process.stdout.write(`${JSON.stringify({ summary, matrix }, null, 2)}\n`);
 
   if (reportPath) {
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, `${JSON.stringify({ summary, matrix }, null, 2)}\n`, "utf8");
     process.stdout.write(`reportWritten=${reportPath}\n`);
   }

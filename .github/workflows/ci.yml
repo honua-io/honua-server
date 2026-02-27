@@ -108,6 +108,9 @@ jobs:
       - name: Real sample migration readiness gate
         run: npm run gate:migration:real-samples
 
+      - name: Runtime parity matrix artifact
+        run: npm run matrix:runtime
+
       - name: Install Playwright browser (Chromium)
         run: npx playwright install --with-deps chromium
 
@@ -116,6 +119,14 @@ jobs:
 
       - name: Split package verification
         run: npm run verify:split-packages
+
+      - name: Upload JS migration artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-migration-artifacts
+          path: |
+            sdk/js/reports/real-sample-metrics.json
+            sdk/js/reports/runtime-parity-matrix.json
 
   terraform-fmt:
     name: Terraform Format Check
