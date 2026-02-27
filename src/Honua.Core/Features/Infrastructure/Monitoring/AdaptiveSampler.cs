@@ -21,7 +21,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     private readonly ILogger<AdaptiveSampler> _logger;
     private readonly ISmartSamplingRules? _smartSamplingRules;
     private readonly Timer _evaluationTimer;
-    private readonly Random _random = new();
 
     private double _currentSamplingRate;
     private volatile bool _disposed;
@@ -74,13 +73,13 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         if (!_options.Enabled)
         {
             // Fallback to base sampling rate if adaptive sampling is disabled
-            return _random.NextDouble() < _options.BaseSamplingRate;
+            return Random.Shared.NextDouble() < _options.BaseSamplingRate;
         }
 
         var importance = ClassifyOperation(operationName);
         var effectiveRate = CalculateEffectiveSamplingRate(importance);
 
-        var shouldSample = _random.NextDouble() < effectiveRate;
+        var shouldSample = Random.Shared.NextDouble() < effectiveRate;
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {

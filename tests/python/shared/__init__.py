@@ -4,17 +4,11 @@
 """
 Shared test infrastructure for Honua integration tests.
 
-This module provides:
-- PostGIS container management via Testcontainers
-- Honua server process management
-- Geometry generators for comprehensive spatial testing
-- HTTP client helpers with retry logic
+Exports are loaded lazily to avoid importing optional heavy dependencies
+unless they are explicitly requested by a test.
 """
 
-from .geometry import GeometryGenerator, ALL_GEOMETRY_TYPES
-from .postgis import PostGISFixture, TestDataBuilder
-from .seed import SeedRunner
-from .server import HonuaServer
+from __future__ import annotations
 
 __all__ = [
     "GeometryGenerator",
@@ -24,3 +18,33 @@ __all__ = [
     "SeedRunner",
     "HonuaServer",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"GeometryGenerator", "ALL_GEOMETRY_TYPES"}:
+        from .geometry import ALL_GEOMETRY_TYPES, GeometryGenerator
+
+        return {
+            "GeometryGenerator": GeometryGenerator,
+            "ALL_GEOMETRY_TYPES": ALL_GEOMETRY_TYPES,
+        }[name]
+
+    if name in {"PostGISFixture", "TestDataBuilder"}:
+        from .postgis import PostGISFixture, TestDataBuilder
+
+        return {
+            "PostGISFixture": PostGISFixture,
+            "TestDataBuilder": TestDataBuilder,
+        }[name]
+
+    if name == "SeedRunner":
+        from .seed import SeedRunner
+
+        return SeedRunner
+
+    if name == "HonuaServer":
+        from .server import HonuaServer
+
+        return HonuaServer
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

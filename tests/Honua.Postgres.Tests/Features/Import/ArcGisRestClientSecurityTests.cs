@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Reflection;
 using System.Text;
 using Honua.Postgres.Features.Import;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -96,6 +97,37 @@ public sealed class ArcGisRestClientSecurityTests
         socketsHandler.ConnectCallback.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task CreatePinnedDnsHttpMessageHandler_CanceledConnect_DoesNotLeakSockets()
+    {
+        if (!OperatingSystem.IsLinux() || !Directory.Exists("/proc/self/fd"))
+        {
+            return;
+        }
+
+        var handler = ArcGisRestClient.CreatePinnedDnsHttpMessageHandler((_, _) =>
+            Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var socketsHandler = handler.Should().BeOfType<SocketsHttpHandler>().Subject;
+        var connectCallback = socketsHandler.ConnectCallback;
+        connectCallback.Should().NotBeNull();
+
+        var baselineDescriptors = CountOpenFileDescriptors();
+
+        for (var i = 0; i < 128; i++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/");
+            var context = CreateConnectionContext(new DnsEndPoint("example.com", 443), request);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                connectCallback!(context, cts.Token).AsTask());
+        }
+
+        var currentDescriptors = CountOpenFileDescriptors();
+        (currentDescriptors - baselineDescriptors).Should().BeLessThan(32);
+    }
+
     private static ArcGisRestClient CreateClient(
         HttpMessageHandler handler,
         Func<string, CancellationToken, Task<IPAddress[]>> resolver)
@@ -103,6 +135,20 @@ public sealed class ArcGisRestClientSecurityTests
         var httpClient = new HttpClient(handler);
         return new ArcGisRestClient(httpClient, NullLogger<ArcGisRestClient>.Instance, resolver);
     }
+
+    private static SocketsHttpConnectionContext CreateConnectionContext(DnsEndPoint dnsEndPoint, HttpRequestMessage request)
+    {
+        var constructor = typeof(SocketsHttpConnectionContext).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            [typeof(DnsEndPoint), typeof(HttpRequestMessage)],
+            modifiers: null);
+
+        constructor.Should().NotBeNull();
+        return (SocketsHttpConnectionContext)constructor!.Invoke([dnsEndPoint, request]);
+    }
+
+    private static int CountOpenFileDescriptors() => Directory.GetFiles("/proc/self/fd").Length;
 
     private sealed class CountingHandler : HttpMessageHandler
     {

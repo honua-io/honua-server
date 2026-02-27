@@ -113,7 +113,8 @@ internal sealed class GeometryConverter : IGeometryConverter
             ?? throw new ArgumentException("Failed to convert WKB to GeoServices geometry.");
 
         var json = JsonSerializer.Serialize(geoServicesGeometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
-        return JsonDocument.Parse(json).RootElement.Clone();
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     /// <summary>

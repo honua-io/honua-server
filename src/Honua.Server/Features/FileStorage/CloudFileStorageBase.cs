@@ -185,6 +185,17 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected virtual Task<int> DeleteByPrefixAsync(string batchId, CancellationToken cancellationToken)
         => Task.FromResult(0);
 
+    protected static (string ProgressMessage, string ResultMessage) ResolveArgumentFailureMessages(ArgumentException exception)
+    {
+        // Only expose folder-validation details because folder originates from request input.
+        if (string.Equals(exception.ParamName, "folder", StringComparison.Ordinal))
+        {
+            return (exception.Message, exception.Message);
+        }
+
+        return ("File upload failed", "File upload failed.");
+    }
+
     protected static void ValidatePresignedUploadArguments(
         string fileName,
         string contentType,

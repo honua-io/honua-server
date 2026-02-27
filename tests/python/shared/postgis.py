@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 import os
+import inspect
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -84,17 +85,14 @@ class PostGISFixture:
             return self
 
         self._container = PostgresContainer(
-            image=self.IMAGE,
-            username=self.USERNAME,
-            password=self.PASSWORD,
-            dbname=self.DATABASE,
+            **self._build_postgres_container_kwargs()
         )
         # Set max connections for parallel tests
         self._container.with_command("-c max_connections=200")
         self._container.start()
 
-        self._connection_string = self._container.get_connection_url().replace(
-            "postgresql+psycopg2://", "postgresql://"
+        self._connection_string = self._normalize_testcontainers_connection_url(
+            self._container.get_connection_url()
         )
 
         # Enable PostGIS extensions
@@ -106,6 +104,35 @@ class PostGISFixture:
             conn.commit()
 
         return self
+
+    @staticmethod
+    def _normalize_testcontainers_connection_url(connection_url: str) -> str:
+        """Normalize testcontainers SQLAlchemy-style URLs for psycopg connect()."""
+        if connection_url.startswith("postgresql+"):
+            return "postgresql://" + connection_url[len("postgresql+") :].split("://", 1)[1]
+        return connection_url
+
+    def _build_postgres_container_kwargs(self) -> dict[str, str]:
+        """
+        Build keyword arguments for PostgresContainer across testcontainers versions.
+
+        testcontainers 4.x accepts ``username`` while older releases expect ``user``.
+        Select the supported parameter name from the constructor signature.
+        """
+        init_params = inspect.signature(PostgresContainer.__init__).parameters
+        username_key = "username" if "username" in init_params else "user"
+
+        kwargs = {
+            "image": self.IMAGE,
+            username_key: self.USERNAME,
+            "password": self.PASSWORD,
+            "dbname": self.DATABASE,
+        }
+
+        if "driver" in init_params:
+            kwargs["driver"] = "psycopg"
+
+        return kwargs
 
     def get_npgsql_connection_string(self, search_path: str | None = None) -> str:
         """

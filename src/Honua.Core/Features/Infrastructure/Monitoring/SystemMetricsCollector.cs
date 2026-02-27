@@ -119,7 +119,7 @@ public sealed class SystemMetricsCollector : ISystemMetricsCollector, IDisposabl
 
         try
         {
-            var process = Process.GetCurrentProcess();
+            using var process = Process.GetCurrentProcess();
 
             // Get GC memory info
             var gcInfo = GC.GetGCMemoryInfo();

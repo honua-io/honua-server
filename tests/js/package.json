@@ -13,7 +13,7 @@
     "test:geometry": "vitest run feature-server/geometry-types",
     "test:edits": "vitest run feature-server/apply-edits",
     "test:metadata": "vitest run feature-server/metadata",
-    "lint": "eslint . --ext .ts",
+    "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

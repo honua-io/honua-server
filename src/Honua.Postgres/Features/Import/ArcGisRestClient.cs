@@ -389,16 +389,28 @@ internal sealed partial class ArcGisRestClient
         foreach (var address in addresses)
         {
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            var connected = false;
 
             try
             {
                 await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
+                connected = true;
                 return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
             {
-                socket.Dispose();
                 lastException = ex;
+            }
+            finally
+            {
+                if (!connected)
+                {
+                    socket.Dispose();
+                }
             }
         }
 

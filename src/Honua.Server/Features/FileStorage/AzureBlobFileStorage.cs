@@ -162,6 +162,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
         catch (ArgumentException ex)
         {
+            var (progressMessage, resultMessage) = ResolveArgumentFailureMessages(ex);
             return await ReportFailedUploadAsync(
                 uploadId,
                 request,
@@ -169,8 +170,8 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 totalBytes,
                 initialProgress.StartedAt,
                 ex,
-                ex.Message,
-                ex.Message);
+                progressMessage,
+                resultMessage);
         }
         catch (Exception ex)
         {

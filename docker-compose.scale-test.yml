@@ -64,12 +64,15 @@ services:
       HONUA_ENABLE_METRICS: "true"
       HONUA_ENABLE_TRACING: "true"
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+      HostValidation__AllowedHosts__0: "localhost"
+      HostValidation__AllowedHosts__1: "127.0.0.1"
+      HostValidation__AllowedHosts__2: "[::1]"
       Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:-scale-test-master-key-that-is-at-least-32-characters-long}"
       Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:-c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=}"
       # Caching configuration
       Cache__Enabled: "true"
       Cache__EnableFallback: "true"
-      Cache__KeyPrefix: "honua:scale:"
+      Cache__KeyPrefix: "honua:"
       Cache__DefaultTtlSeconds: "300"
       # Performance settings for scale testing
       Limits__Query__MaxRecordCount: "10000"

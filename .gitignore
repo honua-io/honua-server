@@ -258,6 +258,9 @@ scripts/setup-playwright-wsl.sh
 .env.production
 .env.docker
 !.env.example
+
+# Local Terraform credentials helper (do not commit secrets)
+scripts/tf-secrets.local.sh
 !.env.*.example
 
 # Private keys
