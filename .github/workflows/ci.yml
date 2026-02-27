@@ -351,16 +351,20 @@ jobs:
       - name: Run .NET Tests
         timeout-minutes: 60
         run: |
-          dotnet build tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
-            --configuration Release
+          dotnet build Honua.sln \
+            --no-restore \
+            --configuration Release \
+            -m:1
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps chromium
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install chromium
           dotnet test Honua.sln \
+            --no-build \
             --no-restore \
             --configuration Release \
             --logger "trx;LogFileName=all-test-results.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
+            -m:1 \
             -- RunConfiguration.MaxCpuCount=1
 
       - name: Install Python test dependencies
