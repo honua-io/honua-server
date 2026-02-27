@@ -3,6 +3,55 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, TileLayerCompat } from "../src/index.js";
 
 describe("TileLayerCompat", () => {
+  it("supports watch handles for lifecycle and mutable properties", async () => {
+    const layer = new TileLayerCompat({
+      url: "https://example.test/rest/services/default/MapServer",
+      client: new (class {
+        public getMapServiceMetadata(): Promise<unknown> {
+          return Promise.resolve({ mapName: "default" });
+        }
+      })() as any,
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const visibleValues: unknown[] = [];
+    const opacityValues: unknown[] = [];
+    const metadataValues: unknown[] = [];
+
+    const loadStatusHandle = layer.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const visibleHandle = layer.watch("visible", (value) => {
+      visibleValues.push(value);
+    });
+    const opacityHandle = layer.watch("opacity", (value) => {
+      opacityValues.push(value);
+    });
+    const metadataHandle = layer.watch("metadata", (value) => {
+      metadataValues.push(value);
+    });
+
+    await layer.load();
+    layer.setVisibility(false);
+    layer.setOpacity(0.4);
+    layer.refresh();
+
+    loadStatusHandle.remove();
+    visibleHandle.remove();
+    opacityHandle.remove();
+    metadataHandle.remove();
+
+    layer.setVisibility(true);
+    layer.setOpacity(0.9);
+
+    expect(loadStatusValues).toEqual(["loading", "loaded", "not-loaded"]);
+    expect(visibleValues).toEqual([false]);
+    expect(opacityValues).toEqual([0.4]);
+    expect(metadataValues).toEqual([{ mapName: "default" }, undefined]);
+    expect(layer.loadStatus).toBe("not-loaded");
+    expect(layer.loaded).toBe(false);
+  });
+
   it("supports load/when/refresh lifecycle", async () => {
     let metadataCalls = 0;
     const layer = new TileLayerCompat({

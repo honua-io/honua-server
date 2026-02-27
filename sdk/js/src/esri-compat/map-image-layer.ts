@@ -22,6 +22,12 @@ export interface MapImageLayerExportOptions extends Omit<ExportMapRequest, "serv
 export interface MapImageLayerLegendOptions extends Omit<MapLegendRequest, "serviceId"> {}
 export interface MapImageLayerIdentifyOptions extends Omit<MapIdentifyRequest, "serviceId"> {}
 
+export type MapImageLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface MapImageLayerHandleCompat {
+  remove(): void;
+}
+
 export class MapImageLayerCompat {
   public readonly url: string;
   public id: string;
@@ -35,10 +41,12 @@ export class MapImageLayerCompat {
   public listMode: string;
   public legendEnabled: boolean;
   public loaded: boolean;
+  public loadStatus: MapImageLayerLoadStatusCompat;
   public metadata: unknown;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: MapImageLayerCompatOptions) {
     const parsed = parseMapServiceUrl(options.url);
@@ -54,17 +62,26 @@ export class MapImageLayerCompat {
     this.listMode = options.listMode ?? "show";
     this.legendEnabled = options.legendEnabled ?? true;
     this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.metadata = undefined;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client, options.sublayers) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
+    this.watchListeners = new Map();
   }
 
   public async load(): Promise<MapImageLayerCompat> {
     if (!this.loaded) {
+      this.loadStatus = "loading";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.eventBus.emit("map-image-layer.loading", { serviceId: this.serviceId, id: this.id }, this);
       this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
+      this.notifyWatchers("metadata", this.metadata);
+      this.loaded = true;
+      this.notifyWatchers("loaded", this.loaded);
+      this.loadStatus = "loaded";
+      this.notifyWatchers("loadStatus", this.loadStatus);
       this.eventBus.emit("map-image-layer.loaded", { serviceId: this.serviceId, id: this.id }, this);
     }
-    this.loaded = true;
     return this;
   }
 
@@ -79,8 +96,27 @@ export class MapImageLayerCompat {
 
   public refresh(): void {
     this.loaded = false;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "not-loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.metadata = undefined;
+    this.notifyWatchers("metadata", this.metadata);
     this.eventBus.emit("map-image-layer.refreshed", { serviceId: this.serviceId, id: this.id }, this);
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): MapImageLayerHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public exportImage(options: MapImageLayerExportOptions): Promise<unknown> {
@@ -110,22 +146,27 @@ export class MapImageLayerCompat {
 
   public setVisibility(visible: boolean): void {
     this.visible = visible;
+    this.notifyWatchers("visible", this.visible);
     this.eventBus.emit("layer.visibility-changed", { layerId: this.id, visible }, this);
   }
 
   public setOpacity(opacity: number): void {
     this.opacity = opacity;
+    this.notifyWatchers("opacity", this.opacity);
     this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
   }
 
   public setSublayers(sublayers: readonly unknown[]): void {
     this.sublayers = [...sublayers];
+    this.notifyWatchers("sublayers", this.sublayers);
     this.eventBus.emit("map-image-layer.sublayers-changed", { layerId: this.id }, this);
   }
 
   public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
     this.minScale = normalizeScale(minScale);
     this.maxScale = normalizeScale(maxScale);
+    this.notifyWatchers("minScale", this.minScale);
+    this.notifyWatchers("maxScale", this.maxScale);
     this.eventBus.emit(
       "map-image-layer.scale-range-changed",
       { layerId: this.id, minScale: this.minScale, maxScale: this.maxScale },
@@ -135,16 +176,29 @@ export class MapImageLayerCompat {
 
   public setListMode(listMode: string): void {
     this.listMode = listMode;
+    this.notifyWatchers("listMode", this.listMode);
     this.eventBus.emit("map-image-layer.list-mode-changed", { layerId: this.id, listMode }, this);
   }
 
   public setLegendEnabled(legendEnabled: boolean): void {
     this.legendEnabled = legendEnabled;
+    this.notifyWatchers("legendEnabled", this.legendEnabled);
     this.eventBus.emit(
       "map-image-layer.legend-enabled-changed",
       { layerId: this.id, legendEnabled },
       this,
     );
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

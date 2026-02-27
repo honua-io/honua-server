@@ -152,13 +152,19 @@ export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
 export type {
+  MapImageLayerHandleCompat,
   MapImageLayerIdentifyOptions,
   MapImageLayerCompatOptions,
   MapImageLayerExportOptions,
+  MapImageLayerLoadStatusCompat,
   MapImageLayerLegendOptions,
 } from "./esri-compat/map-image-layer.js";
 export { TileLayerCompat } from "./esri-compat/tile-layer.js";
-export type { TileLayerCompatOptions } from "./esri-compat/tile-layer.js";
+export type {
+  TileLayerCompatOptions,
+  TileLayerHandleCompat,
+  TileLayerLoadStatusCompat,
+} from "./esri-compat/tile-layer.js";
 export { IdentifyCompat } from "./esri-compat/identify.js";
 export type {
   IdentifyCompatLayerError,

@@ -15,6 +15,12 @@ export interface TileLayerCompatOptions {
   eventBus?: CompatEventBus;
 }
 
+export type TileLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface TileLayerHandleCompat {
+  remove(): void;
+}
+
 export class TileLayerCompat {
   public readonly url: string;
   public id: string;
@@ -26,11 +32,13 @@ export class TileLayerCompat {
   public maxScale: number;
   public listMode: string;
   public loaded: boolean;
+  public loadStatus: TileLayerLoadStatusCompat;
   public metadata: unknown;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
   private readonly baseUrl: string;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: TileLayerCompatOptions) {
     const parsed = parseMapServiceUrl(options.url);
@@ -45,17 +53,26 @@ export class TileLayerCompat {
     this.maxScale = normalizeScale(options.maxScale);
     this.listMode = options.listMode ?? "show";
     this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.metadata = undefined;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
+    this.watchListeners = new Map();
   }
 
   public async load(): Promise<TileLayerCompat> {
     if (!this.loaded) {
+      this.loadStatus = "loading";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.eventBus.emit("tile-layer.loading", { serviceId: this.serviceId, id: this.id }, this);
       this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
+      this.notifyWatchers("metadata", this.metadata);
+      this.loaded = true;
+      this.notifyWatchers("loaded", this.loaded);
+      this.loadStatus = "loaded";
+      this.notifyWatchers("loadStatus", this.loadStatus);
       this.eventBus.emit("tile-layer.loaded", { serviceId: this.serviceId, id: this.id }, this);
     }
-    this.loaded = true;
     return this;
   }
 
@@ -69,23 +86,46 @@ export class TileLayerCompat {
 
   public refresh(): void {
     this.loaded = false;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "not-loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.metadata = undefined;
+    this.notifyWatchers("metadata", this.metadata);
     this.eventBus.emit("tile-layer.refreshed", { serviceId: this.serviceId, id: this.id }, this);
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): TileLayerHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public setVisibility(visible: boolean): void {
     this.visible = visible;
+    this.notifyWatchers("visible", this.visible);
     this.eventBus.emit("layer.visibility-changed", { layerId: this.id, visible }, this);
   }
 
   public setOpacity(opacity: number): void {
     this.opacity = opacity;
+    this.notifyWatchers("opacity", this.opacity);
     this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
   }
 
   public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
     this.minScale = normalizeScale(minScale);
     this.maxScale = normalizeScale(maxScale);
+    this.notifyWatchers("minScale", this.minScale);
+    this.notifyWatchers("maxScale", this.maxScale);
     this.eventBus.emit(
       "tile-layer.scale-range-changed",
       { layerId: this.id, minScale: this.minScale, maxScale: this.maxScale },
@@ -95,11 +135,23 @@ export class TileLayerCompat {
 
   public setListMode(listMode: string): void {
     this.listMode = listMode;
+    this.notifyWatchers("listMode", this.listMode);
     this.eventBus.emit("tile-layer.list-mode-changed", { layerId: this.id, listMode }, this);
   }
 
   public getTileUrl(level: number, row: number, col: number): string {
     return `${this.baseUrl}/rest/services/${encodeURIComponent(this.serviceId)}/MapServer/tile/${level}/${row}/${col}`;
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
