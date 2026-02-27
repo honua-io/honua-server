@@ -28,11 +28,22 @@ export type {
   FeatureLayerQueryCountOptions,
 } from "./esri-compat/feature-layer.js";
 export { FeatureCompat } from "./esri-compat/feature.js";
-export type { FeatureCompatOptions } from "./esri-compat/feature.js";
+export type {
+  FeatureCompatOptions,
+  FeatureHandleCompat,
+  FeatureLoadStatusCompat,
+} from "./esri-compat/feature.js";
 export { FeatureFormCompat } from "./esri-compat/feature-form.js";
-export type { FeatureFormCompatOptions, FeatureFormSubmitResultCompat } from "./esri-compat/feature-form.js";
+export type {
+  FeatureFormCompatOptions,
+  FeatureFormHandleCompat,
+  FeatureFormLoadStatusCompat,
+  FeatureFormSubmitResultCompat,
+} from "./esri-compat/feature-form.js";
 export { FeatureTemplatesCompat } from "./esri-compat/feature-templates.js";
 export type {
+  FeatureTemplatesHandleCompat,
+  FeatureTemplatesLoadStatusCompat,
   FeatureTemplateItemCompat,
   FeatureTemplatesCompatOptions,
 } from "./esri-compat/feature-templates.js";
@@ -48,7 +59,11 @@ export type {
   FeatureTableStateCompat,
 } from "./esri-compat/feature-table.js";
 export { FeatureSetCompat } from "./esri-compat/feature-set.js";
-export type { FeatureSetCompatOptions } from "./esri-compat/feature-set.js";
+export type {
+  FeatureSetCompatOptions,
+  FeatureSetHandleCompat,
+  FeatureSetLoadStatusCompat,
+} from "./esri-compat/feature-set.js";
 export { ColorCompat } from "./esri-compat/color.js";
 export type { ColorCompatInput } from "./esri-compat/color.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
