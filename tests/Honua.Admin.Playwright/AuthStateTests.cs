@@ -29,7 +29,7 @@ public sealed class AuthStateTests : IClassFixture<PlaywrightFixture>
             }
 
             await page.GotoAsync(baseUrl);
-            _ = await AuthTestHelpers.IsUnauthorizedAsync(page);
+            _ = await AuthTestHelpers.IsUnauthorizedAsync(page, strict: true);
         });
     }
 }

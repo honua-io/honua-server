@@ -609,12 +609,36 @@ public sealed class WebAppFixture : IAsyncLifetime
               AND table_name = 'data_connections'
             LIMIT 1
             """;
+        const int maxAttempts = 3;
 
-        await using var connection = await connectionProvider.OpenConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
-        return result != null && result != DBNull.Value;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await using var connection = await connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
+                await using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.CommandTimeout = 10;
+                var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
+                return result != null && result != DBNull.Value;
+            }
+            catch (Exception ex) when (IsTransientSecureConnectionCheckFailure(ex))
+            {
+                if (attempt == maxAttempts)
+                {
+                    return false;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt)).ConfigureAwait(false);
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsTransientSecureConnectionCheckFailure(Exception ex)
+    {
+        return ex is TimeoutException or TaskCanceledException or NpgsqlException;
     }
 
     private Task SeedSchemaAsync(string schemaName)
