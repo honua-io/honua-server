@@ -244,10 +244,14 @@ export type {
 export { DirectionsCompat } from "./esri-compat/directions.js";
 export type {
   DirectionsCompatOptions,
+  DirectionsHandleCompat,
+  DirectionsLoadStatusCompat,
   DirectionsSolveSummaryCompat,
 } from "./esri-compat/directions.js";
 export { CoordinateConversionCompat } from "./esri-compat/coordinate-conversion.js";
 export type {
+  CoordinateConversionHandleCompat,
+  CoordinateConversionLoadStatusCompat,
   CoordinateConversionCompatOptions,
   CoordinateConversionResultCompat,
   CoordinateFormatCompat,
