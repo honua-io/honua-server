@@ -111,6 +111,23 @@ jobs:
       - name: Demo target migration gate
         run: npm run gate:migration:demo-target
 
+      - name: Incident demo codemod pipeline report
+        run: npm run demo:migration:incident
+
+      - name: Incident demo live migration pipeline (optional)
+        env:
+          HONUA_DEMO_TARGET_BASE_URL: ${{ secrets.HONUA_DEMO_TARGET_BASE_URL }}
+          HONUA_DEMO_ADMIN_API_KEY: ${{ secrets.HONUA_DEMO_ADMIN_API_KEY }}
+          HONUA_DEMO_SOURCE_SERVICE_URL: ${{ secrets.HONUA_DEMO_SOURCE_SERVICE_URL }}
+          HONUA_DEMO_TABLE_NAME: ${{ secrets.HONUA_DEMO_TABLE_NAME }}
+          HONUA_DEMO_LAYER_ID: ${{ secrets.HONUA_DEMO_LAYER_ID }}
+          HONUA_DEMO_SOURCE_BASE_URL: ${{ secrets.HONUA_DEMO_SOURCE_BASE_URL }}
+          HONUA_DEMO_SOURCE_SERVICE_ID: ${{ secrets.HONUA_DEMO_SOURCE_SERVICE_ID }}
+          HONUA_DEMO_TARGET_SERVICE_ID: ${{ secrets.HONUA_DEMO_TARGET_SERVICE_ID }}
+          HONUA_DEMO_SAMPLE_SIZE: ${{ vars.HONUA_DEMO_SAMPLE_SIZE }}
+          HONUA_DEMO_TIMEOUT_SECONDS: ${{ vars.HONUA_DEMO_TIMEOUT_SECONDS }}
+        run: npm run demo:migration:incident:live
+
       - name: Runtime parity matrix artifact
         run: npm run matrix:runtime
 
@@ -129,8 +146,16 @@ jobs:
           name: js-migration-artifacts
           path: |
             sdk/js/reports/demo-target-metrics.json
+            sdk/js/reports/demo-incident-codemod-report.json
             sdk/js/reports/real-sample-metrics.json
             sdk/js/reports/runtime-parity-matrix.json
+
+      - name: Upload JS live demo artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-live-demo-artifacts
+          path: sdk/js/reports/demo-incident-live-report.json
+          if-no-files-found: ignore
 
   terraform-fmt:
     name: Terraform Format Check
@@ -357,14 +382,68 @@ jobs:
             -m:1
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps chromium
           pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install chromium
-          dotnet test Honua.sln \
+
+          dotnet test tests/Honua.Admin.Tests/Honua.Admin.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
-            --logger "trx;LogFileName=all-test-results.trx" \
+            --logger "trx;LogFileName=admin-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -m:1 \
+            -- RunConfiguration.MaxCpuCount=1
+
+          dotnet test tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=admin-playwright-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1
+
+          dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=core-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1
+
+          dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=load-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1
+
+          dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=postgres-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1
+
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=server-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1
+
+          dotnet test tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=architecture-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
 
       - name: Install Python test dependencies
