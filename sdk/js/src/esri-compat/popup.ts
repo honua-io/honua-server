@@ -20,10 +20,14 @@ export interface PopupHandleCompat {
   remove(): void;
 }
 
+export type PopupLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
 export class PopupCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: PopupLoadStatusCompat;
   public visible: boolean;
   public location: unknown;
   public features: unknown[];
@@ -42,6 +46,8 @@ export class PopupCompat {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.visible = false;
     this.location = undefined;
     this.features = [];
@@ -63,6 +69,31 @@ export class PopupCompat {
     ];
 
     this.syncFromViewPopup();
+  }
+
+  public async load(): Promise<PopupCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("popup.loading", undefined, this);
+    this.syncFromViewPopup();
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("popup.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: PopupCompat) => void): Promise<PopupCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
   }
 
   public open(options: PopupOpenOptionsCompat = {}): void {

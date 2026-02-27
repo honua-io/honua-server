@@ -3,6 +3,49 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, MapViewCompat, PopupCompat } from "../src/index.js";
 
 describe("PopupCompat", () => {
+  it("supports when() and watch() for lifecycle state", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+
+    const widget = new PopupCompat({ eventBus });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const loadStatusHandle = widget.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = widget.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+
+    let callbackWidget: PopupCompat | undefined;
+    const resolved = await widget.when((popup) => {
+      callbackWidget = popup;
+    });
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+    };
+
+    await widget.load();
+
+    expect(resolved).toBe(widget);
+    expect(callbackWidget).toBe(widget);
+    expect(widget.loaded).toBe(true);
+    expect(widget.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(seenTypes).toContain("popup.loading");
+    expect(seenTypes).toContain("popup.loaded");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+  });
+
   it("syncs with MapView popup bridge over the shared event bus", () => {
     const eventBus = new CompatEventBus();
     const view = new MapViewCompat({ eventBus });

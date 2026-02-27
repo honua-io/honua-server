@@ -270,6 +270,7 @@ export { PopupCompat } from "./esri-compat/popup.js";
 export type {
   PopupCompatOptions,
   PopupHandleCompat,
+  PopupLoadStatusCompat,
   PopupOpenOptionsCompat,
 } from "./esri-compat/popup.js";
 export { PopupTemplateCompat } from "./esri-compat/popup-template.js";
