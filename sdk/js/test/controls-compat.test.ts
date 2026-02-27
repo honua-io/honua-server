@@ -15,6 +15,144 @@ import {
 } from "../src/index.js";
 
 describe("common controls compat", () => {
+  it("supports when() and watch() lifecycle state across controls", async () => {
+    const eventBus = new CompatEventBus();
+    const map = new MapCompat({ basemap: "streets", eventBus });
+    const view = new MapViewCompat({ map, eventBus, center: [0, 0], zoom: 4 });
+
+    const locate = new LocateCompat({
+      view,
+      eventBus,
+      locateProvider: async () => ({
+        coords: {
+          latitude: 21.3069,
+          longitude: -157.8583,
+        },
+      }),
+    });
+    const controls = [
+      new HomeCompat({ view, eventBus }),
+      new BasemapToggleCompat({ map, nextBasemap: "satellite", eventBus }),
+      new ScaleBarCompat({ view, eventBus }),
+      locate,
+      new CompassCompat({ view, eventBus }),
+      new ZoomCompat({ view, eventBus }),
+      new FullscreenCompat({ view, eventBus }),
+      new AttributionCompat({ eventBus }),
+    ];
+
+    const loadStatusValuesByControl = new Map<object, unknown[]>();
+    const loadedValuesByControl = new Map<object, unknown[]>();
+    const handles: { remove(): void }[] = [];
+    for (const control of controls) {
+      const loadStatusValues: unknown[] = [];
+      const loadedValues: unknown[] = [];
+      loadStatusValuesByControl.set(control, loadStatusValues);
+      loadedValuesByControl.set(control, loadedValues);
+      handles.push(
+        control.watch("loadStatus", (value: unknown) => {
+          loadStatusValues.push(value);
+        }),
+      );
+      handles.push(
+        control.watch("loaded", (value: unknown) => {
+          loadedValues.push(value);
+        }),
+      );
+
+      const widget = await control.when();
+      expect(widget).toBe(control);
+      expect(control.loaded).toBe(true);
+      expect(control.loadStatus).toBe("loaded");
+    }
+
+    for (const handle of handles) {
+      handle.remove();
+    }
+    for (const control of controls) {
+      const loadStatusValues = loadStatusValuesByControl.get(control) ?? [];
+      const loadedValues = loadedValuesByControl.get(control) ?? [];
+      expect(loadStatusValues).toEqual(["loading", "loaded"]);
+      expect(loadedValues).toEqual([true]);
+    }
+  });
+
+  it("emits watch updates for control property changes", async () => {
+    const eventBus = new CompatEventBus();
+    const map = new MapCompat({ basemap: "streets", eventBus });
+    const view = new MapViewCompat({ map, eventBus, center: [0, 0], zoom: 4 });
+
+    const locate = new LocateCompat({
+      view,
+      eventBus,
+      locateProvider: async () => ({
+        coords: {
+          latitude: 21.3069,
+          longitude: -157.8583,
+        },
+      }),
+    });
+    const compass = new CompassCompat({ view, eventBus });
+    const zoom = new ZoomCompat({ view, eventBus });
+    const fullscreen = new FullscreenCompat({ eventBus });
+    const attribution = new AttributionCompat({ eventBus });
+    const scaleBar = new ScaleBarCompat({ view, eventBus });
+
+    const positionValues: unknown[] = [];
+    const orientationValues: unknown[] = [];
+    const zoomValues: unknown[] = [];
+    const activeValues: unknown[] = [];
+    const textValues: unknown[] = [];
+    const scaleTextValues: unknown[] = [];
+
+    const positionHandle = locate.watch("lastPosition", (value) => {
+      positionValues.push(value);
+    });
+    const orientationHandle = compass.watch("orientation", (value) => {
+      orientationValues.push(value);
+    });
+    const zoomHandle = zoom.watch("zoom", (value) => {
+      zoomValues.push(value);
+    });
+    const activeHandle = fullscreen.watch("active", (value) => {
+      activeValues.push(value);
+    });
+    const textHandle = attribution.watch("text", (value) => {
+      textValues.push(value);
+    });
+    const scaleTextHandle = scaleBar.watch("text", (value) => {
+      scaleTextValues.push(value);
+    });
+
+    await locate.locate();
+    compass.rotateTo(45);
+    zoom.zoomIn();
+    fullscreen.enter();
+    fullscreen.exit();
+    attribution.addAttribution("Source A");
+    scaleBar.refresh();
+
+    positionHandle.remove();
+    orientationHandle.remove();
+    zoomHandle.remove();
+    activeHandle.remove();
+    textHandle.remove();
+    scaleTextHandle.remove();
+
+    await locate.locate();
+    compass.rotateTo(60);
+    zoom.zoomIn();
+    fullscreen.enter();
+    attribution.addAttribution("Source B");
+
+    expect(positionValues).toHaveLength(1);
+    expect(orientationValues).toEqual([45]);
+    expect(zoomValues).toEqual([5]);
+    expect(activeValues).toEqual([true, false]);
+    expect(textValues).toEqual(["Source A"]);
+    expect(scaleTextValues).not.toEqual([]);
+  });
+
   it("HomeCompat resets view center/zoom", async () => {
     const eventBus = new CompatEventBus();
     const view = new MapViewCompat({ eventBus, center: [0, 0], zoom: 4 });

@@ -71,6 +71,8 @@ export type {
   AttributionCompatOptions,
   BasemapToggleCompatOptions,
   CompassCompatOptions,
+  ControlHandleCompat,
+  ControlLoadStatusCompat,
   FullscreenCompatOptions,
   HomeCompatOptions,
   HomeViewpointCompat,

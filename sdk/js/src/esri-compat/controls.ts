@@ -12,19 +12,70 @@ export interface HomeViewpointCompat {
   zoom?: number;
 }
 
+export type ControlLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface ControlHandleCompat {
+  remove(): void;
+}
+
 export class HomeCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public viewpoint: HomeViewpointCompat;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: HomeCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.viewpoint = options.viewpoint ?? {
       center: extractViewCenter(options.view),
       zoom: extractViewZoom(options.view),
+    };
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<HomeCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("home.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("home.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: HomeCompat) => void): Promise<HomeCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
     };
   }
 
@@ -48,7 +99,23 @@ export class HomeCompat {
       center: extractViewCenter(this.view),
       zoom: extractViewZoom(this.view),
     };
+    this.notifyWatchers("viewpoint", this.viewpoint);
     this.eventBus.emit("home.reset", this.viewpoint, this);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
@@ -65,10 +132,13 @@ export class BasemapToggleCompat {
   public readonly map: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public activeBasemap: unknown;
   public nextBasemap: unknown;
 
   private readonly subscriptions: CompatEventSubscription[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: BasemapToggleCompatOptions = {}) {
     this.view = options.view;
@@ -76,13 +146,56 @@ export class BasemapToggleCompat {
     this.container = options.container;
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.activeBasemap = extractMapBasemap(this.map);
     this.nextBasemap = options.nextBasemap;
+    this.watchListeners = new Map();
     this.subscriptions = [
       this.eventBus.on("map.basemap-changed", (event) => {
         this.activeBasemap = extractPayloadBasemap(event.payload);
+        this.notifyWatchers("activeBasemap", this.activeBasemap);
       }),
     ];
+  }
+
+  public async load(): Promise<BasemapToggleCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("basemap-toggle.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("basemap-toggle.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: BasemapToggleCompat) => void): Promise<BasemapToggleCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public toggle(): unknown {
@@ -94,7 +207,9 @@ export class BasemapToggleCompat {
     const previous = currentMap.basemap;
     setMapBasemap(currentMap, this.nextBasemap, this.eventBus, this);
     this.activeBasemap = extractMapBasemap(currentMap);
+    this.notifyWatchers("activeBasemap", this.activeBasemap);
     this.nextBasemap = previous;
+    this.notifyWatchers("nextBasemap", this.nextBasemap);
     this.eventBus.emit(
       "basemap.toggle",
       {
@@ -109,6 +224,18 @@ export class BasemapToggleCompat {
   public destroy(): void {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.remove();
+    }
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
     }
   }
 }
@@ -126,19 +253,25 @@ export class ScaleBarCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public unit: ScaleBarUnitCompat;
   public scale: number | undefined;
   public text: string;
 
   private readonly subscriptions: CompatEventSubscription[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: ScaleBarCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.unit = options.unit ?? "metric";
     this.scale = undefined;
     this.text = "";
+    this.watchListeners = new Map();
     this.subscriptions = [
       this.eventBus.on("view.go-to", () => {
         this.refresh();
@@ -147,17 +280,61 @@ export class ScaleBarCompat {
     this.refresh();
   }
 
+  public async load(): Promise<ScaleBarCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("scalebar.loading", undefined, this);
+    this.refresh();
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("scalebar.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: ScaleBarCompat) => void): Promise<ScaleBarCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
   public refresh(): string {
     const zoom = extractViewZoom(this.view);
     if (zoom === undefined) {
       this.scale = undefined;
+      this.notifyWatchers("scale", this.scale);
       this.text = "";
+      this.notifyWatchers("text", this.text);
       return this.text;
     }
 
     const mapScale = 591657527.591555 / Math.pow(2, zoom);
     this.scale = mapScale;
+    this.notifyWatchers("scale", this.scale);
     this.text = buildScaleBarText(mapScale, this.unit);
+    this.notifyWatchers("text", this.text);
     this.eventBus.emit("scalebar.updated", { scale: mapScale, text: this.text, unit: this.unit }, this);
     return this.text;
   }
@@ -165,6 +342,18 @@ export class ScaleBarCompat {
   public destroy(): void {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.remove();
+    }
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
     }
   }
 }
@@ -218,16 +407,63 @@ export class LocateCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public readonly zoom: number | undefined;
+  public lastPosition: LocatePositionCompat | undefined;
 
   private readonly locateProvider: () => Promise<LocatePositionCompat>;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: LocateCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.zoom = options.zoom;
+    this.lastPosition = undefined;
     this.locateProvider = options.locateProvider ?? getDefaultLocateProvider();
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<LocateCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("locate.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("locate.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: LocateCompat) => void): Promise<LocateCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public async locate(): Promise<LocatePositionCompat> {
@@ -235,6 +471,8 @@ export class LocateCompat {
 
     try {
       const position = await this.locateProvider();
+      this.lastPosition = position;
+      this.notifyWatchers("lastPosition", this.lastPosition);
       const center: [number, number] = [position.coords.longitude, position.coords.latitude];
       const target = {
         center,
@@ -260,24 +498,85 @@ export class LocateCompat {
       throw error;
     }
   }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
+  }
 }
 
 export class CompassCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public orientation: number;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: CompassCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.orientation = extractViewRotation(options.view) ?? 0;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<CompassCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("compass.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("compass.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: CompassCompat) => void): Promise<CompassCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public rotateTo(rotation: number): number {
     const next = Number.isFinite(rotation) ? rotation : this.orientation;
     this.orientation = next;
+    this.notifyWatchers("orientation", this.orientation);
     if (isRecord(this.view)) {
       this.view.rotation = next;
     }
@@ -294,19 +593,79 @@ export class CompassCompat {
   public goToNorth(): number {
     return this.reset();
   }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
+  }
 }
 
 export class ZoomCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public readonly layout: "vertical" | "horizontal";
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: ZoomCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.layout = options.layout ?? "vertical";
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<ZoomCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("zoom.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("zoom.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: ZoomCompat) => void): Promise<ZoomCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public zoomIn(step = 1): number | undefined {
@@ -324,8 +683,24 @@ export class ZoomCompat {
 
     const next = this.view.zoom + delta;
     this.view.zoom = next;
+    this.notifyWatchers("zoom", next);
     this.eventBus.emit("zoom.changed", { zoom: next, delta }, this);
     return next;
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
@@ -334,14 +709,59 @@ export class FullscreenCompat {
   public readonly container: unknown;
   public readonly element: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public active: boolean;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: FullscreenCompatOptions = {}) {
     this.view = options.view;
     this.container = options.container;
     this.element = options.element;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.active = false;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<FullscreenCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("fullscreen.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("fullscreen.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: FullscreenCompat) => void): Promise<FullscreenCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public enter(): void {
@@ -349,6 +769,7 @@ export class FullscreenCompat {
       return;
     }
     this.active = true;
+    this.notifyWatchers("active", this.active);
     this.eventBus.emit("fullscreen.changed", { active: true }, this);
   }
 
@@ -357,6 +778,7 @@ export class FullscreenCompat {
       return;
     }
     this.active = false;
+    this.notifyWatchers("active", this.active);
     this.eventBus.emit("fullscreen.changed", { active: false }, this);
   }
 
@@ -369,6 +791,21 @@ export class FullscreenCompat {
     }
     return this.active;
   }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
+  }
 }
 
 export class AttributionCompat {
@@ -376,8 +813,11 @@ export class AttributionCompat {
   public readonly map: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: ControlLoadStatusCompat;
   public itemDelimiter: string;
   public attributions: string[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: AttributionCompatOptions = {}) {
     this.view = options.view;
@@ -385,8 +825,50 @@ export class AttributionCompat {
     this.container = options.container;
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.itemDelimiter = options.itemDelimiter ?? " | ";
     this.attributions = options.attributions ? [...options.attributions] : [];
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<AttributionCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("attribution.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("attribution.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (widget: AttributionCompat) => void): Promise<AttributionCompat> {
+    const widget = await this.load();
+    if (callback) {
+      callback(widget);
+    }
+    return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public addAttribution(value: string): void {
@@ -394,6 +876,8 @@ export class AttributionCompat {
       return;
     }
     this.attributions.push(value);
+    this.notifyWatchers("attributions", this.attributions);
+    this.notifyWatchers("text", this.getText());
     this.eventBus.emit("attribution.updated", { count: this.attributions.length }, this);
   }
 
@@ -403,6 +887,8 @@ export class AttributionCompat {
       return false;
     }
     this.attributions.splice(index, 1);
+    this.notifyWatchers("attributions", this.attributions);
+    this.notifyWatchers("text", this.getText());
     this.eventBus.emit("attribution.updated", { count: this.attributions.length }, this);
     return true;
   }
@@ -412,6 +898,21 @@ export class AttributionCompat {
       return "";
     }
     return this.attributions.join(this.itemDelimiter);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
