@@ -30,6 +30,10 @@ export class WebMapCompat extends MapCompat {
     return map;
   }
 
+  public watch(propertyName: string, listener: (value: unknown) => void): WebMapHandleCompat {
+    return super.watch(propertyName, listener);
+  }
+
   public setPortalItem(portalItem: unknown): void {
     super.setPortalItem(portalItem);
     this.eventBus.emit("web-map.portal-item-changed", { portalItem }, this);

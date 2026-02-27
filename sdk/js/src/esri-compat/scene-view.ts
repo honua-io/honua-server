@@ -41,6 +41,10 @@ export class SceneViewCompat extends MapViewCompat {
     return view;
   }
 
+  public watch(propertyName: string, listener: (value: unknown) => void): SceneViewHandleCompat {
+    return super.watch(propertyName, listener);
+  }
+
   public setViewingMode(viewingMode: "global" | "local"): void {
     this.viewingMode = viewingMode;
     this.notifyWatchers("viewingMode", this.viewingMode);
