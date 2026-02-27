@@ -147,6 +147,7 @@ describe("MapImageLayerCompat", () => {
       url: "https://example.test/rest/services/default/MapServer",
       id: "default-map",
       title: "Default Map",
+      sublayers: [{ id: 1, title: "Parcels" }],
       minScale: 12000,
       maxScale: 0,
       listMode: "hide",
@@ -195,15 +196,24 @@ describe("MapImageLayerCompat", () => {
       }),
     ).toEqual({ results: [] });
 
+    expect(layer.allSublayers).toEqual([{ id: 1, title: "Parcels" }]);
+    expect(layer.findSublayerById(1)).toEqual({ id: 1, title: "Parcels" });
+    expect(layer.findSublayerById("1")).toEqual({ id: 1, title: "Parcels" });
+    expect(layer.findSublayerById("missing")).toBeUndefined();
+
     layer.setVisibility(false);
     layer.setOpacity(0.5);
-    layer.setSublayers([{ id: 1 }]);
+    layer.setSublayers([{ id: 2 }, { id: "5" }]);
     layer.setScaleRange(8000, 0);
     layer.setListMode("show");
     layer.setLegendEnabled(true);
     expect(layer.visible).toBe(false);
     expect(layer.opacity).toBe(0.5);
-    expect(layer.sublayers).toEqual([{ id: 1 }]);
+    expect(layer.sublayers).toEqual([{ id: 2 }, { id: "5" }]);
+    expect(layer.allSublayers).toEqual([{ id: 2 }, { id: "5" }]);
+    expect(layer.findSublayerById(2)).toEqual({ id: 2 });
+    expect(layer.findSublayerById(5)).toEqual({ id: "5" });
+    expect(layer.findSublayerById(999)).toBeUndefined();
     expect(layer.id).toBe("default-map");
     expect(layer.title).toBe("Default Map");
     expect(layer.minScale).toBe(8000);

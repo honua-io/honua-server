@@ -27,6 +27,7 @@ export interface MapImageLayerExportOptions extends Omit<ExportMapRequest, "serv
 export interface MapImageLayerLegendOptions extends Omit<MapLegendRequest, "serviceId"> {}
 export interface MapImageLayerIdentifyOptions extends Omit<MapIdentifyRequest, "serviceId"> {}
 export interface MapImageLayerFindOptions extends Omit<MapFindRequest, "serviceId"> {}
+export type MapImageLayerSublayerLookupId = number | string;
 
 export type MapImageLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
 
@@ -125,6 +126,10 @@ export class MapImageLayerCompat {
     };
   }
 
+  public get allSublayers(): readonly unknown[] {
+    return [...this.sublayers];
+  }
+
   public exportImage(options: MapImageLayerExportOptions): Promise<unknown> {
     return this.client.exportMap({
       ...options,
@@ -175,6 +180,15 @@ export class MapImageLayerCompat {
     this.eventBus.emit("map-image-layer.sublayers-changed", { layerId: this.id }, this);
   }
 
+  public findSublayerById(id: MapImageLayerSublayerLookupId): unknown {
+    const expectedId = normalizeSublayerId(id);
+    if (expectedId === undefined) {
+      return undefined;
+    }
+
+    return this.sublayers.find((sublayer) => extractSublayerId(sublayer) === expectedId);
+  }
+
   public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
     this.minScale = normalizeScale(minScale);
     this.maxScale = normalizeScale(maxScale);
@@ -220,4 +234,23 @@ function normalizeScale(scale: number | undefined): number {
     return 0;
   }
   return Math.max(0, Math.trunc(scale));
+}
+
+function normalizeSublayerId(id: MapImageLayerSublayerLookupId): number | undefined {
+  const parsed = Number(id);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return Math.trunc(parsed);
+}
+
+function extractSublayerId(sublayer: unknown): number | undefined {
+  if (typeof sublayer !== "object" || sublayer === null) {
+    return undefined;
+  }
+  const id = (sublayer as { id?: unknown }).id;
+  if (id === undefined) {
+    return undefined;
+  }
+  return normalizeSublayerId(id as MapImageLayerSublayerLookupId);
 }

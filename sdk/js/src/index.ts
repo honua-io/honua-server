@@ -291,6 +291,7 @@ export type {
   MapImageLayerExportOptions,
   MapImageLayerLoadStatusCompat,
   MapImageLayerLegendOptions,
+  MapImageLayerSublayerLookupId,
 } from "./esri-compat/map-image-layer.js";
 export { TileLayerCompat } from "./esri-compat/tile-layer.js";
 export type {
