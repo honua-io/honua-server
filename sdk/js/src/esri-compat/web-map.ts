@@ -15,6 +15,7 @@ export class WebMapCompat extends MapCompat {
   }
 
   public async load(): Promise<WebMapCompat> {
+    await super.load();
     this.loaded = true;
     return this;
   }

@@ -3,6 +3,34 @@ import { describe, expect, it } from "vitest";
 import { BasemapCompat, CompatEventBus } from "../src/index.js";
 
 describe("BasemapCompat", () => {
+  it("supports basemap load/when lifecycle state", async () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const basemap = new BasemapCompat({
+      id: "streets",
+      eventBus,
+    });
+
+    expect(basemap.loaded).toBe(false);
+    expect(basemap.loadStatus).toBe("not-loaded");
+
+    let callbackBasemap: BasemapCompat | undefined;
+    const loadedBasemap = await basemap.when((readyBasemap) => {
+      callbackBasemap = readyBasemap;
+    });
+
+    expect(loadedBasemap).toBe(basemap);
+    expect(callbackBasemap).toBe(basemap);
+    expect(basemap.loaded).toBe(true);
+    expect(basemap.loadStatus).toBe("loaded");
+    expect(eventTypes).toContain("basemap.loading");
+    expect(eventTypes).toContain("basemap.loaded");
+  });
+
   it("supports constructing and mutating basemap layers with event notifications", () => {
     const eventBus = new CompatEventBus();
     const seenTypes: string[] = [];

@@ -3,6 +3,34 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, MapCompat, MapViewCompat } from "../src/index.js";
 
 describe("MapCompat", () => {
+  it("supports map load/when lifecycle state", async () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const map = new MapCompat({
+      eventBus,
+      layers: [{ id: "layer-1" }],
+    });
+
+    expect(map.loaded).toBe(false);
+    expect(map.loadStatus).toBe("not-loaded");
+
+    let callbackMap: MapCompat | undefined;
+    const loadedMap = await map.when((readyMap) => {
+      callbackMap = readyMap;
+    });
+
+    expect(loadedMap).toBe(map);
+    expect(callbackMap).toBe(map);
+    expect(map.loaded).toBe(true);
+    expect(map.loadStatus).toBe("loaded");
+    expect(eventTypes).toContain("map.loading");
+    expect(eventTypes).toContain("map.loaded");
+  });
+
   it("tracks layers through add and remove", () => {
     const layerA = { id: "a" };
     const layerB = { id: "b" };

@@ -10,12 +10,16 @@ export interface MapCompatOptions {
   eventBus?: CompatEventBus;
 }
 
+export type MapLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
 export class MapCompat {
   public basemap: unknown;
   public ground: unknown;
   public tables: unknown[];
   public portalItem: unknown;
   public spatialReference: unknown;
+  public loaded: boolean;
+  public loadStatus: MapLoadStatusCompat;
   public readonly eventBus: CompatEventBus;
   private readonly layersInternal: unknown[];
 
@@ -25,8 +29,31 @@ export class MapCompat {
     this.tables = Array.isArray(options.tables) ? [...options.tables] : [];
     this.portalItem = options.portalItem;
     this.spatialReference = options.spatialReference;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.layersInternal = Array.isArray(options.layers) ? [...options.layers] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.layers) ?? new CompatEventBus();
+  }
+
+  public async load(): Promise<MapCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.eventBus.emit("map.loading", { layerCount: this.layersInternal.length }, this);
+    this.loaded = true;
+    this.loadStatus = "loaded";
+    this.eventBus.emit("map.loaded", { layerCount: this.layersInternal.length }, this);
+    return this;
+  }
+
+  public async when(callback?: (map: MapCompat) => void): Promise<MapCompat> {
+    const map = await this.load();
+    if (callback) {
+      callback(map);
+    }
+    return map;
   }
 
   public get layers(): readonly unknown[] {

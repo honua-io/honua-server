@@ -80,7 +80,7 @@ export type {
 export { BasemapGalleryCompat } from "./esri-compat/basemap-gallery.js";
 export type { BasemapGalleryCompatOptions } from "./esri-compat/basemap-gallery.js";
 export { BasemapCompat } from "./esri-compat/basemap.js";
-export type { BasemapCompatOptions } from "./esri-compat/basemap.js";
+export type { BasemapCompatOptions, BasemapLoadStatusCompat } from "./esri-compat/basemap.js";
 export { BasemapLayerListCompat } from "./esri-compat/basemap-layer-list.js";
 export type { BasemapLayerListCompatOptions } from "./esri-compat/basemap-layer-list.js";
 export { BookmarksCompat } from "./esri-compat/bookmarks.js";
@@ -165,7 +165,7 @@ export type {
 export { OAuthInfoCompat } from "./esri-compat/oauth-info.js";
 export type { OAuthInfoCompatOptions } from "./esri-compat/oauth-info.js";
 export { MapCompat } from "./esri-compat/map.js";
-export type { MapCompatOptions } from "./esri-compat/map.js";
+export type { MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
 export type {
   MapImageLayerIdentifyOptions,
