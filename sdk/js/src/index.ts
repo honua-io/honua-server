@@ -41,6 +41,7 @@ export { FeatureTableHighlightIdsCompat } from "./esri-compat/feature-table.js";
 export type {
   FeatureTableCompatOptions,
   FeatureTableHighlightIdsChangeEventCompat,
+  FeatureTableHandleCompat,
   FeatureTableHighlightIdsHandleCompat,
   FeatureTableQueryRelatedRecordsOptions,
   FeatureTableRowCompat,
