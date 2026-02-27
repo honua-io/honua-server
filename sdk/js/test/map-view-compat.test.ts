@@ -680,6 +680,45 @@ describe("MapViewCompat", () => {
     ]);
   });
 
+  it("supports takeScreenshot helpers and emits screenshot events", async () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const view = new MapViewCompat({ eventBus });
+    const screenshotEvents: unknown[] = [];
+    view.on("take-screenshot", (event) => {
+      screenshotEvents.push(event);
+    });
+
+    const screenshot = await view.takeScreenshot({
+      width: 320,
+      height: 200,
+      format: "jpg",
+      quality: 80,
+      area: { x: 10, y: 20, width: 100, height: 120 },
+    });
+
+    expect(screenshot.width).toBe(320);
+    expect(screenshot.height).toBe(200);
+    expect(screenshot.data).toBeInstanceOf(Uint8ClampedArray);
+    expect(screenshot.data.length).toBe(320 * 200 * 4);
+    expect(screenshot.dataUrl.startsWith("data:image/jpeg;base64,")).toBe(true);
+    expect(eventTypes).toContain("view.screenshot");
+    expect(screenshotEvents).toEqual([
+      {
+        width: 320,
+        height: 200,
+        format: "jpg",
+        quality: 80,
+        area: { x: 10, y: 20, width: 100, height: 120 },
+        ignoreBackground: undefined,
+      },
+    ]);
+  });
+
   it("publishes popup/goTo/layer-view/destroy events to the shared event bus", async () => {
     const eventBus = new CompatEventBus();
     const events: string[] = [];

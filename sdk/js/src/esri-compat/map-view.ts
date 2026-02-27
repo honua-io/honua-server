@@ -56,6 +56,29 @@ export interface MapViewGoToOptions {
   easing?: string;
 }
 
+export interface MapViewTakeScreenshotArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface MapViewTakeScreenshotOptions {
+  width?: number;
+  height?: number;
+  format?: "png" | "jpg" | "jpeg";
+  quality?: number;
+  area?: MapViewTakeScreenshotArea;
+  ignoreBackground?: boolean;
+}
+
+export interface MapViewTakeScreenshotResult {
+  data: Uint8ClampedArray;
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 export interface MapViewHandle {
   remove(): void;
 }
@@ -787,6 +810,33 @@ export class MapViewCompat {
     return this;
   }
 
+  public async takeScreenshot(
+    options: MapViewTakeScreenshotOptions = {},
+  ): Promise<MapViewTakeScreenshotResult> {
+    const width = normalizeScreenshotDimension(options.width, 1024);
+    const height = normalizeScreenshotDimension(options.height, 768);
+    const format = normalizeScreenshotFormat(options.format);
+    const mimeType = format === "jpg" ? "image/jpeg" : "image/png";
+    const result: MapViewTakeScreenshotResult = {
+      data: new Uint8ClampedArray(width * height * 4),
+      dataUrl: `data:${mimeType};base64,`,
+      width,
+      height,
+    };
+
+    const payload = {
+      width,
+      height,
+      format,
+      quality: options.quality,
+      area: options.area,
+      ignoreBackground: options.ignoreBackground,
+    };
+    this.eventBus.emit("view.screenshot", payload, this);
+    this.emit("take-screenshot", payload);
+    return result;
+  }
+
   public openPopup(options: MapViewPopupOpenOptions = {}): void {
     this.popup.open(options);
   }
@@ -1221,6 +1271,22 @@ function extractPointFromRecord(
 
 function normalizeFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeScreenshotDimension(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(1, Math.trunc(value));
+}
+
+function normalizeScreenshotFormat(
+  format: MapViewTakeScreenshotOptions["format"],
+): "png" | "jpg" {
+  if (format === "jpg" || format === "jpeg") {
+    return "jpg";
+  }
+  return "png";
 }
 
 function createBoundsFromPoint(x: number, y: number, spatialReference?: unknown): MapViewExtentBounds {
