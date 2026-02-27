@@ -3,6 +3,81 @@ import { describe, expect, it } from "vitest";
 import { CompatEventBus, LegendCompat } from "../src/index.js";
 
 describe("LegendCompat", () => {
+  it("supports when() and watch() for load and item updates", async () => {
+    const eventBus = new CompatEventBus();
+    const seenTypes: string[] = [];
+    eventBus.onAny((event) => {
+      seenTypes.push(event.type);
+    });
+
+    const layer = {
+      id: "layer-1",
+      title: "Layer 1",
+      getLegend: async () => ({
+        layers: [
+          {
+            layerId: 0,
+            layerName: "Layer 1",
+            legend: [{ label: "Entry A" }],
+          },
+        ],
+      }),
+    };
+
+    const legend = new LegendCompat({
+      eventBus,
+      layers: [layer],
+      autoRefresh: false,
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const itemCounts: number[] = [];
+    const loadStatusHandle = legend.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = legend.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const itemsHandle = legend.watch("items", (value) => {
+      if (Array.isArray(value)) {
+        itemCounts.push(value.length);
+      }
+    });
+
+    let callbackWidget: LegendCompat | undefined;
+    const widget = await legend.when((resolvedWidget) => {
+      callbackWidget = resolvedWidget;
+    });
+
+    await legend.refresh();
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    itemsHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      itemCounts: itemCounts.length,
+    };
+    await legend.refresh();
+
+    expect(widget).toBe(legend);
+    expect(callbackWidget).toBe(legend);
+    expect(legend.loaded).toBe(true);
+    expect(legend.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(itemCounts).toEqual([1, 1]);
+    expect(seenTypes).toContain("legend.loading");
+    expect(seenTypes).toContain("legend.loaded");
+    expect(seenTypes).toContain("legend.updated");
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(itemCounts).toHaveLength(watchSnapshot.itemCounts);
+  });
+
   it("builds legend entries from visible layers by default", async () => {
     const layerVisible = {
       id: "visible",

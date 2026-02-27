@@ -46,6 +46,8 @@ export interface LayerListHandleCompat {
   remove(): void;
 }
 
+export type LayerListLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
 interface LayerListEventPayloadByType {
   "trigger-action": LayerListTriggerActionEventCompat;
   updated: LayerListUpdatedEventCompat;
@@ -60,11 +62,14 @@ export class LayerListCompat {
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly includeHidden: boolean;
+  public loaded: boolean;
+  public loadStatus: LayerListLoadStatusCompat;
   public items: LayerListItemCompat[];
 
   private readonly autoRefresh: boolean;
   private readonly listItemCreatedFunction: ((event: LayerListListItemCreatedEventCompat) => void) | undefined;
   private readonly listenersByType: Map<LayerListEventTypeCompat, Set<LayerListListenerCompat>>;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private subscriptions: CompatEventSubscription[];
 
   public constructor(options: LayerListCompatOptions = {}) {
@@ -74,10 +79,13 @@ export class LayerListCompat {
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(this.view, this.map) ?? new CompatEventBus();
     this.includeHidden = options.includeHidden ?? false;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.autoRefresh = options.autoRefresh ?? true;
     this.listItemCreatedFunction = options.listItemCreatedFunction;
     this.items = [];
     this.listenersByType = new Map();
+    this.watchListeners = new Map();
     this.subscriptions = [];
 
     if (this.autoRefresh) {
@@ -95,7 +103,19 @@ export class LayerListCompat {
   }
 
   public async load(): Promise<LayerListCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("layer-list.loading", undefined, this);
     this.refresh();
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("layer-list.loaded", { itemCount: this.items.length }, this);
     return this;
   }
 
@@ -105,6 +125,21 @@ export class LayerListCompat {
       callback(widget);
     }
     return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): LayerListHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+
+    listeners.add(listener);
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public refresh(): readonly LayerListItemCompat[] {
@@ -118,6 +153,7 @@ export class LayerListCompat {
       }
     }
 
+    this.notifyWatchers("items", this.items);
     const updateEvent: LayerListUpdatedEventCompat = { itemCount: this.items.length };
     this.eventBus.emit("layer-list.updated", updateEvent, this);
     this.emit("updated", updateEvent);
@@ -147,6 +183,7 @@ export class LayerListCompat {
     }
 
     item.actionsSections = normalizeActionSections(actionsSections);
+    this.notifyWatchers("items", this.items);
     const updateEvent: LayerListUpdatedEventCompat = { itemCount: this.items.length };
     this.eventBus.emit("layer-list.updated", updateEvent, this);
     this.emit("updated", updateEvent);
@@ -200,6 +237,7 @@ export class LayerListCompat {
       subscription.remove();
     }
     this.listenersByType.clear();
+    this.watchListeners.clear();
   }
 
   private findLayer(layerOrId: unknown | string): unknown {
@@ -229,6 +267,17 @@ export class LayerListCompat {
       } catch {
         // Listener errors should not break widget compatibility flow.
       }
+    }
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
     }
   }
 }

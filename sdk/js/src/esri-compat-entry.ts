@@ -211,15 +211,18 @@ export type {
   LayerListCompatOptions,
   LayerListHandleCompat,
   LayerListItemCompat,
+  LayerListLoadStatusCompat,
   LayerListListItemCreatedEventCompat,
   LayerListTriggerActionEventCompat,
   LayerListUpdatedEventCompat,
 } from "./esri-compat/layer-list.js";
 export { LegendCompat } from "./esri-compat/legend.js";
 export type {
+  LegendHandleCompat,
   LegendCompatOptions,
   LegendItemCompat,
   LegendLayerGroupCompat,
+  LegendLoadStatusCompat,
 } from "./esri-compat/legend.js";
 export {
   MapViewCompat,

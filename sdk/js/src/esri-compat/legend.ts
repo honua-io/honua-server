@@ -26,16 +26,25 @@ export interface LegendLayerGroupCompat {
   entries: LegendItemCompat[];
 }
 
+export type LegendLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface LegendHandleCompat {
+  remove(): void;
+}
+
 export class LegendCompat {
   public readonly view: unknown;
   public readonly map: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public readonly includeHidden: boolean;
+  public loaded: boolean;
+  public loadStatus: LegendLoadStatusCompat;
   public items: LegendLayerGroupCompat[];
 
   private readonly explicitLayers: readonly unknown[] | undefined;
   private readonly autoRefresh: boolean;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private subscriptions: CompatEventSubscription[];
 
   public constructor(options: LegendCompatOptions = {}) {
@@ -46,8 +55,11 @@ export class LegendCompat {
     this.eventBus =
       options.eventBus ?? resolveCompatEventBus(this.view, this.map, options.layers) ?? new CompatEventBus();
     this.includeHidden = options.includeHidden ?? false;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.autoRefresh = options.autoRefresh ?? true;
     this.items = [];
+    this.watchListeners = new Map();
     this.subscriptions = [];
 
     if (this.autoRefresh) {
@@ -66,7 +78,19 @@ export class LegendCompat {
   }
 
   public async load(): Promise<LegendCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("legend.loading", undefined, this);
     await this.refresh();
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("legend.loaded", { layerCount: this.items.length }, this);
     return this;
   }
 
@@ -76,6 +100,21 @@ export class LegendCompat {
       callback(widget);
     }
     return widget;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): LegendHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+
+    listeners.add(listener);
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public async refresh(): Promise<readonly LegendLayerGroupCompat[]> {
@@ -99,6 +138,7 @@ export class LegendCompat {
     }
 
     this.items = groups;
+    this.notifyWatchers("items", this.items);
     this.eventBus.emit("legend.updated", { layerCount: groups.length }, this);
     return this.items;
   }
@@ -107,6 +147,7 @@ export class LegendCompat {
     for (const subscription of this.subscriptions.splice(0)) {
       subscription.remove();
     }
+    this.watchListeners.clear();
   }
 
   private resolveLegendLayers(): unknown[] {
@@ -115,6 +156,17 @@ export class LegendCompat {
     }
 
     return getRootLayers(this.map);
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
