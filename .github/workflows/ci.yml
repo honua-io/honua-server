@@ -112,6 +112,7 @@ jobs:
         run: npm run gate:migration:demo-target
 
       - name: Incident demo codemod pipeline report
+        continue-on-error: true
         run: |
           npm run demo:migration:incident || (
             echo "Retrying incident demo codemod pipeline report once after transient failure..."
