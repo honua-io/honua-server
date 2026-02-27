@@ -1,10 +1,64 @@
 export type ColorCompatInput = string | number[] | Record<string, unknown>;
 
+export type ColorLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface ColorHandleCompat {
+  remove(): void;
+}
+
 export class ColorCompat {
-  private readonly value: ColorCompatInput;
+  public loaded: boolean;
+  public loadStatus: ColorLoadStatusCompat;
+  private value: ColorCompatInput;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(input: ColorCompatInput = [0, 0, 0, 1]) {
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.value = normalizeInput(input);
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<ColorCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    return this;
+  }
+
+  public async when(callback?: (color: ColorCompat) => void): Promise<ColorCompat> {
+    const color = await this.load();
+    if (callback) {
+      callback(color);
+    }
+    return color;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ColorHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
+  public set(input: ColorCompatInput): void {
+    this.value = normalizeInput(input);
+    this.notifyWatchers("value", this.toJSON());
   }
 
   public clone(): ColorCompat {
@@ -43,6 +97,21 @@ export class ColorCompat {
       return `rgba(${r}, ${g}, ${b}, ${a})`;
     }
     return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

@@ -19,7 +19,15 @@ export interface ClassBreaksRendererCompatOptions {
   classBreakInfos?: ClassBreakInfoCompat[];
 }
 
+export type ClassBreaksRendererLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface ClassBreaksRendererHandleCompat {
+  remove(): void;
+}
+
 export class ClassBreaksRendererCompat {
+  public loaded: boolean;
+  public loadStatus: ClassBreaksRendererLoadStatusCompat;
   public field: string | undefined;
   public normalizationField: string | undefined;
   public normalizationTotal: number | undefined;
@@ -30,8 +38,11 @@ export class ClassBreaksRendererCompat {
   public valueExpression: string | undefined;
   public valueExpressionTitle: string | undefined;
   public classBreakInfos: ClassBreakInfoCompat[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: ClassBreaksRendererCompatOptions = {}) {
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.field = options.field;
     this.normalizationField = options.normalizationField;
     this.normalizationTotal =
@@ -48,10 +59,95 @@ export class ClassBreaksRendererCompat {
     this.valueExpression = options.valueExpression;
     this.valueExpressionTitle = options.valueExpressionTitle;
     this.classBreakInfos = options.classBreakInfos ? options.classBreakInfos.map(cloneClassBreakInfo) : [];
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<ClassBreaksRendererCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    return this;
+  }
+
+  public async when(callback?: (renderer: ClassBreaksRendererCompat) => void): Promise<ClassBreaksRendererCompat> {
+    const renderer = await this.load();
+    if (callback) {
+      callback(renderer);
+    }
+    return renderer;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): ClassBreaksRendererHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
+  public update(options: ClassBreaksRendererCompatOptions): void {
+    if (options.field !== undefined) {
+      this.field = options.field;
+      this.notifyWatchers("field", this.field);
+    }
+    if (options.normalizationField !== undefined) {
+      this.normalizationField = options.normalizationField;
+      this.notifyWatchers("normalizationField", this.normalizationField);
+    }
+    if (options.normalizationTotal !== undefined) {
+      this.normalizationTotal =
+        typeof options.normalizationTotal === "number" && Number.isFinite(options.normalizationTotal)
+          ? options.normalizationTotal
+          : undefined;
+      this.notifyWatchers("normalizationTotal", this.normalizationTotal);
+    }
+    if (options.minValue !== undefined) {
+      this.minValue = typeof options.minValue === "number" && Number.isFinite(options.minValue) ? options.minValue : undefined;
+      this.notifyWatchers("minValue", this.minValue);
+    }
+    if (options.defaultSymbol !== undefined) {
+      this.defaultSymbol = options.defaultSymbol;
+      this.notifyWatchers("defaultSymbol", this.defaultSymbol);
+    }
+    if (options.defaultLabel !== undefined) {
+      this.defaultLabel = options.defaultLabel;
+      this.notifyWatchers("defaultLabel", this.defaultLabel);
+    }
+    if (options.legendOptions !== undefined) {
+      this.legendOptions = options.legendOptions;
+      this.notifyWatchers("legendOptions", this.legendOptions);
+    }
+    if (options.valueExpression !== undefined) {
+      this.valueExpression = options.valueExpression;
+      this.notifyWatchers("valueExpression", this.valueExpression);
+    }
+    if (options.valueExpressionTitle !== undefined) {
+      this.valueExpressionTitle = options.valueExpressionTitle;
+      this.notifyWatchers("valueExpressionTitle", this.valueExpressionTitle);
+    }
+    if (options.classBreakInfos !== undefined) {
+      this.classBreakInfos = options.classBreakInfos.map(cloneClassBreakInfo);
+      this.notifyWatchers("classBreakInfos", this.classBreakInfos);
+    }
   }
 
   public addClassBreakInfo(info: ClassBreakInfoCompat): void {
     this.classBreakInfos.push(cloneClassBreakInfo(info));
+    this.notifyWatchers("classBreakInfos", this.classBreakInfos);
   }
 
   public removeClassBreakInfo(maxValue: number): boolean {
@@ -61,6 +157,7 @@ export class ClassBreaksRendererCompat {
     }
 
     this.classBreakInfos.splice(index, 1);
+    this.notifyWatchers("classBreakInfos", this.classBreakInfos);
     return true;
   }
 
@@ -81,6 +178,21 @@ export class ClassBreaksRendererCompat {
       valueExpressionTitle: this.valueExpressionTitle,
       classBreakInfos: this.classBreakInfos.map(cloneClassBreakInfo),
     };
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

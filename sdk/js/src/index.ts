@@ -66,7 +66,11 @@ export type {
   FeatureSetLoadStatusCompat,
 } from "./esri-compat/feature-set.js";
 export { ColorCompat } from "./esri-compat/color.js";
-export type { ColorCompatInput } from "./esri-compat/color.js";
+export type {
+  ColorCompatInput,
+  ColorHandleCompat,
+  ColorLoadStatusCompat,
+} from "./esri-compat/color.js";
 export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,
@@ -173,27 +177,59 @@ export type {
   SpatialReferenceLoadStatusCompat,
 } from "./esri-compat/spatial-reference.js";
 export { SimpleLineSymbolCompat } from "./esri-compat/simple-line-symbol.js";
-export type { SimpleLineSymbolCompatOptions } from "./esri-compat/simple-line-symbol.js";
+export type {
+  SimpleLineSymbolCompatOptions,
+  SimpleLineSymbolHandleCompat,
+  SimpleLineSymbolLoadStatusCompat,
+} from "./esri-compat/simple-line-symbol.js";
 export { SimpleFillSymbolCompat } from "./esri-compat/simple-fill-symbol.js";
-export type { SimpleFillSymbolCompatOptions } from "./esri-compat/simple-fill-symbol.js";
+export type {
+  SimpleFillSymbolCompatOptions,
+  SimpleFillSymbolHandleCompat,
+  SimpleFillSymbolLoadStatusCompat,
+} from "./esri-compat/simple-fill-symbol.js";
 export { SimpleMarkerSymbolCompat } from "./esri-compat/simple-marker-symbol.js";
-export type { SimpleMarkerSymbolCompatOptions } from "./esri-compat/simple-marker-symbol.js";
+export type {
+  SimpleMarkerSymbolCompatOptions,
+  SimpleMarkerSymbolHandleCompat,
+  SimpleMarkerSymbolLoadStatusCompat,
+} from "./esri-compat/simple-marker-symbol.js";
 export { PictureMarkerSymbolCompat } from "./esri-compat/picture-marker-symbol.js";
-export type { PictureMarkerSymbolCompatOptions } from "./esri-compat/picture-marker-symbol.js";
+export type {
+  PictureMarkerSymbolCompatOptions,
+  PictureMarkerSymbolHandleCompat,
+  PictureMarkerSymbolLoadStatusCompat,
+} from "./esri-compat/picture-marker-symbol.js";
 export { TextSymbolCompat } from "./esri-compat/text-symbol.js";
-export type { TextSymbolCompatOptions } from "./esri-compat/text-symbol.js";
+export type {
+  TextSymbolCompatOptions,
+  TextSymbolHandleCompat,
+  TextSymbolLoadStatusCompat,
+} from "./esri-compat/text-symbol.js";
 export { LabelClassCompat } from "./esri-compat/label-class.js";
-export type { LabelClassCompatOptions } from "./esri-compat/label-class.js";
+export type {
+  LabelClassCompatOptions,
+  LabelClassHandleCompat,
+  LabelClassLoadStatusCompat,
+} from "./esri-compat/label-class.js";
 export { ClassBreaksRendererCompat } from "./esri-compat/class-breaks-renderer.js";
 export type {
   ClassBreakInfoCompat,
+  ClassBreaksRendererHandleCompat,
+  ClassBreaksRendererLoadStatusCompat,
   ClassBreaksRendererCompatOptions,
 } from "./esri-compat/class-breaks-renderer.js";
 export { SimpleRendererCompat } from "./esri-compat/simple-renderer.js";
-export type { SimpleRendererCompatOptions } from "./esri-compat/simple-renderer.js";
+export type {
+  SimpleRendererCompatOptions,
+  SimpleRendererHandleCompat,
+  SimpleRendererLoadStatusCompat,
+} from "./esri-compat/simple-renderer.js";
 export { UniqueValueRendererCompat } from "./esri-compat/unique-value-renderer.js";
 export type {
   UniqueValueInfoCompat,
+  UniqueValueRendererHandleCompat,
+  UniqueValueRendererLoadStatusCompat,
   UniqueValueRendererCompatOptions,
 } from "./esri-compat/unique-value-renderer.js";
 export { GroupLayerCompat } from "./esri-compat/group-layer.js";
