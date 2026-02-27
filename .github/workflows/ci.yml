@@ -443,7 +443,9 @@ jobs:
 
       - name: Run .NET Tests (Server)
         timeout-minutes: 45
+        shell: bash
         run: |
+          set +e
           dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
@@ -451,7 +453,21 @@ jobs:
             --logger "trx;LogFileName=server-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-live.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-live.log
+          exit "$test_exit_code"
 
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
