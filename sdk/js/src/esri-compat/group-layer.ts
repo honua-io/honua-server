@@ -13,6 +13,10 @@ export interface GroupLayerCompatOptions {
 
 export type GroupLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
 
+export interface GroupLayerHandleCompat {
+  remove(): void;
+}
+
 export class GroupLayerCompat {
   public readonly type: "group";
   public id: string | undefined;
@@ -25,6 +29,7 @@ export class GroupLayerCompat {
   public loadStatus: GroupLayerLoadStatusCompat;
   public readonly eventBus: CompatEventBus;
   private readonly layersInternal: unknown[];
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: GroupLayerCompatOptions = {}) {
     this.type = "group";
@@ -38,6 +43,7 @@ export class GroupLayerCompat {
     this.loadStatus = "not-loaded";
     this.layersInternal = Array.isArray(options.layers) ? [...options.layers] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.layers) ?? new CompatEventBus();
+    this.watchListeners = new Map();
   }
 
   public async load(): Promise<GroupLayerCompat> {
@@ -46,9 +52,12 @@ export class GroupLayerCompat {
     }
 
     this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.eventBus.emit("group-layer.loading", { layerId: this.id }, this);
     this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
     this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.eventBus.emit("group-layer.loaded", { layerId: this.id }, this);
     return this;
   }
@@ -59,6 +68,21 @@ export class GroupLayerCompat {
       callback(layer);
     }
     return layer;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): GroupLayerHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public get layers(): readonly unknown[] {
@@ -77,12 +101,16 @@ export class GroupLayerCompat {
   public add(layer: unknown, index?: number): void {
     if (index === undefined) {
       this.layersInternal.push(layer);
+      this.notifyWatchers("layers", this.layers);
+      this.notifyWatchers("allLayers", this.allLayers);
       this.eventBus.emit("group-layer.layer-added", { groupLayerId: this.id, layer, index: this.layersInternal.length - 1 }, this);
       return;
     }
 
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, layer);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("group-layer.layer-added", { groupLayerId: this.id, layer, index: insertAt }, this);
   }
 
@@ -94,12 +122,16 @@ export class GroupLayerCompat {
     if (index === undefined) {
       const startIndex = this.layersInternal.length;
       this.layersInternal.push(...layers);
+      this.notifyWatchers("layers", this.layers);
+      this.notifyWatchers("allLayers", this.allLayers);
       this.eventBus.emit("group-layer.layers-added", { groupLayerId: this.id, layers: [...layers], index: startIndex }, this);
       return;
     }
 
     const insertAt = normalizeInsertIndex(index, this.layersInternal.length);
     this.layersInternal.splice(insertAt, 0, ...layers);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("group-layer.layers-added", { groupLayerId: this.id, layers: [...layers], index: insertAt }, this);
   }
 
@@ -110,6 +142,8 @@ export class GroupLayerCompat {
     }
 
     this.layersInternal.splice(index, 1);
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("group-layer.layer-removed", { groupLayerId: this.id, layer, index }, this);
     return true;
   }
@@ -127,6 +161,8 @@ export class GroupLayerCompat {
   public removeAll(): void {
     const removedLayers = [...this.layersInternal];
     this.layersInternal.length = 0;
+    this.notifyWatchers("layers", this.layers);
+    this.notifyWatchers("allLayers", this.allLayers);
     this.eventBus.emit("group-layer.layers-cleared", { groupLayerId: this.id, layers: removedLayers }, this);
   }
 
@@ -142,12 +178,29 @@ export class GroupLayerCompat {
 
   public setVisibility(visible: boolean): void {
     this.visible = visible;
+    this.notifyWatchers("visible", this.visible);
     this.eventBus.emit("layer.visibility-changed", { layerId: this.id, visible }, this);
   }
 
   public setOpacity(opacity: number): void {
     this.opacity = opacity;
+    this.notifyWatchers("opacity", this.opacity);
     this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity }, this);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

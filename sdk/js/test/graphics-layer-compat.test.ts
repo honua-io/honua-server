@@ -17,6 +17,18 @@ describe("GraphicsLayerCompat", () => {
       graphics: [graphicA],
       eventBus,
     });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const graphicCounts: number[] = [];
+    const loadStatusHandle = layer.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = layer.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const graphicsHandle = layer.watch("graphics", (value) => {
+      graphicCounts.push(Array.isArray(value) ? value.length : -1);
+    });
 
     expect(layer.loaded).toBe(false);
     expect(layer.loadStatus).toBe("not-loaded");
@@ -39,5 +51,23 @@ describe("GraphicsLayerCompat", () => {
     expect(layer.remove(graphicA)).toBe(graphicA);
     expect(layer.graphics).toEqual([graphicB]);
     expect(await layer.queryFeatures()).toEqual({ features: [graphicB] });
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    graphicsHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      graphics: graphicCounts.length,
+    };
+    layer.add({ id: "g-c" });
+
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(graphicCounts).toEqual([2, 1]);
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(graphicCounts).toHaveLength(watchSnapshot.graphics);
   });
 });

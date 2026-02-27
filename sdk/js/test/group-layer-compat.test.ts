@@ -18,6 +18,18 @@ describe("GroupLayerCompat", () => {
       layers: [layerA, nestedGroup],
       eventBus,
     });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const layerCounts: number[] = [];
+    const loadStatusHandle = layer.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = layer.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const layersHandle = layer.watch("layers", (value) => {
+      layerCounts.push(Array.isArray(value) ? value.length : -1);
+    });
 
     expect(layer.loaded).toBe(false);
     expect(layer.loadStatus).toBe("not-loaded");
@@ -42,5 +54,23 @@ describe("GroupLayerCompat", () => {
     expect(layer.layers).toEqual([layerA, layerC, nestedGroup]);
     expect(layer.remove(layerA)).toBe(true);
     expect(layer.layers).toEqual([layerC, nestedGroup]);
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    layersHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      layers: layerCounts.length,
+    };
+    layer.add({ id: "layer-d" });
+
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(layerCounts).toEqual([3, 2]);
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(layerCounts).toHaveLength(watchSnapshot.layers);
   });
 });

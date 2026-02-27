@@ -3,6 +3,49 @@ import { describe, expect, it } from "vitest";
 import { BasemapCompat, CompatEventBus } from "../src/index.js";
 
 describe("BasemapCompat", () => {
+  it("supports watch handles for load and layer updates", async () => {
+    const basemap = new BasemapCompat({
+      id: "streets",
+      baseLayers: [{ id: "base-1" }],
+    });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const baseLayerCounts: number[] = [];
+
+    const loadStatusHandle = basemap.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = basemap.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const baseLayersHandle = basemap.watch("baseLayers", (value) => {
+      baseLayerCounts.push(Array.isArray(value) ? value.length : -1);
+    });
+
+    await basemap.load();
+    basemap.setBaseLayers([{ id: "base-2" }, { id: "base-3" }]);
+
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    baseLayersHandle.remove();
+
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      baseLayers: baseLayerCounts.length,
+    };
+
+    await basemap.load();
+    basemap.setBaseLayers([{ id: "base-4" }]);
+
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(baseLayerCounts).toEqual([2]);
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(baseLayerCounts).toHaveLength(watchSnapshot.baseLayers);
+  });
+
   it("supports basemap load/when lifecycle state", async () => {
     const eventBus = new CompatEventBus();
     const eventTypes: string[] = [];

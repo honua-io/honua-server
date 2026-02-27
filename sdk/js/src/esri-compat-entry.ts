@@ -104,7 +104,11 @@ export type {
   BasemapGalleryLoadStatusCompat,
 } from "./esri-compat/basemap-gallery.js";
 export { BasemapCompat } from "./esri-compat/basemap.js";
-export type { BasemapCompatOptions, BasemapLoadStatusCompat } from "./esri-compat/basemap.js";
+export type {
+  BasemapCompatOptions,
+  BasemapHandleCompat,
+  BasemapLoadStatusCompat,
+} from "./esri-compat/basemap.js";
 export { BasemapLayerListCompat } from "./esri-compat/basemap-layer-list.js";
 export type {
   BasemapLayerListCompatOptions,
@@ -127,6 +131,7 @@ export type {
 export { GraphicsLayerCompat } from "./esri-compat/graphics-layer.js";
 export type {
   GraphicsLayerCompatOptions,
+  GraphicsLayerHandleCompat,
   GraphicsLayerLoadStatusCompat,
   GraphicsLayerQueryResult,
 } from "./esri-compat/graphics-layer.js";
@@ -167,7 +172,11 @@ export type {
   UniqueValueRendererCompatOptions,
 } from "./esri-compat/unique-value-renderer.js";
 export { GroupLayerCompat } from "./esri-compat/group-layer.js";
-export type { GroupLayerCompatOptions, GroupLayerLoadStatusCompat } from "./esri-compat/group-layer.js";
+export type {
+  GroupLayerCompatOptions,
+  GroupLayerHandleCompat,
+  GroupLayerLoadStatusCompat,
+} from "./esri-compat/group-layer.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
 export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
