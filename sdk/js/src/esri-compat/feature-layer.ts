@@ -86,6 +86,12 @@ export interface FeatureLayerQueryExtentResult {
   count?: number;
 }
 
+export type FeatureLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface FeatureLayerHandleCompat {
+  remove(): void;
+}
+
 export class FeatureLayerCompat {
   public readonly url: string;
   public id: string;
@@ -105,10 +111,12 @@ export class FeatureLayerCompat {
   public legendEnabled: boolean;
   public listMode: string;
   public loaded: boolean;
+  public loadStatus: FeatureLayerLoadStatusCompat;
   public metadata: unknown;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: FeatureLayerCompatOptions) {
     const parsed = parseFeatureLayerUrl(options.url);
@@ -135,21 +143,34 @@ export class FeatureLayerCompat {
     this.legendEnabled = options.legendEnabled ?? true;
     this.listMode = options.listMode ?? "show";
     this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.metadata = undefined;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
+    this.watchListeners = new Map();
   }
 
   public async load(): Promise<FeatureLayerCompat> {
     if (!this.loaded) {
+      this.loadStatus = "loading";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.eventBus.emit(
+        "feature-layer.loading",
+        { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
+        this,
+      );
       this.metadata = await this.client.getLayerMetadata(this.serviceId, this.layerId);
+      this.notifyWatchers("metadata", this.metadata);
+      this.loaded = true;
+      this.notifyWatchers("loaded", this.loaded);
+      this.loadStatus = "loaded";
+      this.notifyWatchers("loadStatus", this.loadStatus);
       this.eventBus.emit(
         "feature-layer.loaded",
         { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
         this,
       );
     }
-    this.loaded = true;
     return this;
   }
 
@@ -164,7 +185,11 @@ export class FeatureLayerCompat {
 
   public refresh(): void {
     this.loaded = false;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "not-loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
     this.metadata = undefined;
+    this.notifyWatchers("metadata", this.metadata);
     this.eventBus.emit(
       "feature-layer.refreshed",
       { serviceId: this.serviceId, layerId: this.layerId, id: this.id },
@@ -172,8 +197,24 @@ export class FeatureLayerCompat {
     );
   }
 
+  public watch(propertyName: string, listener: (value: unknown) => void): FeatureLayerHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
+  }
+
   public setVisibility(visible: boolean): void {
     this.visible = visible;
+    this.notifyWatchers("visible", this.visible);
     this.eventBus.emit(
       "layer.visibility-changed",
       { layerId: this.id, serviceId: this.serviceId, sublayerId: this.layerId, visible },
@@ -183,6 +224,7 @@ export class FeatureLayerCompat {
 
   public setOpacity(opacity: number): void {
     this.opacity = normalizeOpacity(opacity);
+    this.notifyWatchers("opacity", this.opacity);
     this.eventBus.emit(
       "layer.opacity-changed",
       { layerId: this.id, serviceId: this.serviceId, sublayerId: this.layerId, opacity: this.opacity },
@@ -192,21 +234,25 @@ export class FeatureLayerCompat {
 
   public setRenderer(renderer: unknown): void {
     this.renderer = renderer;
+    this.notifyWatchers("renderer", this.renderer);
     this.eventBus.emit("feature-layer.renderer-changed", { layerId: this.id }, this);
   }
 
   public setPopupTemplate(popupTemplate: unknown): void {
     this.popupTemplate = popupTemplate;
+    this.notifyWatchers("popupTemplate", this.popupTemplate);
     this.eventBus.emit("feature-layer.popup-template-changed", { layerId: this.id }, this);
   }
 
   public setLabelingInfo(labelingInfo: readonly unknown[]): void {
     this.labelingInfo = [...labelingInfo];
+    this.notifyWatchers("labelingInfo", this.labelingInfo);
     this.eventBus.emit("feature-layer.labeling-changed", { layerId: this.id }, this);
   }
 
   public setDefinitionExpression(definitionExpression: string | undefined): void {
     this.definitionExpression = definitionExpression;
+    this.notifyWatchers("definitionExpression", this.definitionExpression);
     this.eventBus.emit(
       "feature-layer.definition-expression-changed",
       { layerId: this.id, definitionExpression },
@@ -217,17 +263,21 @@ export class FeatureLayerCompat {
   public setOutFields(outFields: string | readonly string[] | undefined): void {
     this.outFields =
       outFields === undefined ? undefined : Array.isArray(outFields) ? [...outFields] : [outFields];
+    this.notifyWatchers("outFields", this.outFields);
     this.eventBus.emit("feature-layer.out-fields-changed", { layerId: this.id, outFields: this.outFields }, this);
   }
 
   public setLabelsVisible(labelsVisible: boolean): void {
     this.labelsVisible = labelsVisible;
+    this.notifyWatchers("labelsVisible", this.labelsVisible);
     this.eventBus.emit("feature-layer.labels-visible-changed", { layerId: this.id, labelsVisible }, this);
   }
 
   public setScaleRange(minScale: number | undefined, maxScale: number | undefined): void {
     this.minScale = normalizeScale(minScale);
     this.maxScale = normalizeScale(maxScale);
+    this.notifyWatchers("minScale", this.minScale);
+    this.notifyWatchers("maxScale", this.maxScale);
     this.eventBus.emit(
       "feature-layer.scale-range-changed",
       { layerId: this.id, minScale: this.minScale, maxScale: this.maxScale },
@@ -237,6 +287,7 @@ export class FeatureLayerCompat {
 
   public setLegendEnabled(legendEnabled: boolean): void {
     this.legendEnabled = legendEnabled;
+    this.notifyWatchers("legendEnabled", this.legendEnabled);
     this.eventBus.emit("feature-layer.legend-enabled-changed", { layerId: this.id, legendEnabled }, this);
   }
 
@@ -417,6 +468,17 @@ export class FeatureLayerCompat {
       },
       body: params.toString(),
     });
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

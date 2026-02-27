@@ -2,6 +2,8 @@ export { FeatureLayerCompat } from "./esri-compat/feature-layer.js";
 export type {
   FeatureLayerCreateQueryResult,
   FeatureLayerDeleteAttachmentsOptions,
+  FeatureLayerHandleCompat,
+  FeatureLayerLoadStatusCompat,
   FeatureLayerListAttachmentsOptions,
   FeatureLayerQueryAttachmentsOptions,
   FeatureLayerQueryCountOptions,

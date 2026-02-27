@@ -105,6 +105,65 @@ describe("FeatureLayerCompat", () => {
     expect(metadataCalls).toBe(2);
   });
 
+  it("supports watch handles for lifecycle and property mutations", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/0",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({ id: 0, name: "Hydrants" });
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    const loadStatusValues: unknown[] = [];
+    const visibleValues: unknown[] = [];
+    const opacityValues: unknown[] = [];
+    const metadataValues: unknown[] = [];
+
+    const loadStatusHandle = layer.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const visibleHandle = layer.watch("visible", (value) => {
+      visibleValues.push(value);
+    });
+    const opacityHandle = layer.watch("opacity", (value) => {
+      opacityValues.push(value);
+    });
+    const metadataHandle = layer.watch("metadata", (value) => {
+      metadataValues.push(value);
+    });
+
+    await layer.load();
+    layer.setVisibility(false);
+    layer.setOpacity(0.4);
+    layer.refresh();
+
+    loadStatusHandle.remove();
+    visibleHandle.remove();
+    opacityHandle.remove();
+    metadataHandle.remove();
+
+    layer.setVisibility(true);
+    layer.setOpacity(0.9);
+
+    expect(loadStatusValues).toEqual(["loading", "loaded", "not-loaded"]);
+    expect(visibleValues).toEqual([false]);
+    expect(opacityValues).toEqual([0.4]);
+    expect(metadataValues).toEqual([{ id: 0, name: "Hydrants" }, undefined]);
+    expect(layer.loadStatus).toBe("not-loaded");
+    expect(layer.loaded).toBe(false);
+    expect(layer.visible).toBe(true);
+    expect(layer.opacity).toBe(0.9);
+  });
+
   it("creates a default query object", () => {
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/1000",
