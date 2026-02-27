@@ -22,3 +22,23 @@ output "vpc_id" {
   description = "VPC ID used by the EKS cluster."
   value       = module.vpc.vpc_id
 }
+
+output "oidc_provider_arn" {
+  description = "ARN of the OIDC provider for IRSA."
+  value       = module.eks.oidc_provider_arn
+}
+
+output "oidc_provider" {
+  description = "OIDC provider URL (without https://)."
+  value       = module.eks.oidc_provider
+}
+
+output "cluster_security_group_id" {
+  description = "Security group ID attached to the EKS cluster."
+  value       = module.eks.cluster_security_group_id
+}
+
+output "node_security_group_id" {
+  description = "Security group ID attached to EKS managed node groups."
+  value       = module.eks.node_security_group_id
+}

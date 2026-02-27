@@ -40,6 +40,12 @@ variable "enable_nat_gateway" {
   default     = true
 }
 
+variable "single_nat_gateway" {
+  description = "Use a single NAT gateway instead of one per AZ (cost savings for non-prod)."
+  type        = bool
+  default     = true
+}
+
 variable "container_port" {
   description = "Container port exposed by Honua Server."
   type        = number
@@ -64,6 +70,12 @@ variable "desired_count" {
   default     = 1
 }
 
+variable "max_capacity" {
+  description = "Maximum number of ECS tasks for auto-scaling."
+  type        = number
+  default     = 4
+}
+
 variable "assign_public_ip" {
   description = "Assign public IPs to tasks (only if using public subnets)."
   type        = bool
@@ -80,6 +92,11 @@ variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = length(var.admin_password) >= 12
+    error_message = "admin_password must be at least 12 characters."
+  }
 }
 
 variable "db_username" {
@@ -111,6 +128,18 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS autoscaling."
+  type        = number
+  default     = 100
+}
+
+variable "db_engine_version" {
+  description = "PostgreSQL engine version for RDS."
+  type        = string
+  default     = "15"
 }
 
 variable "db_publicly_accessible" {

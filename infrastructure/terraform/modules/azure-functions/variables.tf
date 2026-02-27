@@ -44,6 +44,11 @@ variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = length(var.admin_password) >= 12
+    error_message = "admin_password must be at least 12 characters."
+  }
 }
 
 variable "skip_migrations" {
@@ -234,4 +239,22 @@ variable "storage_account_replication_type" {
   description = "Storage account replication type."
   type        = string
   default     = "LRS"
+}
+
+variable "serve_admin_ui" {
+  description = "Enable the Honua admin UI."
+  type        = bool
+  default     = false
+}
+
+variable "key_vault_public_network_access_enabled" {
+  description = "Whether Key Vault is accessible from public networks."
+  type        = bool
+  default     = true
+}
+
+variable "db_backup_retention_days" {
+  description = "Backup retention period in days for PostgreSQL."
+  type        = number
+  default     = 14
 }

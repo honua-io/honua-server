@@ -13,9 +13,10 @@ import { evaluateMigrationGates } from "./gating.js";
 import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
 import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
 import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
+import { parseGeoservicesServiceUrl, runMigrationDemo } from "./demo.js";
 
 interface ParsedArgs {
-  command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures";
+  command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" | "demo";
   target: string;
   codemodTarget: CodemodTarget;
   write: boolean;
@@ -34,6 +35,17 @@ interface ParsedArgs {
   layerId?: number;
   sampleSize?: number;
   fixtureNames?: string[];
+  fixtureName?: string;
+  fixturesRoot?: string;
+  outputDir?: string;
+  adminBaseUrl?: string;
+  adminApiKey?: string;
+  sourceServiceUrl?: string;
+  tableName?: string;
+  pollIntervalMs?: number;
+  timeoutSeconds?: number;
+  skipImport: boolean;
+  skipReconcile: boolean;
 }
 
 interface FixtureMetricSnapshot {
@@ -105,6 +117,7 @@ const DEFAULT_REAL_SAMPLE_FIXTURE_NAMES = [
   "esri-real-sample-editing-app",
   "esri-real-sample-network-app",
 ] as const;
+const DEFAULT_DEMO_FIXTURE_NAME = "esri-real-sample-incident-command-app";
 
 const parsed = parseArgs(process.argv.slice(2));
 if (!parsed) {
@@ -119,6 +132,11 @@ if (!parsed) {
     runRuntimeMatrix(parsed.reportPath);
   } else if (parsed.command === "fixtures") {
     runFixtures(parsed);
+  } else if (parsed.command === "demo") {
+    void runDemo(parsed).catch((error) => {
+      process.stderr.write(`demoError=${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });
   } else if (parsed.command === "reconcile") {
     void runReconcile(parsed).catch((error) => {
       process.stderr.write(`reconcileError=${error instanceof Error ? error.message : String(error)}\n`);
@@ -532,6 +550,184 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
   }
 }
 
+async function runDemo(args: ParsedArgs): Promise<void> {
+  const fixtureName = args.fixtureName ?? DEFAULT_DEMO_FIXTURE_NAME;
+  const fixturesRoot = args.fixturesRoot ?? path.join(process.cwd(), "test", "fixtures");
+  const outputDir =
+    args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
+  const sourceUrlDetails =
+    typeof args.sourceServiceUrl === "string"
+      ? parseGeoservicesServiceUrl(args.sourceServiceUrl)
+      : undefined;
+  const resolvedLayerId = args.layerId ?? sourceUrlDetails?.layerId;
+  const adminApiKey = args.adminApiKey ?? process.env.HONUA_ADMIN_API_KEY;
+
+  if (!args.skipImport) {
+    if (!args.adminBaseUrl || !args.sourceServiceUrl || resolvedLayerId === undefined || !args.tableName) {
+      throw new Error(
+        "demo requires --admin-base-url, --source-service-url, --layer-id (or a layer in source URL), and --table-name unless --skip-import is set.",
+      );
+    }
+  }
+
+  let sourceBaseUrl = args.sourceBaseUrl;
+  if (!sourceBaseUrl) {
+    sourceBaseUrl = sourceUrlDetails?.baseUrl;
+  }
+
+  let sourceServiceId = args.sourceServiceId;
+  if (!sourceServiceId) {
+    sourceServiceId = sourceUrlDetails?.serviceId;
+  }
+
+  let targetBaseUrl = args.targetBaseUrl;
+  if (!targetBaseUrl) {
+    targetBaseUrl = args.adminBaseUrl;
+  }
+
+  let targetServiceId = args.targetServiceId;
+  if (!targetServiceId) {
+    targetServiceId = args.tableName;
+  }
+
+  if (!args.skipReconcile) {
+    if (!sourceBaseUrl || !sourceServiceId || !targetBaseUrl || !targetServiceId || resolvedLayerId === undefined) {
+      throw new Error(
+        "demo reconciliation requires source/target base URLs, service IDs, and --layer-id (or source URL with layer). Use --skip-reconcile to disable.",
+      );
+    }
+  }
+
+  const report = await runMigrationDemo({
+    fixtureName,
+    fixturesRoot,
+    outputDir,
+    codemodTarget: args.codemodTarget,
+    compatImportPath: args.compatImportPath,
+    annotateTodos: args.annotateTodos,
+    skipImport: args.skipImport,
+    skipReconciliation: args.skipReconcile,
+    importOptions:
+      args.skipImport || !args.adminBaseUrl || !args.sourceServiceUrl || resolvedLayerId === undefined || !args.tableName
+        ? undefined
+        : {
+            adminBaseUrl: args.adminBaseUrl,
+            adminApiKey,
+            sourceServiceUrl: args.sourceServiceUrl,
+            layerId: resolvedLayerId,
+            tableName: args.tableName,
+            pollIntervalMs: args.pollIntervalMs,
+            timeoutMs:
+              typeof args.timeoutSeconds === "number"
+                ? Math.max(1, Math.trunc(args.timeoutSeconds * 1_000))
+                : undefined,
+            autoPublish: true,
+          },
+    reconciliationOptions:
+      args.skipReconcile ||
+      !sourceBaseUrl ||
+      !sourceServiceId ||
+      !targetBaseUrl ||
+      !targetServiceId ||
+      resolvedLayerId === undefined
+        ? undefined
+        : {
+            sourceBaseUrl,
+            sourceServiceId,
+            targetBaseUrl,
+            targetServiceId,
+            layerId: resolvedLayerId,
+            sampleSize: args.sampleSize,
+          },
+  });
+
+  if (report.import) {
+    process.stdout.write(
+      [
+        "demoStage=import",
+        `jobId=${report.import.jobId}`,
+        `status=${report.import.status}`,
+        `polls=${report.import.pollCount}`,
+      ].join(" "),
+    );
+    process.stdout.write("\n");
+  } else {
+    process.stdout.write("demoStage=import skipped=yes\n");
+  }
+
+  process.stdout.write(
+    [
+      "demoStage=codemod",
+      `fixture=${report.fixtureName}`,
+      `readiness=${report.migration.readiness}`,
+      `autoMigrated=${report.migration.codemodResult.metrics.autoMigratedCallSites}`,
+      `manual=${report.migration.codemodResult.metrics.manualCallSites}`,
+      `manualRewrite=${report.migration.manualRewriteMetric.numerator}/${report.migration.manualRewriteMetric.denominator}`,
+      `manualIntervention=${report.migration.manualInterventionMetric.numerator}/${report.migration.manualInterventionMetric.denominator}`,
+    ].join(" "),
+  );
+  process.stdout.write("\n");
+
+  if (report.reconciliation) {
+    process.stdout.write(`demoStage=reconcile ${summarizeLayerReconciliation(report.reconciliation)}\n`);
+  } else {
+    process.stdout.write("demoStage=reconcile skipped=yes\n");
+  }
+
+  const stdoutSummary = {
+    fixture: report.fixtureName,
+    codemodTarget: report.codemodTarget,
+    workingAppDir: report.workingAppDir,
+    import: report.import
+      ? {
+          jobId: report.import.jobId,
+          status: report.import.status,
+          pollCount: report.import.pollCount,
+        }
+      : undefined,
+    migration: {
+      readiness: report.migration.readiness,
+      autoMigratedCallSites: report.migration.codemodResult.metrics.autoMigratedCallSites,
+      manualCallSites: report.migration.codemodResult.metrics.manualCallSites,
+      manualRewrite: {
+        numerator: report.migration.manualRewriteMetric.numerator,
+        denominator: report.migration.manualRewriteMetric.denominator,
+        ratio: report.migration.manualRewriteMetric.ratio,
+      },
+      manualIntervention: {
+        numerator: report.migration.manualInterventionMetric.numerator,
+        denominator: report.migration.manualInterventionMetric.denominator,
+        ratio: report.migration.manualInterventionMetric.ratio,
+      },
+    },
+    reconciliation: report.reconciliation
+      ? {
+          passed: report.reconciliation.passed,
+          sourceFeatureCount: report.reconciliation.sourceFeatureCount,
+          targetFeatureCount: report.reconciliation.targetFeatureCount,
+          missingInTargetAttributeKeys: report.reconciliation.missingInTargetAttributeKeys.length,
+          extraInTargetAttributeKeys: report.reconciliation.extraInTargetAttributeKeys.length,
+        }
+      : undefined,
+    passed: report.passed,
+  };
+
+  process.stdout.write(
+    `demoPassed=${report.passed ? "yes" : "no"} outputDir=${report.workingAppDir}\n`,
+  );
+  process.stdout.write(`${JSON.stringify(stdoutSummary, null, 2)}\n`);
+
+  if (args.reportPath) {
+    fs.mkdirSync(path.dirname(args.reportPath), { recursive: true });
+    fs.writeFileSync(args.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    process.stdout.write(`reportWritten=${args.reportPath}\n`);
+  }
+
+  if (!report.passed) {
+    process.exitCode = 2;
+  }
+}
+
 function parseArgs(argv: string[]): ParsedArgs | undefined {
   if (argv.length === 0) {
     return {
@@ -543,17 +739,27 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       failOnUnhandled: false,
       failOnBlocked: false,
       codemodTarget: "honua-compat",
+      skipImport: false,
+      skipReconcile: false,
     };
   }
 
   const maybeCommand = argv[0];
-  const command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" =
+  const command:
+    | "scan"
+    | "codemod"
+    | "reconcile"
+    | "matrix"
+    | "runtime-matrix"
+    | "fixtures"
+    | "demo" =
     maybeCommand === "scan" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
     maybeCommand === "matrix" ||
     maybeCommand === "runtime-matrix" ||
-    maybeCommand === "fixtures"
+    maybeCommand === "fixtures" ||
+    maybeCommand === "demo"
       ? maybeCommand
       : "scan";
   const positional = command === maybeCommand ? argv.slice(1) : argv.slice(0);
@@ -576,6 +782,17 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   let targetServiceId: string | undefined;
   let layerId: number | undefined;
   let sampleSize: number | undefined;
+  let fixtureName: string | undefined;
+  let fixturesRoot: string | undefined;
+  let outputDir: string | undefined;
+  let adminBaseUrl: string | undefined;
+  let adminApiKey: string | undefined;
+  let sourceServiceUrl: string | undefined;
+  let tableName: string | undefined;
+  let pollIntervalMs: number | undefined;
+  let timeoutSeconds: number | undefined;
+  let skipImport = false;
+  let skipReconcile = false;
 
   for (let i = 0; i < positional.length; i += 1) {
     const token = positional[i];
@@ -675,6 +892,103 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
       i += 1;
       continue;
     }
+    if (token === "--fixture") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      fixtureName = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--fixtures-root") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      fixturesRoot = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--output-dir") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      outputDir = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--admin-base-url") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      adminBaseUrl = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--admin-api-key") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      adminApiKey = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--source-service-url") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      sourceServiceUrl = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--table-name") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      tableName = next;
+      i += 1;
+      continue;
+    }
+    if (token === "--poll-interval-ms") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      const parsedPoll = Number.parseInt(next, 10);
+      if (!Number.isFinite(parsedPoll) || parsedPoll <= 0) {
+        return undefined;
+      }
+      pollIntervalMs = parsedPoll;
+      i += 1;
+      continue;
+    }
+    if (token === "--timeout-seconds") {
+      const next = positional[i + 1];
+      if (!next) {
+        return undefined;
+      }
+      const parsedTimeout = Number.parseInt(next, 10);
+      if (!Number.isFinite(parsedTimeout) || parsedTimeout <= 0) {
+        return undefined;
+      }
+      timeoutSeconds = parsedTimeout;
+      i += 1;
+      continue;
+    }
+    if (token === "--skip-import") {
+      skipImport = true;
+      continue;
+    }
+    if (token === "--skip-reconcile") {
+      skipReconcile = true;
+      continue;
+    }
     if (token === "--source-base-url") {
       const next = positional[i + 1];
       if (!next) {
@@ -743,6 +1057,13 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     if (command === "reconcile") {
       return undefined;
     }
+    if (command === "demo") {
+      if (!fixtureName) {
+        fixtureName = token;
+        continue;
+      }
+      return undefined;
+    }
     if (!target) {
       target = token;
       continue;
@@ -754,7 +1075,9 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     command,
     target:
       target ??
-      (command === "fixtures" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
+      (command === "fixtures" || command === "demo"
+        ? path.join(process.cwd(), "test", "fixtures")
+        : process.cwd()),
     write,
     codemodTarget,
     annotateTodos,
@@ -772,6 +1095,17 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     layerId,
     sampleSize,
     fixtureNames,
+    fixtureName,
+    fixturesRoot,
+    outputDir,
+    adminBaseUrl,
+    adminApiKey,
+    sourceServiceUrl,
+    tableName,
+    pollIntervalMs,
+    timeoutSeconds,
+    skipImport,
+    skipReconcile,
   };
 }
 
@@ -800,6 +1134,7 @@ function printUsage(): void {
       "  honua-migrate runtime-matrix [--report <file>]",
       "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
+      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua-compat|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
@@ -811,6 +1146,7 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0",
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
+      "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --report demo-report.json",
     ].join("\n"),
   );
   process.stdout.write("\n");

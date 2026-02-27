@@ -25,6 +25,16 @@ locals {
   prometheus_values = {
     alertmanager = {
       enabled = true
+      resources = {
+        requests = {
+          cpu    = "50m"
+          memory = "64Mi"
+        }
+        limits = {
+          cpu    = "200m"
+          memory = "256Mi"
+        }
+      }
     }
     kube-state-metrics = {
       enabled = false
@@ -36,6 +46,18 @@ locals {
       persistentVolume = {
         enabled = var.prometheus_persistence_enabled
         size    = var.prometheus_persistence_size
+      }
+      retention     = var.prometheus_retention
+      retentionSize = var.prometheus_retention_size
+      resources = {
+        requests = {
+          cpu    = "250m"
+          memory = "512Mi"
+        }
+        limits = {
+          cpu    = "1"
+          memory = "2Gi"
+        }
       }
     }
     serverFiles = {
@@ -74,7 +96,7 @@ locals {
             access    = "proxy"
             url       = local.prometheus_server_url
             isDefault = true
-            editable  = true
+            editable  = false
           }
         ]
       }
@@ -88,7 +110,7 @@ locals {
             orgId           = 1
             folder          = "Honua"
             type            = "file"
-            disableDeletion = false
+            disableDeletion = true
             editable        = true
             options = {
               path = "/var/lib/grafana/dashboards/honua"
@@ -105,7 +127,20 @@ locals {
       ingressClassName = var.grafana_ingress_class_name
       annotations      = var.grafana_ingress_annotations
       hosts            = var.grafana_ingress_host != "" ? [var.grafana_ingress_host] : []
-      tls              = []
+      tls = var.grafana_ingress_tls_secret != "" ? [{
+        secretName = var.grafana_ingress_tls_secret
+        hosts      = [var.grafana_ingress_host]
+      }] : []
+    }
+    resources = {
+      requests = {
+        cpu    = "100m"
+        memory = "256Mi"
+      }
+      limits = {
+        cpu    = "500m"
+        memory = "512Mi"
+      }
     }
   }
 }
@@ -156,9 +191,11 @@ resource "helm_release" "prometheus" {
   chart            = "prometheus"
   version          = var.prometheus_chart_version
   namespace        = var.namespace
-  create_namespace = var.create_namespace
+  create_namespace = false
 
   values = [yamlencode(local.prometheus_values)]
+
+  depends_on = [kubernetes_namespace_v1.this]
 }
 
 resource "helm_release" "grafana" {
@@ -167,11 +204,12 @@ resource "helm_release" "grafana" {
   chart            = "grafana"
   version          = var.grafana_chart_version
   namespace        = var.namespace
-  create_namespace = var.create_namespace
+  create_namespace = false
 
   values = [yamlencode(local.grafana_values)]
 
   depends_on = [
+    kubernetes_namespace_v1.this,
     helm_release.prometheus,
     kubernetes_secret_v1.grafana_admin,
     kubernetes_config_map_v1.honua_dashboard,

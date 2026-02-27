@@ -41,13 +41,17 @@ DB_FIREWALL_END_IP="${HONUA_AZURE_DB_FIREWALL_END_IP:-}"
 EXISTING_DB_FQDN="${HONUA_AZURE_EXISTING_DB_FQDN:-}"
 EXISTING_DB_CONNECTION_STRING="${HONUA_AZURE_EXISTING_DB_CONNECTION_STRING:-}"
 EXISTING_REDIS_CONNECTION_STRING="${HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING:-}"
+AUTO_PROVISION_DATA_STACK=true
 
 TEMP_TF_ROOT=""
+DATA_APPLIED=false
 ACA_APPLIED=false
 FUNCTIONS_APPLIED=false
 
+DATA_NAME_PREFIX=""
 ACA_NAME_PREFIX=""
 FUNCTIONS_NAME_PREFIX=""
+DATA_RESOURCE_GROUP=""
 EXPIRES_AT_UTC=""
 
 usage() {
@@ -56,6 +60,9 @@ Run live Terraform integration tests for Azure ACA and Azure Functions.
 
 Usage:
   ./scripts/run-azure-terraform-integration.sh [options]
+
+When existing DB/Redis settings are not provided, the script provisions 'examples/azure-data'
+first and then feeds those outputs into ACA/Functions validation applies.
 
 Options:
   --stack <aca|functions|both>        Stack to test (default: both)
@@ -135,6 +142,7 @@ normalize_identifiers() {
   fi
 
   NAME_PREFIX_BASE="${NAME_PREFIX_BASE:0:10}"
+  DATA_NAME_PREFIX="${NAME_PREFIX_BASE}"
   ACA_NAME_PREFIX="${NAME_PREFIX_BASE}aca"
   FUNCTIONS_NAME_PREFIX="${NAME_PREFIX_BASE}fn"
 
@@ -709,7 +717,7 @@ verify_redis_exists() {
   local resource_group="$1"
   local count
 
-  if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+  if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" && "$DATA_APPLIED" != "true" ]]; then
     log_info "Using existing Redis connection string; skipping Azure Redis resource check"
     return 0
   fi
@@ -837,6 +845,22 @@ validate_existing_resource_inputs() {
   fi
 }
 
+configure_data_stack_mode() {
+  if [[ -z "$EXISTING_DB_CONNECTION_STRING" && -z "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    AUTO_PROVISION_DATA_STACK=true
+    return
+  fi
+
+  AUTO_PROVISION_DATA_STACK=false
+
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" && -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    log_info "Using caller-provided DB/Redis connections; skipping azure-data bootstrap stack"
+    return
+  fi
+
+  log_warn "Partial existing data inputs detected; skipping azure-data bootstrap stack and using mixed data wiring"
+}
+
 run_quota_preflight() {
   local usage_json
   local current
@@ -936,17 +960,70 @@ set_functions_tf_vars() {
   unset TF_VAR_key_vault_default_action
 }
 
+set_data_tf_vars() {
+  set_common_tf_vars
+  export TF_VAR_name_prefix="$DATA_NAME_PREFIX"
+  export TF_VAR_key_vault_default_action="Allow"
+
+  unset TF_VAR_honua_image
+  unset TF_VAR_plan_sku_name
+  unset TF_VAR_skip_migrations
+  unset TF_VAR_min_replicas
+  unset TF_VAR_max_replicas
+}
+
+apply_data_stack() {
+  if [[ "$AUTO_PROVISION_DATA_STACK" != "true" ]]; then
+    return
+  fi
+
+  log_info "Applying Azure data stack"
+  set_data_tf_vars
+
+  run_tf -chdir=examples/azure-data init -input=false -no-color
+  # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
+  DATA_APPLIED=true
+
+  plan_apply "examples/azure-data" "data.tfplan" "azure-data"
+
+  EXISTING_DB_FQDN="$(run_tf -chdir=examples/azure-data output -raw db_fqdn)"
+  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw db_connection_string)"
+  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw redis_connection_string)"
+  DATA_RESOURCE_GROUP="$(run_tf -chdir=examples/azure-data output -raw resource_group_name)"
+
+  if [[ -z "$EXISTING_DB_FQDN" || -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    log_error "Azure data stack output validation failed: db_fqdn/db_connection_string must be non-empty"
+    return 1
+  fi
+
+  if [[ -z "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    log_error "Azure data stack output validation failed: redis_connection_string must be non-empty"
+    return 1
+  fi
+
+  if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
+    assert_idempotent_plan "examples/azure-data"
+  fi
+
+  log_info "Azure data stack ready: resource_group=$DATA_RESOURCE_GROUP"
+}
+
 run_aca_checks() {
   local url="$1"
   local db_fqdn="$2"
   local resource_group="$3"
+  local redis_resource_group="$resource_group"
+
+  if [[ "$DATA_APPLIED" == "true" && -n "$DATA_RESOURCE_GROUP" ]]; then
+    redis_resource_group="$DATA_RESOURCE_GROUP"
+  fi
 
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
     run_admin_api_crud_smoke "$url" "$db_fqdn"
   fi
-  verify_redis_exists "$resource_group"
+  verify_redis_exists "$redis_resource_group"
   verify_postgis_extensions "$db_fqdn"
   if [[ "$RUN_DB_RESILIENCE" == "true" ]]; then
     verify_db_backup_restore "$db_fqdn"
@@ -958,13 +1035,18 @@ run_functions_checks() {
   local url="$1"
   local db_fqdn="$2"
   local resource_group="$3"
+  local redis_resource_group="$resource_group"
+
+  if [[ "$DATA_APPLIED" == "true" && -n "$DATA_RESOURCE_GROUP" ]]; then
+    redis_resource_group="$DATA_RESOURCE_GROUP"
+  fi
 
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
     run_admin_api_crud_smoke "$url" "$db_fqdn"
   fi
-  verify_redis_exists "$resource_group"
+  verify_redis_exists "$redis_resource_group"
   verify_postgis_extensions "$db_fqdn"
   if [[ "$RUN_DB_RESILIENCE" == "true" ]]; then
     verify_db_backup_restore "$db_fqdn"
@@ -1133,6 +1215,16 @@ destroy_functions_stack() {
   run_tf -chdir=examples/azure-functions destroy -input=false -auto-approve -no-color || log_warn "Functions destroy encountered errors"
 }
 
+destroy_data_stack() {
+  if [[ "$DATA_APPLIED" != "true" ]]; then
+    return
+  fi
+
+  log_info "Destroying Azure data stack"
+  set_data_tf_vars
+  run_tf -chdir=examples/azure-data destroy -input=false -auto-approve -no-color || log_warn "Data stack destroy encountered errors"
+}
+
 delete_rg_if_exists() {
   local resource_group="$1"
 
@@ -1143,6 +1235,14 @@ delete_rg_if_exists() {
 }
 
 janitor_delete_resource_groups() {
+  if [[ "$DATA_APPLIED" == "true" ]]; then
+    if [[ -n "$DATA_RESOURCE_GROUP" ]]; then
+      delete_rg_if_exists "$DATA_RESOURCE_GROUP"
+    else
+      delete_rg_if_exists "${DATA_NAME_PREFIX}-${ENVIRONMENT}-data-rg"
+    fi
+  fi
+
   if [[ "$STACK" == "aca" || "$STACK" == "both" ]]; then
     delete_rg_if_exists "${ACA_NAME_PREFIX}-${ENVIRONMENT}-rg"
   fi
@@ -1176,6 +1276,7 @@ cleanup() {
   if [[ "$AUTO_DESTROY" == "true" ]]; then
     destroy_functions_stack
     destroy_aca_stack
+    destroy_data_stack
     janitor_delete_resource_groups
     verify_no_leaks || exit_code=1
   else
@@ -1207,6 +1308,7 @@ main() {
 
   normalize_identifiers
   validate_existing_resource_inputs
+  configure_data_stack_mode
   assert_cost_guardrail
   run_quota_preflight
   detect_db_firewall_ips
@@ -1220,6 +1322,7 @@ main() {
   log_info "Stack selection: $STACK"
   log_info "Region: $LOCATION"
   log_info "Environment: $ENVIRONMENT"
+  log_info "Data prefix: $DATA_NAME_PREFIX"
   log_info "ACA prefix: $ACA_NAME_PREFIX"
   log_info "Functions prefix: $FUNCTIONS_NAME_PREFIX"
   log_info "DB firewall range: $DB_FIREWALL_START_IP - $DB_FIREWALL_END_IP"
@@ -1231,6 +1334,8 @@ main() {
   fi
   log_info "Ready SLO seconds: $READY_SLO_SECONDS"
   log_info "Max load error rate: ${MAX_LOAD_ERROR_RATE_PERCENT}%"
+
+  apply_data_stack
 
   if [[ "$STACK" == "aca" || "$STACK" == "both" ]]; then
     apply_aca_stack
@@ -1244,4 +1349,3 @@ main() {
 }
 
 main "$@"
-  normalized="$(normalize_base_url "$base_url")"

@@ -6,6 +6,8 @@ data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
+data "aws_elb_service_account" "current" {}
+
 locals {
   name = "${var.name_prefix}-${var.environment}"
   tags = merge({
@@ -51,6 +53,7 @@ module "vpc" {
   private_subnets = var.private_subnet_cidrs
 
   enable_nat_gateway             = var.enable_nat_gateway
+  single_nat_gateway             = var.single_nat_gateway
   enable_dns_support             = true
   enable_dns_hostnames           = true
   manage_default_security_group  = true
@@ -58,6 +61,13 @@ module "vpc" {
   default_security_group_egress  = []
 
   tags = local.tags
+}
+
+check "nat_gateway_required" {
+  assert {
+    condition     = var.enable_nat_gateway || var.assign_public_ip
+    error_message = "Tasks in private subnets require either NAT gateway or public IP assignment for outbound connectivity."
+  }
 }
 
 resource "aws_security_group" "alb" {
@@ -343,8 +353,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm     = "aws:kms"
-      kms_master_key_id = local.kms_key_arn
+      sse_algorithm = "AES256"
     }
   }
 }
@@ -368,6 +377,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
       {
         Effect = "Allow"
         Principal = {
+          AWS     = data.aws_elb_service_account.current.arn
           Service = "logdelivery.elasticloadbalancing.amazonaws.com"
         }
         Action   = "s3:PutObject"
@@ -376,6 +386,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
       {
         Effect = "Allow"
         Principal = {
+          AWS     = data.aws_elb_service_account.current.arn
           Service = "logdelivery.elasticloadbalancing.amazonaws.com"
         }
         Action   = "s3:GetBucketAcl"
@@ -508,7 +519,7 @@ resource "aws_iam_policy" "secrets" {
 }
 
 resource "aws_iam_role_policy_attachment" "task_secrets" {
-  role       = aws_iam_role.task.name
+  role       = aws_iam_role.task_execution.name
   policy_arn = aws_iam_policy.secrets.arn
 }
 
@@ -517,6 +528,10 @@ resource "random_password" "db" {
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
 }
 
 resource "random_password" "redis_auth" {
@@ -583,13 +598,13 @@ module "rds" {
   identifier = "${local.name}-postgres"
 
   engine               = "postgres"
-  engine_version       = "15.4"
-  family               = "postgres15"
-  major_engine_version = "15"
+  engine_version       = var.db_engine_version
+  family               = "postgres${split(".", var.db_engine_version)[0]}"
+  major_engine_version = split(".", var.db_engine_version)[0]
   instance_class       = var.db_instance_class
 
   allocated_storage     = var.db_allocated_storage
-  max_allocated_storage = 100
+  max_allocated_storage = var.db_max_allocated_storage
   storage_encrypted     = true
 
   db_name  = var.db_name
@@ -703,6 +718,13 @@ resource "aws_ecs_task_definition" "this" {
           awslogs-stream-prefix = "honua"
         }
       }
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -f http://localhost:8080/healthz/ready || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+      }
     }
   ])
 
@@ -715,6 +737,11 @@ resource "aws_ecs_service" "this" {
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = module.vpc.private_subnets
@@ -731,6 +758,31 @@ resource "aws_ecs_service" "this" {
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
 
   tags = local.tags
+}
+
+resource "aws_appautoscaling_target" "ecs" {
+  max_capacity       = var.max_capacity
+  min_capacity       = var.desired_count
+  resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "cpu" {
+  name               = "${local.name}-cpu-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 70.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
 }
 
 data "aws_iam_policy_document" "ecs_task_assume" {
@@ -754,12 +806,15 @@ resource "null_resource" "enable_postgis" {
     command = <<-EOT
       set -e
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}" \
-        && PGPASSWORD='${local.db_password}' psql \
+        && psql \
           --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
           --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
+    environment = {
+      PGPASSWORD = local.db_password
+    }
   }
 
   depends_on = [module.rds]

@@ -40,6 +40,20 @@ resource "azurerm_storage_account" "this" {
   account_replication_type = var.storage_account_replication_type
   min_tls_version          = "TLS1_2"
   tags                     = local.tags
+
+  network_rules {
+    default_action = "Deny"
+    bypass         = ["AzureServices"]
+  }
+
+  blob_properties {
+    delete_retention_policy {
+      days = 7
+    }
+    container_delete_retention_policy {
+      days = 7
+    }
+  }
 }
 
 resource "azurerm_service_plan" "this" {
@@ -82,6 +96,7 @@ resource "azurerm_postgresql_flexible_server" "this" {
 
   public_network_access_enabled = var.db_public_network_access
   geo_redundant_backup_enabled  = var.db_geo_redundant_backup_enabled
+  backup_retention_days         = var.db_backup_retention_days
 
   tags = local.tags
 }
@@ -101,6 +116,13 @@ resource "azurerm_postgresql_flexible_server_database" "this" {
   server_id = azurerm_postgresql_flexible_server.this[0].id
   charset   = "UTF8"
   collation = "en_US.utf8"
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "require_secure_transport" {
+  count     = local.db_use_existing ? 0 : 1
+  name      = "require_secure_transport"
+  server_id = azurerm_postgresql_flexible_server.this[0].id
+  value     = "on"
 }
 
 resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
@@ -125,13 +147,61 @@ resource "azurerm_redis_cache" "this" {
   tags                          = local.tags
 }
 
+resource "azurerm_log_analytics_workspace" "this" {
+  count               = var.app_insights_enabled ? 1 : 0
+  name                = "${local.name}-logs"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.tags
+}
+
 resource "azurerm_application_insights" "this" {
   count               = var.app_insights_enabled ? 1 : 0
   name                = "${local.name}-appinsights"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   application_type    = "web"
+  workspace_id        = azurerm_log_analytics_workspace.this[0].id
   tags                = local.tags
+}
+
+resource "azurerm_key_vault" "this" {
+  name                          = "${local.name}-kv"
+  location                      = azurerm_resource_group.this.location
+  resource_group_name           = azurerm_resource_group.this.name
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
+  soft_delete_retention_days    = 30
+  purge_protection_enabled      = true
+  public_network_access_enabled = var.key_vault_public_network_access_enabled
+
+  tags = local.tags
+}
+
+resource "azurerm_key_vault_access_policy" "terraform" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id
+
+  secret_permissions = ["Get", "Set", "Delete", "Purge", "List"]
+}
+
+resource "azurerm_key_vault_secret" "connection_string" {
+  name         = "connection-string"
+  value        = local.db_connection_string
+  key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [azurerm_key_vault_access_policy.terraform]
+}
+
+resource "azurerm_key_vault_secret" "admin_password" {
+  name         = "admin-password"
+  value        = var.admin_password
+  key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [azurerm_key_vault_access_policy.terraform]
 }
 
 locals {
@@ -141,8 +211,11 @@ locals {
     WEBSITES_PORT                        = tostring(var.container_port)
     WEBSITES_ENABLE_APP_SERVICE_STORAGE  = "false"
     AzureWebJobsStorage                  = azurerm_storage_account.this.primary_connection_string
-    ConnectionStrings__DefaultConnection = local.db_connection_string
-    HONUA_ADMIN_PASSWORD                 = var.admin_password
+    ConnectionStrings__DefaultConnection = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
+    HONUA_ADMIN_PASSWORD                 = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    HONUA_SERVE_ADMIN_UI                 = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                       = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                  = "true"
     HONUA_SKIP_MIGRATIONS                = var.skip_migrations ? "true" : "false"
   }
   redis_settings = local.redis_connection != "" ? {
@@ -166,13 +239,17 @@ resource "azurerm_linux_function_app" "this" {
   location            = azurerm_resource_group.this.location
   service_plan_id     = azurerm_service_plan.this.id
 
-  storage_account_name       = azurerm_storage_account.this.name
-  storage_account_access_key = azurerm_storage_account.this.primary_access_key
+  storage_account_name          = azurerm_storage_account.this.name
+  storage_uses_managed_identity = true
 
   https_only                  = true
   functions_extension_version = var.functions_extension_version
 
   app_settings = local.app_settings
+
+  identity {
+    type = "SystemAssigned"
+  }
 
   site_config {
     linux_fx_version  = "DOCKER|${var.image}"
@@ -181,6 +258,20 @@ resource "azurerm_linux_function_app" "this" {
   }
 
   tags = local.tags
+}
+
+resource "azurerm_key_vault_access_policy" "function_app" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = azurerm_linux_function_app.this.identity[0].principal_id
+
+  secret_permissions = ["Get"]
+}
+
+resource "azurerm_role_assignment" "function_storage" {
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_linux_function_app.this.identity[0].principal_id
 }
 
 resource "null_resource" "enable_postgis" {
@@ -195,7 +286,7 @@ resource "null_resource" "enable_postgis" {
       set -e
       echo "Waiting for PostgreSQL readiness on ${local.db_server_fqdn}"
       for attempt in $(seq 1 30); do
-        if PGCONNECT_TIMEOUT=5 PGPASSWORD='${local.db_password}' psql \
+        if PGCONNECT_TIMEOUT=5 psql \
           --host=${local.db_server_fqdn} \
           --username=${var.db_admin_username} \
           --dbname=${var.db_name} \
@@ -210,13 +301,17 @@ resource "null_resource" "enable_postgis" {
       done
 
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_server_fqdn}"
-      PGCONNECT_TIMEOUT=5 PGPASSWORD='${local.db_password}' psql \
+      PGCONNECT_TIMEOUT=5 psql \
         --host=${local.db_server_fqdn} \
         --username=${var.db_admin_username} \
         --dbname=${var.db_name} \
         --set=ON_ERROR_STOP=1 \
         --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
+
+    environment = {
+      PGPASSWORD = local.db_password
+    }
   }
 
   depends_on = [

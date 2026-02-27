@@ -22,62 +22,7 @@ variable "tags" {
   default     = {}
 }
 
-variable "image" {
-  description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster startup and lower memory."
-  type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
-}
-
-variable "container_cpu" {
-  description = "Container CPU cores."
-  type        = number
-  default     = 0.5
-
-  validation {
-    condition     = contains([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 4.0], var.container_cpu)
-    error_message = "container_cpu must be one of: 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 4.0."
-  }
-}
-
-variable "container_memory" {
-  description = "Container memory with Gi suffix (for example 1Gi, 1.5Gi)."
-  type        = string
-  default     = "1Gi"
-
-  validation {
-    condition     = can(regex("^[0-9]+(\\.[0-9]{1,2})?Gi$", var.container_memory))
-    error_message = "container_memory must be a decimal value with Gi suffix, such as 1Gi or 1.5Gi."
-  }
-}
-
-variable "container_port" {
-  description = "Container port exposed by Honua Server."
-  type        = number
-  default     = 8080
-}
-
-variable "min_replicas" {
-  description = "Minimum replicas for Container Apps."
-  type        = number
-  default     = 1
-}
-
-variable "max_replicas" {
-  description = "Maximum replicas for Container Apps."
-  type        = number
-  default     = 5
-}
-
-variable "admin_password" {
-  description = "Admin API password for Honua (required in non-dev)."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(var.admin_password) >= 12
-    error_message = "admin_password must be at least 12 characters."
-  }
-}
+# --- PostgreSQL ---
 
 variable "db_admin_username" {
   description = "PostgreSQL admin username."
@@ -86,23 +31,10 @@ variable "db_admin_username" {
 }
 
 variable "db_admin_password" {
-  description = "PostgreSQL admin password. Leave null to auto-generate. Ignored when existing_db_connection_string is provided."
+  description = "PostgreSQL admin password. Leave null to auto-generate."
   type        = string
   sensitive   = true
   default     = null
-}
-
-variable "existing_db_fqdn" {
-  description = "Optional existing PostgreSQL server FQDN to reuse instead of creating a new server."
-  type        = string
-  default     = ""
-}
-
-variable "existing_db_connection_string" {
-  description = "Optional existing PostgreSQL connection string to reuse instead of creating a new server/database."
-  type        = string
-  default     = ""
-  sensitive   = true
 }
 
 variable "db_name" {
@@ -153,24 +85,19 @@ variable "db_geo_redundant_backup_enabled" {
   default     = true
 }
 
+variable "db_backup_retention_days" {
+  description = "Backup retention period in days for PostgreSQL."
+  type        = number
+  default     = 14
+}
+
 variable "enable_postgis" {
   description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
   type        = bool
   default     = false
 }
 
-variable "additional_env" {
-  description = "Additional environment variables for the container."
-  type        = map(string)
-  default     = {}
-}
-
-variable "redis_connection_string" {
-  description = "Redis connection string for multi-node mode. Leave empty to create Redis."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
+# --- Redis ---
 
 variable "redis_enabled" {
   description = "Provision Azure Cache for Redis."
@@ -214,29 +141,34 @@ variable "redis_subnet_id" {
   default     = ""
 }
 
-variable "registry_server" {
-  description = "Container registry server (optional)."
-  type        = string
-  default     = ""
-}
+# --- Key Vault ---
 
-variable "registry_username" {
-  description = "Container registry username (optional)."
+variable "admin_password" {
+  description = "Admin API password for Honua (stored in Key Vault)."
   type        = string
-  default     = ""
-}
-
-variable "registry_password" {
-  description = "Container registry password (optional)."
-  type        = string
-  default     = ""
   sensitive   = true
+
+  validation {
+    condition     = length(var.admin_password) >= 12
+    error_message = "admin_password must be at least 12 characters."
+  }
 }
 
 variable "key_vault_purge_protection_enabled" {
   description = "Enable purge protection on the Key Vault."
   type        = bool
   default     = true
+}
+
+variable "key_vault_soft_delete_retention_days" {
+  description = "Number of days to retain soft-deleted Key Vault items."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.key_vault_soft_delete_retention_days >= 7 && var.key_vault_soft_delete_retention_days <= 90
+    error_message = "key_vault_soft_delete_retention_days must be between 7 and 90."
+  }
 }
 
 variable "key_vault_public_network_access_enabled" {
@@ -267,39 +199,4 @@ variable "secret_expiration_days" {
   description = "Days until Key Vault secrets expire."
   type        = number
   default     = 365
-}
-
-variable "enable_ingress" {
-  description = "Expose Container App via external ingress."
-  type        = bool
-  default     = true
-}
-
-variable "log_analytics_enabled" {
-  description = "Enable Log Analytics workspace for Container Apps environment."
-  type        = bool
-  default     = true
-}
-
-variable "scaling_concurrent_requests" {
-  description = "Number of concurrent HTTP requests per replica before scaling out."
-  type        = string
-  default     = "50"
-}
-
-variable "db_backup_retention_days" {
-  description = "Backup retention period in days for PostgreSQL."
-  type        = number
-  default     = 14
-}
-
-variable "key_vault_soft_delete_retention_days" {
-  description = "Number of days to retain soft-deleted Key Vault items."
-  type        = number
-  default     = 30
-
-  validation {
-    condition     = var.key_vault_soft_delete_retention_days >= 7 && var.key_vault_soft_delete_retention_days <= 90
-    error_message = "key_vault_soft_delete_retention_days must be between 7 and 90."
-  }
 }

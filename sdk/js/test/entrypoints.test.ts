@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { HonuaClient, HonuaHttpError } from "../src/honua.js";
+import {
+  createHonuaService,
+  HonuaClient,
+  HonuaFeatureLayer,
+  HonuaHttpError,
+  HonuaMapService,
+  HonuaService,
+} from "../src/honua.js";
 import {
   AttributionCompat,
   BasemapCompat,
@@ -98,6 +105,10 @@ describe("entrypoint modules", () => {
   it("exposes honua-first core entrypoint", () => {
     expect(HonuaClient).toBeTypeOf("function");
     expect(HonuaHttpError).toBeTypeOf("function");
+    expect(HonuaService).toBeTypeOf("function");
+    expect(HonuaFeatureLayer).toBeTypeOf("function");
+    expect(HonuaMapService).toBeTypeOf("function");
+    expect(createHonuaService).toBeTypeOf("function");
   });
 
   it("exposes esri-compat entrypoint", () => {

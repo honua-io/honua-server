@@ -27,7 +27,26 @@ module "vpc" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
+  manage_default_security_group  = true
+  default_security_group_ingress = []
+  default_security_group_egress  = []
+
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = "1"
+  }
+
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = "1"
+  }
+
   tags = local.tags
+}
+
+resource "aws_kms_key" "eks" {
+  description             = "EKS secret encryption key for ${local.name}"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  tags                    = local.tags
 }
 
 module "eks" {
@@ -37,8 +56,29 @@ module "eks" {
   cluster_name    = "${local.name}-eks"
   cluster_version = var.cluster_version
 
-  cluster_endpoint_public_access           = true
+  cluster_endpoint_public_access       = var.cluster_endpoint_public_access
+  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
+  cluster_endpoint_private_access      = true
   enable_cluster_creator_admin_permissions = true
+
+  cluster_encryption_config = {
+    provider_key_arn = aws_kms_key.eks.arn
+    resources        = ["secrets"]
+  }
+
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      most_recent = true
+    }
+  }
+
+  cluster_enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   vpc_id                   = module.vpc.vpc_id
   subnet_ids               = module.vpc.private_subnets
@@ -48,6 +88,8 @@ module "eks" {
     default = {
       name           = "default"
       instance_types = var.node_instance_types
+      ami_type       = "AL2023_x86_64_STANDARD"
+      disk_size      = 50
       min_size       = var.node_min_size
       max_size       = var.node_max_size
       desired_size   = var.node_desired_size

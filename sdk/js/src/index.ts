@@ -518,6 +518,28 @@ export type {
   EditorWorkflowCompat,
 } from "./esri-compat/editor.js";
 
+export {
+  createHonuaService,
+  HonuaFeatureLayer,
+  HonuaMapService,
+  HonuaService,
+} from "./core/surfaces.js";
+export type {
+  HonuaFeatureLayerApplyEditsRequest,
+  HonuaFeatureLayerOptions,
+  HonuaFeatureLayerQueryAllRequest,
+  HonuaFeatureLayerQueryCountRequest,
+  HonuaFeatureLayerQueryObjectIdsRequest,
+  HonuaFeatureLayerQueryRelatedRecordsRequest,
+  HonuaFeatureLayerQueryRequest,
+  HonuaMapServiceExportMapRequest,
+  HonuaMapServiceFindRequest,
+  HonuaMapServiceIdentifyRequest,
+  HonuaMapServiceLegendRequest,
+  HonuaMapServiceOptions,
+  HonuaServiceOptions,
+} from "./core/surfaces.js";
+
 export { scanArcGisUsage, summarizeArcGisScan } from "./migration/scanner.js";
 export type { ArcGisImportHit, ArcGisScanReport } from "./migration/scanner.js";
 export { runEsriCompatCodemod } from "./migration/codemod.js";
@@ -548,6 +570,18 @@ export { evaluateMigrationGates } from "./migration/gating.js";
 export type { MigrationGateEvaluation, MigrationGateOptions } from "./migration/gating.js";
 export { runLayerReconciliation, summarizeLayerReconciliation } from "./migration/reconcile.js";
 export type { LayerReconciliationOptions, LayerReconciliationReport } from "./migration/reconcile.js";
+export {
+  parseGeoservicesServiceUrl,
+  runGeoservicesImportJob,
+  runMigrationDemo,
+} from "./migration/demo.js";
+export type {
+  GeoservicesImportJobReport,
+  GeoservicesImportStageOptions,
+  MigrationDemoOptions,
+  MigrationDemoReport,
+  ParsedGeoservicesServiceUrl,
+} from "./migration/demo.js";
 export { getJsParityMatrix, JS_PARITY_MATRIX, summarizeJsParityMatrix } from "./migration/parity-matrix.js";
 export type {
   JsParityCategory,

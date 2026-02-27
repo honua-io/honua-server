@@ -16,6 +16,11 @@ import type {
   QueryMethod,
   QueryRelatedRecordsRequest,
 } from "./types.js";
+import {
+  HonuaFeatureLayer,
+  HonuaMapService,
+  HonuaService,
+} from "./surfaces.js";
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
@@ -108,6 +113,28 @@ export class HonuaClient {
     }
     this.defaultHeaders = headers;
     this.interceptors = options.interceptors ?? [];
+  }
+
+  public service(serviceId: string): HonuaService {
+    return new HonuaService({
+      client: this,
+      serviceId,
+    });
+  }
+
+  public featureLayer(serviceId: string, layerId: number): HonuaFeatureLayer {
+    return new HonuaFeatureLayer({
+      client: this,
+      serviceId,
+      layerId,
+    });
+  }
+
+  public mapService(serviceId: string): HonuaMapService {
+    return new HonuaMapService({
+      client: this,
+      serviceId,
+    });
   }
 
   public async listServices(format: "json" | "pjson" = "json"): Promise<unknown> {

@@ -50,7 +50,7 @@ variable "honua_image_uri" {
 variable "db_publicly_accessible" {
   description = "Expose RDS publicly for integration testing."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_additional_ingress_cidrs" {

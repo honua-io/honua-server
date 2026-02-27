@@ -11,8 +11,13 @@ variable "role_name" {
 }
 
 variable "scope" {
+  description = "The scope for the role assignment. Defaults to current subscription. Recommended: set to a specific resource group ID."
   type        = string
-  description = "Scope for the role assignment (subscription or resource group). Leave empty for the current subscription."
   default     = ""
+
+  validation {
+    condition     = var.scope == "" || can(regex("^/subscriptions/", var.scope))
+    error_message = "scope must be empty (for subscription) or a valid Azure resource scope starting with /subscriptions/."
+  }
 }
 

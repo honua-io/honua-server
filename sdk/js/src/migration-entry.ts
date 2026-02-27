@@ -28,6 +28,18 @@ export { evaluateMigrationGates } from "./migration/gating.js";
 export type { MigrationGateEvaluation, MigrationGateOptions } from "./migration/gating.js";
 export { runLayerReconciliation, summarizeLayerReconciliation } from "./migration/reconcile.js";
 export type { LayerReconciliationOptions, LayerReconciliationReport } from "./migration/reconcile.js";
+export {
+  parseGeoservicesServiceUrl,
+  runGeoservicesImportJob,
+  runMigrationDemo,
+} from "./migration/demo.js";
+export type {
+  GeoservicesImportJobReport,
+  GeoservicesImportStageOptions,
+  MigrationDemoOptions,
+  MigrationDemoReport,
+  ParsedGeoservicesServiceUrl,
+} from "./migration/demo.js";
 export { getJsParityMatrix, JS_PARITY_MATRIX, summarizeJsParityMatrix } from "./migration/parity-matrix.js";
 export type {
   JsParityCategory,

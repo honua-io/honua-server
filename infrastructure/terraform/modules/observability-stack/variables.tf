@@ -128,3 +128,21 @@ variable "grafana_admin_user" {
   type        = string
   default     = "admin"
 }
+
+variable "prometheus_retention" {
+  description = "How long Prometheus retains time series data."
+  type        = string
+  default     = "15d"
+}
+
+variable "prometheus_retention_size" {
+  description = "Maximum size of Prometheus TSDB before oldest data is dropped."
+  type        = string
+  default     = "18GB"
+}
+
+variable "grafana_ingress_tls_secret" {
+  description = "Kubernetes TLS secret name for Grafana ingress. Empty to disable TLS."
+  type        = string
+  default     = ""
+}

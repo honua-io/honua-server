@@ -14,8 +14,8 @@ output "prometheus_url" {
 }
 
 output "grafana_url" {
-  description = "Grafana URL (ingress host when configured, otherwise cluster-local service URL)."
-  value       = var.grafana_ingress_enabled && var.grafana_ingress_host != "" ? "https://${var.grafana_ingress_host}" : "http://${var.grafana_release_name}.${var.namespace}.svc.cluster.local"
+  description = "URL for accessing the Grafana dashboard."
+  value       = var.grafana_ingress_enabled && var.grafana_ingress_host != "" ? "${var.grafana_ingress_tls_secret != "" ? "https" : "http"}://${var.grafana_ingress_host}" : "kubectl port-forward svc/grafana 3000:80 -n ${var.namespace}"
 }
 
 output "grafana_admin_secret_name" {

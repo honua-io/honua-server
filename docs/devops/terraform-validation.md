@@ -12,7 +12,7 @@ The workflow and scripts cover:
 
 - Static validation: `terraform fmt`, `terraform init -backend=false`, `terraform validate`
 - Policy/security gates: `tflint`, `checkov`, `tfsec`, and custom guard checks in `scripts/terraform-policy-gate.sh`
-- Azure live integration: ACA + Functions, Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and auto-destroy + leak check
+- Azure live integration: `examples/azure-data` bootstrap (Postgres + Redis) by default, then ACA + Functions using those existing connections; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and auto-destroy + leak check
 - AWS live integration: ECS + serverless, Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and auto-destroy + leak check
 - Kubernetes live integration: k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
@@ -118,6 +118,7 @@ gh workflow run terraform-manual-validation.yml \
 Local script entry points:
 
 ```bash
+# Default flow provisions examples/azure-data first, then runs compute stack validation.
 ./scripts/run-azure-terraform-integration.sh --stack both
 ./scripts/run-azure-terraform-integration.sh \
   --stack aca \
@@ -148,5 +149,6 @@ Local script entry points:
   - `infrastructure/terraform/bootstrap/aws-serverless`
   - `infrastructure/terraform/bootstrap/aws-eks`
 - Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
+- Azure script behavior: when neither `--existing-db-connection` nor `--existing-redis-connection` is provided, `scripts/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data` first and feeds outputs into ACA/Functions applies.
 - `.terraform` directories are already ignored in `.gitignore`.
 - Live scripts auto-destroy by default unless `--no-destroy` / `no_destroy=true` is set.

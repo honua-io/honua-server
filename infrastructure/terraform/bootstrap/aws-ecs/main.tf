@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.4"
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -51,6 +51,12 @@ data "aws_iam_policy_document" "terraform" {
       "wafv2:*"
     ]
     resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
   }
 
   statement {

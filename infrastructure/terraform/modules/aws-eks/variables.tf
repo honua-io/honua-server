@@ -25,13 +25,13 @@ variable "vpc_cidr" {
 variable "public_subnet_cidrs" {
   description = "Public subnet CIDRs."
   type        = list(string)
-  default     = ["10.40.101.0/24", "10.40.102.0/24", "10.40.103.0/24"]
+  default     = ["10.40.48.0/24", "10.40.49.0/24", "10.40.50.0/24"]
 }
 
 variable "private_subnet_cidrs" {
   description = "Private subnet CIDRs."
   type        = list(string)
-  default     = ["10.40.1.0/24", "10.40.2.0/24", "10.40.3.0/24"]
+  default     = ["10.40.0.0/20", "10.40.16.0/20", "10.40.32.0/20"]
 }
 
 variable "cluster_version" {
@@ -43,7 +43,7 @@ variable "cluster_version" {
 variable "node_instance_types" {
   description = "Managed node group instance types."
   type        = list(string)
-  default     = ["t3.small"]
+  default     = ["t3.medium"]
 }
 
 variable "node_min_size" {
@@ -62,4 +62,16 @@ variable "node_desired_size" {
   description = "Desired node group size."
   type        = number
   default     = 2
+}
+
+variable "cluster_endpoint_public_access" {
+  description = "Whether the EKS API server endpoint is publicly accessible."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_endpoint_public_access_cidrs" {
+  description = "CIDR blocks allowed to access the EKS public endpoint."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }

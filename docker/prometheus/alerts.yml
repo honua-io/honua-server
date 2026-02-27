@@ -2,7 +2,7 @@ groups:
   - name: honua.alerts
     rules:
       - alert: HonuaInstanceDown
-        expr: up{job="honua-servers"} == 0
+        expr: up{job="honua"} == 0
         for: 2m
         labels:
           severity: critical

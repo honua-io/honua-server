@@ -34,6 +34,7 @@ run_tflint() {
     "$ROOT/examples/aws-serverless"
     "$ROOT/examples/aws-eks"
     "$ROOT/examples/azure"
+    "$ROOT/examples/azure-data"
     "$ROOT/examples/azure-functions"
     "$ROOT/examples/azure-aks"
     "$ROOT/examples/observability"
@@ -125,12 +126,14 @@ run_custom_policy_checks() {
     "$ROOT/modules/aws-serverless/variables.tf"
     "$ROOT/modules/aws-eks/variables.tf"
     "$ROOT/modules/azure-aca/variables.tf"
+    "$ROOT/modules/azure-data/variables.tf"
     "$ROOT/modules/azure-functions/variables.tf"
     "$ROOT/modules/azure-aks/variables.tf"
     "$ROOT/examples/aws/variables.tf"
     "$ROOT/examples/aws-serverless/variables.tf"
     "$ROOT/examples/aws-eks/variables.tf"
     "$ROOT/examples/azure/variables.tf"
+    "$ROOT/examples/azure-data/variables.tf"
     "$ROOT/examples/azure-functions/variables.tf"
     "$ROOT/examples/azure-aks/variables.tf"
   )
@@ -146,6 +149,7 @@ run_custom_policy_checks() {
   assert_regex_present 'transit_encryption_enabled\\s*=\\s*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-redis-transit-encryption"
   assert_regex_present 'transit_encryption_enabled\\s*=\\s*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-transit-encryption"
   assert_regex_present 'minimum_tls_version\\s*=\\s*"1\\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
+  assert_regex_present 'minimum_tls_version\\s*=\\s*"1\\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
   assert_regex_present 'minimum_tls_version\\s*=\\s*"1\\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
 }
 

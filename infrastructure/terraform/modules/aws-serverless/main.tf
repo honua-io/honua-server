@@ -49,17 +49,16 @@ locals {
   db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
-  # NOTE: Lambda environment variables are encrypted at rest by AWS KMS but are visible
-  # in the AWS Console/API. For enhanced secret management, use the AWS Parameters and
-  # Secrets Lambda Extension to resolve secrets from Secrets Manager at runtime.
-  # See: https://docs.aws.amazon.com/systems-manager/latest/userguide/ps-integration-lambda-extensions.html
-  lambda_environment = merge({
-    ConnectionStrings__DefaultConnection = local.db_connection_string
-    HONUA_ADMIN_PASSWORD                 = var.admin_password
-    HONUA_SKIP_MIGRATIONS                = var.skip_migrations ? "true" : "false"
-    }, local.redis_connection != "" ? {
+  redis_settings = local.redis_connection != "" ? {
     ConnectionStrings__redis = local.redis_connection
-  } : {}, var.additional_env)
+  } : {}
+  lambda_environment = merge({
+    HONUA_SECRET_CONNECTION_STRING_ARN = aws_secretsmanager_secret.connection_string.arn
+    HONUA_SECRET_ADMIN_PASSWORD_ARN    = aws_secretsmanager_secret.admin_password.arn
+    HONUA_SERVE_ADMIN_UI               = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                     = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                = "true"
+  }, var.additional_env, local.redis_settings)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -77,6 +76,7 @@ module "vpc" {
   private_subnets = var.private_subnet_cidrs
 
   enable_nat_gateway             = var.enable_nat_gateway
+  single_nat_gateway             = var.single_nat_gateway
   enable_dns_support             = true
   enable_dns_hostnames           = true
   manage_default_security_group  = true
@@ -94,10 +94,10 @@ resource "aws_security_group" "lambda" {
   vpc_id      = module.vpc.vpc_id
 
   egress {
-    description = "Database and Redis access"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "PostgreSQL access"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
     cidr_blocks = [module.vpc.vpc_cidr_block]
   }
 
@@ -150,14 +150,6 @@ resource "aws_security_group" "rds" {
     }
   }
 
-  egress {
-    description = "Outbound HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = local.tags
 }
 
@@ -173,14 +165,6 @@ resource "aws_security_group" "redis" {
     to_port         = var.redis_port
     protocol        = "tcp"
     security_groups = [aws_security_group.lambda.id]
-  }
-
-  egress {
-    description = "Redis outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
   }
 
   tags = local.tags
@@ -236,9 +220,9 @@ module "rds" {
   identifier = "${local.name}-postgres"
 
   engine               = "postgres"
-  engine_version       = "15.4"
-  family               = "postgres15"
-  major_engine_version = "15"
+  engine_version       = var.db_engine_version
+  family               = "postgres${split(".", var.db_engine_version)[0]}"
+  major_engine_version = split(".", var.db_engine_version)[0]
   instance_class       = var.db_instance_class
 
   allocated_storage     = var.db_allocated_storage
@@ -288,6 +272,53 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
+resource "aws_iam_policy" "lambda_secrets" {
+  name = "${local.name}-lambda-secrets"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.connection_string.arn,
+          aws_secretsmanager_secret.admin_password.arn
+        ]
+      }
+    ]
+  })
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_secrets" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = aws_iam_policy.lambda_secrets.arn
+}
+
+resource "aws_secretsmanager_secret" "connection_string" {
+  name        = "${local.name}/connection-string"
+  description = "Database connection string for Honua."
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "connection_string" {
+  secret_id     = aws_secretsmanager_secret.connection_string.id
+  secret_string = local.db_connection_string
+}
+
+resource "aws_secretsmanager_secret" "admin_password" {
+  name        = "${local.name}/admin-password"
+  description = "Admin API password for Honua."
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "admin_password" {
+  secret_id     = aws_secretsmanager_secret.admin_password.id
+  secret_string = var.admin_password
+}
+
 resource "aws_cloudwatch_log_group" "lambda" {
   name              = "/aws/lambda/${local.name}-honua"
   retention_in_days = var.log_retention_days
@@ -334,7 +365,18 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
 resource "aws_apigatewayv2_api" "this" {
   name          = "${local.name}-honua"
   protocol_type = "HTTP"
-  tags          = local.tags
+
+  dynamic "cors_configuration" {
+    for_each = var.cors_allowed_origins != null ? [1] : []
+    content {
+      allow_origins = var.cors_allowed_origins
+      allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      allow_headers = ["Content-Type", "Authorization", "X-API-Key"]
+      max_age       = 300
+    }
+  }
+
+  tags = local.tags
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
@@ -377,8 +419,42 @@ resource "aws_apigatewayv2_stage" "this" {
 
   default_route_settings {
     detailed_metrics_enabled = true
+    throttling_burst_limit   = var.api_throttle_burst_limit
+    throttling_rate_limit    = var.api_throttle_rate_limit
   }
 
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  alarm_name          = "${local.name}-lambda-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_description   = "Lambda function error rate is elevated."
+  dimensions = {
+    FunctionName = aws_lambda_function.this.function_name
+  }
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_5xx" {
+  alarm_name          = "${local.name}-api-5xx"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "5xx"
+  namespace           = "AWS/ApiGateway"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 10
+  alarm_description   = "API Gateway 5xx error rate is elevated."
+  dimensions = {
+    ApiId = aws_apigatewayv2_api.this.id
+  }
   tags = local.tags
 }
 
@@ -401,12 +477,15 @@ resource "null_resource" "enable_postgis" {
     command = <<-EOT
       set -e
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}" \
-        && PGPASSWORD='${local.db_password}' psql \
+        && psql \
           --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
           --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
+    environment = {
+      PGPASSWORD = local.db_password
+    }
   }
 
   depends_on = [module.rds]

@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.4"
+  required_version = ">= 1.5"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -57,7 +57,12 @@ resource "azurerm_role_definition" "terraform" {
       "Microsoft.ManagedIdentity/userAssignedIdentities/*",
       "Microsoft.Insights/diagnosticSettings/*",
       "Microsoft.OperationalInsights/workspaces/*",
-      "Microsoft.Authorization/roleAssignments/*"
+      # P1-20: Scoped role assignment actions instead of wildcard.
+      # Note: azurerm_role_definition does not support conditions on individual actions.
+      # Scope is limited by assignable_scopes below.
+      "Microsoft.Authorization/roleAssignments/write",
+      "Microsoft.Authorization/roleAssignments/read",
+      "Microsoft.Authorization/roleAssignments/delete"
     ]
     not_actions = []
   }

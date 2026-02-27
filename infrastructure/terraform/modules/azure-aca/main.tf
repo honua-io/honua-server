@@ -41,7 +41,7 @@ resource "azurerm_key_vault" "this" {
   tenant_id                     = data.azurerm_client_config.current.tenant_id
   sku_name                      = "standard"
   purge_protection_enabled      = var.key_vault_purge_protection_enabled
-  soft_delete_retention_days    = 7
+  soft_delete_retention_days    = var.key_vault_soft_delete_retention_days
   public_network_access_enabled = var.key_vault_public_network_access_enabled
 
   network_acls {
@@ -86,6 +86,8 @@ resource "random_password" "db" {
   override_special = "#%*()-_=+[]{}:?."
 }
 
+resource "time_static" "secret_baseline" {}
+
 locals {
   db_password            = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
   db_server_fqdn         = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
@@ -93,7 +95,7 @@ locals {
   redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
   redis_create           = var.redis_enabled && var.redis_connection_string == ""
   redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
-  secret_expiration_date = timeadd(timestamp(), format("%dh", var.secret_expiration_days * 24))
+  secret_expiration_date = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -109,10 +111,18 @@ resource "azurerm_postgresql_flexible_server" "this" {
   storage_mb             = var.db_storage_mb
   sku_name               = var.db_sku_name
 
+  backup_retention_days = var.db_backup_retention_days
+
   public_network_access_enabled = var.db_public_network_access
   geo_redundant_backup_enabled  = var.db_geo_redundant_backup_enabled
 
   tags = local.tags
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "require_secure_transport" {
+  name      = "require_secure_transport"
+  server_id = azurerm_postgresql_flexible_server.this[0].id
+  value     = "on"
 }
 
 resource "azurerm_postgresql_flexible_server_firewall_rule" "validation" {
@@ -256,6 +266,11 @@ resource "azurerm_container_app" "this" {
     min_replicas = var.min_replicas
     max_replicas = var.max_replicas
 
+    http_scale_rule {
+      name                = "http-scaling"
+      concurrent_requests = var.scaling_concurrent_requests
+    }
+
     container {
       name   = "honua"
       image  = var.image
@@ -286,6 +301,37 @@ resource "azurerm_container_app" "this" {
           name  = env.key
           value = env.value
         }
+      }
+
+      liveness_probe {
+        transport = "HTTP"
+        path      = "/healthz/live"
+        port      = var.container_port
+
+        initial_delay    = 10
+        interval_seconds = 30
+        timeout          = 5
+        failure_count_threshold = 3
+      }
+
+      readiness_probe {
+        transport = "HTTP"
+        path      = "/healthz/ready"
+        port      = var.container_port
+
+        interval_seconds = 10
+        timeout          = 5
+        failure_count_threshold = 3
+      }
+
+      startup_probe {
+        transport = "HTTP"
+        path      = "/healthz/ready"
+        port      = var.container_port
+
+        interval_seconds = 10
+        timeout          = 5
+        failure_count_threshold = 10
       }
     }
   }
@@ -320,7 +366,7 @@ resource "null_resource" "enable_postgis" {
       set -e
       echo "Waiting for PostgreSQL readiness on ${local.db_server_fqdn}"
       for attempt in $(seq 1 30); do
-        if PGCONNECT_TIMEOUT=5 PGPASSWORD='${local.db_password}' psql \
+        if PGCONNECT_TIMEOUT=5 psql \
           --host=${local.db_server_fqdn} \
           --username=${var.db_admin_username} \
           --dbname=${var.db_name} \
@@ -335,13 +381,17 @@ resource "null_resource" "enable_postgis" {
       done
 
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_server_fqdn}"
-      PGCONNECT_TIMEOUT=5 PGPASSWORD='${local.db_password}' psql \
+      PGCONNECT_TIMEOUT=5 psql \
         --host=${local.db_server_fqdn} \
         --username=${var.db_admin_username} \
         --dbname=${var.db_name} \
         --set=ON_ERROR_STOP=1 \
         --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
+
+    environment = {
+      PGPASSWORD = local.db_password
+    }
   }
 
   depends_on = [

@@ -18,9 +18,9 @@ module "honua" {
   enable_postgis                = var.enable_postgis
   redis_enabled                 = var.redis_enabled
   redis_connection_string       = var.redis_connection_string
-  redis_sku_name                = "Basic"
+  redis_sku_name                = "Standard"
   redis_family                  = "C"
-  redis_capacity                = 0
+  redis_capacity                = 1
   min_replicas                  = var.min_replicas
   max_replicas                  = var.max_replicas
   key_vault_default_action      = var.key_vault_default_action
@@ -29,7 +29,6 @@ module "honua" {
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
-    AllowedHosts         = "*"
   }
 }
 
