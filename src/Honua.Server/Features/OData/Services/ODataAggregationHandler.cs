@@ -107,10 +107,14 @@ internal sealed class ODataAggregationHandler
         var groupbyMatch = Regex.Match(trimmed, @"^groupby\s*\(\s*\(([^)]+)\)\s*(?:,\s*aggregate\((.+)\))?\s*\)$", RegexOptions.IgnoreCase);
         if (groupbyMatch.Success)
         {
-            var groupByFields = groupbyMatch.Groups[1].Value
-                .Split(',')
-                .Select(f => f.Trim())
-                .Where(f => !string.IsNullOrEmpty(f))
+            var rawGroupByFields = groupbyMatch.Groups[1].Value;
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(rawGroupByFields))
+            {
+                throw new ArgumentException("groupby contains an empty field expression.");
+            }
+
+            var groupByFields = rawGroupByFields
+                .Split(',', StringSplitOptions.TrimEntries)
                 .ToImmutableArray();
 
             ImmutableArray<AggregateExpression>? aggregates = null;
@@ -164,6 +168,10 @@ internal sealed class ODataAggregationHandler
         foreach (var part in parts)
         {
             var trimmed = part.Trim();
+            if (trimmed.Length == 0)
+            {
+                throw new ArgumentException("aggregate contains an empty expression segment.");
+            }
 
             // Pattern: field with function as alias
             // Example: population with sum as TotalPop
@@ -204,6 +212,7 @@ internal sealed class ODataAggregationHandler
         var result = new List<string>();
         var current = new System.Text.StringBuilder();
         var depth = 0;
+        var trimmedInput = input.Trim();
 
         foreach (var c in input)
         {
@@ -231,6 +240,11 @@ internal sealed class ODataAggregationHandler
         if (current.Length > 0)
         {
             result.Add(current.ToString());
+        }
+
+        if (trimmedInput.EndsWith(','))
+        {
+            result.Add(string.Empty);
         }
 
         return result;

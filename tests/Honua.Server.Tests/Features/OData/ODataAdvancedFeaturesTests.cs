@@ -1089,6 +1089,17 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         feature.TryGetProperty("population", out _).Should().BeFalse();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$compute with malformed delimiter")]
+    public async Task Features_WithMalformedComputeDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=1&$compute=population div 1000 as PopulationThousands,");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     #endregion
 
     #region Expand Tests

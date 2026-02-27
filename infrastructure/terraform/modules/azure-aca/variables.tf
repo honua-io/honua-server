@@ -25,7 +25,7 @@ variable "tags" {
 variable "image" {
   description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster startup and lower memory."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
+  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "container_cpu" {
@@ -35,9 +35,14 @@ variable "container_cpu" {
 }
 
 variable "container_memory" {
-  description = "Container memory in GiB."
-  type        = number
-  default     = 1.0
+  description = "Container memory with Gi suffix (for example 1Gi, 1.5Gi)."
+  type        = string
+  default     = "1Gi"
+
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]{1,2})?Gi$", var.container_memory))
+    error_message = "container_memory must be a decimal value with Gi suffix, such as 1Gi or 1.5Gi."
+  }
 }
 
 variable "container_port" {
@@ -71,10 +76,23 @@ variable "db_admin_username" {
 }
 
 variable "db_admin_password" {
-  description = "PostgreSQL admin password. Leave null to auto-generate."
+  description = "PostgreSQL admin password. Leave null to auto-generate. Ignored when existing_db_connection_string is provided."
   type        = string
   sensitive   = true
   default     = null
+}
+
+variable "existing_db_fqdn" {
+  description = "Optional existing PostgreSQL server FQDN to reuse instead of creating a new server."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Optional existing PostgreSQL connection string to reuse instead of creating a new server/database."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "db_name" {
@@ -107,6 +125,18 @@ variable "db_public_network_access" {
   default     = true
 }
 
+variable "db_firewall_start_ip" {
+  description = "Optional PostgreSQL firewall start IP. Set with db_firewall_end_ip to allow external validation access."
+  type        = string
+  default     = ""
+}
+
+variable "db_firewall_end_ip" {
+  description = "Optional PostgreSQL firewall end IP. Set with db_firewall_start_ip to allow external validation access."
+  type        = string
+  default     = ""
+}
+
 variable "db_geo_redundant_backup_enabled" {
   description = "Enable geo-redundant backups for PostgreSQL Flexible Server."
   type        = bool
@@ -114,7 +144,7 @@ variable "db_geo_redundant_backup_enabled" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS via local-exec (requires psql + network access)."
+  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
   type        = bool
   default     = false
 }

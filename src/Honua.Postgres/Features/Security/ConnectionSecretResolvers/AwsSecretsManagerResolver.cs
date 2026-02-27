@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -22,8 +23,16 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     private const string MetadataClientName = "AwsMetadata";
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _metadataTimeout = TimeSpan.FromSeconds(2);
+    private static readonly IPAddress _ecsCredentialsEndpoint = IPAddress.Parse("169.254.170.2");
+    private static readonly IPAddress _eksPodIdentityEndpoint = IPAddress.Parse("169.254.170.23");
+    private static readonly IPAddress _eksPodIdentityEndpointV6 = IPAddress.Parse("fd00:ec2::23");
     private static readonly Action<ILogger, Exception?> _logImdsTokenFailed =
         LoggerMessage.Define(LogLevel.Debug, new EventId(6403, "AwsImdsTokenRequestFailed"), "AWS IMDS token request failed");
+    private static readonly Action<ILogger, string, Exception?> _logRejectedEcsCredentialsUri =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(6404, "AwsEcsCredentialsUriRejected"),
+            "Rejected AWS container credentials URI '{Uri}' because it is not a trusted local endpoint.");
 
     private readonly HttpClient _secretsClient;
     private readonly HttpClient _metadataClient;
@@ -80,8 +89,8 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException($"AWS Secrets Manager request failed ({(int)response.StatusCode}): {body}");
+            throw new InvalidOperationException(
+                $"AWS Secrets Manager request failed with status code {(int)response.StatusCode}.");
         }
 
         var responseContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -108,7 +117,16 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             return Task.FromResult(false);
         }
 
-        var secretId = ParseSecretOptions(secretIdWithOptions).SecretId;
+        string secretId;
+        try
+        {
+            secretId = ParseSecretOptions(secretIdWithOptions).SecretId;
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(false);
+        }
+
         var region = TryResolveRegion(secretId);
         if (string.IsNullOrWhiteSpace(region))
         {
@@ -270,7 +288,18 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         if (root.TryGetProperty("SecretBinary", out var secretBinaryElement) &&
             secretBinaryElement.ValueKind == JsonValueKind.String)
         {
-            var decoded = Convert.FromBase64String(secretBinaryElement.GetString()!);
+            byte[] decoded;
+            try
+            {
+                decoded = Convert.FromBase64String(secretBinaryElement.GetString()!);
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidOperationException(
+                    "AWS secret binary payload is not valid base64.",
+                    ex);
+            }
+
             return SecretValueExtractor.ExtractValue(Encoding.UTF8.GetString(decoded));
         }
 
@@ -299,7 +328,13 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
             }
 
             var key = kvp[0];
-            var value = Uri.UnescapeDataString(kvp[1]);
+            if (!TryUnescapeSecretOptionValue(kvp[1], out var value))
+            {
+                throw new ArgumentException(
+                    "AWS secret reference contains malformed option encoding.",
+                    nameof(secretIdWithOptions));
+            }
+
             if (key.Equals("versionStage", StringComparison.OrdinalIgnoreCase))
             {
                 versionStage = value;
@@ -311,6 +346,62 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         }
 
         return (secretId, versionStage, versionId);
+    }
+
+    private static bool TryUnescapeSecretOptionValue(string value, out string decoded)
+    {
+        decoded = string.Empty;
+
+        if (ContainsMalformedEscapeSequence(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            decoded = Uri.UnescapeDataString(value);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsMalformedEscapeSequence(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] != '%')
+            {
+                continue;
+            }
+
+            if (i + 2 >= value.Length)
+            {
+                return true;
+            }
+
+            if (!IsHexDigit(value[i + 1]) || !IsHexDigit(value[i + 2]))
+            {
+                return true;
+            }
+
+            i += 2;
+        }
+
+        return false;
+    }
+
+    private static bool IsHexDigit(char c)
+    {
+        return (c >= '0' && c <= '9')
+            || (c >= 'A' && c <= 'F')
+            || (c >= 'a' && c <= 'f');
     }
 
     private static string ResolveRegion(string secretId)
@@ -422,15 +513,7 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         var relativeUri = Environment.GetEnvironmentVariable("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
         var fullUri = Environment.GetEnvironmentVariable("AWS_CONTAINER_CREDENTIALS_FULL_URI");
 
-        Uri? endpoint = null;
-        if (!string.IsNullOrWhiteSpace(relativeUri))
-        {
-            endpoint = new Uri($"http://169.254.170.2{relativeUri}");
-        }
-        else if (!string.IsNullOrWhiteSpace(fullUri))
-        {
-            endpoint = new Uri(fullUri);
-        }
+        Uri? endpoint = ResolveEcsCredentialsEndpoint(relativeUri, fullUri);
 
         if (endpoint == null)
         {
@@ -456,6 +539,72 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
         var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
         return ParseCredentials(content);
     }
+
+    private Uri? ResolveEcsCredentialsEndpoint(string? relativeUri, string? fullUri)
+    {
+        if (!string.IsNullOrWhiteSpace(relativeUri))
+        {
+            if (!relativeUri.StartsWith('/'))
+            {
+                _logRejectedEcsCredentialsUri(_logger, relativeUri, null);
+                return null;
+            }
+
+            return new Uri($"http://{_ecsCredentialsEndpoint}{relativeUri}", UriKind.Absolute);
+        }
+
+        if (string.IsNullOrWhiteSpace(fullUri))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(fullUri, UriKind.Absolute, out var endpoint) ||
+            !IsAllowedEcsCredentialsEndpoint(endpoint))
+        {
+            _logRejectedEcsCredentialsUri(_logger, fullUri, null);
+            return null;
+        }
+
+        return endpoint;
+    }
+
+    internal static bool IsAllowedEcsCredentialsEndpoint(Uri endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+
+        if (!string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(endpoint.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(endpoint.UserInfo))
+        {
+            return false;
+        }
+
+        if (endpoint.IsLoopback || IsLocalhostHostName(endpoint.Host))
+        {
+            return true;
+        }
+
+        if (!IPAddress.TryParse(endpoint.Host, out var hostAddress))
+        {
+            return false;
+        }
+
+        hostAddress = NormalizeAddress(hostAddress);
+        return hostAddress.Equals(_ecsCredentialsEndpoint) ||
+               hostAddress.Equals(_eksPodIdentityEndpoint) ||
+               hostAddress.Equals(_eksPodIdentityEndpointV6);
+    }
+
+    private static IPAddress NormalizeAddress(IPAddress address)
+        => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+
+    private static bool IsLocalhostHostName(string host)
+        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
 
     private async Task<AwsCredentials?> TryGetImdsCredentialsAsync(CancellationToken cancellationToken)
     {

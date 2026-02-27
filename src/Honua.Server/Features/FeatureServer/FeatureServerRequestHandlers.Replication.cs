@@ -395,7 +395,15 @@ internal static partial class FeatureServerEndpoints
         }
 
         var layerById = service.Layers.ToDictionary(layer => layer.Id);
-        var tokens = layersParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var tokens = layersParam.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Any(token => token.Length == 0))
+        {
+            error = StandardErrorHelpers.CreateBadRequest(
+                context,
+                "layers parameter must contain only numeric layer IDs.");
+            return false;
+        }
+
         var ids = new HashSet<int>();
 
         foreach (var token in tokens)

@@ -46,4 +46,31 @@ public sealed class GeometryServiceTests
         result.HasZ.Should().BeFalse();
         result.HasM.Should().BeTrue();
     }
+
+    [Fact]
+    public void ConvertGeoJsonToWkb_WithMalformedPayload_ReturnsSanitizedError()
+    {
+        const string malformed = """{"type":"Point","coordinates":SENTINEL_GEOMETRY_TOKEN}""";
+
+        var action = () => _service.ConvertGeoJsonToWkb(malformed);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Contain("Invalid GeoJSON format.");
+        ex.Message.Should().NotContain("SENTINEL_GEOMETRY_TOKEN");
+        ex.Message.Should().NotContain("BytePositionInLine");
+        ex.Message.Should().NotContain("LineNumber");
+    }
+
+    [Fact]
+    public void ConvertWkbToGeoJson_WithMalformedPayload_ReturnsSanitizedError()
+    {
+        var malformed = new byte[] { 0x01, 0x02, 0x03 };
+
+        var action = () => _service.ConvertWkbToGeoJson(malformed);
+
+        var ex = action.Should().Throw<ArgumentException>().Which;
+        ex.Message.Should().Contain("Invalid WKB geometry format.");
+        ex.Message.Should().NotContain("BytePositionInLine");
+        ex.Message.Should().NotContain("LineNumber");
+    }
 }

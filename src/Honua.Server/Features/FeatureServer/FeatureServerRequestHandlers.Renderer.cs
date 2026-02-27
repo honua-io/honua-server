@@ -14,6 +14,8 @@ namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const string InvalidRendererJsonMessage = "classificationDef must be valid JSON.";
+
     private static async Task<IResult> HandleGenerateRenderer(
         HttpContext context)
     {
@@ -66,7 +68,7 @@ internal static partial class FeatureServerEndpoints
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid classificationDef",
-                [jsonError ?? "classificationDef must be valid JSON."]);
+                [jsonError ?? InvalidRendererJsonMessage]);
         }
 
         if (!layer.HasGeometry)
@@ -147,9 +149,9 @@ internal static partial class FeatureServerEndpoints
             using var _ = JsonDocument.Parse(payload);
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidRendererJsonMessage;
             return false;
         }
     }

@@ -228,6 +228,36 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Buffer)]
     [Endpoint("POST /rest/services/geometry/buffer")]
+    public async Task Buffer_MalformedGeometryPayload_DoesNotLeakParserDetails()
+    {
+        const string sentinel = "GEOMETRY_SENTINEL";
+        var body = $$"""
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": "{{sentinel}}", "y": 37.7749}]
+            },
+            "inSR": "4326",
+            "distances": "100"
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/geometry/buffer", content);
+
+        response.Be400BadRequest();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Invalid geometry input.");
+        responseContent.Should().NotContain(sentinel);
+        responseContent.Should().NotContain("BytePositionInLine");
+        responseContent.Should().NotContain("LineNumber");
+        responseContent.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
+    [Endpoint("POST /rest/services/geometry/buffer")]
     public async Task Buffer_MissingDistance_Returns400()
     {
         var body = """

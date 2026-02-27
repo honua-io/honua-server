@@ -208,6 +208,23 @@ public class RouteParameterValidatorTests
     }
 
     [Theory]
+    [InlineData("feature%")]
+    [InlineData("feature%2")]
+    [InlineData("feature%zz")]
+    public void ValidateFeatureId_WithMalformedUrlEncoding_TreatsValueAsLiteral(string featureId)
+    {
+        // Arrange
+        var context = CreateMockContext(new Dictionary<string, object?> { { "featureId", featureId } });
+
+        // Act
+        var result = _validator.ValidateFeatureId(context);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Value.Should().Be(featureId);
+    }
+
+    [Theory]
     [InlineData("GET", new[] { "GET", "POST" }, true)]
     [InlineData("POST", new[] { "GET", "POST" }, true)]
     [InlineData("PUT", new[] { "GET", "POST" }, false)]

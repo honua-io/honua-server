@@ -73,7 +73,7 @@ variable "assign_public_ip" {
 variable "image" {
   description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster startup and lower memory."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
+  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "admin_password" {
@@ -119,6 +119,12 @@ variable "db_publicly_accessible" {
   default     = false
 }
 
+variable "db_additional_ingress_cidrs" {
+  description = "Additional CIDRs allowed to access PostgreSQL (for controlled migration/PostGIS operations)."
+  type        = list(string)
+  default     = []
+}
+
 variable "db_multi_az" {
   description = "Enable Multi-AZ for RDS."
   type        = bool
@@ -129,6 +135,19 @@ variable "db_require_ssl" {
   description = "Append SSL requirements to the connection string."
   type        = bool
   default     = true
+}
+
+variable "existing_db_endpoint" {
+  description = "Existing PostgreSQL endpoint to reuse. Set with existing_db_connection_string."
+  type        = string
+  default     = ""
+}
+
+variable "existing_db_connection_string" {
+  description = "Existing PostgreSQL connection string to reuse. Set with existing_db_endpoint."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "allow_public_ingress_cidrs" {
@@ -308,7 +327,7 @@ variable "kms_key_deletion_window_days" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS via local-exec (requires psql + network access)."
+  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
   type        = bool
   default     = false
 }

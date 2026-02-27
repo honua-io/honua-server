@@ -15,6 +15,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.MapServer.Rendering;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 using SkiaSharp;
 
 namespace Honua.Server.Features.MapServer;
@@ -38,6 +39,14 @@ internal static partial class MapServerEndpoints
         if (!TryParseTileCoordinates(context, out var z, out var y, out var x))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid tile coordinates.");
+        }
+
+        var tileLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        if (z < tileLimits.MinTileZoom || z > tileLimits.MaxTileZoom)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Zoom level {z} is outside supported range ({tileLimits.MinTileZoom}-{tileLimits.MaxTileZoom}).");
         }
 
         if (!TileMath.ValidateTileCoordinates(x, y, z))

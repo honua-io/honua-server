@@ -673,9 +673,9 @@ internal sealed class OgcMapsRenderingHandler
         {
             return (null, "Numeric parameter value is out of range.");
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return (null, ex.Message);
+            return (null, "Invalid map request parameters.");
         }
     }
 }

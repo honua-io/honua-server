@@ -193,11 +193,18 @@ internal static partial class FeatureServerEndpoints
                 : $"({where}) AND ({definitionExpression})";
         }
 
+        var outFields = GetValueString(values, "outFields");
+        if (HasEmptyCommaSeparatedToken(outFields))
+        {
+            errorMessage = "outFields parameter contains an empty field name";
+            return false;
+        }
+
         parameters = new QueryRelatedRecordsParameters
         {
             ObjectIds = objectIds,
             RelationshipId = relationshipId,
-            OutFields = NormalizeOutFields(GetValueString(values, "outFields")),
+            OutFields = NormalizeOutFields(outFields),
             Where = where,
             ReturnGeometry = returnGeometry,
             F = GetValueString(values, "f") ?? "json",

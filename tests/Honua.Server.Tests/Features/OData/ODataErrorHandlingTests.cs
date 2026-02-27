@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -431,6 +432,40 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/Layers({layerId})/Features with invalid geometry payload details hidden")]
+    public async Task Create_InvalidGeometryPayload_DoesNotLeakParserDetails()
+    {
+        const string sentinel = "SENTINEL_GEOMETRY_PAYLOAD";
+        var payload = new
+        {
+            Geometry = new
+            {
+                type = "Point",
+                coordinates = sentinel
+            },
+            Attributes = new { name = "Test" }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            $"/odata/Layers({TestLayerId})/Features",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Be("Invalid geometry payload.");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain(sentinel);
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("PATCH /odata/Features({layerId},{objectId}) with invalid JSON")]
     public async Task Update_InvalidJson_ReturnsBadRequest()
     {
@@ -539,6 +574,30 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         await AssertODataErrorAsync(response);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /odata/Features({layerId})/$apply?$apply=groupby((field,,field),aggregate(...))")]
+    public async Task Apply_GroupBy_WithMalformedDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=groupby((state,,state),aggregate(population with sum as TotalPop))");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /odata/Features({layerId})/$apply?$apply=aggregate(...,)")]
+    public async Task Apply_Aggregate_WithTrailingDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})/$apply?$apply=aggregate(population with sum as TotalPop,)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response);
+    }
+
     #endregion
 
     #region $search Errors
@@ -568,6 +627,32 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
             new StringContent("{ invalid json }", Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with unsupported content type")]
+    public async Task Batch_UnsupportedContentType_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent("{}", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch without content type")]
+    public async Task Batch_MissingContentType_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new ByteArrayContent("{}"u8.ToArray()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response);
     }
 
     [IntegrationTest]
@@ -616,6 +701,194 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         var responses = document.RootElement.GetProperty("responses");
         var firstResponse = responses[0];
         firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with malformed key predicate URL")]
+    public async Task Batch_MalformedKeyPredicateUrl_ReturnsErrorInResponse()
+    {
+        var payload = new
+        {
+            requests = new[]
+            {
+                new
+                {
+                    id = "1",
+                    method = "GET",
+                    url = "Features(0,,1)"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var responses = document.RootElement.GetProperty("responses");
+        var firstResponse = responses[0];
+        firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with key predicate containing unknown key")]
+    public async Task Batch_KeyPredicateWithUnknownKey_ReturnsErrorInResponse()
+    {
+        var payload = new
+        {
+            requests = new[]
+            {
+                new
+                {
+                    id = "1",
+                    method = "GET",
+                    url = "Features(LayerId=0,ObjectId=1,Extra=1)"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var responses = document.RootElement.GetProperty("responses");
+        var firstResponse = responses[0];
+        firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with duplicate key predicate property")]
+    public async Task Batch_KeyPredicateWithDuplicateObjectId_ReturnsErrorInResponse()
+    {
+        var payload = new
+        {
+            requests = new[]
+            {
+                new
+                {
+                    id = "1",
+                    method = "GET",
+                    url = "Features(LayerId=0,ObjectId=1,ObjectId=2)"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var responses = document.RootElement.GetProperty("responses");
+        var firstResponse = responses[0];
+        firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with malformed $select delimiter")]
+    public async Task Batch_MalformedSelectDelimiter_ReturnsErrorInResponse()
+    {
+        var payload = new
+        {
+            requests = new[]
+            {
+                new
+                {
+                    id = "1",
+                    method = "GET",
+                    url = "Features(0)?$select=ObjectId,,LayerId"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        var responses = document.RootElement.GetProperty("responses");
+        var firstResponse = responses[0];
+        firstResponse.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with too many requests")]
+    public async Task Batch_TooManyRequests_ReturnsBadRequest()
+    {
+        var requests = string.Join(
+            ',',
+            Enumerable.Range(1, 1001)
+                .Select(i => $$"""{"id":"{{i}}","method":"GET","url":"Features(0,1)"}"""));
+
+        var payload = $$"""{"requests":[{{requests}}]}""";
+
+        var response = await _fixture.Client.PostAsync(
+            "/odata/$batch",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Contain("maximum of 1000 operations");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /odata/$batch with oversized multipart section")]
+    public async Task Batch_MultipartSectionTooLarge_ReturnsBadRequest()
+    {
+        const string boundary = "batch_oversized";
+        var oversizedBody = new string('a', 10 * 1024 * 1024 + 1);
+        var payload = string.Join("\r\n",
+        [
+            $"--{boundary}",
+            "Content-Type: application/http",
+            "Content-Transfer-Encoding: binary",
+            string.Empty,
+            "GET /odata/Features(0,1) HTTP/1.1",
+            "Accept: application/json",
+            string.Empty,
+            oversizedBody,
+            $"--{boundary}--",
+            string.Empty
+        ]);
+
+        var content = new StringContent(payload, Encoding.UTF8);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
+
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertODataErrorAsync(response, "BadRequest");
+
+        var message = await GetODataErrorMessageAsync(response);
+        message.Should().Contain("maximum allowed size");
     }
 
     #endregion

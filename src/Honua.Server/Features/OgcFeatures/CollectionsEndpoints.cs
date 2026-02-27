@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -154,8 +155,10 @@ internal static class CollectionsEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            CollectionsEndpointLogging.LogInvalidCollectionsOperation(logger, ex);
-            return StandardErrorHelpers.CreateBadRequest(context, "Invalid operation.");
+            CollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "An error occurred while retrieving collections.");
         }
         catch (Exception ex)
         {
@@ -246,16 +249,24 @@ internal static class CollectionsEndpoints
         {
             throw;
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
+        catch (ArgumentException ex)
+        {
+            CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "An error occurred while retrieving the collection.");
+        }
+        catch (ResourceNotFoundException)
         {
             OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            // Layer not found is a legitimate 404 case
-            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "An error occurred while retrieving the collection.");
         }
         catch (Exception ex)
         {
@@ -337,15 +348,24 @@ internal static class CollectionsEndpoints
         {
             throw;
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("parse") || ex.Message.Contains("invalid"))
+        catch (ArgumentException ex)
+        {
+            CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "An error occurred while retrieving the queryables schema.");
+        }
+        catch (ResourceNotFoundException)
         {
             OgcFeaturesLog.CollectionNotFound(logger, collectionId);
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "An error occurred while retrieving the queryables schema.");
         }
         catch (Exception ex)
         {

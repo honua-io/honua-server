@@ -94,7 +94,7 @@ helm upgrade --install honua infrastructure/helm/honua -f values-prod.yaml
 
 ## External PostGIS database (recommended for production)
 
-For production, point `ConnectionStrings__DefaultConnection` at a managed PostGIS database (e.g., Amazon RDS, Azure Flexible Server, Cloud SQL) rather than using the Bitnami subchart.
+For production, point `ConnectionStrings__DefaultConnection` at a managed PostGIS database (e.g., Amazon RDS, Azure Flexible Server) rather than using the Bitnami subchart.
 
 > The Bitnami PostgreSQL subchart **does not include PostGIS**. Honua requires PostGIS for migrations and spatial queries. For anything beyond local development, use an external PostGIS-enabled database.
 

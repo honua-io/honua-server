@@ -83,6 +83,28 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithMalformedObjectIdsDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?objectIds=1,,2&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithMalformedOutFieldsDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?outFields=name,,category&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task QueryPost_WithUnsupportedBodyParameter_ReturnsBadRequest()
     {
@@ -101,6 +123,27 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithMalformedOutStatistics_DoesNotLeakJsonParserDetails()
+    {
+        const string sentinel = "SENTINEL_STAT_FIELD";
+        var malformedOutStatistics = Uri.EscapeDataString($"[{{\"statisticType\":\"count\",\"onStatisticField\":\"{sentinel}\"");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&outStatistics={malformedOutStatistics}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("outStatistics must be a valid JSON array.");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+        content.Should().NotContain(sentinel);
     }
 
     [IntegrationTest]

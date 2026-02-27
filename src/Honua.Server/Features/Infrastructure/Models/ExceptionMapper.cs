@@ -129,10 +129,17 @@ internal static class ExceptionMapper
                 null
             ),
 
+            InvalidOperationException invalidOperationEx when IsAuthenticationInvalidOperation(invalidOperationEx) => (
+                StatusCodes.Status401Unauthorized,
+                "Unauthorized",
+                "Authentication is required to access this resource.",
+                null
+            ),
+
             InvalidOperationException => (
-                StatusCodes.Status400BadRequest,
-                "Bad Request",
-                "The requested operation is not valid in the current state.",
+                StatusCodes.Status500InternalServerError,
+                "Internal Server Error",
+                "An unexpected error occurred while processing the request.",
                 null
             ),
 
@@ -197,6 +204,20 @@ internal static class ExceptionMapper
             || exception is ResourceNotFoundException
             || exception is ResourceConflictException
             || exception is ServiceUnavailableException;
+    }
+
+    /// <summary>
+    /// Detects authentication failures surfaced by IdentityModel/OpenIdConnect as InvalidOperationException
+    /// (for example "IDX20803"), and maps them to 401 instead of generic server errors.
+    /// </summary>
+    private static bool IsAuthenticationInvalidOperation(InvalidOperationException ex)
+    {
+        if (string.IsNullOrWhiteSpace(ex.Message))
+        {
+            return false;
+        }
+
+        return ex.Message.StartsWith("IDX", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

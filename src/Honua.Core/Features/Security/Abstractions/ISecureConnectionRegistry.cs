@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Security.Abstractions;
@@ -99,7 +100,8 @@ public interface ISecureConnectionResolver
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Resolved plaintext connection string</returns>
     /// <exception cref="ArgumentException">Thrown when connectionName is null or empty</exception>
-    /// <exception cref="InvalidOperationException">Thrown when connection not found or inactive</exception>
+    /// <exception cref="ResourceNotFoundException">Thrown when the connection is not found</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the connection is inactive or invalid</exception>
     /// <exception cref="UnauthorizedAccessException">Thrown when connection access is denied</exception>
     Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default);
 
@@ -109,7 +111,8 @@ public interface ISecureConnectionResolver
     /// <param name="connectionId">ID of the connection to resolve</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Resolved plaintext connection string</returns>
-    /// <exception cref="InvalidOperationException">Thrown when connection not found or inactive</exception>
+    /// <exception cref="ResourceNotFoundException">Thrown when the connection is not found</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the connection is inactive or invalid</exception>
     /// <exception cref="UnauthorizedAccessException">Thrown when connection access is denied</exception>
     Task<string> ResolveConnectionStringAsync(Guid connectionId, CancellationToken cancellationToken = default);
 

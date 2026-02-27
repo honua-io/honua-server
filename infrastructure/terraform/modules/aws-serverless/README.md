@@ -11,7 +11,7 @@ module "honua" {
   environment    = "dev"
   image          = var.honua_image_uri   # Must be an ECR image URI
   admin_password = var.honua_admin_password
-  enable_postgis = true  # Required — Honua needs PostGIS for migrations
+  enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
@@ -23,7 +23,7 @@ module "honua" {
 ## Prerequisites
 
 - **ECR image**: Lambda container images must be stored in ECR. Push the Honua image (or an extended Lambda-compatible version) to your ECR repository before applying.
-- **PostGIS**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS).
+- **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS). For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
 - **Migrations**: `skip_migrations` defaults to `true` for serverless. Run migrations out-of-band (e.g. via a one-off ECS task or local `psql`) before first use.
 
 ## Production example
@@ -74,11 +74,14 @@ module "honua" {
 | `lambda_memory_size` | 1024 | Lambda memory in MB (128–10240). |
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
 | `lambda_architectures` | `["x86_64"]` | `x86_64` or `arm64`. |
-| `enable_postgis` | **false** | Enable PostGIS on RDS. **Set to true.** |
+| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
+| `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
+| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
 | `db_multi_az` | false | Enable Multi-AZ failover. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
+| `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
 | `enable_nat_gateway` | true | NAT gateways for outbound access. Required for OIDC. |
 
 See `variables.tf` for the complete list.

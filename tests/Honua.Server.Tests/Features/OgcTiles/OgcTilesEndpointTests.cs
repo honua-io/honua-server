@@ -167,6 +167,16 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
+    public async Task GetDatasetTileset_WithMalformedCollectionsDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad?collections=0,");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
     public async Task GetDatasetTileset_WithoutCollections_WhenMultipleCollectionsExist_ReturnsTilesetMetadata()
     {
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad");

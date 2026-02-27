@@ -682,7 +682,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
             return true;
         }
 
-        var tokens = rawIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (HasEmptyCommaSeparatedToken(rawIds))
+        {
+            error = "Parameter 'ids' contains an empty ID value.";
+            return false;
+        }
+
+        var tokens = rawIds.Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Length == 0)
         {
             error = "Parameter 'ids' must contain at least one ID value.";
@@ -728,7 +734,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
             return true;
         }
 
-        var tokens = rawProperties.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (HasEmptyCommaSeparatedToken(rawProperties))
+        {
+            error = "Parameter 'properties' contains an empty field name.";
+            return false;
+        }
+
+        var tokens = rawProperties.Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Length == 0)
         {
             error = "Parameter 'properties' must contain at least one field name.";
@@ -779,7 +791,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
             return true;
         }
 
-        var tokens = rawSortBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (HasEmptyCommaSeparatedToken(rawSortBy))
+        {
+            error = "Parameter 'sortby' contains an empty field expression.";
+            return false;
+        }
+
+        var tokens = rawSortBy.Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Length == 0)
         {
             error = "Parameter 'sortby' must contain at least one field expression.";
@@ -792,7 +810,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var token = rawToken.Trim();
             if (token.Length == 0)
             {
-                continue;
+                error = "Invalid sortby expression.";
+                return false;
             }
 
             var ascending = true;
@@ -879,6 +898,19 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
 
         return true;
+    }
+
+    private static bool HasEmptyCommaSeparatedToken(string value)
+    {
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IResult FormatFeatureResponse<T>(

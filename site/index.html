@@ -41,7 +41,7 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="icon" type="image/png" href="assets/honua-logo.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
     <link rel="canonical" href="https://honua.io/" />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -73,7 +73,7 @@
             <p class="eyebrow">Cloud Native GIS Server</p>
             <h1>The Modern Alternative to Legacy GIS Servers</h1>
             <p class="subhead secondary">
-              Serve features, maps, and tiles through Esri REST, OGC API, OData, and MVT
+              Serve features, maps, and tiles through six industry standards
               from one codebase and one PostGIS database &mdash;
               <span class="emphasis">without per-user licensing</span>.
             </p>
@@ -185,7 +185,8 @@
           <line x1="128" y1="198" x2="222" y2="145" stroke="#d3e2e6" stroke-width="1.2" marker-end="url(#arr)"/>
 
           <!-- Protocol labels -->
-          <text x="168" y="66" font-size="8" font-weight="600" fill="#4a6474">Esri REST / OGC</text>
+          <text x="168" y="54" font-size="8" font-weight="600" fill="#4a6474">Esri REST</text>
+          <text x="168" y="80" font-size="8" font-weight="600" fill="#4a6474">OGC API</text>
           <text x="168" y="127" font-size="8" font-weight="600" fill="#4a6474">MVT Tiles</text>
           <text x="168" y="182" font-size="8" font-weight="600" fill="#4a6474">OData v4</text>
 
@@ -240,9 +241,9 @@
 
           <!-- Infrastructure -->
           <g filter="url(#ds)">
-            <rect x="665" y="14" width="170" height="46" rx="8" fill="#0e2433"/>
-            <text x="750" y="35" text-anchor="middle" font-size="10.5" font-weight="600" fill="#fff">Monitoring &amp; Ops</text>
-            <text x="750" y="50" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.6)">OpenTelemetry · Prometheus · Grafana</text>
+            <rect x="665" y="14" width="170" height="46" rx="8" fill="#fff" stroke="#d3e2e6" stroke-width="1.2"/>
+            <text x="750" y="35" text-anchor="middle" font-size="10.5" font-weight="600" fill="#0e2433">Monitoring &amp; Ops</text>
+            <text x="750" y="50" text-anchor="middle" font-size="8" fill="#4a6474">OpenTelemetry · Prometheus · Grafana</text>
           </g>
           <g filter="url(#ds)">
             <rect x="665" y="84" width="170" height="46" rx="8" fill="#fff" stroke="#d3e2e6" stroke-width="1.2"/>
@@ -299,42 +300,71 @@
 
         <section id="capabilities" class="section reveal delay-3">
           <div class="section-header">
-            <h2>One Server. Five Protocol Families.</h2>
+            <h2>One Server. Six Standards.</h2>
             <p>Publish once from PostGIS. Consume through whichever protocol your clients need. No ETL, no sync, no duplication.</p>
           </div>
           <div class="grid three">
             <div class="card">
               <h3>GeoServices REST</h3>
-              <p class="card-subtitle">Esri FeatureServer + MapServer</p>
+              <p class="card-subtitle">FeatureServer, MapServer, ImageServer, Geometry Service</p>
               <ul class="bullet-list">
                 <li>23 FeatureServer operations (query, edits, attachments, related records, replicas, domains, statistics)</li>
                 <li>8 MapServer operations (export, identify, find, legend, query, tiles)</li>
-                <li>Full query parameter support (spatial, temporal, statistics, pagination, sorting)</li>
+                <li>9 Geometry Service operations (buffer, simplify, project, intersect, union, clip, difference, area, length)</li>
                 <li>Batch edits via applyEdits and append</li>
               </ul>
-              <p class="note">Existing ArcGIS Pro, ArcGIS JS, and Esri SDK apps connect without code changes.</p>
+              <p class="note">ArcGIS Pro, ArcGIS JS, and Esri SDK apps connect without code changes.</p>
             </div>
             <div class="card">
-              <h3>OGC API</h3>
-              <p class="card-subtitle">Features, Tiles, Maps, WMS, WMTS</p>
+              <h3>OGC API Features</h3>
+              <p class="card-subtitle">CITE certified &mdash; 137/137 tests</p>
               <ul class="bullet-list">
-                <li>OGC API Features with CQL2 filtering (10 spatial, 14 temporal, 4 array predicates, 32+ functions)</li>
-                <li>OGC API Tiles with MVT and raster output</li>
-                <li>OGC API Maps for dynamic rendering</li>
-                <li>WMS 1.3 and WMTS 1.0 for legacy OGC clients</li>
-                <li>Full CRUD transactions</li>
+                <li>Collections, items, queryables, transactions (create/replace/patch/delete)</li>
+                <li>CQL2 filtering: 10 spatial, 14 temporal, 4 array predicates, 32+ functions</li>
+                <li>Multi-CRS support with Content-Crs headers</li>
+                <li>GeoJSON, JSON, HTML output</li>
               </ul>
-              <p class="note">QGIS, OpenLayers, MapLibre, and any OGC-compliant client.</p>
+              <p class="note">QGIS, OpenLayers, and any OGC-compliant client.</p>
             </div>
             <div class="card">
-              <h3>OData v4 + MVT</h3>
-              <p class="card-subtitle">Enterprise data + vector tiles</p>
+              <h3>OGC API Tiles &amp; Maps</h3>
+              <p class="card-subtitle">CITE certified &mdash; 48/48 tests</p>
               <ul class="bullet-list">
-                <li>21 OData operations ($filter, $select, $orderby, $apply, $batch, $search, $expand, spatial functions)</li>
-                <li>Aggregation, change tracking, batch operations</li>
-                <li>Vector tiles at /tiles/{layer}/{z}/{x}/{y}.mvt</li>
+                <li>Vector tiles (MVT) and raster tile output</li>
+                <li>OGC API Maps for server-rendered images (PNG, JPEG, TIFF)</li>
+                <li>Styled maps and map tiles per collection</li>
               </ul>
-              <p class="note">Power BI, Excel, Tableau, SAP, and any OData v4 client. No plugins required.</p>
+              <p class="note">MapLibre, Leaflet, and OGC tile clients.</p>
+            </div>
+            <div class="card">
+              <h3>WMS 1.3 &amp; WMTS 1.0</h3>
+              <p class="card-subtitle">CITE certified &mdash; 345/345 tests</p>
+              <ul class="bullet-list">
+                <li>GetCapabilities, GetMap, GetFeatureInfo (WMS)</li>
+                <li>GetCapabilities, GetTile, GetFeatureInfo (WMTS)</li>
+                <li>KVP and RESTful bindings</li>
+              </ul>
+              <p class="note">Legacy OGC clients, INSPIRE/SDI compliance, QGIS WMS/WMTS layers.</p>
+            </div>
+            <div class="card">
+              <h3>OData v4</h3>
+              <p class="card-subtitle">Enterprise BI integration</p>
+              <ul class="bullet-list">
+                <li>$filter, $select, $orderby, $apply, $batch, $search, $expand</li>
+                <li>Spatial functions (geo.distance, geo.intersects)</li>
+                <li>Aggregation, change tracking ($deltatoken), batch operations</li>
+              </ul>
+              <p class="note">Power BI, Excel, Tableau, SAP &mdash; no plugins required.</p>
+            </div>
+            <div class="card">
+              <h3>Vector Tiles</h3>
+              <p class="card-subtitle">PostGIS-native MVT</p>
+              <ul class="bullet-list">
+                <li>ST_AsMVT tile generation at /tiles/{layer}/{z}/{x}/{y}.mvt</li>
+                <li>TileJSON metadata for client configuration</li>
+                <li>Auto-generated MapLibre GL styles</li>
+              </ul>
+              <p class="note">MapLibre GL JS, Leaflet, Mapbox GL &mdash; fast vector rendering.</p>
             </div>
           </div>
         </section>
@@ -350,9 +380,9 @@
               <p class="note">Honua serves FeatureServer and MapServer endpoints that your existing ArcGIS clients already understand.</p>
             </div>
             <div class="card highlight-card">
-              <h3>Modernizing infrastructure</h3>
-              <p>Your data is in PostGIS. You need it served to web apps, dashboards, and desktop GIS. You don't need an enterprise platform to do it.</p>
-              <p class="note">Container-native, stateless, horizontally scalable. Deploy with Docker, Helm, or Terraform.</p>
+              <h3>Cutting infrastructure spend</h3>
+              <p>Always-on VMs, oversized instances, and enterprise middleware add up. You need GIS serving that scales with demand &mdash; including scaling to zero.</p>
+              <p class="note">Serverless-ready, container-native, single-dependency. Run on the cheapest compute that fits your traffic pattern.</p>
             </div>
             <div class="card highlight-card">
               <h3>Mandated open standards</h3>
@@ -426,42 +456,44 @@
 
         <section id="cloudnative" class="section reveal delay-4">
           <div class="section-header">
-            <h2>Cloud Native by Design</h2>
-            <p>Engineered for modern operations from day one. Not retrofitted.</p>
+            <h2>Cut Infrastructure Costs, Not Capability</h2>
+            <p>Legacy GIS servers run always-on VMs whether you're serving 10 requests or 10,000. Honua scales to zero when idle and out when demand spikes &mdash; you pay only for what you use.</p>
           </div>
           <div class="grid three">
-            <div class="card">
-              <h3>Architecture</h3>
+            <div class="card highlight-card">
+              <h3>Scale to zero</h3>
               <ul class="bullet-list">
-                <li>Stateless, container-first</li>
-                <li>Kubernetes-native scaling</li>
-                <li>OpenTelemetry observability</li>
-                <li>Health checks and readiness probes</li>
-                <li>Infrastructure as Code</li>
+                <li>Run on AWS Lambda or Azure Functions &mdash; no idle compute costs</li>
+                <li>Sub-second cold starts with AOT compilation</li>
+                <li>Container or serverless &mdash; match the deployment to the workload</li>
               </ul>
+              <p class="note">Stop paying for servers that sit idle nights and weekends.</p>
             </div>
-            <div class="card">
-              <h3>Deployment options</h3>
-              <div class="pill-list">
-                <span class="pill">Kubernetes</span>
-                <span class="pill">AWS ECS/Fargate</span>
-                <span class="pill">Azure Container Apps</span>
-                <span class="pill">AWS Lambda</span>
-                <span class="pill">Azure Functions</span>
-                <span class="pill">Terraform</span>
-                <span class="pill">Helm</span>
-                <span class="pill">Docker Compose</span>
-              </div>
-            </div>
-            <div class="card">
-              <h3>Dependencies</h3>
+            <div class="card highlight-card">
+              <h3>Minimal footprint</h3>
               <ul class="bullet-list">
                 <li><strong>PostGIS</strong> &mdash; only required dependency</li>
                 <li><strong>Redis</strong> &mdash; optional, for multi-node caching</li>
-                <li><strong>Object storage</strong> &mdash; optional, for file import</li>
-                <li>No GDAL dependency</li>
-                <li>No Java runtime</li>
+                <li>No GDAL, no Java runtime, no Windows Server</li>
+                <li>Single container, ~167 MB AOT image</li>
               </ul>
+              <p class="note">Fewer moving parts means lower hosting bills and less ops overhead.</p>
+            </div>
+            <div class="card highlight-card">
+              <h3>Cloud-native ops</h3>
+              <ul class="bullet-list">
+                <li>Stateless, horizontal auto-scaling</li>
+                <li>OpenTelemetry traces and metrics built in</li>
+                <li>Health probes for orchestrator-driven restarts</li>
+                <li>Infrastructure as Code (Terraform, Helm)</li>
+              </ul>
+              <div class="pill-list" style="margin-top: 8px">
+                <span class="pill">Kubernetes</span>
+                <span class="pill">ECS/Fargate</span>
+                <span class="pill">Container Apps</span>
+                <span class="pill">Lambda</span>
+                <span class="pill">Azure Functions</span>
+              </div>
             </div>
           </div>
         </section>

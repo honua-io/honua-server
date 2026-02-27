@@ -21,7 +21,15 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerExportHandler
 {
+    private const int MinOutputDimension = 1;
+    private const int MaxAllowedOutputDimension = 4096;
     private const int DefaultMaxOutputDimension = 1024;
+    private const int MinCompressionQuality = 1;
+    private const int MaxCompressionQuality = 100;
+    private const int MinCompression = 0;
+    private const int MaxCompression = 100;
+    private const int MinPixelType = 0;
+    private const int MaxPixelType = 255;
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
@@ -151,6 +159,30 @@ internal sealed class ImageServerExportHandler
     {
         try
         {
+            if (request.Size.HasValue &&
+                (request.Size.Value < MinOutputDimension || request.Size.Value > MaxAllowedOutputDimension))
+            {
+                return null;
+            }
+
+            if (request.CompressionQuality.HasValue &&
+                (request.CompressionQuality.Value < MinCompressionQuality || request.CompressionQuality.Value > MaxCompressionQuality))
+            {
+                return null;
+            }
+
+            if (request.Compression.HasValue &&
+                (request.Compression.Value < MinCompression || request.Compression.Value > MaxCompression))
+            {
+                return null;
+            }
+
+            if (request.PixelType.HasValue &&
+                (request.PixelType.Value < MinPixelType || request.PixelType.Value > MaxPixelType))
+            {
+                return null;
+            }
+
             var outputSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr);
             if (!string.IsNullOrWhiteSpace(request.ImageSr) && !outputSrid.HasValue)
             {
@@ -163,9 +195,14 @@ internal sealed class ImageServerExportHandler
                 return null;
             }
 
+            if (!RasterParsingHelpers.TryParseRasterFormat(request.Format ?? "png", out var outputFormat))
+            {
+                return null;
+            }
+
             var query = new RasterQuery
             {
-                OutputFormat = RasterParsingHelpers.ParseRasterFormat(request.Format ?? "png"),
+                OutputFormat = outputFormat,
                 Quality = request.CompressionQuality,
                 OutputSrid = outputSrid
             };
@@ -228,10 +265,19 @@ internal sealed class ImageServerExportHandler
         // If size is specified, use it as width and calculate proportional height
         if (request.Size.HasValue)
         {
-            var width = request.Size.Value;
+            var width = Math.Clamp(request.Size.Value, MinOutputDimension, MaxAllowedOutputDimension);
             var aspectRatio = (double)raster.Height / raster.Width;
-            var height = (int)(width * aspectRatio);
-            return (width, height);
+            var height = (int)Math.Round(width * aspectRatio, MidpointRounding.AwayFromZero);
+
+            if (height > MaxAllowedOutputDimension)
+            {
+                var adjustedWidth = Math.Max(
+                    MinOutputDimension,
+                    (int)Math.Round(MaxAllowedOutputDimension / aspectRatio, MidpointRounding.AwayFromZero));
+                return (adjustedWidth, MaxAllowedOutputDimension);
+            }
+
+            return (width, Math.Clamp(height, MinOutputDimension, MaxAllowedOutputDimension));
         }
 
         // Default to original raster dimensions capped at max output size

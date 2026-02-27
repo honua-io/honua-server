@@ -847,7 +847,13 @@ internal static class TilesEndpoints
         collectionId = default;
         error = null;
 
-        var values = collections.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (HasEmptyCommaSeparatedToken(collections))
+        {
+            error = "Invalid collections parameter.";
+            return false;
+        }
+
+        var values = collections.Split(',', StringSplitOptions.TrimEntries);
         if (values.Length == 0)
         {
             error = "Invalid collections parameter.";
@@ -893,6 +899,19 @@ internal static class TilesEndpoints
 
         trimmed = trimmed.TrimEnd('/');
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static bool HasEmptyCommaSeparatedToken(string value)
+    {
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IResult? ValidateTileQueryParameters(

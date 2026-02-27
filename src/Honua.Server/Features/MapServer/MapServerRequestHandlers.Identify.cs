@@ -26,7 +26,9 @@ namespace Honua.Server.Features.MapServer;
 internal static partial class MapServerEndpoints
 {
     private const int DefaultTolerance = 3;
+    private const int MaxIdentifyGeometryInputLength = 2000;
     private const string InvalidIdentifyRequestMessage = "Invalid identify request parameters.";
+    private const string InvalidIdentifyGeometryMessage = "Geometry parameter is invalid.";
 
     private enum IdentifyLayerMode
     {
@@ -91,6 +93,16 @@ internal static partial class MapServerEndpoints
 
             var srValue = GetValue(values, "sr");
             var layersParam = GetValue(values, "layers");
+            if (HasEmptyCommaSeparatedToken(layersParam))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
+            }
+
+            if (HasNonIntegerIdentifyLayerToken(layersParam))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter must contain integer layer ids.");
+            }
+
             var layerDefsValue = GetValue(values, "layerDefs");
             if (!TryParseTolerance(GetValue(values, "tolerance"), out var tolerance, out var toleranceError))
             {
@@ -107,12 +119,6 @@ internal static partial class MapServerEndpoints
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     $"Output format '{responseFormat}' is not supported.");
-            }
-
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
             }
 
             if (string.IsNullOrWhiteSpace(geometryValue))
@@ -366,8 +372,11 @@ internal static partial class MapServerEndpoints
         dpi = 0;
         error = null;
 
-        var parts = imageDisplay.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 3)
+        var parts = imageDisplay.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 3 ||
+            string.IsNullOrWhiteSpace(parts[0]) ||
+            string.IsNullOrWhiteSpace(parts[1]) ||
+            string.IsNullOrWhiteSpace(parts[2]))
         {
             error = "Invalid imageDisplay parameter. Expected format: width,height,dpi";
             return false;
@@ -492,6 +501,12 @@ internal static partial class MapServerEndpoints
         geometry = default!;
         error = null;
 
+        if (geometryValue.Length > MaxIdentifyGeometryInputLength)
+        {
+            error = "Geometry parameter is too long.";
+            return false;
+        }
+
         if (string.Equals(geometryType, "esriGeometryPoint", StringComparison.OrdinalIgnoreCase) &&
             TryParsePointPair(geometryValue, out var pairX, out var pairY))
         {
@@ -571,8 +586,10 @@ internal static partial class MapServerEndpoints
         x = 0;
         y = 0;
 
-        var parts = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 2)
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 ||
+            string.IsNullOrWhiteSpace(parts[0]) ||
+            string.IsNullOrWhiteSpace(parts[1]))
         {
             return false;
         }
@@ -747,6 +764,47 @@ internal static partial class MapServerEndpoints
                string.Equals(token, "top", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool HasNonIntegerIdentifyLayerToken(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return false;
+        }
+
+        var spec = layersParam.Trim();
+        string? idsPart = null;
+        var colonIndex = spec.IndexOf(':');
+        if (colonIndex >= 0)
+        {
+            idsPart = spec[(colonIndex + 1)..];
+        }
+        else if (!IsIdentifyLayerModeToken(spec))
+        {
+            idsPart = spec;
+        }
+
+        if (string.IsNullOrWhiteSpace(idsPart))
+        {
+            return false;
+        }
+
+        foreach (var token in idsPart.Split(',', StringSplitOptions.None))
+        {
+            var trimmed = token.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool TryBuildIdentifySpatialFilter(
         IdentifyGeometryInput geometry,
         string geometryType,
@@ -831,9 +889,9 @@ internal static partial class MapServerEndpoints
                     return false;
             }
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            error = ex.Message;
+            error = InvalidIdentifyGeometryMessage;
             return false;
         }
     }

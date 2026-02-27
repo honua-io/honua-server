@@ -19,6 +19,8 @@ namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const string InvalidServiceApplyEditsJsonMessage = "Request body contains invalid JSON.";
+
     private static async Task<IResult> HandleApplyEdits(
         string serviceId,
         int layerId,
@@ -360,11 +362,11 @@ internal static partial class FeatureServerEndpoints
         {
             layerEdits = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid service applyEdits request",
-                [$"Invalid JSON: {ex.Message}"]);
+                [InvalidServiceApplyEditsJsonMessage]);
         }
 
         if (layerEdits == null || layerEdits.Length == 0)
@@ -1064,6 +1066,12 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        if (HasEmptyDeleteToken(payload))
+        {
+            error = $"{key} contains an empty value.";
+            return false;
+        }
+
         deletes = ParseDeleteTokens(payload);
         return true;
     }
@@ -1096,7 +1104,14 @@ internal static partial class FeatureServerEndpoints
 
         if (element.ValueKind == JsonValueKind.String)
         {
-            deletes = ParseDeleteTokens(element.GetString() ?? string.Empty);
+            var payload = element.GetString() ?? string.Empty;
+            if (HasEmptyDeleteToken(payload))
+            {
+                error = $"{key} contains an empty value.";
+                return false;
+            }
+
+            deletes = ParseDeleteTokens(payload);
             return true;
         }
 
@@ -1132,6 +1147,19 @@ internal static partial class FeatureServerEndpoints
         }
 
         return parsed;
+    }
+
+    private static bool HasEmptyDeleteToken(string value)
+    {
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryParseBooleanElement(JsonElement element, out bool value)

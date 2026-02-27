@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -20,6 +21,11 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class LayerPublishingEndpoints
 {
+    private const int MaxSafeLayerPublishingMessageLength = 240;
+    private const string LayerPublishingValidationMessage = "Layer publishing request is invalid.";
+    private const string LayerPublishingConflictMessage = "Layer publishing operation conflicted with existing data.";
+    private const string LayerPublishingNotFoundMessage = "The requested resource was not found.";
+
     internal sealed class LayerPublishingEndpointsLog;
 
     public static void MapLayerPublishingEndpoints(this IEndpointRouteBuilder endpoints)
@@ -47,7 +53,7 @@ internal static class LayerPublishingEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleListLayers(
             string id,
             string? serviceName,
@@ -69,17 +75,25 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer list failed: {Message}", ex.Message);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer list invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer list connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer list failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer list failed",
+                detail: "An internal error occurred while retrieving layers.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -88,7 +102,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<PublishedLayerSummary>>, BadRequest<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Created<ApiResponse<PublishedLayerSummary>>, BadRequest<ApiResponse<object>>, NotFound<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandlePublishLayer(
             string id,
             PublishLayerRequest request,
@@ -153,27 +167,35 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
         {
             logger.LogWarning(ex, "Layer publish conflict");
-            return TypedResults.Conflict(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.Conflict(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
         {
             logger.LogWarning(ex, "Layer publish not found");
-            return TypedResults.NotFound(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.NotFound(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer publish validation failed");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer publish invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer publish connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer publish failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer publish failed",
+                detail: "An internal error occurred while publishing the layer.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)
         {
@@ -181,7 +203,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetLayerEnabled(
             string id,
             int layerId,
@@ -230,17 +252,25 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer toggle failed");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer toggle invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer toggle connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer toggle failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer toggle failed",
+                detail: "An internal error occurred while updating layer state.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)
         {
@@ -248,7 +278,7 @@ internal static class LayerPublishingEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetServiceLayersEnabled(
             string id,
             LayerEnabledRequest request,
@@ -293,17 +323,25 @@ internal static class LayerPublishingEndpoints
         catch (LayerPublishingException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle failed");
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(GetSafeLayerPublishingMessage(ex)));
         }
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle invalid request");
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid request parameters."));
         }
-        catch (InvalidOperationException ex)
+        catch (ResourceNotFoundException ex)
         {
             logger.LogWarning(ex, "Layer bulk toggle connection not found");
             return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Layer bulk toggle failed due to invalid operation");
+            return TypedResults.Problem(
+                title: "Layer bulk toggle failed",
+                detail: "An internal error occurred while updating service layer state.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (UnauthorizedAccessException)
         {
@@ -347,5 +385,48 @@ internal static class LayerPublishingEndpoints
         {
             logger.LogWarning(ex, "Failed to invalidate service catalog cache for {ServiceName}", serviceName);
         }
+    }
+
+    private static string GetSafeLayerPublishingMessage(LayerPublishingException exception)
+    {
+        var fallback = exception.ErrorKind switch
+        {
+            LayerPublishingErrorKind.Conflict => LayerPublishingConflictMessage,
+            LayerPublishingErrorKind.NotFound => LayerPublishingNotFoundMessage,
+            _ => LayerPublishingValidationMessage
+        };
+
+        return SanitizeLayerPublishingMessage(exception.Message, fallback);
+    }
+
+    private static string SanitizeLayerPublishingMessage(string? message, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return fallback;
+        }
+
+        var trimmed = message.Trim();
+        if (trimmed.Length > MaxSafeLayerPublishingMessageLength || ContainsUnsafeMessagePattern(trimmed))
+        {
+            return fallback;
+        }
+
+        return trimmed;
+    }
+
+    private static bool ContainsUnsafeMessagePattern(string message)
+    {
+        return message.Contains('\r') ||
+               message.Contains('\n') ||
+               message.Contains("BytePositionInLine", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("System.", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("StackTrace", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("SQLSTATE", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("ConnectionString", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("password", StringComparison.OrdinalIgnoreCase);
     }
 }

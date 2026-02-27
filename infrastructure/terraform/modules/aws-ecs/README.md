@@ -11,7 +11,7 @@ module "honua" {
   environment    = "dev"
   image          = "ghcr.io/honua-io/honua-server:latest-aot"
   admin_password = var.honua_admin_password
-  enable_postgis = true  # Required — Honua needs PostGIS for migrations
+  enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
@@ -20,7 +20,7 @@ module "honua" {
 }
 ```
 
-> **PostGIS is required.** Set `enable_postgis = true` to enable the PostGIS extension on the RDS instance via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the RDS endpoint. If you cannot run local-exec, enable PostGIS manually after apply.
+> **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` to enable both extensions on the RDS instance via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the RDS endpoint. If you cannot run local-exec, enable both extensions manually after apply. For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
 
 ## Production example
 
@@ -109,11 +109,14 @@ route53_zone_id = "Z1234567890ABC"
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |
 | `container_memory` | 1024 | Fargate memory in MiB. |
 | `desired_count` | 1 | Number of tasks. Use 2+ for production. |
-| `enable_postgis` | **false** | Enable PostGIS extension on RDS. **Set to true.** |
+| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
+| `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
+| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
 | `db_multi_az` | false | Enable Multi-AZ failover. Recommended for production. |
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
+| `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
 | `redis_node_type` | `cache.t3.micro` | ElastiCache node type. |
 | `alb_certificate_arn` | `""` | ACM certificate ARN. Falls back to HTTP if empty. |
 | `waf_web_acl_arn` | `""` | WAFv2 Web ACL ARN for the ALB. |
@@ -129,6 +132,6 @@ See `outputs.tf` for ALB URL, RDS endpoint, secrets ARNs, and connection strings
 
 ## After apply
 
-1. Verify PostGIS: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version();"`
+1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
 2. Health check: `curl -f https://<alb-url>/healthz/ready`
 3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)

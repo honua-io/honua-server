@@ -231,6 +231,26 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features with malformed layer filter")]
+    public async Task Features_AllLayers_WithMalformedLayerFilter_DoesNotLeakParserDetails()
+    {
+        const string sentinel = "ODATA_LAYER_FILTER_SENTINEL";
+        var malformedFilter = Uri.EscapeDataString($"LayerId eq {sentinel}(");
+
+        var response = await _fixture.Client.GetAsync($"/odata/Features?$filter={malformedFilter}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("LayerId filter must be a valid OData expression that resolves to a single layer.");
+        content.Should().NotContain(sentinel);
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_ReturnsXmlDocument()
@@ -618,6 +638,17 @@ public sealed class ODataEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$select=ObjectId,,LayerId")]
+    public async Task Features_WithMalformedSelectDelimiter_ReturnsODataError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$select=ObjectId,,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,LayerId")]
     public async Task Features_WithLargeTop_UsesStreamingResponse()
     {
@@ -637,6 +668,17 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var first = items[0];
         first.TryGetProperty("Geometry", out _).Should().BeFalse();
         first.TryGetProperty("name", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features({layerId})?$top=2000&$select=ObjectId,,LayerId")]
+    public async Task Features_WithMalformedSelectDelimiter_WhenStreaming_ReturnsODataError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$top=2000&$select=ObjectId,,LayerId");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

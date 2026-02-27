@@ -57,11 +57,26 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, "layers parameter is required.");
             }
 
+            if (HasEmptyCommaSeparatedToken(layersParam))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter must specify at least one layer id.");
+            }
+
+            if (HasNonIntegerLayerToken(layersParam))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter must contain integer layer ids.");
+            }
+
             var containsValue = GetValue(values, "contains");
             var contains = string.IsNullOrWhiteSpace(containsValue) ||
                            !string.Equals(containsValue, "false", StringComparison.OrdinalIgnoreCase);
 
             var searchFieldsParam = GetValue(values, "searchFields");
+            if (HasEmptyCommaSeparatedToken(searchFieldsParam))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "searchFields parameter contains an empty field name.");
+            }
+
             var srValue = GetValue(values, "sr");
             var layerDefsValue = GetValue(values, "layerDefs");
             var returnGeometry = !string.Equals(GetValue(values, "returnGeometry"), "false", StringComparison.OrdinalIgnoreCase);
@@ -92,12 +107,6 @@ internal static partial class MapServerEndpoints
             if (protocolError is not null)
             {
                 return protocolError;
-            }
-
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
             }
 
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -281,6 +290,48 @@ internal static partial class MapServerEndpoints
         }
 
         return fields.Count > 0 ? fields : null;
+    }
+
+    private static bool HasEmptyCommaSeparatedToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasNonIntegerLayerToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            var trimmed = token.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static FieldDefinition[] ResolveSearchFields(LayerDefinition layer, HashSet<string>? requestedFields)

@@ -88,6 +88,38 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_InvalidSize_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(size: 0);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_UnsupportedOutputFormat_ReturnsBadRequest()
+    {
+        SetupLayerAndRasters();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "bmp");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_ValidRequest_ReturnsOk()
     {
         SetupSuccessfulExport();
@@ -124,6 +156,38 @@ public class ImageServerExportHandlerTests
 
         var okResult = result as Ok<ExportImageResponse>;
         okResult.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithExtremeAspectRatio_ClampsOutputDimensions()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
+            .Returns([CreateTestRasterInfo() with { Width = 100, Height = 20000 }]);
+
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("/temp/test.png");
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(size: 4096);
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputWidth.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
+        capturedQuery.Value.OutputHeight.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
     }
 
     [UnitTest]

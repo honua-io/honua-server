@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcMaps.Handlers;
@@ -100,7 +101,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
@@ -120,7 +121,12 @@ public static partial class OgcMapsEndpoints
         var selectedLayerIds = Array.Empty<int>();
         if (request.Collections is not null)
         {
-            var collectionTokens = request.Collections.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (HasEmptyCommaSeparatedToken(request.Collections))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
+            }
+
+            var collectionTokens = request.Collections.Split(',', StringSplitOptions.TrimEntries);
             if (collectionTokens.Length == 0)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "Valid collection IDs are required");
@@ -137,7 +143,7 @@ public static partial class OgcMapsEndpoints
             var invalidCollections = new List<string>();
             foreach (var token in collectionTokens)
             {
-                if (int.TryParse(token, out var layerId))
+                if (TryParseNonNegativeCollectionId(token, out var layerId))
                 {
                     collectionIds.Add(layerId);
                 }
@@ -180,7 +186,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
@@ -203,7 +209,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!int.TryParse(collectionId, out var layerId))
+        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
         }
@@ -213,4 +219,23 @@ public static partial class OgcMapsEndpoints
 
     [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
     private static partial Regex StyleIdPattern();
+
+    private static bool TryParseNonNegativeCollectionId(string value, out int layerId)
+    {
+        var parsed = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);
+        return parsed && layerId >= 0;
+    }
+
+    private static bool HasEmptyCommaSeparatedToken(string value)
+    {
+        foreach (var token in value.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

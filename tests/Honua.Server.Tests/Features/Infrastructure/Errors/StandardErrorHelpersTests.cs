@@ -196,14 +196,14 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        context.Response.StatusCode.Should().Be(400);
+        context.Response.StatusCode.Should().Be(500);
 
         var responseBody = GetResponseBody(context);
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(responseBody);
 
-        problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
+        problemDetails.GetProperty("title").GetString().Should().Be("Internal Server Error");
         var detail = problemDetails.GetProperty("detail").GetString();
-        detail.Should().Contain("The requested operation is not valid in the current state."); // Sanitized message
+        detail.Should().Contain("An unexpected error occurred while processing the request."); // Sanitized message
         detail.Should().Contain("Debug:"); // Debug info included
         detail.Should().Contain("Detailed internal error message"); // Original message in debug section
     }
@@ -222,14 +222,14 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        context.Response.StatusCode.Should().Be(400);
+        context.Response.StatusCode.Should().Be(500);
 
         var responseBody = GetResponseBody(context);
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(responseBody);
 
-        problemDetails.GetProperty("title").GetString().Should().Be("Bad Request");
+        problemDetails.GetProperty("title").GetString().Should().Be("Internal Server Error");
         var detail = problemDetails.GetProperty("detail").GetString();
-        detail.Should().Be("The requested operation is not valid in the current state."); // Only sanitized message
+        detail.Should().Be("An unexpected error occurred while processing the request."); // Only sanitized message
         detail.Should().NotContain("sensitive info"); // No sensitive information leaked
         detail.Should().NotContain("Debug:"); // No debug info in production
     }

@@ -253,17 +253,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             catch (ResourceConflictException ex)
             {
                 Log.ReplaceFeatureConflict(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateConflict(context, ex.Message);
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
             catch (ResourceNotFoundException)
             {
                 Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
-                Log.ReplaceFeatureNotFound(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                Log.ReplaceFeatureFailed(_logger, collectionId, ex);
+                return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while replacing the feature.");
             }
             catch (ArgumentException ex)
             {
@@ -453,17 +453,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             catch (ResourceConflictException ex)
             {
                 Log.PatchFeatureConflict(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateConflict(context, ex.Message);
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
             catch (ResourceNotFoundException)
             {
                 Log.PatchFeatureNotFound(_logger, collectionId, featureId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
-                Log.PatchFeatureNotFound(_logger, collectionId, featureId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                Log.PatchFeatureFailed(_logger, collectionId, ex);
+                return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while patching the feature.");
             }
             catch (ArgumentException ex)
             {

@@ -396,15 +396,19 @@ internal static class AttachmentEndpoints
         }
 
         // Parse comma-separated attachment IDs
-        var attachmentIdStrings = attachmentIdsValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var attachmentIdStrings = attachmentIdsValue.Split(',', StringSplitOptions.TrimEntries);
         var attachmentIds = new List<long>();
 
         foreach (var idString in attachmentIdStrings)
         {
-            if (long.TryParse(idString.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            if (idString.Length == 0 ||
+                !long.TryParse(idString, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
             {
-                attachmentIds.Add(id);
+                await RouteValidationHelpers.WriteValidationErrorAsync(context, "attachmentIds parameter must contain only numeric values");
+                return;
             }
+
+            attachmentIds.Add(id);
         }
 
         if (attachmentIds.Count == 0)
@@ -554,7 +558,17 @@ internal static class AttachmentEndpoints
                 continue;
             }
 
-            tokens.AddRange(raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            var segments = raw.Split(',', StringSplitOptions.TrimEntries);
+            foreach (var segment in segments)
+            {
+                if (segment.Length == 0)
+                {
+                    error = "objectIds parameter must contain only numeric values";
+                    return false;
+                }
+
+                tokens.Add(segment);
+            }
         }
 
         if (tokens.Count == 0)

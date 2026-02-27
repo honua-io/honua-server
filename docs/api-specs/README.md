@@ -2,7 +2,7 @@
 
 Honua Server provides OpenAPI specifications for OGC APIs and a curated, versioned Admin API contract snapshot. These interactive docs allow you to explore and test the APIs directly.
 
-## 🌐 **Available API Specifications**
+## Available API Specifications
 
 ### **OGC API Features**
 **Protocol**: OGC API Features Parts 1-3
@@ -35,7 +35,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 {% swagger src="ogc-api-tiles.json" %}
 {% endswagger %}
 
-## ⚙️ **Server Management API**
+## Server Management API
 
 **Protocol**: REST API
 **Base URL**: `/api/v1/admin`
@@ -57,7 +57,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 {% swagger src="admin-api.json" %}
 {% endswagger %}
 
-## 🚀 **GeoServices REST FeatureServer + MapServer**
+## GeoServices REST FeatureServer + MapServer
 
 **Protocol**: Esri-compatible REST API
 **Base URL**: `/rest/services`
@@ -67,7 +67,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 >
 > For detailed endpoint reference, see the [FeatureServer Coverage Matrix](../user/feature-server-matrix.md) and the [MapServer Coverage Matrix](../user/map-server-matrix.md).
 
-## ⚡ **Vector Tiles (MVT)**
+## Vector Tiles (MVT)
 
 **Protocol**: Mapbox Vector Tiles
 **Base URL**: `/tiles`
@@ -77,7 +77,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 >
 > For usage examples, see the [API Examples Guide](../user/API_EXAMPLES.md#vector-tiles-mvt).
 
-## 🧪 **Testing the APIs**
+## Testing the APIs
 
 ### **Using the Interactive Docs**
 1. **Try it out**: Use the "Try it out" buttons in the specs above
@@ -110,7 +110,7 @@ Control-plane SDK governance and contract diff checks:
 - `.github/workflows/openapi-contract-governance.yml`
 - `.github/workflows/control-plane-sdk-governance.yml`
 
-## 🔗 **Related Documentation**
+## Related Documentation
 
 - [**Geospatial Data APIs**](../user/STANDARDS_APIS.md) - Protocol overview and selection guide
 - [**Server Management API**](../user/CONTROL_PLANE_API.md) - Admin API guide and key workflows

@@ -7,7 +7,7 @@ output "lambda_function_name" {
 }
 
 output "db_endpoint" {
-  value     = module.rds.db_instance_address
+  value     = local.db_endpoint
   sensitive = true
 }
 

@@ -50,6 +50,17 @@ public sealed class MapServerTileEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Tile)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
+    public async Task Tile_ZoomAboveConfiguredMaximum_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/23/0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Tile)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
     public async Task Tile_InvalidCoordinates_ReturnsBadRequest()
     {
         // z=2 means max tile index is 3 (2^2 - 1), so x=10 is out of range

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging;
@@ -95,7 +96,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         if (connection == null)
         {
             _logConnectionNotFound(_logger, connectionName, null);
-            throw new InvalidOperationException($"Connection configuration '{connectionName}' not found");
+            throw new ResourceNotFoundException($"Connection configuration '{connectionName}' not found");
         }
 
         return await ResolveConnectionStringInternalAsync(connection, cancellationToken);
@@ -107,7 +108,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         if (connection == null)
         {
             _logConnectionNotFoundById(_logger, connectionId, null);
-            throw new InvalidOperationException($"Connection configuration with ID {connectionId} not found");
+            throw new ResourceNotFoundException($"Connection configuration with ID {connectionId} not found");
         }
 
         return await ResolveConnectionStringInternalAsync(connection, cancellationToken);
@@ -237,17 +238,28 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             }
             catch (ArgumentException ex)
             {
-                throw new InvalidOperationException($"Invalid connection string format for '{connection.Name}': {ex.Message}", ex);
+                throw new InvalidOperationException(
+                    $"Invalid connection string format for '{connection.Name}'.",
+                    ex);
             }
 
             _logConnectionStringResolved(_logger, connection.Name, null);
             return connectionString;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (InvalidOperationException ex)
+        {
+            _logConnectionStringResolveFailure(_logger, connection.Name, ex);
+            throw new InvalidOperationException(
+                $"Failed to resolve connection string for '{connection.Name}'.",
+                ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logConnectionStringResolveFailure(_logger, connection.Name, ex);
 
-            throw new InvalidOperationException($"Failed to resolve connection string for '{connection.Name}': {ex.Message}", ex);
+            throw new InvalidOperationException(
+                $"Failed to resolve connection string for '{connection.Name}'.",
+                ex);
         }
     }
 
@@ -293,7 +305,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         }
         catch (Exception ex)
         {
-            _logHealthCheckFailed(_logger, connection.Name, ex.Message, ex);
+            _logHealthCheckFailed(_logger, connection.Name, ex.GetType().Name, ex);
 
             await _registry.UpdateHealthStatusAsync(connection.ConnectionId, ConnectionHealthStatus.Unhealthy, cancellationToken);
 

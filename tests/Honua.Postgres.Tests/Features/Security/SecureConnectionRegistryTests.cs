@@ -86,6 +86,30 @@ public class SecureConnectionRegistryTests : IClassFixture<WebAppFixture>
     }
 
     [Fact]
+    public async Task CreateConnectionAsync_VerifyCaSslMode_RoundTripsSuccessfully()
+    {
+        // Arrange
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: $"test-verifyca-{Guid.NewGuid():N}",
+            host: "localhost",
+            port: 5432,
+            databaseName: "testdb",
+            username: "testuser",
+            encryptedConnectionString: new byte[] { 1, 2, 3, 4, 5 },
+            encryptionKeyVersion: 1,
+            createdBy: "test-user",
+            sslMode: SslMode.VerifyCA);
+
+        // Act
+        var created = await _registry.CreateConnectionAsync(connection);
+        var retrieved = await _registry.GetConnectionAsync(created.ConnectionId);
+
+        // Assert
+        Assert.NotNull(retrieved);
+        Assert.Equal(SslMode.VerifyCA, retrieved!.SslMode);
+    }
+
+    [Fact]
     public async Task CreateConnectionAsync_DuplicateName_ThrowsInvalidOperationException()
     {
         // Arrange

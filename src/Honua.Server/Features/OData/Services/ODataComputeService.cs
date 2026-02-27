@@ -38,7 +38,13 @@ internal static partial class ODataComputeService
             return true;
         }
 
-        var parts = compute.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(compute))
+        {
+            errorMessage = "$compute contains an empty expression segment.";
+            return false;
+        }
+
+        var parts = compute.Split(',', StringSplitOptions.TrimEntries);
         var parsed = new List<ODataComputeExpression>(parts.Length);
         var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

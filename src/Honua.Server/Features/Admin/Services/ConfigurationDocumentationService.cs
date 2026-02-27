@@ -400,6 +400,12 @@ internal sealed class ConfigurationDocumentationService
             [
                 BuildProperty("Public:BaseUrl", "PUBLIC_BASE_URL", "string",
                     "Public base URL used for link generation", null),
+                BuildProperty("HostValidation:Enabled", "HostValidation__Enabled", "boolean",
+                    "Enable Host header validation middleware", null),
+                BuildProperty("HostValidation:AllowedHosts:0", "HostValidation__AllowedHosts__0", "string",
+                    "First explicitly allowed host for Host header validation", null),
+                BuildProperty("HostValidation:RequireExplicitHosts", "HostValidation__RequireExplicitHosts", "boolean",
+                    "Fail startup in non-development when host validation is enabled without explicit hosts or PUBLIC_BASE_URL", false),
                 BuildProperty("ForwardedHeaders:Enabled", "ForwardedHeaders__Enabled", "boolean",
                     "Enable forwarded headers processing", false),
                 BuildProperty("ForwardedHeaders:ForwardLimit", "ForwardedHeaders__ForwardLimit", "integer",
@@ -655,6 +661,9 @@ internal sealed class ConfigurationDocumentationService
 
             // Networking
             new() { Name = "PUBLIC_BASE_URL", ConfigPath = "Networking", Description = "Public base URL override", Required = false, Example = "https://api.honua.example.com" },
+            new() { Name = "HostValidation__Enabled", ConfigPath = "Networking", Description = "Enable Host header validation middleware", Default = "true (non-development)", Example = "true" },
+            new() { Name = "HostValidation__AllowedHosts__0", ConfigPath = "Networking", Description = "First explicit allowed host for Host header validation", Required = false, Example = "api.honua.example.com" },
+            new() { Name = "HostValidation__RequireExplicitHosts", ConfigPath = "Networking", Description = "Enforce explicit hosts/Public:BaseUrl at startup when host validation is enabled", Default = "false", Example = "true" },
             new() { Name = "ForwardedHeaders__Enabled", ConfigPath = "Networking", Description = "Enable forwarded headers", Default = "false", Example = "true" },
             new() { Name = "ForwardedHeaders__ForwardLimit", ConfigPath = "Networking", Description = "Forwarded headers limit", Default = "1", Example = "2" },
             new() { Name = "ForwardedHeaders__KnownProxies__0", ConfigPath = "Networking", Description = "First trusted proxy IP", Required = false, Example = "10.0.0.10" },

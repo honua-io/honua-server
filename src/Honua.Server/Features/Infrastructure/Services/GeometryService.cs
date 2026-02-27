@@ -92,7 +92,7 @@ internal sealed class GeometryService : IGeometryService
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException)
         {
-            throw new ArgumentException($"Invalid WKB geometry format: {ex.Message}", ex);
+            throw new ArgumentException("Invalid WKB geometry format.", ex);
         }
     }
 
@@ -139,7 +139,7 @@ internal sealed class GeometryService : IGeometryService
         }
         catch (Exception ex) when (ex is ParseException or FormatException or JsonException or Newtonsoft.Json.JsonReaderException)
         {
-            throw new ArgumentException($"Invalid GeoJSON format: {ex.Message}", ex);
+            throw new ArgumentException("Invalid GeoJSON format.", ex);
         }
     }
 
@@ -175,7 +175,7 @@ internal sealed class GeometryService : IGeometryService
         }
         catch (Exception ex) when (ex is ParseException or FormatException)
         {
-            throw new ArgumentException($"Invalid WKT format: {ex.Message}", ex);
+            throw new ArgumentException("Invalid WKT format.", ex);
         }
     }
 

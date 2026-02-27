@@ -104,7 +104,7 @@ public class TileMathPropertyTests
     {
         public static Arbitrary<TileCoordinate> TileCoordinate() =>
             Arb.From(
-                from z in Gen.Choose(0, 22)
+                from z in Gen.Choose(0, TileMath.MaxSupportedZoomLevel)
                 let maxTile = 1 << z
                 from x in Gen.Choose(0, maxTile - 1)
                 from y in Gen.Choose(0, maxTile - 1)
@@ -119,17 +119,17 @@ public class TileMathPropertyTests
         private static Gen<TileCoordinate> InvalidZoom() =>
             Gen.OneOf(
                 Gen.Choose(-10, -1).Select(z => new TileCoordinate(0, 0, z)),
-                Gen.Choose(23, 30).Select(z => new TileCoordinate(0, 0, z)));
+                Gen.Choose(TileMath.MaxSupportedZoomLevel + 1, 30).Select(z => new TileCoordinate(0, 0, z)));
 
         private static Gen<TileCoordinate> InvalidX() =>
-            from z in Gen.Choose(0, 22)
+            from z in Gen.Choose(0, TileMath.MaxSupportedZoomLevel)
             let maxTile = 1 << z
             from x in Gen.OneOf(Gen.Constant(-1), Gen.Constant(maxTile))
             from y in Gen.Choose(0, maxTile - 1)
             select new TileCoordinate(x, y, z);
 
         private static Gen<TileCoordinate> InvalidY() =>
-            from z in Gen.Choose(0, 22)
+            from z in Gen.Choose(0, TileMath.MaxSupportedZoomLevel)
             let maxTile = 1 << z
             from x in Gen.Choose(0, maxTile - 1)
             from y in Gen.OneOf(Gen.Constant(-1), Gen.Constant(maxTile))
@@ -138,6 +138,6 @@ public class TileMathPropertyTests
 
     internal static class ZoomLevelArbs
     {
-        public static Arbitrary<int> ZoomLevel() => Arb.From(Gen.Choose(0, 22));
+        public static Arbitrary<int> ZoomLevel() => Arb.From(Gen.Choose(0, TileMath.MaxSupportedZoomLevel));
     }
 }

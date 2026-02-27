@@ -19,6 +19,18 @@ internal static class NpgsqlDataSourceExtensions
     /// <param name="cancellationToken">Cancellation token</param>
     public static async Task WarmupConnectionPoolAsync(this NpgsqlDataSource dataSource, int minConnections = 5, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(dataSource);
+
+        if (minConnections < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minConnections), "Minimum connections cannot be negative.");
+        }
+
+        if (minConnections == 0)
+        {
+            return;
+        }
+
         var connections = new NpgsqlConnection[minConnections];
         try
         {

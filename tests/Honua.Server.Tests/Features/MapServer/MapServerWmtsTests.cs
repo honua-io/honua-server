@@ -182,6 +182,20 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_MalformedAcceptFormatsDelimiter_ReturnsInvalidParameterValue()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&ACCEPTFORMATS=text/xml,,application/xml");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"acceptFormats\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_InvalidAcceptVersions_ReturnsVersionNegotiationFailedWithoutLocator()
     {
         var response = await _fixture.Client.GetAsync(
@@ -196,6 +210,20 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_MalformedAcceptVersionsDelimiter_ReturnsInvalidParameterValue()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&ACCEPTVERSIONS=1.0.0,,1.1.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"acceptVersions\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_SectionsMissingValue_ReturnsMissingParameterValue()
     {
         var response = await _fixture.Client.GetAsync(
@@ -204,6 +232,20 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"MissingParameterValue\"");
+        content.Should().Contain("locator=\"sections\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_MalformedSectionsDelimiter_ReturnsInvalidParameterValue()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&SECTIONS=Contents,,Themes");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"sections\"");
     }
 
@@ -388,5 +430,81 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
 
         var response = await _fixture.Client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}")]
+    public async Task Wmts_Restful_GetCapabilities_WithMalformedEncodedVersion_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS/%25E0%25A4%25A/WMTSCapabilities.xml");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}")]
+    public async Task Wmts_Restful_GetCapabilities_WithMalformedPercentEncoding_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS/%25zz/WMTSCapabilities.xml");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"request\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}")]
+    public async Task Wmts_Restful_GetTile_WithMalformedAdditionalQueryEncoding_DoesNotReturnServerError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS/{WebAppFixture.TestLayerId}/default/WebMercatorQuad/0/0/0.png?bad=%25E0%25A4%25A");
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}")]
+    public async Task Wmts_Restful_GetTile_WithMalformedEncodedPathSegment_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS/%252/default/WebMercatorQuad/0/0/0.png");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}")]
+    public async Task Wmts_Restful_GetTile_WithMalformedPercentEncoding_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS/%25zz/default/WebMercatorQuad/0/0/0.png");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"request\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}")]
+    public async Task Wmts_Restful_GetFeatureInfo_WithMalformedEncodedPixelSegment_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS/{WebAppFixture.TestLayerId}/default/WebMercatorQuad/0/0/0/%252/128.txt");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
     }
 }

@@ -1,0 +1,45 @@
+{
+  "name": "@honua/sdk-js",
+  "version": "0.0.1-alpha.0",
+  "description": "Honua JavaScript SDK scaffold (core + Esri compatibility layer)",
+  "type": "module",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./honua": {
+      "types": "./dist/src/honua.d.ts",
+      "default": "./dist/src/honua.js"
+    },
+    "./esri-compat": {
+      "types": "./dist/src/esri-compat-entry.d.ts",
+      "default": "./dist/src/esri-compat-entry.js"
+    },
+    "./migration": {
+      "types": "./dist/src/migration-entry.d.ts",
+      "default": "./dist/src/migration-entry.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:split-packages": "npm run build --silent && node scripts/prepare-split-packages.mjs",
+    "verify:split-packages": "npm run build:split-packages --silent && node scripts/verify-split-packages.mjs",
+    "pack:split-packages": "npm run build:split-packages --silent && npm pack ./dist/packages/honua-sdk && npm pack ./dist/packages/honua-sdk-esri-compat && npm pack ./dist/packages/honua-migrate",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:playwright": "npm run build --silent && playwright test",
+    "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js scan",
+    "migrate:arcgis": "npm run build --silent && node dist/src/migration/cli.js codemod"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^24.3.1",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.16"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

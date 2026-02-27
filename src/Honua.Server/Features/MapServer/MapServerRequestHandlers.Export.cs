@@ -32,6 +32,11 @@ internal static partial class MapServerEndpoints
     private const int DefaultDpi = 96;
     private const int MaxFeaturesPerLayer = 10_000;
     private const string InvalidExportRequestMessage = "Invalid export request parameters.";
+    private const string InvalidLayerDefsJsonMessage = "layerDefs contains invalid JSON.";
+    private const string InvalidLayerTimeOptionsJsonMessage = "layerTimeOptions contains invalid JSON.";
+    private const string InvalidDynamicLayersJsonMessage = "dynamicLayers contains invalid JSON.";
+    private const string InvalidTimeParameterMessage = "Invalid time parameter.";
+    private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
 
     /// <summary>
     /// Handle MapServer export (map image generation) requests.
@@ -192,14 +197,18 @@ internal static partial class MapServerEndpoints
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
 
-            var gdbVersion = GetValue(values, "gdbVersion");
-            if (!string.IsNullOrWhiteSpace(gdbVersion))
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "gdbVersion is not supported.");
-            }
-
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
+            var layersValue = GetValue(values, "layers");
+            if (HasEmptyLayerToken(layersValue))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
+            }
+
+            if (HasNonIntegerExportLayerToken(layersValue))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "layers parameter must contain integer layer ids.");
+            }
 
             MapServerLog.ExportRequested(logger, serviceId, imageWidth, imageHeight);
             var stopwatch = Stopwatch.StartNew();
@@ -225,7 +234,7 @@ internal static partial class MapServerEndpoints
                 Dpi = dpi,
                 Format = imageFormat,
                 Transparent = transparent,
-                Layers = GetValue(values, "layers"),
+                Layers = layersValue,
                 BboxSr = bboxSrRaw,
                 ImageSr = imageSrRaw,
                 F = responseFormat,
@@ -674,8 +683,10 @@ internal static partial class MapServerEndpoints
             return true;
         }
 
-        var parts = size.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 2)
+        var parts = size.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 ||
+            string.IsNullOrWhiteSpace(parts[0]) ||
+            string.IsNullOrWhiteSpace(parts[1]))
         {
             error = "Invalid size parameter. Expected format: width,height";
             return false;
@@ -791,12 +802,12 @@ internal static partial class MapServerEndpoints
             return ExtentTransformResult.Success(
                 CoordinateTransformer.TransformExtent(extent, fromSrid, toSrid));
         }
-        catch (NotSupportedException ex)
+        catch (NotSupportedException)
         {
             var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
             if (connectionProvider == null)
             {
-                return ExtentTransformResult.Failure(ex.Message);
+                return ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
             }
 
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -811,7 +822,7 @@ internal static partial class MapServerEndpoints
                 cancellationToken);
             return transformed.HasValue
                 ? ExtentTransformResult.Success(transformed.Value)
-                : ExtentTransformResult.Failure(ex.Message);
+                : ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
         }
     }
 
@@ -997,9 +1008,9 @@ internal static partial class MapServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidLayerDefsJsonMessage;
             return false;
         }
     }
@@ -1185,9 +1196,9 @@ internal static partial class MapServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidLayerTimeOptionsJsonMessage;
             return false;
         }
     }
@@ -1305,9 +1316,9 @@ internal static partial class MapServerEndpoints
 
             return true;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            error = ex.Message;
+            error = InvalidDynamicLayersJsonMessage;
             return false;
         }
     }
@@ -1453,7 +1464,7 @@ internal static partial class MapServerEndpoints
 
         if (!FeatureServerTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
         {
-            error = $"Invalid time parameter: {effectiveTime}";
+            error = InvalidTimeParameterMessage;
             return false;
         }
 
@@ -1760,9 +1771,9 @@ internal static partial class MapServerEndpoints
                 {
                     temporalExpression = FeatureServerTemporalQueryBuilder.BuildTemporalExpression(time, timeRelation, layer);
                 }
-                catch (ArgumentException ex)
+                catch (ArgumentException)
                 {
-                    error = $"Invalid time parameter: {ex.Message}";
+                    error = InvalidTimeParameterMessage;
                     return false;
                 }
             }
@@ -1860,8 +1871,12 @@ internal static partial class MapServerEndpoints
     {
         color = SKColors.White;
 
-        var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length is < 3 or > 4)
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length is < 3 or > 4 ||
+            string.IsNullOrWhiteSpace(parts[0]) ||
+            string.IsNullOrWhiteSpace(parts[1]) ||
+            string.IsNullOrWhiteSpace(parts[2]) ||
+            (parts.Length == 4 && string.IsNullOrWhiteSpace(parts[3])))
         {
             return false;
         }
@@ -1943,6 +1958,84 @@ internal static partial class MapServerEndpoints
         }
 
         return ids;
+    }
+
+    private static bool HasEmptyLayerToken(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return false;
+        }
+
+        var spec = layersParam.Trim();
+        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["show:".Length..];
+        }
+        else if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["hide:".Length..];
+        }
+        else if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["include:".Length..];
+        }
+        else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["exclude:".Length..];
+        }
+
+        foreach (var token in spec.Split(',', StringSplitOptions.None))
+        {
+            if (token.Trim().Length == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasNonIntegerExportLayerToken(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return false;
+        }
+
+        var spec = layersParam.Trim();
+        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["show:".Length..];
+        }
+        else if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["hide:".Length..];
+        }
+        else if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["include:".Length..];
+        }
+        else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
+        {
+            spec = spec["exclude:".Length..];
+        }
+
+        foreach (var token in spec.Split(',', StringSplitOptions.None))
+        {
+            var trimmed = token.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsLayerVisibleAtScale(LayerDefinition layer, double scaleDenominator)

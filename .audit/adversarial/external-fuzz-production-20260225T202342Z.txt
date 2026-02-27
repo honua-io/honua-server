@@ -1,0 +1,16 @@
+External adversarial fuzz summary (production mode) (20260225T202342Z)
+total_cases: 49
+status_5xx_count: 0
+error_detail_leak_count: 0
+secret_leak_count: 0
+host_bypass_suspicions: 8
+
+Findings:
+- host-abuse-4-live [200]: host_validation_bypass_possible
+- host-abuse-3-live [200]: host_validation_bypass_possible
+- host-abuse-1-live [200]: host_validation_bypass_possible
+- host-abuse-3-features [200]: host_validation_bypass_possible
+- host-abuse-2-features [200]: host_validation_bypass_possible
+- host-abuse-2-live [200]: host_validation_bypass_possible
+- host-abuse-1-features [200]: host_validation_bypass_possible
+- host-abuse-4-features [200]: host_validation_bypass_possible

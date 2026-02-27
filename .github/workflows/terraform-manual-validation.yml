@@ -1,0 +1,1233 @@
+name: Terraform Manual Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud target"
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - azure
+          - aws
+      deployment_profile:
+        description: "Deployment profile"
+        required: true
+        type: choice
+        default: ephemeral
+        options:
+          - ephemeral
+          - persistent
+      apply_confirmation:
+        description: "Type APPROVED for persistent apply"
+        required: false
+        type: string
+        default: ""
+      run_live:
+        description: "Run live plan/apply/smoke/destroy tests"
+        required: true
+        type: boolean
+        default: true
+      run_k8s:
+        description: "Run local Kubernetes validation (k3d + Helm + observability)"
+        required: true
+        type: boolean
+        default: true
+      run_aks:
+        description: "Run AKS validation (Terraform cluster + Kubernetes checks)"
+        required: true
+        type: boolean
+        default: false
+      run_eks:
+        description: "Run EKS validation (Terraform cluster + Kubernetes checks)"
+        required: true
+        type: boolean
+        default: false
+      run_drift:
+        description: "Run drift detection job"
+        required: true
+        type: boolean
+        default: false
+      no_destroy:
+        description: "Keep resources after live test"
+        required: true
+        type: boolean
+        default: false
+      allow_destroy_plan:
+        description: "Allow apply when plan includes destroys"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-manual-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: true
+  AZURE_VALIDATION_REGION: ${{ vars.HONUA_AZURE_VALIDATION_REGION || 'eastus' }}
+  AWS_VALIDATION_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
+  AZURE_VALIDATION_STACK: ${{ vars.HONUA_AZURE_VALIDATION_STACK || 'both' }}
+  AWS_VALIDATION_STACK: ${{ vars.HONUA_AWS_VALIDATION_STACK || 'both' }}
+  HONUA_READY_SLO_SECONDS: ${{ vars.HONUA_READY_SLO_SECONDS || '600' }}
+  HONUA_MAX_LOAD_ERROR_RATE_PERCENT: ${{ vars.HONUA_MAX_LOAD_ERROR_RATE_PERCENT || '0' }}
+  HONUA_MAX_RUN_COST_USD: ${{ vars.HONUA_MAX_RUN_COST_USD || '0' }}
+  HONUA_TTL_HOURS: ${{ vars.HONUA_TTL_HOURS || '8' }}
+  HONUA_RUN_UPGRADE_ROLLBACK: ${{ vars.HONUA_RUN_UPGRADE_ROLLBACK || 'false' }}
+  HONUA_SKIP_DB_RESILIENCE: ${{ vars.HONUA_SKIP_DB_RESILIENCE || 'false' }}
+  HONUA_SKIP_QUOTA_PREFLIGHT: ${{ vars.HONUA_SKIP_QUOTA_PREFLIGHT || 'false' }}
+  HONUA_SKIP_HELM_STATIC_VALIDATION: ${{ vars.HONUA_SKIP_HELM_STATIC_VALIDATION || 'false' }}
+  HONUA_SKIP_OBSERVABILITY: ${{ vars.HONUA_SKIP_OBSERVABILITY || 'false' }}
+  HONUA_SKIP_IDEMPOTENCY: ${{ vars.HONUA_SKIP_IDEMPOTENCY || 'false' }}
+  HONUA_SKIP_PROTOCOL_CHECKS: ${{ vars.HONUA_SKIP_PROTOCOL_CHECKS || 'false' }}
+  HONUA_SKIP_SCALE_CHECK: ${{ vars.HONUA_SKIP_SCALE_CHECK || 'false' }}
+  HONUA_AZURE_NAME_PREFIX_BASE: ${{ vars.HONUA_AZURE_NAME_PREFIX_BASE || '' }}
+  HONUA_AWS_NAME_PREFIX_BASE: ${{ vars.HONUA_AWS_NAME_PREFIX_BASE || '' }}
+  HONUA_AZURE_EXISTING_DB_FQDN: ${{ vars.HONUA_AZURE_EXISTING_DB_FQDN || '' }}
+  HONUA_AZURE_EXISTING_DB_CONNECTION_STRING: ${{ vars.HONUA_AZURE_EXISTING_DB_CONNECTION_STRING || '' }}
+  HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING: ${{ vars.HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING || '' }}
+  HONUA_AWS_EXISTING_DB_ENDPOINT: ${{ vars.HONUA_AWS_EXISTING_DB_ENDPOINT || '' }}
+  HONUA_AWS_EXISTING_DB_CONNECTION_STRING: ${{ vars.HONUA_AWS_EXISTING_DB_CONNECTION_STRING || '' }}
+  HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING: ${{ vars.HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING || '' }}
+  HONUA_AKS_NAME_PREFIX_BASE: ${{ vars.HONUA_AKS_NAME_PREFIX_BASE || '' }}
+  HONUA_EKS_NAME_PREFIX_BASE: ${{ vars.HONUA_EKS_NAME_PREFIX_BASE || '' }}
+  HONUA_DRIFT_ROOTS: ${{ vars.HONUA_DRIFT_ROOTS || '' }}
+  HONUA_DRIFT_VAR_FILES: ${{ vars.HONUA_DRIFT_VAR_FILES || '' }}
+
+jobs:
+  static-validate:
+    name: Static Terraform Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt check
+        run: |
+          terraform fmt -check -recursive infrastructure/terraform
+          terraform fmt -check -recursive docs/devops/examples
+
+      - name: Terraform init/validate (selected roots)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          roots=(
+            "infrastructure/terraform/bootstrap/azure-aca"
+            "infrastructure/terraform/bootstrap/azure-functions"
+            "infrastructure/terraform/bootstrap/azure-aks"
+            "infrastructure/terraform/bootstrap/aws-ecs"
+            "infrastructure/terraform/bootstrap/aws-serverless"
+            "infrastructure/terraform/bootstrap/aws-eks"
+            "infrastructure/terraform/examples/azure"
+            "infrastructure/terraform/examples/azure-functions"
+            "infrastructure/terraform/examples/aws"
+            "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/azure-aks"
+            "infrastructure/terraform/examples/aws-eks"
+            "infrastructure/terraform/examples/observability"
+            "infrastructure/terraform/modules/azure-aca"
+            "infrastructure/terraform/modules/azure-functions"
+            "infrastructure/terraform/modules/aws-ecs"
+            "infrastructure/terraform/modules/aws-serverless"
+            "infrastructure/terraform/modules/azure-aks"
+            "infrastructure/terraform/modules/aws-eks"
+            "infrastructure/terraform/modules/observability-stack"
+            "docs/devops/examples"
+          )
+
+          for root in "${roots[@]}"; do
+            echo "::group::terraform init ($root)"
+            terraform -chdir="$root" init -backend=false -input=false -no-color
+            echo "::endgroup::"
+
+            echo "::group::terraform validate ($root)"
+            terraform -chdir="$root" validate -no-color
+            echo "::endgroup::"
+          done
+
+  policy-gates:
+    name: Terraform Policy Gates
+    needs: static-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install checkov
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install checkov
+
+      - name: Install tfsec
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          tfsec --version
+
+      - name: Run Terraform policy gate script
+        shell: bash
+        run: ./scripts/terraform-policy-gate.sh
+
+  azure-live:
+    name: Azure Live Validation
+    needs: policy-gates
+    if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    env:
+      BOOTSTRAP_ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      BOOTSTRAP_ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      BOOTSTRAP_ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      BOOTSTRAP_ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+      HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
+      HONUA_ACA_IMAGE: ${{ secrets.HONUA_ACA_IMAGE }}
+      HONUA_ACA_PREVIOUS_IMAGE: ${{ secrets.HONUA_ACA_PREVIOUS_IMAGE }}
+      HONUA_FUNCTIONS_IMAGE: ${{ secrets.HONUA_FUNCTIONS_IMAGE }}
+      HONUA_FUNCTIONS_PREVIOUS_IMAGE: ${{ secrets.HONUA_FUNCTIONS_PREVIOUS_IMAGE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Validate required secrets (Azure)
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            BOOTSTRAP_ARM_CLIENT_ID
+            BOOTSTRAP_ARM_CLIENT_SECRET
+            BOOTSTRAP_ARM_TENANT_ID
+            BOOTSTRAP_ARM_SUBSCRIPTION_ID
+            HONUA_ADMIN_PASSWORD
+            HONUA_DB_PASSWORD
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret for Azure live validation: $name"
+              exit 1
+            fi
+          done
+
+      - name: Enforce persistent apply confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.deployment_profile }}" != "ephemeral" && "${{ inputs.apply_confirmation }}" != "APPROVED" ]]; then
+            echo "Persistent profile requires apply_confirmation=APPROVED"
+            exit 1
+          fi
+
+      - name: Bootstrap least-privilege identities and run Azure validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bootstrap_root="$RUNNER_TEMP/bootstrap/azure"
+          plan_root="$RUNNER_TEMP/plans/azure"
+          mkdir -p "$bootstrap_root" "$plan_root"
+
+          requested_stack="$AZURE_VALIDATION_STACK"
+          case "$requested_stack" in
+            aca|functions|both) ;;
+            *)
+              echo "Unsupported AZURE_VALIDATION_STACK: $requested_stack"
+              exit 1
+              ;;
+          esac
+
+          cleanup_bootstrap_stack() {
+            local stack="$1"
+            local dir="$bootstrap_root/$stack"
+            if [[ ! -f "$dir/terraform.tfstate" ]]; then
+              return 0
+            fi
+            echo "Destroying Azure bootstrap identity for stack '$stack'"
+            ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+            ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+            ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+            ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+            terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy Azure bootstrap '$stack'"
+          }
+
+          cleanup_bootstrap() {
+            cleanup_bootstrap_stack "aca"
+            cleanup_bootstrap_stack "functions"
+          }
+          trap cleanup_bootstrap EXIT
+
+          bootstrap_azure_stack() {
+            local stack="$1"
+            local source_dir=""
+            local app_name=""
+            local role_name=""
+            local target_dir="$bootstrap_root/$stack"
+
+            case "$stack" in
+              aca)
+                source_dir="infrastructure/terraform/bootstrap/azure-aca"
+                app_name="honua-tf-aca-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+                role_name="Honua TF ACA ${GITHUB_RUN_ID} ${GITHUB_RUN_ATTEMPT}"
+                ;;
+              functions)
+                source_dir="infrastructure/terraform/bootstrap/azure-functions"
+                app_name="honua-tf-fn-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+                role_name="Honua TF Functions ${GITHUB_RUN_ID} ${GITHUB_RUN_ATTEMPT}"
+                ;;
+              *)
+                echo "Unsupported bootstrap stack: $stack"
+                exit 1
+                ;;
+            esac
+
+            mkdir -p "$target_dir"
+            cp "$source_dir"/*.tf "$target_dir"/
+
+            ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+            ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+            ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+            ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+            terraform -chdir="$target_dir" init -input=false -no-color
+
+            ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+            ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+            ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+            ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+            terraform -chdir="$target_dir" apply -input=false -auto-approve -no-color \
+              -var "app_name=${app_name}" \
+              -var "role_name=${role_name}"
+          }
+
+          read_bootstrap_output() {
+            local stack="$1"
+            local output_name="$2"
+            terraform -chdir="$bootstrap_root/$stack" output -raw "$output_name"
+          }
+
+          run_validation_for_stack() {
+            local stack="$1"
+            local arm_client_id="$2"
+            local arm_client_secret="$3"
+            local arm_tenant_id="$4"
+            local arm_subscription_id="$5"
+            local stack_plan_dir="$plan_root/$stack"
+
+            mkdir -p "$stack_plan_dir"
+
+            args=(
+              --stack "$stack"
+              --location "$AZURE_VALIDATION_REGION"
+              --plan-artifact-dir "$stack_plan_dir"
+              --max-run-cost-usd "$HONUA_MAX_RUN_COST_USD"
+              --max-ready-seconds "$HONUA_READY_SLO_SECONDS"
+              --max-load-error-rate "$HONUA_MAX_LOAD_ERROR_RATE_PERCENT"
+              --ttl-hours "$HONUA_TTL_HOURS"
+            )
+
+            if [[ -n "$HONUA_AZURE_NAME_PREFIX_BASE" ]]; then
+              args+=(--name-prefix-base "$HONUA_AZURE_NAME_PREFIX_BASE")
+            fi
+
+            if [[ "$stack" == "aca" ]]; then
+              if [[ -n "${HONUA_ACA_IMAGE:-}" ]]; then
+                args+=(--aca-image "$HONUA_ACA_IMAGE")
+              fi
+              if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+                args+=(--upgrade-rollback)
+                if [[ -n "${HONUA_ACA_PREVIOUS_IMAGE:-}" ]]; then
+                  args+=(--aca-previous-image "$HONUA_ACA_PREVIOUS_IMAGE")
+                fi
+              fi
+            fi
+
+            if [[ "$stack" == "functions" ]]; then
+              if [[ -n "${HONUA_FUNCTIONS_IMAGE:-}" ]]; then
+                args+=(--functions-image "$HONUA_FUNCTIONS_IMAGE")
+              fi
+              if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+                args+=(--upgrade-rollback)
+                if [[ -n "${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}" ]]; then
+                  args+=(--functions-previous-image "$HONUA_FUNCTIONS_PREVIOUS_IMAGE")
+                fi
+              fi
+            fi
+
+            if [[ "$HONUA_SKIP_DB_RESILIENCE" == "true" ]]; then
+              args+=(--skip-db-resilience)
+            fi
+
+            if [[ "$HONUA_SKIP_QUOTA_PREFLIGHT" == "true" ]]; then
+              args+=(--skip-quota-preflight)
+            fi
+
+            if [[ "${{ inputs.allow_destroy_plan }}" == "true" ]]; then
+              args+=(--allow-destroy-plan)
+            fi
+
+            if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
+              args+=(--no-destroy)
+            fi
+
+            if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
+              args+=(--no-scale-check)
+            fi
+
+            if [[ "$HONUA_SKIP_IDEMPOTENCY" == "true" ]]; then
+              args+=(--skip-idempotency)
+            fi
+
+            if [[ "$HONUA_SKIP_PROTOCOL_CHECKS" == "true" ]]; then
+              args+=(--skip-protocol-checks)
+            fi
+
+            ARM_CLIENT_ID="$arm_client_id" \
+            ARM_CLIENT_SECRET="$arm_client_secret" \
+            ARM_TENANT_ID="$arm_tenant_id" \
+            ARM_SUBSCRIPTION_ID="$arm_subscription_id" \
+            HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-azure-${stack}" \
+            ./scripts/run-azure-terraform-integration.sh "${args[@]}"
+          }
+
+          ACA_ARM_CLIENT_ID=""
+          ACA_ARM_CLIENT_SECRET=""
+          ACA_ARM_TENANT_ID=""
+          ACA_ARM_SUBSCRIPTION_ID=""
+          FUNCTIONS_ARM_CLIENT_ID=""
+          FUNCTIONS_ARM_CLIENT_SECRET=""
+          FUNCTIONS_ARM_TENANT_ID=""
+          FUNCTIONS_ARM_SUBSCRIPTION_ID=""
+
+          if [[ "$requested_stack" == "aca" || "$requested_stack" == "both" ]]; then
+            bootstrap_azure_stack "aca"
+            ACA_ARM_CLIENT_ID="$(read_bootstrap_output aca client_id)"
+            ACA_ARM_CLIENT_SECRET="$(read_bootstrap_output aca client_secret)"
+            ACA_ARM_TENANT_ID="$(read_bootstrap_output aca tenant_id)"
+            ACA_ARM_SUBSCRIPTION_ID="$(read_bootstrap_output aca subscription_id)"
+          fi
+
+          if [[ "$requested_stack" == "functions" || "$requested_stack" == "both" ]]; then
+            bootstrap_azure_stack "functions"
+            FUNCTIONS_ARM_CLIENT_ID="$(read_bootstrap_output functions client_id)"
+            FUNCTIONS_ARM_CLIENT_SECRET="$(read_bootstrap_output functions client_secret)"
+            FUNCTIONS_ARM_TENANT_ID="$(read_bootstrap_output functions tenant_id)"
+            FUNCTIONS_ARM_SUBSCRIPTION_ID="$(read_bootstrap_output functions subscription_id)"
+          fi
+
+          if [[ "$requested_stack" == "aca" || "$requested_stack" == "both" ]]; then
+            run_validation_for_stack "aca" \
+              "$ACA_ARM_CLIENT_ID" \
+              "$ACA_ARM_CLIENT_SECRET" \
+              "$ACA_ARM_TENANT_ID" \
+              "$ACA_ARM_SUBSCRIPTION_ID"
+          fi
+
+          if [[ "$requested_stack" == "functions" || "$requested_stack" == "both" ]]; then
+            run_validation_for_stack "functions" \
+              "$FUNCTIONS_ARM_CLIENT_ID" \
+              "$FUNCTIONS_ARM_CLIENT_SECRET" \
+              "$FUNCTIONS_ARM_TENANT_ID" \
+              "$FUNCTIONS_ARM_SUBSCRIPTION_ID"
+          fi
+
+      - name: Upload Azure plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-plan-artifacts-${{ github.run_id }}
+          path: ${{ runner.temp }}/plans/azure
+          if-no-files-found: ignore
+
+  aws-live:
+    name: AWS Live Validation
+    needs: policy-gates
+    if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    env:
+      BOOTSTRAP_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      BOOTSTRAP_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      BOOTSTRAP_AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+      HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
+      HONUA_AWS_ECS_IMAGE: ${{ secrets.HONUA_AWS_ECS_IMAGE }}
+      HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ secrets.HONUA_AWS_ECS_PREVIOUS_IMAGE }}
+      HONUA_AWS_SERVERLESS_IMAGE: ${{ secrets.HONUA_AWS_SERVERLESS_IMAGE }}
+      HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ secrets.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Validate required secrets (AWS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            BOOTSTRAP_AWS_ACCESS_KEY_ID
+            BOOTSTRAP_AWS_SECRET_ACCESS_KEY
+            HONUA_ADMIN_PASSWORD
+            HONUA_DB_PASSWORD
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret for AWS live validation: $name"
+              exit 1
+            fi
+          done
+
+      - name: Enforce persistent apply confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.deployment_profile }}" != "ephemeral" && "${{ inputs.apply_confirmation }}" != "APPROVED" ]]; then
+            echo "Persistent profile requires apply_confirmation=APPROVED"
+            exit 1
+          fi
+
+      - name: Bootstrap least-privilege identities and run AWS validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bootstrap_root="$RUNNER_TEMP/bootstrap/aws"
+          plan_root="$RUNNER_TEMP/plans/aws"
+          mkdir -p "$bootstrap_root" "$plan_root"
+
+          requested_stack="$AWS_VALIDATION_STACK"
+          case "$requested_stack" in
+            ecs|serverless|both) ;;
+            *)
+              echo "Unsupported AWS_VALIDATION_STACK: $requested_stack"
+              exit 1
+              ;;
+          esac
+
+          cleanup_bootstrap_stack() {
+            local stack="$1"
+            local dir="$bootstrap_root/$stack"
+            if [[ ! -f "$dir/terraform.tfstate" ]]; then
+              return 0
+            fi
+            echo "Destroying AWS bootstrap identity for stack '$stack'"
+            AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+            AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+            AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+            terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy AWS bootstrap '$stack'"
+          }
+
+          cleanup_bootstrap() {
+            cleanup_bootstrap_stack "ecs"
+            cleanup_bootstrap_stack "serverless"
+          }
+          trap cleanup_bootstrap EXIT
+
+          bootstrap_aws_stack() {
+            local stack="$1"
+            local source_dir=""
+            local target_dir="$bootstrap_root/$stack"
+            local user_name=""
+
+            case "$stack" in
+              ecs)
+                source_dir="infrastructure/terraform/bootstrap/aws-ecs"
+                user_name="honua-tf-ecs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+                ;;
+              serverless)
+                source_dir="infrastructure/terraform/bootstrap/aws-serverless"
+                user_name="honua-tf-sls-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+                ;;
+              *)
+                echo "Unsupported bootstrap stack: $stack"
+                exit 1
+                ;;
+            esac
+
+            mkdir -p "$target_dir"
+            cp "$source_dir"/*.tf "$target_dir"/
+
+            AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+            AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+            AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+            terraform -chdir="$target_dir" init -input=false -no-color
+
+            AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+            AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+            AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+            terraform -chdir="$target_dir" apply -input=false -auto-approve -no-color \
+              -var "aws_region=${AWS_VALIDATION_REGION}" \
+              -var "user_name=${user_name}"
+          }
+
+          read_bootstrap_output() {
+            local stack="$1"
+            local output_name="$2"
+            terraform -chdir="$bootstrap_root/$stack" output -raw "$output_name"
+          }
+
+          run_validation_for_stack() {
+            local stack="$1"
+            local access_key_id="$2"
+            local secret_access_key="$3"
+            local stack_plan_dir="$plan_root/$stack"
+
+            mkdir -p "$stack_plan_dir"
+
+            args=(
+              --stack "$stack"
+              --region "$AWS_VALIDATION_REGION"
+              --plan-artifact-dir "$stack_plan_dir"
+              --max-run-cost-usd "$HONUA_MAX_RUN_COST_USD"
+              --max-ready-seconds "$HONUA_READY_SLO_SECONDS"
+              --max-load-error-rate "$HONUA_MAX_LOAD_ERROR_RATE_PERCENT"
+              --ttl-hours "$HONUA_TTL_HOURS"
+            )
+
+            if [[ -n "$HONUA_AWS_NAME_PREFIX_BASE" ]]; then
+              args+=(--name-prefix-base "$HONUA_AWS_NAME_PREFIX_BASE")
+            fi
+
+            if [[ "$stack" == "ecs" ]]; then
+              if [[ -n "${HONUA_AWS_ECS_IMAGE:-}" ]]; then
+                args+=(--ecs-image "$HONUA_AWS_ECS_IMAGE")
+              fi
+              if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+                args+=(--upgrade-rollback)
+                if [[ -n "${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}" ]]; then
+                  args+=(--ecs-previous-image "$HONUA_AWS_ECS_PREVIOUS_IMAGE")
+                fi
+              fi
+            fi
+
+            if [[ "$stack" == "serverless" ]]; then
+              if [[ -n "${HONUA_AWS_SERVERLESS_IMAGE:-}" ]]; then
+                args+=(--serverless-image "$HONUA_AWS_SERVERLESS_IMAGE")
+              fi
+              if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+                args+=(--upgrade-rollback)
+                if [[ -n "${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}" ]]; then
+                  args+=(--serverless-previous-image "$HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE")
+                fi
+              fi
+            fi
+
+            if [[ "$HONUA_SKIP_DB_RESILIENCE" == "true" ]]; then
+              args+=(--skip-db-resilience)
+            fi
+
+            if [[ "$HONUA_SKIP_QUOTA_PREFLIGHT" == "true" ]]; then
+              args+=(--skip-quota-preflight)
+            fi
+
+            if [[ "${{ inputs.allow_destroy_plan }}" == "true" ]]; then
+              args+=(--allow-destroy-plan)
+            fi
+
+            if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
+              args+=(--no-destroy)
+            fi
+
+            if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
+              args+=(--no-scale-check)
+            fi
+
+            if [[ "$HONUA_SKIP_IDEMPOTENCY" == "true" ]]; then
+              args+=(--skip-idempotency)
+            fi
+
+            if [[ "$HONUA_SKIP_PROTOCOL_CHECKS" == "true" ]]; then
+              args+=(--skip-protocol-checks)
+            fi
+
+            AWS_ACCESS_KEY_ID="$access_key_id" \
+            AWS_SECRET_ACCESS_KEY="$secret_access_key" \
+            AWS_SESSION_TOKEN="" \
+            HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-aws-${stack}" \
+            ./scripts/run-aws-terraform-integration.sh "${args[@]}"
+          }
+
+          ECS_AWS_ACCESS_KEY_ID=""
+          ECS_AWS_SECRET_ACCESS_KEY=""
+          SERVERLESS_AWS_ACCESS_KEY_ID=""
+          SERVERLESS_AWS_SECRET_ACCESS_KEY=""
+
+          if [[ "$requested_stack" == "ecs" || "$requested_stack" == "both" ]]; then
+            bootstrap_aws_stack "ecs"
+            ECS_AWS_ACCESS_KEY_ID="$(read_bootstrap_output ecs access_key_id)"
+            ECS_AWS_SECRET_ACCESS_KEY="$(read_bootstrap_output ecs secret_access_key)"
+          fi
+
+          if [[ "$requested_stack" == "serverless" || "$requested_stack" == "both" ]]; then
+            bootstrap_aws_stack "serverless"
+            SERVERLESS_AWS_ACCESS_KEY_ID="$(read_bootstrap_output serverless access_key_id)"
+            SERVERLESS_AWS_SECRET_ACCESS_KEY="$(read_bootstrap_output serverless secret_access_key)"
+          fi
+
+          if [[ "$requested_stack" == "ecs" || "$requested_stack" == "both" ]]; then
+            run_validation_for_stack "ecs" \
+              "$ECS_AWS_ACCESS_KEY_ID" \
+              "$ECS_AWS_SECRET_ACCESS_KEY"
+          fi
+
+          if [[ "$requested_stack" == "serverless" || "$requested_stack" == "both" ]]; then
+            run_validation_for_stack "serverless" \
+              "$SERVERLESS_AWS_ACCESS_KEY_ID" \
+              "$SERVERLESS_AWS_SECRET_ACCESS_KEY"
+          fi
+
+      - name: Upload AWS plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-plan-artifacts-${{ github.run_id }}
+          path: ${{ runner.temp }}/plans/aws
+          if-no-files-found: ignore
+
+  k8s-live:
+    name: Kubernetes Live Validation
+    needs: policy-gates
+    if: ${{ inputs.run_live && inputs.run_k8s }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    env:
+      HONUA_K8S_IMAGE: ${{ secrets.HONUA_K8S_IMAGE }}
+      HONUA_K8S_PREVIOUS_IMAGE: ${{ secrets.HONUA_K8S_PREVIOUS_IMAGE }}
+      HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install k3d
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      - name: Enforce persistent apply confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.deployment_profile }}" != "ephemeral" && "${{ inputs.apply_confirmation }}" != "APPROVED" ]]; then
+            echo "Persistent profile requires apply_confirmation=APPROVED"
+            exit 1
+          fi
+
+      - name: Run Kubernetes live integration script
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=(
+            --max-ready-seconds "$HONUA_READY_SLO_SECONDS"
+            --max-load-error-rate "$HONUA_MAX_LOAD_ERROR_RATE_PERCENT"
+          )
+
+          if [[ -n "${HONUA_K8S_IMAGE:-}" ]]; then
+            args+=(--image "$HONUA_K8S_IMAGE")
+          fi
+
+          if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+            args+=(--upgrade-rollback)
+            if [[ -n "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
+              args+=(--previous-image "$HONUA_K8S_PREVIOUS_IMAGE")
+            fi
+          fi
+
+          if [[ "$HONUA_SKIP_OBSERVABILITY" == "true" ]]; then
+            args+=(--skip-observability)
+          fi
+
+          if [[ "$HONUA_SKIP_DB_RESILIENCE" == "true" ]]; then
+            args+=(--skip-db-resilience)
+          fi
+
+          if [[ "$HONUA_SKIP_HELM_STATIC_VALIDATION" == "true" ]]; then
+            args+=(--skip-helm-static-validation)
+          fi
+
+          if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
+            args+=(--no-destroy)
+          fi
+
+          if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
+            args+=(--no-scale-check)
+          fi
+
+          if [[ "$HONUA_SKIP_IDEMPOTENCY" == "true" ]]; then
+            args+=(--skip-idempotency)
+          fi
+
+          if [[ "$HONUA_SKIP_PROTOCOL_CHECKS" == "true" ]]; then
+            args+=(--skip-protocol-checks)
+          fi
+
+          ./scripts/run-k8s-terraform-integration.sh "${args[@]}"
+
+  aks-live:
+    name: AKS Live Validation
+    needs: policy-gates
+    if: ${{ inputs.run_live && inputs.run_aks && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    env:
+      BOOTSTRAP_ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      BOOTSTRAP_ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      BOOTSTRAP_ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      BOOTSTRAP_ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+      HONUA_K8S_IMAGE: ${{ secrets.HONUA_K8S_IMAGE }}
+      HONUA_K8S_PREVIOUS_IMAGE: ${{ secrets.HONUA_K8S_PREVIOUS_IMAGE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Validate required secrets (AKS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            BOOTSTRAP_ARM_CLIENT_ID
+            BOOTSTRAP_ARM_CLIENT_SECRET
+            BOOTSTRAP_ARM_TENANT_ID
+            BOOTSTRAP_ARM_SUBSCRIPTION_ID
+            HONUA_ADMIN_PASSWORD
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret for AKS live validation: $name"
+              exit 1
+            fi
+          done
+
+      - name: Enforce persistent apply confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.deployment_profile }}" != "ephemeral" && "${{ inputs.apply_confirmation }}" != "APPROVED" ]]; then
+            echo "Persistent profile requires apply_confirmation=APPROVED"
+            exit 1
+          fi
+
+      - name: Bootstrap least-privilege identity and run AKS validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bootstrap_dir="$RUNNER_TEMP/bootstrap/aks"
+          plan_dir="$RUNNER_TEMP/plans/aks"
+          mkdir -p "$bootstrap_dir" "$plan_dir"
+
+          cleanup_bootstrap() {
+            if [[ ! -f "$bootstrap_dir/terraform.tfstate" ]]; then
+              return 0
+            fi
+            echo "Destroying AKS bootstrap identity"
+            ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+            ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+            ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+            ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+            terraform -chdir="$bootstrap_dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy AKS bootstrap identity"
+          }
+          trap cleanup_bootstrap EXIT
+
+          cp infrastructure/terraform/bootstrap/azure-aks/*.tf "$bootstrap_dir"/
+
+          ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+          ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+          ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+          ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+          terraform -chdir="$bootstrap_dir" init -input=false -no-color
+
+          ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+          ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+          ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+          ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+          terraform -chdir="$bootstrap_dir" apply -input=false -auto-approve -no-color \
+            -var "app_name=honua-tf-aks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -var "role_name=Honua TF AKS ${GITHUB_RUN_ID} ${GITHUB_RUN_ATTEMPT}"
+
+          AKS_ARM_CLIENT_ID="$(terraform -chdir="$bootstrap_dir" output -raw client_id)"
+          AKS_ARM_CLIENT_SECRET="$(terraform -chdir="$bootstrap_dir" output -raw client_secret)"
+          AKS_ARM_TENANT_ID="$(terraform -chdir="$bootstrap_dir" output -raw tenant_id)"
+          AKS_ARM_SUBSCRIPTION_ID="$(terraform -chdir="$bootstrap_dir" output -raw subscription_id)"
+
+          args=(
+            --location "$AZURE_VALIDATION_REGION"
+            --plan-artifact-dir "$plan_dir"
+            --max-run-cost-usd "$HONUA_MAX_RUN_COST_USD"
+            --max-ready-seconds "$HONUA_READY_SLO_SECONDS"
+            --max-load-error-rate "$HONUA_MAX_LOAD_ERROR_RATE_PERCENT"
+            --ttl-hours "$HONUA_TTL_HOURS"
+          )
+
+          if [[ -n "$HONUA_AKS_NAME_PREFIX_BASE" ]]; then
+            args+=(--name-prefix-base "$HONUA_AKS_NAME_PREFIX_BASE")
+          fi
+
+          if [[ -n "${HONUA_K8S_IMAGE:-}" ]]; then
+            args+=(--image "$HONUA_K8S_IMAGE")
+          fi
+
+          if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+            args+=(--upgrade-rollback)
+            if [[ -n "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
+              args+=(--previous-image "$HONUA_K8S_PREVIOUS_IMAGE")
+            fi
+          fi
+
+          if [[ "$HONUA_SKIP_OBSERVABILITY" == "true" ]]; then
+            args+=(--skip-observability)
+          fi
+
+          if [[ "$HONUA_SKIP_DB_RESILIENCE" == "true" ]]; then
+            args+=(--skip-db-resilience)
+          fi
+
+          if [[ "$HONUA_SKIP_HELM_STATIC_VALIDATION" == "true" ]]; then
+            args+=(--skip-helm-static-validation)
+          fi
+
+          if [[ "$HONUA_SKIP_QUOTA_PREFLIGHT" == "true" ]]; then
+            args+=(--skip-quota-preflight)
+          fi
+
+          if [[ "${{ inputs.allow_destroy_plan }}" == "true" ]]; then
+            args+=(--allow-destroy-plan)
+          fi
+
+          if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
+            args+=(--no-destroy)
+          fi
+
+          if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
+            args+=(--no-scale-check)
+          fi
+
+          if [[ "$HONUA_SKIP_IDEMPOTENCY" == "true" ]]; then
+            args+=(--skip-idempotency)
+          fi
+
+          if [[ "$HONUA_SKIP_PROTOCOL_CHECKS" == "true" ]]; then
+            args+=(--skip-protocol-checks)
+          fi
+
+          ARM_CLIENT_ID="$AKS_ARM_CLIENT_ID" \
+          ARM_CLIENT_SECRET="$AKS_ARM_CLIENT_SECRET" \
+          ARM_TENANT_ID="$AKS_ARM_TENANT_ID" \
+          ARM_SUBSCRIPTION_ID="$AKS_ARM_SUBSCRIPTION_ID" \
+          HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-aks" \
+          ./scripts/run-aks-terraform-integration.sh "${args[@]}"
+
+      - name: Upload AKS plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aks-plan-artifacts-${{ github.run_id }}
+          path: ${{ runner.temp }}/plans/aks
+          if-no-files-found: ignore
+
+  eks-live:
+    name: EKS Live Validation
+    needs: policy-gates
+    if: ${{ inputs.run_live && inputs.run_eks && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    env:
+      BOOTSTRAP_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      BOOTSTRAP_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      BOOTSTRAP_AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+      HONUA_K8S_IMAGE: ${{ secrets.HONUA_K8S_IMAGE }}
+      HONUA_K8S_PREVIOUS_IMAGE: ${{ secrets.HONUA_K8S_PREVIOUS_IMAGE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Validate required secrets (EKS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            BOOTSTRAP_AWS_ACCESS_KEY_ID
+            BOOTSTRAP_AWS_SECRET_ACCESS_KEY
+            HONUA_ADMIN_PASSWORD
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret for EKS live validation: $name"
+              exit 1
+            fi
+          done
+
+      - name: Enforce persistent apply confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.deployment_profile }}" != "ephemeral" && "${{ inputs.apply_confirmation }}" != "APPROVED" ]]; then
+            echo "Persistent profile requires apply_confirmation=APPROVED"
+            exit 1
+          fi
+
+      - name: Bootstrap least-privilege identity and run EKS validation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bootstrap_dir="$RUNNER_TEMP/bootstrap/eks"
+          plan_dir="$RUNNER_TEMP/plans/eks"
+          mkdir -p "$bootstrap_dir" "$plan_dir"
+
+          cleanup_bootstrap() {
+            if [[ ! -f "$bootstrap_dir/terraform.tfstate" ]]; then
+              return 0
+            fi
+            echo "Destroying EKS bootstrap identity"
+            AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+            AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+            AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+            terraform -chdir="$bootstrap_dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy EKS bootstrap identity"
+          }
+          trap cleanup_bootstrap EXIT
+
+          cp infrastructure/terraform/bootstrap/aws-eks/*.tf "$bootstrap_dir"/
+
+          AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+          AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+          AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+          terraform -chdir="$bootstrap_dir" init -input=false -no-color
+
+          AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+          AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+          AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+          terraform -chdir="$bootstrap_dir" apply -input=false -auto-approve -no-color \
+            -var "aws_region=${AWS_VALIDATION_REGION}" \
+            -var "user_name=honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          EKS_AWS_ACCESS_KEY_ID="$(terraform -chdir="$bootstrap_dir" output -raw access_key_id)"
+          EKS_AWS_SECRET_ACCESS_KEY="$(terraform -chdir="$bootstrap_dir" output -raw secret_access_key)"
+
+          args=(
+            --region "$AWS_VALIDATION_REGION"
+            --plan-artifact-dir "$plan_dir"
+            --max-run-cost-usd "$HONUA_MAX_RUN_COST_USD"
+            --max-ready-seconds "$HONUA_READY_SLO_SECONDS"
+            --max-load-error-rate "$HONUA_MAX_LOAD_ERROR_RATE_PERCENT"
+            --ttl-hours "$HONUA_TTL_HOURS"
+          )
+
+          if [[ -n "$HONUA_EKS_NAME_PREFIX_BASE" ]]; then
+            args+=(--name-prefix-base "$HONUA_EKS_NAME_PREFIX_BASE")
+          fi
+
+          if [[ -n "${HONUA_K8S_IMAGE:-}" ]]; then
+            args+=(--image "$HONUA_K8S_IMAGE")
+          fi
+
+          if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+            args+=(--upgrade-rollback)
+            if [[ -n "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
+              args+=(--previous-image "$HONUA_K8S_PREVIOUS_IMAGE")
+            fi
+          fi
+
+          if [[ "$HONUA_SKIP_OBSERVABILITY" == "true" ]]; then
+            args+=(--skip-observability)
+          fi
+
+          if [[ "$HONUA_SKIP_DB_RESILIENCE" == "true" ]]; then
+            args+=(--skip-db-resilience)
+          fi
+
+          if [[ "$HONUA_SKIP_HELM_STATIC_VALIDATION" == "true" ]]; then
+            args+=(--skip-helm-static-validation)
+          fi
+
+          if [[ "$HONUA_SKIP_QUOTA_PREFLIGHT" == "true" ]]; then
+            args+=(--skip-quota-preflight)
+          fi
+
+          if [[ "${{ inputs.allow_destroy_plan }}" == "true" ]]; then
+            args+=(--allow-destroy-plan)
+          fi
+
+          if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
+            args+=(--no-destroy)
+          fi
+
+          if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
+            args+=(--no-scale-check)
+          fi
+
+          if [[ "$HONUA_SKIP_IDEMPOTENCY" == "true" ]]; then
+            args+=(--skip-idempotency)
+          fi
+
+          if [[ "$HONUA_SKIP_PROTOCOL_CHECKS" == "true" ]]; then
+            args+=(--skip-protocol-checks)
+          fi
+
+          AWS_ACCESS_KEY_ID="$EKS_AWS_ACCESS_KEY_ID" \
+          AWS_SECRET_ACCESS_KEY="$EKS_AWS_SECRET_ACCESS_KEY" \
+          AWS_SESSION_TOKEN="" \
+          HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-eks" \
+          ./scripts/run-eks-terraform-integration.sh "${args[@]}"
+
+      - name: Upload EKS plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eks-plan-artifacts-${{ github.run_id }}
+          path: ${{ runner.temp }}/plans/eks
+          if-no-files-found: ignore
+
+  drift-detect:
+    name: Terraform Drift Detection
+    needs: policy-gates
+    if: ${{ inputs.run_drift }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+      HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Run drift detection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          drift_dir="$RUNNER_TEMP/drift"
+          mkdir -p "$drift_dir"
+
+          args=(--plan-artifact-dir "$drift_dir")
+
+          roots_csv="$HONUA_DRIFT_ROOTS"
+          if [[ -z "$roots_csv" ]]; then
+            roots=()
+
+            if [[ "${{ inputs.cloud }}" == "both" || "${{ inputs.cloud }}" == "azure" ]]; then
+              roots+=(
+                "infrastructure/terraform/examples/azure"
+                "infrastructure/terraform/examples/azure-functions"
+              )
+              if [[ "${{ inputs.run_aks }}" == "true" ]]; then
+                roots+=("infrastructure/terraform/examples/azure-aks")
+              fi
+            fi
+
+            if [[ "${{ inputs.cloud }}" == "both" || "${{ inputs.cloud }}" == "aws" ]]; then
+              roots+=(
+                "infrastructure/terraform/examples/aws"
+                "infrastructure/terraform/examples/aws-serverless"
+              )
+              if [[ "${{ inputs.run_eks }}" == "true" ]]; then
+                roots+=("infrastructure/terraform/examples/aws-eks")
+              fi
+            fi
+
+            roots+=("infrastructure/terraform/examples/observability")
+            roots_csv="$(IFS=','; echo "${roots[*]}")"
+          fi
+
+          IFS=',' read -ra roots <<< "$roots_csv"
+          for root in "${roots[@]}"; do
+            root_trimmed="$(echo "$root" | xargs)"
+            [[ -z "$root_trimmed" ]] && continue
+            args+=(--root "$root_trimmed")
+          done
+
+          if [[ "$HONUA_DRIFT_VAR_FILES" != "" ]]; then
+            IFS=',' read -ra varfiles <<< "$HONUA_DRIFT_VAR_FILES"
+            for vf in "${varfiles[@]}"; do
+              vf_trimmed="$(echo "$vf" | xargs)"
+              [[ -z "$vf_trimmed" ]] && continue
+              args+=(--var-file "$vf_trimmed")
+            done
+          fi
+
+          ./scripts/run-terraform-drift-detection.sh "${args[@]}"
+
+      - name: Upload drift artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-artifacts-${{ github.run_id }}
+          path: ${{ runner.temp }}/drift
+          if-no-files-found: ignore

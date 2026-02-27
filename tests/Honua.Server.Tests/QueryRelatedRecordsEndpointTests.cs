@@ -158,6 +158,17 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithMalformedOutFieldsDelimiter_Returns400()
+    {
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outFields=objectid,,name");
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithReturnGeometryFalse_ReturnsNoGeometry()
     {
         // Act
@@ -343,6 +354,25 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=invalid,abc&relationshipId={TestRelationshipId}");
 
         // Assert
+        response.Be400BadRequest();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var errorElement = jsonDoc.RootElement.GetProperty("error");
+        errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
+        errorElement.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Should().Contain(detail => detail.Contains("Invalid objectId"));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithMalformedObjectIdsDelimiter_Returns400()
+    {
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,,2&relationshipId={TestRelationshipId}");
+
         response.Be400BadRequest();
 
         var content = await response.Content.ReadAsStringAsync();

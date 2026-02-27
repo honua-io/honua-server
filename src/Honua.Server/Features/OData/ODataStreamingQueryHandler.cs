@@ -38,6 +38,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
     private const int StreamingThreshold = 1000;
     private const int FlushInterval = 32;
+    private const string InvalidLayerIdFilterMessage = "LayerId filter must be a valid OData expression that resolves to a single layer.";
 
     /// <summary>
     /// Handles OData features collection request with streaming for large result sets
@@ -70,6 +71,22 @@ internal sealed partial class ODataStreamingQueryHandler(
             if (queryValidation != null)
             {
                 return queryValidation;
+            }
+
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(select))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$select contains an empty field expression.");
+            }
+
+            if (ODataParsingUtilities.HasEmptyCommaSeparatedToken(expand))
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$expand contains an empty navigation expression.");
             }
 
             var formatValidation = ODataRequestValidation.ValidateFormat(context, _validationService, format);
@@ -812,9 +829,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             result = (layerIds.First(), null);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            result = (0, ex.Message);
+            result = (0, InvalidLayerIdFilterMessage);
             return false;
         }
     }

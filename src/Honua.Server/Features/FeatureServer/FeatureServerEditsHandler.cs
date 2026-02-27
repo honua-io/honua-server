@@ -25,6 +25,10 @@ internal sealed class FeatureServerEditsHandler(
     FeatureServerEditsDependencies dependencies,
     ILogger<FeatureServerEditsHandler> logger)
 {
+    private const int MaxSafeEditErrorMessageLength = 240;
+    private const string InvalidFeatureDataMessage = "Invalid feature data.";
+    private const string InvalidGeometryPayloadMessage = "Invalid geometry payload.";
+
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
@@ -214,7 +218,7 @@ internal sealed class FeatureServerEditsHandler(
                 context.HasValidationErrors = true;
                 context.AddResults![i] = CreateFailureResult(
                     code: 1000,
-                    description: ex.Message);
+                    description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage));
             }
             catch (Exception ex)
             {
@@ -263,7 +267,7 @@ internal sealed class FeatureServerEditsHandler(
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
                     code: 1002,
-                    description: ex.Message,
+                    description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage),
                     objectId: objectId);
             }
             catch (Exception ex)
@@ -434,7 +438,10 @@ internal sealed class FeatureServerEditsHandler(
             if (!esriValidation.IsValid)
             {
                 var errorMessages = string.Join("; ", esriValidation.Errors.Select(e => e.Message));
-                throw new ArgumentException($"Geometry validation failed: {errorMessages}");
+                var safeError = SanitizeEditErrorMessage(
+                    $"Geometry validation failed: {errorMessages}",
+                    "Geometry validation failed.");
+                throw new ArgumentException(safeError);
             }
 
             var layerSrid = layer.SpatialReference.Wkid;
@@ -442,16 +449,31 @@ internal sealed class FeatureServerEditsHandler(
                 ?? feature.Geometry.SpatialReference?.LatestWkid;
             if (geometrySrid.HasValue && geometrySrid.Value != layerSrid)
             {
-                throw new ArgumentException($"Geometry spatial reference {geometrySrid.Value} does not match layer SRID {layerSrid}.");
+                var safeError = SanitizeEditErrorMessage(
+                    $"Geometry spatial reference {geometrySrid.Value} does not match layer SRID {layerSrid}.",
+                    "Geometry spatial reference does not match layer SRID.");
+                throw new ArgumentException(safeError);
             }
 
             geometrySrid ??= layerSrid;
-            geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
+            try
+            {
+                geometry = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(feature.Geometry, geometrySrid);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new ArgumentException(
+                    SanitizeEditErrorMessage(ex.Message, InvalidGeometryPayloadMessage),
+                    ex);
+            }
 
             var geometryValidation = await _mutationValidator.ValidateGeometryAsync(geometry, cancellationToken);
             if (!geometryValidation.IsValid)
             {
-                throw new ArgumentException($"Geometry validation failed: {geometryValidation.ErrorMessage}");
+                var safeError = SanitizeEditErrorMessage(
+                    $"Geometry validation failed: {geometryValidation.ErrorMessage}",
+                    "Geometry validation failed.");
+                throw new ArgumentException(safeError);
             }
 
             geometry = geometryValidation.Geometry;
@@ -463,7 +485,8 @@ internal sealed class FeatureServerEditsHandler(
             ValidationExtensions.AttributeValidationMode.GeoServices);
         if (!attributesResult.IsValid)
         {
-            throw new ArgumentException(attributesResult.ErrorMessage ?? "Invalid attributes.");
+            throw new ArgumentException(
+                SanitizeEditErrorMessage(attributesResult.ErrorMessage, "Invalid attributes."));
         }
 
         return Feature.Create(objectId, geometry, attributesResult.Value!);
@@ -518,7 +541,7 @@ internal sealed class FeatureServerEditsHandler(
 
         return CreateFailureResult(
             result.ErrorCode,
-            result.ErrorMessage ?? "Operation failed",
+            SanitizeEditErrorMessage(result.ErrorMessage, "Operation failed"),
             result.ObjectId,
             result.GlobalId);
     }
@@ -585,6 +608,37 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         return results.All(result => result.Success);
+    }
+
+    private static string SanitizeEditErrorMessage(string? message, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return fallback;
+        }
+
+        var trimmed = message.Trim();
+        if (trimmed.Length > MaxSafeEditErrorMessageLength || ContainsUnsafeEditMessagePattern(trimmed))
+        {
+            return fallback;
+        }
+
+        return trimmed;
+    }
+
+    private static bool ContainsUnsafeEditMessagePattern(string message)
+    {
+        return message.Contains('\r') ||
+               message.Contains('\n') ||
+               message.Contains("BytePositionInLine", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("LineNumber", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("System.", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("StackTrace", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("SQLSTATE", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("ConnectionString", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("password", StringComparison.OrdinalIgnoreCase);
     }
 
 

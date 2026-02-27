@@ -27,6 +27,13 @@ internal sealed partial class ODataBatchOperationHandler(
     IETagService etagService,
     ILogger<ODataBatchOperationHandler> logger)
 {
+    private const int MaxBatchOperationCount = 1000;
+    private const int MaxApplicationHttpSectionBytes = 10 * 1024 * 1024;
+    private const string BatchTooManyOperationsMessage =
+        "Batch request exceeds the maximum of 1000 operations.";
+    private const string BatchOperationPayloadTooLargeMessage =
+        "Batch operation payload exceeds the maximum allowed size of 10485760 bytes.";
+
     private readonly ODataBatchDependencies _batchDependencies = batchDependencies ?? throw new ArgumentNullException(nameof(batchDependencies));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
@@ -118,14 +125,31 @@ internal sealed partial class ODataBatchOperationHandler(
             return (multipartResult.Request, true, multipartResult.Error);
         }
 
+        if (!IsJsonContentType(request.ContentType))
+        {
+            return (null, false, "Batch request content type must be application/json or multipart/mixed.");
+        }
+
         try
         {
             var requestModel = await request.ReadFromJsonAsync<ODataBatchRequest>(
                 ODataJsonContext.Default.ODataBatchRequest,
                 cancellationToken);
+
+            if (requestModel != null &&
+                !TryValidateBatchOperationCount(requestModel.Requests.Length, out var operationLimitError))
+            {
+                return (null, false, operationLimitError);
+            }
+
             return (requestModel, false, null);
         }
-        catch (JsonException ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+            when (ex is JsonException or NotSupportedException or InvalidOperationException or BadHttpRequestException)
         {
             Log.BatchParseFailed(_logger, ex);
             return (null, false, "Failed to parse batch request body.");
@@ -138,107 +162,161 @@ internal sealed partial class ODataBatchOperationHandler(
                contentType.StartsWith("multipart/mixed", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsJsonContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType) ||
+            !MediaTypeHeaderValue.TryParse(contentType, out var mediaType) ||
+            !mediaType.MediaType.HasValue)
+        {
+            return false;
+        }
+
+        var mediaTypeValue = mediaType.MediaType.Value;
+        return string.Equals(mediaTypeValue, "application/json", StringComparison.OrdinalIgnoreCase) ||
+               mediaTypeValue.EndsWith("+json", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<(ODataBatchRequest? Request, string? Error)> ParseMultipartBatchRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType))
+        try
         {
-            return (null, "Invalid multipart batch content type.");
-        }
-
-        var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value;
-        if (string.IsNullOrWhiteSpace(boundary))
-        {
-            return (null, "Multipart batch request is missing the boundary parameter.");
-        }
-
-        var reader = new MultipartReader(boundary, request.Body);
-        var requests = new List<ODataBatchRequestItem>();
-        var requestSequence = 1;
-        var atomicitySequence = 1;
-
-        MultipartSection? section;
-        while ((section = await reader.ReadNextSectionAsync(cancellationToken)) != null)
-        {
-            var sectionContentType = GetSectionContentType(section);
-            if (IsApplicationHttpContentType(sectionContentType))
+            if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType))
             {
-                var fallbackId = requestSequence.ToString(CultureInfo.InvariantCulture);
-                var parse = await ParseApplicationHttpSectionAsync(section, null, fallbackId, cancellationToken);
-                if (parse.Request == null)
+                return (null, "Invalid multipart batch content type.");
+            }
+
+            var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value;
+            if (string.IsNullOrWhiteSpace(boundary))
+            {
+                return (null, "Multipart batch request is missing the boundary parameter.");
+            }
+
+            var reader = new MultipartReader(boundary, request.Body);
+            var requests = new List<ODataBatchRequestItem>();
+            var requestSequence = 1;
+            var atomicitySequence = 1;
+
+            MultipartSection? section;
+            while ((section = await reader.ReadNextSectionAsync(cancellationToken)) != null)
+            {
+                var sectionContentType = GetSectionContentType(section);
+                if (IsApplicationHttpContentType(sectionContentType))
                 {
-                    return (null, parse.Error);
+                    if (!TryValidateBatchOperationCount(requests.Count + 1, out var operationLimitError))
+                    {
+                        return (null, operationLimitError);
+                    }
+
+                    var fallbackId = requestSequence.ToString(CultureInfo.InvariantCulture);
+                    var parse = await ParseApplicationHttpSectionAsync(section, null, fallbackId, cancellationToken);
+                    if (parse.Request == null)
+                    {
+                        return (null, parse.Error);
+                    }
+
+                    requests.Add(parse.Request);
+                    requestSequence++;
+                    continue;
                 }
 
-                requests.Add(parse.Request);
-                requestSequence++;
-                continue;
+                if (!IsMultipartContentType(sectionContentType))
+                {
+                    return (null, $"Unsupported multipart section content type '{sectionContentType ?? "(missing)"}'.");
+                }
+
+                var groupId = $"changeset-{atomicitySequence.ToString(CultureInfo.InvariantCulture)}";
+                atomicitySequence++;
+
+                var changeset = await ParseChangesetSectionAsync(
+                    section,
+                    groupId,
+                    requestSequence,
+                    requests.Count,
+                    cancellationToken);
+                if (changeset.Requests == null)
+                {
+                    return (null, changeset.Error);
+                }
+
+                requests.AddRange(changeset.Requests);
+                requestSequence = changeset.NextRequestSequence;
             }
 
-            if (!IsMultipartContentType(sectionContentType))
-            {
-                return (null, $"Unsupported multipart section content type '{sectionContentType ?? "(missing)"}'.");
-            }
-
-            var groupId = $"changeset-{atomicitySequence.ToString(CultureInfo.InvariantCulture)}";
-            atomicitySequence++;
-
-            var changeset = await ParseChangesetSectionAsync(section, groupId, requestSequence, cancellationToken);
-            if (changeset.Requests == null)
-            {
-                return (null, changeset.Error);
-            }
-
-            requests.AddRange(changeset.Requests);
-            requestSequence = changeset.NextRequestSequence;
+            return (new ODataBatchRequest { Requests = requests.ToImmutableArray() }, null);
         }
-
-        return (new ODataBatchRequest { Requests = requests.ToImmutableArray() }, null);
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            Log.BatchParseFailed(_logger, ex);
+            return (null, "Failed to parse multipart batch request body.");
+        }
     }
 
     private async Task<(List<ODataBatchRequestItem>? Requests, int NextRequestSequence, string? Error)> ParseChangesetSectionAsync(
         MultipartSection section,
         string atomicityGroup,
         int requestSequence,
+        int existingRequestCount,
         CancellationToken cancellationToken)
     {
-        var sectionContentType = GetSectionContentType(section);
-        if (!MediaTypeHeaderValue.TryParse(sectionContentType, out var sectionMediaType))
+        try
         {
-            return (null, requestSequence, "Invalid changeset content type.");
-        }
-
-        var boundary = HeaderUtilities.RemoveQuotes(sectionMediaType.Boundary).Value;
-        if (string.IsNullOrWhiteSpace(boundary))
-        {
-            return (null, requestSequence, "Changeset is missing the boundary parameter.");
-        }
-
-        var reader = new MultipartReader(boundary, section.Body);
-        var requests = new List<ODataBatchRequestItem>();
-
-        MultipartSection? changesetSection;
-        while ((changesetSection = await reader.ReadNextSectionAsync(cancellationToken)) != null)
-        {
-            var changesetContentType = GetSectionContentType(changesetSection);
-            if (!IsApplicationHttpContentType(changesetContentType))
+            var sectionContentType = GetSectionContentType(section);
+            if (!MediaTypeHeaderValue.TryParse(sectionContentType, out var sectionMediaType))
             {
-                return (null, requestSequence, "Changeset can only contain application/http sections.");
+                return (null, requestSequence, "Invalid changeset content type.");
             }
 
-            var fallbackId = requestSequence.ToString(CultureInfo.InvariantCulture);
-            var parse = await ParseApplicationHttpSectionAsync(changesetSection, atomicityGroup, fallbackId, cancellationToken);
-            if (parse.Request == null)
+            var boundary = HeaderUtilities.RemoveQuotes(sectionMediaType.Boundary).Value;
+            if (string.IsNullOrWhiteSpace(boundary))
             {
-                return (null, requestSequence, parse.Error);
+                return (null, requestSequence, "Changeset is missing the boundary parameter.");
             }
 
-            requests.Add(parse.Request);
-            requestSequence++;
-        }
+            var reader = new MultipartReader(boundary, section.Body);
+            var requests = new List<ODataBatchRequestItem>();
 
-        return (requests, requestSequence, null);
+            MultipartSection? changesetSection;
+            while ((changesetSection = await reader.ReadNextSectionAsync(cancellationToken)) != null)
+            {
+                var changesetContentType = GetSectionContentType(changesetSection);
+                if (!IsApplicationHttpContentType(changesetContentType))
+                {
+                    return (null, requestSequence, "Changeset can only contain application/http sections.");
+                }
+
+                if (!TryValidateBatchOperationCount(existingRequestCount + requests.Count + 1, out var operationLimitError))
+                {
+                    return (null, requestSequence, operationLimitError);
+                }
+
+                var fallbackId = requestSequence.ToString(CultureInfo.InvariantCulture);
+                var parse = await ParseApplicationHttpSectionAsync(changesetSection, atomicityGroup, fallbackId, cancellationToken);
+                if (parse.Request == null)
+                {
+                    return (null, requestSequence, parse.Error);
+                }
+
+                requests.Add(parse.Request);
+                requestSequence++;
+            }
+
+            return (requests, requestSequence, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            Log.BatchParseFailed(_logger, ex);
+            return (null, requestSequence, "Failed to parse multipart changeset body.");
+        }
     }
 
     private async Task<(ODataBatchRequestItem? Request, string? Error)> ParseApplicationHttpSectionAsync(
@@ -249,11 +327,10 @@ internal sealed partial class ODataBatchOperationHandler(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        using var reader = new StreamReader(section.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        var payload = await reader.ReadToEndAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(payload))
+        var (payload, payloadError) = await ReadSectionPayloadAsync(section, cancellationToken);
+        if (payload == null)
         {
-            return (null, "application/http section payload is empty.");
+            return (null, payloadError);
         }
 
         var normalized = payload.Replace("\r\n", "\n", StringComparison.Ordinal);
@@ -331,6 +408,52 @@ internal sealed partial class ODataBatchOperationHandler(
             Body = body,
             AtomicityGroup = atomicityGroup
         }, null);
+    }
+
+    private static bool TryValidateBatchOperationCount(int requestCount, out string? error)
+    {
+        if (requestCount > MaxBatchOperationCount)
+        {
+            error = BatchTooManyOperationsMessage;
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static async Task<(string? Payload, string? Error)> ReadSectionPayloadAsync(
+        MultipartSection section,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        var totalBytesRead = 0L;
+
+        await using var memoryStream = new MemoryStream();
+        int bytesRead;
+        while ((bytesRead = await section.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
+        {
+            totalBytesRead += bytesRead;
+            if (totalBytesRead > MaxApplicationHttpSectionBytes)
+            {
+                return (null, BatchOperationPayloadTooLargeMessage);
+            }
+
+            await memoryStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+        }
+
+        if (memoryStream.Length == 0)
+        {
+            return (null, "application/http section payload is empty.");
+        }
+
+        memoryStream.Position = 0;
+        using var reader = new StreamReader(memoryStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        var payload = await reader.ReadToEndAsync(cancellationToken);
+
+        return string.IsNullOrWhiteSpace(payload)
+            ? (null, "application/http section payload is empty.")
+            : (payload, null);
     }
 
     private static string? GetSectionContentType(MultipartSection section)

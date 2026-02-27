@@ -20,7 +20,8 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerIdentifyHandler
 {
-    private const int MaxJsonGeometrySize = 1000;
+    private const int MaxGeometryInputLength = 1000;
+    private const string SupportedGeometryType = "esriGeometryPoint";
 
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
@@ -67,6 +68,15 @@ internal sealed class ImageServerIdentifyHandler
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.GeometryType) &&
+                !string.Equals(request.GeometryType, SupportedGeometryType, StringComparison.OrdinalIgnoreCase))
+            {
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, "Unsupported geometry type");
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Unsupported geometryType '{request.GeometryType}'. Only {SupportedGeometryType} is supported.");
             }
 
             // Parse geometry coordinates
@@ -132,15 +142,25 @@ internal sealed class ImageServerIdentifyHandler
             return (null, null, null);
         }
 
+        if (request.Geometry.Length > MaxGeometryInputLength)
+        {
+            return (null, null, null);
+        }
+
+        var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
+        if (!string.IsNullOrWhiteSpace(request.Sr) && !srid.HasValue)
+        {
+            return (null, null, null);
+        }
+
         // Handle point geometry string (e.g., "x,y" or JSON format)
         if (request.Geometry.Contains(','))
         {
-            var coords = request.Geometry.Split(',');
-            if (coords.Length >= 2 &&
+            var coords = request.Geometry.Split(',', StringSplitOptions.TrimEntries);
+            if (coords.Length == 2 &&
                 double.TryParse(coords[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) &&
                 double.TryParse(coords[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
             {
-                var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
                 return (x, y, srid);
             }
         }
@@ -148,12 +168,6 @@ internal sealed class ImageServerIdentifyHandler
         // Handle JSON geometry format
         if (request.Geometry.StartsWith('{'))
         {
-            // Limit JSON size to prevent DoS
-            if (request.Geometry.Length > MaxJsonGeometrySize)
-            {
-                return (null, null, null);
-            }
-
             try
             {
                 using var geometryDoc = JsonDocument.Parse(request.Geometry);
@@ -162,7 +176,6 @@ internal sealed class ImageServerIdentifyHandler
                 {
                     if (xElement.TryGetDouble(out var x) && yElement.TryGetDouble(out var y))
                     {
-                        var srid = SpatialReferenceHelpers.TryParseSrid(request.Sr);
                         return (x, y, srid);
                     }
                 }

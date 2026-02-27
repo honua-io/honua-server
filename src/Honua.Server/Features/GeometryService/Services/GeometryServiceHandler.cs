@@ -22,6 +22,7 @@ internal sealed class GeometryServiceHandler(
 {
     private const int MaxGeometriesPerRequestUpperBound = 1000;
     private const int MaxGeometryJsonLengthUpperBound = 10_000_000;
+    private const string InvalidGeometryInputMessage = "Invalid geometry input.";
 
     private readonly IGeometryOperationService _operationService = operationService
         ?? throw new ArgumentNullException(nameof(operationService));
@@ -162,7 +163,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {
@@ -244,7 +245,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "simplify", ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {
@@ -341,7 +342,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "project", ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {
@@ -420,7 +421,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "union", ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {
@@ -525,7 +526,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "area", ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {
@@ -603,7 +604,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, "length", ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {
@@ -794,7 +795,7 @@ internal sealed class GeometryServiceHandler(
         {
             GeometryServiceLog.InvalidGeometryInput(_logger, operationName, ex.Message);
             scope.RecordException(ex);
-            return CreateError(400, ex.Message);
+            return CreateError(400, InvalidGeometryInputMessage);
         }
         catch (Exception ex)
         {

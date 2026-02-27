@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -673,6 +674,17 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQueryFeatures_GetWithMalformedLayersDelimiter_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/query?layers={TestLayerId},&where=1%3D1&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true")]
     public async Task QueryFeatures_WithReturnCountOnly_ReturnsCount()
     {
@@ -787,6 +799,24 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("classification");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_WithMalformedClassificationDef_DoesNotLeakJsonParserDetails()
+    {
+        var malformedClassificationDef = Uri.EscapeDataString("{\"type\":");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={malformedClassificationDef}");
+
+        response.HaveStatusCode(System.Net.HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("classificationDef must be valid JSON.");
+        content.Should().NotContain("BytePositionInLine");
+        content.Should().NotContain("LineNumber");
+        content.Should().NotContain("System.Text.Json");
     }
 
     [IntegrationTest]
@@ -2135,6 +2165,26 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails()
+    {
+        var malformedRequest = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]""";
+        var content = new StringContent(malformedRequest, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
+            content);
+
+        response.Be400BadRequest();
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Request body contains invalid JSON.");
+        responseContent.Should().NotContain("BytePositionInLine");
+        responseContent.Should().NotContain("LineNumber");
+        responseContent.Should().NotContain("System.Text.Json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAddOperation_ReturnsNewObjectId()
     {
@@ -2635,6 +2685,25 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         result!.DeleteResults.Should().HaveCount(1);
         result.DeleteResults![0].Success.Should().BeTrue();
         result.DeleteResults[0].ObjectId.Should().Be(objectId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkDelete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    public async Task DeleteFeatures_WithMalformedObjectIdsDelimiter_ReturnsBadRequest()
+    {
+        var deletePayload = """
+            {
+              "objectIds": "1,,2",
+              "f": "json"
+            }
+            """;
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
+            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     private static long ReadObjectIdValue(object? value)

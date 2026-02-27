@@ -227,6 +227,11 @@ internal static class SecurityServiceCollectionExtensions
         services.AddHttpClient("AwsMetadata", client =>
         {
             client.Timeout = TimeSpan.FromSeconds(2);
+        })
+        .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseProxy = false
         });
 
         services.TryAddSingleton<AwsSecretsManagerResolver>();
@@ -250,6 +255,16 @@ internal static class SecurityServiceCollectionExtensions
         services.AddHttpClient("AzureKeyVault", client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
+        });
+
+        services.AddHttpClient("AzureManagedIdentityMetadata", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(2);
+        })
+        .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseProxy = false
         });
 
         services.TryAddSingleton<AzureKeyVaultResolver>();

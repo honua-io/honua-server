@@ -84,7 +84,22 @@ internal static class ODataDeltaService
             return false;
         }
 
-        timestamp = new DateTimeOffset(ticks, TimeSpan.Zero);
+        if (parsedLayerId < 0)
+        {
+            errorMessage = "$deltatoken is invalid or malformed.";
+            return false;
+        }
+
+        try
+        {
+            timestamp = new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+        catch (ArgumentException)
+        {
+            errorMessage = "$deltatoken is invalid or malformed.";
+            return false;
+        }
+
         layerId = parsedLayerId;
         return true;
     }
