@@ -81,6 +81,21 @@ export interface FeatureLayerDeleteAttachmentsOptions {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+export type FeatureLayerAttachmentData = Blob | ArrayBuffer | ArrayBufferView | string;
+
+export interface FeatureLayerAddAttachmentOptions {
+  objectId: number;
+  attachment: FeatureLayerAttachmentData;
+  name?: string;
+  contentType?: string;
+  responseFormat?: "json" | "pjson";
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface FeatureLayerUpdateAttachmentOptions extends FeatureLayerAddAttachmentOptions {
+  attachmentId: number;
+}
+
 export interface FeatureLayerQueryExtentResult {
   extent: unknown | null;
   count?: number;
@@ -470,6 +485,33 @@ export class FeatureLayerCompat {
     });
   }
 
+  public addAttachment(options: FeatureLayerAddAttachmentOptions): Promise<unknown> {
+    const form = buildAttachmentFormData(options);
+    return this.client.request({
+      method: "POST",
+      path:
+        `/rest/services/${encodeURIComponent(this.serviceId)}` +
+        `/FeatureServer/${this.layerId}/${options.objectId}/addAttachment`,
+      responseFormat: options.responseFormat ?? "json",
+      query: options.extraParams,
+      body: form,
+    });
+  }
+
+  public updateAttachment(options: FeatureLayerUpdateAttachmentOptions): Promise<unknown> {
+    const form = buildAttachmentFormData(options);
+    form.set("attachmentId", String(options.attachmentId));
+    return this.client.request({
+      method: "POST",
+      path:
+        `/rest/services/${encodeURIComponent(this.serviceId)}` +
+        `/FeatureServer/${this.layerId}/${options.objectId}/updateAttachment`,
+      responseFormat: options.responseFormat ?? "json",
+      query: options.extraParams,
+      body: form,
+    });
+  }
+
   private notifyWatchers(propertyName: string, value: unknown): void {
     const listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
@@ -529,4 +571,69 @@ function extractObjectId(feature: unknown): number | undefined {
   }
 
   return undefined;
+}
+
+function buildAttachmentFormData(options: {
+  attachment: FeatureLayerAttachmentData;
+  name?: string;
+  contentType?: string;
+}): FormData {
+  const form = new FormData();
+  if (options.name) {
+    form.set("name", options.name);
+  }
+
+  const attachmentBlob = normalizeAttachmentData(options.attachment, options.contentType);
+  const attachmentName = resolveAttachmentName(options.attachment, options.name);
+  form.set("attachment", attachmentBlob, attachmentName);
+  return form;
+}
+
+function resolveAttachmentName(
+  attachment: FeatureLayerAttachmentData,
+  explicitName?: string,
+): string {
+  if (explicitName && explicitName.trim().length > 0) {
+    return explicitName.trim();
+  }
+
+  if (isRecord(attachment)) {
+    const inferredName = attachment.name;
+    if (typeof inferredName === "string" && inferredName.trim().length > 0) {
+      return inferredName.trim();
+    }
+  }
+
+  return "attachment.bin";
+}
+
+function normalizeAttachmentData(
+  attachment: FeatureLayerAttachmentData,
+  contentType?: string,
+): Blob {
+  if (attachment instanceof Blob) {
+    return attachment;
+  }
+
+  if (typeof attachment === "string") {
+    return new Blob([attachment], {
+      type: contentType ?? "text/plain",
+    });
+  }
+
+  if (attachment instanceof ArrayBuffer) {
+    return new Blob([attachment], {
+      type: contentType ?? "application/octet-stream",
+    });
+  }
+
+  if (ArrayBuffer.isView(attachment)) {
+    const source = new Uint8Array(attachment.buffer, attachment.byteOffset, attachment.byteLength);
+    const copy = Uint8Array.from(source);
+    return new Blob([copy], {
+      type: contentType ?? "application/octet-stream",
+    });
+  }
+
+  throw new Error("Unsupported attachment payload type.");
 }

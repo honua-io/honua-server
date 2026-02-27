@@ -424,7 +424,12 @@ describe("FeatureLayerCompat", () => {
   });
 
   it("maps attachment helper calls to attachment endpoints", async () => {
-    const requests: unknown[] = [];
+    const requests: Array<{
+      method?: string;
+      path?: string;
+      query?: Record<string, unknown>;
+      body?: unknown;
+    }> = [];
     const layer = new FeatureLayerCompat({
       url: "https://example.test/rest/services/default/FeatureServer/1000",
       client: new (class {
@@ -445,7 +450,7 @@ describe("FeatureLayerCompat", () => {
         }
 
         public request(request: unknown): Promise<unknown> {
-          requests.push(request);
+          requests.push(request as any);
           return Promise.resolve({ ok: true });
         }
       })() as any,
@@ -454,14 +459,42 @@ describe("FeatureLayerCompat", () => {
     await layer.queryAttachments({ objectIds: [1, 2], where: "1=1" });
     await layer.listAttachments({ objectId: 99 });
     await layer.deleteAttachments({ objectId: 99, attachmentIds: [7, 8] });
+    await layer.addAttachment({
+      objectId: 99,
+      attachment: "hello-world",
+      name: "notes.txt",
+      contentType: "text/plain",
+      extraParams: { token: "abc" },
+    });
+    await layer.updateAttachment({
+      objectId: 99,
+      attachmentId: 7,
+      attachment: new Uint8Array([1, 2, 3]),
+      name: "capture.bin",
+    });
 
-    expect(requests).toHaveLength(3);
-    expect(JSON.stringify(requests[0])).toContain("/FeatureServer/1000/queryAttachments");
-    expect(JSON.stringify(requests[0])).toContain('"objectIds":"1,2"');
-    expect(JSON.stringify(requests[0])).toContain('"where":"1=1"');
-    expect(JSON.stringify(requests[1])).toContain("/FeatureServer/1000/99/attachments");
-    expect(JSON.stringify(requests[2])).toContain("/FeatureServer/1000/99/deleteAttachments");
-    expect(JSON.stringify(requests[2])).toContain("attachmentIds=7%2C8");
+    expect(requests).toHaveLength(5);
+    expect(requests[0]?.path).toContain("/FeatureServer/1000/queryAttachments");
+    expect(requests[0]?.query).toMatchObject({ objectIds: "1,2", where: "1=1" });
+    expect(requests[1]?.path).toContain("/FeatureServer/1000/99/attachments");
+    expect(requests[2]?.path).toContain("/FeatureServer/1000/99/deleteAttachments");
+    expect(String(requests[2]?.body)).toContain("attachmentIds=7%2C8");
+
+    expect(requests[3]?.method).toBe("POST");
+    expect(requests[3]?.path).toContain("/FeatureServer/1000/99/addAttachment");
+    expect(requests[3]?.query).toMatchObject({ token: "abc" });
+    expect(requests[3]?.body).toBeInstanceOf(FormData);
+    const addAttachmentBody = requests[3]?.body as FormData;
+    expect(addAttachmentBody.get("name")).toBe("notes.txt");
+    expect(addAttachmentBody.get("attachment")).toBeInstanceOf(Blob);
+
+    expect(requests[4]?.method).toBe("POST");
+    expect(requests[4]?.path).toContain("/FeatureServer/1000/99/updateAttachment");
+    expect(requests[4]?.body).toBeInstanceOf(FormData);
+    const updateAttachmentBody = requests[4]?.body as FormData;
+    expect(updateAttachmentBody.get("attachmentId")).toBe("7");
+    expect(updateAttachmentBody.get("name")).toBe("capture.bin");
+    expect(updateAttachmentBody.get("attachment")).toBeInstanceOf(Blob);
   });
 
   it("preserves common display options and emits event bus lifecycle changes", async () => {

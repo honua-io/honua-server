@@ -20,6 +20,8 @@ export type {
 
 export { FeatureLayerCompat } from "./esri-compat/feature-layer.js";
 export type {
+  FeatureLayerAddAttachmentOptions,
+  FeatureLayerAttachmentData,
   FeatureLayerCreateQueryResult,
   FeatureLayerDeleteAttachmentsOptions,
   FeatureLayerHandleCompat,
@@ -27,6 +29,7 @@ export type {
   FeatureLayerListAttachmentsOptions,
   FeatureLayerQueryAttachmentsOptions,
   FeatureLayerQueryCountOptions,
+  FeatureLayerUpdateAttachmentOptions,
 } from "./esri-compat/feature-layer.js";
 export { FeatureCompat } from "./esri-compat/feature.js";
 export type {
