@@ -152,33 +152,44 @@ public sealed class EmulatorFixture : IAsyncLifetime
 
     private static async Task WaitForEmulatorsReadyAsync(int localStackPort, int azuritePort)
     {
-        var timeout = TimeSpan.FromSeconds(45);
+        var timeout = TimeSpan.FromSeconds(120);
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         using var httpClient = new HttpClient
         {
-            Timeout = TimeSpan.FromSeconds(2)
+            Timeout = TimeSpan.FromSeconds(8)
         };
 
         Exception? lastError = null;
 
         while (DateTimeOffset.UtcNow < deadline)
         {
+            var localStackReady = false;
+            var azuriteReady = false;
+
             try
             {
-                var localStackReady = await IsLocalStackReadyAsync(httpClient, localStackPort);
-                var azuriteReady = await IsAzuriteReadyAsync(httpClient, azuritePort);
-
-                if (localStackReady && azuriteReady)
-                {
-                    return;
-                }
+                localStackReady = await IsLocalStackReadyAsync(httpClient, localStackPort);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (IsTransientHealthCheckFailure(ex))
             {
                 lastError = ex;
             }
 
-            await Task.Delay(500);
+            try
+            {
+                azuriteReady = await IsAzuriteReadyAsync(httpClient, azuritePort);
+            }
+            catch (Exception ex) when (IsTransientHealthCheckFailure(ex))
+            {
+                lastError = ex;
+            }
+
+            if (localStackReady && azuriteReady)
+            {
+                return;
+            }
+
+            await Task.Delay(1000);
         }
 
         var errorDetails = lastError is null ? string.Empty : $" Last error: {lastError.Message}";
@@ -204,6 +215,11 @@ public sealed class EmulatorFixture : IAsyncLifetime
     {
         using var response = await client.GetAsync($"http://127.0.0.1:{port}/");
         return (int)response.StatusCode < 500;
+    }
+
+    private static bool IsTransientHealthCheckFailure(Exception exception)
+    {
+        return exception is HttpRequestException or TimeoutException or TaskCanceledException;
     }
 
     private static void ClearEnvironmentVariables()

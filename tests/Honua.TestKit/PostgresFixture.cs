@@ -26,6 +26,8 @@ public sealed class PostgresFixture : IAsyncLifetime
     private const string ExternalConnectionStringEnv = "HONUA_TEST_DB_URL";
     private const string SeedPathEnv = "HONUA_TEST_DB_SEED_PATH";
     private const string SeedProfileEnv = "HONUA_TEST_DB_SEED_PROFILE";
+    private const int DropSchemaCommandTimeoutSeconds = 30;
+    private const int DropSchemaMaxAttempts = 3;
     private string? _connectionString;
 
     public PostgresFixture()
@@ -154,10 +156,34 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// </summary>
     public async Task DropSchemaAsync(string schemaName)
     {
-        await using var conn = await DataSource.OpenConnectionAsync();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"DROP SCHEMA IF EXISTS {schemaName} CASCADE;";
-        await cmd.ExecuteNonQueryAsync();
+        Exception? lastTransient = null;
+
+        for (var attempt = 1; attempt <= DropSchemaMaxAttempts; attempt++)
+        {
+            try
+            {
+                await using var conn = await DataSource.OpenConnectionAsync().ConfigureAwait(false);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DROP SCHEMA IF EXISTS {schemaName} CASCADE;";
+                cmd.CommandTimeout = DropSchemaCommandTimeoutSeconds;
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (IsTransientDropSchemaFailure(ex))
+            {
+                lastTransient = ex;
+                if (attempt == DropSchemaMaxAttempts)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt)).ConfigureAwait(false);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to drop schema '{schemaName}' after {DropSchemaMaxAttempts} attempts.",
+            lastTransient);
     }
 
     /// <summary>
@@ -211,5 +237,10 @@ public sealed class PostgresFixture : IAsyncLifetime
         return new string(name
             .Where(c => char.IsLetterOrDigit(c) || c == '_')
             .ToArray());
+    }
+
+    private static bool IsTransientDropSchemaFailure(Exception ex)
+    {
+        return ex is TimeoutException or TaskCanceledException or NpgsqlException;
     }
 }
