@@ -58,7 +58,7 @@ locals {
     admin = {
       existingSecret = kubernetes_secret_v1.grafana_admin.metadata[0].name
       userKey        = "admin-user"
-      passwordKey    = "admin-password"
+      passwordKey    = "admin-pass"
     }
     persistence = {
       enabled = var.grafana_persistence_enabled
@@ -131,7 +131,7 @@ resource "kubernetes_secret_v1" "grafana_admin" {
 
   data = {
     "admin-user"     = var.grafana_admin_user
-    "admin-password" = random_password.grafana_admin.result
+    "admin-pass"     = random_password.grafana_admin.result
   }
 
   depends_on = [kubernetes_namespace_v1.this]
