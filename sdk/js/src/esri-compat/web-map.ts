@@ -1,22 +1,24 @@
-import { MapCompat, type MapCompatOptions } from "./map.js";
+import {
+  MapCompat,
+  type MapCompatHandle,
+  type MapCompatOptions,
+  type MapLoadStatusCompat,
+} from "./map.js";
 
 export interface WebMapCompatOptions extends MapCompatOptions {
   portalItem?: unknown;
 }
 
-export class WebMapCompat extends MapCompat {
-  public portalItem: unknown;
-  public loaded: boolean;
+export type WebMapLoadStatusCompat = MapLoadStatusCompat;
+export type WebMapHandleCompat = MapCompatHandle;
 
+export class WebMapCompat extends MapCompat {
   public constructor(options: WebMapCompatOptions = {}) {
     super(options);
-    this.portalItem = options.portalItem;
-    this.loaded = false;
   }
 
   public async load(): Promise<WebMapCompat> {
     await super.load();
-    this.loaded = true;
     return this;
   }
 
@@ -26,5 +28,10 @@ export class WebMapCompat extends MapCompat {
       callback(map);
     }
     return map;
+  }
+
+  public setPortalItem(portalItem: unknown): void {
+    super.setPortalItem(portalItem);
+    this.eventBus.emit("web-map.portal-item-changed", { portalItem }, this);
   }
 }

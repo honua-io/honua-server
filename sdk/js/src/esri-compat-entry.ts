@@ -35,6 +35,7 @@ export type {
   FeatureTableHighlightIdsChangeEventCompat,
   FeatureTableHandleCompat,
   FeatureTableHighlightIdsHandleCompat,
+  FeatureTableLoadStatusCompat,
   FeatureTableQueryRelatedRecordsOptions,
   FeatureTableRowCompat,
   FeatureTableStateCompat,
@@ -332,9 +333,17 @@ export type {
   PrintTemplateOptionsCompat,
 } from "./esri-compat/print.js";
 export { SceneViewCompat } from "./esri-compat/scene-view.js";
-export type { SceneViewCompatOptions } from "./esri-compat/scene-view.js";
+export type {
+  SceneViewCompatOptions,
+  SceneViewHandleCompat,
+  SceneViewLoadStatusCompat,
+} from "./esri-compat/scene-view.js";
 export { WebMapCompat } from "./esri-compat/web-map.js";
-export type { WebMapCompatOptions } from "./esri-compat/web-map.js";
+export type {
+  WebMapCompatOptions,
+  WebMapHandleCompat,
+  WebMapLoadStatusCompat,
+} from "./esri-compat/web-map.js";
 export { SearchCompat } from "./esri-compat/search.js";
 export type {
   SearchCompatOptions,

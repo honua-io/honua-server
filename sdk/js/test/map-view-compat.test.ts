@@ -134,15 +134,18 @@ describe("MapCompat", () => {
     map.setBasemap("satellite");
     map.setGround("custom-ground");
     map.setTables([{ id: "table-2" }]);
+    map.setPortalItem({ id: "webmap-2" });
     map.setSpatialReference({ wkid: 4326 });
 
     expect(map.basemap).toBe("satellite");
     expect(map.ground).toBe("custom-ground");
     expect(map.tables).toEqual([{ id: "table-2" }]);
+    expect(map.portalItem).toEqual({ id: "webmap-2" });
     expect(map.spatialReference).toEqual({ wkid: 4326 });
     expect(eventTypes).toContain("map.basemap-changed");
     expect(eventTypes).toContain("map.ground-changed");
     expect(eventTypes).toContain("map.tables-changed");
+    expect(eventTypes).toContain("map.portal-item-changed");
     expect(eventTypes).toContain("map.spatial-reference-changed");
   });
 });

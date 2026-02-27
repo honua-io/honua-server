@@ -1,8 +1,10 @@
 import {
   MapViewCompat,
+  type MapViewHandle,
   type MapViewCompatOptions,
   type MapViewGoToInput,
   type MapViewGoToOptions,
+  type MapViewLoadStatusCompat,
 } from "./map-view.js";
 
 export interface SceneViewCompatOptions extends MapViewCompatOptions {
@@ -10,6 +12,9 @@ export interface SceneViewCompatOptions extends MapViewCompatOptions {
   qualityProfile?: string;
   camera?: unknown;
 }
+
+export type SceneViewLoadStatusCompat = MapViewLoadStatusCompat;
+export type SceneViewHandleCompat = MapViewHandle;
 
 export class SceneViewCompat extends MapViewCompat {
   public viewingMode: "global" | "local";
@@ -23,8 +28,34 @@ export class SceneViewCompat extends MapViewCompat {
     this.camera = options.camera;
   }
 
+  public async load(): Promise<SceneViewCompat> {
+    await super.load();
+    return this;
+  }
+
+  public async when(callback?: (view: SceneViewCompat) => void): Promise<SceneViewCompat> {
+    const view = await this.load();
+    if (callback) {
+      callback(view);
+    }
+    return view;
+  }
+
+  public setViewingMode(viewingMode: "global" | "local"): void {
+    this.viewingMode = viewingMode;
+    this.notifyWatchers("viewingMode", this.viewingMode);
+    this.eventBus.emit("scene-view.viewing-mode-changed", { viewingMode }, this);
+  }
+
+  public setQualityProfile(qualityProfile: string | undefined): void {
+    this.qualityProfile = qualityProfile;
+    this.notifyWatchers("qualityProfile", this.qualityProfile);
+    this.eventBus.emit("scene-view.quality-profile-changed", { qualityProfile }, this);
+  }
+
   public setCamera(camera: unknown): void {
     this.camera = camera;
+    this.notifyWatchers("camera", this.camera);
     this.eventBus.emit("scene-view.camera-changed", { camera }, this);
   }
 

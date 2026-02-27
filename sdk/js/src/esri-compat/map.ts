@@ -204,6 +204,12 @@ export class MapCompat {
     this.eventBus.emit("map.tables-changed", { tables: this.tables }, this);
   }
 
+  public setPortalItem(portalItem: unknown): void {
+    this.portalItem = portalItem;
+    this.notifyWatchers("portalItem", this.portalItem);
+    this.eventBus.emit("map.portal-item-changed", { portalItem }, this);
+  }
+
   public setSpatialReference(spatialReference: unknown): void {
     this.spatialReference = spatialReference;
     this.notifyWatchers("spatialReference", this.spatialReference);

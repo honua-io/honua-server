@@ -13,11 +13,19 @@ describe("FeatureTableCompat", () => {
 
     const table = new FeatureTableCompat({ layer, where: "1=1" });
     const stateValues: unknown[] = [];
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
     const sizeValues: unknown[] = [];
     const whereValues: unknown[] = [];
 
     const stateHandle = table.watch("state", (value) => {
       stateValues.push(value);
+    });
+    const loadStatusHandle = table.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = table.watch("loaded", (value) => {
+      loadedValues.push(value);
     });
     const sizeHandle = table.watch("size", (value) => {
       sizeValues.push(value);
@@ -33,6 +41,8 @@ describe("FeatureTableCompat", () => {
     table.setWhere("status = 'active'");
 
     stateHandle.remove();
+    loadStatusHandle.remove();
+    loadedHandle.remove();
     sizeHandle.remove();
     whereHandle.remove();
 
@@ -41,7 +51,10 @@ describe("FeatureTableCompat", () => {
     expect(readyTable).toBe(table);
     expect(callbackTable).toBe(table);
     expect(table.loaded).toBe(true);
+    expect(table.loadStatus).toBe("loaded");
     expect(stateValues).toEqual(["loading", "loaded"]);
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
     expect(sizeValues).toEqual([1]);
     expect(whereValues).toEqual(["status = 'active'"]);
     expect(table.where).toBe("status = 'inactive'");
@@ -67,11 +80,14 @@ describe("FeatureTableCompat", () => {
     const rows = await table.refresh();
 
     expect(table.state).toBe("loaded");
+    expect(table.loadStatus).toBe("loaded");
     expect(table.size).toBe(2);
     expect(table.multiSortEnabled).toBe(true);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ objectId: 1 });
     expect(rows[1]).toMatchObject({ objectId: 2 });
+    expect(seenTypes).toContain("feature-table.loading");
+    expect(seenTypes).toContain("feature-table.loaded");
     expect(seenTypes).toContain("feature-table.state-changed");
     expect(seenTypes).toContain("feature-table.refreshed");
   });

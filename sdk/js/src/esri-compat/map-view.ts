@@ -415,7 +415,7 @@ export class MapViewLayerViewCompat {
     return true;
   }
 
-  private notifyWatchers(propertyName: string, value: unknown): void {
+  protected notifyWatchers(propertyName: string, value: unknown): void {
     const listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       return;
@@ -943,7 +943,7 @@ export class MapViewCompat {
     return true;
   }
 
-  private notifyWatchers(propertyName: string, value: unknown): void {
+  protected notifyWatchers(propertyName: string, value: unknown): void {
     const listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       return;

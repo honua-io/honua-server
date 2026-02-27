@@ -26,6 +26,7 @@ export interface FeatureTableCompatOptions {
 }
 
 export type FeatureTableStateCompat = "loading" | "loaded" | "error";
+export type FeatureTableLoadStatusCompat = "not-loaded" | "loading" | "loaded" | "failed";
 
 export interface FeatureTableHighlightIdsChangeEventCompat {
   added: number[];
@@ -217,6 +218,7 @@ export class FeatureTableCompat {
   public relatedRecordsEnabled: boolean;
   public readonly objectIdField: string;
   public state: FeatureTableStateCompat;
+  public loadStatus: FeatureTableLoadStatusCompat;
   public filterGeometry: unknown;
   public filterBySelectionEnabled: boolean;
   public where: string;
@@ -232,7 +234,7 @@ export class FeatureTableCompat {
   }
 
   public get loaded(): boolean {
-    return this.state === "loaded";
+    return this.loadStatus === "loaded";
   }
 
   public constructor(options: FeatureTableCompatOptions = {}) {
@@ -250,6 +252,7 @@ export class FeatureTableCompat {
     this.relatedRecordsEnabled = options.relatedRecordsEnabled ?? false;
     this.objectIdField = options.objectIdField ?? "OBJECTID";
     this.state = "loading";
+    this.loadStatus = "not-loaded";
     this.where = options.where ?? "1=1";
     this.filterGeometry = options.filterGeometry;
     this.filterBySelectionEnabled = options.filterBySelectionEnabled ?? false;
@@ -275,12 +278,19 @@ export class FeatureTableCompat {
   }
 
   public async when(callback?: (table: FeatureTableCompat) => void): Promise<FeatureTableCompat> {
-    if (this.state === "loading") {
-      await this.refresh();
-    }
+    await this.load();
     if (callback) {
       callback(this);
     }
+    return this;
+  }
+
+  public async load(): Promise<FeatureTableCompat> {
+    if (this.loadStatus === "loaded") {
+      return this;
+    }
+
+    await this.refresh();
     return this;
   }
 
@@ -300,6 +310,12 @@ export class FeatureTableCompat {
   }
 
   public async refresh(): Promise<readonly FeatureTableRowCompat[]> {
+    if (this.loadStatus !== "loading") {
+      this.loadStatus = "loading";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.eventBus.emit("feature-table.loading", undefined, this);
+    }
+
     this.state = "loading";
     this.notifyWatchers("state", this.state);
     this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
@@ -311,6 +327,10 @@ export class FeatureTableCompat {
       this.state = "loaded";
       this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
+      this.loadStatus = "loaded";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.notifyWatchers("loaded", this.loaded);
+      this.eventBus.emit("feature-table.loaded", { rowCount: 0 }, this);
       this.eventBus.emit("feature-table.refreshed", { rowCount: 0 }, this);
       return this.rows;
     }
@@ -326,12 +346,20 @@ export class FeatureTableCompat {
       this.state = "loaded";
       this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
+      this.loadStatus = "loaded";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.notifyWatchers("loaded", this.loaded);
+      this.eventBus.emit("feature-table.loaded", { rowCount: this.rows.length }, this);
       this.eventBus.emit("feature-table.refreshed", { rowCount: this.rows.length }, this);
       return this.rows;
     } catch (error) {
       this.state = "error";
       this.notifyWatchers("state", this.state);
       this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
+      this.loadStatus = "failed";
+      this.notifyWatchers("loadStatus", this.loadStatus);
+      this.notifyWatchers("loaded", this.loaded);
+      this.eventBus.emit("feature-table.failed", { error }, this);
       throw error;
     }
   }
