@@ -19,34 +19,64 @@ function getProjectRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 }
 
-function ensureBuiltCliArtifacts(): void {
-  const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
-  if (builtOnce && fs.existsSync(cliPath)) {
-    return;
+function sleep(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withCliLock<T>(work: () => T): T {
+  const lockDir = path.join(getProjectRoot(), ".tmp", "vitest-cli-lock");
+  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      sleep(25);
+    }
   }
 
-  const buildResult = spawnSync("npm", ["run", "build", "--silent"], {
-    cwd: getProjectRoot(),
-    encoding: "utf8",
-  });
-  if (buildResult.status !== 0) {
-    throw new Error(buildResult.stderr || buildResult.stdout || "failed to build migration CLI");
+  try {
+    return work();
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
   }
-  builtOnce = true;
+}
+
+function ensureBuiltCliArtifacts(): void {
+  withCliLock(() => {
+    const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
+    if (builtOnce && fs.existsSync(cliPath)) {
+      return;
+    }
+
+    const buildResult = spawnSync("npm", ["run", "build", "--silent"], {
+      cwd: getProjectRoot(),
+      encoding: "utf8",
+    });
+    if (buildResult.status !== 0) {
+      throw new Error(buildResult.stderr || buildResult.stdout || "failed to build migration CLI");
+    }
+    builtOnce = true;
+  });
 }
 
 function runCli(args: readonly string[], cwd: string): { status: number | null; stdout: string; stderr: string } {
-  const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
-  const result = spawnSync("node", [cliPath, ...args], {
-    cwd,
-    encoding: "utf8",
-  });
+  return withCliLock(() => {
+    const cliPath = path.join(getProjectRoot(), "dist", "src", "migration", "cli.js");
+    const result = spawnSync("node", [cliPath, ...args], {
+      cwd,
+      encoding: "utf8",
+    });
 
-  return {
-    status: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  });
 }
 
 afterEach(() => {

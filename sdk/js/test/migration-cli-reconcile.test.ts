@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { execSync, spawn } from "node:child_process";
@@ -12,16 +13,66 @@ function projectRoot(): string {
   return path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 }
 
-function ensureBuiltCliArtifacts(): void {
-  if (builtOnce) {
-    return;
+function sleep(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withCliLock<T>(work: () => T): T {
+  const lockDir = path.join(projectRoot(), ".tmp", "vitest-cli-lock");
+  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      sleep(25);
+    }
   }
 
-  execSync("npm run build --silent", {
-    cwd: projectRoot(),
-    stdio: "pipe",
+  try {
+    return work();
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+}
+
+async function withCliLockAsync<T>(work: () => Promise<T>): Promise<T> {
+  const lockDir = path.join(projectRoot(), ".tmp", "vitest-cli-lock");
+  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  try {
+    return await work();
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+}
+
+function ensureBuiltCliArtifacts(): void {
+  withCliLock(() => {
+    if (builtOnce) {
+      return;
+    }
+
+    execSync("npm run build --silent", {
+      cwd: projectRoot(),
+      stdio: "pipe",
+    });
+    builtOnce = true;
   });
-  builtOnce = true;
 }
 
 beforeAll(async () => {
@@ -139,32 +190,35 @@ function runCli(
   args: readonly string[],
   envOverrides: Record<string, string> = {},
 ): Promise<{ status: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("node", args, {
-      cwd: projectRoot(),
-      env: {
-        ...process.env,
-        ...envOverrides,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+  return withCliLockAsync(
+    () =>
+      new Promise((resolve, reject) => {
+        const child = spawn("node", args, {
+          cwd: projectRoot(),
+          env: {
+            ...process.env,
+            ...envOverrides,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
 
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
-    });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk: Buffer | string) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on("data", (chunk: Buffer | string) => {
+          stderr += chunk.toString();
+        });
 
-    child.on("error", (error) => reject(error));
-    child.on("close", (status) => {
-      resolve({
-        status,
-        stdout,
-        stderr,
-      });
-    });
-  });
+        child.on("error", (error) => reject(error));
+        child.on("close", (status) => {
+          resolve({
+            status,
+            stdout,
+            stderr,
+          });
+        });
+      }),
+  );
 }
