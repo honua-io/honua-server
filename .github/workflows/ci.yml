@@ -111,6 +111,9 @@ jobs:
       - name: Demo target migration gate
         run: npm run gate:migration:demo-target
 
+      - name: Esri Leaflet deterministic target gate
+        run: npm run gate:migration:esri-leaflet-target
+
       - name: Incident demo codemod pipeline report
         continue-on-error: true
         run: |
@@ -118,6 +121,9 @@ jobs:
             echo "Retrying incident demo codemod pipeline report once after transient failure..."
             npm run demo:migration:incident
           )
+
+      - name: Constructor parity matrix artifact
+        run: npm run matrix:parity
 
       - name: Incident demo live migration pipeline (optional)
         continue-on-error: true
@@ -152,7 +158,9 @@ jobs:
           name: js-migration-artifacts
           path: |
             sdk/js/reports/demo-target-metrics.json
+            sdk/js/reports/esri-leaflet-target-metrics.json
             sdk/js/reports/demo-incident-codemod-report.json
+            sdk/js/reports/parity-matrix.json
             sdk/js/reports/real-sample-metrics.json
             sdk/js/reports/runtime-parity-matrix.json
 
@@ -441,8 +449,8 @@ jobs:
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
 
-      - name: Run .NET Tests (Server)
-        timeout-minutes: 45
+      - name: Run .NET Tests (Server - Core)
+        timeout-minutes: 20
         shell: bash
         run: |
           set +e
@@ -450,15 +458,16 @@ jobs:
             --no-build \
             --no-restore \
             --configuration Release \
-            --logger "trx;LogFileName=server-tests.trx" \
+            --filter "FullyQualifiedName!~Honua.Server.Tests.Features." \
+            --logger "trx;LogFileName=server-tests-core.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1 \
-            > ./tests/TestResults/server-tests-live.log 2>&1 &
+            > ./tests/TestResults/server-tests-core.log 2>&1 &
           test_pid=$!
 
           while kill -0 "$test_pid" 2>/dev/null; do
-            echo "[server-tests-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            echo "[server-tests-core-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
             sleep 30
           done
 
@@ -466,7 +475,94 @@ jobs:
           test_exit_code=$?
           set -e
 
-          cat ./tests/TestResults/server-tests-live.log
+          cat ./tests/TestResults/server-tests-core.log
+          exit "$test_exit_code"
+
+      - name: Run .NET Tests (Server - Feature APIs)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~Honua.Server.Tests.Features.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.OData|FullyQualifiedName~Honua.Server.Tests.Features.OgcFeatures|FullyQualifiedName~Honua.Server.Tests.Features.API" \
+            --logger "trx;LogFileName=server-tests-feature-apis.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-feature-apis.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-feature-apis-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-feature-apis.log
+          exit "$test_exit_code"
+
+      - name: Run .NET Tests (Server - Map and Imagery)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~Honua.Server.Tests.Features.OgcMaps|FullyQualifiedName~Honua.Server.Tests.Features.OgcTiles|FullyQualifiedName~Honua.Server.Tests.Features.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.GeometryService" \
+            --logger "trx;LogFileName=server-tests-map-imagery.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-map-imagery.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-map-imagery-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-map-imagery.log
+          exit "$test_exit_code"
+
+      - name: Run .NET Tests (Server - Infra and Security)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.GeoservicesCatalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling" \
+            --logger "trx;LogFileName=server-tests-infra-security.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-infra-security.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-infra-security-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-infra-security.log
           exit "$test_exit_code"
 
       - name: Run .NET Tests (Architecture)
