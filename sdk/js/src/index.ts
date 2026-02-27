@@ -295,6 +295,8 @@ export type {
 } from "./esri-compat/tile-layer.js";
 export { IdentifyCompat } from "./esri-compat/identify.js";
 export type {
+  IdentifyHandleCompat,
+  IdentifyLoadStatusCompat,
   IdentifyCompatLayerError,
   IdentifyCompatLayerResult,
   IdentifyCompatOptions,

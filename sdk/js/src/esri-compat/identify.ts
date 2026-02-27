@@ -9,6 +9,12 @@ export interface IdentifyCompatOptions {
   includeHidden?: boolean;
 }
 
+export type IdentifyLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface IdentifyHandleCompat {
+  remove(): void;
+}
+
 export interface IdentifyCompatRequest {
   geometry: string | Record<string, unknown>;
   geometryType?: string;
@@ -55,9 +61,12 @@ export class IdentifyCompat {
   public readonly eventBus: CompatEventBus;
   public readonly autoOpenPopup: boolean;
   public readonly includeHidden: boolean;
+  public loaded: boolean;
+  public loadStatus: IdentifyLoadStatusCompat;
   public lastResult: IdentifyCompatResult | undefined;
 
   private readonly explicitLayers: readonly unknown[] | undefined;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: IdentifyCompatOptions = {}) {
     this.view = options.view;
@@ -66,10 +75,54 @@ export class IdentifyCompat {
       options.eventBus ?? resolveCompatEventBus(options.view, options.layers) ?? new CompatEventBus();
     this.autoOpenPopup = options.autoOpenPopup ?? true;
     this.includeHidden = options.includeHidden ?? false;
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.lastResult = undefined;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<IdentifyCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("identify.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("identify.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (identify: IdentifyCompat) => void): Promise<IdentifyCompat> {
+    const identify = await this.load();
+    if (callback) {
+      callback(identify);
+    }
+    return identify;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): IdentifyHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public async identify(request: IdentifyCompatRequest): Promise<IdentifyCompatResult> {
+    await this.load();
+
     const candidates = this.resolveCandidateLayers(request.layerSources);
     const identifyLayers = candidates.filter((layer): layer is IdentifyProvider => {
       if (!isIdentifyProvider(layer)) {
@@ -151,6 +204,7 @@ export class IdentifyCompat {
       totalResultCount: features.length,
     };
     this.lastResult = result;
+    this.notifyWatchers("lastResult", this.lastResult);
 
     const shouldOpenPopup = request.openPopup ?? this.autoOpenPopup;
     if (shouldOpenPopup && features.length > 0) {
@@ -202,6 +256,21 @@ export class IdentifyCompat {
     }
 
     return resolveViewLayers(this.view);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 

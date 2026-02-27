@@ -32,12 +32,34 @@ describe("IdentifyCompat", () => {
     const map = new MapCompat({ eventBus, layers: [layerA, layerB] });
     const view = new MapViewCompat({ eventBus, map, center: [5, 6] });
     const identify = new IdentifyCompat({ view, eventBus });
+    const loadStatusValues: unknown[] = [];
+    const loadedValues: unknown[] = [];
+    const lastResultValues: unknown[] = [];
+    const loadStatusHandle = identify.watch("loadStatus", (value) => {
+      loadStatusValues.push(value);
+    });
+    const loadedHandle = identify.watch("loaded", (value) => {
+      loadedValues.push(value);
+    });
+    const lastResultHandle = identify.watch("lastResult", (value) => {
+      lastResultValues.push(value);
+    });
 
     const result = await identify.identify({
       geometry: { x: 5, y: 6 },
       mapExtent: [0, 0, 10, 10],
       imageDisplay: [800, 600, 96],
     });
+    loadStatusHandle.remove();
+    loadedHandle.remove();
+    lastResultHandle.remove();
+    const watchSnapshot = {
+      loadStatus: loadStatusValues.length,
+      loaded: loadedValues.length,
+      lastResult: lastResultValues.length,
+    };
+
+    await identify.load();
 
     expect(result.totalResultCount).toBe(2);
     expect(result.features).toEqual([{ id: 1 }, { id: 2 }]);
@@ -51,9 +73,19 @@ describe("IdentifyCompat", () => {
     expect(view.popup.features).toEqual([{ id: 1 }, { id: 2 }]);
     expect(view.popup.location).toEqual({ x: 5, y: 6 });
     expect(events).toContain("identify.started");
+    expect(events).toContain("identify.loading");
+    expect(events).toContain("identify.loaded");
     expect(events).toContain("identify.layer-completed");
     expect(events).toContain("identify.popup-opened");
     expect(events).toContain("identify.completed");
+    expect(identify.loaded).toBe(true);
+    expect(identify.loadStatus).toBe("loaded");
+    expect(loadStatusValues).toEqual(["loading", "loaded"]);
+    expect(loadedValues).toEqual([true]);
+    expect(lastResultValues).toEqual([result]);
+    expect(loadStatusValues).toHaveLength(watchSnapshot.loadStatus);
+    expect(loadedValues).toHaveLength(watchSnapshot.loaded);
+    expect(lastResultValues).toHaveLength(watchSnapshot.lastResult);
   });
 
   it("supports identifyAt defaults from view dimensions/extent and includeHidden", async () => {
