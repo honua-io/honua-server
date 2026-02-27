@@ -231,6 +231,8 @@ export type {
 } from "./esri-compat/route-layer.js";
 export { RouteTaskCompat } from "./esri-compat/route-task.js";
 export type {
+  RouteTaskHandleCompat,
+  RouteTaskLoadStatusCompat,
   RouteTaskCompatOptions,
   RouteTaskDirectionsFeatureCompat,
   RouteTaskDirectionsSummaryCompat,
@@ -315,9 +317,15 @@ export type {
   ReactiveUtilsWhenOptionsCompat,
 } from "./esri-compat/reactive-utils.js";
 export { QueryCompat } from "./esri-compat/query.js";
-export type { QueryCompatOptions } from "./esri-compat/query.js";
+export type {
+  QueryCompatOptions,
+  QueryHandleCompat,
+  QueryLoadStatusCompat,
+} from "./esri-compat/query.js";
 export { PrintCompat } from "./esri-compat/print.js";
 export type {
+  PrintHandleCompat,
+  PrintLoadStatusCompat,
   PrintCompatOptions,
   PrintExecuteOptionsCompat,
   PrintResultCompat,

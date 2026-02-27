@@ -78,11 +78,21 @@ export interface RouteTaskSolveResultCompat {
   routeResults: readonly RouteTaskRouteResultCompat[];
 }
 
+export type RouteTaskLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface RouteTaskHandleCompat {
+  remove(): void;
+}
+
 export class RouteTaskCompat {
   public readonly url: string | undefined;
   public readonly apiKey: string | undefined;
   public readonly requestOptions: Readonly<Record<string, unknown>> | undefined;
   public readonly eventBus: CompatEventBus;
+  public loaded: boolean;
+  public loadStatus: RouteTaskLoadStatusCompat;
+  public lastSolveResult: RouteTaskSolveResultCompat | undefined;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   private readonly routeProvider: RouteLayerCompatOptions["routeProvider"] | undefined;
 
@@ -92,6 +102,10 @@ export class RouteTaskCompat {
       this.apiKey = undefined;
       this.requestOptions = undefined;
       this.eventBus = new CompatEventBus();
+      this.loaded = false;
+      this.loadStatus = "not-loaded";
+      this.lastSolveResult = undefined;
+      this.watchListeners = new Map();
       this.routeProvider = undefined;
       return;
     }
@@ -100,7 +114,50 @@ export class RouteTaskCompat {
     this.apiKey = options.apiKey;
     this.requestOptions = options.requestOptions ? { ...options.requestOptions } : undefined;
     this.eventBus = options.eventBus ?? new CompatEventBus();
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
+    this.lastSolveResult = undefined;
+    this.watchListeners = new Map();
     this.routeProvider = options.routeProvider;
+  }
+
+  public async load(): Promise<RouteTaskCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("route-task.loading", undefined, this);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.eventBus.emit("route-task.loaded", undefined, this);
+    return this;
+  }
+
+  public async when(callback?: (task: RouteTaskCompat) => void): Promise<RouteTaskCompat> {
+    const task = await this.load();
+    if (callback) {
+      callback(task);
+    }
+    return task;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): RouteTaskHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public async solve(params: RouteTaskSolveParametersCompat = {}): Promise<RouteTaskSolveResultCompat> {
@@ -124,11 +181,30 @@ export class RouteTaskCompat {
       }
 
       const result = buildSolveResult(route, stops, params.returnDirections ?? true);
+      this.lastSolveResult = result;
+      this.notifyWatchers("lastSolveResult", this.lastSolveResult);
       this.eventBus.emit("route-task.solve-completed", { routeResults: result.routeResults }, this);
       return result;
     } catch (error) {
+      this.lastSolveResult = undefined;
+      this.notifyWatchers("lastSolveResult", this.lastSolveResult);
       this.eventBus.emit("route-task.solve-error", { error }, this);
       throw error;
+    }
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
     }
   }
 }

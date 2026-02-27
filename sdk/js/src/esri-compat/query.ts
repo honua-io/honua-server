@@ -14,7 +14,15 @@ export interface QueryCompatOptions {
   outStatistics?: unknown[];
 }
 
+export type QueryLoadStatusCompat = "not-loaded" | "loading" | "loaded";
+
+export interface QueryHandleCompat {
+  remove(): void;
+}
+
 export class QueryCompat {
+  public loaded: boolean;
+  public loadStatus: QueryLoadStatusCompat;
   public where: string;
   public outFields: string[] | undefined;
   public returnGeometry: boolean;
@@ -28,8 +36,11 @@ export class QueryCompat {
   public timeExtent: unknown;
   public groupByFieldsForStatistics: string[] | undefined;
   public outStatistics: unknown[] | undefined;
+  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: QueryCompatOptions = {}) {
+    this.loaded = false;
+    this.loadStatus = "not-loaded";
     this.where = options.where ?? "1=1";
     this.outFields = normalizeStringList(options.outFields);
     this.returnGeometry = options.returnGeometry ?? true;
@@ -43,6 +54,44 @@ export class QueryCompat {
     this.timeExtent = options.timeExtent;
     this.groupByFieldsForStatistics = normalizeStringList(options.groupByFieldsForStatistics);
     this.outStatistics = options.outStatistics ? [...options.outStatistics] : undefined;
+    this.watchListeners = new Map();
+  }
+
+  public async load(): Promise<QueryCompat> {
+    if (this.loaded) {
+      return this;
+    }
+
+    this.loadStatus = "loading";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    this.loaded = true;
+    this.notifyWatchers("loaded", this.loaded);
+    this.loadStatus = "loaded";
+    this.notifyWatchers("loadStatus", this.loadStatus);
+    return this;
+  }
+
+  public async when(callback?: (query: QueryCompat) => void): Promise<QueryCompat> {
+    const query = await this.load();
+    if (callback) {
+      callback(query);
+    }
+    return query;
+  }
+
+  public watch(propertyName: string, listener: (value: unknown) => void): QueryHandleCompat {
+    let listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      listeners = new Set();
+      this.watchListeners.set(propertyName, listeners);
+    }
+    listeners.add(listener);
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+      },
+    };
   }
 
   public clone(): QueryCompat {
@@ -67,6 +116,21 @@ export class QueryCompat {
         : undefined,
       outStatistics: this.outStatistics ? [...this.outStatistics] : undefined,
     };
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+  }
+
+  private notifyWatchers(propertyName: string, value: unknown): void {
+    const listeners = this.watchListeners.get(propertyName);
+    if (!listeners) {
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(value);
+    }
   }
 }
 
