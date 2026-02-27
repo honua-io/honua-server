@@ -156,17 +156,41 @@ export type {
   GraphicsLayerQueryResult,
 } from "./esri-compat/graphics-layer.js";
 export { GraphicCompat } from "./esri-compat/graphic.js";
-export type { GraphicCompatOptions } from "./esri-compat/graphic.js";
+export type {
+  GraphicCompatOptions,
+  GraphicHandleCompat,
+  GraphicLoadStatusCompat,
+} from "./esri-compat/graphic.js";
 export { PointCompat } from "./esri-compat/point.js";
-export type { PointCompatOptions } from "./esri-compat/point.js";
+export type {
+  PointCompatOptions,
+  PointHandleCompat,
+  PointLoadStatusCompat,
+} from "./esri-compat/point.js";
 export { PolylineCompat } from "./esri-compat/polyline.js";
-export type { PolylineCompatOptions } from "./esri-compat/polyline.js";
+export type {
+  PolylineCompatOptions,
+  PolylineHandleCompat,
+  PolylineLoadStatusCompat,
+} from "./esri-compat/polyline.js";
 export { PolygonCompat } from "./esri-compat/polygon.js";
-export type { PolygonCompatOptions } from "./esri-compat/polygon.js";
+export type {
+  PolygonCompatOptions,
+  PolygonHandleCompat,
+  PolygonLoadStatusCompat,
+} from "./esri-compat/polygon.js";
 export { ExtentCompat } from "./esri-compat/extent.js";
-export type { ExtentCompatOptions } from "./esri-compat/extent.js";
+export type {
+  ExtentCompatOptions,
+  ExtentHandleCompat,
+  ExtentLoadStatusCompat,
+} from "./esri-compat/extent.js";
 export { SpatialReferenceCompat } from "./esri-compat/spatial-reference.js";
-export type { SpatialReferenceCompatOptions } from "./esri-compat/spatial-reference.js";
+export type {
+  SpatialReferenceCompatOptions,
+  SpatialReferenceHandleCompat,
+  SpatialReferenceLoadStatusCompat,
+} from "./esri-compat/spatial-reference.js";
 export { SimpleLineSymbolCompat } from "./esri-compat/simple-line-symbol.js";
 export type { SimpleLineSymbolCompatOptions } from "./esri-compat/simple-line-symbol.js";
 export { SimpleFillSymbolCompat } from "./esri-compat/simple-fill-symbol.js";
