@@ -129,6 +129,7 @@ describe("migration cli parity matrix", () => {
     const simpleRenderer = report.matrix.find((row) => row.kind === "simple-renderer");
     const uniqueValueRenderer = report.matrix.find((row) => row.kind === "unique-value-renderer");
     const basemap = report.matrix.find((row) => row.kind === "basemap");
+    const sceneView = report.matrix.find((row) => row.kind === "scene-view");
     const track = report.matrix.find((row) => row.kind === "track-widget");
     const routeTask = report.matrix.find((row) => row.kind === "route-task");
     const swipe = report.matrix.find((row) => row.kind === "swipe-widget");
@@ -151,42 +152,43 @@ describe("migration cli parity matrix", () => {
     const esriConfig = report.matrix.find((row) => row.kind === "esri-config");
     const reactiveUtils = report.matrix.find((row) => row.kind === "reactive-utils");
     expect(featureLayer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
-    expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(point).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(polyline).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(polygon).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(extent).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(spatialReference).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(color).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(simpleLineSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(simpleMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(pictureMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(textSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(labelClass).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(simpleFillSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(classBreaksRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(simpleRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(uniqueValueRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(swipe).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(featureWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(featureSet).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(featureFormWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(tableListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(featureTemplatesWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(basemapLayerListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(distanceMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(areaMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(query).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(oauthInfo).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(identityManager).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(esriRequest).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(esriConfig).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
-    expect(reactiveUtils).toMatchObject({ honuaCompat: "compat", esriLeaflet: "assisted" });
+    expect(graphic).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(point).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(polyline).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(polygon).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(extent).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(spatialReference).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(color).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(simpleLineSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(simpleMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(pictureMarkerSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(textSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(labelClass).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(simpleFillSymbol).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(classBreaksRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(simpleRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(uniqueValueRenderer).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(basemap).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(sceneView).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(track).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(routeTask).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(swipe).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(featureWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(featureSet).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(featureFormWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(tableListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(featureTemplatesWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(basemapLayerListWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(distanceMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(areaMeasurement2dWidget).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(query).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(oauthInfo).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(identityManager).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(esriRequest).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(esriConfig).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
+    expect(reactiveUtils).toMatchObject({ honuaCompat: "compat", esriLeaflet: "compat" });
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
-    expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
+    expect(report.summary.esriLeaflet.assisted).toBe(0);
   }, 60_000);
 
   it("prints and writes the runtime parity matrix artifact", () => {
@@ -217,13 +219,28 @@ describe("migration cli parity matrix", () => {
     };
 
     expect(report.summary.honuaCompat.compat).toBeGreaterThan(0);
-    expect(report.summary.esriLeaflet.assisted).toBeGreaterThan(0);
+    expect(report.summary.esriLeaflet.assisted).toBe(0);
 
     const queryFeatures = report.matrix.find(
       (entry) => entry.capability === "query-features" && entry.surface === "feature-layer",
     );
     const mapImageFind = report.matrix.find(
       (entry) => entry.capability === "find" && entry.surface === "map-image-layer",
+    );
+    const mapImageQuery = report.matrix.find(
+      (entry) => entry.capability === "query-features" && entry.surface === "map-image-layer",
+    );
+    const mapImageQueryExtent = report.matrix.find(
+      (entry) => entry.capability === "query-extent" && entry.surface === "map-image-layer",
+    );
+    const mapImageQueryRelated = report.matrix.find(
+      (entry) => entry.capability === "query-related-features" && entry.surface === "map-image-layer",
+    );
+    const mapImageSublayerWrapper = report.matrix.find(
+      (entry) => entry.capability === "sublayer-query-wrapper" && entry.surface === "map-image-layer",
+    );
+    const mapImageSublayerVisibility = report.matrix.find(
+      (entry) => entry.capability === "sublayer-visibility-and-filters" && entry.surface === "map-image-layer",
     );
     const viewGoTo = report.matrix.find(
       (entry) => entry.capability === "navigation-go-to" && entry.surface === "map-view",
@@ -236,6 +253,32 @@ describe("migration cli parity matrix", () => {
     expect(mapImageFind).toMatchObject({
       arcGisJsApi: "MapImageLayer.find",
       honuaCompat: "compat",
+    });
+    expect(mapImageQuery).toMatchObject({
+      arcGisJsApi: "MapImageLayer/Sublayer.queryFeatures",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(mapImageQueryExtent).toMatchObject({
+      arcGisJsApi: "MapImageLayer/Sublayer.queryExtent",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(mapImageQueryRelated).toMatchObject({
+      arcGisJsApi: "MapImageLayer/Sublayer.queryRelatedFeatures",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(mapImageSublayerWrapper).toMatchObject({
+      arcGisJsApi:
+        "MapImageLayer.sublayer(id).queryFeatures/queryFeatureCount/queryObjectIds/queryExtent/queryRelatedFeatures",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(mapImageSublayerVisibility).toMatchObject({
+      arcGisJsApi: "MapImageLayer.sublayer(id).visible/definitionExpression",
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
     });
     expect(viewGoTo).toMatchObject({
       arcGisJsApi: "MapView.goTo",

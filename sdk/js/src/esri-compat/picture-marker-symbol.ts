@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface PictureMarkerSymbolCompatOptions {
   url?: string;
   width?: number | string;
@@ -134,7 +135,7 @@ export class PictureMarkerSymbolCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

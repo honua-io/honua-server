@@ -67,6 +67,36 @@ variable "redis_connection_string" {
   default     = ""
 }
 
+variable "redis_sku_name" {
+  description = "Redis SKU for new cache creation."
+  type        = string
+  default     = "Basic"
+}
+
+variable "redis_family" {
+  description = "Redis family for new cache creation."
+  type        = string
+  default     = "C"
+}
+
+variable "redis_capacity" {
+  description = "Redis capacity for new cache creation."
+  type        = number
+  default     = 0
+}
+
+variable "db_geo_redundant_backup_enabled" {
+  description = "Enable geo-redundant backups for PostgreSQL."
+  type        = bool
+  default     = false
+}
+
+variable "db_backup_retention_days" {
+  description = "Backup retention period in days for PostgreSQL."
+  type        = number
+  default     = 7
+}
+
 variable "min_replicas" {
   description = "Minimum replicas for Azure Container Apps."
   type        = number

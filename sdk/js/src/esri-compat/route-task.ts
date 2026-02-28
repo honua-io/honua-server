@@ -1,4 +1,4 @@
-import { CompatEventBus } from "./event-bus.js";
+import { CompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import {
   RouteLayerCompat,
   type RouteLayerCompatOptions,
@@ -204,7 +204,7 @@ export class RouteTaskCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

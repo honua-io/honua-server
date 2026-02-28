@@ -114,6 +114,17 @@ export function resolveCompatEventBus(...candidates: readonly unknown[]): Compat
   return undefined;
 }
 
+export function safeInvokeCompatListener<TValue>(
+  listener: (value: TValue) => void,
+  value: TValue,
+): void {
+  try {
+    listener(value);
+  } catch {
+    // Listener errors should not break compatibility flow.
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null;
 }

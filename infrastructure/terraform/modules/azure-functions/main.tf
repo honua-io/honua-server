@@ -206,17 +206,18 @@ resource "azurerm_key_vault_secret" "admin_password" {
 
 locals {
   base_app_settings = {
-    FUNCTIONS_WORKER_RUNTIME             = var.functions_worker_runtime
-    FUNCTIONS_CUSTOMHANDLER_PORT         = tostring(var.container_port)
-    WEBSITES_PORT                        = tostring(var.container_port)
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE  = "false"
-    AzureWebJobsStorage                  = azurerm_storage_account.this.primary_connection_string
-    ConnectionStrings__DefaultConnection = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
-    HONUA_ADMIN_PASSWORD                 = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    HONUA_SERVE_ADMIN_UI                 = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                       = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                  = "true"
-    HONUA_SKIP_MIGRATIONS                = var.skip_migrations ? "true" : "false"
+    FUNCTIONS_WORKER_RUNTIME                  = var.functions_worker_runtime
+    FUNCTIONS_CUSTOMHANDLER_PORT              = tostring(var.container_port)
+    WEBSITES_PORT                             = tostring(var.container_port)
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE       = "false"
+    AzureWebJobsStorage                       = azurerm_storage_account.this.primary_connection_string
+    ConnectionStrings__DefaultConnection      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
+    HONUA_ADMIN_PASSWORD                      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    Security__ConnectionEncryption__MasterKey = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                       = "true"
+    HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
   }
   redis_settings = local.redis_connection != "" ? {
     ConnectionStrings__redis = local.redis_connection
@@ -231,6 +232,16 @@ locals {
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.this[0].instrumentation_key
   } : {}
   app_settings = merge(local.base_app_settings, local.redis_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
+
+  image_parts          = split("/", var.image)
+  image_registry       = local.image_parts[0]
+  image_path_and_tag   = join("/", slice(local.image_parts, 1, length(local.image_parts)))
+  image_path_parts     = split(":", local.image_path_and_tag)
+  image_name           = local.image_path_parts[0]
+  image_tag            = length(local.image_path_parts) > 1 ? local.image_path_parts[1] : "latest"
+  image_registry_url   = var.registry_server != "" ? (startswith(var.registry_server, "http") ? var.registry_server : "https://${var.registry_server}") : "https://${local.image_registry}"
+  image_registry_user  = var.registry_username != "" ? var.registry_username : null
+  image_registry_pass  = var.registry_password != "" ? var.registry_password : null
 }
 
 resource "azurerm_linux_function_app" "this" {
@@ -252,9 +263,19 @@ resource "azurerm_linux_function_app" "this" {
   }
 
   site_config {
-    linux_fx_version  = "DOCKER|${var.image}"
-    always_on         = var.plan_sku_name != "Y1"
-    health_check_path = "/healthz/ready"
+    always_on                          = var.plan_sku_name != "Y1"
+    health_check_path                  = "/healthz/ready"
+    health_check_eviction_time_in_min  = 2
+
+    application_stack {
+      docker {
+        registry_url      = local.image_registry_url
+        image_name        = local.image_name
+        image_tag         = local.image_tag
+        registry_username = local.image_registry_user
+        registry_password = local.image_registry_pass
+      }
+    }
   }
 
   tags = local.tags

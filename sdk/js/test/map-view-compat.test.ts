@@ -109,6 +109,21 @@ describe("MapCompat", () => {
     expect(map.layers).toEqual([]);
   });
 
+  it("isolates watcher errors so later watchers still run", () => {
+    const map = new MapCompat({ basemap: "streets" });
+    let safeWatcherCalls = 0;
+
+    map.watch("basemap", () => {
+      throw new Error("watcher-failure");
+    });
+    map.watch("basemap", () => {
+      safeWatcherCalls += 1;
+    });
+
+    expect(() => map.setBasemap("satellite")).not.toThrow();
+    expect(safeWatcherCalls).toBe(1);
+  });
+
   it("preserves map metadata options and emits basemap/ground/table/spatial events", () => {
     const eventBus = new CompatEventBus();
     const eventTypes: string[] = [];

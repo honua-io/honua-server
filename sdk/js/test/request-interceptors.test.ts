@@ -226,6 +226,54 @@ describe("esri-style request bridge", () => {
     expect(requestedHeaders[0]).toMatchObject({ Authorization: "Bearer bearer-token" });
   });
 
+  it("adds ArcGIS query token when request URLs are relative", async () => {
+    const requestedUrls: string[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "",
+      interceptors: [
+        createArcGisTokenInterceptor({
+          applyTo: "/rest/services/default",
+          getToken: () => "relative-token",
+          mode: "query",
+        }),
+      ],
+      fetchFn: async (input) => {
+        requestedUrls.push(String(input));
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+
+    expect(requestedUrls[0]).toContain("/rest/services/default/FeatureServer/0/query?");
+    expect(requestedUrls[0]).toContain("token=relative-token");
+  });
+
+  it("supports bearer mode without prefix", async () => {
+    const requestedHeaders: HeadersInit[] = [];
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        createArcGisTokenInterceptor({
+          applyTo: "/rest/services/default",
+          getToken: () => "bare-token",
+          mode: "bearer",
+          bearerPrefix: "",
+        }),
+      ],
+      fetchFn: async (_input, init) => {
+        requestedHeaders.push(init?.headers ?? {});
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({ serviceId: "default", layerId: 0 });
+
+    expect(requestedHeaders[0]).toMatchObject({ Authorization: "bare-token" });
+  });
+
   it("supports dynamic interceptor add/remove via registry bridge", async () => {
     const registry = new EsriRequestInterceptorRegistry();
     const requestedHeaders: HeadersInit[] = [];
@@ -286,5 +334,34 @@ describe("esri-style request bridge", () => {
 
     expect(requestedHeaders[0]).toMatchObject({ "X-Global-RegExp": "matched" });
     expect(requestedHeaders[1]).toMatchObject({ "X-Global-RegExp": "matched" });
+  });
+
+  it("matches string URL patterns on path boundaries only", async () => {
+    let matchedCount = 0;
+    const [bridge] = createEsriRequestInterceptors([
+      {
+        urls: "/rest/services/default",
+        before: () => {
+          matchedCount += 1;
+        },
+      },
+    ]);
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [bridge],
+      fetchFn: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    });
+
+    await client.request({
+      path: "/rest/services/default/FeatureServer/0/query",
+      method: "GET",
+    });
+    await client.request({
+      path: "/rest/services/default-legacy/FeatureServer/0/query",
+      method: "GET",
+    });
+
+    expect(matchedCount).toBe(1);
   });
 });

@@ -16,6 +16,9 @@ export interface ArcGisScanReport {
   filesScanned: number;
   filesWithArcGisImports: number;
   imports: ArcGisImportHit[];
+  filesWithEsriLeafletImports?: number;
+  esriLeafletImportCount?: number;
+  esriLeafletImports?: ArcGisImportHit[];
   symbolUsageCounts: Record<string, number>;
   flags: string[];
 }
@@ -23,6 +26,7 @@ export interface ArcGisScanReport {
 export function scanArcGisUsage(rootDir: string): ArcGisScanReport {
   const files = collectSourceFiles(rootDir);
   const imports: ArcGisImportHit[] = [];
+  const esriLeafletImports: ArcGisImportHit[] = [];
   const flags = new Set<string>();
   const symbolUsageCounts: Record<string, number> = {};
 
@@ -33,6 +37,17 @@ export function scanArcGisUsage(rootDir: string): ArcGisScanReport {
     }
 
     const fileImports = findArcGisImports(source, file);
+    if (fileImports.some((item) => item.importClause.startsWith("export "))) {
+      flags.add("arcgis-reexports-detected");
+    }
+    if (fileImports.some((item) => isArcGisBarrelModulePath(item.modulePath))) {
+      flags.add("arcgis-barrel-imports-detected");
+    }
+    const fileEsriLeafletImports = findEsriLeafletImports(source, file);
+    if (fileEsriLeafletImports.length > 0) {
+      flags.add("esri-leaflet-imports-detected");
+      esriLeafletImports.push(...fileEsriLeafletImports);
+    }
     if (fileImports.length === 0) {
       continue;
     }
@@ -52,6 +67,9 @@ export function scanArcGisUsage(rootDir: string): ArcGisScanReport {
     filesScanned: files.length,
     filesWithArcGisImports: new Set(imports.map((item) => item.file)).size,
     imports,
+    filesWithEsriLeafletImports: new Set(esriLeafletImports.map((item) => item.file)).size,
+    esriLeafletImportCount: esriLeafletImports.length,
+    esriLeafletImports,
     symbolUsageCounts,
     flags: Array.from(flags).sort(),
   };
@@ -69,6 +87,7 @@ export function summarizeArcGisScan(report: ArcGisScanReport): string {
     `filesScanned=${report.filesScanned}`,
     `filesWithArcGisImports=${report.filesWithArcGisImports}`,
     `importCount=${report.imports.length}`,
+    `esriLeafletImportCount=${report.esriLeafletImportCount ?? 0}`,
     `topSymbols=[${topSymbols}]`,
     `flags=[${flagText}]`,
   ].join(" ");
@@ -169,6 +188,63 @@ function findArcGisImports(source: string, file: string): ArcGisImportHit[] {
   return hits;
 }
 
+function findEsriLeafletImports(source: string, file: string): ArcGisImportHit[] {
+  const hits: ArcGisImportHit[] = [];
+
+  const importRegex = /import\s+([^;]+?)\s+from\s+["'](esri-leaflet)["'];?/g;
+  let importMatch: RegExpExecArray | null = importRegex.exec(source);
+  while (importMatch !== null) {
+    const importClause = importMatch[1].trim();
+    hits.push({
+      file,
+      modulePath: importMatch[2],
+      importClause,
+      symbols: extractImportedSymbols(importClause),
+    });
+    importMatch = importRegex.exec(source);
+  }
+
+  const sideEffectImportRegex = /import\s+["'](esri-leaflet)["'];?/g;
+  let sideEffectImportMatch: RegExpExecArray | null = sideEffectImportRegex.exec(source);
+  while (sideEffectImportMatch !== null) {
+    hits.push({
+      file,
+      modulePath: sideEffectImportMatch[1],
+      importClause: "side-effect-import",
+      symbols: [],
+    });
+    sideEffectImportMatch = sideEffectImportRegex.exec(source);
+  }
+
+  const requireRegex =
+    /(?:\b(?:const|let|var)\s+(?:([A-Za-z_$][A-Za-z0-9_$]*)|\{\s*default\s*:\s*([A-Za-z_$][A-Za-z0-9_$]*)[^}]*\})\s*=\s*)?require\(["'](esri-leaflet)["']\)(?:\.default)?/g;
+  let requireMatch: RegExpExecArray | null = requireRegex.exec(source);
+  while (requireMatch !== null) {
+    const localSymbol = requireMatch[1] ?? requireMatch[2];
+    hits.push({
+      file,
+      modulePath: requireMatch[3],
+      importClause: "require(...)",
+      symbols: localSymbol ? [localSymbol] : [],
+    });
+    requireMatch = requireRegex.exec(source);
+  }
+
+  const dynamicImportRegex = /import\(\s*["'](esri-leaflet)["']\s*\)/g;
+  let dynamicImportMatch: RegExpExecArray | null = dynamicImportRegex.exec(source);
+  while (dynamicImportMatch !== null) {
+    hits.push({
+      file,
+      modulePath: dynamicImportMatch[1],
+      importClause: "import(...)",
+      symbols: [],
+    });
+    dynamicImportMatch = dynamicImportRegex.exec(source);
+  }
+
+  return hits;
+}
+
 function extractImportedSymbols(importClause: string): string[] {
   const symbols: string[] = [];
 
@@ -234,4 +310,24 @@ function addFileLevelFlags(source: string, flags: Set<string>): void {
   if (/\bmodule\.exports\b/.test(source) || /\bexports\.[A-Za-z_$][A-Za-z0-9_$]*\b/.test(source)) {
     flags.add("commonjs-detected");
   }
+}
+
+function isArcGisBarrelModulePath(modulePath: string): boolean {
+  const normalized = modulePath.endsWith(".js") ? modulePath.slice(0, -3) : modulePath;
+  if (!normalized.startsWith("@arcgis/core/")) {
+    return false;
+  }
+
+  return (
+    normalized === "@arcgis/core/layers" ||
+    normalized === "@arcgis/core/layers/support" ||
+    normalized === "@arcgis/core/widgets" ||
+    normalized === "@arcgis/core/geometry" ||
+    normalized === "@arcgis/core/symbols" ||
+    normalized === "@arcgis/core/renderers" ||
+    normalized === "@arcgis/core/views" ||
+    normalized === "@arcgis/core/rest/support" ||
+    normalized === "@arcgis/core/identity" ||
+    normalized === "@arcgis/core/core"
+  );
 }

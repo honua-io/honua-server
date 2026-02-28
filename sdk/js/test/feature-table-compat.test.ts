@@ -197,4 +197,87 @@ describe("FeatureTableCompat", () => {
       relatedRecordGroups: [{ objectId: 1 }],
     });
   });
+
+  it("supports layer switching via property assignment and refreshes against the new layer", async () => {
+    const eventBus = new CompatEventBus();
+    const layerChanges: unknown[] = [];
+    eventBus.on("feature-table.layer-changed", (event) => {
+      layerChanges.push(event.payload);
+    });
+
+    const firstLayer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 1, name: "A" }, geometry: null }],
+      }),
+    } as unknown as FeatureLayerCompat;
+    const secondLayer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 2, name: "B" }, geometry: null }],
+      }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer: firstLayer, eventBus });
+    const seenLayerValues: unknown[] = [];
+    const layerHandle = table.watch("layer", (value) => {
+      seenLayerValues.push(value);
+    });
+
+    await table.refresh();
+    expect(table.rows[0]).toMatchObject({ objectId: 1, attributes: { name: "A" } });
+
+    table.layer = secondLayer;
+    await table.refresh();
+    layerHandle.remove();
+
+    expect(table.rows[0]).toMatchObject({ objectId: 2, attributes: { name: "B" } });
+    expect(seenLayerValues).toEqual([secondLayer]);
+    expect(layerChanges).toEqual([{ hasLayer: true }]);
+  });
+
+  it("does not emit layer-changed events when assigning the same layer instance", () => {
+    const eventBus = new CompatEventBus();
+    const changes: unknown[] = [];
+    eventBus.on("feature-table.layer-changed", (event) => {
+      changes.push(event.payload);
+    });
+
+    const layer = {
+      queryFeatures: async () => ({ features: [] }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer, eventBus });
+    table.layer = layer;
+    table.setLayer(layer);
+
+    expect(changes).toEqual([]);
+  });
+
+  it("invalidates in-flight refresh results when layer changes", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    const firstResponse = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const firstLayer = {
+      queryFeatures: async () => firstResponse,
+    } as unknown as FeatureLayerCompat;
+    const secondLayer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 2, name: "new" }, geometry: null }],
+      }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer: firstLayer });
+    const firstRefresh = table.refresh();
+
+    table.setLayer(secondLayer);
+    await table.refresh();
+    resolveFirst?.({
+      features: [{ attributes: { OBJECTID: 1, name: "stale" }, geometry: null }],
+    });
+    await firstRefresh;
+
+    expect(table.rows).toHaveLength(1);
+    expect(table.rows[0]).toMatchObject({ objectId: 2, attributes: { name: "new" } });
+  });
 });

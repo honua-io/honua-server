@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export type TimeSliderModeCompat = "instant" | "time-window";
 export type TimeSliderIntervalUnitCompat =
@@ -215,7 +215,7 @@ export class TimeSliderCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

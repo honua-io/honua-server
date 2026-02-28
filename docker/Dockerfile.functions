@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1.7
+# Azure Functions-targeted Honua image.
+# Uses a glibc-based .NET runtime image and App Service-friendly writable paths.
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
+COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
+COPY src/Honua.Admin/*.csproj src/Honua.Admin/
+COPY src/Honua.Server/*.csproj src/Honua.Server/
+
+ARG TARGETARCH
+ARG HONUA_INCLUDE_ADMIN_UI=false
+
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) RUNTIME_ID="linux-x64" ;; \
+      arm64) RUNTIME_ID="linux-arm64" ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet restore src/Honua.Server/Honua.Server.csproj \
+      --runtime "$RUNTIME_ID" \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeAdminUi="$HONUA_INCLUDE_ADMIN_UI"
+
+COPY . .
+
+ARG CONFIGURATION=Release
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) RUNTIME_ID="linux-x64" ;; \
+      arm64) RUNTIME_ID="linux-arm64" ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet publish src/Honua.Server/Honua.Server.csproj \
+      --configuration "$CONFIGURATION" \
+      --runtime "$RUNTIME_ID" \
+      --self-contained false \
+      --output /app \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:PublishAot=false \
+      -p:DebugType=None \
+      -p:DebugSymbols=false \
+      -p:HonuaIncludeAdminUi="$HONUA_INCLUDE_ADMIN_UI" && \
+    rm -rf /app/BlazorDebugProxy && \
+    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot; fi && \
+    find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin honua && \
+    mkdir -p /home/site/wwwroot /home/LogFiles /appsvctmp /tmp/honua-logs /tmp/honua-cache && \
+    chown -R 1001:1001 /home/site /home/LogFiles /appsvctmp /tmp/honua-logs /tmp/honua-cache
+
+COPY --from=build --chown=1001:1001 /app /app
+
+USER 1001:1001
+
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    WEBSITES_PORT=8080 \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_EnableDiagnostics=0
+
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "Honua.Server.dll"]

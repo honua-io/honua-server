@@ -204,7 +204,7 @@ describe("migration cli fixtures metrics", () => {
     expect(result.stdout).toContain("fixturesGate=pass");
   }, 60_000);
 
-  it("fails fixture gates when manual migration remains", () => {
+  it("passes fixture gates for esri-leaflet network sample after compat-fallback expansion", () => {
     ensureBuiltCliArtifacts();
 
     const result = runCli(
@@ -221,10 +221,9 @@ describe("migration cli fixtures metrics", () => {
       getProjectRoot(),
     );
 
-    expect(result.status).toBe(2);
-    expect(result.stdout).toContain("fixturesGate=fail");
-    expect(result.stdout).toContain("gatingFailures:");
-    expect(result.stdout).toContain("Manual call sites detected");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("fixturesGate=pass");
+    expect(result.stdout).toContain("manual=0");
   }, 60_000);
 
   it("passes strict fixture gates for deterministic esri-leaflet subset", () => {

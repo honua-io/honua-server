@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface UniqueValueInfoCompat {
   value: string | number;
   symbol?: unknown;
@@ -148,7 +149,7 @@ export class UniqueValueRendererCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

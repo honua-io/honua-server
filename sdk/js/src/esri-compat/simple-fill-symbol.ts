@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface SimpleFillSymbolCompatOptions {
   style?: string;
   color?: unknown;
@@ -102,7 +103,7 @@ export class SimpleFillSymbolCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

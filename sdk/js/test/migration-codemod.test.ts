@@ -372,7 +372,7 @@ describe("runEsriCompatCodemod", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "extent-geometry",
-          reason: "Extent options include unsupported properties; requires manual migration.",
+          reason: "Extent options include unsupported properties: type; requires manual migration.",
         }),
       ]),
     );
@@ -463,7 +463,7 @@ describe("runEsriCompatCodemod", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "label-class",
-          reason: "LabelClass options include unsupported properties; requires manual migration.",
+          reason: "LabelClass options include unsupported properties: deconflictionStrategy; requires manual migration.",
         }),
       ]),
     );
@@ -588,7 +588,7 @@ describe("runEsriCompatCodemod", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "simple-renderer",
-          reason: "SimpleRenderer options include unsupported properties; requires manual migration.",
+          reason: "SimpleRenderer options include unsupported properties: authoringInfo; requires manual migration.",
         }),
       ]),
     );
@@ -1791,6 +1791,7 @@ describe("runEsriCompatCodemod", () => {
       [
         "import Map from '@arcgis/core/Map';",
         "import MapView from '@arcgis/core/views/MapView';",
+        "import SceneView from '@arcgis/core/views/SceneView';",
         "import LayerList from '@arcgis/core/widgets/LayerList';",
         "import Legend from '@arcgis/core/widgets/Legend';",
         "import Popup from '@arcgis/core/widgets/Popup';",
@@ -1808,6 +1809,7 @@ describe("runEsriCompatCodemod", () => {
         "import Attribution from '@arcgis/core/widgets/Attribution';",
         "const map = new Map({ basemap: 'streets' });",
         "const view = new MapView({ map, container: 'viewDiv', center: [0, 0], zoom: 4 });",
+        "const scene = new SceneView({ map, container: 'sceneDiv', viewingMode: 'global' });",
         "const layerList = new LayerList({ view });",
         "const legend = new Legend({ view });",
         "const popup = new Popup({ view });",
@@ -1823,7 +1825,7 @@ describe("runEsriCompatCodemod", () => {
         "const fullscreen = new Fullscreen({ view });",
         "const zoom = new Zoom({ view });",
         "const attribution = new Attribution({ view });",
-        "void map; void view; void layerList; void legend; void popup; void search; void home; void basemapToggle; void locate; void scaleBar; void basemapGallery; void expand; void compass; void bookmarks; void fullscreen; void zoom; void attribution;",
+        "void map; void view; void scene; void layerList; void legend; void popup; void search; void home; void basemapToggle; void locate; void scaleBar; void basemapGallery; void expand; void compass; void bookmarks; void fullscreen; void zoom; void attribution;",
       ].join("\n"),
       "utf8",
     );
@@ -1835,8 +1837,8 @@ describe("runEsriCompatCodemod", () => {
     });
 
     expect(result.filesChanged).toBe(1);
-    expect(result.metrics.totalCodemodScopedCallSites).toBe(17);
-    expect(result.metrics.autoMigratedCallSites).toBe(17);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(18);
+    expect(result.metrics.autoMigratedCallSites).toBe(18);
     expect(result.metrics.manualCallSites).toBe(0);
     expect(result.metrics.byKind.map).toEqual({
       total: 1,
@@ -1844,6 +1846,11 @@ describe("runEsriCompatCodemod", () => {
       manual: 0,
     });
     expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["scene-view"]).toEqual({
       total: 1,
       autoMigrated: 1,
       manual: 0,
@@ -1926,10 +1933,11 @@ describe("runEsriCompatCodemod", () => {
 
     const nextSource = fs.readFileSync(file, "utf8");
     expect(nextSource).toContain(
-      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
+      'import { AttributionCompat, BasemapGalleryCompat, BasemapToggleCompat, BookmarksCompat, CompassCompat, ExpandCompat, FullscreenCompat, HomeCompat, LayerListCompat, LegendCompat, LocateCompat, MapCompat, MapViewCompat, PopupCompat, ScaleBarCompat, SceneViewCompat, SearchCompat, ZoomCompat } from "@honua/sdk-esri-compat";',
     );
     expect(nextSource).toContain("const map = new MapCompat({ basemap: 'streets' });");
     expect(nextSource).toContain("const view = new MapViewCompat({ map, container: 'viewDiv', center: [0, 0], zoom: 4 });");
+    expect(nextSource).toContain("const scene = new SceneViewCompat({ map, container: 'sceneDiv', viewingMode: 'global' });");
     expect(nextSource).toContain("const layerList = new LayerListCompat({ view });");
     expect(nextSource).toContain("const legend = new LegendCompat({ view });");
     expect(nextSource).toContain("const popup = new PopupCompat({ view });");
@@ -1947,6 +1955,7 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("const attribution = new AttributionCompat({ view });");
     expect(nextSource).not.toContain("@arcgis/core/Map");
     expect(nextSource).not.toContain("@arcgis/core/views/MapView");
+    expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
     expect(nextSource).not.toContain("@arcgis/core/widgets/LayerList");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Legend");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Popup");
@@ -1962,6 +1971,179 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/widgets/Fullscreen");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Zoom");
     expect(nextSource).not.toContain("@arcgis/core/widgets/Attribution");
+  });
+
+  it("forces FeatureLayer compat fallback when advanced query helpers are used in esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet-feature-layer-helpers.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "const ids = await layer.queryObjectIds({ where: \"1=1\" });",
+        "void ids;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("const layer = new FeatureLayerCompat({ url: serviceUrl });");
+    expect(nextSource).toContain("const ids = await layer.queryObjectIds({ where: \"1=1\" });");
+    expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
+  });
+
+  it("forces FeatureLayer compat fallback when queryFeatures helpers are used in esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet-feature-layer-query-features.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "const features = await layer.queryFeatures({ where: \"1=1\" });",
+        "const all = await layer.queryFeaturesAll({ pageSize: 2000 });",
+        "void features; void all;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("const layer = new FeatureLayerCompat({ url: serviceUrl });");
+    expect(nextSource).toContain("const features = await layer.queryFeatures({ where: \"1=1\" });");
+    expect(nextSource).toContain("const all = await layer.queryFeaturesAll({ pageSize: 2000 });");
+    expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
+  });
+
+  it("forces MapImageLayer compat fallback when identify/find/related helpers are used in esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet-map-image-helpers.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "const layer = new MapImageLayer({ url: serviceUrl });",
+        "const hit = await layer.identify({ geometry: { x: 1, y: 2 }, mapExtent: \"0,0,10,10\", imageDisplay: \"800,600,96\" });",
+        "const related = await layer.queryRelatedFeatures({ layerId: 0, relationshipId: 2, objectIds: [1, 2] });",
+        "void related;",
+        "void hit;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { MapImageLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("const layer = new MapImageLayerCompat({ url: serviceUrl });");
+    expect(nextSource).toContain("const hit = await layer.identify({ geometry: { x: 1, y: 2 }, mapExtent: \"0,0,10,10\", imageDisplay: \"800,600,96\" });");
+    expect(nextSource).toContain(
+      "const related = await layer.queryRelatedFeatures({ layerId: 0, relationshipId: 2, objectIds: [1, 2] });",
+    );
+    expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
+  });
+
+  it("forces MapImageLayer compat fallback when query/sublayer helpers are used in esri-leaflet target", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "esri-leaflet-map-image-query-helpers.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "const layer = new MapImageLayer({ url: serviceUrl });",
+        "const features = await layer.queryFeatures({ layerId: 0, where: \"1=1\" });",
+        "const count = await layer.queryFeatureCount({ layerId: 0, where: \"1=1\" });",
+        "const sub = layer.sublayer(0);",
+        "const subFeatures = await sub?.queryFeatures({ where: \"1=1\" });",
+        "void features; void count; void subFeatures;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      target: "esri-leaflet",
+      write: true,
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { MapImageLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("const layer = new MapImageLayerCompat({ url: serviceUrl });");
+    expect(nextSource).toContain("const features = await layer.queryFeatures({ layerId: 0, where: \"1=1\" });");
+    expect(nextSource).toContain("const count = await layer.queryFeatureCount({ layerId: 0, where: \"1=1\" });");
+    expect(nextSource).toContain("const sub = layer.sublayer(0);");
+    expect(nextSource).toContain("const subFeatures = await sub?.queryFeatures({ where: \"1=1\" });");
+    expect(nextSource).not.toContain('import * as HonuaEsriLeaflet from "esri-leaflet";');
+    expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
   });
 
   it("keeps extended map image/tile options as manual TODOs for esri-leaflet target", () => {
@@ -2003,25 +2185,25 @@ describe("runEsriCompatCodemod", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "map-image-layer",
-          reason: "MapImageLayer options include unsupported properties; requires manual migration.",
+          reason: "MapImageLayer options include unsupported properties: legendEnabled; requires manual migration.",
         }),
         expect.objectContaining({
           kind: "tile-layer",
-          reason: "TileLayer options include unsupported properties; requires manual migration.",
+          reason: "TileLayer options include unsupported properties: listMode; requires manual migration.",
         }),
       ]),
     );
   });
 
-  it("keeps unsupported constructors as manual TODOs for esri-leaflet target", () => {
+  it("keeps SceneView constructors with unsupported options as manual TODOs for esri-leaflet target", () => {
     const root = makeTempProject();
     const file = path.join(root, "unsupported-for-esri-leaflet.ts");
     fs.writeFileSync(
       file,
       [
-        "import RouteTask from '@arcgis/core/rest/route/RouteTask';",
-        "const routeTask = new RouteTask({ url: routeServiceUrl });",
-        "void routeTask;",
+        "import SceneView from '@arcgis/core/views/SceneView';",
+        "const sceneView = new SceneView({ map, container: 'view', environment: { lighting: {} } });",
+        "void sceneView;",
       ].join("\n"),
       "utf8",
     );
@@ -2038,14 +2220,14 @@ describe("runEsriCompatCodemod", () => {
     expect(result.metrics.autoMigratedCallSites).toBe(0);
     expect(result.metrics.manualCallSites).toBe(1);
     expect(result.manualTodos).toHaveLength(1);
-    expect(result.manualTodos[0]?.kind).toBe("route-task");
-    expect(result.manualTodos[0]?.reason).toContain("esri-leaflet mapping");
+    expect(result.manualTodos[0]?.kind).toBe("scene-view");
+    expect(result.manualTodos[0]?.reason).toContain("SceneView options include unsupported properties");
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain("new RouteTask({ url: routeServiceUrl })");
-    expect(nextSource).toContain("// TODO(honua-migrate)[route-task]:");
+    expect(nextSource).toContain("new SceneView({ map, container: 'view', environment: { lighting: {} } })");
+    expect(nextSource).toContain("// TODO(honua-migrate)[scene-view]:");
     expect(nextSource).not.toContain("HonuaEsriLeaflet.");
-    expect(nextSource).toContain("@arcgis/core/rest/route/RouteTask");
+    expect(nextSource).toContain("@arcgis/core/views/SceneView");
   });
 
   it("rewrites constructors imported via named default alias", () => {
@@ -2913,14 +3095,14 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
   });
 
-  it("keeps unsupported dynamic imports as manual TODOs for esri-leaflet target", () => {
+  it("rewrites SceneView dynamic imports to compat fallback for esri-leaflet target", () => {
     const root = makeTempProject();
     const file = path.join(root, "lazy-unsupported-esri-leaflet.ts");
     fs.writeFileSync(
       file,
       [
-        "export async function loadRouteTaskCtor() {",
-        "  const module = await import('@arcgis/core/rest/route/RouteTask');",
+        "export async function loadSceneViewCtor() {",
+        "  const module = await import('@arcgis/core/views/SceneView');",
         "  return module.default;",
         "}",
       ].join("\n"),
@@ -2931,19 +3113,269 @@ describe("runEsriCompatCodemod", () => {
       rootDir: root,
       target: "esri-leaflet",
       write: true,
-      annotateTodos: true,
     });
 
     expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
-    expect(result.metrics.autoMigratedCallSites).toBe(0);
-    expect(result.metrics.manualCallSites).toBe(1);
-    expect(result.manualTodos[0]).toMatchObject({
-      kind: "route-task",
-    });
-    expect(result.manualTodos[0]?.reason).toContain("Dynamic import");
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.manualTodos).toHaveLength(0);
 
     const nextSource = fs.readFileSync(file, "utf8");
-    expect(nextSource).toContain("@arcgis/core/rest/route/RouteTask");
-    expect(nextSource).toContain("// TODO(honua-migrate)[route-task]:");
+    expect(nextSource).toContain(
+      'await import("@honua/sdk-esri-compat").then((m) => ({ default: m.SceneViewCompat }))',
+    );
+    expect(nextSource).not.toContain("@arcgis/core/views/SceneView");
+  });
+
+  it("keeps constructor calls as manual TODO when imported identifier is shadowed", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "shadowed.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "function buildLayerFactory() {",
+        "  const FeatureLayer = createCustomLayer();",
+        "  return new FeatureLayer({ url: serviceUrl });",
+        "}",
+        "void buildLayerFactory;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      annotateTodos: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(0);
+    expect(result.metrics.manualCallSites).toBe(1);
+    expect(result.manualTodos).toHaveLength(1);
+    expect(result.manualTodos[0]?.reason).toContain("shadowed by a local declaration");
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("new FeatureLayer({ url: serviceUrl })");
+    expect(nextSource).toContain("// TODO(honua-migrate)[feature-layer]:");
+  });
+
+  it("continues codemod processing when a file has parse errors", () => {
+    const root = makeTempProject();
+    const brokenFile = path.join(root, "broken.ts");
+    const validFile = path.join(root, "valid.ts");
+
+    fs.writeFileSync(
+      brokenFile,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const broken = new FeatureLayer({",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      validFile,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesScanned).toBe(2);
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors?.[0]?.file).toBe(brokenFile);
+    expect(result.errors?.[0]?.stage).toBe("transform");
+    expect(result.errors?.[0]?.message).toContain("Unable to parse source file");
+
+    const nextValidSource = fs.readFileSync(validFile, "utf8");
+    expect(nextValidSource).toContain("FeatureLayerCompat");
+  });
+
+  it("rewrites constructors imported from ArcGIS barrel modules", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "barrels.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import { FeatureLayer, MapImageLayer } from '@arcgis/core/layers';",
+        "import { MapView } from '@arcgis/core/views';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "const mapImage = new MapImageLayer({ url: mapServiceUrl });",
+        "const view = new MapView({ map, container: 'viewDiv' });",
+        "void layer; void mapImage; void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(3);
+    expect(result.metrics.autoMigratedCallSites).toBe(3);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-image-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat, MapImageLayerCompat, MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new FeatureLayerCompat({ url: serviceUrl })");
+    expect(nextSource).toContain("new MapImageLayerCompat({ url: mapServiceUrl })");
+    expect(nextSource).toContain("new MapViewCompat({ map, container: 'viewDiv' })");
+    expect(nextSource).not.toContain("@arcgis/core/layers");
+    expect(nextSource).not.toContain("@arcgis/core/views");
+  });
+
+  it("rewrites aliased constructors imported from ArcGIS barrel modules", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "barrels-alias.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import { FeatureLayer as ArcFeatureLayer } from '@arcgis/core/layers';",
+        "const layer = new ArcFeatureLayer({ url: serviceUrl });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain(
+      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextSource).toContain("new FeatureLayerCompat({ url: serviceUrl })");
+    expect(nextSource).not.toContain("@arcgis/core/layers");
+  });
+
+  it("rewrites constructors imported through local ArcGIS re-export modules", () => {
+    const root = makeTempProject();
+    const wrapperFile = path.join(root, "wrapper.ts");
+    const appFile = path.join(root, "app.ts");
+    fs.writeFileSync(
+      wrapperFile,
+      "export { default as FeatureLayer } from '@arcgis/core/layers/FeatureLayer';\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      appFile,
+      [
+        "import { FeatureLayer } from './wrapper';",
+        "const layer = new FeatureLayer({ url: serviceUrl });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["feature-layer"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextAppSource = fs.readFileSync(appFile, "utf8");
+    expect(nextAppSource).toContain(
+      'import { FeatureLayerCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextAppSource).toContain("new FeatureLayerCompat({ url: serviceUrl })");
+  });
+
+  it("rewrites constructors through chained local ArcGIS re-export modules", () => {
+    const root = makeTempProject();
+    const baseWrapper = path.join(root, "arcgis-wrapper.ts");
+    const chainWrapper = path.join(root, "chain-wrapper.ts");
+    const appFile = path.join(root, "app.ts");
+    fs.writeFileSync(
+      baseWrapper,
+      "export { default as MapView } from '@arcgis/core/views/MapView';\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      chainWrapper,
+      "export { MapView } from './arcgis-wrapper';\n",
+      "utf8",
+    );
+    fs.writeFileSync(
+      appFile,
+      [
+        "import { MapView } from './chain-wrapper';",
+        "const view = new MapView({ map, container: 'viewDiv' });",
+        "void view;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.filesChanged).toBe(1);
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+    expect(result.metrics.byKind["map-view"]).toEqual({
+      total: 1,
+      autoMigrated: 1,
+      manual: 0,
+    });
+
+    const nextAppSource = fs.readFileSync(appFile, "utf8");
+    expect(nextAppSource).toContain(
+      'import { MapViewCompat } from "@honua/sdk-esri-compat";',
+    );
+    expect(nextAppSource).toContain("new MapViewCompat({ map, container: 'viewDiv' })");
   });
 });

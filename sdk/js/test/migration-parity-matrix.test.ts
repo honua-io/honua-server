@@ -36,6 +36,7 @@ describe("JS parity matrix", () => {
     const basemap = matrix.find((row) => row.kind === "basemap");
     const map = matrix.find((row) => row.kind === "map");
     const mapView = matrix.find((row) => row.kind === "map-view");
+    const sceneView = matrix.find((row) => row.kind === "scene-view");
     const homeWidget = matrix.find((row) => row.kind === "home-widget");
     const basemapGalleryWidget = matrix.find((row) => row.kind === "basemap-gallery-widget");
     const layerList = matrix.find((row) => row.kind === "layer-list");
@@ -68,77 +69,81 @@ describe("JS parity matrix", () => {
     });
     expect(graphic).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(point).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(polyline).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(polygon).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(extent).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(spatialReference).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(color).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(simpleLineSymbol).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(simpleMarkerSymbol).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(pictureMarkerSymbol).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(textSymbol).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(labelClass).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(simpleFillSymbol).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(classBreaksRenderer).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(simpleRenderer).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(uniqueValueRenderer).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(basemap).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(map).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "compat",
     });
     expect(mapView).toMatchObject({
+      honuaCompat: "compat",
+      esriLeaflet: "compat",
+    });
+    expect(sceneView).toMatchObject({
       honuaCompat: "compat",
       esriLeaflet: "compat",
     });
@@ -168,71 +173,71 @@ describe("JS parity matrix", () => {
     });
     expect(track).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(routeTask).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(swipe).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(featureWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(featureSet).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(featureFormWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(tableListWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(featureTemplatesWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(basemapLayerListWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(distanceMeasurement2dWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(areaMeasurement2dWidget).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(query).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(oauthInfo).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(identityManager).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(esriRequest).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(esriConfig).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
     expect(reactiveUtils).toMatchObject({
       honuaCompat: "compat",
-      esriLeaflet: "assisted",
+      esriLeaflet: "compat",
     });
   });
 
@@ -249,6 +254,6 @@ describe("JS parity matrix", () => {
     expect(totalEsriLeaflet).toBe(matrix.length);
     expect(summary.honuaCompat.compat).toBeGreaterThan(0);
     expect(summary.esriLeaflet.compat).toBeGreaterThan(0);
-    expect(summary.esriLeaflet.assisted).toBeGreaterThan(0);
+    expect(summary.esriLeaflet.assisted).toBe(0);
   });
 });

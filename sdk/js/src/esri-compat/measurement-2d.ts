@@ -1,4 +1,4 @@
-import { CompatEventBus } from "./event-bus.js";
+import { CompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import {
   MeasurementCompat,
   type AreaUnitCompat,
@@ -135,7 +135,7 @@ export class DistanceMeasurement2DCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -241,7 +241,7 @@ export class AreaMeasurement2DCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

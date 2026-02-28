@@ -147,4 +147,70 @@ describe("PopupTemplateCompat", () => {
     expect(cloned.expressionInfos).not.toBe(template.expressionInfos);
     expect(cloned.outFields).not.toBe(template.outFields);
   });
+
+  it("getTitle interpolates field tokens from attributes", () => {
+    const template = new PopupTemplateCompat({
+      title: "{NAME}",
+    });
+
+    expect(template.getTitle({ NAME: "Parcel A" })).toBe("Parcel A");
+  });
+
+  it("getTitle interpolates multiple fields", () => {
+    const template = new PopupTemplateCompat({
+      title: "{NAME} ({TYPE})",
+    });
+
+    expect(template.getTitle({ NAME: "Parcel A", TYPE: "residential" })).toBe("Parcel A (residential)");
+  });
+
+  it("getTitle replaces missing fields with empty string", () => {
+    const template = new PopupTemplateCompat({
+      title: "Name: {NAME}",
+    });
+
+    expect(template.getTitle({})).toBe("Name: ");
+  });
+
+  it("getTitle replaces null/undefined values with empty string", () => {
+    const template = new PopupTemplateCompat({
+      title: "{A} and {B}",
+    });
+
+    expect(template.getTitle({ A: null, B: undefined })).toBe(" and ");
+  });
+
+  it("getTitle returns String(title) for non-string title", () => {
+    const template = new PopupTemplateCompat({
+      title: 42,
+    });
+
+    expect(template.getTitle({ NAME: "X" })).toBe("42");
+  });
+
+  it("getTitle returns template as-is when no tokens", () => {
+    const template = new PopupTemplateCompat({
+      title: "Static Title",
+    });
+
+    expect(template.getTitle({ NAME: "X" })).toBe("Static Title");
+  });
+
+  it("getContent interpolates field tokens", () => {
+    const template = new PopupTemplateCompat({
+      content: "Owner: {OWNER}, Area: {AREA} sqft",
+    });
+
+    expect(template.getContent({ OWNER: "John", AREA: 5000 })).toBe("Owner: John, Area: 5000 sqft");
+  });
+
+  it("getTitle returns empty string for undefined title", () => {
+    const template = new PopupTemplateCompat({});
+    expect(template.getTitle({})).toBe("");
+  });
+
+  it("getContent returns empty string for undefined content", () => {
+    const template = new PopupTemplateCompat({});
+    expect(template.getContent({})).toBe("");
+  });
 });

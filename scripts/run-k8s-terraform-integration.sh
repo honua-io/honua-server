@@ -17,7 +17,10 @@ NAMESPACE="${K8S_TF_NAMESPACE:-honua}"
 OBS_NAMESPACE="${K8S_TF_OBS_NAMESPACE:-honua-observability}"
 RELEASE_NAME="${K8S_TF_RELEASE_NAME:-honua}"
 INGRESS_HOSTNAME="${K8S_TF_INGRESS_HOSTNAME:-honua.local}"
-HONUA_IMAGE="${HONUA_K8S_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
+DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
+DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
+USE_AOT="${HONUA_USE_AOT:-false}"
+HONUA_IMAGE="${HONUA_K8S_IMAGE:-$DEFAULT_HONUA_IMAGE}"
 PREVIOUS_IMAGE="${HONUA_K8S_PREVIOUS_IMAGE:-}"
 AUTO_DESTROY=true
 QUICK_SCALE=true
@@ -77,6 +80,7 @@ Options:
   --observability-namespace <name>     Namespace for observability stack (default: honua-observability)
   --release-name <name>                Helm release name for Honua (default: honua)
   --ingress-host <hostname>            Ingress host header used for checks (default: honua.local)
+  --aot                                Use latest-aot when image is default
   --image <repo:tag>                   Honua container image
   --previous-image <repo:tag>          Previous image used for upgrade/rollback validation
   --upgrade-rollback                   Enable upgrade/rollback validation sequence
@@ -108,6 +112,16 @@ log_warn() {
 
 log_error() {
   echo "[ERROR] $1" >&2
+}
+
+apply_aot_mode() {
+  if [[ "$USE_AOT" != "true" ]]; then
+    return
+  fi
+
+  if [[ "$HONUA_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
+    HONUA_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
+  fi
 }
 
 require_command() {
@@ -171,6 +185,10 @@ parse_args() {
       --ingress-host)
         INGRESS_HOSTNAME="$2"
         shift 2
+        ;;
+      --aot)
+        USE_AOT=true
+        shift
         ;;
       --image)
         HONUA_IMAGE="$2"
@@ -419,16 +437,38 @@ wait_for_ready() {
 verify_protocol_endpoints() {
   local status
   local base
+  local admin_api_key
   local curl_args=()
 
   base="$(http_base_url)"
+  admin_api_key="${HONUA_ADMIN_PASSWORD:-change-me}"
   if [[ "$ACCESS_MODE" == "ingress" ]]; then
     curl_args=(-H "Host: ${INGRESS_HOSTNAME}")
   fi
 
-  curl -fsS --max-time 20 "${curl_args[@]}" "${base}/rest/services?f=pjson" >/dev/null
-  curl -fsS --max-time 20 "${curl_args[@]}" "${base}/ogc/features" >/dev/null
-  curl -fsS --max-time 20 "${curl_args[@]}" "${base}/odata" >/dev/null
+  check_endpoint() {
+    local endpoint="$1"
+    local endpoint_status
+
+    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "$endpoint" || true)"
+    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
+      curl -fsS --max-time 20 "${curl_args[@]}" \
+        -H "X-API-Key: $admin_api_key" \
+        "$endpoint" >/dev/null
+      return 0
+    fi
+
+    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
+    return 1
+  }
+
+  check_endpoint "${base}/rest/services?f=pjson"
+  check_endpoint "${base}/ogc/features"
+  check_endpoint "${base}/odata"
 
   status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "${base}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
@@ -511,22 +551,29 @@ run_admin_api_crud_smoke() {
     trap - RETURN
     set +e
 
-    run_db_sql_k8s "DROP TABLE IF EXISTS public.${table_name};" || true
+    local cleanup_table_name="${table_name:-}"
+    local cleanup_layer_id="${layer_id:-}"
+    local cleanup_service_name="${service_name:-}"
+    local cleanup_connection_id="${connection_id:-}"
+    local cleanup_base="${base:-}"
 
-    if [[ -n "$layer_id" ]]; then
+    run_db_sql_k8s "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
+
+    if [[ -n "$cleanup_layer_id" ]]; then
       run_db_sql_k8s "
-        DELETE FROM honua.layer_fields WHERE layer_id = ${layer_id};
-        DELETE FROM honua.service_layers WHERE layer_id = ${layer_id};
-        DELETE FROM honua.layers WHERE layer_id = ${layer_id};
+        DELETE FROM features WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.layer_fields WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.service_layers WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.layers WHERE layer_id = ${cleanup_layer_id};
       " || true
     fi
 
-    run_db_sql_k8s "DELETE FROM honua.services WHERE service_name = '$(json_escape "$service_name")';" || true
+    run_db_sql_k8s "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
 
-    if [[ -n "$connection_id" ]]; then
+    if [[ -n "$cleanup_connection_id" ]]; then
       curl -sS --max-time 20 "${curl_args[@]}" -X DELETE \
         -H "X-API-Key: $admin_api_key" \
-        "${base}/api/v1/admin/connections/${connection_id}" >/dev/null || true
+        "${cleanup_base}/api/v1/admin/connections/${cleanup_connection_id}" >/dev/null || true
     fi
   }
 
@@ -577,8 +624,19 @@ JSON
     return 1
   fi
 
+  run_db_sql_k8s "
+    INSERT INTO features (layer_id, geometry, attributes)
+    VALUES (
+      ${layer_id},
+      ST_SetSRID(ST_Point(1, 1), 4326),
+      jsonb_build_object('id', 1, 'name', 'Smoke Feature', 'population', 1)
+    );
+  "
+
   query_url="${base}/rest/services/${service_name}/FeatureServer/${layer_id}/query?where=1%3D1&outFields=id,name,population&f=pjson"
-  query_response="$(curl -fsS --max-time 20 "${curl_args[@]}" "$query_url")"
+  query_response="$(curl -fsS --max-time 20 "${curl_args[@]}" \
+    -H "X-API-Key: $admin_api_key" \
+    "$query_url")"
 
   if command -v jq >/dev/null 2>&1; then
     feature_count="$(printf '%s' "$query_response" | jq -r '(.features // []) | length' 2>/dev/null || echo 0)"
@@ -778,9 +836,15 @@ run_stack_checks() {
 
 run_scale_check() {
   local available
+  local baseline_replicas
 
   if [[ "$QUICK_SCALE" != "true" ]]; then
     return
+  fi
+
+  baseline_replicas="$(kubectl -n "$NAMESPACE" get "deployment/${HONUA_DEPLOYMENT_NAME}" -o jsonpath='{.spec.replicas}')"
+  if [[ -z "$baseline_replicas" ]]; then
+    baseline_replicas=1
   fi
 
   log_info "Running quick k8s scale validation by raising replicas to $SCALE_TARGET_REPLICAS"
@@ -794,6 +858,12 @@ run_scale_check() {
   fi
 
   log_info "Scale check passed with available replicas: $available"
+
+  if [[ "$baseline_replicas" != "$SCALE_TARGET_REPLICAS" ]]; then
+    log_info "Restoring deployment replicas to baseline: $baseline_replicas"
+    kubectl -n "$NAMESPACE" scale "deployment/${HONUA_DEPLOYMENT_NAME}" --replicas="$baseline_replicas"
+    kubectl -n "$NAMESPACE" rollout status "deployment/${HONUA_DEPLOYMENT_NAME}" --timeout="${TIMEOUT_SECONDS}s"
+  fi
 }
 
 deploy_honua_stack() {
@@ -935,6 +1005,7 @@ cleanup() {
 
 main() {
   parse_args "$@"
+  apply_aot_mode
 
   require_command docker
   require_command kubectl
@@ -968,6 +1039,7 @@ main() {
   fi
   log_info "Namespace: $NAMESPACE"
   log_info "Observability namespace: $OBS_NAMESPACE"
+  log_info "AOT mode: $USE_AOT"
   log_info "Honua image: $HONUA_IMAGE"
   if [[ -n "$PREVIOUS_IMAGE" ]]; then
     log_info "Previous image: $PREVIOUS_IMAGE"

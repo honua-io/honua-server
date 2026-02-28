@@ -111,7 +111,7 @@ describe("migration cli target selection", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("target=esri-leaflet");
-    expect(result.stdout).toContain("manual=0");
+    expect(result.stdout).toContain("manual=[trivial:0 moderate:0 complex:0]");
     expect(fs.existsSync(reportPath)).toBe(true);
 
     const migrated = fs.readFileSync(appFile, "utf8");
@@ -139,5 +139,29 @@ describe("migration cli target selection", () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("Usage:");
+  }, 60_000);
+
+  it("prints a note when project only contains esri-leaflet imports", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const appFile = path.join(root, "app.ts");
+
+    fs.writeFileSync(
+      appFile,
+      [
+        "import * as L from 'esri-leaflet';",
+        "const layer = L.featureLayer({ url: serviceUrl });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runCli(["codemod", root, "--target", "esri-leaflet"], getProjectRoot());
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("filesChanged=0");
+    expect(result.stdout).toContain(
+      "note=esri-leaflet-imports-detected-without-arcgis-js; codemod targets @arcgis/core inputs (not migrations from esri-leaflet)",
+    );
   }, 60_000);
 });

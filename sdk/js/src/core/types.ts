@@ -38,10 +38,54 @@ export interface QueryFeaturesRequest {
   outFields?: string | string[];
   returnGeometry?: boolean;
   method?: QueryMethod;
+  orderByFields?: string;
+  objectIds?: number[] | string;
+  geometry?: string | Record<string, unknown>;
+  geometryType?: string;
+  spatialRel?: string;
+  returnDistinctValues?: boolean;
+  returnCentroid?: boolean;
+  groupByFieldsForStatistics?: string;
+  outStatistics?: string | readonly Record<string, unknown>[];
+  resultOffset?: number;
+  resultRecordCount?: number;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface MapLayerQueryRequest {
+  serviceId: string;
+  layerId: number;
+  where?: string;
+  outFields?: string | string[];
+  returnGeometry?: boolean;
+  method?: QueryMethod;
+  orderByFields?: string;
+  objectIds?: number[] | string;
+  geometry?: string | Record<string, unknown>;
+  geometryType?: string;
+  spatialRel?: string;
+  returnDistinctValues?: boolean;
+  returnCentroid?: boolean;
+  groupByFieldsForStatistics?: string;
+  outStatistics?: string | readonly Record<string, unknown>[];
+  resultOffset?: number;
+  resultRecordCount?: number;
   extraParams?: Record<string, string | number | boolean>;
 }
 
 export interface QueryRelatedRecordsRequest {
+  serviceId: string;
+  layerId: number;
+  relationshipId: number;
+  objectIds?: number[] | string;
+  where?: string;
+  outFields?: string | string[];
+  returnGeometry?: boolean;
+  method?: QueryMethod;
+  extraParams?: Record<string, string | number | boolean>;
+}
+
+export interface MapRelatedRecordsRequest {
   serviceId: string;
   layerId: number;
   relationshipId: number;
@@ -141,6 +185,15 @@ export interface HonuaClientOptions {
   bearerToken?: string;
   fetchFn?: typeof fetch;
   interceptors?: readonly HonuaRequestInterceptor[];
+  timeoutMs?: number;
+  retry?: HonuaRetryOptions;
+}
+
+export interface HonuaRetryOptions {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  retryStatuses?: readonly number[];
 }
 
 export type OgcResponseFormat = "json" | "html" | "geojson" | "gml" | "csv" | "schemajson" | "schema+json";

@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface SimpleMarkerSymbolCompatOptions {
   style?: string;
   color?: unknown;
@@ -113,7 +114,7 @@ export class SimpleMarkerSymbolCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

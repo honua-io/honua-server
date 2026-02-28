@@ -157,6 +157,86 @@ describe("LegendCompat", () => {
     expect(seenTypes).toContain("legend.updated");
   });
 
+  it("continues refresh when one layer legend call fails and emits layer-failed event", async () => {
+    const eventBus = new CompatEventBus();
+    const failures: unknown[] = [];
+    eventBus.on("legend.layer-failed", (event) => {
+      failures.push(event.payload);
+    });
+
+    const brokenLayer = {
+      id: "broken",
+      title: "Broken Layer",
+      visible: true,
+      getLegend: async () => {
+        throw new Error("legend-unavailable");
+      },
+    };
+    const healthyLayer = {
+      id: "healthy",
+      title: "Healthy Layer",
+      visible: true,
+      getLegend: async () => ({
+        layers: [
+          {
+            layerId: 9,
+            layerName: "Healthy Layer",
+            legend: [{ label: "Healthy Entry" }],
+          },
+        ],
+      }),
+    };
+
+    const legend = new LegendCompat({
+      eventBus,
+      layers: [brokenLayer, healthyLayer],
+      autoRefresh: false,
+    });
+
+    const items = await legend.refresh();
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      title: "Healthy Layer",
+      entries: [{ label: "Healthy Entry" }],
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ layer: brokenLayer });
+  });
+
+  it("includes nested child layers when parents do not provide legend", async () => {
+    const childLayer = {
+      id: "child-1",
+      title: "Child Layer",
+      visible: true,
+      getLegend: async () => ({
+        layers: [
+          {
+            layerId: 3,
+            layerName: "Child Layer",
+            legend: [{ label: "Child Entry" }],
+          },
+        ],
+      }),
+    };
+    const groupLayer = {
+      id: "group-1",
+      title: "Group",
+      visible: true,
+      layers: [childLayer],
+    };
+    const map = { layers: [groupLayer] };
+
+    const legend = new LegendCompat({ map });
+    const items = await legend.refresh();
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      title: "Child Layer",
+      entries: [{ label: "Child Entry" }],
+    });
+  });
+
   it("keeps the latest refresh result when concurrent refresh calls race", async () => {
     let resolveFirst: ((value: unknown) => void) | undefined;
     const firstResponse = new Promise((resolve) => {

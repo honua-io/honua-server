@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface OAuthInfoCompatOptions {
   appId?: string;
   portalUrl?: string;
@@ -140,7 +141,7 @@ export class OAuthInfoCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

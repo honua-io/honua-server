@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface SimpleRendererCompatOptions {
   symbol?: unknown;
   label?: string;
@@ -110,7 +111,7 @@ export class SimpleRendererCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

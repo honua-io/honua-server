@@ -1,4 +1,4 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export interface BasemapGalleryCompatOptions {
   view?: unknown;
@@ -164,7 +164,7 @@ export class BasemapGalleryCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

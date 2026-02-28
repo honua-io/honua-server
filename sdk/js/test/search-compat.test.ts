@@ -182,6 +182,79 @@ describe("SearchCompat", () => {
     search.destroy();
   });
 
+  it("isolates watcher errors so other search watchers still receive updates", async () => {
+    const search = new SearchCompat({
+      includeDefaultSources: false,
+      autoNavigate: false,
+      sources: [
+        {
+          search: async ({ searchTerm }: { searchTerm: string }) => [
+            {
+              name: searchTerm,
+            },
+          ],
+        },
+      ],
+    });
+
+    const observedTerms: unknown[] = [];
+    search.watch("searchTerm", () => {
+      throw new Error("watcher-failed");
+    });
+    search.watch("searchTerm", (value) => {
+      observedTerms.push(value);
+    });
+
+    await search.search("resilient");
+    expect(observedTerms).toEqual(["resilient"]);
+    search.destroy();
+  });
+
+  it("executes source searches concurrently", async () => {
+    let resolveFirst = () => {};
+    let resolveSecond = () => {};
+    const firstGate = new Promise<void>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondGate = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
+
+    const started: string[] = [];
+    const firstSource = {
+      search: async () => {
+        started.push("first");
+        await firstGate;
+        return [{ name: "first-result" }];
+      },
+    };
+    const secondSource = {
+      search: async () => {
+        started.push("second");
+        await secondGate;
+        return [{ name: "second-result" }];
+      },
+    };
+
+    const search = new SearchCompat({
+      sources: [firstSource, secondSource],
+      includeDefaultSources: false,
+      autoNavigate: false,
+    });
+
+    const pending = search.search("parallel");
+    await Promise.resolve();
+
+    expect(started).toEqual(["first", "second"]);
+
+    resolveFirst();
+    resolveSecond();
+
+    const response = await pending;
+    expect(response.results).toHaveLength(2);
+    search.destroy();
+  });
+
   it("builds default layer-backed sources from view map", async () => {
     const layerQueries: unknown[] = [];
     const layer = {
@@ -243,6 +316,7 @@ describe("SearchCompat", () => {
       outFields: ["*"],
       returnGeometry: true,
       extraParams: {
+        text: "park",
         resultOffset: 0,
         resultRecordCount: 200,
       },
@@ -332,6 +406,29 @@ describe("SearchCompat", () => {
     search.destroy();
   });
 
+  it("escapes SQL wildcard characters in optimized where filters", async () => {
+    const layerQueries: unknown[] = [];
+    const layer = {
+      id: "places",
+      displayField: "NAME",
+      fields: [{ name: "NAME", type: "esriFieldTypeString" }],
+      queryFeatures: async (options?: unknown) => {
+        layerQueries.push(options);
+        return { features: [] };
+      },
+    };
+    const map = new MapCompat({ layers: [layer] });
+    const view = new MapViewCompat({ map });
+    const search = new SearchCompat({ view });
+
+    await search.search("100%_park");
+
+    const firstQuery = layerQueries[0] as Record<string, unknown>;
+    expect(typeof firstQuery.where).toBe("string");
+    expect(firstQuery.where).toContain("LIKE '%100\\%\\_PARK%' ESCAPE '\\\\'");
+    search.destroy();
+  });
+
   it("falls back to broad default search query when optimized where filtering fails", async () => {
     const layerQueries: unknown[] = [];
     const layer = {
@@ -370,7 +467,9 @@ describe("SearchCompat", () => {
     expect((layerQueries[0] as Record<string, unknown>).where).not.toBe("1=1");
     expect((layerQueries[1] as Record<string, unknown>).where).toBe("1=1");
     expect((layerQueries[2] as Record<string, unknown>).where).toBe("1=1");
-    expect((layerQueries[1] as Record<string, unknown>).outFields).toEqual(["*"]);
+    expect((layerQueries[1] as Record<string, unknown>).outFields).toEqual(expect.arrayContaining(["NAME"]));
+    expect((layerQueries[1] as Record<string, unknown>).extraParams).toMatchObject({ text: "park" });
+    expect((layerQueries[2] as Record<string, unknown>).extraParams).toMatchObject({ text: "beach" });
 
     search.destroy();
   });

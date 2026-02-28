@@ -44,7 +44,7 @@ try {
   );
 
   const smokeScript = `
-import { HonuaClient } from "@honua/sdk";
+import { HonuaClient, HonuaMapLayer } from "@honua/sdk";
 import {
   AttributionCompat,
   BasemapCompat,
@@ -85,6 +85,7 @@ import {
   AreaMeasurement2DCompat,
   DistanceMeasurement2DCompat,
   MapImageLayerCompat,
+  MapImageSublayerCompat,
   MapViewCompat,
   MapViewUiCompat,
   PrintCompat,
@@ -132,6 +133,7 @@ import {
 } from "@honua/honua-migrate";
 
 if (typeof HonuaClient !== "function") throw new Error("HonuaClient export missing");
+if (typeof HonuaMapLayer !== "function") throw new Error("HonuaMapLayer export missing");
 if (typeof CompatEventBus !== "function") throw new Error("CompatEventBus export missing");
 if (typeof CoordinateConversionCompat !== "function") throw new Error("CoordinateConversionCompat export missing");
 if (typeof createEsriRequestInterceptors !== "function") throw new Error("createEsriRequestInterceptors export missing");
@@ -181,6 +183,7 @@ if (typeof IdentifyCompat !== "function") throw new Error("IdentifyCompat export
 if (typeof LayerListCompat !== "function") throw new Error("LayerListCompat export missing");
 if (typeof LegendCompat !== "function") throw new Error("LegendCompat export missing");
 if (typeof MapImageLayerCompat !== "function") throw new Error("MapImageLayerCompat export missing");
+if (typeof MapImageSublayerCompat !== "function") throw new Error("MapImageSublayerCompat export missing");
 if (typeof MapViewCompat !== "function") throw new Error("MapViewCompat export missing");
 if (typeof MapViewUiCompat !== "function") throw new Error("MapViewUiCompat export missing");
 if (typeof PrintCompat !== "function") throw new Error("PrintCompat export missing");

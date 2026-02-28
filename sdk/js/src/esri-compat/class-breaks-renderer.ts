@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface ClassBreakInfoCompat {
   maxValue: number;
   minValue?: number;
@@ -191,7 +192,7 @@ export class ClassBreaksRendererCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

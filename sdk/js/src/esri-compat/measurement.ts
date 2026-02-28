@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export type MeasurementToolCompat = "distance" | "area" | "direct-line";
 export type LinearUnitCompat = "meters" | "kilometers" | "feet" | "miles";
@@ -154,7 +154,7 @@ export class MeasurementCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

@@ -6,6 +6,7 @@ import {
   HonuaClient,
   HonuaFeatureLayer,
   HonuaHttpError,
+  HonuaMapLayer,
   HonuaMapService,
   HonuaOgcFeatureCollection,
   HonuaOgcFeatures,
@@ -53,6 +54,7 @@ import {
   MeasurementCompat,
   MapCompat,
   MapImageLayerCompat,
+  MapImageSublayerCompat,
   MapViewCompat,
   MapViewUiCompat,
   PrintCompat,
@@ -110,6 +112,7 @@ describe("entrypoint modules", () => {
     expect(HonuaHttpError).toBeTypeOf("function");
     expect(HonuaService).toBeTypeOf("function");
     expect(HonuaFeatureLayer).toBeTypeOf("function");
+    expect(HonuaMapLayer).toBeTypeOf("function");
     expect(HonuaMapService).toBeTypeOf("function");
     expect(HonuaOgcFeatures).toBeTypeOf("function");
     expect(HonuaOgcFeatureCollection).toBeTypeOf("function");
@@ -164,6 +167,7 @@ describe("entrypoint modules", () => {
     expect(LegendCompat).toBeTypeOf("function");
     expect(MapCompat).toBeTypeOf("function");
     expect(MapImageLayerCompat).toBeTypeOf("function");
+    expect(MapImageSublayerCompat).toBeTypeOf("function");
     expect(MapViewCompat).toBeTypeOf("function");
     expect(MapViewUiCompat).toBeTypeOf("function");
     expect(PrintCompat).toBeTypeOf("function");

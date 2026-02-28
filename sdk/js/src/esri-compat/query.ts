@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface QueryCompatOptions {
   where?: string;
   outFields?: string | string[];
@@ -129,7 +130,7 @@ export class QueryCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

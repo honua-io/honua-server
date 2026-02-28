@@ -12,7 +12,10 @@ NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t3.small}"
 NODE_MIN_SIZE="${EKS_NODE_MIN_SIZE:-1}"
 NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-3}"
 NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-2}"
-K8S_IMAGE="${HONUA_K8S_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
+DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
+DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
+USE_AOT="${HONUA_USE_AOT:-false}"
+K8S_IMAGE="${HONUA_K8S_IMAGE:-$DEFAULT_HONUA_IMAGE}"
 K8S_PREVIOUS_IMAGE="${HONUA_K8S_PREVIOUS_IMAGE:-}"
 AUTO_DESTROY=true
 CHECK_IDEMPOTENCY=true
@@ -55,6 +58,7 @@ Options:
   --node-min-size <n>                  EKS node group min size (default: 1)
   --node-max-size <n>                  EKS node group max size (default: 3)
   --node-desired-size <n>              EKS node group desired size (default: 2)
+  --aot                                Use latest-aot when image is default
   --image <repo:tag>                   Honua image for Kubernetes checks
   --previous-image <repo:tag>          Previous image used for upgrade/rollback checks
   --upgrade-rollback                   Enable upgrade/rollback validation sequence
@@ -91,6 +95,16 @@ log_warn() {
 
 log_error() {
   echo "[ERROR] $1" >&2
+}
+
+apply_aot_mode() {
+  if [[ "$USE_AOT" != "true" ]]; then
+    return
+  fi
+
+  if [[ "$K8S_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
+    K8S_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
+  fi
 }
 
 require_command() {
@@ -140,6 +154,10 @@ parse_args() {
       --node-desired-size)
         NODE_DESIRED_SIZE="$2"
         shift 2
+        ;;
+      --aot)
+        USE_AOT=true
+        shift
         ;;
       --image)
         K8S_IMAGE="$2"
@@ -536,6 +554,7 @@ cleanup() {
 
 main() {
   parse_args "$@"
+  apply_aot_mode
 
   require_command docker
   require_command aws
@@ -562,6 +581,8 @@ main() {
   log_info "Name prefix: $NAME_PREFIX"
   log_info "Node type: $NODE_INSTANCE_TYPE"
   log_info "Node sizes: min=$NODE_MIN_SIZE desired=$NODE_DESIRED_SIZE max=$NODE_MAX_SIZE"
+  log_info "AOT mode: $USE_AOT"
+  log_info "K8S image: $K8S_IMAGE"
   log_info "Ready SLO seconds: $READY_SLO_SECONDS"
   log_info "Max load error rate: ${MAX_LOAD_ERROR_RATE_PERCENT}%"
 

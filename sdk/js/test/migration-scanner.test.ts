@@ -165,6 +165,38 @@ describe("scanArcGisUsage", () => {
       },
     ]);
     expect(report.filesWithArcGisImports).toBe(1);
+    expect(report.flags).toContain("arcgis-reexports-detected");
+  });
+
+  it("flags arcgis barrel module imports", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "barrel.ts"),
+      [
+        "import { FeatureLayer as ArcFeatureLayer, MapImageLayer } from '@arcgis/core/layers';",
+        "import { MapView } from '@arcgis/core/views';",
+        "void ArcFeatureLayer; void MapImageLayer; void MapView;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.filesWithArcGisImports).toBe(1);
+    expect(report.flags).toContain("arcgis-barrel-imports-detected");
+    expect(report.imports).toEqual([
+      {
+        file: path.join(root, "barrel.ts"),
+        modulePath: "@arcgis/core/layers",
+        importClause: "{ FeatureLayer as ArcFeatureLayer, MapImageLayer }",
+        symbols: ["ArcFeatureLayer", "MapImageLayer"],
+      },
+      {
+        file: path.join(root, "barrel.ts"),
+        modulePath: "@arcgis/core/views",
+        importClause: "{ MapView }",
+        symbols: ["MapView"],
+      },
+    ]);
   });
 
   it("produces a stable summary string", () => {
@@ -214,5 +246,33 @@ describe("scanArcGisUsage", () => {
 
     const report = scanArcGisUsage(root);
     expect(report.flags).toContain("advanced-widget-or-networking-detected");
+  });
+
+  it("detects esri-leaflet imports separately from arcgis imports", () => {
+    const root = makeTempProject();
+    fs.writeFileSync(
+      path.join(root, "leaflet.ts"),
+      [
+        "import * as L from 'esri-leaflet';",
+        "const layer = L.featureLayer({ url: serviceUrl });",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const report = scanArcGisUsage(root);
+    expect(report.imports).toEqual([]);
+    expect(report.filesWithArcGisImports).toBe(0);
+    expect(report.esriLeafletImportCount).toBe(1);
+    expect(report.filesWithEsriLeafletImports).toBe(1);
+    expect(report.esriLeafletImports).toEqual([
+      {
+        file: path.join(root, "leaflet.ts"),
+        modulePath: "esri-leaflet",
+        importClause: "* as L",
+        symbols: [],
+      },
+    ]);
+    expect(report.flags).toContain("esri-leaflet-imports-detected");
   });
 });

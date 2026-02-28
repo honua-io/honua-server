@@ -1,7 +1,9 @@
 import { HonuaClient } from "../core/client.js";
 import type { QueryMethod } from "../core/types.js";
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseFeatureLayerUrl } from "./url.js";
+
+const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 export interface FeatureLayerCompatOptions {
   url: string;
@@ -19,6 +21,7 @@ export interface FeatureLayerCompatOptions {
   maxScale?: number;
   legendEnabled?: boolean;
   listMode?: string;
+  maxAttachmentBytes?: number;
   client?: HonuaClient;
   eventBus?: CompatEventBus;
 }
@@ -30,6 +33,11 @@ export interface FeatureLayerQueryOptions {
   method?: QueryMethod;
   extraParams?: Record<string, string | number | boolean>;
 }
+
+export type FeatureLayerQueryAllOptions = FeatureLayerQueryOptions & {
+  pageSize?: number;
+  maxPages?: number;
+};
 
 export interface FeatureLayerEditsOptions {
   adds?: unknown[];
@@ -88,6 +96,7 @@ export interface FeatureLayerAddAttachmentOptions {
   attachment: FeatureLayerAttachmentData;
   name?: string;
   contentType?: string;
+  maxAttachmentBytes?: number;
   responseFormat?: "json" | "pjson";
   extraParams?: Record<string, string | number | boolean>;
 }
@@ -132,6 +141,7 @@ export class FeatureLayerCompat {
 
   private readonly client: HonuaClient;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly maxAttachmentBytes: number;
 
   public constructor(options: FeatureLayerCompatOptions) {
     const parsed = parseFeatureLayerUrl(options.url);
@@ -163,6 +173,7 @@ export class FeatureLayerCompat {
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
     this.watchListeners = new Map();
+    this.maxAttachmentBytes = normalizeAttachmentSizeLimit(options.maxAttachmentBytes);
   }
 
   public async load(): Promise<FeatureLayerCompat> {
@@ -326,14 +337,14 @@ export class FeatureLayerCompat {
   }
 
   public getField(fieldName: string): Record<string, unknown> | undefined {
-    const normalizedFieldName = fieldName.trim().toLowerCase();
+    const normalizedFieldName = fieldName.trim();
     if (normalizedFieldName.length === 0) {
       return undefined;
     }
 
     return this.listFields().find((field) => {
       const candidate = field.name;
-      return typeof candidate === "string" && candidate.trim().toLowerCase() === normalizedFieldName;
+      return typeof candidate === "string" && candidate.trim() === normalizedFieldName;
     });
   }
 
@@ -359,6 +370,77 @@ export class FeatureLayerCompat {
       method: options.method,
       extraParams: options.extraParams,
     });
+  }
+
+  public async queryFeaturesAll(options: FeatureLayerQueryAllOptions = {}): Promise<unknown[]> {
+    const { pageSize: requestedPageSize, maxPages: requestedMaxPages, ...queryOptions } = options;
+    const pageSize =
+      typeof requestedPageSize === "number" && Number.isFinite(requestedPageSize)
+        ? Math.max(1, Math.trunc(requestedPageSize))
+        : 2000;
+    const maxPages =
+      typeof requestedMaxPages === "number" && Number.isFinite(requestedMaxPages)
+        ? Math.max(1, Math.trunc(requestedMaxPages))
+        : 100;
+
+    const features: unknown[] = [];
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await this.queryFeatures({
+        ...queryOptions,
+        extraParams: {
+          ...(queryOptions.extraParams ?? {}),
+          resultOffset: page * pageSize,
+          resultRecordCount: pageSize,
+        },
+      });
+
+      const pageFeatures = extractFeatures(response) ?? [];
+      if (pageFeatures.length === 0) {
+        break;
+      }
+
+      features.push(...pageFeatures);
+      if (pageFeatures.length < pageSize) {
+        break;
+      }
+    }
+
+    return features;
+  }
+
+  public async *queryFeaturesStream(
+    options: FeatureLayerQueryAllOptions = {},
+  ): AsyncGenerator<unknown[], void, undefined> {
+    const { pageSize: requestedPageSize, maxPages: requestedMaxPages, ...queryOptions } = options;
+    const pageSize =
+      typeof requestedPageSize === "number" && Number.isFinite(requestedPageSize)
+        ? Math.max(1, Math.trunc(requestedPageSize))
+        : 2000;
+    const maxPages =
+      typeof requestedMaxPages === "number" && Number.isFinite(requestedMaxPages)
+        ? Math.max(1, Math.trunc(requestedMaxPages))
+        : 100;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await this.queryFeatures({
+        ...queryOptions,
+        extraParams: {
+          ...(queryOptions.extraParams ?? {}),
+          resultOffset: page * pageSize,
+          resultRecordCount: pageSize,
+        },
+      });
+
+      const pageFeatures = extractFeatures(response) ?? [];
+      if (pageFeatures.length === 0) {
+        break;
+      }
+
+      yield pageFeatures;
+      if (pageFeatures.length < pageSize) {
+        break;
+      }
+    }
   }
 
   public async queryObjectIds(options: FeatureLayerQueryCountOptions = {}): Promise<number[]> {
@@ -463,6 +545,10 @@ export class FeatureLayerCompat {
     });
   }
 
+  public queryRelatedRecords(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+    return this.queryRelatedFeatures(options);
+  }
+
   public queryAttachments(options: FeatureLayerQueryAttachmentsOptions = {}): Promise<unknown> {
     return this.client.request({
       method: options.method ?? "GET",
@@ -521,6 +607,7 @@ export class FeatureLayerCompat {
   }
 
   public addAttachment(options: FeatureLayerAddAttachmentOptions): Promise<unknown> {
+    enforceAttachmentSizeLimit(options.attachment, options.maxAttachmentBytes ?? this.maxAttachmentBytes);
     const form = buildAttachmentFormData(options);
     return this.client.request({
       method: "POST",
@@ -534,6 +621,7 @@ export class FeatureLayerCompat {
   }
 
   public updateAttachment(options: FeatureLayerUpdateAttachmentOptions): Promise<unknown> {
+    enforceAttachmentSizeLimit(options.attachment, options.maxAttachmentBytes ?? this.maxAttachmentBytes);
     const form = buildAttachmentFormData(options);
     form.set("attachmentId", String(options.attachmentId));
     return this.client.request({
@@ -554,7 +642,7 @@ export class FeatureLayerCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -642,6 +730,39 @@ function buildAttachmentFormData(options: {
   const attachmentName = resolveAttachmentName(options.attachment, options.name);
   form.set("attachment", attachmentBlob, attachmentName);
   return form;
+}
+
+function normalizeAttachmentSizeLimit(maxAttachmentBytes: number | undefined): number {
+  if (typeof maxAttachmentBytes !== "number" || !Number.isFinite(maxAttachmentBytes)) {
+    return DEFAULT_MAX_ATTACHMENT_BYTES;
+  }
+  return Math.max(1, Math.trunc(maxAttachmentBytes));
+}
+
+function enforceAttachmentSizeLimit(attachment: FeatureLayerAttachmentData, maxAttachmentBytes: number): void {
+  const sizeBytes = estimateAttachmentSizeBytes(attachment);
+  if (sizeBytes <= maxAttachmentBytes) {
+    return;
+  }
+  throw new Error(
+    `Attachment payload exceeds maxAttachmentBytes (${sizeBytes} > ${maxAttachmentBytes}).`,
+  );
+}
+
+function estimateAttachmentSizeBytes(attachment: FeatureLayerAttachmentData): number {
+  if (attachment instanceof Blob) {
+    return attachment.size;
+  }
+
+  if (typeof attachment === "string") {
+    return new TextEncoder().encode(attachment).byteLength;
+  }
+
+  if (attachment instanceof ArrayBuffer) {
+    return attachment.byteLength;
+  }
+
+  return attachment.byteLength;
 }
 
 function resolveAttachmentName(

@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface GraphicCompatOptions {
   geometry?: unknown;
   symbol?: unknown;
@@ -126,7 +127,7 @@ export class GraphicCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

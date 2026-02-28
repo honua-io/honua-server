@@ -703,6 +703,10 @@ resource "aws_ecs_task_definition" "this" {
         {
           name      = "HONUA_ADMIN_PASSWORD"
           valueFrom = aws_secretsmanager_secret.admin_password.arn
+        },
+        {
+          name      = "Security__ConnectionEncryption__MasterKey"
+          valueFrom = aws_secretsmanager_secret.admin_password.arn
         }
         ], local.redis_connection != "" ? [
         {

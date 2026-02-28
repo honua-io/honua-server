@@ -1,5 +1,5 @@
 import type { QueryMethod } from "../core/types.js";
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export interface IdentifyCompatOptions {
   view?: unknown;
@@ -269,7 +269,7 @@ export class IdentifyCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

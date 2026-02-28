@@ -452,7 +452,7 @@ function runCodemod(args: ParsedArgs): void {
       `filesScanned=${codemodResult.filesScanned}`,
       `filesChanged=${codemodResult.filesChanged}`,
       `autoMigrated=${codemodResult.metrics.autoMigratedCallSites}`,
-      `manual=${codemodResult.metrics.manualCallSites}`,
+      `manual=${formatManualDifficultyBreakdown(report.manualTodos)}`,
       `manualRewrite=${report.manualRewriteMetric.numerator}/${report.manualRewriteMetric.denominator}`,
       `manualIntervention=${report.manualInterventionMetric.numerator}/${report.manualInterventionMetric.denominator}`,
       `writeMode=${args.write ? "enabled" : "dry-run"}`,
@@ -465,6 +465,15 @@ function runCodemod(args: ParsedArgs): void {
   process.stdout.write("\n");
 
   process.stdout.write(`gates=${formatGateResults(report.gates)}\n`);
+
+  if (
+    (scanReport.imports.length === 0 || scanReport.filesWithArcGisImports === 0) &&
+    (scanReport.esriLeafletImportCount ?? 0) > 0
+  ) {
+    process.stdout.write(
+      "note=esri-leaflet-imports-detected-without-arcgis-js; codemod targets @arcgis/core inputs (not migrations from esri-leaflet)\n",
+    );
+  }
 
   if (report.manualTodos.length > 0) {
     process.stdout.write("manualTodos:\n");
@@ -1118,6 +1127,24 @@ function formatByKindMetrics(byKind: CodemodMetricsByKind): string {
     .join(",");
 }
 
+function formatManualDifficultyBreakdown(
+  todos: readonly { difficulty?: string }[],
+): string {
+  let trivial = 0;
+  let moderate = 0;
+  let complex = 0;
+  for (const todo of todos) {
+    if (todo.difficulty === "trivial") {
+      trivial += 1;
+    } else if (todo.difficulty === "complex") {
+      complex += 1;
+    } else {
+      moderate += 1;
+    }
+  }
+  return `[trivial:${trivial} moderate:${moderate} complex:${complex}]`;
+}
+
 function formatGateResults(gates: readonly { gate: string; passed: boolean }[]): string {
   return gates
     .map((gate) => `${gate.gate}:${gate.passed ? "pass" : "fail"}`)
@@ -1147,6 +1174,11 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
       "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --report demo-report.json",
+      "",
+      "Target semantics:",
+      "  honua-compat: migrate ArcGIS JS (@arcgis/core) to @honua/sdk-esri-compat.",
+      "  esri-leaflet: migrate ArcGIS JS (@arcgis/core) to a mixed esri-leaflet + compat output.",
+      "  Existing esri-leaflet apps generally do not need this codemod.",
     ].join("\n"),
   );
   process.stdout.write("\n");

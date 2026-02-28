@@ -101,6 +101,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
             line: 8,
             column: 17,
             reason: "FeatureLayer options include unsupported properties; requires manual migration.",
+            difficulty: "moderate",
           },
         ],
       },
@@ -112,6 +113,7 @@ function createCodemodResult(): EsriCompatCodemodResult {
         line: 8,
         column: 17,
         reason: "FeatureLayer options include unsupported properties; requires manual migration.",
+        difficulty: "moderate",
       },
     ],
   };
@@ -337,7 +339,7 @@ describe("buildJsMigrationReport", () => {
     });
   });
 
-  it("treats target-unsupported modules as unhandled for esri-leaflet mode", () => {
+  it("treats non-codemod modules as unhandled for esri-leaflet mode", () => {
     const codemodResult = {
       ...createCodemodResult(),
       target: "esri-leaflet" as const,
@@ -349,9 +351,9 @@ describe("buildJsMigrationReport", () => {
       imports: [
         {
           file: "/tmp/app/src/main.ts",
-          modulePath: "@arcgis/core/rest/route/RouteTask",
-          importClause: "RouteTask",
-          symbols: ["RouteTask"],
+          modulePath: "@arcgis/core/widgets/Slice",
+          importClause: "Slice",
+          symbols: ["Slice"],
         },
         {
           file: "/tmp/app/src/main.ts",
@@ -361,7 +363,7 @@ describe("buildJsMigrationReport", () => {
         },
       ],
       symbolUsageCounts: {
-        RouteTask: 1,
+        Slice: 1,
         MapImageLayer: 1,
       },
       flags: [],
@@ -370,7 +372,62 @@ describe("buildJsMigrationReport", () => {
     const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
     expect(report.unhandledArcGisModules).toEqual([
       {
-        modulePath: "@arcgis/core/rest/route/RouteTask",
+        modulePath: "@arcgis/core/widgets/Slice",
+        usageStyle: "static-import",
+        count: 1,
+      },
+    ]);
+  });
+
+  it("treats supported barrel imports as handled when symbols map to codemod scope", () => {
+    const codemodResult = createCodemodResult();
+    const scanReport: ArcGisScanReport = {
+      rootDir: "/tmp/app",
+      filesScanned: 1,
+      filesWithArcGisImports: 1,
+      imports: [
+        {
+          file: "/tmp/app/src/main.ts",
+          modulePath: "@arcgis/core/layers",
+          importClause: "{ FeatureLayer, MapImageLayer as ArcMapImageLayer }",
+          symbols: ["FeatureLayer", "ArcMapImageLayer"],
+        },
+      ],
+      symbolUsageCounts: {
+        FeatureLayer: 1,
+        ArcMapImageLayer: 1,
+      },
+      flags: ["arcgis-barrel-imports-detected"],
+    };
+
+    const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+    expect(report.unhandledArcGisModules).toEqual([]);
+  });
+
+  it("keeps arcgis re-export declarations in unhandled inventory", () => {
+    const codemodResult = createCodemodResult();
+    const scanReport: ArcGisScanReport = {
+      rootDir: "/tmp/app",
+      filesScanned: 1,
+      filesWithArcGisImports: 1,
+      imports: [
+        {
+          file: "/tmp/app/src/wrapper.ts",
+          modulePath: "@arcgis/core/layers/FeatureLayer",
+          importClause: "export { default as FeatureLayer }",
+          symbols: ["FeatureLayer"],
+        },
+      ],
+      symbolUsageCounts: {
+        FeatureLayer: 1,
+      },
+      flags: ["arcgis-reexports-detected"],
+    };
+
+    const report = buildJsMigrationReport("/tmp/app", codemodResult, scanReport);
+    expect(report.unhandledArcGisModules).toEqual([
+      {
+        modulePath: "@arcgis/core/layers/FeatureLayer",
         usageStyle: "static-import",
         count: 1,
       },

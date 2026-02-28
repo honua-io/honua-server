@@ -1,5 +1,7 @@
 import {
   isKindSupportedForTarget,
+  isSupportedArcGisBarrelModulePath,
+  resolveArcGisBarrelImportKind,
   SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
   type CodemodConstructorKind,
   type EsriCompatCodemodResult,
@@ -234,16 +236,21 @@ function summarizeUnhandledModules(
 
   for (const hit of scanReport.imports) {
     const usageStyle = classifyUsageStyle(hit.importClause);
+    const isReExport = hit.importClause.startsWith("export ");
     const isSideEffectImport = hit.importClause === "side-effect-import";
-    const supportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
+    const supportedKinds = resolveSupportedKindsForImportHit(hit);
+    const hasSupportedKind = supportedKinds.length > 0;
     const moduleSupportedForTarget =
       !isSideEffectImport &&
-      supportedKind !== undefined &&
-      isKindSupportedForTarget(supportedKind, codemodResult.target);
+      !isReExport &&
+      hasSupportedKind &&
+      supportedKinds.every((kind) => isKindSupportedForTarget(kind, codemodResult.target));
+    const directSupportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
     const requireCoveredByCodemod =
       usageStyle === "require" &&
       moduleSupportedForTarget &&
-      codemodResult.metrics.byKind[supportedKind].total > 0;
+      directSupportedKind !== undefined &&
+      codemodResult.metrics.byKind[directSupportedKind].total > 0;
     const isHandledByCodemodScope =
       moduleSupportedForTarget && (usageStyle !== "require" || requireCoveredByCodemod);
     if (isHandledByCodemodScope) {
@@ -272,6 +279,63 @@ function summarizeUnhandledModules(
       }
       return a.usageStyle.localeCompare(b.usageStyle);
     });
+}
+
+function resolveSupportedKindsForImportHit(hit: ArcGisScanReport["imports"][number]): CodemodConstructorKind[] {
+  const directSupportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
+  if (directSupportedKind !== undefined) {
+    return [directSupportedKind];
+  }
+  if (!isSupportedArcGisBarrelModulePath(hit.modulePath)) {
+    return [];
+  }
+  if (
+    hit.importClause === "side-effect-import" ||
+    hit.importClause === "import(...)" ||
+    hit.importClause === "require(...)" ||
+    hit.importClause.startsWith("*")
+  ) {
+    return [];
+  }
+
+  const importedNames = extractImportedNamesFromClause(hit.importClause);
+  const kinds: CodemodConstructorKind[] = [];
+  for (const importedName of importedNames) {
+    const kind = resolveArcGisBarrelImportKind(hit.modulePath, importedName);
+    if (!kind || kinds.includes(kind)) {
+      continue;
+    }
+    kinds.push(kind);
+  }
+  return kinds;
+}
+
+function extractImportedNamesFromClause(importClause: string): string[] {
+  const names: string[] = [];
+  const namedMatch = importClause.match(/\{([^}]+)\}/);
+  if (!namedMatch) {
+    return names;
+  }
+
+  for (const token of namedMatch[1].split(",")) {
+    const value = token.trim();
+    if (!value || value === "*") {
+      continue;
+    }
+
+    const aliasMatch = value.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s+as\s+[A-Za-z_$][A-Za-z0-9_$]*$/);
+    if (aliasMatch) {
+      names.push(aliasMatch[1]);
+      continue;
+    }
+
+    const directMatch = value.match(/^([A-Za-z_$][A-Za-z0-9_$]*)$/);
+    if (directMatch) {
+      names.push(directMatch[1]);
+    }
+  }
+
+  return names;
 }
 
 function classifyUsageStyle(importClause: string): ArcGisUsageStyle {

@@ -5,12 +5,15 @@ import type {
   HonuaClientOptions,
   HonuaErrorContext,
   HonuaRawRequest,
+  HonuaRetryOptions,
   HonuaRequestContext,
   HonuaRequestInterceptor,
   HonuaRequestMutation,
   HonuaResponseContext,
   MapFindRequest,
   MapIdentifyRequest,
+  MapLayerQueryRequest,
+  MapRelatedRecordsRequest,
   MapLegendRequest,
   OgcCollectionRequest,
   OgcCreateItemRequest,
@@ -26,6 +29,7 @@ import type {
 } from "./types.js";
 import {
   HonuaFeatureLayer,
+  HonuaMapLayer,
   HonuaMapService,
   HonuaOgcFeatures,
   HonuaService,
@@ -44,16 +48,27 @@ function normalizePath(path: string): string {
 
 function resolveRequestUrl(baseUrl: string, path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
+    if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+      throw new Error("Absolute request URLs are not allowed when baseUrl is relative.");
+    }
+    const baseOrigin = new URL(baseUrl).origin;
+    const requestUrl = new URL(path);
+    if (requestUrl.origin !== baseOrigin) {
+      throw new Error(`Cross-origin request URL is not allowed: ${path}`);
+    }
+    return requestUrl.toString();
   }
   return `${baseUrl}${path}`;
 }
 
 function normalizeOutFields(outFields: string | string[] | undefined): string {
-  if (!outFields) {
+  if (outFields === undefined) {
     return "*";
   }
-  return Array.isArray(outFields) ? outFields.join(",") : outFields;
+  if (Array.isArray(outFields)) {
+    return outFields.length > 0 ? outFields.join(",") : "";
+  }
+  return outFields;
 }
 
 function encodeFormValue(value: unknown): string {
@@ -103,11 +118,22 @@ function normalizeSearchFields(searchFields: MapFindRequest["searchFields"]): st
   return Array.isArray(searchFields) ? searchFields.join(",") : searchFields;
 }
 
+interface NormalizedRetryOptions {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  retryStatuses: ReadonlySet<number>;
+}
+
+const DEFAULT_RETRY_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
+
 export class HonuaClient {
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
   private readonly defaultHeaders: HeadersInit;
   private readonly interceptors: readonly HonuaRequestInterceptor[];
+  private readonly timeoutMs: number | undefined;
+  private readonly retryOptions: NormalizedRetryOptions | undefined;
 
   public constructor(options: HonuaClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -122,6 +148,8 @@ export class HonuaClient {
     }
     this.defaultHeaders = headers;
     this.interceptors = options.interceptors ?? [];
+    this.timeoutMs = normalizeTimeoutMs(options.timeoutMs);
+    this.retryOptions = normalizeRetryOptions(options.retry);
   }
 
   public service(serviceId: string): HonuaService {
@@ -143,6 +171,14 @@ export class HonuaClient {
     return new HonuaMapService({
       client: this,
       serviceId,
+    });
+  }
+
+  public mapLayer(serviceId: string, layerId: number): HonuaMapLayer {
+    return new HonuaMapLayer({
+      client: this,
+      serviceId,
+      layerId,
     });
   }
 
@@ -339,6 +375,8 @@ export class HonuaClient {
     params.set("outFields", normalizeOutFields(request.outFields));
     params.set("returnGeometry", String(request.returnGeometry ?? true));
 
+    serializeQueryParams(params, request);
+
     if (request.extraParams) {
       for (const [key, value] of Object.entries(request.extraParams)) {
         params.set(key, String(value));
@@ -346,6 +384,35 @@ export class HonuaClient {
     }
 
     const path = `/rest/services/${encodeURIComponent(request.serviceId)}/FeatureServer/${request.layerId}/query`;
+    if (method === "GET") {
+      return this.requestJson("GET", `${path}?${params.toString()}`);
+    }
+
+    return this.requestJson("POST", path, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  }
+
+  public async queryMapLayer(request: MapLayerQueryRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", "json");
+    params.set("where", request.where ?? "1=1");
+    params.set("outFields", normalizeOutFields(request.outFields));
+    params.set("returnGeometry", String(request.returnGeometry ?? true));
+
+    serializeQueryParams(params, request);
+
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/${request.layerId}/query`;
     if (method === "GET") {
       return this.requestJson("GET", `${path}?${params.toString()}`);
     }
@@ -405,6 +472,42 @@ export class HonuaClient {
     const path =
       `/rest/services/${encodeURIComponent(request.serviceId)}` +
       `/FeatureServer/${request.layerId}/queryRelatedRecords`;
+    if (method === "GET") {
+      return this.requestJson("GET", `${path}?${params.toString()}`);
+    }
+
+    return this.requestJson("POST", path, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  }
+
+  public async queryMapRelatedRecords(request: MapRelatedRecordsRequest): Promise<unknown> {
+    const method: QueryMethod = request.method ?? "GET";
+    const params = new URLSearchParams();
+    params.set("f", "json");
+    params.set("relationshipId", String(request.relationshipId));
+    if (request.objectIds !== undefined) {
+      params.set(
+        "objectIds",
+        Array.isArray(request.objectIds) ? request.objectIds.join(",") : String(request.objectIds),
+      );
+    }
+    params.set("where", request.where ?? "1=1");
+    params.set("outFields", normalizeOutFields(request.outFields));
+    params.set("returnGeometry", String(request.returnGeometry ?? true));
+
+    if (request.extraParams) {
+      for (const [key, value] of Object.entries(request.extraParams)) {
+        params.set(key, String(value));
+      }
+    }
+
+    const path =
+      `/rest/services/${encodeURIComponent(request.serviceId)}` +
+      `/MapServer/${request.layerId}/queryRelatedRecords`;
     if (method === "GET") {
       return this.requestJson("GET", `${path}?${params.toString()}`);
     }
@@ -614,32 +717,49 @@ export class HonuaClient {
 
     request = await this.applyBeforeInterceptors(request);
 
-    let response: Response;
-    try {
-      response = await this.fetchFn(request.url, {
-        ...request.init,
-        method: request.method,
-      });
-    } catch (error) {
-      await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
-      throw error;
-    }
+    for (let attempt = 0; ; attempt += 1) {
+      let response: Response;
+      const timeout = createTimeoutSignal(request.init.signal, this.timeoutMs);
+      try {
+        response = await this.fetchFn(request.url, {
+          ...request.init,
+          method: request.method,
+          signal: timeout.signal,
+        });
+      } catch (error) {
+        const normalizedError = timeout.didTimeout
+          ? new Error(`Request timed out after ${this.timeoutMs}ms`)
+          : error;
+        if (this.shouldRetryRequest(attempt, undefined, normalizedError)) {
+          await sleep(this.resolveRetryDelayMs(attempt));
+          continue;
+        }
+        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: normalizedError });
+        throw normalizedError;
+      } finally {
+        timeout.dispose();
+      }
 
-    const body = await parseResponseBody(response.clone());
-    if (!response.ok) {
-      const httpError = this.toHttpError(response.status, body);
-      await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: httpError });
-      throw httpError;
-    }
+      const body = await parseResponseBody(response.clone());
+      if (!response.ok) {
+        const httpError = this.toHttpError(response.status, body);
+        if (this.shouldRetryRequest(attempt, response.status, httpError)) {
+          await sleep(this.resolveRetryDelayMs(attempt, response));
+          continue;
+        }
+        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: httpError });
+        throw httpError;
+      }
 
-    try {
-      await this.applyAfterInterceptors(cloneRequestContext(request), response);
-    } catch (error) {
-      await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
-      throw error;
-    }
+      try {
+        await this.applyAfterInterceptors(cloneRequestContext(request), response);
+      } catch (error) {
+        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
+        throw error;
+      }
 
-    return body;
+      return body;
+    }
   }
 
   private async applyBeforeInterceptors(request: HonuaRequestContext): Promise<HonuaRequestContext> {
@@ -666,8 +786,36 @@ export class HonuaClient {
 
   private async applyErrorInterceptors(context: HonuaErrorContext): Promise<void> {
     for (const interceptor of this.interceptors) {
-      await interceptor.error?.(context);
+      try {
+        await interceptor.error?.(context);
+      } catch {
+        // Preserve original request failure; interceptor failures should not mask it.
+      }
     }
+  }
+
+  private shouldRetryRequest(attempt: number, statusCode: number | undefined, error: unknown): boolean {
+    if (!this.retryOptions || attempt >= this.retryOptions.maxRetries) {
+      return false;
+    }
+
+    if (statusCode !== undefined) {
+      return this.retryOptions.retryStatuses.has(statusCode);
+    }
+
+    return error instanceof Error;
+  }
+
+  private resolveRetryDelayMs(attempt: number, response?: Response): number {
+    const retryAfterMs = response ? parseRetryAfterMs(response) : undefined;
+    if (retryAfterMs !== undefined) {
+      return retryAfterMs;
+    }
+    if (!this.retryOptions) {
+      return 0;
+    }
+    const exponentialDelay = this.retryOptions.baseDelayMs * 2 ** attempt;
+    return Math.min(this.retryOptions.maxDelayMs, exponentialDelay);
   }
 
   private toHttpError(statusCode: number, body: unknown): HonuaHttpError {
@@ -765,13 +913,142 @@ function mergeHeaders(...headersList: Array<HeadersInit | undefined>): Record<st
     }
 
     for (const [key, value] of Object.entries(headers)) {
-      if (value === undefined) {
+      if (value === undefined || value === null) {
         continue;
       }
       merged[key] = String(value);
     }
   }
   return merged;
+}
+
+function normalizeTimeoutMs(timeoutMs: number | undefined): number | undefined {
+  if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs)) {
+    return undefined;
+  }
+  return Math.max(1, Math.trunc(timeoutMs));
+}
+
+function normalizeRetryOptions(options: HonuaRetryOptions | undefined): NormalizedRetryOptions | undefined {
+  if (!options) {
+    return undefined;
+  }
+
+  const maxRetries =
+    typeof options.maxRetries === "number" && Number.isFinite(options.maxRetries)
+      ? Math.max(0, Math.trunc(options.maxRetries))
+      : 0;
+  if (maxRetries < 1) {
+    return undefined;
+  }
+
+  const baseDelayMs =
+    typeof options.baseDelayMs === "number" && Number.isFinite(options.baseDelayMs)
+      ? Math.max(1, Math.trunc(options.baseDelayMs))
+      : 100;
+  const maxDelayMs =
+    typeof options.maxDelayMs === "number" && Number.isFinite(options.maxDelayMs)
+      ? Math.max(baseDelayMs, Math.trunc(options.maxDelayMs))
+      : 2_000;
+  const retryStatuses = new Set<number>(
+    (options.retryStatuses ?? Array.from(DEFAULT_RETRY_STATUSES))
+      .map((status) => Math.trunc(status))
+      .filter((status) => Number.isFinite(status) && status >= 100 && status <= 599),
+  );
+  if (retryStatuses.size === 0) {
+    for (const status of DEFAULT_RETRY_STATUSES) {
+      retryStatuses.add(status);
+    }
+  }
+
+  return {
+    maxRetries,
+    baseDelayMs,
+    maxDelayMs,
+    retryStatuses,
+  };
+}
+
+function parseRetryAfterMs(response: Response): number | undefined {
+  const value = response.headers.get("retry-after");
+  if (!value) {
+    return undefined;
+  }
+
+  const seconds = Number.parseInt(value, 10);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1_000;
+  }
+
+  const targetTime = Date.parse(value);
+  if (!Number.isFinite(targetTime)) {
+    return undefined;
+  }
+  return Math.max(0, targetTime - Date.now());
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function createTimeoutSignal(
+  existingSignal: AbortSignal | null | undefined,
+  timeoutMs: number | undefined,
+): {
+  signal: AbortSignal | undefined;
+  didTimeout: boolean;
+  dispose(): void;
+} {
+  if (timeoutMs === undefined) {
+    return {
+      signal: existingSignal ?? undefined,
+      didTimeout: false,
+      dispose: () => undefined,
+    };
+  }
+
+  const controller = new AbortController();
+  let didTimeout = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+
+  timer = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  if (existingSignal) {
+    if (existingSignal.aborted) {
+      controller.abort();
+    } else {
+      onAbort = () => {
+        controller.abort();
+      };
+      existingSignal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    get didTimeout() {
+      return didTimeout;
+    },
+    dispose: () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (existingSignal && onAbort) {
+        existingSignal.removeEventListener("abort", onAbort);
+        onAbort = undefined;
+      }
+    },
+  };
 }
 
 function createOgcMetadataParams(
@@ -785,6 +1062,45 @@ function createOgcMetadataParams(
     }
   }
   return params;
+}
+
+function serializeQueryParams(
+  params: URLSearchParams,
+  request: QueryFeaturesRequest | MapLayerQueryRequest,
+): void {
+  if (request.orderByFields !== undefined) {
+    params.set("orderByFields", request.orderByFields);
+  }
+  if (request.objectIds !== undefined) {
+    params.set("objectIds", Array.isArray(request.objectIds) ? request.objectIds.join(",") : String(request.objectIds));
+  }
+  if (request.geometry !== undefined) {
+    params.set("geometry", typeof request.geometry === "object" && request.geometry !== null ? JSON.stringify(request.geometry) : String(request.geometry));
+  }
+  if (request.geometryType !== undefined) {
+    params.set("geometryType", request.geometryType);
+  }
+  if (request.spatialRel !== undefined) {
+    params.set("spatialRel", request.spatialRel);
+  }
+  if (request.returnDistinctValues !== undefined) {
+    params.set("returnDistinctValues", String(request.returnDistinctValues));
+  }
+  if (request.returnCentroid !== undefined) {
+    params.set("returnCentroid", String(request.returnCentroid));
+  }
+  if (request.groupByFieldsForStatistics !== undefined) {
+    params.set("groupByFieldsForStatistics", request.groupByFieldsForStatistics);
+  }
+  if (request.outStatistics !== undefined) {
+    params.set("outStatistics", Array.isArray(request.outStatistics) ? JSON.stringify(request.outStatistics) : String(request.outStatistics));
+  }
+  if (request.resultOffset !== undefined) {
+    params.set("resultOffset", String(request.resultOffset));
+  }
+  if (request.resultRecordCount !== undefined) {
+    params.set("resultRecordCount", String(request.resultRecordCount));
+  }
 }
 
 function normalizeCsv(

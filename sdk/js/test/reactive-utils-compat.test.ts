@@ -35,6 +35,30 @@ describe("reactiveUtils compat", () => {
     expect(seen).toEqual([0, 1, 2]);
   });
 
+  it("detects in-place object/array mutations without reference changes", async () => {
+    const state = {
+      filters: ["all"],
+    };
+    const seen: string[] = [];
+
+    const handle = watch(
+      () => state.filters,
+      (next) => {
+        seen.push(next.join(","));
+      },
+      { initial: true, intervalMs: 1 },
+    );
+
+    await sleep(5);
+    state.filters.push("open");
+    await sleep(5);
+    state.filters[0] = "active";
+    await sleep(5);
+    handle.remove();
+
+    expect(seen).toEqual(["all", "all,open", "active,open"]);
+  });
+
   it("fires when() on false->true transitions", async () => {
     let enabled = false;
     const seen: boolean[] = [];

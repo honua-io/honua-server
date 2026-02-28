@@ -1,4 +1,9 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
 
 export interface SearchCompatOptions {
   view?: unknown;
@@ -166,18 +171,25 @@ export class SearchCompat {
     this.notifyWatchers("searchTerm", this.searchTerm);
     this.eventBus.emit("search.started", { searchTerm }, this);
 
-    const allResults: SearchResultCompat[] = [];
-    for (const source of this.sources) {
-      try {
-        const sourceResults = await source.search({ searchTerm });
-        for (const result of sourceResults) {
-          allResults.push({
-            ...result,
-            source: result.source ?? source,
-          });
+    const sourceResults = await Promise.all(
+      this.sources.map(async (source) => {
+        try {
+          const results = await source.search({ searchTerm });
+          return { source, results };
+        } catch (error) {
+          this.eventBus.emit("search.source-error", { searchTerm, error }, this);
+          return { source, results: [] as readonly SearchResultCompat[] };
         }
-      } catch (error) {
-        this.eventBus.emit("search.source-error", { searchTerm, error }, this);
+      }),
+    );
+
+    const allResults: SearchResultCompat[] = [];
+    for (const sourceResult of sourceResults) {
+      for (const result of sourceResult.results) {
+        allResults.push({
+          ...result,
+          source: result.source ?? sourceResult.source,
+        });
       }
     }
 
@@ -214,22 +226,29 @@ export class SearchCompat {
           ? termOrRequest.searchTerm
           : "";
 
-    const suggestions: SearchSuggestionCompat[] = [];
-    for (const source of this.sources) {
-      if (!source.suggest) {
-        continue;
-      }
-
-      try {
-        const sourceSuggestions = await source.suggest({ searchTerm });
-        for (const suggestion of sourceSuggestions) {
-          suggestions.push({
-            ...suggestion,
-            source: suggestion.source ?? source,
-          });
+    const suggestionSources = this.sources.filter((source) => typeof source.suggest === "function");
+    const sourceSuggestions = await Promise.all(
+      suggestionSources.map(async (source) => {
+        if (!source.suggest) {
+          return { source, suggestions: [] as readonly SearchSuggestionCompat[] };
         }
-      } catch (error) {
-        this.eventBus.emit("search.suggest-error", { searchTerm, error }, this);
+        try {
+          const suggestions = await source.suggest({ searchTerm });
+          return { source, suggestions };
+        } catch (error) {
+          this.eventBus.emit("search.suggest-error", { searchTerm, error }, this);
+          return { source, suggestions: [] as readonly SearchSuggestionCompat[] };
+        }
+      }),
+    );
+
+    const suggestions: SearchSuggestionCompat[] = [];
+    for (const sourceSuggestion of sourceSuggestions) {
+      for (const suggestion of sourceSuggestion.suggestions) {
+        suggestions.push({
+          ...suggestion,
+          source: suggestion.source ?? sourceSuggestion.source,
+        });
       }
     }
 
@@ -418,7 +437,7 @@ export class SearchCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -476,7 +495,11 @@ function resolveViewSearchSources(view: unknown, limits: SearchSourceLimits): Se
           fieldSearchConfig = resolveLayerSearchFieldConfig(layer);
         }
 
-        const fallbackQueryOptions = createFallbackLayerSearchQueryOptions(limits.maxFeatureCandidates);
+        const fallbackQueryOptions = createFallbackLayerSearchQueryOptions(
+          limits.maxFeatureCandidates,
+          normalizedTerm,
+          fieldSearchConfig.outFields,
+        );
         const optimizedQueryOptions =
           !fieldSearchUnsupported && fieldSearchConfig.searchableFields.length > 0
             ? createOptimizedLayerSearchQueryOptions(
@@ -603,12 +626,17 @@ const COMMON_SEARCH_FIELD_NAMES = [
 const MAX_SERVER_SEARCH_FIELDS = 6;
 const MAX_SERVER_OUT_FIELDS = 16;
 
-function createFallbackLayerSearchQueryOptions(maxFeatureCandidates: number): Record<string, unknown> {
+function createFallbackLayerSearchQueryOptions(
+  maxFeatureCandidates: number,
+  normalizedTerm: string,
+  outFields: readonly string[],
+): Record<string, unknown> {
   return {
     where: "1=1",
-    outFields: ["*"],
+    outFields: normalizeFallbackOutFields(outFields),
     returnGeometry: true,
     extraParams: {
+      text: normalizedTerm,
       resultOffset: 0,
       resultRecordCount: maxFeatureCandidates,
     },
@@ -633,7 +661,9 @@ function createOptimizedLayerSearchQueryOptions(
 
 function createSearchWhereClause(searchableFields: readonly string[], normalizedTerm: string): string {
   const escapedTerm = escapeSqlLiteral(normalizedTerm.toUpperCase());
-  return searchableFields.map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%'`).join(" OR ");
+  return searchableFields
+    .map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%' ESCAPE '\\\\'`)
+    .join(" OR ");
 }
 
 function resolveLayerSearchFieldConfig(layer: QueryFeaturesProvider): LayerSearchFieldConfig {
@@ -810,6 +840,29 @@ function resolveLayerOutFields(layer: QueryFeaturesProvider): string[] {
   return [];
 }
 
+function normalizeFallbackOutFields(outFields: readonly string[]): string[] {
+  if (outFields.includes("*")) {
+    return ["*"];
+  }
+
+  const normalized = new Set<string>();
+  for (const outField of outFields) {
+    const fieldName = normalizeFieldIdentifier(outField);
+    if (!fieldName || fieldName === "*") {
+      continue;
+    }
+    normalized.add(fieldName);
+    if (normalized.size >= MAX_SERVER_OUT_FIELDS) {
+      break;
+    }
+  }
+
+  if (normalized.size > 0) {
+    return Array.from(normalized);
+  }
+  return ["*"];
+}
+
 function resolveLayerDisplayField(layer: QueryFeaturesProvider): string | undefined {
   const fromLayer = normalizeFieldIdentifier(typeof layer.displayField === "string" ? layer.displayField : undefined);
   if (fromLayer) {
@@ -866,7 +919,7 @@ function isStringFieldType(type: string | undefined): boolean {
 }
 
 function escapeSqlLiteral(value: string): string {
-  return value.replace(/'/g, "''");
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "''").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 function extractMapFromView(view: unknown): unknown {

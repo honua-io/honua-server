@@ -1,5 +1,5 @@
 import { HonuaClient } from "../core/client.js";
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseMapServiceUrl } from "./url.js";
 
 export interface TileLayerCompatOptions {
@@ -161,7 +161,7 @@ export class TileLayerCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

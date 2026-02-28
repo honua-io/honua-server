@@ -145,13 +145,13 @@ export function createArcGisTokenInterceptor(
       }
 
       if (mode === "query") {
-        const url = new URL(context.url);
-        url.searchParams.set(queryParamName, token);
-        return { url: url.toString() };
+        return {
+          url: setQueryParam(context.url, queryParamName, token),
+        };
       }
 
       const headers = headersToRecord(context.init.headers);
-      headers[headerName] = `${bearerPrefix} ${token}`;
+      headers[headerName] = bearerPrefix.trim().length > 0 ? `${bearerPrefix} ${token}` : token;
       return {
         init: {
           ...context.init,
@@ -265,8 +265,22 @@ function matchesPattern(url: string, pattern: EsriUrlPattern | readonly EsriUrlP
 
   const patterns = Array.isArray(pattern) ? pattern : [pattern];
   return patterns.some((candidate) =>
-    typeof candidate === "string" ? url.includes(candidate) : matchesRegExpPattern(url, candidate),
+    typeof candidate === "string" ? matchesStringPattern(url, candidate) : matchesRegExpPattern(url, candidate),
   );
+}
+
+function matchesStringPattern(url: string, pattern: string): boolean {
+  if (!pattern) {
+    return true;
+  }
+
+  if (url === pattern) {
+    return true;
+  }
+
+  const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const boundaryRegex = new RegExp(`${escapedPattern}(?=$|[/?#])`, "g");
+  return boundaryRegex.test(url);
 }
 
 function matchesRegExpPattern(url: string, pattern: RegExp): boolean {
@@ -307,4 +321,19 @@ function headersToRecord(headers: HeadersInit | undefined): Record<string, strin
   }
 
   return record;
+}
+
+function setQueryParam(urlText: string, key: string, value: string): string {
+  const hashIndex = urlText.indexOf("#");
+  const hash = hashIndex >= 0 ? urlText.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? urlText.slice(0, hashIndex) : urlText;
+
+  const queryIndex = withoutHash.indexOf("?");
+  const path = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash;
+  const existingQuery = queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : "";
+  const params = new URLSearchParams(existingQuery);
+  params.set(key, value);
+  const nextQuery = params.toString();
+  const withQuery = nextQuery.length > 0 ? `${path}?${nextQuery}` : path;
+  return `${withQuery}${hash}`;
 }

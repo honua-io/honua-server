@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface FeatureSetCompatOptions {
   features?: unknown[];
   fields?: unknown[];
@@ -99,7 +100,7 @@ export class FeatureSetCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

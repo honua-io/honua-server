@@ -10,7 +10,10 @@ ENVIRONMENT="${AKS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
 NODE_COUNT="${AKS_NODE_COUNT:-2}"
 NODE_VM_SIZE="${AKS_NODE_VM_SIZE:-Standard_B2s}"
-K8S_IMAGE="${HONUA_K8S_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
+DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
+DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
+USE_AOT="${HONUA_USE_AOT:-false}"
+K8S_IMAGE="${HONUA_K8S_IMAGE:-$DEFAULT_HONUA_IMAGE}"
 K8S_PREVIOUS_IMAGE="${HONUA_K8S_PREVIOUS_IMAGE:-}"
 AUTO_DESTROY=true
 CHECK_IDEMPOTENCY=true
@@ -53,6 +56,7 @@ Options:
   --name-prefix-base <prefix>          Base prefix for generated resource names
   --node-count <n>                     AKS node count (default: 2)
   --node-vm-size <sku>                 AKS node VM size (default: Standard_B2s)
+  --aot                                Use latest-aot when image is default
   --image <repo:tag>                   Honua image for Kubernetes checks
   --previous-image <repo:tag>          Previous image used for upgrade/rollback checks
   --upgrade-rollback                   Enable upgrade/rollback validation sequence
@@ -91,6 +95,16 @@ log_warn() {
 
 log_error() {
   echo "[ERROR] $1" >&2
+}
+
+apply_aot_mode() {
+  if [[ "$USE_AOT" != "true" ]]; then
+    return
+  fi
+
+  if [[ "$K8S_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
+    K8S_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
+  fi
 }
 
 require_command() {
@@ -132,6 +146,10 @@ parse_args() {
       --node-vm-size)
         NODE_VM_SIZE="$2"
         shift 2
+        ;;
+      --aot)
+        USE_AOT=true
+        shift
         ;;
       --image)
         K8S_IMAGE="$2"
@@ -540,6 +558,7 @@ cleanup() {
 
 main() {
   parse_args "$@"
+  apply_aot_mode
 
   require_command docker
   require_command kubectl
@@ -567,6 +586,8 @@ main() {
   log_info "Name prefix: $NAME_PREFIX"
   log_info "Node count: $NODE_COUNT"
   log_info "Node VM size: $NODE_VM_SIZE"
+  log_info "AOT mode: $USE_AOT"
+  log_info "K8S image: $K8S_IMAGE"
   log_info "Ready SLO seconds: $READY_SLO_SECONDS"
   log_info "Max load error rate: ${MAX_LOAD_ERROR_RATE_PERCENT}%"
 

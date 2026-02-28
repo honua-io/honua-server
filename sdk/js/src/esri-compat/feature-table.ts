@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { FeatureLayerCompat } from "./feature-layer.js";
 import type { QueryMethod } from "../core/types.js";
 
@@ -205,7 +205,6 @@ export class FeatureTableHighlightIdsCompat {
 
 export class FeatureTableCompat {
   public readonly view: unknown;
-  public readonly layer: FeatureLayerCompat | undefined;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
   public title: unknown;
@@ -229,9 +228,18 @@ export class FeatureTableCompat {
   public rows: readonly FeatureTableRowCompat[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private refreshRevision: number;
+  private layerInternal: FeatureLayerCompat | undefined;
 
   public get size(): number {
     return this.rows.length;
+  }
+
+  public get layer(): FeatureLayerCompat | undefined {
+    return this.layerInternal;
+  }
+
+  public set layer(layer: FeatureLayerCompat | undefined) {
+    this.setLayer(layer);
   }
 
   public get loaded(): boolean {
@@ -240,7 +248,7 @@ export class FeatureTableCompat {
 
   public constructor(options: FeatureTableCompatOptions = {}) {
     this.view = options.view;
-    this.layer = options.layer;
+    this.layerInternal = options.layer;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, options.layer) ?? new CompatEventBus();
     this.title = options.title;
@@ -323,6 +331,9 @@ export class FeatureTableCompat {
     this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
 
     if (!this.layer) {
+      if (refreshRevision !== this.refreshRevision) {
+        return this.rows;
+      }
       this.rows = [];
       this.notifyWatchers("rows", this.rows);
       this.notifyWatchers("size", this.size);
@@ -370,6 +381,16 @@ export class FeatureTableCompat {
       this.eventBus.emit("feature-table.failed", { error }, this);
       throw error;
     }
+  }
+
+  public setLayer(layer: FeatureLayerCompat | undefined): void {
+    if (Object.is(this.layerInternal, layer)) {
+      return;
+    }
+    this.nextRefreshRevision();
+    this.layerInternal = layer;
+    this.notifyWatchers("layer", this.layerInternal);
+    this.eventBus.emit("feature-table.layer-changed", { hasLayer: Boolean(layer) }, this);
   }
 
   public setWhere(where: string): void {
@@ -435,7 +456,7 @@ export class FeatureTableCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 
