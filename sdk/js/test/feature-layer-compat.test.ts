@@ -886,4 +886,153 @@ describe("FeatureLayerCompat", () => {
       [{ attributes: { OBJECTID: 3 } }],
     ]);
   });
+
+  it(".on('edits') fires after applyEdits with result payload", async () => {
+    const editResult = { addResults: [{ objectId: 1, success: true }] };
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        applyEdits: async () => editResult,
+      } as never,
+    });
+
+    const received: unknown[] = [];
+    layer.on("edits", (event) => {
+      received.push(event);
+    });
+
+    await layer.applyEdits({ adds: [{ attributes: { name: "Test" } }] });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ result: editResult });
+  });
+
+  it(".on() returns a handle with .remove() that stops listener", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        applyEdits: async () => ({ success: true }),
+      } as never,
+    });
+
+    const received: unknown[] = [];
+    const handle = layer.on("edits", (event) => {
+      received.push(event);
+    });
+
+    await layer.applyEdits({ adds: [] });
+    handle.remove();
+    await layer.applyEdits({ adds: [] });
+
+    expect(received).toHaveLength(1);
+  });
+
+  it(".on() with unsupported event name does not throw", () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+    });
+
+    expect(() => layer.on("unsupported-event", () => {})).not.toThrow();
+  });
+
+  it("multiple .on() listeners for same event all fire", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        applyEdits: async () => ({ ok: true }),
+      } as never,
+    });
+
+    const firstReceived: unknown[] = [];
+    const secondReceived: unknown[] = [];
+    layer.on("edits", (event) => firstReceived.push(event));
+    layer.on("edits", (event) => secondReceived.push(event));
+
+    await layer.applyEdits({ adds: [] });
+
+    expect(firstReceived).toHaveLength(1);
+    expect(secondReceived).toHaveLength(1);
+  });
+
+  it("setTimeExtent stores extent and emits event", () => {
+    const eventBus = new CompatEventBus();
+    const events: string[] = [];
+    eventBus.onAny((event) => events.push(event.type));
+
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      eventBus,
+    });
+
+    const start = new Date("2024-01-01");
+    const end = new Date("2024-06-01");
+    layer.setTimeExtent({ start, end });
+
+    expect(layer.timeExtent).toBeDefined();
+    expect(layer.timeExtent!.start.getTime()).toBe(start.getTime());
+    expect(layer.timeExtent!.end.getTime()).toBe(end.getTime());
+    expect(events).toContain("feature-layer.time-extent-change");
+  });
+
+  it("queryFeatures includes time param when timeExtent is set", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          capturedParams.push(request);
+          return { features: [] };
+        },
+      } as never,
+    });
+
+    const start = new Date("2024-01-01");
+    const end = new Date("2024-06-01");
+    layer.setTimeExtent({ start, end });
+
+    await layer.queryFeatures({ where: "1=1" });
+
+    const extraParams = capturedParams[0]?.extraParams as Record<string, string>;
+    expect(extraParams?.time).toBe(`${start.getTime()},${end.getTime()}`);
+  });
+
+  it("queryFeatures does NOT include time when timeExtent is unset", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          capturedParams.push(request);
+          return { features: [] };
+        },
+      } as never,
+    });
+
+    await layer.queryFeatures({ where: "1=1" });
+
+    expect(capturedParams[0]?.extraParams).toBeUndefined();
+  });
+
+  it("queryFeatures does NOT override explicit time param in extraParams", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          capturedParams.push(request);
+          return { features: [] };
+        },
+      } as never,
+    });
+
+    layer.setTimeExtent({ start: new Date("2024-01-01"), end: new Date("2024-06-01") });
+
+    await layer.queryFeatures({
+      where: "1=1",
+      extraParams: { time: "custom-value" },
+    });
+
+    const extraParams = capturedParams[0]?.extraParams as Record<string, string>;
+    expect(extraParams?.time).toBe("custom-value");
+  });
 });

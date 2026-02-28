@@ -573,4 +573,38 @@ describe("SearchCompat", () => {
 
     search.destroy();
   });
+
+  it("stores expanded search options and provides defaults", () => {
+    const search = new SearchCompat({
+      searchAllEnabled: false,
+      popupEnabled: false,
+      maxResults: 20,
+      allPlaceholder: "Search all layers",
+      locationEnabled: false,
+      resultGraphicEnabled: false,
+      includeDefaultSources: false,
+    });
+
+    expect(search.searchAllEnabled).toBe(false);
+    expect(search.popupEnabled).toBe(false);
+    expect(search.maxResults).toBe(20);
+    expect(search.allPlaceholder).toBe("Search all layers");
+    expect(search.locationEnabled).toBe(false);
+    expect(search.resultGraphicEnabled).toBe(false);
+
+    search.destroy();
+  });
+
+  it("uses default values for expanded search options when not provided", () => {
+    const search = new SearchCompat({ includeDefaultSources: false });
+
+    expect(search.searchAllEnabled).toBe(true);
+    expect(search.popupEnabled).toBe(true);
+    expect(search.maxResults).toBe(10);
+    expect(search.allPlaceholder).toBe("");
+    expect(search.locationEnabled).toBe(true);
+    expect(search.resultGraphicEnabled).toBe(true);
+
+    search.destroy();
+  });
 });

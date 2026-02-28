@@ -806,4 +806,43 @@ describe("MapViewCompat", () => {
     expect(events).toContain("view.ui.components-cleared");
     expect(events).toContain("view.destroy");
   });
+
+  it("whenLayerView emits feature-layer.layerview-create on the shared event bus", async () => {
+    const eventBus = new CompatEventBus();
+    const view = new MapViewCompat({ eventBus });
+    await view.load();
+
+    const busEvents: unknown[] = [];
+    eventBus.on("feature-layer.layerview-create", (event) => {
+      busEvents.push(event.payload);
+    });
+
+    const fakeLayer = { id: "test-layer" };
+    const layerView = await view.whenLayerView(fakeLayer);
+
+    expect(busEvents).toHaveLength(1);
+    expect(busEvents[0]).toMatchObject({ view, layerView });
+  });
+
+  it("FeatureLayerCompat.on('layerview-create') fires via event bus bridge", async () => {
+    const eventBus = new CompatEventBus();
+    const view = new MapViewCompat({ eventBus });
+    await view.load();
+
+    const { FeatureLayerCompat } = await import("../src/esri-compat/feature-layer.js");
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      eventBus,
+    });
+
+    const received: unknown[] = [];
+    layer.on("layerview-create", (event) => {
+      received.push(event);
+    });
+
+    await view.whenLayerView(layer);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ view });
+  });
 });

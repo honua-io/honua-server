@@ -908,6 +908,7 @@ export class MapViewCompat {
     const layerView = new MapViewLayerViewCompat(layer, this.eventBus);
     this.layerViews.set(layer, layerView);
     this.eventBus.emit("view.layer-view-created", { layer, layerView }, this);
+    this.eventBus.emit("feature-layer.layerview-create", { view: this, layerView }, this);
     this.emit("layerview-create", { layer, layerView });
     return layerView;
   }

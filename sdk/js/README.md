@@ -171,6 +171,74 @@ const mapLayerRelated = await mapLayer.queryRelatedFeatures({
 });
 ```
 
+## Streaming Pagination
+
+```ts
+import { FeatureLayerCompat, CompatEventBus } from "@honua/sdk-js/esri-compat";
+
+const layer = new FeatureLayerCompat({
+  url: "https://example.test/rest/services/transport/FeatureServer/0",
+});
+
+// Collect all pages in one call
+const allFeatures = await layer.queryFeaturesAll({ pageSize: 500, maxPages: 50 });
+
+// Stream pages one at a time with an async generator
+for await (const page of layer.queryFeaturesStream({ pageSize: 500 })) {
+  console.log(`Received ${page.length} features`);
+}
+```
+
+## Event Lifecycle (.on)
+
+```ts
+import { FeatureLayerCompat, CompatEventBus } from "@honua/sdk-js/esri-compat";
+
+const eventBus = new CompatEventBus();
+const layer = new FeatureLayerCompat({
+  url: "https://example.test/rest/services/transport/FeatureServer/0",
+  eventBus,
+});
+
+// Listen for edit completions
+const handle = layer.on("edits", (result) => {
+  console.log("Edits applied:", result);
+});
+
+await layer.applyEdits({ adds: [{ attributes: { name: "New" } }] });
+
+// Clean up when done
+handle.remove();
+```
+
+## TimeSlider Integration
+
+```ts
+import { FeatureLayerCompat, TimeSliderCompat, CompatEventBus } from "@honua/sdk-js/esri-compat";
+
+const eventBus = new CompatEventBus();
+
+const layer = new FeatureLayerCompat({
+  url: "https://example.test/rest/services/events/FeatureServer/0",
+  eventBus,
+});
+
+const slider = new TimeSliderCompat({
+  eventBus,
+  timeExtent: { start: new Date("2024-01-01"), end: new Date("2024-06-01") },
+  stops: { interval: { value: 1, unit: "days" } },
+});
+
+// Connect slider to layer — time extent changes auto-filter queries
+const connection = slider.connectLayer(layer);
+
+// Queries now include the time parameter automatically
+const features = await layer.queryFeatures({ where: "1=1" });
+
+// Disconnect when done
+connection.remove();
+```
+
 ## Migration CLI
 
 ```bash

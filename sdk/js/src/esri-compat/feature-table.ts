@@ -23,6 +23,11 @@ export interface FeatureTableCompatOptions {
   tableTemplate?: unknown;
   visibleElements?: unknown;
   fieldConfigs?: unknown;
+  selectionMode?: string;
+  rowSelectionEnabled?: boolean;
+  highlightEnabled?: boolean;
+  pageSize?: number;
+  autoRefreshEnabled?: boolean;
 }
 
 export type FeatureTableStateCompat = "loading" | "loaded" | "error";
@@ -224,6 +229,11 @@ export class FeatureTableCompat {
   public tableTemplate: unknown;
   public visibleElements: unknown;
   public fieldConfigs: unknown;
+  public selectionMode: string;
+  public rowSelectionEnabled: boolean;
+  public highlightEnabled: boolean;
+  public pageSize: number;
+  public autoRefreshEnabled: boolean;
   public readonly highlightIds: FeatureTableHighlightIdsCompat;
   public rows: readonly FeatureTableRowCompat[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
@@ -268,6 +278,11 @@ export class FeatureTableCompat {
     this.tableTemplate = options.tableTemplate;
     this.visibleElements = options.visibleElements;
     this.fieldConfigs = options.fieldConfigs;
+    this.selectionMode = options.selectionMode ?? "multiple";
+    this.rowSelectionEnabled = options.rowSelectionEnabled ?? true;
+    this.highlightEnabled = options.highlightEnabled ?? true;
+    this.pageSize = typeof options.pageSize === "number" && Number.isFinite(options.pageSize) ? Math.max(1, Math.trunc(options.pageSize)) : 25;
+    this.autoRefreshEnabled = options.autoRefreshEnabled ?? true;
     this.highlightIds = new FeatureTableHighlightIdsCompat(options.highlightIds);
     this.rows = [];
     this.watchListeners = new Map();

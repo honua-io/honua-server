@@ -3378,4 +3378,77 @@ describe("runEsriCompatCodemod", () => {
     );
     expect(nextAppSource).toContain("new MapViewCompat({ map, container: 'viewDiv' })");
   });
+
+  it("auto-migrates Search with newly-allowed expanded properties", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "search-expanded.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import Search from '@arcgis/core/widgets/Search';",
+        "const search = new Search({",
+        "  view,",
+        "  container: 'searchDiv',",
+        "  searchAllEnabled: true,",
+        "  popupEnabled: false,",
+        "  maxResults: 20,",
+        "  allPlaceholder: 'Find address',",
+        "  locationEnabled: false,",
+        "  resultGraphicEnabled: true,",
+        "});",
+        "void search;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("SearchCompat");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/Search");
+  });
+
+  it("auto-migrates FeatureTable with newly-allowed expanded properties", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "feature-table-expanded.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureTable from '@arcgis/core/widgets/FeatureTable';",
+        "const table = new FeatureTable({",
+        "  layer,",
+        "  container: 'tableDiv',",
+        "  selectionMode: 'single',",
+        "  rowSelectionEnabled: true,",
+        "  highlightEnabled: false,",
+        "  pageSize: 50,",
+        "  autoRefreshEnabled: false,",
+        "});",
+        "void table;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("FeatureTableCompat");
+    expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
+  });
 });

@@ -137,10 +137,12 @@ export class FeatureLayerCompat {
   public loaded: boolean;
   public loadStatus: FeatureLayerLoadStatusCompat;
   public metadata: unknown;
+  public timeExtent: { start: Date; end: Date } | undefined;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
   private readonly maxAttachmentBytes: number;
 
   public constructor(options: FeatureLayerCompatOptions) {
@@ -170,9 +172,11 @@ export class FeatureLayerCompat {
     this.loaded = false;
     this.loadStatus = "not-loaded";
     this.metadata = undefined;
+    this.timeExtent = undefined;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
     this.watchListeners = new Map();
+    this.eventListeners = new Map();
     this.maxAttachmentBytes = normalizeAttachmentSizeLimit(options.maxAttachmentBytes);
   }
 
@@ -332,6 +336,35 @@ export class FeatureLayerCompat {
     this.eventBus.emit("feature-layer.legend-enabled-changed", { layerId: this.id, legendEnabled }, this);
   }
 
+  public setTimeExtent(extent: { start: Date; end: Date } | undefined): void {
+    this.timeExtent = extent
+      ? { start: new Date(extent.start.getTime()), end: new Date(extent.end.getTime()) }
+      : undefined;
+    this.notifyWatchers("timeExtent", this.timeExtent);
+    this.eventBus.emit("feature-layer.time-extent-change", { layerId: this.id, timeExtent: this.timeExtent }, this);
+  }
+
+  public on(eventName: string, listener: (event: unknown) => void): FeatureLayerHandleCompat {
+    const namespacedEvent = `feature-layer.${eventName}`;
+    let listeners = this.eventListeners.get(eventName);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(eventName, listeners);
+    }
+    listeners.add(listener);
+
+    const subscription = this.eventBus.on(namespacedEvent, (event) => {
+      safeInvokeCompatListener(listener, event.payload);
+    });
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+        subscription.remove();
+      },
+    };
+  }
+
   public listFields(): readonly Record<string, unknown>[] {
     return extractFieldDefinitions(this.metadata);
   }
@@ -361,6 +394,7 @@ export class FeatureLayerCompat {
   }
 
   public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<unknown> {
+    const timeParam = buildTimeParam(this.timeExtent, options.extraParams);
     return this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -368,7 +402,9 @@ export class FeatureLayerCompat {
       outFields: options.outFields ?? this.outFields,
       returnGeometry: options.returnGeometry,
       method: options.method,
-      extraParams: options.extraParams,
+      extraParams: timeParam
+        ? { ...(options.extraParams ?? {}), time: timeParam }
+        : options.extraParams,
     });
   }
 
@@ -520,8 +556,8 @@ export class FeatureLayerCompat {
     };
   }
 
-  public applyEdits(options: FeatureLayerEditsOptions): Promise<unknown> {
-    return this.client.applyEdits({
+  public async applyEdits(options: FeatureLayerEditsOptions): Promise<unknown> {
+    const result = await this.client.applyEdits({
       serviceId: this.serviceId,
       layerId: this.layerId,
       adds: options.adds,
@@ -529,6 +565,8 @@ export class FeatureLayerCompat {
       deletes: options.deletes,
       rollbackOnFailure: options.rollbackOnFailure,
     });
+    this.eventBus.emit("feature-layer.edits", { result, layerId: this.id }, this);
+    return result;
   }
 
   public queryRelatedFeatures(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<unknown> {
@@ -781,6 +819,19 @@ function resolveAttachmentName(
   }
 
   return "attachment.bin";
+}
+
+function buildTimeParam(
+  timeExtent: { start: Date; end: Date } | undefined,
+  extraParams?: Record<string, string | number | boolean>,
+): string | undefined {
+  if (!timeExtent) {
+    return undefined;
+  }
+  if (extraParams && "time" in extraParams) {
+    return undefined;
+  }
+  return `${timeExtent.start.getTime()},${timeExtent.end.getTime()}`;
 }
 
 function normalizeAttachmentData(

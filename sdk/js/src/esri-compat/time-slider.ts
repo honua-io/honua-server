@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export type TimeSliderModeCompat = "instant" | "time-window";
 export type TimeSliderIntervalUnitCompat =
@@ -202,6 +202,25 @@ export class TimeSliderCompat {
     };
     this.setTimeExtent(shifted);
     return this.timeExtent;
+  }
+
+  public connectLayer(layer: { setTimeExtent(extent: { start: Date; end: Date } | undefined): void }): TimeSliderHandleCompat {
+    if (this.timeExtent) {
+      layer.setTimeExtent(this.timeExtent);
+    }
+
+    const subscription: CompatEventSubscription = this.eventBus.on("timeslider.updated", (event) => {
+      const payload = event.payload as { timeExtent?: { start: Date; end: Date } } | undefined;
+      if (payload?.timeExtent) {
+        layer.setTimeExtent(payload.timeExtent);
+      }
+    });
+
+    return {
+      remove: () => {
+        subscription.remove();
+      },
+    };
   }
 
   public destroy(): void {

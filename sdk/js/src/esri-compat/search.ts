@@ -16,6 +16,12 @@ export interface SearchCompatOptions {
   defaultSourceMaxFeatureCandidates?: number;
   defaultSourceMaxResults?: number;
   defaultSourceMaxSuggestions?: number;
+  searchAllEnabled?: boolean;
+  popupEnabled?: boolean;
+  maxResults?: number;
+  allPlaceholder?: string;
+  locationEnabled?: boolean;
+  resultGraphicEnabled?: boolean;
 }
 
 export interface SearchRequestCompat {
@@ -81,6 +87,12 @@ export class SearchCompat {
   public readonly defaultSourceMaxFeatureCandidates: number;
   public readonly defaultSourceMaxResults: number;
   public readonly defaultSourceMaxSuggestions: number;
+  public searchAllEnabled: boolean;
+  public popupEnabled: boolean;
+  public maxResults: number;
+  public allPlaceholder: string;
+  public locationEnabled: boolean;
+  public resultGraphicEnabled: boolean;
 
   private readonly subscriptions: CompatEventSubscription[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
@@ -114,6 +126,12 @@ export class SearchCompat {
       options.defaultSourceMaxSuggestions,
       DEFAULT_SEARCH_SOURCE_MAX_SUGGESTIONS,
     );
+    this.searchAllEnabled = options.searchAllEnabled ?? true;
+    this.popupEnabled = options.popupEnabled ?? true;
+    this.maxResults = normalizeSearchLimit(options.maxResults, DEFAULT_SEARCH_SOURCE_MAX_RESULTS);
+    this.allPlaceholder = options.allPlaceholder ?? "";
+    this.locationEnabled = options.locationEnabled ?? true;
+    this.resultGraphicEnabled = options.resultGraphicEnabled ?? true;
     this.subscriptions = [];
     this.watchListeners = new Map();
     this.refreshSourceSubscriptions();

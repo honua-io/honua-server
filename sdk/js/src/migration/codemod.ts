@@ -4924,6 +4924,11 @@ function isSafeFeatureTableWidgetCompatCall(
     "editingEnabled",
     "multiSortEnabled",
     "highlightIds",
+    "selectionMode",
+    "rowSelectionEnabled",
+    "highlightEnabled",
+    "pageSize",
+    "autoRefreshEnabled",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -5423,6 +5428,12 @@ function isSafeSearchWidgetCompatCall(
     "includeDefaultSources",
     "autoNavigate",
     "autoRefreshSources",
+    "searchAllEnabled",
+    "popupEnabled",
+    "maxResults",
+    "allPlaceholder",
+    "locationEnabled",
+    "resultGraphicEnabled",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {

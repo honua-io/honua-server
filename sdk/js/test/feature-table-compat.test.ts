@@ -280,4 +280,39 @@ describe("FeatureTableCompat", () => {
     expect(table.rows).toHaveLength(1);
     expect(table.rows[0]).toMatchObject({ objectId: 2, attributes: { name: "new" } });
   });
+
+  it("stores expanded table options and provides defaults", () => {
+    const layer = {
+      queryFeatures: async () => ({ features: [] }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({
+      layer,
+      selectionMode: "single",
+      rowSelectionEnabled: false,
+      highlightEnabled: false,
+      pageSize: 50,
+      autoRefreshEnabled: false,
+    });
+
+    expect(table.selectionMode).toBe("single");
+    expect(table.rowSelectionEnabled).toBe(false);
+    expect(table.highlightEnabled).toBe(false);
+    expect(table.pageSize).toBe(50);
+    expect(table.autoRefreshEnabled).toBe(false);
+  });
+
+  it("uses default values for expanded table options when not provided", () => {
+    const layer = {
+      queryFeatures: async () => ({ features: [] }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer });
+
+    expect(table.selectionMode).toBe("multiple");
+    expect(table.rowSelectionEnabled).toBe(true);
+    expect(table.highlightEnabled).toBe(true);
+    expect(table.pageSize).toBe(25);
+    expect(table.autoRefreshEnabled).toBe(true);
+  });
 });
