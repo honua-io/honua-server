@@ -865,4 +865,50 @@ describe("MapImageLayerCompat", () => {
     expect(requestedOffsets).toEqual(["0", "2", "0", "2"]);
     expect(requestedRecordCounts).toEqual(["2", "2", "2", "2"]);
   });
+
+  it(".on() fires for namespaced events and handle.remove() stops delivery", () => {
+    const eventBus = new CompatEventBus();
+    const layer = new MapImageLayerCompat({
+      url: "https://example.test/rest/services/imagery/MapServer",
+      eventBus,
+    });
+
+    const received: unknown[] = [];
+    const handle = layer.on("sublayers-changed", (event) => {
+      received.push(event);
+    });
+
+    layer.setSublayers([{ id: 0 }]);
+    expect(received).toHaveLength(1);
+
+    handle.remove();
+    layer.setSublayers([{ id: 1 }]);
+    expect(received).toHaveLength(1);
+  });
+
+  it("destroy() clears watchers, event listeners, and emits map-image-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new MapImageLayerCompat({
+      url: "https://example.test/rest/services/imagery/MapServer",
+      eventBus,
+    });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    const eventPayloads: unknown[] = [];
+    layer.on("sublayers-changed", (e) => eventPayloads.push(e));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("map-image-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
+  });
 });

@@ -210,6 +210,11 @@ export class MapCompat {
     this.eventBus.emit("map.portal-item-changed", { portalItem }, this);
   }
 
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventBus.emit("map.destroyed", { layerCount: this.layersInternal.length }, this);
+  }
+
   public setSpatialReference(spatialReference: unknown): void {
     this.spatialReference = spatialReference;
     this.notifyWatchers("spatialReference", this.spatialReference);

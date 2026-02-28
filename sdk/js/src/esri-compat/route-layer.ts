@@ -216,6 +216,11 @@ export class RouteLayerCompat {
     return this;
   }
 
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventBus.emit("route-layer.destroyed", { layerId: this.id }, this);
+  }
+
   public setVisibility(visible: boolean): void {
     this.visible = visible;
     this.notifyWatchers("visible", this.visible);

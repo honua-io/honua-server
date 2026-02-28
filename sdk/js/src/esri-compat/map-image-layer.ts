@@ -91,6 +91,7 @@ export class MapImageLayerCompat {
 
   private readonly client: HonuaClient;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
   private readonly sublayerWrappersById: Map<number, MapImageSublayerCompat>;
   private sublayerSources: unknown[];
 
@@ -113,6 +114,7 @@ export class MapImageLayerCompat {
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client, options.sublayers) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
     this.watchListeners = new Map();
+    this.eventListeners = new Map();
     this.sublayerWrappersById = new Map();
   }
 
@@ -429,6 +431,33 @@ export class MapImageLayerCompat {
     this.listMode = listMode;
     this.notifyWatchers("listMode", this.listMode);
     this.eventBus.emit("map-image-layer.list-mode-changed", { layerId: this.id, listMode }, this);
+  }
+
+  public on(eventName: string, listener: (event: unknown) => void): MapImageLayerHandleCompat {
+    const namespacedEvent = `map-image-layer.${eventName}`;
+    let listeners = this.eventListeners.get(eventName);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(eventName, listeners);
+    }
+    listeners.add(listener);
+
+    const subscription = this.eventBus.on(namespacedEvent, (event) => {
+      safeInvokeCompatListener(listener, event.payload);
+    });
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+        subscription.remove();
+      },
+    };
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventListeners.clear();
+    this.eventBus.emit("map-image-layer.destroyed", { id: this.id }, this);
   }
 
   public setLegendEnabled(legendEnabled: boolean): void {

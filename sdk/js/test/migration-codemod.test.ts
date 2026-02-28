@@ -3451,4 +3451,98 @@ describe("runEsriCompatCodemod", () => {
     expect(nextSource).toContain("FeatureTableCompat");
     expect(nextSource).not.toContain("@arcgis/core/widgets/FeatureTable");
   });
+
+  it("auto-migrates FeatureLayer with client and maxAttachmentBytes properties", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "fl-client.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import FeatureLayer from '@arcgis/core/layers/FeatureLayer';",
+        "const layer = new FeatureLayer({",
+        "  url: 'https://example.test/rest/services/svc/FeatureServer/0',",
+        "  client: myClient,",
+        "  maxAttachmentBytes: 10485760,",
+        "});",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("FeatureLayerCompat");
+    expect(nextSource).not.toContain("@arcgis/core/layers/FeatureLayer");
+  });
+
+  it("auto-migrates MapImageLayer with client property", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "mil-client.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import MapImageLayer from '@arcgis/core/layers/MapImageLayer';",
+        "const layer = new MapImageLayer({",
+        "  url: 'https://example.test/rest/services/imagery/MapServer',",
+        "  client: myClient,",
+        "});",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("MapImageLayerCompat");
+    expect(nextSource).not.toContain("@arcgis/core/layers/MapImageLayer");
+  });
+
+  it("auto-migrates TileLayer with client property", () => {
+    const root = makeTempProject();
+    const file = path.join(root, "tl-client.ts");
+    fs.writeFileSync(
+      file,
+      [
+        "import TileLayer from '@arcgis/core/layers/TileLayer';",
+        "const layer = new TileLayer({",
+        "  url: 'https://example.test/rest/services/tiles/MapServer',",
+        "  client: myClient,",
+        "});",
+        "void layer;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runEsriCompatCodemod({
+      rootDir: root,
+      write: true,
+      compatImportPath: "@honua/sdk-esri-compat",
+    });
+
+    expect(result.metrics.totalCodemodScopedCallSites).toBe(1);
+    expect(result.metrics.autoMigratedCallSites).toBe(1);
+    expect(result.metrics.manualCallSites).toBe(0);
+
+    const nextSource = fs.readFileSync(file, "utf8");
+    expect(nextSource).toContain("TileLayerCompat");
+    expect(nextSource).not.toContain("@arcgis/core/layers/TileLayer");
+  });
 });

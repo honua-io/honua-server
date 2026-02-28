@@ -440,6 +440,11 @@ export class FeatureTableCompat {
     return this.rows.filter((row) => selectedIds.has(row.objectId));
   }
 
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventBus.emit("feature-table.destroyed", undefined, this);
+  }
+
   public async queryRelatedRecords(options: FeatureTableQueryRelatedRecordsOptions): Promise<unknown> {
     if (!this.layer) {
       return { relatedRecordGroups: [] };

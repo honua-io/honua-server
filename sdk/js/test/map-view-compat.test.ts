@@ -163,6 +163,26 @@ describe("MapCompat", () => {
     expect(eventTypes).toContain("map.portal-item-changed");
     expect(eventTypes).toContain("map.spatial-reference-changed");
   });
+
+  it("destroy() clears watchers and emits map.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const map = new MapCompat({ eventBus });
+
+    const watchValues: unknown[] = [];
+    map.watch("basemap", (v) => watchValues.push(v));
+
+    map.destroy();
+
+    expect(eventTypes).toContain("map.destroyed");
+
+    map.setBasemap("dark-gray");
+    expect(watchValues).toHaveLength(0);
+  });
 });
 
 describe("MapViewCompat", () => {

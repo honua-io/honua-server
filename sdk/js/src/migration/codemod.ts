@@ -3463,6 +3463,8 @@ function isSafeFeatureLayerCompatCall(
           "maxScale",
           "legendEnabled",
           "listMode",
+          "client",
+          "maxAttachmentBytes",
         ])
       : new Set(["url", "outFields", "definitionExpression"]);
 
@@ -4242,6 +4244,7 @@ function isSafeMapImageLayerCompatCall(
           "maxScale",
           "listMode",
           "legendEnabled",
+          "client",
         ])
       : new Set(["url", "sublayers", "opacity", "visible"]);
   for (const property of arg.properties) {
@@ -4299,7 +4302,7 @@ function isSafeTileLayerCompatCall(
   let hasUrlOption = false;
   const allowed =
     target === "honua-compat"
-      ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode"])
+      ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode", "client"])
       : new Set(["url", "opacity", "visible"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {

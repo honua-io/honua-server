@@ -80,4 +80,44 @@ describe("GroupLayerCompat", () => {
     layer.setOpacity(5);
     expect(layer.opacity).toBe(1);
   });
+
+  it(".on() fires for layer-added and handle.remove() stops delivery", () => {
+    const eventBus = new CompatEventBus();
+    const layer = new GroupLayerCompat({ eventBus });
+
+    const received: unknown[] = [];
+    const handle = layer.on("layer-added", (event) => {
+      received.push(event);
+    });
+
+    layer.add({ id: "child-1" });
+    expect(received).toHaveLength(1);
+
+    handle.remove();
+    layer.add({ id: "child-2" });
+    expect(received).toHaveLength(1);
+  });
+
+  it("upgraded destroy() clears watchers, event listeners, and emits group-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new GroupLayerCompat({ eventBus });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    const eventPayloads: unknown[] = [];
+    layer.on("layer-added", (e) => eventPayloads.push(e));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("group-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
+  });
 });

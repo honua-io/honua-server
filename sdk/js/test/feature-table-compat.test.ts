@@ -315,4 +315,24 @@ describe("FeatureTableCompat", () => {
     expect(table.pageSize).toBe(25);
     expect(table.autoRefreshEnabled).toBe(true);
   });
+
+  it("destroy() clears watchers and emits feature-table.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const table = new FeatureTableCompat({ eventBus });
+
+    const watchValues: unknown[] = [];
+    table.watch("state", (v) => watchValues.push(v));
+
+    table.destroy();
+
+    expect(eventTypes).toContain("feature-table.destroyed");
+
+    table.setWhere("1=0");
+    expect(watchValues).toHaveLength(0);
+  });
 });

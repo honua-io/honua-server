@@ -1035,4 +1035,30 @@ describe("FeatureLayerCompat", () => {
     const extraParams = capturedParams[0]?.extraParams as Record<string, string>;
     expect(extraParams?.time).toBe("custom-value");
   });
+
+  it("destroy() clears watchers, event listeners, and emits feature-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/svc/FeatureServer/0",
+      eventBus,
+    });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    const eventPayloads: unknown[] = [];
+    layer.on("edits", (e) => eventPayloads.push(e));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("feature-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
+  });
 });

@@ -344,6 +344,12 @@ export class FeatureLayerCompat {
     this.eventBus.emit("feature-layer.time-extent-change", { layerId: this.id, timeExtent: this.timeExtent }, this);
   }
 
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventListeners.clear();
+    this.eventBus.emit("feature-layer.destroyed", { id: this.id }, this);
+  }
+
   public on(eventName: string, listener: (event: unknown) => void): FeatureLayerHandleCompat {
     const namespacedEvent = `feature-layer.${eventName}`;
     let listeners = this.eventListeners.get(eventName);

@@ -32,6 +32,7 @@ export class GraphicsLayerCompat {
   public readonly eventBus: CompatEventBus;
   private readonly graphicsInternal: unknown[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
 
   public constructor(options: GraphicsLayerCompatOptions = {}) {
     this.type = "graphics";
@@ -45,6 +46,7 @@ export class GraphicsLayerCompat {
     this.graphicsInternal = Array.isArray(options.graphics) ? [...options.graphics] : [];
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.graphics) ?? new CompatEventBus();
     this.watchListeners = new Map();
+    this.eventListeners = new Map();
   }
 
   public async load(): Promise<GraphicsLayerCompat> {
@@ -193,8 +195,31 @@ export class GraphicsLayerCompat {
     return this.graphicsInternal.length;
   }
 
+  public on(eventName: string, listener: (event: unknown) => void): GraphicsLayerHandleCompat {
+    const namespacedEvent = `graphics-layer.${eventName}`;
+    let listeners = this.eventListeners.get(eventName);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(eventName, listeners);
+    }
+    listeners.add(listener);
+
+    const subscription = this.eventBus.on(namespacedEvent, (event) => {
+      safeInvokeCompatListener(listener, event.payload);
+    });
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+        subscription.remove();
+      },
+    };
+  }
+
   public destroy(): void {
     this.watchListeners.clear();
+    this.eventListeners.clear();
+    this.eventBus.emit("graphics-layer.destroyed", { layerId: this.id }, this);
   }
 
   private notifyWatchers(propertyName: string, value: unknown): void {

@@ -77,4 +77,44 @@ describe("GraphicsLayerCompat", () => {
     layer.setOpacity(3);
     expect(layer.opacity).toBe(1);
   });
+
+  it(".on() fires for graphic-added and handle.remove() stops delivery", () => {
+    const eventBus = new CompatEventBus();
+    const layer = new GraphicsLayerCompat({ eventBus });
+
+    const received: unknown[] = [];
+    const handle = layer.on("graphic-added", (event) => {
+      received.push(event);
+    });
+
+    layer.add({ id: 1 });
+    expect(received).toHaveLength(1);
+
+    handle.remove();
+    layer.add({ id: 2 });
+    expect(received).toHaveLength(1);
+  });
+
+  it("upgraded destroy() clears watchers, event listeners, and emits graphics-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new GraphicsLayerCompat({ eventBus });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    const eventPayloads: unknown[] = [];
+    layer.on("graphic-added", (e) => eventPayloads.push(e));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("graphics-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
+  });
 });
