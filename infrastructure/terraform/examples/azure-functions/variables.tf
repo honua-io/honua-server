@@ -43,9 +43,9 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image (Functions-compatible)."
+  description = "Container image (Functions-compatible). Prefer `*-functions-aot`; use `*-functions` only for debug fallback."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
+  default     = "ghcr.io/honua-io/honua-server:latest-functions-aot"
 }
 
 variable "plan_sku_name" {
@@ -71,6 +71,36 @@ variable "redis_connection_string" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+variable "redis_sku_name" {
+  description = "Redis SKU for new cache creation."
+  type        = string
+  default     = "Basic"
+}
+
+variable "redis_family" {
+  description = "Redis family for new cache creation."
+  type        = string
+  default     = "C"
+}
+
+variable "redis_capacity" {
+  description = "Redis capacity for new cache creation."
+  type        = number
+  default     = 0
+}
+
+variable "db_geo_redundant_backup_enabled" {
+  description = "Enable geo-redundant backups for PostgreSQL."
+  type        = bool
+  default     = false
+}
+
+variable "db_backup_retention_days" {
+  description = "Backup retention period in days for PostgreSQL."
+  type        = number
+  default     = 7
 }
 
 variable "db_firewall_start_ip" {

@@ -43,7 +43,7 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image_uri" {
-  description = "ECR image URI for Honua (Lambda-compatible)."
+  description = "ECR image URI for Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback)."
   type        = string
 }
 

@@ -60,9 +60,9 @@ AWS live / EKS:
 
 Optional image override secrets:
 
-- Azure app images: `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE`
+- Azure app images: `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE` (ACR URI with `*-functions-aot` recommended; `*-functions` is debug fallback)
 - Azure rollback images: `HONUA_ACA_PREVIOUS_IMAGE`, `HONUA_FUNCTIONS_PREVIOUS_IMAGE`
-- AWS app images: `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE`
+- AWS app images: `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE` (ECR URI, `*-lambda-aot` recommended; `*-lambda` is debug fallback)
 - AWS rollback images: `HONUA_AWS_ECS_PREVIOUS_IMAGE`, `HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE`
 - Kubernetes app images: `HONUA_K8S_IMAGE`, `HONUA_K8S_PREVIOUS_IMAGE`
 
@@ -78,6 +78,8 @@ Optional image override secrets:
   - `HONUA_MAX_LOAD_ERROR_RATE_PERCENT`
   - `HONUA_TTL_HOURS`
 - Optional behavior toggles:
+  - `HONUA_USE_AOT` (`true|false`; switches default images to `latest-aot` in validation scripts)
+  - `HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH` (`true|false`; defaults to `true` for AOT-first Functions image selection)
   - `HONUA_RUN_UPGRADE_ROLLBACK`
   - `HONUA_SKIP_DB_RESILIENCE`
   - `HONUA_SKIP_QUOTA_PREFLIGHT`
@@ -120,18 +122,22 @@ Local script entry points:
 ```bash
 # Default flow provisions examples/azure-data first, then runs compute stack validation.
 ./scripts/run-azure-terraform-integration.sh --stack both
+./scripts/run-azure-terraform-integration.sh --stack both --aot
 ./scripts/run-azure-terraform-integration.sh \
   --stack aca \
   --existing-db-fqdn mypg.postgres.database.azure.com \
   --existing-db-connection "Host=mypg.postgres.database.azure.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
   --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False"
 ./scripts/run-aws-terraform-integration.sh --stack both
+./scripts/run-aws-terraform-integration.sh --stack ecs --aot
+./scripts/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot"
 ./scripts/run-aws-terraform-integration.sh \
   --stack ecs \
   --existing-db-endpoint mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com \
   --existing-db-connection "Host=mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
   --existing-redis-connection "mycache.xxxxxx.use1.cache.amazonaws.com:6379,password=***,ssl=true"
 ./scripts/run-k8s-terraform-integration.sh
+./scripts/run-k8s-terraform-integration.sh --aot
 ./scripts/run-aks-terraform-integration.sh
 ./scripts/run-eks-terraform-integration.sh
 ./scripts/terraform-policy-gate.sh
@@ -150,5 +156,7 @@ Local script entry points:
   - `infrastructure/terraform/bootstrap/aws-eks`
 - Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
 - Azure script behavior: when neither `--existing-db-connection` nor `--existing-redis-connection` is provided, `scripts/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data` first and feeds outputs into ACA/Functions applies.
+- Current known issue (February 28, 2026): generic web tags (`latest`, `latest-aot`) crash on Azure Functions custom container startup (container exit code `139`). Use Functions-targeted tags (`*-functions-aot` preferred, `*-functions` debug fallback).
+- Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.
 - Live scripts auto-destroy by default unless `--no-destroy` / `no_destroy=true` is set.

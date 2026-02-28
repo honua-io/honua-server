@@ -41,7 +41,7 @@ variable "enable_nat_gateway" {
 }
 
 variable "image" {
-  description = "Lambda container image URI (ECR). AOT builds (vX.Y.Z-aot) are recommended for faster cold starts."
+  description = "Lambda container image URI (ECR). Prefer Honua Lambda AOT tags (`vX.Y.Z-lambda-aot`); JIT tags (`vX.Y.Z-lambda`) are debug fallback."
   type        = string
 }
 

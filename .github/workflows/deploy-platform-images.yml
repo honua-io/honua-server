@@ -1,0 +1,541 @@
+name: Build & Publish Platform Images
+
+on:
+  push:
+    branches: [trunk]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  ECR_REGION: ${{ vars.AWS_ECR_REGION }}
+  ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
+  ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
+
+jobs:
+  build-and-push-lambda:
+    name: Build & Push Lambda JIT Image (Debug Fallback)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials for ECR
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.ECR_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${ECR_REPOSITORY:-honua-server}"
+          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$repo" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$ECR_REGION" >/dev/null
+          fi
+
+      - name: Log in to Amazon ECR
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Log in to Azure Container Registry
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Resolve target image names
+        id: targets
+        shell: bash
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          ecr_repo="${ECR_REPOSITORY:-honua-server}"
+          acr_repo="${ACR_REPOSITORY:-honua-server}"
+          images=()
+
+          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
+            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          fi
+          if [ -n "$ACR_LOGIN_SERVER" ]; then
+            images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
+          fi
+
+          if [ "${#images[@]}" -eq 0 ]; then
+            echo "No registry target configured for platform image publish." >&2
+            echo "Set AWS_ECR_REGION + AWS credential secrets and/or ACR_LOGIN_SERVER/ACR_USERNAME/ACR_PASSWORD." >&2
+            exit 1
+          fi
+
+          {
+            echo "images<<EOF"
+            printf '%s\n' "${images[@]}"
+            echo "EOF"
+            echo "scan_image=${images[0]}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: |
+            type=ref,event=branch,suffix=-lambda
+            type=ref,event=tag,suffix=-lambda
+            type=semver,pattern={{version}},suffix=-lambda
+            type=semver,pattern={{major}}.{{minor}},suffix=-lambda
+            type=semver,pattern={{major}},suffix=-lambda
+            type=sha,prefix={{branch}}-,suffix=-lambda
+            type=raw,value=latest-lambda,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.lambda
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-lambda-jit
+          cache-to: type=gha,mode=max,scope=release-lambda-jit
+          provenance: true
+          sbom: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
+        with:
+          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results-lambda.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results-lambda.sarif') != ''
+        with:
+          sarif_file: 'trivy-results-lambda.sarif'
+          category: 'trivy-lambda'
+
+  build-and-push-lambda-aot:
+    name: Build & Push Lambda AOT Image (Multi-Arch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials for ECR
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.ECR_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${ECR_REPOSITORY:-honua-server}"
+          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$repo" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$ECR_REGION" >/dev/null
+          fi
+
+      - name: Log in to Amazon ECR
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Log in to Azure Container Registry
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Resolve target image names
+        id: targets
+        shell: bash
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          ecr_repo="${ECR_REPOSITORY:-honua-server}"
+          acr_repo="${ACR_REPOSITORY:-honua-server}"
+          images=()
+
+          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
+            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          fi
+          if [ -n "$ACR_LOGIN_SERVER" ]; then
+            images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
+          fi
+
+          if [ "${#images[@]}" -eq 0 ]; then
+            echo "No registry target configured for platform image publish." >&2
+            echo "Set AWS_ECR_REGION + AWS credential secrets and/or ACR_LOGIN_SERVER/ACR_USERNAME/ACR_PASSWORD." >&2
+            exit 1
+          fi
+
+          {
+            echo "images<<EOF"
+            printf '%s\n' "${images[@]}"
+            echo "EOF"
+            echo "scan_image=${images[0]}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: |
+            type=ref,event=branch,suffix=-lambda-aot
+            type=ref,event=tag,suffix=-lambda-aot
+            type=semver,pattern={{version}},suffix=-lambda-aot
+            type=semver,pattern={{major}}.{{minor}},suffix=-lambda-aot
+            type=semver,pattern={{major}},suffix=-lambda-aot
+            type=sha,prefix={{branch}}-,suffix=-lambda-aot
+            type=raw,value=latest-lambda-aot,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.lambda.aot
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-lambda-aot
+          cache-to: type=gha,mode=max,scope=release-lambda-aot
+          provenance: true
+          sbom: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
+        with:
+          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results-lambda-aot.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results-lambda-aot.sarif') != ''
+        with:
+          sarif_file: 'trivy-results-lambda-aot.sarif'
+          category: 'trivy-lambda-aot'
+
+  build-and-push-functions:
+    name: Build & Push Functions JIT Image (Debug Fallback)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials for ECR
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.ECR_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${ECR_REPOSITORY:-honua-server}"
+          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$repo" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$ECR_REGION" >/dev/null
+          fi
+
+      - name: Log in to Amazon ECR
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Log in to Azure Container Registry
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Resolve target image names
+        id: targets
+        shell: bash
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          ecr_repo="${ECR_REPOSITORY:-honua-server}"
+          acr_repo="${ACR_REPOSITORY:-honua-server}"
+          images=()
+
+          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
+            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          fi
+          if [ -n "$ACR_LOGIN_SERVER" ]; then
+            images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
+          fi
+
+          if [ "${#images[@]}" -eq 0 ]; then
+            echo "No registry target configured for platform image publish." >&2
+            echo "Set AWS_ECR_REGION + AWS credential secrets and/or ACR_LOGIN_SERVER/ACR_USERNAME/ACR_PASSWORD." >&2
+            exit 1
+          fi
+
+          {
+            echo "images<<EOF"
+            printf '%s\n' "${images[@]}"
+            echo "EOF"
+            echo "scan_image=${images[0]}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: |
+            type=ref,event=branch,suffix=-functions
+            type=ref,event=tag,suffix=-functions
+            type=semver,pattern={{version}},suffix=-functions
+            type=semver,pattern={{major}}.{{minor}},suffix=-functions
+            type=semver,pattern={{major}},suffix=-functions
+            type=sha,prefix={{branch}}-,suffix=-functions
+            type=raw,value=latest-functions,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.functions
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-functions-jit
+          cache-to: type=gha,mode=max,scope=release-functions-jit
+          provenance: true
+          sbom: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
+        with:
+          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results-functions.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results-functions.sarif') != ''
+        with:
+          sarif_file: 'trivy-results-functions.sarif'
+          category: 'trivy-functions'
+
+  build-and-push-functions-aot:
+    name: Build & Push Functions AOT Image (Multi-Arch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials for ECR
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.ECR_REGION }}
+
+      - name: Resolve ECR registry
+        id: ecr
+        if: ${{ env.ECR_REGION != '' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${ECR_REPOSITORY:-honua-server}"
+          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$repo" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$ECR_REGION" >/dev/null
+          fi
+
+      - name: Log in to Amazon ECR
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Log in to Azure Container Registry
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Resolve target image names
+        id: targets
+        shell: bash
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          ecr_repo="${ECR_REPOSITORY:-honua-server}"
+          acr_repo="${ACR_REPOSITORY:-honua-server}"
+          images=()
+
+          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
+            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          fi
+          if [ -n "$ACR_LOGIN_SERVER" ]; then
+            images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
+          fi
+
+          if [ "${#images[@]}" -eq 0 ]; then
+            echo "No registry target configured for platform image publish." >&2
+            echo "Set AWS_ECR_REGION + AWS credential secrets and/or ACR_LOGIN_SERVER/ACR_USERNAME/ACR_PASSWORD." >&2
+            exit 1
+          fi
+
+          {
+            echo "images<<EOF"
+            printf '%s\n' "${images[@]}"
+            echo "EOF"
+            echo "scan_image=${images[0]}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: |
+            type=ref,event=branch,suffix=-functions-aot
+            type=ref,event=tag,suffix=-functions-aot
+            type=semver,pattern={{version}},suffix=-functions-aot
+            type=semver,pattern={{major}}.{{minor}},suffix=-functions-aot
+            type=semver,pattern={{major}},suffix=-functions-aot
+            type=sha,prefix={{branch}}-,suffix=-functions-aot
+            type=raw,value=latest-functions-aot,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.functions.aot
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-functions-aot
+          cache-to: type=gha,mode=max,scope=release-functions-aot
+          provenance: true
+          sbom: true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
+        with:
+          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results-functions-aot.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results-functions-aot.sarif') != ''
+        with:
+          sarif_file: 'trivy-results-functions-aot.sarif'
+          category: 'trivy-functions-aot'

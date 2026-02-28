@@ -22,7 +22,7 @@ module "honua" {
 
 ## Prerequisites
 
-- **ECR image**: Lambda container images must be stored in ECR. Push the Honua image (or an extended Lambda-compatible version) to your ECR repository before applying.
+- **ECR image**: Lambda container images must be stored in ECR. Push the Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback) to your ECR repository before applying.
 - **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS). For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
 - **Migrations**: `skip_migrations` defaults to `true` for serverless. Run migrations out-of-band (e.g. via a one-off ECS task or local `psql`) before first use.
 
@@ -89,7 +89,7 @@ See `variables.tf` for the complete list.
 ## Constraints
 
 - **API Gateway timeout**: HTTP API has a 30-second max integration timeout. Keep `lambda_timeout_seconds` in sync.
-- **Cold starts**: Use an AOT image (`vX.Y.Z-aot`) for faster cold starts. Consider provisioned concurrency for latency-sensitive workloads.
+- **Cold starts**: Use an AOT Lambda image (`vX.Y.Z-lambda-aot`) for faster cold starts. Consider provisioned concurrency for latency-sensitive workloads.
 - **Concurrent migrations**: Multiple Lambda invocations may attempt migrations simultaneously. Always set `skip_migrations = true` in production.
 
 ## Outputs

@@ -1,6 +1,6 @@
 # Deploying Honua Server
 
-All deployment options run the same Honua container image and require a PostGIS-enabled PostgreSQL database. Redis is optional (recommended for multi-node deployments).
+All deployment options require a PostGIS-enabled PostgreSQL database. Redis is optional (recommended for multi-node deployments). Container images are target-specific (web, Lambda, Functions) with shared app code.
 
 ## Pick a deployment path
 
@@ -51,18 +51,41 @@ See `.env.example` in the repo root for every available setting.
 
 ## Container images
 
-Published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`).
+Web runtime tags are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`).
+Serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 
-| Tag | Build | Use for |
-|-----|-------|---------|
-| `vX.Y.Z-aot` | AOT | Production (recommended) |
-| `vX.Y.Z` | JIT | Production (if AOT incompatible) |
-| `latest-aot` | AOT | Development (tracks trunk) |
-| `latest` | JIT | Development (tracks trunk) |
-| `nightly-aot` | AOT | CI / experiments |
-| `nightly` | JIT | CI / experiments |
+| Tag | Build | Use for | Registry |
+|-----|-------|---------|----------|
+| `vX.Y.Z-aot` | AOT | Production (recommended) | GHCR + Docker Hub |
+| `vX.Y.Z` | JIT | Production (if AOT incompatible) | GHCR + Docker Hub |
+| `vX.Y.Z-lambda-aot` | AOT | AWS Lambda (preferred) | ECR (and optional ACR mirror) |
+| `vX.Y.Z-lambda` | JIT | AWS Lambda debug fallback | ECR (and optional ACR mirror) |
+| `vX.Y.Z-functions-aot` | AOT | Azure Functions (preferred) | ACR (and optional ECR mirror) |
+| `vX.Y.Z-functions` | JIT | Azure Functions debug fallback | ACR (and optional ECR mirror) |
+| `latest-aot` | AOT | Development (tracks trunk) | GHCR + Docker Hub |
+| `latest` | JIT | Development (tracks trunk) | GHCR + Docker Hub |
+| `latest-lambda-aot` | AOT | Lambda validation / dev | ECR (and optional ACR mirror) |
+| `latest-lambda` | JIT | Lambda debug fallback / dev | ECR (and optional ACR mirror) |
+| `latest-functions-aot` | AOT | Functions validation / dev | ACR (and optional ECR mirror) |
+| `latest-functions` | JIT | Functions debug fallback / dev | ACR (and optional ECR mirror) |
+| `nightly-aot` | AOT | CI / experiments | GHCR + Docker Hub |
+| `nightly` | JIT | CI / experiments | GHCR + Docker Hub |
 
-AOT images start faster and use less memory. Use JIT only if you encounter AOT compatibility issues.
+### Platform Image Publish CI
+
+Workflow: `.github/workflows/deploy-platform-images.yml`
+
+- Publishes only platform tags to cloud registries (`ECR` and/or `ACR`).
+- Publishes AOT platform lanes for Lambda and Functions as multi-arch (`linux/amd64`, `linux/arm64`), with JIT lanes kept for debug fallback.
+- Requires at least one configured target (ECR or ACR), otherwise the workflow fails fast.
+- ECR config:
+  - Repository variable: `AWS_ECR_REGION` (required for ECR lane), `AWS_ECR_REPOSITORY` (optional; defaults to `honua-server`)
+  - Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` (optional)
+- ACR config:
+  - Secret: `ACR_LOGIN_SERVER`, `ACR_USERNAME`, `ACR_PASSWORD`
+  - Repository variable: `ACR_REPOSITORY` (optional; defaults to `honua-server`)
+
+AOT images start faster and use less memory. Keep JIT serverless tags as debug fallback only.
 
 ## Production checklist
 

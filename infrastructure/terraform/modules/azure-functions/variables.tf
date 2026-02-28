@@ -23,9 +23,9 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster cold starts."
+  description = "Container image. Prefer Functions AOT tags (latest-functions-aot, vX.Y.Z-functions-aot). JIT functions tags are debug fallback."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
+  default     = "ghcr.io/honua-io/honua-server:latest-functions-aot"
 }
 
 variable "container_port" {

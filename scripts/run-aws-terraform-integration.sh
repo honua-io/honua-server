@@ -8,8 +8,13 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 STACK="both"
 REGION="${AWS_REGION_OVERRIDE:-us-east-1}"
 ENVIRONMENT="${AWS_TF_ENVIRONMENT:-it}"
-NAME_PREFIX_BASE="${AWS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
-ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
+NAME_PREFIX_BASE="${AWS_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
+DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
+DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
+DEFAULT_LAMBDA_TAG_SUFFIX="-lambda"
+DEFAULT_LAMBDA_AOT_TAG_SUFFIX="-lambda-aot"
+USE_AOT="${HONUA_USE_AOT:-false}"
+ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-$DEFAULT_HONUA_IMAGE}"
 SERVERLESS_IMAGE="${HONUA_AWS_SERVERLESS_IMAGE:-}"
 ECS_PREVIOUS_IMAGE="${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}"
 SERVERLESS_PREVIOUS_IMAGE="${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}"
@@ -59,6 +64,7 @@ Options:
   --region <aws-region>                AWS region (default: us-east-1)
   --environment <name>                 Environment suffix in names (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
+  --aot                                Use latest-aot for ECS; map serverless tag '*-lambda' -> '*-lambda-aot' when provided (JIT is debug fallback)
   --ecs-image <image>                  ECS container image
   --serverless-image <ecr-uri>         Lambda container image URI (ECR)
   --ecs-previous-image <image>         Previous ECS image for upgrade/rollback validation
@@ -144,6 +150,10 @@ parse_args() {
       --name-prefix-base)
         NAME_PREFIX_BASE="$2"
         shift 2
+        ;;
+      --aot)
+        USE_AOT=true
+        shift
         ;;
       --ecs-image)
         ECS_IMAGE="$2"
@@ -248,6 +258,24 @@ parse_args() {
   if [[ "$STACK" != "ecs" && "$STACK" != "serverless" && "$STACK" != "both" ]]; then
     log_error "Invalid --stack value: $STACK"
     exit 1
+  fi
+}
+
+apply_aot_mode() {
+  if [[ "$USE_AOT" != "true" ]]; then
+    return
+  fi
+
+  if [[ "$ECS_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
+    ECS_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
+  fi
+
+  if [[ -n "$SERVERLESS_IMAGE" && "$SERVERLESS_IMAGE" == *:* ]]; then
+    local serverless_tag
+    serverless_tag="${SERVERLESS_IMAGE##*:}"
+    if [[ "$serverless_tag" == *"$DEFAULT_LAMBDA_TAG_SUFFIX" && "$serverless_tag" != *"$DEFAULT_LAMBDA_AOT_TAG_SUFFIX" ]]; then
+      SERVERLESS_IMAGE="${SERVERLESS_IMAGE%:*}:${serverless_tag}-aot"
+    fi
   fi
 }
 
@@ -546,13 +574,35 @@ assert_idempotent_plan() {
 verify_protocol_endpoints() {
   local base_url="$1"
   local normalized
+  local admin_api_key
   local status
 
   normalized="$(normalize_base_url "$base_url")"
+  admin_api_key="${HONUA_ADMIN_PASSWORD}"
 
-  curl -fsSL --max-time 20 "${normalized}/rest/services?f=pjson" >/dev/null
-  curl -fsSL --max-time 20 "${normalized}/ogc/features" >/dev/null
-  curl -fsSL --max-time 20 "${normalized}/odata" >/dev/null
+  check_endpoint() {
+    local endpoint="$1"
+    local endpoint_status
+
+    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$endpoint" || true)"
+    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
+      curl -fsSL --max-time 20 \
+        -H "X-API-Key: $admin_api_key" \
+        "$endpoint" >/dev/null
+      return 0
+    fi
+
+    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
+    return 1
+  }
+
+  check_endpoint "${normalized}/rest/services?f=pjson"
+  check_endpoint "${normalized}/ogc/features"
+  check_endpoint "${normalized}/odata"
 
   status="$(curl -sSL -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
@@ -639,22 +689,34 @@ run_admin_api_crud_smoke() {
     trap - RETURN
     set +e
 
-    run_db_sql "$db_host" "DROP TABLE IF EXISTS public.${table_name};" || true
+    local cleanup_db_host="${db_host:-}"
+    local cleanup_table_name="${table_name:-}"
+    local cleanup_layer_id="${layer_id:-}"
+    local cleanup_service_name="${service_name:-}"
+    local cleanup_connection_id="${connection_id:-}"
+    local cleanup_normalized="${normalized:-}"
 
-    if [[ -n "$layer_id" ]]; then
-      run_db_sql "$db_host" "
-        DELETE FROM honua.layer_fields WHERE layer_id = ${layer_id};
-        DELETE FROM honua.service_layers WHERE layer_id = ${layer_id};
-        DELETE FROM honua.layers WHERE layer_id = ${layer_id};
+    if [[ -z "$cleanup_db_host" ]]; then
+      return 0
+    fi
+
+    run_db_sql "$cleanup_db_host" "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
+
+    if [[ -n "$cleanup_layer_id" ]]; then
+      run_db_sql "$cleanup_db_host" "
+        DELETE FROM features WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.layer_fields WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.service_layers WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.layers WHERE layer_id = ${cleanup_layer_id};
       " || true
     fi
 
-    run_db_sql "$db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$service_name")';" || true
+    run_db_sql "$cleanup_db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
 
-    if [[ -n "$connection_id" ]]; then
+    if [[ -n "$cleanup_connection_id" ]]; then
       curl -sSL --max-time 20 -X DELETE \
         -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-        "${normalized}/api/v1/admin/connections/${connection_id}" >/dev/null || true
+        "${cleanup_normalized}/api/v1/admin/connections/${cleanup_connection_id}" >/dev/null || true
     fi
   }
 
@@ -705,8 +767,19 @@ JSON
     return 1
   fi
 
+  run_db_sql "$db_host" "
+    INSERT INTO features (layer_id, geometry, attributes)
+    VALUES (
+      ${layer_id},
+      ST_SetSRID(ST_Point(1, 1), 4326),
+      jsonb_build_object('id', 1, 'name', 'Smoke Feature', 'population', 1)
+    );
+  "
+
   query_url="${normalized}/rest/services/${service_name}/FeatureServer/${layer_id}/query?where=1%3D1&outFields=id,name,population&f=pjson"
-  query_response="$(curl -fsSL --max-time 20 "$query_url")"
+  query_response="$(curl -fsSL --max-time 20 \
+    -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+    "$query_url")"
 
   if command -v jq >/dev/null 2>&1; then
     feature_count="$(printf '%s' "$query_response" | jq -r '(.features // []) | length' 2>/dev/null || echo 0)"
@@ -751,7 +824,7 @@ verify_db_backup_restore() {
       pg_dump 'host=$db_endpoint port=5432 dbname=honua user=honua sslmode=require' -Fc -f /tmp/honua.dump; \
       psql 'host=$db_endpoint port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check'; \
       psql 'host=$db_endpoint port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'CREATE DATABASE honua_restore_check'; \
-      pg_restore 'host=$db_endpoint port=5432 dbname=honua_restore_check user=honua sslmode=require' -v /tmp/honua.dump >/dev/null;" >/dev/null
+      pg_restore -d 'host=$db_endpoint port=5432 dbname=honua_restore_check user=honua sslmode=require' -v /tmp/honua.dump >/dev/null;" >/dev/null
 
   extensions_count="$(docker run --rm \
     -e PGPASSWORD="$HONUA_DB_PASSWORD" \
@@ -987,6 +1060,10 @@ apply_ecs_stack() {
       plan_apply "examples/aws" "ecs-scale.tfplan" "ecs-scale"
       wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_SCALE_TARGET_DESIRED_COUNT" 900
       export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
+      plan_apply "examples/aws" "ecs-scale-reset.tfplan" "ecs-scale-reset"
+      if [[ "$ECS_DESIRED_COUNT" =~ ^[0-9]+$ ]] && (( ECS_DESIRED_COUNT > 0 )); then
+        wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_DESIRED_COUNT" 900
+      fi
     fi
 
     export TF_VAR_honua_image="$ECS_PREVIOUS_IMAGE"
@@ -1026,6 +1103,10 @@ apply_ecs_stack() {
       plan_apply "examples/aws" "ecs-scale.tfplan" "ecs-scale"
       wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_SCALE_TARGET_DESIRED_COUNT" 900
       export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
+      plan_apply "examples/aws" "ecs-scale-reset.tfplan" "ecs-scale-reset"
+      if [[ "$ECS_DESIRED_COUNT" =~ ^[0-9]+$ ]] && (( ECS_DESIRED_COUNT > 0 )); then
+        wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_DESIRED_COUNT" 900
+      fi
     fi
   fi
 
@@ -1178,6 +1259,7 @@ cleanup() {
 
 main() {
   parse_args "$@"
+  apply_aot_mode
   require_command docker
   require_command curl
   require_env \
@@ -1199,6 +1281,11 @@ main() {
   log_info "Starting AWS Terraform integration test"
   log_info "Validation run ID: $VALIDATION_RUN_ID"
   log_info "Stack selection: $STACK"
+  log_info "AOT mode: $USE_AOT"
+  log_info "ECS image: $ECS_IMAGE"
+  if [[ -n "$SERVERLESS_IMAGE" ]]; then
+    log_info "Serverless image: $SERVERLESS_IMAGE"
+  fi
   log_info "Region: $REGION"
   log_info "Environment: $ENVIRONMENT"
   log_info "ECS prefix: $ECS_NAME_PREFIX"

@@ -8,9 +8,15 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 STACK="both"
 LOCATION="${AZURE_LOCATION:-westus}"
 ENVIRONMENT="${AZURE_TF_ENVIRONMENT:-it}"
-NAME_PREFIX_BASE="${AZURE_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
-ACA_IMAGE="${HONUA_ACA_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
-FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-ghcr.io/honua-io/honua-server:latest}"
+NAME_PREFIX_BASE="${AZURE_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
+DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
+DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
+DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE="${HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE:-ghcr.io/honua-io/honua-server:latest-functions-aot}"
+DEFAULT_HONUA_FUNCTIONS_IMAGE="${HONUA_DEFAULT_FUNCTIONS_IMAGE:-$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE}"
+USE_AOT="${HONUA_USE_AOT:-false}"
+FUNCTIONS_AOT_AUTOSWITCH="${HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH:-true}"
+ACA_IMAGE="${HONUA_ACA_IMAGE:-$DEFAULT_HONUA_IMAGE}"
+FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-$DEFAULT_HONUA_FUNCTIONS_IMAGE}"
 ACA_PREVIOUS_IMAGE="${HONUA_ACA_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PREVIOUS_IMAGE="${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PLAN_SKU="${HONUA_FUNCTIONS_PLAN_SKU:-EP1}"
@@ -24,9 +30,9 @@ RUN_QUOTA_PREFLIGHT=true
 TIMEOUT_SECONDS="${HONUA_AZURE_TEST_TIMEOUT_SECONDS:-900}"
 LOAD_REQUESTS="${HONUA_AZURE_LOAD_REQUESTS:-120}"
 LOAD_CONCURRENCY="${HONUA_AZURE_LOAD_CONCURRENCY:-20}"
-ACA_MIN_REPLICAS=1
-ACA_MAX_REPLICAS=3
-ACA_SCALE_TARGET_MIN_REPLICAS=2
+ACA_MIN_REPLICAS="${HONUA_AZURE_ACA_MIN_REPLICAS:-0}"
+ACA_MAX_REPLICAS="${HONUA_AZURE_ACA_MAX_REPLICAS:-3}"
+ACA_SCALE_TARGET_MIN_REPLICAS="${HONUA_AZURE_ACA_SCALE_TARGET_MIN_REPLICAS:-2}"
 READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
 MAX_LOAD_ERROR_RATE_PERCENT="${HONUA_MAX_LOAD_ERROR_RATE_PERCENT:-0}"
 MAX_RUN_COST_USD="${HONUA_MAX_RUN_COST_USD:-0}"
@@ -44,6 +50,8 @@ EXISTING_REDIS_CONNECTION_STRING="${HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING
 AUTO_PROVISION_DATA_STACK=true
 DATA_DB_SKU_NAME="${HONUA_AZURE_DATA_DB_SKU_NAME:-B_Standard_B1ms}"
 DATA_DB_STORAGE_MB="${HONUA_AZURE_DATA_DB_STORAGE_MB:-32768}"
+DATA_DB_GEO_REDUNDANT_BACKUP_ENABLED="${HONUA_AZURE_DATA_DB_GEO_REDUNDANT_BACKUP_ENABLED:-false}"
+DATA_DB_BACKUP_RETENTION_DAYS="${HONUA_AZURE_DATA_DB_BACKUP_RETENTION_DAYS:-7}"
 DATA_DB_PUBLIC_NETWORK_ACCESS="${HONUA_AZURE_DATA_DB_PUBLIC_NETWORK_ACCESS:-true}"
 DATA_REDIS_SKU_NAME="${HONUA_AZURE_DATA_REDIS_SKU_NAME:-Basic}"
 DATA_REDIS_FAMILY="${HONUA_AZURE_DATA_REDIS_FAMILY:-C}"
@@ -76,6 +84,7 @@ Options:
   --location <azure-region>           Azure region (default: westus)
   --environment <name>                Environment suffix in names (default: it)
   --name-prefix-base <prefix>         Base prefix for generated resource names
+  --aot                               Use latest-aot for ACA; Functions defaults to latest-functions-aot (JIT is debug fallback)
   --aca-image <image>                 ACA image tag
   --functions-image <image>           Functions image tag
   --aca-previous-image <image>        Previous ACA image for upgrade/rollback validation
@@ -88,6 +97,8 @@ Options:
   --max-run-cost-usd <n>              Max allowed estimated run cost (0 disables cap)
   --data-db-sku <name>                Azure data stack PostgreSQL SKU (default: B_Standard_B1ms)
   --data-db-storage-mb <n>            Azure data stack PostgreSQL storage in MB (default: 32768)
+  --data-db-geo-backup <true|false>   Azure data stack PostgreSQL geo backup (default: false)
+  --data-db-backup-retention-days <n> Azure data stack PostgreSQL backup retention (default: 7)
   --data-redis-sku <Basic|Standard>   Azure data stack Redis SKU (default: Basic)
   --data-redis-family <char>          Azure data stack Redis family (default: C)
   --data-redis-capacity <n>           Azure data stack Redis capacity (default: 0)
@@ -162,6 +173,20 @@ normalize_identifiers() {
   FUNCTIONS_NAME_PREFIX="${FUNCTIONS_NAME_PREFIX:0:20}"
 }
 
+apply_aot_mode() {
+  if [[ "$USE_AOT" != "true" ]]; then
+    return
+  fi
+
+  if [[ "$ACA_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
+    ACA_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
+  fi
+
+  if [[ "$FUNCTIONS_AOT_AUTOSWITCH" == "true" && "$FUNCTIONS_IMAGE" == "$DEFAULT_HONUA_FUNCTIONS_IMAGE" ]]; then
+    FUNCTIONS_IMAGE="$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE"
+  fi
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -180,6 +205,10 @@ parse_args() {
       --name-prefix-base)
         NAME_PREFIX_BASE="$2"
         shift 2
+        ;;
+      --aot)
+        USE_AOT=true
+        shift
         ;;
       --aca-image)
         ACA_IMAGE="$2"
@@ -227,6 +256,14 @@ parse_args() {
         ;;
       --data-db-storage-mb)
         DATA_DB_STORAGE_MB="$2"
+        shift 2
+        ;;
+      --data-db-geo-backup)
+        DATA_DB_GEO_REDUNDANT_BACKUP_ENABLED="$2"
+        shift 2
+        ;;
+      --data-db-backup-retention-days)
+        DATA_DB_BACKUP_RETENTION_DAYS="$2"
         shift 2
         ;;
       --data-redis-sku)
@@ -337,6 +374,8 @@ run_tf() {
     -e TF_VAR_db_admin_password \
     -e TF_VAR_db_sku_name \
     -e TF_VAR_db_storage_mb \
+    -e TF_VAR_db_geo_redundant_backup_enabled \
+    -e TF_VAR_db_backup_retention_days \
     -e TF_VAR_db_public_network_access \
     -e TF_VAR_honua_image \
     -e TF_VAR_enable_postgis \
@@ -567,13 +606,35 @@ assert_idempotent_plan() {
 verify_protocol_endpoints() {
   local base_url="$1"
   local normalized
+  local admin_api_key
   local status
 
   normalized="$(normalize_base_url "$base_url")"
+  admin_api_key="${HONUA_ADMIN_PASSWORD}"
 
-  curl -fsSL --max-time 20 "${normalized}/rest/services?f=pjson" >/dev/null
-  curl -fsSL --max-time 20 "${normalized}/ogc/features" >/dev/null
-  curl -fsSL --max-time 20 "${normalized}/odata" >/dev/null
+  check_endpoint() {
+    local endpoint="$1"
+    local endpoint_status
+
+    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$endpoint" || true)"
+    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
+      curl -fsSL --max-time 20 \
+        -H "X-API-Key: $admin_api_key" \
+        "$endpoint" >/dev/null
+      return 0
+    fi
+
+    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
+    return 1
+  }
+
+  check_endpoint "${normalized}/rest/services?f=pjson"
+  check_endpoint "${normalized}/ogc/features"
+  check_endpoint "${normalized}/odata"
 
   status="$(curl -sSL -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
@@ -669,22 +730,34 @@ run_admin_api_crud_smoke() {
     trap - RETURN
     set +e
 
-    run_db_sql "$db_host" "DROP TABLE IF EXISTS public.${table_name};" || true
+    local cleanup_db_host="${db_host:-}"
+    local cleanup_table_name="${table_name:-}"
+    local cleanup_layer_id="${layer_id:-}"
+    local cleanup_service_name="${service_name:-}"
+    local cleanup_connection_id="${connection_id:-}"
+    local cleanup_normalized="${normalized:-}"
 
-    if [[ -n "$layer_id" ]]; then
-      run_db_sql "$db_host" "
-        DELETE FROM honua.layer_fields WHERE layer_id = ${layer_id};
-        DELETE FROM honua.service_layers WHERE layer_id = ${layer_id};
-        DELETE FROM honua.layers WHERE layer_id = ${layer_id};
+    if [[ -z "$cleanup_db_host" ]]; then
+      return 0
+    fi
+
+    run_db_sql "$cleanup_db_host" "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
+
+    if [[ -n "$cleanup_layer_id" ]]; then
+      run_db_sql "$cleanup_db_host" "
+        DELETE FROM features WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.layer_fields WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.service_layers WHERE layer_id = ${cleanup_layer_id};
+        DELETE FROM honua.layers WHERE layer_id = ${cleanup_layer_id};
       " || true
     fi
 
-    run_db_sql "$db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$service_name")';" || true
+    run_db_sql "$cleanup_db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
 
-    if [[ -n "$connection_id" ]]; then
+    if [[ -n "$cleanup_connection_id" ]]; then
       curl -sS --max-time 20 -X DELETE \
         -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-        "${normalized}/api/v1/admin/connections/${connection_id}" >/dev/null || true
+        "${cleanup_normalized}/api/v1/admin/connections/${cleanup_connection_id}" >/dev/null || true
     fi
   }
 
@@ -735,8 +808,19 @@ JSON
     return 1
   fi
 
+  run_db_sql "$db_host" "
+    INSERT INTO features (layer_id, geometry, attributes)
+    VALUES (
+      ${layer_id},
+      ST_SetSRID(ST_Point(1, 1), 4326),
+      jsonb_build_object('id', 1, 'name', 'Smoke Feature', 'population', 1)
+    );
+  "
+
   query_url="${normalized}/rest/services/${service_name}/FeatureServer/${layer_id}/query?where=1%3D1&outFields=id,name,population&f=pjson"
-  query_response="$(curl -fsS --max-time 20 "$query_url")"
+  query_response="$(curl -fsS --max-time 20 \
+    -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+    "$query_url")"
 
   if command -v jq >/dev/null 2>&1; then
     feature_count="$(printf '%s' "$query_response" | jq -r '(.features // []) | length' 2>/dev/null || echo 0)"
@@ -799,7 +883,7 @@ verify_db_backup_restore() {
       pg_dump 'host=$db_fqdn port=5432 dbname=honua user=honua sslmode=require' -Fc -f /tmp/honua.dump; \
       psql 'host=$db_fqdn port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check'; \
       psql 'host=$db_fqdn port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'CREATE DATABASE honua_restore_check'; \
-      pg_restore 'host=$db_fqdn port=5432 dbname=honua_restore_check user=honua sslmode=require' -v /tmp/honua.dump >/dev/null;" >/dev/null
+      pg_restore -d 'host=$db_fqdn port=5432 dbname=honua_restore_check user=honua sslmode=require' -v /tmp/honua.dump >/dev/null;" >/dev/null
 
   extensions_count="$(docker run --rm \
     -e PGPASSWORD="$HONUA_DB_PASSWORD" \
@@ -959,7 +1043,9 @@ detect_db_firewall_ips() {
 }
 
 set_common_tf_vars() {
-  EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
+  # Azure Managed Identity tag reads normalize this value to MM/DD/YYYY HH:MM:SS.
+  # Use that format up-front to keep idempotency checks stable across services.
+  EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%m/%d/%Y\ %H:%M:%S)"
 
   export TF_VAR_location="$LOCATION"
   export TF_VAR_environment="$ENVIRONMENT"
@@ -987,6 +1073,8 @@ set_aca_tf_vars() {
   unset TF_VAR_skip_migrations
   unset TF_VAR_db_sku_name
   unset TF_VAR_db_storage_mb
+  unset TF_VAR_db_geo_redundant_backup_enabled
+  unset TF_VAR_db_backup_retention_days
   unset TF_VAR_db_public_network_access
   unset TF_VAR_redis_sku_name
   unset TF_VAR_redis_family
@@ -1006,6 +1094,8 @@ set_functions_tf_vars() {
   unset TF_VAR_key_vault_default_action
   unset TF_VAR_db_sku_name
   unset TF_VAR_db_storage_mb
+  unset TF_VAR_db_geo_redundant_backup_enabled
+  unset TF_VAR_db_backup_retention_days
   unset TF_VAR_db_public_network_access
   unset TF_VAR_redis_sku_name
   unset TF_VAR_redis_family
@@ -1019,6 +1109,8 @@ set_data_tf_vars() {
   export TF_VAR_key_vault_default_action="Allow"
   export TF_VAR_db_sku_name="$DATA_DB_SKU_NAME"
   export TF_VAR_db_storage_mb="$DATA_DB_STORAGE_MB"
+  export TF_VAR_db_geo_redundant_backup_enabled="$DATA_DB_GEO_REDUNDANT_BACKUP_ENABLED"
+  export TF_VAR_db_backup_retention_days="$DATA_DB_BACKUP_RETENTION_DAYS"
   export TF_VAR_db_public_network_access="$DATA_DB_PUBLIC_NETWORK_ACCESS"
   export TF_VAR_redis_sku_name="$DATA_REDIS_SKU_NAME"
   export TF_VAR_redis_family="$DATA_REDIS_FAMILY"
@@ -1154,6 +1246,10 @@ apply_aca_stack() {
       plan_apply "examples/azure" "aca-scale.tfplan" "aca-scale"
       wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_SCALE_TARGET_MIN_REPLICAS" 600
       export TF_VAR_min_replicas="$ACA_MIN_REPLICAS"
+      plan_apply "examples/azure" "aca-scale-reset.tfplan" "aca-scale-reset"
+      if [[ "$ACA_MIN_REPLICAS" =~ ^[0-9]+$ ]] && (( ACA_MIN_REPLICAS > 0 )); then
+        wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_MIN_REPLICAS" 600
+      fi
     fi
 
     export TF_VAR_honua_image="$ACA_PREVIOUS_IMAGE"
@@ -1183,6 +1279,10 @@ apply_aca_stack() {
       plan_apply "examples/azure" "aca-scale.tfplan" "aca-scale"
       wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_SCALE_TARGET_MIN_REPLICAS" 600
       export TF_VAR_min_replicas="$ACA_MIN_REPLICAS"
+      plan_apply "examples/azure" "aca-scale-reset.tfplan" "aca-scale-reset"
+      if [[ "$ACA_MIN_REPLICAS" =~ ^[0-9]+$ ]] && (( ACA_MIN_REPLICAS > 0 )); then
+        wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_MIN_REPLICAS" 600
+      fi
     fi
   fi
 
@@ -1356,6 +1456,7 @@ cleanup() {
 
 main() {
   parse_args "$@"
+  apply_aot_mode
   require_command docker
   require_command curl
   require_env \
@@ -1380,10 +1481,15 @@ main() {
   log_info "Starting Azure Terraform integration test"
   log_info "Validation run ID: $VALIDATION_RUN_ID"
   log_info "Stack selection: $STACK"
+  log_info "AOT mode: $USE_AOT"
+  log_info "Functions AOT autoswitch: $FUNCTIONS_AOT_AUTOSWITCH"
+  log_info "ACA image: $ACA_IMAGE"
+  log_info "Functions image: $FUNCTIONS_IMAGE"
   log_info "Region: $LOCATION"
   log_info "Environment: $ENVIRONMENT"
   log_info "Data prefix: $DATA_NAME_PREFIX"
   log_info "Data DB SKU/storage: $DATA_DB_SKU_NAME / ${DATA_DB_STORAGE_MB}MB"
+  log_info "Data DB geo-backup/retention-days: $DATA_DB_GEO_REDUNDANT_BACKUP_ENABLED / $DATA_DB_BACKUP_RETENTION_DAYS"
   log_info "Data Redis SKU/family/capacity: $DATA_REDIS_SKU_NAME/$DATA_REDIS_FAMILY/$DATA_REDIS_CAPACITY"
   log_info "ACA prefix: $ACA_NAME_PREFIX"
   log_info "Functions prefix: $FUNCTIONS_NAME_PREFIX"
