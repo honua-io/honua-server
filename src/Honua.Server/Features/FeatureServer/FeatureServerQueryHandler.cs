@@ -205,6 +205,18 @@ internal sealed class FeatureServerQueryHandler(
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
+            async Task<IResult> CreateCachedBytesResultAsync(byte[] payload, string contentType)
+            {
+                if (!canCache || cacheKey is null)
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
+                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
+                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+            }
+
             GeoServicesGeometry? parsedGeometry = null;
             if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
             {
@@ -469,7 +481,8 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
-            var useStreaming = effectiveLimit > StreamingThreshold;
+            var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf;
 
             if (!useStreaming)
             {
@@ -506,6 +519,13 @@ internal sealed class FeatureServerQueryHandler(
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
+
+                if (isPbf)
+                {
+                    return await CreateCachedBytesResultAsync(
+                        (byte[])formattedResponse!,
+                        contentType ?? "application/x-protobuf");
+                }
 
                 return format.ToLowerInvariant() switch
                 {

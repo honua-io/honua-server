@@ -15,6 +15,7 @@ internal static class FeatureServerServiceCollectionExtensions
 
         services.AddHttpContextAccessor();
 
+        services.AddScoped<PbfQueryFormatter>();
         services.AddScoped<IQueryFormatter, QueryFormatter>();
         services.AddScoped<IFeatureQueryValidator, FeatureQueryValidator>();
         services.AddScoped<IGeometryValidator, GeometryValidator>();

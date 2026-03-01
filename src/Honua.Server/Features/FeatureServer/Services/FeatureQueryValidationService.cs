@@ -65,11 +65,6 @@ internal sealed class FeatureQueryValidationService
             return FormatValidationResult.Valid("json");
         }
 
-        if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase))
-        {
-            return FormatValidationResult.Invalid("Output format 'pbf' is not supported");
-        }
-
         return FormatValidationResult.Valid(format);
     }
 

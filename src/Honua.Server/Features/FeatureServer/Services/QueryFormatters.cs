@@ -55,12 +55,14 @@ internal interface IQueryFormatter
 internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
+    private readonly PbfQueryFormatter _pbfFormatter;
     [ThreadStatic]
     private static WKBReader? _wkbReader;
 
-    public QueryFormatter(IOptions<LimitsOptions> limitsOptions)
+    public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _pbfFormatter = pbfFormatter;
     }
 
     /// <summary>
@@ -86,6 +88,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
         return format.ToLowerInvariant() switch
         {
+            "pbf" => _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields),
             "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
             "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
         };
