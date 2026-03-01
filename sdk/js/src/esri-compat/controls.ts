@@ -330,7 +330,7 @@ export class ScaleBarCompat {
       return this.text;
     }
 
-    const mapScale = 591657527.591555 / Math.pow(2, zoom);
+    const mapScale = 591657527.591555 / 2 ** zoom;
     this.scale = mapScale;
     this.notifyWatchers("scale", this.scale);
     this.text = buildScaleBarText(mapScale, this.unit);

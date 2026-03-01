@@ -1,4 +1,4 @@
-import { CompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import { type CompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import {
   MeasurementCompat,
   type AreaUnitCompat,

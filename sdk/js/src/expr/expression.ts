@@ -469,6 +469,30 @@ export function rgba(
   return new Expr<ExprColor>(["rgba", r(red), r(green), r(blue), r(alpha)]);
 }
 
+/** Create a color from HSL components (hue 0-360, saturation/lightness 0-100%). */
+export function hsl(
+  hue: NumberInput,
+  saturation: NumberInput,
+  lightness: NumberInput,
+): Expr<ExprColor> {
+  return new Expr<ExprColor>(["hsl", r(hue), r(saturation), r(lightness)]);
+}
+
+/** Create a color from HSLA components (hue 0-360, saturation/lightness 0-100%, alpha 0-1). */
+export function hsla(
+  hue: NumberInput,
+  saturation: NumberInput,
+  lightness: NumberInput,
+  alpha: NumberInput,
+): Expr<ExprColor> {
+  return new Expr<ExprColor>(["hsla", r(hue), r(saturation), r(lightness), r(alpha)]);
+}
+
+/** Decompose a color into its RGBA components as `[r, g, b, a]`. */
+export function toRgba(color: ColorInput): Expr<number[]> {
+  return new Expr<number[]>(["to-rgba", r(color)]);
+}
+
 // ── Interpolation methods ────────────────────────────────────
 
 /** Linear interpolation method. */
@@ -606,9 +630,167 @@ export function varExpr(name: string): Expr<ExprValue> {
 
 // ── Format and image ─────────────────────────────────────────
 
+/** Options for a single segment in a `format()` expression. */
+export interface FormatSegmentOptions {
+  "font-scale"?: NumberInput;
+  "text-font"?: Expr<unknown> | string[];
+  "text-color"?: ColorInput;
+}
+
+/**
+ * Create a formatted text value from one or more text segments with per-segment styling.
+ *
+ * Each segment is `[text, options?]`:
+ * ```ts
+ * expr.format(
+ *   [expr.get("name"), { "font-scale": 1.2, "text-color": "#000" }],
+ *   ["\n"],
+ *   [expr.get("description")],
+ * )
+ * ```
+ */
+export function format(
+  ...segments: [StringInput, FormatSegmentOptions?][]
+): Expr<ExprFormatted> {
+  const json: unknown[] = ["format"];
+  for (const [text, opts] of segments) {
+    json.push(r(text));
+    const resolvedOpts: Record<string, unknown> = {};
+    if (opts) {
+      if (opts["font-scale"] !== undefined)
+        resolvedOpts["font-scale"] = r(opts["font-scale"]);
+      if (opts["text-font"] !== undefined)
+        resolvedOpts["text-font"] =
+          opts["text-font"] instanceof Expr
+            ? opts["text-font"].toJSON()
+            : opts["text-font"];
+      if (opts["text-color"] !== undefined)
+        resolvedOpts["text-color"] = r(opts["text-color"]);
+    }
+    json.push(resolvedOpts);
+  }
+  return new Expr<ExprFormatted>(json);
+}
+
+/** Options for `numberFormat()`. */
+export interface NumberFormatOptions {
+  locale?: StringInput;
+  currency?: StringInput;
+  "min-fraction-digits"?: NumberInput;
+  "max-fraction-digits"?: NumberInput;
+}
+
+/** Format a number using locale-sensitive formatting. */
+export function numberFormat(
+  input: NumberInput,
+  options?: NumberFormatOptions,
+): Expr<string> {
+  const opts: Record<string, unknown> = {};
+  if (options) {
+    if (options.locale !== undefined) opts.locale = r(options.locale);
+    if (options.currency !== undefined) opts.currency = r(options.currency);
+    if (options["min-fraction-digits"] !== undefined)
+      opts["min-fraction-digits"] = r(options["min-fraction-digits"]);
+    if (options["max-fraction-digits"] !== undefined)
+      opts["max-fraction-digits"] = r(options["max-fraction-digits"]);
+  }
+  return new Expr<string>(["number-format", r(input), opts]);
+}
+
+/** Branded type for a collator value. */
+export interface ExprCollator {
+  readonly __brand: "honua-expr-collator";
+}
+
+/** Options for `collator()`. */
+export interface CollatorOptions {
+  "case-sensitive"?: BooleanInput;
+  "diacritic-sensitive"?: BooleanInput;
+  locale?: StringInput;
+}
+
+/** Create a collator for locale-aware string comparisons. */
+export function collator(options?: CollatorOptions): Expr<ExprCollator> {
+  const opts: Record<string, unknown> = {};
+  if (options) {
+    if (options["case-sensitive"] !== undefined)
+      opts["case-sensitive"] = r(options["case-sensitive"]);
+    if (options["diacritic-sensitive"] !== undefined)
+      opts["diacritic-sensitive"] = r(options["diacritic-sensitive"]);
+    if (options.locale !== undefined) opts.locale = r(options.locale);
+  }
+  return new Expr<ExprCollator>(["collator", opts]);
+}
+
+/** Get the resolved locale string from a collator. */
+export function resolvedLocale(input: Expr<ExprCollator>): Expr<string> {
+  return new Expr<string>(["resolved-locale", input.toJSON()]);
+}
+
 /** Resolve an image name from the style's sprite. Usable in `icon-image` and pattern properties. */
 export function image(name: StringInput): Expr<ExprImage> {
   return new Expr<ExprImage>(["image", r(name)]);
+}
+
+// ── GeoJSON geometry type (minimal, avoids npm dependency) ───
+
+export interface GeoJsonPoint {
+  type: "Point";
+  coordinates: number[];
+}
+
+export interface GeoJsonMultiPoint {
+  type: "MultiPoint";
+  coordinates: number[][];
+}
+
+export interface GeoJsonLineString {
+  type: "LineString";
+  coordinates: number[][];
+}
+
+export interface GeoJsonMultiLineString {
+  type: "MultiLineString";
+  coordinates: number[][][];
+}
+
+export interface GeoJsonPolygon {
+  type: "Polygon";
+  coordinates: number[][][];
+}
+
+export interface GeoJsonMultiPolygon {
+  type: "MultiPolygon";
+  coordinates: number[][][][];
+}
+
+export type GeoJsonGeometry =
+  | GeoJsonPoint
+  | GeoJsonMultiPoint
+  | GeoJsonLineString
+  | GeoJsonMultiLineString
+  | GeoJsonPolygon
+  | GeoJsonMultiPolygon;
+
+// ── Spatial ──────────────────────────────────────────────────
+
+function resolveGeometry(input: GeoJsonGeometry | Expr<ExprValue>): unknown {
+  return input instanceof Expr ? input.toJSON() : input;
+}
+
+/** Shortest distance in meters from the evaluated feature to the input geometry. */
+export function distance(geometry: GeoJsonGeometry | Expr<ExprValue>): Expr<number> {
+  return new Expr<number>(["distance", resolveGeometry(geometry)]);
+}
+
+/** True if the evaluated feature is entirely within the input geometry. */
+export function within(geometry: GeoJsonGeometry | Expr<ExprValue>): Expr<boolean> {
+  return new Expr<boolean>(["within", resolveGeometry(geometry)]);
+}
+
+/** True if the evaluated feature intersects the input geometry. */
+export function intersects(geometry: GeoJsonGeometry | Expr<ExprValue>): Expr<boolean> {
+  return new Expr<boolean>(["intersects", resolveGeometry(geometry)]);
 }
 
 // ── Namespace export ─────────────────────────────────────────
@@ -712,6 +894,9 @@ export const expr = {
   // Color
   rgb,
   rgba,
+  hsl,
+  hsla,
+  toRgba,
 
   // Interpolation
   step,
@@ -730,5 +915,14 @@ export const expr = {
   var: varExpr,
 
   // Format/image
+  format,
+  numberFormat,
+  collator,
+  resolvedLocale,
   image,
+
+  // Spatial
+  distance,
+  within,
+  intersects,
 } as const;

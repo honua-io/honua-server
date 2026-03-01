@@ -47,14 +47,36 @@
     "demo:migration:incident": "npm run build --silent && node dist/src/migration/cli.js demo --fixture esri-real-sample-incident-command-app --fixtures-root test/fixtures --skip-import --skip-reconcile --report reports/demo-incident-codemod-report.json",
     "demo:migration:incident:live": "npm run build --silent && node scripts/run-live-demo.mjs",
     "scan:arcgis": "npm run build --silent && node dist/src/migration/cli.js scan",
-    "migrate:arcgis": "npm run build --silent && node dist/src/migration/cli.js codemod"
+    "migrate:arcgis": "npm run build --silent && node dist/src/migration/cli.js codemod",
+    "proto:generate": "buf generate --template ../../proto/buf.gen.yaml ../../proto",
+    "lint": "biome lint src/ test/",
+    "lint:fix": "biome lint --write src/ test/",
+    "format": "biome format src/ test/",
+    "format:fix": "biome format --write src/ test/",
+    "check": "biome check src/ test/",
+    "check:fix": "biome check --write src/ test/",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.0.0",
+    "@connectrpc/connect": "^2.0.0",
+    "@connectrpc/connect-web": "^2.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@bufbuild/buf": "^1.47.0",
+    "@bufbuild/protoc-gen-es": "^2.0.0",
     "@playwright/test": "^1.58.0",
     "@types/node": "^24.3.1",
     "typescript": "^5.9.2",
     "vitest": "^4.0.16"
   },
+  "files": [
+    "dist/src",
+    "dist/packages",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "engines": {
     "node": ">=20.0.0"
   }

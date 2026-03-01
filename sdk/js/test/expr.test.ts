@@ -73,7 +73,11 @@ import {
   letExpr,
   varExpr,
   image,
+  distance,
+  within,
+  intersects,
 } from "../src/index.js";
+import type { GeoJsonGeometry } from "../src/index.js";
 
 describe("Expr", () => {
   it("wraps a JSON value and serializes via toJSON()", () => {
@@ -547,6 +551,93 @@ describe("Variable binding", () => {
 describe("Image expression", () => {
   it("image() serializes to image lookup", () => {
     expect(image("marker-icon").toJSON()).toEqual(["image", "marker-icon"]);
+  });
+});
+
+describe("Spatial expressions", () => {
+  const polygon: GeoJsonGeometry = {
+    type: "Polygon",
+    coordinates: [
+      [
+        [-122.4, 37.8],
+        [-122.4, 37.7],
+        [-122.3, 37.7],
+        [-122.3, 37.8],
+        [-122.4, 37.8],
+      ],
+    ],
+  };
+
+  const point: GeoJsonGeometry = {
+    type: "Point",
+    coordinates: [-122.4194, 37.7749],
+  };
+
+  it("distance() serializes with GeoJSON geometry", () => {
+    expect(distance(point).toJSON()).toEqual([
+      "distance",
+      { type: "Point", coordinates: [-122.4194, 37.7749] },
+    ]);
+  });
+
+  it("within() serializes with GeoJSON polygon", () => {
+    expect(within(polygon).toJSON()).toEqual([
+      "within",
+      {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-122.4, 37.8],
+            [-122.4, 37.7],
+            [-122.3, 37.7],
+            [-122.3, 37.8],
+            [-122.4, 37.8],
+          ],
+        ],
+      },
+    ]);
+  });
+
+  it("intersects() serializes with GeoJSON geometry", () => {
+    expect(intersects(polygon).toJSON()).toEqual([
+      "intersects",
+      {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-122.4, 37.8],
+            [-122.4, 37.7],
+            [-122.3, 37.7],
+            [-122.3, 37.8],
+            [-122.4, 37.8],
+          ],
+        ],
+      },
+    ]);
+  });
+
+  it("distance() accepts an expression input", () => {
+    expect(distance(get("target_geom")).toJSON()).toEqual([
+      "distance",
+      ["get", "target_geom"],
+    ]);
+  });
+
+  it("spatial operators are accessible on expr namespace", () => {
+    expect(typeof expr.distance).toBe("function");
+    expect(typeof expr.within).toBe("function");
+    expect(typeof expr.intersects).toBe("function");
+  });
+
+  it("distance() composes with comparison for distance-based styling", () => {
+    const fadeByDistance = expr.case(
+      [expr.lt(expr.distance(point), 1000), 1.0],
+      [expr.lt(expr.distance(point), 5000), 0.5],
+      0.1,
+    );
+    const json = fadeByDistance.toJSON() as unknown[];
+    expect(json[0]).toBe("case");
+    expect(json[1]).toEqual(["<", ["distance", { type: "Point", coordinates: [-122.4194, 37.7749] }], 1000]);
   });
 });
 

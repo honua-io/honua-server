@@ -1,5 +1,14 @@
 import { HonuaClient } from "../core/client.js";
-import type { QueryMethod } from "../core/types.js";
+import type {
+  ApplyEditsRequest,
+  HonuaApplyEditsResponse,
+  HonuaExtent,
+  HonuaFeature,
+  HonuaFieldInfo,
+  HonuaQueryResponse,
+  HonuaRelatedRecordsResponse,
+  QueryMethod,
+} from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseFeatureLayerUrl } from "./url.js";
 
@@ -106,7 +115,7 @@ export interface FeatureLayerUpdateAttachmentOptions extends FeatureLayerAddAtta
 }
 
 export interface FeatureLayerQueryExtentResult {
-  extent: unknown | null;
+  extent: HonuaExtent | null;
   count?: number;
 }
 
@@ -242,7 +251,11 @@ export class FeatureLayerCompat {
     );
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): FeatureLayerHandleCompat {
+  public watch(propertyName: "visible" | "loaded" | "labelsVisible" | "legendEnabled", listener: (value: boolean) => void): FeatureLayerHandleCompat;
+  public watch(propertyName: "opacity" | "minScale" | "maxScale", listener: (value: number) => void): FeatureLayerHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: FeatureLayerLoadStatusCompat) => void): FeatureLayerHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): FeatureLayerHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): FeatureLayerHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -298,16 +311,11 @@ export class FeatureLayerCompat {
   public setDefinitionExpression(definitionExpression: string | undefined): void {
     this.definitionExpression = definitionExpression;
     this.notifyWatchers("definitionExpression", this.definitionExpression);
-    this.eventBus.emit(
-      "feature-layer.definition-expression-changed",
-      { layerId: this.id, definitionExpression },
-      this,
-    );
+    this.eventBus.emit("feature-layer.definition-expression-changed", { layerId: this.id, definitionExpression }, this);
   }
 
   public setOutFields(outFields: string | readonly string[] | undefined): void {
-    this.outFields =
-      outFields === undefined ? undefined : Array.isArray(outFields) ? [...outFields] : [outFields];
+    this.outFields = outFields === undefined ? undefined : Array.isArray(outFields) ? [...outFields] : [outFields];
     this.notifyWatchers("outFields", this.outFields);
     this.eventBus.emit("feature-layer.out-fields-changed", { layerId: this.id, outFields: this.outFields }, this);
   }
@@ -371,19 +379,18 @@ export class FeatureLayerCompat {
     };
   }
 
-  public listFields(): readonly Record<string, unknown>[] {
+  public listFields(): readonly HonuaFieldInfo[] {
     return extractFieldDefinitions(this.metadata);
   }
 
-  public getField(fieldName: string): Record<string, unknown> | undefined {
+  public getField(fieldName: string): HonuaFieldInfo | undefined {
     const normalizedFieldName = fieldName.trim();
     if (normalizedFieldName.length === 0) {
       return undefined;
     }
 
     return this.listFields().find((field) => {
-      const candidate = field.name;
-      return typeof candidate === "string" && candidate.trim() === normalizedFieldName;
+      return field.name.trim() === normalizedFieldName;
     });
   }
 
@@ -399,7 +406,7 @@ export class FeatureLayerCompat {
     };
   }
 
-  public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<unknown> {
+  public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<HonuaQueryResponse> {
     const timeParam = buildTimeParam(this.timeExtent, options.extraParams);
     return this.client.queryFeatures({
       serviceId: this.serviceId,
@@ -408,13 +415,11 @@ export class FeatureLayerCompat {
       outFields: options.outFields ?? this.outFields,
       returnGeometry: options.returnGeometry,
       method: options.method,
-      extraParams: timeParam
-        ? { ...(options.extraParams ?? {}), time: timeParam }
-        : options.extraParams,
+      extraParams: timeParam ? { ...(options.extraParams ?? {}), time: timeParam } : options.extraParams,
     });
   }
 
-  public async queryFeaturesAll(options: FeatureLayerQueryAllOptions = {}): Promise<unknown[]> {
+  public async queryFeaturesAll(options: FeatureLayerQueryAllOptions = {}): Promise<HonuaFeature[]> {
     const { pageSize: requestedPageSize, maxPages: requestedMaxPages, ...queryOptions } = options;
     const pageSize =
       typeof requestedPageSize === "number" && Number.isFinite(requestedPageSize)
@@ -425,7 +430,7 @@ export class FeatureLayerCompat {
         ? Math.max(1, Math.trunc(requestedMaxPages))
         : 100;
 
-    const features: unknown[] = [];
+    const features: HonuaFeature[] = [];
     for (let page = 0; page < maxPages; page += 1) {
       const response = await this.queryFeatures({
         ...queryOptions,
@@ -436,7 +441,7 @@ export class FeatureLayerCompat {
         },
       });
 
-      const pageFeatures = extractFeatures(response) ?? [];
+      const pageFeatures = response.features ?? [];
       if (pageFeatures.length === 0) {
         break;
       }
@@ -452,7 +457,7 @@ export class FeatureLayerCompat {
 
   public async *queryFeaturesStream(
     options: FeatureLayerQueryAllOptions = {},
-  ): AsyncGenerator<unknown[], void, undefined> {
+  ): AsyncGenerator<HonuaFeature[], void, undefined> {
     const { pageSize: requestedPageSize, maxPages: requestedMaxPages, ...queryOptions } = options;
     const pageSize =
       typeof requestedPageSize === "number" && Number.isFinite(requestedPageSize)
@@ -473,7 +478,7 @@ export class FeatureLayerCompat {
         },
       });
 
-      const pageFeatures = extractFeatures(response) ?? [];
+      const pageFeatures = response.features ?? [];
       if (pageFeatures.length === 0) {
         break;
       }
@@ -486,7 +491,7 @@ export class FeatureLayerCompat {
   }
 
   public async queryObjectIds(options: FeatureLayerQueryCountOptions = {}): Promise<number[]> {
-    const response = await this.client.queryFeatures({
+    const response = (await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -496,26 +501,22 @@ export class FeatureLayerCompat {
         ...options.extraParams,
         returnIdsOnly: true,
       },
-    });
+    })) as HonuaQueryResponse & { objectIds?: unknown[] };
 
-    if (isRecord(response) && Array.isArray(response.objectIds)) {
-      return response.objectIds
-        .map((value) => Number(value))
-        .filter((value) => Number.isFinite(value));
+    if (Array.isArray(response.objectIds)) {
+      return response.objectIds.map((value) => Number(value)).filter((value) => Number.isFinite(value));
     }
 
-    const features = extractFeatures(response);
+    const features = response.features;
     if (!features) {
       return [];
     }
 
-    return features
-      .map((feature) => extractObjectId(feature))
-      .filter((value): value is number => value !== undefined);
+    return features.map((feature) => extractObjectId(feature)).filter((value): value is number => value !== undefined);
   }
 
   public async queryFeatureCount(options: FeatureLayerQueryCountOptions = {}): Promise<number> {
-    const response = await this.client.queryFeatures({
+    const response = (await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -525,20 +526,17 @@ export class FeatureLayerCompat {
         ...options.extraParams,
         returnCountOnly: true,
       },
-    });
+    })) as HonuaQueryResponse & { count?: number };
 
-    if (isRecord(response) && typeof response.count === "number") {
-      return Number.isFinite(response.count) ? response.count : 0;
+    if (typeof response.count === "number" && Number.isFinite(response.count)) {
+      return response.count;
     }
 
-    const features = extractFeatures(response);
-    return features?.length ?? 0;
+    return response.features?.length ?? 0;
   }
 
-  public async queryExtent(
-    options: FeatureLayerQueryCountOptions = {},
-  ): Promise<FeatureLayerQueryExtentResult> {
-    const response = await this.client.queryFeatures({
+  public async queryExtent(options: FeatureLayerQueryCountOptions = {}): Promise<FeatureLayerQueryExtentResult> {
+    const response = (await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -548,26 +546,21 @@ export class FeatureLayerCompat {
         ...options.extraParams,
         returnExtentOnly: true,
       },
-    });
+    })) as HonuaQueryResponse & { extent?: HonuaExtent | null; count?: number };
 
-    if (!isRecord(response)) {
-      return { extent: null };
-    }
-
-    const count =
-      typeof response.count === "number" && Number.isFinite(response.count) ? response.count : undefined;
+    const count = typeof response.count === "number" && Number.isFinite(response.count) ? response.count : undefined;
     return {
       extent: response.extent ?? null,
       count,
     };
   }
 
-  public async applyEdits(options: FeatureLayerEditsOptions): Promise<unknown> {
+  public async applyEdits(options: FeatureLayerEditsOptions): Promise<HonuaApplyEditsResponse> {
     const result = await this.client.applyEdits({
       serviceId: this.serviceId,
       layerId: this.layerId,
-      adds: options.adds,
-      updates: options.updates,
+      adds: options.adds as ApplyEditsRequest["adds"],
+      updates: options.updates as ApplyEditsRequest["updates"],
       deletes: options.deletes,
       rollbackOnFailure: options.rollbackOnFailure,
     });
@@ -575,7 +568,7 @@ export class FeatureLayerCompat {
     return result;
   }
 
-  public queryRelatedFeatures(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedFeatures(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<HonuaRelatedRecordsResponse> {
     return this.client.queryRelatedRecords({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -589,7 +582,7 @@ export class FeatureLayerCompat {
     });
   }
 
-  public queryRelatedRecords(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedRecords(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<HonuaRelatedRecordsResponse> {
     return this.queryRelatedFeatures(options);
   }
 
@@ -602,9 +595,7 @@ export class FeatureLayerCompat {
         ...(options.objectIds === undefined
           ? {}
           : {
-              objectIds: Array.isArray(options.objectIds)
-                ? options.objectIds.join(",")
-                : options.objectIds,
+              objectIds: Array.isArray(options.objectIds) ? options.objectIds.join(",") : options.objectIds,
             }),
         ...(options.where === undefined ? {} : { where: options.where }),
         ...(options.extraParams ?? {}),
@@ -628,9 +619,7 @@ export class FeatureLayerCompat {
     params.set("f", options.responseFormat ?? "json");
     params.set(
       "attachmentIds",
-      Array.isArray(options.attachmentIds)
-        ? options.attachmentIds.join(",")
-        : String(options.attachmentIds),
+      Array.isArray(options.attachmentIds) ? options.attachmentIds.join(",") : String(options.attachmentIds),
     );
     if (options.extraParams) {
       for (const [key, value] of Object.entries(options.extraParams)) {
@@ -709,16 +698,6 @@ function normalizeScale(scale: number | undefined): number {
   return Math.max(0, Math.trunc(scale));
 }
 
-function extractFeatures(value: unknown): unknown[] | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  if (!Array.isArray(value.features)) {
-    return undefined;
-  }
-  return value.features;
-}
-
 function extractObjectId(feature: unknown): number | undefined {
   if (!isRecord(feature)) {
     return undefined;
@@ -740,7 +719,7 @@ function extractObjectId(feature: unknown): number | undefined {
   return undefined;
 }
 
-function extractFieldDefinitions(metadata: unknown): Record<string, unknown>[] {
+function extractFieldDefinitions(metadata: unknown): HonuaFieldInfo[] {
   if (!isRecord(metadata)) {
     return [];
   }
@@ -750,12 +729,12 @@ function extractFieldDefinitions(metadata: unknown): Record<string, unknown>[] {
     return [];
   }
 
-  const records: Record<string, unknown>[] = [];
+  const records: HonuaFieldInfo[] = [];
   for (const field of fields) {
-    if (!isRecord(field)) {
+    if (!isRecord(field) || typeof field.name !== "string" || typeof field.type !== "string") {
       continue;
     }
-    records.push({ ...field });
+    records.push(field as unknown as HonuaFieldInfo);
   }
   return records;
 }
@@ -788,9 +767,7 @@ function enforceAttachmentSizeLimit(attachment: FeatureLayerAttachmentData, maxA
   if (sizeBytes <= maxAttachmentBytes) {
     return;
   }
-  throw new Error(
-    `Attachment payload exceeds maxAttachmentBytes (${sizeBytes} > ${maxAttachmentBytes}).`,
-  );
+  throw new Error(`Attachment payload exceeds maxAttachmentBytes (${sizeBytes} > ${maxAttachmentBytes}).`);
 }
 
 function estimateAttachmentSizeBytes(attachment: FeatureLayerAttachmentData): number {
@@ -809,10 +786,7 @@ function estimateAttachmentSizeBytes(attachment: FeatureLayerAttachmentData): nu
   return attachment.byteLength;
 }
 
-function resolveAttachmentName(
-  attachment: FeatureLayerAttachmentData,
-  explicitName?: string,
-): string {
+function resolveAttachmentName(attachment: FeatureLayerAttachmentData, explicitName?: string): string {
   if (explicitName && explicitName.trim().length > 0) {
     return explicitName.trim();
   }
@@ -840,10 +814,7 @@ function buildTimeParam(
   return `${timeExtent.start.getTime()},${timeExtent.end.getTime()}`;
 }
 
-function normalizeAttachmentData(
-  attachment: FeatureLayerAttachmentData,
-  contentType?: string,
-): Blob {
+function normalizeAttachmentData(attachment: FeatureLayerAttachmentData, contentType?: string): Blob {
   if (attachment instanceof Blob) {
     return attachment;
   }

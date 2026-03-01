@@ -42,6 +42,7 @@ function createSdkPackage() {
   copyDirectory(path.join(DIST_SRC_ROOT, "core"), path.join(packageRoot, "core"));
   copyDirectory(path.join(DIST_SRC_ROOT, "esri-compat"), path.join(packageRoot, "esri-compat"));
   copyDirectory(path.join(DIST_SRC_ROOT, "expr"), path.join(packageRoot, "expr"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "gen"), path.join(packageRoot, "gen"));
   copyDirectory(path.join(DIST_SRC_ROOT, "interactions"), path.join(packageRoot, "interactions"));
   copyDirectory(path.join(DIST_SRC_ROOT, "map"), path.join(packageRoot, "map"));
   copyDirectory(path.join(DIST_SRC_ROOT, "style"), path.join(packageRoot, "style"));
@@ -58,6 +59,11 @@ function createSdkPackage() {
         types: "./index.d.ts",
         default: "./index.js",
       },
+    },
+    dependencies: {
+      "@bufbuild/protobuf": rootPackageJson.dependencies["@bufbuild/protobuf"],
+      "@connectrpc/connect": rootPackageJson.dependencies["@connectrpc/connect"],
+      "@connectrpc/connect-web": rootPackageJson.dependencies["@connectrpc/connect-web"],
     },
   });
 
@@ -79,6 +85,7 @@ function createCompatPackage() {
 
   copyDirectory(path.join(DIST_SRC_ROOT, "core"), path.join(packageRoot, "core"));
   copyDirectory(path.join(DIST_SRC_ROOT, "esri-compat"), path.join(packageRoot, "esri-compat"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "gen"), path.join(packageRoot, "gen"));
   copyFile(path.join(DIST_SRC_ROOT, "esri-compat-entry.js"), path.join(packageRoot, "index.js"));
   copyFile(path.join(DIST_SRC_ROOT, "esri-compat-entry.d.ts"), path.join(packageRoot, "index.d.ts"));
 
@@ -92,6 +99,11 @@ function createCompatPackage() {
         types: "./index.d.ts",
         default: "./index.js",
       },
+    },
+    dependencies: {
+      "@bufbuild/protobuf": rootPackageJson.dependencies["@bufbuild/protobuf"],
+      "@connectrpc/connect": rootPackageJson.dependencies["@connectrpc/connect"],
+      "@connectrpc/connect-web": rootPackageJson.dependencies["@connectrpc/connect-web"],
     },
   });
 

@@ -10,7 +10,7 @@ import {
   HonuaFeatureLayer,
   HonuaMapService,
   HonuaOgcFeatures,
-  HonuaOgcFeatureCollection,
+  type HonuaOgcFeatureCollection,
 } from "../core/surfaces.js";
 import { parseFeatureLayerUrl, parseMapServiceUrl } from "../esri-compat/url.js";
 import type { HonuaStyleSpecification } from "./specification.js";

@@ -246,7 +246,7 @@ describe("FeatureLayerCompat", () => {
       { name: "OBJECTID", type: "esriFieldTypeOID" },
       { name: "Name", type: "esriFieldTypeString" },
     ]);
-    (fields as Array<Record<string, unknown>>).push({ name: "MUTATED" });
+    (fields as unknown as Array<Record<string, unknown>>).push({ name: "MUTATED" });
     expect(layer.listFields()).toHaveLength(2);
   });
 

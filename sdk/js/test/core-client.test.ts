@@ -629,7 +629,8 @@ describe("HonuaClient", () => {
     });
 
     await expect(client.listServices()).rejects.toThrow("network-down");
-    expect(intercepted).toEqual([networkError]);
+    expect(intercepted).toHaveLength(1);
+    expect((intercepted[0] as Error).message).toBe("network-down");
   });
 
   it("retries transient network failures when retry policy is configured", async () => {
@@ -758,7 +759,7 @@ describe("HonuaClient", () => {
       },
     });
 
-    await expect(client.listServices()).rejects.toBe(networkError);
+    await expect(client.listServices()).rejects.toThrow("network-down");
     expect(seen).toEqual(["first", "second"]);
   });
 

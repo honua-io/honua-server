@@ -1,5 +1,14 @@
 export { HonuaClient } from "./core/client.js";
-export { HonuaHttpError } from "./core/errors.js";
+export {
+  HonuaHttpError,
+  HonuaTimeoutError,
+  HonuaNetworkError,
+  HonuaAbortError,
+  HonuaGrpcError,
+  isHonuaError,
+} from "./core/errors.js";
+export type { HonuaError } from "./core/errors.js";
+export { QueryBuilder } from "./core/query-builder.js";
 export { decodePbfQueryResponse, isPbfResponse } from "./core/pbf-decoder.js";
 export {
   isHonuaSource,
@@ -94,7 +103,17 @@ export {
   zoom,
   letExpr,
   varExpr,
+  format,
+  numberFormat,
+  collator,
+  resolvedLocale,
+  hsl,
+  hsla,
+  toRgba,
   image,
+  distance,
+  within,
+  intersects,
 } from "./expr/index.js";
 export type {
   ExprColor,
@@ -106,6 +125,17 @@ export type {
   BooleanInput,
   ColorInput,
   Resolvable,
+  GeoJsonPoint,
+  GeoJsonMultiPoint,
+  GeoJsonLineString,
+  GeoJsonMultiLineString,
+  GeoJsonPolygon,
+  GeoJsonMultiPolygon,
+  GeoJsonGeometry,
+  FormatSegmentOptions,
+  NumberFormatOptions,
+  CollatorOptions,
+  ExprCollator,
 } from "./expr/index.js";
 export {
   setFeatureState,
@@ -135,14 +165,58 @@ export type {
 export type {
   ApplyEditsRequest,
   ExportMapRequest,
+  HonuaApplyEditsResponse,
+  HonuaAttachmentEditResult,
+  HonuaAttachmentGroup,
+  HonuaAttachmentInfo,
+  HonuaAttachmentListResponse,
   HonuaClientOptions,
+  HonuaCountResponse,
+  HonuaEditResult,
+  HonuaExportMapResponse,
+  HonuaExtent,
+  HonuaExtentResponse,
+  HonuaFeature,
+  HonuaFieldInfo,
+  HonuaFindResponse,
+  HonuaFindResult,
+  HonuaIdentifyResponse,
+  HonuaIdentifyResult,
+  HonuaLayerMetadata,
+  HonuaLegendEntry,
+  HonuaLegendLayer,
+  HonuaLegendResponse,
+  HonuaObjectIdsResponse,
+  HonuaOgcFeatureCollectionResponse,
+  HonuaOgcFeatureResponse,
+  HonuaOgcLink,
+  HonuaQueryAttachmentsResponse,
+  HonuaQueryResponse,
   HonuaRawRequest,
+  HonuaRelatedRecordGroup,
+  HonuaRelatedRecordsResponse,
+  HonuaRelationshipInfo,
+  HonuaAddAttachmentResponse,
+  HonuaUpdateAttachmentResponse,
+  HonuaDeleteAttachmentsResponse,
+  HonuaOgcLandingResponse,
+  HonuaOgcConformanceResponse,
+  HonuaOgcCollectionSummary,
+  HonuaOgcCollectionsResponse,
+  HonuaOgcCollectionMetadata,
+  HonuaOgcQueryableProperty,
+  HonuaOgcQueryablesResponse,
   HonuaErrorContext,
   HonuaRequestContext,
   HonuaRequestInterceptor,
   HonuaRequestMutation,
   HonuaRetryOptions,
   HonuaResponseContext,
+  HonuaServiceMetadata,
+  HonuaSpatialReference,
+  HonuaTransport,
+  HonuaTypedFeature,
+  HonuaTypedQueryResponse,
   MapFindRequest,
   MapIdentifyRequest,
   MapLayerQueryRequest,
@@ -160,6 +234,17 @@ export type {
   QueryFeaturesRequest,
   QueryMethod,
   QueryRelatedRecordsRequest,
+  EsriGeometryType,
+  EsriSpatialRel,
+  EsriFieldType,
+  EsriPoint,
+  EsriPolyline,
+  EsriPolygon,
+  EsriEnvelope,
+  EsriMultipoint,
+  EsriGeometry,
+  GeoJsonFeature,
+  HonuaServicesResponse,
 } from "./core/types.js";
 
 export { FeatureLayerCompat } from "./esri-compat/feature-layer.js";
@@ -224,6 +309,7 @@ export { CompatEventBus } from "./esri-compat/event-bus.js";
 export type {
   CompatEvent,
   CompatEventListener,
+  CompatEventPayloads,
   CompatEventSubscription,
 } from "./esri-compat/event-bus.js";
 export {
@@ -291,6 +377,9 @@ export type {
 } from "./esri-compat/graphics-layer.js";
 export { GraphicCompat } from "./esri-compat/graphic.js";
 export type {
+  CompatGeometryLike,
+  CompatPopupTemplateLike,
+  CompatSymbolLike,
   GraphicCompatOptions,
   GraphicHandleCompat,
   GraphicLoadStatusCompat,

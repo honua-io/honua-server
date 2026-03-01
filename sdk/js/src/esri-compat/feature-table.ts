@@ -1,5 +1,5 @@
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
-import { FeatureLayerCompat } from "./feature-layer.js";
+import type { FeatureLayerCompat } from "./feature-layer.js";
 import type { QueryMethod } from "../core/types.js";
 
 export interface FeatureTableCompatOptions {

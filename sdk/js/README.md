@@ -1,4 +1,20 @@
-# Honua JS SDK (Scaffold)
+# Honua JS SDK
+
+## Quickstart
+
+```bash
+npm install @honua/sdk-js
+```
+
+```ts
+import { HonuaClient } from "@honua/sdk-js/honua";
+
+const client = new HonuaClient({ baseUrl: "https://your-honua-server.com" });
+const result = await client.queryFeatures({ serviceId: "parcels", layerId: 0 });
+console.log(result.features); // fully typed HonuaFeature[]
+```
+
+---
 
 Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 
