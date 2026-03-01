@@ -43,6 +43,7 @@ function createSdkPackage() {
   copyDirectory(path.join(DIST_SRC_ROOT, "esri-compat"), path.join(packageRoot, "esri-compat"));
   copyDirectory(path.join(DIST_SRC_ROOT, "expr"), path.join(packageRoot, "expr"));
   copyDirectory(path.join(DIST_SRC_ROOT, "interactions"), path.join(packageRoot, "interactions"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "map"), path.join(packageRoot, "map"));
   copyDirectory(path.join(DIST_SRC_ROOT, "style"), path.join(packageRoot, "style"));
   copyFile(path.join(DIST_SRC_ROOT, "honua.js"), path.join(packageRoot, "index.js"));
   copyFile(path.join(DIST_SRC_ROOT, "honua.d.ts"), path.join(packageRoot, "index.d.ts"));

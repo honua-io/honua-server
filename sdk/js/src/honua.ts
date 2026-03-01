@@ -49,6 +49,14 @@ export type {
   SelectionHandlerOptions,
   SelectionHandle,
 } from "./interactions/index.js";
+export { HonuaMap } from "./map/index.js";
+export type {
+  HonuaMapOptions,
+  HonuaMapEvent,
+  HonuaMapEventListener,
+  LayerSnapshot,
+  ResolvedMapSource,
+} from "./map/index.js";
 export { HonuaHttpError } from "./core/errors.js";
 export {
   createHonuaOgcFeatures,

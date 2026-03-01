@@ -123,6 +123,14 @@ export type {
   SelectionHandlerOptions,
   SelectionHandle,
 } from "./interactions/index.js";
+export { HonuaMap } from "./map/index.js";
+export type {
+  HonuaMapOptions,
+  HonuaMapEvent,
+  HonuaMapEventListener,
+  LayerSnapshot,
+  ResolvedMapSource,
+} from "./map/index.js";
 export type {
   ApplyEditsRequest,
   ExportMapRequest,
