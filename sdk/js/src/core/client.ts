@@ -1085,7 +1085,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   }
 }
 
-function isObject(value: unknown): value is Record<string, any> {
+function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

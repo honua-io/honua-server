@@ -1,4 +1,4 @@
-import type { QueryMethod } from "../core/types.js";
+import type { HonuaRelatedRecordsResponse, QueryMethod } from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import type { FeatureLayerCompat } from "./feature-layer.js";
 
@@ -446,7 +446,9 @@ export class FeatureTableCompat {
     this.eventBus.emit("feature-table.destroyed", undefined, this);
   }
 
-  public async queryRelatedRecords(options: FeatureTableQueryRelatedRecordsOptions): Promise<unknown> {
+  public async queryRelatedRecords(
+    options: FeatureTableQueryRelatedRecordsOptions,
+  ): Promise<HonuaRelatedRecordsResponse> {
     if (!this.layer) {
       return { relatedRecordGroups: [] };
     }

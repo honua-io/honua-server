@@ -1,12 +1,17 @@
 import { HonuaClient } from "../core/client.js";
 import type {
   ApplyEditsRequest,
+  HonuaAddAttachmentResponse,
   HonuaApplyEditsResponse,
+  HonuaAttachmentListResponse,
+  HonuaDeleteAttachmentsResponse,
   HonuaExtent,
   HonuaFeature,
   HonuaFieldInfo,
+  HonuaQueryAttachmentsResponse,
   HonuaQueryResponse,
   HonuaRelatedRecordsResponse,
+  HonuaUpdateAttachmentResponse,
   QueryMethod,
 } from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
@@ -595,7 +600,7 @@ export class FeatureLayerCompat {
     return this.queryRelatedFeatures(options);
   }
 
-  public queryAttachments(options: FeatureLayerQueryAttachmentsOptions = {}): Promise<unknown> {
+  public queryAttachments(options: FeatureLayerQueryAttachmentsOptions = {}): Promise<HonuaQueryAttachmentsResponse> {
     return this.client.request({
       method: options.method ?? "GET",
       path: `/rest/services/${encodeURIComponent(this.serviceId)}/FeatureServer/${this.layerId}/queryAttachments`,
@@ -612,7 +617,7 @@ export class FeatureLayerCompat {
     });
   }
 
-  public listAttachments(options: FeatureLayerListAttachmentsOptions): Promise<unknown> {
+  public listAttachments(options: FeatureLayerListAttachmentsOptions): Promise<HonuaAttachmentListResponse> {
     return this.client.request({
       method: "GET",
       path:
@@ -623,7 +628,7 @@ export class FeatureLayerCompat {
     });
   }
 
-  public deleteAttachments(options: FeatureLayerDeleteAttachmentsOptions): Promise<unknown> {
+  public deleteAttachments(options: FeatureLayerDeleteAttachmentsOptions): Promise<HonuaDeleteAttachmentsResponse> {
     const params = new URLSearchParams();
     params.set("f", options.responseFormat ?? "json");
     params.set(
@@ -648,7 +653,7 @@ export class FeatureLayerCompat {
     });
   }
 
-  public addAttachment(options: FeatureLayerAddAttachmentOptions): Promise<unknown> {
+  public addAttachment(options: FeatureLayerAddAttachmentOptions): Promise<HonuaAddAttachmentResponse> {
     enforceAttachmentSizeLimit(options.attachment, options.maxAttachmentBytes ?? this.maxAttachmentBytes);
     const form = buildAttachmentFormData(options);
     return this.client.request({
@@ -662,7 +667,7 @@ export class FeatureLayerCompat {
     });
   }
 
-  public updateAttachment(options: FeatureLayerUpdateAttachmentOptions): Promise<unknown> {
+  public updateAttachment(options: FeatureLayerUpdateAttachmentOptions): Promise<HonuaUpdateAttachmentResponse> {
     enforceAttachmentSizeLimit(options.attachment, options.maxAttachmentBytes ?? this.maxAttachmentBytes);
     const form = buildAttachmentFormData(options);
     form.set("attachmentId", String(options.attachmentId));

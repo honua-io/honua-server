@@ -59,6 +59,22 @@ function createSdkPackage() {
         types: "./index.d.ts",
         default: "./index.js",
       },
+      "./expr": {
+        types: "./expr/index.d.ts",
+        default: "./expr/index.js",
+      },
+      "./interactions": {
+        types: "./interactions/index.d.ts",
+        default: "./interactions/index.js",
+      },
+      "./map": {
+        types: "./map/index.d.ts",
+        default: "./map/index.js",
+      },
+      "./style": {
+        types: "./style/index.d.ts",
+        default: "./style/index.js",
+      },
     },
     dependencies: {
       "@bufbuild/protobuf": rootPackageJson.dependencies["@bufbuild/protobuf"],
