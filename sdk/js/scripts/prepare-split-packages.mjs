@@ -40,6 +40,7 @@ function createSdkPackage() {
   fs.mkdirSync(packageRoot, { recursive: true });
 
   copyDirectory(path.join(DIST_SRC_ROOT, "core"), path.join(packageRoot, "core"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "expr"), path.join(packageRoot, "expr"));
   copyFile(path.join(DIST_SRC_ROOT, "honua.js"), path.join(packageRoot, "index.js"));
   copyFile(path.join(DIST_SRC_ROOT, "honua.d.ts"), path.join(packageRoot, "index.d.ts"));
 

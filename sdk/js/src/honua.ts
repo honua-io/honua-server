@@ -1,4 +1,16 @@
 export { HonuaClient } from "./core/client.js";
+export { expr, Expr } from "./expr/index.js";
+export type {
+  ExprColor,
+  ExprFormatted,
+  ExprImage,
+  ExprValue,
+  NumberInput,
+  StringInput,
+  BooleanInput,
+  ColorInput,
+  Resolvable,
+} from "./expr/index.js";
 export { HonuaHttpError } from "./core/errors.js";
 export {
   createHonuaOgcFeatures,

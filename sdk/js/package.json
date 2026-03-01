@@ -20,6 +20,10 @@
     "./migration": {
       "types": "./dist/src/migration-entry.d.ts",
       "default": "./dist/src/migration-entry.js"
+    },
+    "./expr": {
+      "types": "./dist/src/expr/index.d.ts",
+      "default": "./dist/src/expr/index.js"
     }
   },
   "scripts": {
