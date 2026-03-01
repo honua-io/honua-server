@@ -32,6 +32,23 @@ export type {
   ColorInput,
   Resolvable,
 } from "./expr/index.js";
+export {
+  setFeatureState,
+  getFeatureState,
+  removeFeatureState,
+  createHoverHandler,
+  createSelectionHandler,
+} from "./interactions/index.js";
+export type {
+  FeatureStateMap,
+  MapEventTarget,
+  InteractiveMap,
+  FeatureTarget,
+  HoverHandlerOptions,
+  HoverHandle,
+  SelectionHandlerOptions,
+  SelectionHandle,
+} from "./interactions/index.js";
 export { HonuaHttpError } from "./core/errors.js";
 export {
   createHonuaOgcFeatures,
