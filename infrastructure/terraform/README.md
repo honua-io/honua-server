@@ -81,7 +81,7 @@ export ARM_CLIENT_ID="<service-principal-client-id>"
 export ARM_CLIENT_SECRET="<service-principal-client-secret>"
 export ARM_TENANT_ID="<tenant-id>"
 export ARM_SUBSCRIPTION_ID="<subscription-id>"
-export HONUA_ADMIN_PASSWORD="<admin-password>"
+export HONUA_ADMIN_PASSWORD="<admin-password-at-least-32-chars>"
 export HONUA_DB_PASSWORD="<postgres-admin-password>"
 
 ./scripts/run-azure-terraform-integration.sh --stack both
@@ -95,7 +95,7 @@ Use the integration runner to validate real AWS provisioning for both ECS and se
 export AWS_ACCESS_KEY_ID="<access-key-id>"
 export AWS_SECRET_ACCESS_KEY="<secret-access-key>"
 export AWS_SESSION_TOKEN="<session-token-if-applicable>"
-export HONUA_ADMIN_PASSWORD="<admin-password>"
+export HONUA_ADMIN_PASSWORD="<admin-password-at-least-32-chars>"
 export HONUA_DB_PASSWORD="<postgres-admin-password>"
 export HONUA_AWS_SERVERLESS_IMAGE="<ecr-image-uri>"
 

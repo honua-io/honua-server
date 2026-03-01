@@ -94,8 +94,8 @@ variable "admin_password" {
   sensitive   = true
 
   validation {
-    condition     = length(var.admin_password) >= 12
-    error_message = "admin_password must be at least 12 characters."
+    condition     = length(var.admin_password) >= 32
+    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
   }
 }
 
@@ -314,9 +314,9 @@ variable "redis_parameter_group_name" {
 }
 
 variable "redis_num_cache_clusters" {
-  description = "Number of cache clusters in the replication group."
+  description = "Number of cache clusters in the replication group. Use 1 for lowest-cost validation; use >=2 for HA failover."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "redis_port" {

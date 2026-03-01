@@ -10,7 +10,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "myregistry.azurecr.io/honua-server:latest-functions-aot"
+  image          = "myregistry.azurecr.io/honua-server:latest-aot"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -38,7 +38,7 @@ module "honua" {
   name_prefix = "honua"
 
   # Function App
-  image         = "myregistry.azurecr.io/honua-server:v1.2.3-functions-aot"  # Pin to a release Functions AOT tag
+  image         = "myregistry.azurecr.io/honua-server:v1.2.3-aot"  # Pin to a release AOT tag
   plan_sku_name = "EP1"    # Premium plan (recommended for predictable cold starts)
 
   # Database
@@ -68,7 +68,7 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | `ghcr.io/.../latest-functions-aot` | Container image. Prefer Functions AOT tags (`latest-functions-aot`, `vX.Y.Z-functions-aot`). |
+| `image` | `ghcr.io/.../latest-aot` | Container image. Prefer AOT tags (`latest-aot`, `vX.Y.Z-aot`). Functions-specific AOT tags can be used when published. |
 | `plan_sku_name` | `EP1` | Premium (`EP1`–`EP3`) or Consumption (`Y1`). Premium recommended. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on database. **Set to true.** |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
@@ -90,7 +90,7 @@ See `variables.tf` for the complete list.
 
 ## Cold starts
 
-Use Functions AOT images (`vX.Y.Z-functions-aot`, `latest-functions-aot`) for runtime performance. Keep JIT functions tags (`*-functions`) for debug fallback only.
+Use AOT images (`vX.Y.Z-aot`, `latest-aot`) for runtime performance. Use JIT tags only for debug fallback.
 
 ## Private container registry
 

@@ -11,7 +11,7 @@ ENVIRONMENT="${AZURE_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AZURE_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
-DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE="${HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE:-ghcr.io/honua-io/honua-server:latest-functions-aot}"
+DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE="${HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE:-ghcr.io/honua-io/honua-server:latest-aot}"
 DEFAULT_HONUA_FUNCTIONS_IMAGE="${HONUA_DEFAULT_FUNCTIONS_IMAGE:-$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE}"
 USE_AOT="${HONUA_USE_AOT:-false}"
 FUNCTIONS_AOT_AUTOSWITCH="${HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH:-true}"
@@ -68,6 +68,7 @@ ACA_NAME_PREFIX=""
 FUNCTIONS_NAME_PREFIX=""
 DATA_RESOURCE_GROUP=""
 EXPIRES_AT_UTC=""
+DB_PASSWORD_EFFECTIVE=""
 
 usage() {
   cat <<USAGE
@@ -84,7 +85,7 @@ Options:
   --location <azure-region>           Azure region (default: westus)
   --environment <name>                Environment suffix in names (default: it)
   --name-prefix-base <prefix>         Base prefix for generated resource names
-  --aot                               Use latest-aot for ACA; Functions defaults to latest-functions-aot (JIT is debug fallback)
+  --aot                               Use latest-aot for ACA and Functions (override HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE if needed; JIT is debug fallback)
   --aca-image <image>                 ACA image tag
   --functions-image <image>           Functions image tag
   --aca-previous-image <image>        Previous ACA image for upgrade/rollback validation
@@ -121,7 +122,7 @@ Required environment variables:
   ARM_CLIENT_SECRET
   ARM_TENANT_ID
   ARM_SUBSCRIPTION_ID
-  HONUA_ADMIN_PASSWORD
+  HONUA_ADMIN_PASSWORD (at least 32 chars)
   HONUA_DB_PASSWORD
 USAGE
 }
@@ -153,6 +154,46 @@ require_env() {
       exit 1
     fi
   done
+}
+
+extract_connection_string_password() {
+  local connection_string="$1"
+  local field
+
+  IFS=';' read -r -a fields <<< "$connection_string"
+  for field in "${fields[@]}"; do
+    field="${field#"${field%%[![:space:]]*}"}"
+    case "$field" in
+      [Pp]assword=*)
+        printf '%s' "${field#*=}"
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+resolve_db_password_for_checks() {
+  DB_PASSWORD_EFFECTIVE="$HONUA_DB_PASSWORD"
+
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    local parsed_password
+    if parsed_password="$(extract_connection_string_password "$EXISTING_DB_CONNECTION_STRING")" && [[ -n "$parsed_password" ]]; then
+      DB_PASSWORD_EFFECTIVE="$parsed_password"
+      log_info "Using DB password parsed from existing DB connection string for smoke checks"
+    else
+      log_warn "Could not parse password from existing DB connection string; using HONUA_DB_PASSWORD for smoke checks"
+    fi
+  fi
+}
+
+validate_admin_password() {
+  if (( ${#HONUA_ADMIN_PASSWORD} < 32 )); then
+    log_error "HONUA_ADMIN_PASSWORD must be at least 32 characters."
+    log_error "Reason: this value is used for both HONUA_ADMIN_PASSWORD and Security__ConnectionEncryption__MasterKey in Terraform app modules."
+    exit 1
+  fi
 }
 
 normalize_identifiers() {
@@ -692,7 +733,7 @@ run_db_sql() {
   printf '%s\n' "$sql" > "$sql_file"
 
   docker run --rm \
-    -e PGPASSWORD="$HONUA_DB_PASSWORD" \
+    -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
     -v "$sql_file:/tmp/smoke.sql:ro" \
     postgres:16-alpine \
     sh -c "psql 'host=$db_host port=5432 dbname=honua user=honua sslmode=require' -v ON_ERROR_STOP=1 -f /tmp/smoke.sql" >/dev/null
@@ -775,7 +816,7 @@ run_admin_api_crud_smoke() {
   "
 
   create_connection_payload="$(cat <<JSON
-{"name":"$(json_escape "$connection_name")","description":"Terraform smoke test connection","host":"$(json_escape "$db_host")","port":5432,"databaseName":"honua","username":"honua","password":"$(json_escape "$HONUA_DB_PASSWORD")","sslRequired":true,"sslMode":"Require"}
+{"name":"$(json_escape "$connection_name")","description":"Terraform smoke test connection","host":"$(json_escape "$db_host")","port":5432,"databaseName":"honua","username":"honua","password":"$(json_escape "$DB_PASSWORD_EFFECTIVE")","sslRequired":true,"sslMode":"Require"}
 JSON
 )"
 
@@ -859,7 +900,7 @@ verify_postgis_extensions() {
   local extensions
 
   extensions="$(docker run --rm \
-    -e PGPASSWORD="$HONUA_DB_PASSWORD" \
+    -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
     postgres:16-alpine \
     sh -c "psql 'host=$db_fqdn port=5432 dbname=honua user=honua sslmode=require' -v ON_ERROR_STOP=1 -tA -c \"SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster') ORDER BY extname;\"" || true)"
 
@@ -877,21 +918,21 @@ verify_db_backup_restore() {
   local extensions_count
 
   docker run --rm \
-    -e PGPASSWORD="$HONUA_DB_PASSWORD" \
+    -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
     postgres:16-alpine \
     sh -c "set -e; \
       pg_dump 'host=$db_fqdn port=5432 dbname=honua user=honua sslmode=require' -Fc -f /tmp/honua.dump; \
       psql 'host=$db_fqdn port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check'; \
       psql 'host=$db_fqdn port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'CREATE DATABASE honua_restore_check'; \
-      pg_restore -d 'host=$db_fqdn port=5432 dbname=honua_restore_check user=honua sslmode=require' -v /tmp/honua.dump >/dev/null;" >/dev/null
+      pg_restore --no-owner --no-privileges -d 'host=$db_fqdn port=5432 dbname=honua_restore_check user=honua sslmode=require' /tmp/honua.dump >/dev/null;" >/dev/null
 
   extensions_count="$(docker run --rm \
-    -e PGPASSWORD="$HONUA_DB_PASSWORD" \
+    -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
     postgres:16-alpine \
     sh -c "psql 'host=$db_fqdn port=5432 dbname=honua_restore_check user=honua sslmode=require' -tA -c \"SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','postgis_raster');\"" | tr -d '[:space:]')"
 
   docker run --rm \
-    -e PGPASSWORD="$HONUA_DB_PASSWORD" \
+    -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
     postgres:16-alpine \
     sh -c "psql 'host=$db_fqdn port=5432 dbname=postgres user=honua sslmode=require' -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check'" >/dev/null
 
@@ -1467,6 +1508,8 @@ main() {
     HONUA_ADMIN_PASSWORD \
     HONUA_DB_PASSWORD
 
+  validate_admin_password
+  resolve_db_password_for_checks
   normalize_identifiers
   validate_existing_resource_inputs
   configure_data_stack_mode

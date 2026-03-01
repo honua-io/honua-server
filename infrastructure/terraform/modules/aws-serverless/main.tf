@@ -86,6 +86,10 @@ module "vpc" {
   tags = local.tags
 }
 
+locals {
+  db_subnet_ids = var.db_publicly_accessible ? module.vpc.public_subnets : module.vpc.private_subnets
+}
+
 #checkov:skip=CKV2_AWS_5: Security group is attached to the Lambda function.
 resource "aws_security_group" "lambda" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the Lambda function.
@@ -200,8 +204,8 @@ resource "aws_elasticache_replication_group" "redis" {
 
   lifecycle {
     precondition {
-      condition     = var.redis_num_cache_clusters >= 2
-      error_message = "redis_num_cache_clusters must be >= 2 when provisioning Redis with multi-AZ failover."
+      condition     = var.redis_num_cache_clusters >= 1
+      error_message = "redis_num_cache_clusters must be >= 1."
     }
   }
 }
@@ -235,7 +239,8 @@ module "rds" {
   port     = 5432
 
   vpc_security_group_ids = local.db_use_existing ? [] : [aws_security_group.rds[0].id]
-  subnet_ids             = module.vpc.private_subnets
+  subnet_ids             = local.db_subnet_ids
+  create_db_subnet_group = true
 
   publicly_accessible = var.db_publicly_accessible
   multi_az            = var.db_multi_az
@@ -476,12 +481,29 @@ resource "null_resource" "enable_postgis" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}" \
-        && psql \
+      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
+      for attempt in $(seq 1 30); do
+        if PGCONNECT_TIMEOUT=5 psql \
           --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+          --command="SELECT 1;" >/dev/null 2>&1; then
+          break
+        fi
+        if [ "$attempt" -eq 30 ]; then
+          echo "PostgreSQL readiness check failed after 30 attempts" >&2
+          exit 1
+        fi
+        sleep 10
+      done
+
+      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${local.db_endpoint} \
+        --username=${var.db_username} \
+        --dbname=${var.db_name} \
+        --set=ON_ERROR_STOP=1 \
+        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
     environment = {
       PGPASSWORD = local.db_password

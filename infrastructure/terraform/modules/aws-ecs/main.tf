@@ -25,6 +25,7 @@ locals {
   redis_create        = var.redis_enabled && var.redis_connection_string == ""
   redis_auth_token    = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  db_subnet_ids       = var.db_publicly_accessible ? module.vpc.public_subnets : module.vpc.private_subnets
 }
 
 check "existing_db_inputs" {
@@ -235,8 +236,8 @@ resource "aws_elasticache_replication_group" "redis" {
   engine_version             = var.redis_engine_version
   port                       = var.redis_port
   parameter_group_name       = var.redis_parameter_group_name
-  automatic_failover_enabled = true
-  multi_az_enabled           = true
+  automatic_failover_enabled = var.redis_num_cache_clusters > 1
+  multi_az_enabled           = var.redis_num_cache_clusters > 1
   num_cache_clusters         = var.redis_num_cache_clusters
   subnet_group_name          = aws_elasticache_subnet_group.redis[0].name
   security_group_ids         = [aws_security_group.redis[0].id]
@@ -249,8 +250,8 @@ resource "aws_elasticache_replication_group" "redis" {
 
   lifecycle {
     precondition {
-      condition     = var.redis_num_cache_clusters >= 2
-      error_message = "redis_num_cache_clusters must be >= 2 when provisioning Redis with multi-AZ failover."
+      condition     = var.redis_num_cache_clusters >= 1
+      error_message = "redis_num_cache_clusters must be >= 1."
     }
   }
 }
@@ -272,6 +273,9 @@ resource "aws_lb" "this" {
     bucket  = local.alb_logs_bucket_name
     prefix  = var.alb_access_logs_prefix
   }
+
+  # Ensure bucket policy is in place before ALB logging is configured.
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 
   tags = local.tags
 }
@@ -381,7 +385,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
           Service = "logdelivery.elasticloadbalancing.amazonaws.com"
         }
         Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.alb_logs[0].arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Resource = "${aws_s3_bucket.alb_logs[0].arn}/${var.alb_access_logs_prefix != "" ? "${var.alb_access_logs_prefix}/" : ""}AWSLogs/${data.aws_caller_identity.current.account_id}/*"
       },
       {
         Effect = "Allow"
@@ -511,7 +515,7 @@ resource "aws_iam_policy" "secrets" {
         Resource = compact([
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
-          local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       }
     ]
@@ -554,6 +558,16 @@ data "aws_iam_policy_document" "kms" {
     principals {
       type        = "AWS"
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "AllowCloudWatchLogsUse"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${data.aws_region.current.name}.amazonaws.com"]
     }
   }
 }
@@ -613,7 +627,8 @@ module "rds" {
   port     = 5432
 
   vpc_security_group_ids = local.db_use_existing ? [] : [aws_security_group.rds[0].id]
-  subnet_ids             = module.vpc.private_subnets
+  subnet_ids             = local.db_subnet_ids
+  create_db_subnet_group = true
 
   publicly_accessible = var.db_publicly_accessible
   multi_az            = var.db_multi_az
@@ -655,7 +670,7 @@ resource "aws_secretsmanager_secret_version" "admin_password" {
 #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
 resource "aws_secretsmanager_secret" "redis_connection" {
   #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
-  count       = local.redis_connection != "" ? 1 : 0
+  count       = local.redis_enabled ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Honua Redis connection string"
   kms_key_id  = local.kms_key_arn
@@ -663,7 +678,7 @@ resource "aws_secretsmanager_secret" "redis_connection" {
 }
 
 resource "aws_secretsmanager_secret_version" "redis_connection" {
-  count         = local.redis_connection != "" ? 1 : 0
+  count         = local.redis_enabled ? 1 : 0
   secret_id     = aws_secretsmanager_secret.redis_connection[0].id
   secret_string = local.redis_connection
 }
@@ -708,7 +723,7 @@ resource "aws_ecs_task_definition" "this" {
           name      = "Security__ConnectionEncryption__MasterKey"
           valueFrom = aws_secretsmanager_secret.admin_password.arn
         }
-        ], local.redis_connection != "" ? [
+        ], local.redis_enabled ? [
         {
           name      = "ConnectionStrings__redis"
           valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
@@ -809,12 +824,29 @@ resource "null_resource" "enable_postgis" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}" \
-        && psql \
+      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
+      for attempt in $(seq 1 30); do
+        if PGCONNECT_TIMEOUT=5 psql \
           --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+          --command="SELECT 1;" >/dev/null 2>&1; then
+          break
+        fi
+        if [ "$attempt" -eq 30 ]; then
+          echo "PostgreSQL readiness check failed after 30 attempts" >&2
+          exit 1
+        fi
+        sleep 10
+      done
+
+      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${local.db_endpoint} \
+        --username=${var.db_username} \
+        --dbname=${var.db_name} \
+        --set=ON_ERROR_STOP=1 \
+        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
     environment = {
       PGPASSWORD = local.db_password
