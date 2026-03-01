@@ -1,5 +1,6 @@
 export { HonuaClient } from "./core/client.js";
 export { HonuaHttpError } from "./core/errors.js";
+export { decodePbfQueryResponse, isPbfResponse } from "./core/pbf-decoder.js";
 export {
   isHonuaSource,
   isFeatureServiceSource,

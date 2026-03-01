@@ -1051,4 +1051,140 @@ describe("HonuaClient", () => {
     expect(url.searchParams.get("objectIds")).toBe("10,20");
     expect(url.searchParams.get("returnDistinctValues")).toBe("true");
   });
+
+  it("uses f=pbf when preferBinary is true and method is GET", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    // Minimal valid PBF: version="1.0", queryResult with empty featureResult
+    const pbfBytes = buildMinimalPbf();
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: true,
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(pbfBytes as unknown as BodyInit, {
+          status: 200,
+          headers: { "Content-Type": "application/x-protobuf" },
+        });
+      },
+    });
+
+    const result = await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+    });
+
+    expect(requestedUrl).toContain("f=pbf");
+    expect(requestedInit?.method).toBe("GET");
+    expect(result).toHaveProperty("objectIdFieldName");
+  });
+
+  it("falls back to JSON when PBF decode fails", async () => {
+    let callCount = 0;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: true,
+      fetchFn: async (input) => {
+        callCount += 1;
+        const url = String(input);
+        if (url.includes("f=pbf")) {
+          // Return garbage bytes that will fail PBF decode
+          return new Response(new Uint8Array([0xff, 0xff, 0xff]), {
+            status: 200,
+            headers: { "Content-Type": "application/x-protobuf" },
+          });
+        }
+        // JSON fallback
+        return new Response(JSON.stringify({ features: [], fallback: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    const result = await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+    });
+
+    expect(callCount).toBe(2);
+    expect(result).toEqual({ features: [], fallback: true });
+  });
+
+  it("does not use PBF when preferBinary is false", async () => {
+    let requestedUrl: string | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: false,
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+    });
+
+    expect(requestedUrl).toContain("f=json");
+    expect(requestedUrl).not.toContain("f=pbf");
+  });
+
+  it("does not use PBF for POST requests even with preferBinary", async () => {
+    let requestedBody: string | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: true,
+      fetchFn: async (_input, init) => {
+        requestedBody = init?.body as string;
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "POST",
+    });
+
+    expect(requestedBody).toContain("f=json");
+    expect(requestedBody).not.toContain("f=pbf");
+  });
 });
+
+/** Build a minimal valid PBF (FeatureCollectionPBuffer) for testing. */
+function buildMinimalPbf(): Uint8Array {
+  // Encode helpers
+  function vi(value: number): number[] {
+    const bytes: number[] = [];
+    let v = value;
+    while (v > 0x7f) {
+      bytes.push((v & 0x7f) | 0x80);
+      v >>>= 7;
+    }
+    bytes.push(v & 0x7f);
+    return bytes;
+  }
+  function tg(field: number, wire: number) { return vi((field << 3) | wire); }
+  function ld(field: number, data: number[]) { return [...tg(field, 2), ...vi(data.length), ...data]; }
+  function sf(field: number, str: string) {
+    return ld(field, Array.from(new TextEncoder().encode(str)));
+  }
+
+  // FeatureResult: objectIdFieldName + one OID field
+  const fieldDef = [...sf(1, "OBJECTID"), ...tg(2, 0), ...vi(6)]; // name + fieldType=OID
+  const featureResult = [...sf(1, "OBJECTID"), ...ld(13, fieldDef)];
+  const queryResult = ld(1, featureResult);
+  const fcpb = [...sf(1, "1.0"), ...ld(2, queryResult)];
+  return new Uint8Array(fcpb);
+}

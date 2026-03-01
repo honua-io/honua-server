@@ -1,4 +1,5 @@
 import { HonuaHttpError } from "./errors.js";
+import { decodePbfQueryResponse, isPbfResponse } from "./pbf-decoder.js";
 import type {
   ApplyEditsRequest,
   ExportMapRequest,
@@ -134,6 +135,7 @@ export class HonuaClient {
   private readonly interceptors: readonly HonuaRequestInterceptor[];
   private readonly timeoutMs: number | undefined;
   private readonly retryOptions: NormalizedRetryOptions | undefined;
+  private readonly preferBinary: boolean;
 
   public constructor(options: HonuaClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -150,6 +152,7 @@ export class HonuaClient {
     this.interceptors = options.interceptors ?? [];
     this.timeoutMs = normalizeTimeoutMs(options.timeoutMs);
     this.retryOptions = normalizeRetryOptions(options.retry);
+    this.preferBinary = options.preferBinary === true;
   }
 
   public service(serviceId: string): HonuaService {
@@ -369,8 +372,9 @@ export class HonuaClient {
 
   public async queryFeatures(request: QueryFeaturesRequest): Promise<unknown> {
     const method: QueryMethod = request.method ?? "GET";
+    const usePbf = this.preferBinary && method === "GET";
     const params = new URLSearchParams();
-    params.set("f", "json");
+    params.set("f", usePbf ? "pbf" : "json");
     params.set("where", request.where ?? "1=1");
     params.set("outFields", normalizeOutFields(request.outFields));
     params.set("returnGeometry", String(request.returnGeometry ?? true));
@@ -384,6 +388,11 @@ export class HonuaClient {
     }
 
     const path = `/rest/services/${encodeURIComponent(request.serviceId)}/FeatureServer/${request.layerId}/query`;
+
+    if (usePbf) {
+      return this.requestBinaryWithJsonFallback("GET", `${path}?${params.toString()}`, params);
+    }
+
     if (method === "GET") {
       return this.requestJson("GET", `${path}?${params.toString()}`);
     }
@@ -759,6 +768,88 @@ export class HonuaClient {
       }
 
       return body;
+    }
+  }
+
+  /**
+   * Request a PBF binary response and decode it. Falls back to JSON on failure.
+   */
+  private async requestBinaryWithJsonFallback(
+    method: QueryMethod,
+    path: string,
+    params: URLSearchParams,
+  ): Promise<unknown> {
+    let request: HonuaRequestContext = {
+      url: resolveRequestUrl(this.baseUrl, path),
+      path,
+      method,
+      init: {
+        method,
+        headers: mergeHeaders(
+          this.defaultHeaders,
+          { Accept: "application/x-protobuf, application/json;q=0.9" },
+        ),
+      },
+    };
+
+    request = await this.applyBeforeInterceptors(request);
+
+    for (let attempt = 0; ; attempt += 1) {
+      let response: Response;
+      const timeout = createTimeoutSignal(request.init.signal, this.timeoutMs);
+      try {
+        response = await this.fetchFn(request.url, {
+          ...request.init,
+          method: request.method,
+          signal: timeout.signal,
+        });
+      } catch (error) {
+        const normalizedError = timeout.didTimeout
+          ? new Error(`Request timed out after ${this.timeoutMs}ms`)
+          : error;
+        if (this.shouldRetryRequest(attempt, undefined, normalizedError)) {
+          await sleep(this.resolveRetryDelayMs(attempt));
+          continue;
+        }
+        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: normalizedError });
+        throw normalizedError;
+      } finally {
+        timeout.dispose();
+      }
+
+      if (!response.ok) {
+        const body = await parseResponseBody(response.clone());
+        const httpError = this.toHttpError(response.status, body);
+        if (this.shouldRetryRequest(attempt, response.status, httpError)) {
+          await sleep(this.resolveRetryDelayMs(attempt, response));
+          continue;
+        }
+        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: httpError });
+        throw httpError;
+      }
+
+      try {
+        await this.applyAfterInterceptors(cloneRequestContext(request), response);
+      } catch (error) {
+        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error });
+        throw error;
+      }
+
+      // If server returned PBF, decode it
+      if (isPbfResponse(response)) {
+        try {
+          const buffer = await response.arrayBuffer();
+          return decodePbfQueryResponse(buffer);
+        } catch {
+          // PBF decode failed — fall back to JSON request
+          params.set("f", "json");
+          const jsonPath = path.replace(/\?.*$/, "") + "?" + params.toString();
+          return this.requestJson("GET", jsonPath);
+        }
+      }
+
+      // Server returned JSON despite PBF request (e.g. error or unsupported)
+      return parseResponseBody(response);
     }
   }
 

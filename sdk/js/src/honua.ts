@@ -58,6 +58,7 @@ export type {
   ResolvedMapSource,
 } from "./map/index.js";
 export { HonuaHttpError } from "./core/errors.js";
+export { decodePbfQueryResponse, isPbfResponse } from "./core/pbf-decoder.js";
 export {
   createHonuaOgcFeatures,
   createHonuaService,

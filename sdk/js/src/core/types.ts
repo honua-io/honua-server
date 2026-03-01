@@ -187,6 +187,12 @@ export interface HonuaClientOptions {
   interceptors?: readonly HonuaRequestInterceptor[];
   timeoutMs?: number;
   retry?: HonuaRetryOptions;
+  /**
+   * When `true`, query methods use `f=pbf` for binary protobuf responses
+   * and decode them transparently into the same JSON-compatible shape.
+   * Falls back to `f=json` on decode failure. Default: `false`.
+   */
+  preferBinary?: boolean;
 }
 
 export interface HonuaRetryOptions {
