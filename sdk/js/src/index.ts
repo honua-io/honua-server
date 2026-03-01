@@ -1,6 +1,27 @@
 export { HonuaClient } from "./core/client.js";
 export { HonuaHttpError } from "./core/errors.js";
 export {
+  isHonuaSource,
+  isFeatureServiceSource,
+  isMapServiceSource,
+  isOgcFeaturesSource,
+  parseOgcFeaturesUrl,
+  validateHonuaStyle,
+  createSources,
+} from "./style/index.js";
+export type {
+  HonuaSourceBase,
+  HonuaFeatureServiceSourceSpecification,
+  HonuaMapServiceSourceSpecification,
+  HonuaOgcFeaturesSourceSpecification,
+  HonuaSourceSpecification,
+  HonuaLayerSpecification,
+  HonuaStyleSpecification,
+  ParsedOgcFeaturesUrl,
+  StyleValidationError,
+  ResolvedSource,
+} from "./style/index.js";
+export {
   expr,
   Expr,
   get,
