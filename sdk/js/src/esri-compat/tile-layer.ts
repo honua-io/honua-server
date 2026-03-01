@@ -1,4 +1,5 @@
 import { HonuaClient } from "../core/client.js";
+import type { HonuaServiceMetadata } from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseMapServiceUrl } from "./url.js";
 
@@ -33,7 +34,7 @@ export class TileLayerCompat {
   public listMode: string;
   public loaded: boolean;
   public loadStatus: TileLayerLoadStatusCompat;
-  public metadata: unknown;
+  public metadata: HonuaServiceMetadata | undefined;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;

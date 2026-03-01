@@ -258,6 +258,9 @@ export class MapLayerQueryBuilder {
   private resultRecordCountValue: number | undefined;
   private objectIdsValue: number[] | string | undefined;
   private returnDistinctValuesValue: boolean | undefined;
+  private returnCentroidValue: boolean | undefined;
+  private groupByFieldsValue: string | undefined;
+  private outStatisticsValue: string | readonly Record<string, unknown>[] | undefined;
   private methodValue: QueryMethod | undefined;
   private signalValue: AbortSignal | undefined;
   private extraParamsValue: Record<string, string | number | boolean> | undefined;
@@ -344,6 +347,24 @@ export class MapLayerQueryBuilder {
     return this;
   }
 
+  /** Return centroids instead of full geometries. */
+  public returnCentroid(value = true): this {
+    this.returnCentroidValue = value;
+    return this;
+  }
+
+  /** Set group-by fields for statistics queries. */
+  public groupBy(fields: string): this {
+    this.groupByFieldsValue = fields;
+    return this;
+  }
+
+  /** Set output statistics definitions. */
+  public outStatistics(stats: string | readonly Record<string, unknown>[]): this {
+    this.outStatisticsValue = stats;
+    return this;
+  }
+
   /** Set the HTTP method (GET or POST). */
   public method(m: QueryMethod): this {
     this.methodValue = m;
@@ -380,6 +401,9 @@ export class MapLayerQueryBuilder {
     if (this.resultRecordCountValue !== undefined) request.resultRecordCount = this.resultRecordCountValue;
     if (this.objectIdsValue !== undefined) request.objectIds = this.objectIdsValue;
     if (this.returnDistinctValuesValue !== undefined) request.returnDistinctValues = this.returnDistinctValuesValue;
+    if (this.returnCentroidValue !== undefined) request.returnCentroid = this.returnCentroidValue;
+    if (this.groupByFieldsValue !== undefined) request.groupByFieldsForStatistics = this.groupByFieldsValue;
+    if (this.outStatisticsValue !== undefined) request.outStatistics = this.outStatisticsValue;
     if (this.methodValue !== undefined) request.method = this.methodValue;
     if (this.signalValue !== undefined) request.signal = this.signalValue;
     if (this.extraParamsValue !== undefined) request.extraParams = this.extraParamsValue;

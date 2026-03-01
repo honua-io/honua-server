@@ -7,9 +7,9 @@ export interface FeatureTableCompatOptions {
   layer?: FeatureLayerCompat;
   container?: unknown;
   eventBus?: CompatEventBus;
-  title?: unknown;
+  title?: string | null;
   description?: string;
-  actionColumnConfig?: unknown;
+  actionColumnConfig?: Record<string, unknown> | null;
   attachmentsEnabled?: boolean;
   paginationEnabled?: boolean;
   editingEnabled?: boolean;
@@ -17,12 +17,12 @@ export interface FeatureTableCompatOptions {
   relatedRecordsEnabled?: boolean;
   objectIdField?: string;
   where?: string;
-  filterGeometry?: unknown;
+  filterGeometry?: Record<string, unknown> | null;
   filterBySelectionEnabled?: boolean;
   highlightIds?: readonly number[];
-  tableTemplate?: unknown;
-  visibleElements?: unknown;
-  fieldConfigs?: unknown;
+  tableTemplate?: Record<string, unknown> | null;
+  visibleElements?: Record<string, unknown> | null;
+  fieldConfigs?: Record<string, unknown>[] | null;
   selectionMode?: string;
   rowSelectionEnabled?: boolean;
   highlightEnabled?: boolean;
@@ -210,9 +210,9 @@ export class FeatureTableCompat {
   public readonly view: unknown;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
-  public title: unknown;
+  public title: string | null;
   public description: string | undefined;
-  public actionColumnConfig: unknown;
+  public actionColumnConfig: Record<string, unknown> | null;
   public attachmentsEnabled: boolean;
   public paginationEnabled: boolean;
   public editingEnabled: boolean;
@@ -221,12 +221,12 @@ export class FeatureTableCompat {
   public readonly objectIdField: string;
   public state: FeatureTableStateCompat;
   public loadStatus: FeatureTableLoadStatusCompat;
-  public filterGeometry: unknown;
+  public filterGeometry: Record<string, unknown> | null;
   public filterBySelectionEnabled: boolean;
   public where: string;
-  public tableTemplate: unknown;
-  public visibleElements: unknown;
-  public fieldConfigs: unknown;
+  public tableTemplate: Record<string, unknown> | null;
+  public visibleElements: Record<string, unknown> | null;
+  public fieldConfigs: Record<string, unknown>[] | null;
   public selectionMode: string;
   public rowSelectionEnabled: boolean;
   public highlightEnabled: boolean;
@@ -259,9 +259,9 @@ export class FeatureTableCompat {
     this.layerInternal = options.layer;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, options.layer) ?? new CompatEventBus();
-    this.title = options.title;
+    this.title = options.title ?? null;
     this.description = options.description;
-    this.actionColumnConfig = options.actionColumnConfig;
+    this.actionColumnConfig = options.actionColumnConfig ?? null;
     this.attachmentsEnabled = options.attachmentsEnabled ?? false;
     this.paginationEnabled = options.paginationEnabled ?? false;
     this.editingEnabled = options.editingEnabled ?? false;
@@ -271,11 +271,11 @@ export class FeatureTableCompat {
     this.state = "loading";
     this.loadStatus = "not-loaded";
     this.where = options.where ?? "1=1";
-    this.filterGeometry = options.filterGeometry;
+    this.filterGeometry = options.filterGeometry ?? null;
     this.filterBySelectionEnabled = options.filterBySelectionEnabled ?? false;
-    this.tableTemplate = options.tableTemplate;
-    this.visibleElements = options.visibleElements;
-    this.fieldConfigs = options.fieldConfigs;
+    this.tableTemplate = options.tableTemplate ?? null;
+    this.visibleElements = options.visibleElements ?? null;
+    this.fieldConfigs = options.fieldConfigs ?? null;
     this.selectionMode = options.selectionMode ?? "multiple";
     this.rowSelectionEnabled = options.rowSelectionEnabled ?? true;
     this.highlightEnabled = options.highlightEnabled ?? true;
@@ -415,7 +415,7 @@ export class FeatureTableCompat {
     this.eventBus.emit("feature-table.filter-changed", { where }, this);
   }
 
-  public setFilterGeometry(filterGeometry: unknown): void {
+  public setFilterGeometry(filterGeometry: Record<string, unknown> | null): void {
     this.filterGeometry = filterGeometry;
     this.notifyWatchers("filterGeometry", this.filterGeometry);
     this.eventBus.emit("feature-table.filter-geometry-changed", { filterGeometry }, this);

@@ -403,7 +403,10 @@ export type {
 } from "./esri-compat/popup.js";
 export { PopupTemplateCompat } from "./esri-compat/popup-template.js";
 export type {
+  PopupTemplateAction,
   PopupTemplateCompatOptions,
+  PopupTemplateExpressionInfo,
+  PopupTemplateFieldInfo,
   PopupTemplateHandleCompat,
   PopupTemplateLoadStatusCompat,
 } from "./esri-compat/popup-template.js";

@@ -36,7 +36,7 @@ export class EditorCompat {
   public allowedWorkflows: EditorWorkflowCompat[];
   public supportingWidgetDefaults: Record<string, unknown>;
   public activeWorkflow: EditorWorkflowCompat | undefined;
-  public selectedFeature: unknown;
+  public selectedFeature: Record<string, unknown> | null;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: EditorCompatOptions = {}) {
@@ -49,7 +49,7 @@ export class EditorCompat {
     this.allowedWorkflows = [...(options.allowedWorkflows ?? ["create", "update"])];
     this.supportingWidgetDefaults = { ...(options.supportingWidgetDefaults ?? {}) };
     this.activeWorkflow = undefined;
-    this.selectedFeature = undefined;
+    this.selectedFeature = null;
     this.watchListeners = new Map();
   }
 
@@ -99,7 +99,7 @@ export class EditorCompat {
 
     this.activeWorkflow = "create";
     this.notifyWatchers("activeWorkflow", this.activeWorkflow);
-    this.selectedFeature = undefined;
+    this.selectedFeature = null;
     this.notifyWatchers("selectedFeature", this.selectedFeature);
     this.eventBus.emit(
       "editor.workflow-started",
@@ -129,7 +129,7 @@ export class EditorCompat {
     return true;
   }
 
-  public startUpdateWorkflowAtFeatureEdit(feature: unknown): boolean {
+  public startUpdateWorkflowAtFeatureEdit(feature: Record<string, unknown>): boolean {
     const started = this.startUpdateWorkflowAtFeatureSelection();
     if (!started) {
       return false;
@@ -161,7 +161,7 @@ export class EditorCompat {
       this.eventBus.emit("editor.feature-deleted", { feature: targetFeature }, this);
     }
     if (this.selectedFeature === targetFeature) {
-      this.selectedFeature = undefined;
+      this.selectedFeature = null;
       this.notifyWatchers("selectedFeature", this.selectedFeature);
     }
     return removed;
@@ -175,7 +175,7 @@ export class EditorCompat {
     const workflow = this.activeWorkflow;
     this.activeWorkflow = undefined;
     this.notifyWatchers("activeWorkflow", this.activeWorkflow);
-    this.selectedFeature = undefined;
+    this.selectedFeature = null;
     this.notifyWatchers("selectedFeature", this.selectedFeature);
     this.eventBus.emit("editor.workflow-stopped", { workflow }, this);
   }

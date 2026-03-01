@@ -1,11 +1,32 @@
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
+export interface PopupTemplateFieldInfo {
+  fieldName: string;
+  label?: string;
+  visible?: boolean;
+  format?: Record<string, unknown>;
+}
+
+export interface PopupTemplateAction {
+  title: string;
+  id: string;
+  type?: string;
+  className?: string;
+}
+
+export interface PopupTemplateExpressionInfo {
+  name: string;
+  title?: string;
+  expression: string;
+  returnType?: string;
+}
+
 export interface PopupTemplateCompatOptions {
-  title?: unknown;
-  content?: unknown;
-  fieldInfos?: readonly unknown[];
-  actions?: readonly unknown[];
-  expressionInfos?: readonly unknown[];
+  title?: string | ((...args: unknown[]) => string) | null;
+  content?: string | Record<string, unknown>[] | ((...args: unknown[]) => string) | null;
+  fieldInfos?: readonly PopupTemplateFieldInfo[];
+  actions?: readonly PopupTemplateAction[];
+  expressionInfos?: readonly PopupTemplateExpressionInfo[];
   outFields?: readonly string[];
   eventBus?: CompatEventBus;
 }
@@ -20,11 +41,11 @@ export class PopupTemplateCompat {
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: PopupTemplateLoadStatusCompat;
-  public title: unknown;
-  public content: unknown;
-  public fieldInfos: unknown[];
-  public actions: unknown[];
-  public expressionInfos: unknown[];
+  public title: string | ((...args: unknown[]) => string) | null;
+  public content: string | Record<string, unknown>[] | ((...args: unknown[]) => string) | null;
+  public fieldInfos: PopupTemplateFieldInfo[];
+  public actions: PopupTemplateAction[];
+  public expressionInfos: PopupTemplateExpressionInfo[];
   public outFields: string[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
@@ -35,8 +56,8 @@ export class PopupTemplateCompat {
       new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
-    this.title = options.title;
-    this.content = options.content;
+    this.title = options.title ?? null;
+    this.content = options.content ?? null;
     this.fieldInfos = options.fieldInfos ? [...options.fieldInfos] : [];
     this.actions = options.actions ? [...options.actions] : [];
     this.expressionInfos = options.expressionInfos ? [...options.expressionInfos] : [];

@@ -29,7 +29,7 @@ export interface SketchCompatOptions {
 export interface SketchCreateResultCompat {
   state: "complete" | "cancel";
   tool: SketchToolCompat;
-  graphic?: unknown;
+  graphic?: Record<string, unknown> | null;
 }
 
 export type SketchLoadStatusCompat = "not-loaded" | "loading" | "loaded";
@@ -52,7 +52,7 @@ export class SketchCompat {
   public state: "ready" | "active";
   public activeTool: SketchToolCompat | undefined;
   public activeCreateOptions: Partial<SketchCreateOptionsCompat> | undefined;
-  public activeUpdateGraphics: unknown[];
+  public activeUpdateGraphics: Record<string, unknown>[];
   public activeUpdateOptions: Partial<SketchUpdateOptionsCompat> | undefined;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
@@ -135,13 +135,13 @@ export class SketchCompat {
     );
   }
 
-  public complete(graphic?: unknown): SketchCreateResultCompat | undefined {
+  public complete(graphic?: Record<string, unknown>): SketchCreateResultCompat | undefined {
     if (this.state !== "active" || !this.activeTool) {
       return undefined;
     }
 
     const tool = this.activeTool;
-    const createdGraphic = graphic ?? {};
+    const createdGraphic: Record<string, unknown> = graphic ?? {};
     appendGraphic(this.layer, createdGraphic);
     this.clearActiveState();
     this.eventBus.emit(
@@ -175,11 +175,11 @@ export class SketchCompat {
   }
 
   public update(
-    graphics: unknown | readonly unknown[],
+    graphics: Record<string, unknown> | readonly Record<string, unknown>[],
     options?: Partial<SketchUpdateOptionsCompat>,
-  ): readonly unknown[] {
+  ): readonly Record<string, unknown>[] {
     const normalizedGraphics = normalizeGraphicsInput(graphics);
-    this.activeUpdateGraphics = [...normalizedGraphics];
+    this.activeUpdateGraphics = [...normalizedGraphics] as Record<string, unknown>[];
     this.notifyWatchers("activeUpdateGraphics", this.activeUpdateGraphics);
     this.activeUpdateOptions = {
       ...this.defaultUpdateOptions,

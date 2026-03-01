@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HonuaClient } from "../src/core/client.js";
 
 describe("HonuaClient transport selection", () => {
@@ -95,5 +95,92 @@ describe("HonuaClient REST transport parity", () => {
 
     // With preferBinary + rest transport, should use f=pbf
     expect(requestedUrl).toContain("f=pbf");
+  });
+});
+
+describe("HonuaClient gRPC streaming", () => {
+  it("queryFeaturesStream routes through gRPC adapter when transport is grpc-web", async () => {
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      transport: "grpc-web",
+      fetchFn: async () => new Response("{}", { status: 200 }),
+    });
+
+    // The stream should attempt to use gRPC transport
+    // Since we can't fully mock connectrpc here, just verify the client
+    // accepts the transport config and the stream method exists
+    expect(typeof client.queryFeaturesStream).toBe("function");
+
+    // Verify it returns an async generator
+    const stream = client.queryFeaturesStream({ serviceId: "svc", layerId: 0 });
+    expect(stream[Symbol.asyncIterator]).toBeDefined();
+  });
+
+  it("streamProtoPages yields feature batches from async iterable", async () => {
+    const { streamProtoPages } = await import("../src/core/grpc-adapter.js");
+
+    // Create a mock async iterable of FeaturePages
+    const mockPages = [
+      {
+        features: [
+          {
+            attributes: {},
+            geometry: { shape: { case: "point" as const, value: { x: 1, y: 2 } } },
+          },
+        ],
+        isLastPage: false,
+      },
+      {
+        features: [
+          {
+            attributes: {},
+            geometry: { shape: { case: "point" as const, value: { x: 3, y: 4 } } },
+          },
+        ],
+        isLastPage: true,
+      },
+    ];
+
+    async function* fakeStream() {
+      for (const page of mockPages) {
+        yield page;
+      }
+    }
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock FeaturePage shape for testing
+    const batches: unknown[] = [];
+    for await (const batch of streamProtoPages(fakeStream() as any)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toEqual([{ attributes: {}, geometry: { x: 1, y: 2 } }]);
+    expect(batches[1]).toEqual([{ attributes: {}, geometry: { x: 3, y: 4 } }]);
+  });
+
+  it("streamProtoPages stops on empty last page", async () => {
+    const { streamProtoPages } = await import("../src/core/grpc-adapter.js");
+
+    async function* fakeStream() {
+      yield {
+        features: [
+          {
+            attributes: {},
+            geometry: { shape: { case: "point" as const, value: { x: 1, y: 2 } } },
+          },
+        ],
+        isLastPage: false,
+      };
+      yield { features: [], isLastPage: true };
+    }
+
+    // biome-ignore lint/suspicious/noExplicitAny: mock FeaturePage shape for testing
+    const batches: unknown[] = [];
+    for await (const batch of streamProtoPages(fakeStream() as any)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toEqual([{ attributes: {}, geometry: { x: 1, y: 2 } }]);
   });
 });

@@ -64,6 +64,24 @@ describe("MapLayerQueryBuilder fluent DSL", () => {
       await expect(builder.run()).rejects.toThrow(/bound client/);
     });
   });
+
+  describe("statistics and centroid methods", () => {
+    it("supports returnCentroid on MapLayerQueryBuilder", () => {
+      const req = MapLayerQueryBuilder.from("svc", 0).returnCentroid().build();
+      expect(req.returnCentroid).toBe(true);
+    });
+
+    it("supports groupBy on MapLayerQueryBuilder", () => {
+      const req = MapLayerQueryBuilder.from("svc", 0).groupBy("category").build();
+      expect(req.groupByFieldsForStatistics).toBe("category");
+    });
+
+    it("supports outStatistics on MapLayerQueryBuilder", () => {
+      const stats = [{ statisticType: "count", onStatisticField: "OBJECTID", outStatisticFieldName: "cnt" }];
+      const req = MapLayerQueryBuilder.from("svc", 0).outStatistics(stats).build();
+      expect(req.outStatistics).toEqual(stats);
+    });
+  });
 });
 
 describe("OgcQueryBuilder fluent DSL", () => {

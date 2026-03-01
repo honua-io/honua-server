@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { collator, expr, format, get, hsl, hsla, numberFormat, resolvedLocale, toRgba } from "../src/index.js";
+import {
+  accumulated,
+  collator,
+  cubicBezier,
+  distanceFromCenter,
+  exponential,
+  expr,
+  format,
+  get,
+  heatmapDensity,
+  hsl,
+  hsla,
+  interpolate,
+  lineProgress,
+  linear,
+  numberFormat,
+  pitch,
+  resolvedLocale,
+  toRgba,
+  zoom,
+} from "../src/index.js";
 
 describe("Expression engine completions (Direction 13)", () => {
   describe("format()", () => {
@@ -136,5 +156,42 @@ describe("Expression engine completions (Direction 13)", () => {
       const e = expr.resolvedLocale(c);
       expect(e.toJSON()).toEqual(["resolved-locale", ["collator", {}]]);
     });
+  });
+});
+
+describe("MapLibre environment operators", () => {
+  it("lineProgress() serializes correctly", () => {
+    expect(lineProgress().toJSON()).toEqual(["line-progress"]);
+  });
+  it("heatmapDensity() serializes correctly", () => {
+    expect(heatmapDensity().toJSON()).toEqual(["heatmap-density"]);
+  });
+  it("pitch() serializes correctly", () => {
+    expect(pitch().toJSON()).toEqual(["pitch"]);
+  });
+  it("accumulated() serializes correctly", () => {
+    expect(accumulated().toJSON()).toEqual(["accumulated"]);
+  });
+  it("distanceFromCenter() serializes correctly", () => {
+    expect(distanceFromCenter().toJSON()).toEqual(["distance-from-center"]);
+  });
+});
+
+describe("Typed interpolation methods", () => {
+  it("linear() returns branded interpolation method", () => {
+    const m = linear();
+    expect(m).toEqual(["linear"]);
+  });
+  it("exponential() returns branded interpolation method", () => {
+    const m = exponential(1.5);
+    expect(m).toEqual(["exponential", 1.5]);
+  });
+  it("cubicBezier() returns branded interpolation method", () => {
+    const m = cubicBezier(0.42, 0, 0.58, 1);
+    expect(m).toEqual(["cubic-bezier", 0.42, 0, 0.58, 1]);
+  });
+  it("interpolate() accepts typed method", () => {
+    const result = interpolate(linear(), zoom(), [0, 0], [10, 1]);
+    expect(result.toJSON()).toEqual(["interpolate", ["linear"], ["zoom"], 0, 0, 10, 1]);
   });
 });

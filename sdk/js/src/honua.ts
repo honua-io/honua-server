@@ -9,6 +9,11 @@ export {
   hsl,
   hsla,
   toRgba,
+  lineProgress,
+  heatmapDensity,
+  pitch,
+  accumulated,
+  distanceFromCenter,
 } from "./expr/index.js";
 export {
   isHonuaSource,
@@ -41,6 +46,7 @@ export type {
   BooleanInput,
   ColorInput,
   Resolvable,
+  InterpolationMethod,
   GeoJsonPoint,
   GeoJsonMultiPoint,
   GeoJsonLineString,

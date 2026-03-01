@@ -33,6 +33,7 @@ export interface HonuaRequestInterceptor {
   error?(context: HonuaErrorContext): void | Promise<void>;
 }
 
+/** Parameters for querying features from a feature layer. */
 export interface QueryFeaturesRequest {
   serviceId: string;
   layerId: number;
@@ -55,6 +56,7 @@ export interface QueryFeaturesRequest {
   signal?: AbortSignal;
 }
 
+/** Parameters for querying features from a map service layer. */
 export interface MapLayerQueryRequest {
   serviceId: string;
   layerId: number;
@@ -77,6 +79,7 @@ export interface MapLayerQueryRequest {
   signal?: AbortSignal;
 }
 
+/** Parameters for querying related records from a feature layer. */
 export interface QueryRelatedRecordsRequest {
   serviceId: string;
   layerId: number;
@@ -90,6 +93,7 @@ export interface QueryRelatedRecordsRequest {
   signal?: AbortSignal;
 }
 
+/** Parameters for querying related records from a map service layer. */
 export interface MapRelatedRecordsRequest {
   serviceId: string;
   layerId: number;
@@ -103,6 +107,7 @@ export interface MapRelatedRecordsRequest {
   signal?: AbortSignal;
 }
 
+/** Parameters for exporting a map image from a map service. */
 export interface ExportMapRequest {
   serviceId: string;
   bbox: string | [number, number, number, number];
@@ -119,6 +124,7 @@ export interface ExportMapRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+/** Parameters for requesting legend information from a map service. */
 export interface MapLegendRequest {
   serviceId: string;
   responseFormat?: "json" | "pjson";
@@ -127,6 +133,7 @@ export interface MapLegendRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+/** Parameters for identifying features at a point on a map service. */
 export interface MapIdentifyRequest {
   serviceId: string;
   geometry: string | Record<string, unknown>;
@@ -146,6 +153,7 @@ export interface MapIdentifyRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+/** Parameters for finding features by attribute value in a map service. */
 export interface MapFindRequest {
   serviceId: string;
   searchText: string;
@@ -167,6 +175,7 @@ export interface MapFindRequest {
   extraParams?: Record<string, string | number | boolean>;
 }
 
+/** Parameters for making a raw HTTP request through the client. */
 export interface HonuaRawRequest {
   path: string;
   method?: QueryMethod;
@@ -177,6 +186,7 @@ export interface HonuaRawRequest {
   signal?: AbortSignal;
 }
 
+/** Parameters for applying feature edits (add, update, delete) to a feature layer. */
 export interface ApplyEditsRequest {
   serviceId: string;
   layerId: number;

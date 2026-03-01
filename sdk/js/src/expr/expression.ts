@@ -151,6 +151,31 @@ export function featureState(property: string): Expr<ExprValue> {
   return new Expr<ExprValue>(["feature-state", property]);
 }
 
+/** Returns the progress along a gradient line. Used in line-gradient paint property. */
+export function lineProgress(): Expr<number> {
+  return new Expr<number>(["line-progress"]);
+}
+
+/** Returns the kernel density estimation of a heatmap layer. Used in heatmap-color paint. */
+export function heatmapDensity(): Expr<number> {
+  return new Expr<number>(["heatmap-density"]);
+}
+
+/** Returns the current map pitch in degrees. */
+export function pitch(): Expr<number> {
+  return new Expr<number>(["pitch"]);
+}
+
+/** Returns the accumulated value of a cluster property. */
+export function accumulated(): Expr<ExprValue> {
+  return new Expr<ExprValue>(["accumulated"]);
+}
+
+/** Returns the distance from the center of the viewport. Used in 3D camera-reactive styling. */
+export function distanceFromCenter(): Expr<number> {
+  return new Expr<number>(["distance-from-center"]);
+}
+
 // ── Type coercion ────────────────────────────────────────────
 
 /** Wrap a raw JSON array or object as a literal expression value. */
@@ -468,19 +493,22 @@ export function toRgba(color: ColorInput): Expr<number[]> {
 
 // ── Interpolation methods ────────────────────────────────────
 
+/** Branded type for interpolation method arrays. */
+export type InterpolationMethod = unknown[] & { readonly __brand: "InterpolationMethod" };
+
 /** Linear interpolation method. */
-export function linear(): unknown[] {
-  return ["linear"];
+export function linear(): InterpolationMethod {
+  return ["linear"] as InterpolationMethod;
 }
 
 /** Exponential interpolation method with the given base. */
-export function exponential(base: number): unknown[] {
-  return ["exponential", base];
+export function exponential(base: number): InterpolationMethod {
+  return ["exponential", base] as InterpolationMethod;
 }
 
 /** Cubic bezier interpolation method. */
-export function cubicBezier(x1: number, y1: number, x2: number, y2: number): unknown[] {
-  return ["cubic-bezier", x1, y1, x2, y2];
+export function cubicBezier(x1: number, y1: number, x2: number, y2: number): InterpolationMethod {
+  return ["cubic-bezier", x1, y1, x2, y2] as InterpolationMethod;
 }
 
 // ── Ramps and scales ─────────────────────────────────────────
@@ -519,7 +547,11 @@ export function step(input: Resolvable, defaultOutput: Resolvable, ...stops: [nu
  * )
  * ```
  */
-export function interpolate(method: unknown[], input: Resolvable, ...stops: [number, Resolvable][]): Expr<ExprValue> {
+export function interpolate(
+  method: InterpolationMethod,
+  input: Resolvable,
+  ...stops: [number, Resolvable][]
+): Expr<ExprValue> {
   const json: unknown[] = ["interpolate", method, r(input)];
   for (const [stopInput, stopOutput] of stops) {
     json.push(stopInput, r(stopOutput));
@@ -529,7 +561,7 @@ export function interpolate(method: unknown[], input: Resolvable, ...stops: [num
 
 /** Interpolate in the HCL color space. Produces smoother color gradients. */
 export function interpolateHcl(
-  method: unknown[],
+  method: InterpolationMethod,
   input: Resolvable,
   ...stops: [number, ColorInput][]
 ): Expr<ExprColor> {
@@ -542,7 +574,7 @@ export function interpolateHcl(
 
 /** Interpolate in the CIELAB color space. */
 export function interpolateLab(
-  method: unknown[],
+  method: InterpolationMethod,
   input: Resolvable,
   ...stops: [number, ColorInput][]
 ): Expr<ExprColor> {
@@ -775,6 +807,11 @@ export const expr = {
   geometryType,
   properties,
   featureState,
+  lineProgress,
+  heatmapDensity,
+  pitch,
+  accumulated,
+  distanceFromCenter,
 
   // Type coercion
   literal,
