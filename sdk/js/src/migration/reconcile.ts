@@ -41,9 +41,7 @@ interface QueryFeaturesResponse {
 
 const DEFAULT_SAMPLE_SIZE = 100;
 
-export async function runLayerReconciliation(
-  options: LayerReconciliationOptions,
-): Promise<LayerReconciliationReport> {
+export async function runLayerReconciliation(options: LayerReconciliationOptions): Promise<LayerReconciliationReport> {
   const fetchFn = options.fetchFn ?? fetch;
   const sampleSize =
     typeof options.sampleSize === "number" && Number.isFinite(options.sampleSize)
@@ -132,11 +130,14 @@ async function queryFeatureCount(
   serviceId: string,
   layerId: number,
 ): Promise<number> {
-  const response = await fetchJson(fetchFn, buildQueryUrl(baseUrl, serviceId, layerId, {
-    f: "json",
-    where: "1=1",
-    returnCountOnly: "true",
-  }));
+  const response = await fetchJson(
+    fetchFn,
+    buildQueryUrl(baseUrl, serviceId, layerId, {
+      f: "json",
+      where: "1=1",
+      returnCountOnly: "true",
+    }),
+  );
 
   if (typeof response.count === "number" && Number.isFinite(response.count)) {
     return response.count;
@@ -152,19 +153,19 @@ async function queryFeatureSample(
   layerId: number,
   sampleSize: number,
 ): Promise<QueryFeaturesResponse> {
-  return fetchJson(fetchFn, buildQueryUrl(baseUrl, serviceId, layerId, {
-    f: "json",
-    where: "1=1",
-    outFields: "*",
-    returnGeometry: "true",
-    resultRecordCount: String(sampleSize),
-  }));
+  return fetchJson(
+    fetchFn,
+    buildQueryUrl(baseUrl, serviceId, layerId, {
+      f: "json",
+      where: "1=1",
+      outFields: "*",
+      returnGeometry: "true",
+      resultRecordCount: String(sampleSize),
+    }),
+  );
 }
 
-async function fetchJson(
-  fetchFn: typeof fetch,
-  url: string,
-): Promise<QueryFeaturesResponse> {
+async function fetchJson(fetchFn: typeof fetch, url: string): Promise<QueryFeaturesResponse> {
   const response = await fetchFn(url, {
     method: "GET",
     headers: {
@@ -189,12 +190,7 @@ async function fetchJson(
   }
 }
 
-function buildQueryUrl(
-  baseUrl: string,
-  serviceId: string,
-  layerId: number,
-  params: Record<string, string>,
-): string {
+function buildQueryUrl(baseUrl: string, serviceId: string, layerId: number, params: Record<string, string>): string {
   const query = new URLSearchParams(params);
   return (
     `${normalizeBaseUrl(baseUrl)}/rest/services/${encodeURIComponent(serviceId)}` +

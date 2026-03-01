@@ -6,8 +6,8 @@ import type {
   HonuaApplyEditsResponse,
   HonuaAttachmentListResponse,
   HonuaDeleteAttachmentsResponse,
-  HonuaExtent,
   HonuaExportMapResponse,
+  HonuaExtent,
   HonuaFeature,
   HonuaFindResponse,
   HonuaIdentifyResponse,
@@ -28,6 +28,11 @@ import type {
   HonuaTypedFeature,
   HonuaTypedQueryResponse,
   HonuaUpdateAttachmentResponse,
+  MapFindRequest,
+  MapIdentifyRequest,
+  MapLayerQueryRequest,
+  MapLegendRequest,
+  MapRelatedRecordsRequest,
   OgcCollectionRequest,
   OgcCreateItemRequest,
   OgcDeleteItemRequest,
@@ -36,11 +41,6 @@ import type {
   OgcMetadataRequest,
   OgcPatchItemRequest,
   OgcReplaceItemRequest,
-  MapLayerQueryRequest,
-  MapFindRequest,
-  MapIdentifyRequest,
-  MapLegendRequest,
-  MapRelatedRecordsRequest,
   QueryFeaturesRequest,
   QueryMethod,
   QueryRelatedRecordsRequest,
@@ -67,10 +67,7 @@ export type HonuaFeatureLayerQueryObjectIdsRequest = Pick<QueryFeaturesRequest, 
   extraParams?: Record<string, string | number | boolean>;
 };
 export type HonuaFeatureLayerQueryExtentRequest = HonuaFeatureLayerQueryCountRequest;
-export type HonuaFeatureLayerQueryRelatedRecordsRequest = Omit<
-  QueryRelatedRecordsRequest,
-  "serviceId" | "layerId"
->;
+export type HonuaFeatureLayerQueryRelatedRecordsRequest = Omit<QueryRelatedRecordsRequest, "serviceId" | "layerId">;
 export type HonuaFeatureLayerApplyEditsRequest = Omit<ApplyEditsRequest, "serviceId" | "layerId">;
 export interface HonuaFeatureLayerQueryExtentResponse {
   extent: HonuaExtent | null;
@@ -121,20 +118,11 @@ export type HonuaMapServiceQueryLayerAllRequest = HonuaMapServiceQueryLayerReque
   pageSize?: number;
   maxPages?: number;
 };
-export type HonuaMapServiceQueryLayerRelatedRecordsRequest = Omit<
-  MapRelatedRecordsRequest,
-  "serviceId"
->;
-export type HonuaMapServiceQueryLayerCountRequest = Pick<
-  MapLayerQueryRequest,
-  "layerId" | "where" | "method"
-> & {
+export type HonuaMapServiceQueryLayerRelatedRecordsRequest = Omit<MapRelatedRecordsRequest, "serviceId">;
+export type HonuaMapServiceQueryLayerCountRequest = Pick<MapLayerQueryRequest, "layerId" | "where" | "method"> & {
   extraParams?: Record<string, string | number | boolean>;
 };
-export type HonuaMapServiceQueryLayerObjectIdsRequest = Pick<
-  MapLayerQueryRequest,
-  "layerId" | "where" | "method"
-> & {
+export type HonuaMapServiceQueryLayerObjectIdsRequest = Pick<MapLayerQueryRequest, "layerId" | "where" | "method"> & {
   extraParams?: Record<string, string | number | boolean>;
 };
 export type HonuaMapServiceQueryLayerExtentRequest = HonuaMapServiceQueryLayerCountRequest;
@@ -147,10 +135,7 @@ export type HonuaMapLayerQueryAllRequest = HonuaMapLayerQueryRequest & {
   pageSize?: number;
   maxPages?: number;
 };
-export type HonuaMapLayerQueryRelatedRecordsRequest = Omit<
-  MapRelatedRecordsRequest,
-  "serviceId" | "layerId"
->;
+export type HonuaMapLayerQueryRelatedRecordsRequest = Omit<MapRelatedRecordsRequest, "serviceId" | "layerId">;
 export type HonuaMapLayerQueryCountRequest = Pick<MapLayerQueryRequest, "where" | "method"> & {
   extraParams?: Record<string, string | number | boolean>;
 };
@@ -224,12 +209,13 @@ export class HonuaService {
 
   public async featureLayers(): Promise<HonuaFeatureLayer[]> {
     const ids = await this.featureLayerIds();
-    return ids.map((layerId) =>
-      new HonuaFeatureLayer({
-        client: this.client,
-        serviceId: this.serviceId,
-        layerId,
-      }),
+    return ids.map(
+      (layerId) =>
+        new HonuaFeatureLayer({
+          client: this.client,
+          serviceId: this.serviceId,
+          layerId,
+        }),
     );
   }
 
@@ -240,12 +226,13 @@ export class HonuaService {
 
   public async mapLayers(): Promise<HonuaMapLayer[]> {
     const ids = await this.mapLayerIds();
-    return ids.map((layerId) =>
-      new HonuaMapLayer({
-        client: this.client,
-        serviceId: this.serviceId,
-        layerId,
-      }),
+    return ids.map(
+      (layerId) =>
+        new HonuaMapLayer({
+          client: this.client,
+          serviceId: this.serviceId,
+          layerId,
+        }),
     );
   }
 
@@ -301,9 +288,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     };
   }
 
-  public async queryFeatures(
-    request: HonuaFeatureLayerQueryRequest = {},
-  ): Promise<HonuaTypedQueryResponse<T>> {
+  public async queryFeatures(request: HonuaFeatureLayerQueryRequest = {}): Promise<HonuaTypedQueryResponse<T>> {
     return this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -311,9 +296,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     }) as Promise<HonuaTypedQueryResponse<T>>;
   }
 
-  public async queryFeaturesAll(
-    request: HonuaFeatureLayerQueryAllRequest = {},
-  ): Promise<HonuaTypedFeature<T>[]> {
+  public async queryFeaturesAll(request: HonuaFeatureLayerQueryAllRequest = {}): Promise<HonuaTypedFeature<T>[]> {
     const pageSize =
       typeof request.pageSize === "number" && Number.isFinite(request.pageSize)
         ? Math.max(1, Math.trunc(request.pageSize))
@@ -401,9 +384,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     }
   }
 
-  public async queryFeatureCount(
-    request: HonuaFeatureLayerQueryCountRequest = {},
-  ): Promise<number> {
+  public async queryFeatureCount(request: HonuaFeatureLayerQueryCountRequest = {}): Promise<number> {
     const response = await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -426,9 +407,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     return 0;
   }
 
-  public async queryObjectIds(
-    request: HonuaFeatureLayerQueryObjectIdsRequest = {},
-  ): Promise<number[]> {
+  public async queryObjectIds(request: HonuaFeatureLayerQueryObjectIdsRequest = {}): Promise<number[]> {
     const response = await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -484,9 +463,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     return this.queryRelatedRecords(request);
   }
 
-  public async applyEdits(
-    request: HonuaFeatureLayerApplyEditsRequest,
-  ): Promise<HonuaApplyEditsResponse> {
+  public async applyEdits(request: HonuaFeatureLayerApplyEditsRequest): Promise<HonuaApplyEditsResponse> {
     return this.client.applyEdits({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -499,8 +476,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
   ): Promise<HonuaQueryAttachmentsResponse> {
     const method: QueryMethod = request.method ?? "GET";
     const path =
-      `/rest/services/${encodeURIComponent(this.serviceId)}` +
-      `/FeatureServer/${this.layerId}/queryAttachments`;
+      `/rest/services/${encodeURIComponent(this.serviceId)}` + `/FeatureServer/${this.layerId}/queryAttachments`;
     const query = {
       ...(request.objectIds === undefined
         ? {}
@@ -534,9 +510,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     }) as Promise<HonuaQueryAttachmentsResponse>;
   }
 
-  public async listAttachments(
-    request: HonuaFeatureLayerListAttachmentsRequest,
-  ): Promise<HonuaAttachmentListResponse> {
+  public async listAttachments(request: HonuaFeatureLayerListAttachmentsRequest): Promise<HonuaAttachmentListResponse> {
     return this.client.request({
       method: "GET",
       path:
@@ -567,9 +541,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     });
   }
 
-  public async addAttachment(
-    request: HonuaFeatureLayerAddAttachmentRequest,
-  ): Promise<HonuaAddAttachmentResponse> {
+  public async addAttachment(request: HonuaFeatureLayerAddAttachmentRequest): Promise<HonuaAddAttachmentResponse> {
     const form = buildAttachmentFormData(request);
     return this.client.request<HonuaAddAttachmentResponse>({
       method: "POST",
@@ -598,9 +570,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
     });
   }
 
-  public async request<T = unknown>(
-    request: HonuaFeatureLayerRequest,
-  ): Promise<T> {
+  public async request<T = unknown>(request: HonuaFeatureLayerRequest): Promise<T> {
     return this.client.request<T>({
       ...request,
       path:
@@ -643,60 +613,49 @@ export class HonuaMapService {
 
   public async layers(): Promise<HonuaMapLayer[]> {
     const ids = await this.layerIds();
-    return ids.map((layerId) =>
-      new HonuaMapLayer({
-        client: this.client,
-        serviceId: this.serviceId,
-        layerId,
-      }),
+    return ids.map(
+      (layerId) =>
+        new HonuaMapLayer({
+          client: this.client,
+          serviceId: this.serviceId,
+          layerId,
+        }),
     );
   }
 
-  public async exportMap(
-    request: HonuaMapServiceExportMapRequest,
-  ): Promise<HonuaExportMapResponse> {
+  public async exportMap(request: HonuaMapServiceExportMapRequest): Promise<HonuaExportMapResponse> {
     return this.client.exportMap({
       serviceId: this.serviceId,
       ...request,
     });
   }
 
-  public async legend(
-    request: HonuaMapServiceLegendRequest = {},
-  ): Promise<HonuaLegendResponse> {
+  public async legend(request: HonuaMapServiceLegendRequest = {}): Promise<HonuaLegendResponse> {
     return this.client.getMapLegend({
       serviceId: this.serviceId,
       ...request,
     });
   }
 
-  public async getLegend(
-    request: HonuaMapServiceLegendRequest = {},
-  ): Promise<HonuaLegendResponse> {
+  public async getLegend(request: HonuaMapServiceLegendRequest = {}): Promise<HonuaLegendResponse> {
     return this.legend(request);
   }
 
-  public async identify(
-    request: HonuaMapServiceIdentifyRequest,
-  ): Promise<HonuaIdentifyResponse> {
+  public async identify(request: HonuaMapServiceIdentifyRequest): Promise<HonuaIdentifyResponse> {
     return this.client.identifyMap({
       serviceId: this.serviceId,
       ...request,
     });
   }
 
-  public async find(
-    request: HonuaMapServiceFindRequest,
-  ): Promise<HonuaFindResponse> {
+  public async find(request: HonuaMapServiceFindRequest): Promise<HonuaFindResponse> {
     return this.client.findMap({
       serviceId: this.serviceId,
       ...request,
     });
   }
 
-  public async queryLayer(
-    request: HonuaMapServiceQueryLayerRequest,
-  ): Promise<HonuaQueryResponse> {
+  public async queryLayer(request: HonuaMapServiceQueryLayerRequest): Promise<HonuaQueryResponse> {
     return this.client.queryMapLayer({
       serviceId: this.serviceId,
       ...request,
@@ -718,9 +677,7 @@ export class HonuaMapService {
     return this.queryLayerRelatedRecords(request);
   }
 
-  public async queryLayerFeaturesAll(
-    request: HonuaMapServiceQueryLayerAllRequest,
-  ): Promise<HonuaFeature[]> {
+  public async queryLayerFeaturesAll(request: HonuaMapServiceQueryLayerAllRequest): Promise<HonuaFeature[]> {
     const pageSize =
       typeof request.pageSize === "number" && Number.isFinite(request.pageSize)
         ? Math.max(1, Math.trunc(request.pageSize))
@@ -789,9 +746,7 @@ export class HonuaMapService {
     }
   }
 
-  public async queryLayerFeatureCount(
-    request: HonuaMapServiceQueryLayerCountRequest,
-  ): Promise<number> {
+  public async queryLayerFeatureCount(request: HonuaMapServiceQueryLayerCountRequest): Promise<number> {
     const response = await this.queryLayer({
       layerId: request.layerId,
       where: request.where ?? "1=1",
@@ -806,9 +761,7 @@ export class HonuaMapService {
     return extractFeatureCountFromResponse(response);
   }
 
-  public async queryLayerObjectIds(
-    request: HonuaMapServiceQueryLayerObjectIdsRequest,
-  ): Promise<number[]> {
+  public async queryLayerObjectIds(request: HonuaMapServiceQueryLayerObjectIdsRequest): Promise<number[]> {
     const response = await this.queryLayer({
       layerId: request.layerId,
       where: request.where ?? "1=1",
@@ -839,20 +792,14 @@ export class HonuaMapService {
     return extractExtentFromResponse(response);
   }
 
-  public async exportImage(
-    request: HonuaMapServiceExportMapRequest,
-  ): Promise<HonuaExportMapResponse> {
+  public async exportImage(request: HonuaMapServiceExportMapRequest): Promise<HonuaExportMapResponse> {
     return this.exportMap(request);
   }
 
-  public async request<T = unknown>(
-    request: HonuaMapServiceRequest,
-  ): Promise<T> {
+  public async request<T = unknown>(request: HonuaMapServiceRequest): Promise<T> {
     return this.client.request<T>({
       ...request,
-      path:
-        `/rest/services/${encodeURIComponent(this.serviceId)}` +
-        `/MapServer/${normalizeServicePath(request.path)}`,
+      path: `/rest/services/${encodeURIComponent(this.serviceId)}` + `/MapServer/${normalizeServicePath(request.path)}`,
     });
   }
 }
@@ -877,9 +824,7 @@ export class HonuaMapLayer {
   public async metadata(): Promise<HonuaLayerMetadata> {
     return this.client.request({
       method: "GET",
-      path:
-        `/rest/services/${encodeURIComponent(this.serviceId)}` +
-        `/MapServer/${this.layerId}`,
+      path: `/rest/services/${encodeURIComponent(this.serviceId)}` + `/MapServer/${this.layerId}`,
     }) as Promise<HonuaLayerMetadata>;
   }
 
@@ -891,9 +836,7 @@ export class HonuaMapLayer {
     };
   }
 
-  public async queryFeatures(
-    request: HonuaMapLayerQueryRequest = {},
-  ): Promise<HonuaQueryResponse> {
+  public async queryFeatures(request: HonuaMapLayerQueryRequest = {}): Promise<HonuaQueryResponse> {
     return this.client.queryMapLayer({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -917,9 +860,7 @@ export class HonuaMapLayer {
     return this.queryRelatedRecords(request);
   }
 
-  public async queryFeaturesAll(
-    request: HonuaMapLayerQueryAllRequest = {},
-  ): Promise<HonuaFeature[]> {
+  public async queryFeaturesAll(request: HonuaMapLayerQueryAllRequest = {}): Promise<HonuaFeature[]> {
     const pageSize =
       typeof request.pageSize === "number" && Number.isFinite(request.pageSize)
         ? Math.max(1, Math.trunc(request.pageSize))
@@ -988,9 +929,7 @@ export class HonuaMapLayer {
     }
   }
 
-  public async queryFeatureCount(
-    request: HonuaMapLayerQueryCountRequest = {},
-  ): Promise<number> {
+  public async queryFeatureCount(request: HonuaMapLayerQueryCountRequest = {}): Promise<number> {
     const response = await this.queryFeatures({
       where: request.where ?? "1=1",
       returnGeometry: false,
@@ -1004,9 +943,7 @@ export class HonuaMapLayer {
     return extractFeatureCountFromResponse(response);
   }
 
-  public async queryObjectIds(
-    request: HonuaMapLayerQueryObjectIdsRequest = {},
-  ): Promise<number[]> {
+  public async queryObjectIds(request: HonuaMapLayerQueryObjectIdsRequest = {}): Promise<number[]> {
     const response = await this.queryFeatures({
       where: request.where ?? "1=1",
       returnGeometry: false,
@@ -1020,9 +957,7 @@ export class HonuaMapLayer {
     return extractObjectIdsFromResponse(response);
   }
 
-  public async queryExtent(
-    request: HonuaMapLayerQueryExtentRequest = {},
-  ): Promise<HonuaMapLayerQueryExtentResponse> {
+  public async queryExtent(request: HonuaMapLayerQueryExtentRequest = {}): Promise<HonuaMapLayerQueryExtentResponse> {
     const response = await this.queryFeatures({
       where: request.where ?? "1=1",
       returnGeometry: false,
@@ -1035,9 +970,7 @@ export class HonuaMapLayer {
     return extractExtentFromResponse(response);
   }
 
-  public async request<T = unknown>(
-    request: HonuaMapLayerRequest,
-  ): Promise<T> {
+  public async request<T = unknown>(request: HonuaMapLayerRequest): Promise<T> {
     return this.client.request<T>({
       ...request,
       path:
@@ -1094,9 +1027,7 @@ export class HonuaOgcFeatures {
     return this.client.listOgcItems(request);
   }
 
-  public async itemsAll(
-    request: HonuaOgcItemsAllRequest,
-  ): Promise<HonuaOgcFeatureResponse[]> {
+  public async itemsAll(request: HonuaOgcItemsAllRequest): Promise<HonuaOgcFeatureResponse[]> {
     const pageSize = normalizePageSize(request.pageSize, request.limit);
     const maxPages = normalizeMaxPages(request.maxPages);
     const offset = normalizeOffset(request.offset);
@@ -1107,8 +1038,7 @@ export class HonuaOgcFeatures {
       if (totalLimit !== undefined && features.length >= totalLimit) {
         break;
       }
-      const remainingLimit =
-        totalLimit === undefined ? pageSize : Math.max(0, totalLimit - features.length);
+      const remainingLimit = totalLimit === undefined ? pageSize : Math.max(0, totalLimit - features.length);
       if (remainingLimit < 1) {
         break;
       }
@@ -1187,9 +1117,7 @@ export class HonuaOgcFeatureCollection {
     });
   }
 
-  public async itemsAll(
-    request: HonuaOgcCollectionItemsAllRequest = {},
-  ): Promise<HonuaOgcFeatureResponse[]> {
+  public async itemsAll(request: HonuaOgcCollectionItemsAllRequest = {}): Promise<HonuaOgcFeatureResponse[]> {
     const pageSize = normalizePageSize(request.pageSize, request.limit);
     const maxPages = normalizeMaxPages(request.maxPages);
     const offset = normalizeOffset(request.offset);
@@ -1200,8 +1128,7 @@ export class HonuaOgcFeatureCollection {
       if (totalLimit !== undefined && features.length >= totalLimit) {
         break;
       }
-      const remainingLimit =
-        totalLimit === undefined ? pageSize : Math.max(0, totalLimit - features.length);
+      const remainingLimit = totalLimit === undefined ? pageSize : Math.max(0, totalLimit - features.length);
       if (remainingLimit < 1) {
         break;
       }
@@ -1290,19 +1217,14 @@ export class HonuaOgcFeatureCollection {
   }
 }
 
-export function createHonuaService(
-  client: HonuaClient,
-  serviceId: string,
-): HonuaService {
+export function createHonuaService(client: HonuaClient, serviceId: string): HonuaService {
   return new HonuaService({
     client,
     serviceId,
   });
 }
 
-export function createHonuaOgcFeatures(
-  client: HonuaClient,
-): HonuaOgcFeatures {
+export function createHonuaOgcFeatures(client: HonuaClient): HonuaOgcFeatures {
   return new HonuaOgcFeatures({
     client,
   });
@@ -1337,9 +1259,7 @@ function extractObjectIdsFromResponse(response: unknown): number[] {
   if (!isObject(response) || !Array.isArray(response.objectIds)) {
     return [];
   }
-  return response.objectIds
-    .map((value) => Number(value))
-    .filter((value): value is number => Number.isFinite(value));
+  return response.objectIds.map((value) => Number(value)).filter((value): value is number => Number.isFinite(value));
 }
 
 function extractExtentFromResponse(response: unknown): { extent: HonuaExtent | null; count?: number } {

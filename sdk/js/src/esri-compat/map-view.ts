@@ -1,28 +1,80 @@
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
+// ── Structural Type Aliases ───────────────────────────────────
+
+/** A center value: either a point-like object with x/y or a coordinate pair. */
+export type MapViewCenterLike =
+  | { x: number; y: number; spatialReference?: MapViewSpatialReferenceLike }
+  | [number, number];
+
+/** An extent-like bounding box with optional spatial reference. */
+export interface MapViewExtentLike {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+  spatialReference?: MapViewSpatialReferenceLike;
+}
+
+/** Padding around the view in CSS pixels. */
+export interface MapViewPaddingLike {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
+/** View constraints such as zoom and scale limits. */
+export interface MapViewConstraintsLike {
+  minZoom?: number;
+  maxZoom?: number;
+  minScale?: number;
+  maxScale?: number;
+  [key: string]: unknown;
+}
+
+/** Highlight options controlling color and opacity of highlighted features. */
+export interface MapViewHighlightOptionsLike {
+  color?: string | number[];
+  haloColor?: string | number[];
+  haloOpacity?: number;
+  fillOpacity?: number;
+  [key: string]: unknown;
+}
+
+/** A spatial reference identified by WKID or WKT. */
+export interface MapViewSpatialReferenceLike {
+  wkid?: number;
+  latestWkid?: number;
+  wkt?: string;
+  [key: string]: unknown;
+}
+
+// ── Options & Input Interfaces ────────────────────────────────
+
 export interface MapViewCompatOptions {
   map?: unknown;
-  container?: unknown;
-  center?: unknown;
+  container?: HTMLElement | string | null;
+  center?: MapViewCenterLike;
   zoom?: number;
   scale?: number;
   rotation?: number;
-  extent?: unknown;
-  constraints?: unknown;
-  padding?: unknown;
-  highlightOptions?: unknown;
-  spatialReference?: unknown;
+  extent?: MapViewExtentLike;
+  constraints?: MapViewConstraintsLike;
+  padding?: MapViewPaddingLike;
+  highlightOptions?: MapViewHighlightOptionsLike;
+  spatialReference?: MapViewSpatialReferenceLike;
   popup?: unknown;
   eventBus?: CompatEventBus;
 }
 
 export interface MapViewGoToTarget {
-  target?: unknown;
-  center?: unknown;
+  target?: MapViewGoToInput;
+  center?: MapViewCenterLike;
   zoom?: number;
   scale?: number;
   rotation?: number;
-  extent?: unknown;
+  extent?: MapViewExtentLike;
 }
 
 export interface MapViewGoToPointLike {
@@ -30,7 +82,7 @@ export interface MapViewGoToPointLike {
   y?: number;
   longitude?: number;
   latitude?: number;
-  spatialReference?: unknown;
+  spatialReference?: MapViewSpatialReferenceLike;
 }
 
 export interface MapViewGoToExtentLike {
@@ -38,7 +90,7 @@ export interface MapViewGoToExtentLike {
   ymin: number;
   xmax: number;
   ymax: number;
-  spatialReference?: unknown;
+  spatialReference?: MapViewSpatialReferenceLike;
 }
 
 export type MapViewGoToInput =
@@ -46,7 +98,7 @@ export type MapViewGoToInput =
   | MapViewGoToPointLike
   | MapViewGoToExtentLike
   | readonly [number, number]
-  | readonly unknown[]
+  | readonly Record<string, unknown>[]
   | Record<string, unknown>;
 
 export interface MapViewGoToOptions {
@@ -86,10 +138,10 @@ export interface MapViewHandle {
 export type MapViewLoadStatusCompat = "not-loaded" | "loading" | "loaded";
 
 export interface MapViewPopupOpenOptions {
-  location?: unknown;
-  features?: readonly unknown[];
+  location?: MapViewCenterLike | Record<string, unknown>;
+  features?: readonly Record<string, unknown>[];
   title?: string;
-  content?: unknown;
+  content?: string | HTMLElement | Record<string, unknown>;
 }
 
 export interface MapViewScreenPoint {
@@ -98,7 +150,7 @@ export interface MapViewScreenPoint {
 }
 
 export interface MapViewMapPoint extends MapViewScreenPoint {
-  spatialReference?: unknown;
+  spatialReference?: MapViewSpatialReferenceLike;
 }
 
 export interface MapViewHitTestEvent {
@@ -109,8 +161,8 @@ export interface MapViewHitTestEvent {
 
 export interface MapViewHitTestResultItem {
   type: "graphic";
-  graphic: unknown;
-  layer?: unknown;
+  graphic: Record<string, unknown>;
+  layer?: Record<string, unknown>;
   mapPoint?: MapViewMapPoint;
 }
 
@@ -123,7 +175,7 @@ export interface MapViewLayerViewHighlightOptions {
 }
 
 export interface MapViewLayerViewHighlightRecord {
-  targets: unknown[];
+  targets: (Record<string, unknown> | number | string)[];
   options: MapViewLayerViewHighlightOptions;
 }
 
@@ -137,7 +189,7 @@ export interface MapViewUiAddOptions {
 }
 
 export interface MapViewUiComponentRecord {
-  component: unknown;
+  component: Record<string, unknown> | HTMLElement;
   position: MapViewUiPosition;
   index: number;
 }
@@ -151,20 +203,20 @@ export interface MapViewPopupViewModelCompat {
 export interface MapViewPopupCompatOptions {
   autoOpenEnabled?: boolean;
   dockEnabled?: boolean;
-  dockOptions?: unknown;
+  dockOptions?: Record<string, unknown>;
 }
 
 export class MapViewPopupCompat {
   public visible: boolean;
-  public location: unknown;
-  public features: unknown[];
-  public selectedFeature: unknown;
+  public location: MapViewCenterLike | Record<string, unknown> | undefined;
+  public features: Record<string, unknown>[];
+  public selectedFeature: Record<string, unknown> | undefined;
   public selectedFeatureIndex: number;
   public title: string | undefined;
-  public content: unknown;
+  public content: string | HTMLElement | Record<string, unknown> | undefined;
   public autoOpenEnabled: boolean;
   public dockEnabled: boolean;
-  public dockOptions: unknown;
+  public dockOptions: Record<string, unknown> | undefined;
   public readonly viewModel: MapViewPopupViewModelCompat;
 
   private readonly onChange: (type: PopupChangeType, options?: MapViewPopupOpenOptions) => void;
@@ -217,7 +269,7 @@ export class MapViewPopupCompat {
     this.onChange("close");
   }
 
-  public selectFeature(featureOrIndex: unknown | number): unknown {
+  public selectFeature(featureOrIndex: Record<string, unknown> | number): Record<string, unknown> | undefined {
     if (this.features.length === 0) {
       return undefined;
     }
@@ -236,7 +288,7 @@ export class MapViewPopupCompat {
     return this.selectedFeature;
   }
 
-  public next(): unknown {
+  public next(): Record<string, unknown> | undefined {
     if (this.features.length === 0) {
       return undefined;
     }
@@ -245,7 +297,7 @@ export class MapViewPopupCompat {
     return this.selectFeature(next);
   }
 
-  public previous(): unknown {
+  public previous(): Record<string, unknown> | undefined {
     if (this.features.length === 0) {
       return undefined;
     }
@@ -286,7 +338,16 @@ export class MapViewLayerViewCompat {
     }));
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle {
+  public watch(propertyName: "updating", listener: (value: boolean) => void): MapViewHandle;
+  public watch(propertyName: "suspended", listener: (value: boolean) => void): MapViewHandle;
+  public watch(propertyName: "hasAllFeatures", listener: (value: boolean) => void): MapViewHandle;
+  public watch(propertyName: "hasAllFeaturesInView", listener: (value: boolean) => void): MapViewHandle;
+  public watch(
+    propertyName: "highlights",
+    listener: (value: readonly MapViewLayerViewHighlightRecord[]) => void,
+  ): MapViewHandle;
+  public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle;
+  public watch(propertyName: string, listener: (value: any) => void): MapViewHandle {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -329,7 +390,7 @@ export class MapViewLayerViewCompat {
     );
   }
 
-  public async queryFeatures(options: unknown = {}): Promise<unknown> {
+  public async queryFeatures(options: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     if (isQueryFeaturesProvider(this.layer)) {
       return this.layer.queryFeatures(options);
     }
@@ -337,7 +398,7 @@ export class MapViewLayerViewCompat {
     return { features: [] };
   }
 
-  public async queryFeatureCount(options: unknown = {}): Promise<number> {
+  public async queryFeatureCount(options: Record<string, unknown> = {}): Promise<number> {
     if (isQueryFeatureCountProvider(this.layer)) {
       const count = await this.layer.queryFeatureCount(options);
       return normalizeCount(count);
@@ -351,7 +412,7 @@ export class MapViewLayerViewCompat {
     return 0;
   }
 
-  public async queryObjectIds(options: unknown = {}): Promise<number[]> {
+  public async queryObjectIds(options: Record<string, unknown> = {}): Promise<number[]> {
     if (isQueryObjectIdsProvider(this.layer)) {
       const ids = await this.layer.queryObjectIds(options);
       return Array.isArray(ids)
@@ -375,7 +436,7 @@ export class MapViewLayerViewCompat {
   }
 
   public highlight(
-    target: unknown | readonly unknown[],
+    target: Record<string, unknown> | number | string | readonly (Record<string, unknown> | number | string)[],
     options: MapViewLayerViewHighlightOptions = {},
   ): MapViewLayerViewHighlightHandle {
     const id = this.nextHighlightId;
@@ -408,11 +469,7 @@ export class MapViewLayerViewCompat {
     if (this.highlightsInternal.size > 0) {
       this.highlightsInternal.clear();
       this.notifyWatchers("highlights", this.highlights);
-      this.eventBus?.emit(
-        "view.layer-view-highlights-cleared",
-        { layer: this.layer, count: 0 },
-        this,
-      );
+      this.eventBus?.emit("view.layer-view-highlights-cleared", { layer: this.layer, count: 0 }, this);
     }
     this.watchListeners.clear();
   }
@@ -451,7 +508,7 @@ export class MapViewLayerViewCompat {
 }
 
 interface QueryFeaturesProvider {
-  queryFeatures(options?: unknown): Promise<unknown> | unknown;
+  queryFeatures(options?: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
 }
 
 interface QueryFeatureCountProvider {
@@ -464,15 +521,10 @@ interface QueryObjectIdsProvider {
 
 export class MapViewUiCompat {
   private readonly eventBus: CompatEventBus;
-  private readonly onChanged:
-    | ((components: readonly MapViewUiComponentRecord[]) => void)
-    | undefined;
+  private readonly onChanged: ((components: readonly MapViewUiComponentRecord[]) => void) | undefined;
   private readonly componentsInternal: MapViewUiComponentRecord[];
 
-  public constructor(
-    eventBus: CompatEventBus,
-    onChanged?: (components: readonly MapViewUiComponentRecord[]) => void,
-  ) {
+  public constructor(eventBus: CompatEventBus, onChanged?: (components: readonly MapViewUiComponentRecord[]) => void) {
     this.eventBus = eventBus;
     this.onChanged = onChanged;
     this.componentsInternal = [];
@@ -483,17 +535,17 @@ export class MapViewUiCompat {
   }
 
   public add(
-    componentOrComponents: unknown | readonly unknown[],
+    componentOrComponents: Record<string, unknown> | HTMLElement | readonly (Record<string, unknown> | HTMLElement)[],
     positionOrOptions: MapViewUiPosition | MapViewUiAddOptions = "manual",
   ): void {
     if (Array.isArray(componentOrComponents)) {
-      for (const component of componentOrComponents) {
+      for (const component of componentOrComponents as (Record<string, unknown> | HTMLElement)[]) {
         this.add(component, positionOrOptions);
       }
       return;
     }
 
-    const component = componentOrComponents;
+    const component = componentOrComponents as Record<string, unknown> | HTMLElement;
     const options = normalizeUiOptions(positionOrOptions);
     const existingIndex = this.findComponentIndex(component);
     if (existingIndex >= 0) {
@@ -520,7 +572,7 @@ export class MapViewUiCompat {
     this.notifyChanged();
   }
 
-  public remove(componentOrId: unknown): boolean {
+  public remove(componentOrId: Record<string, unknown> | HTMLElement | string): boolean {
     const index = this.findComponentIndex(componentOrId);
     if (index < 0) {
       return false;
@@ -579,7 +631,7 @@ export class MapViewUiCompat {
   }
 
   public move(
-    componentOrId: unknown,
+    componentOrId: Record<string, unknown> | HTMLElement | string,
     positionOrOptions: MapViewUiPosition | MapViewUiAddOptions,
   ): boolean {
     const index = this.findComponentIndex(componentOrId);
@@ -610,21 +662,21 @@ export class MapViewUiCompat {
     return true;
   }
 
-  public find(componentOrId: unknown): unknown {
+  public find(
+    componentOrId: Record<string, unknown> | HTMLElement | string,
+  ): Record<string, unknown> | HTMLElement | undefined {
     const index = this.findComponentIndex(componentOrId);
     return index < 0 ? undefined : this.componentsInternal[index]?.component;
   }
 
-  public getComponents(position?: MapViewUiPosition): unknown[] {
+  public getComponents(position?: MapViewUiPosition): (Record<string, unknown> | HTMLElement)[] {
     if (position === undefined) {
       return this.componentsInternal.map((record) => record.component);
     }
-    return this.componentsInternal
-      .filter((record) => record.position === position)
-      .map((record) => record.component);
+    return this.componentsInternal.filter((record) => record.position === position).map((record) => record.component);
   }
 
-  private findComponentIndex(componentOrId: unknown): number {
+  private findComponentIndex(componentOrId: Record<string, unknown> | HTMLElement | string): number {
     if (typeof componentOrId === "string") {
       for (let i = 0; i < this.componentsInternal.length; i += 1) {
         const component = this.componentsInternal[i]?.component;
@@ -655,18 +707,18 @@ export class MapViewUiCompat {
 
 export class MapViewCompat {
   public map: unknown;
-  public container: unknown;
+  public container: HTMLElement | string | null | undefined;
   public loaded: boolean;
   public loadStatus: MapViewLoadStatusCompat;
-  public center: unknown;
+  public center: MapViewCenterLike | undefined;
   public zoom: number | undefined;
   public scale: number | undefined;
   public rotation: number | undefined;
-  public extent: unknown;
-  public constraints: unknown;
-  public padding: unknown;
-  public highlightOptions: unknown;
-  public spatialReference: unknown;
+  public extent: MapViewExtentLike | undefined;
+  public constraints: MapViewConstraintsLike | undefined;
+  public padding: MapViewPaddingLike | undefined;
+  public highlightOptions: MapViewHighlightOptionsLike | undefined;
+  public spatialReference: MapViewSpatialReferenceLike | undefined;
   public readonly eventBus: CompatEventBus;
   public readonly popup: MapViewPopupCompat;
   public readonly ui: MapViewUiCompat;
@@ -690,8 +742,7 @@ export class MapViewCompat {
     this.padding = options.padding;
     this.highlightOptions = options.highlightOptions;
     this.spatialReference = options.spatialReference;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.map, options.container) ?? new CompatEventBus();
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.map, options.container) ?? new CompatEventBus();
     this.popup = new MapViewPopupCompat((type, popupOptions) => {
       this.notifyWatchers("popup.visible", this.popup.visible);
       this.notifyWatchers("popup.features", this.popup.features);
@@ -772,9 +823,7 @@ export class MapViewCompat {
   public async hitTest(event: MapViewHitTestEvent = {}): Promise<MapViewHitTestResult> {
     const mapPoint =
       event.mapPoint ??
-      (typeof event.x === "number" && typeof event.y === "number"
-        ? this.toMap({ x: event.x, y: event.y })
-        : undefined);
+      (typeof event.x === "number" && typeof event.y === "number" ? this.toMap({ x: event.x, y: event.y }) : undefined);
 
     return {
       results: this.popup.features.map((feature) => ({
@@ -810,9 +859,7 @@ export class MapViewCompat {
     return this;
   }
 
-  public async takeScreenshot(
-    options: MapViewTakeScreenshotOptions = {},
-  ): Promise<MapViewTakeScreenshotResult> {
+  public async takeScreenshot(options: MapViewTakeScreenshotOptions = {}): Promise<MapViewTakeScreenshotResult> {
     const width = normalizeScreenshotDimension(options.width, 1024);
     const height = normalizeScreenshotDimension(options.height, 768);
     const format = normalizeScreenshotFormat(options.format);
@@ -845,7 +892,7 @@ export class MapViewCompat {
     this.popup.close();
   }
 
-  public setCenter(center: unknown): void {
+  public setCenter(center: MapViewCenterLike): void {
     this.center = center;
     this.notifyWatchers("center", this.center);
     this.eventBus.emit("view.center-changed", { center }, this);
@@ -869,31 +916,31 @@ export class MapViewCompat {
     this.eventBus.emit("view.rotation-changed", { rotation }, this);
   }
 
-  public setExtent(extent: unknown): void {
+  public setExtent(extent: MapViewExtentLike): void {
     this.extent = extent;
     this.notifyWatchers("extent", this.extent);
     this.eventBus.emit("view.extent-changed", { extent }, this);
   }
 
-  public setPadding(padding: unknown): void {
+  public setPadding(padding: MapViewPaddingLike): void {
     this.padding = padding;
     this.notifyWatchers("padding", this.padding);
     this.eventBus.emit("view.padding-changed", { padding }, this);
   }
 
-  public setConstraints(constraints: unknown): void {
+  public setConstraints(constraints: MapViewConstraintsLike): void {
     this.constraints = constraints;
     this.notifyWatchers("constraints", this.constraints);
     this.eventBus.emit("view.constraints-changed", { constraints }, this);
   }
 
-  public setHighlightOptions(highlightOptions: unknown): void {
+  public setHighlightOptions(highlightOptions: MapViewHighlightOptionsLike): void {
     this.highlightOptions = highlightOptions;
     this.notifyWatchers("highlightOptions", this.highlightOptions);
     this.eventBus.emit("view.highlight-options-changed", { highlightOptions }, this);
   }
 
-  public setSpatialReference(spatialReference: unknown): void {
+  public setSpatialReference(spatialReference: MapViewSpatialReferenceLike): void {
     this.spatialReference = spatialReference;
     this.notifyWatchers("spatialReference", this.spatialReference);
     this.eventBus.emit("view.spatial-reference-changed", { spatialReference }, this);
@@ -913,7 +960,16 @@ export class MapViewCompat {
     return layerView;
   }
 
-  public on(eventName: string, listener: (event: unknown) => void): MapViewHandle {
+  public on(
+    eventName: "click" | "double-click" | "pointer-move" | "pointer-down" | "pointer-up",
+    listener: (event: MapViewScreenPoint & { mapPoint?: MapViewMapPoint; [key: string]: unknown }) => void,
+  ): MapViewHandle;
+  public on(
+    eventName: "layerview-create",
+    listener: (event: { layer: unknown; layerView: MapViewLayerViewCompat }) => void,
+  ): MapViewHandle;
+  public on(eventName: string, listener: (event: unknown) => void): MapViewHandle;
+  public on(eventName: string, listener: (event: any) => void): MapViewHandle {
     let listeners = this.eventListeners.get(eventName);
     if (!listeners) {
       listeners = new Set();
@@ -928,7 +984,35 @@ export class MapViewCompat {
     };
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle {
+  public watch(propertyName: "zoom", listener: (value: number | undefined) => void): MapViewHandle;
+  public watch(propertyName: "scale", listener: (value: number | undefined) => void): MapViewHandle;
+  public watch(propertyName: "rotation", listener: (value: number | undefined) => void): MapViewHandle;
+  public watch(propertyName: "center", listener: (value: MapViewCenterLike | undefined) => void): MapViewHandle;
+  public watch(propertyName: "extent", listener: (value: MapViewExtentLike | undefined) => void): MapViewHandle;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): MapViewHandle;
+  public watch(propertyName: "loadStatus", listener: (value: MapViewLoadStatusCompat) => void): MapViewHandle;
+  public watch(
+    propertyName: "container",
+    listener: (value: HTMLElement | string | null | undefined) => void,
+  ): MapViewHandle;
+  public watch(propertyName: "padding", listener: (value: MapViewPaddingLike | undefined) => void): MapViewHandle;
+  public watch(
+    propertyName: "constraints",
+    listener: (value: MapViewConstraintsLike | undefined) => void,
+  ): MapViewHandle;
+  public watch(
+    propertyName: "highlightOptions",
+    listener: (value: MapViewHighlightOptionsLike | undefined) => void,
+  ): MapViewHandle;
+  public watch(
+    propertyName: "spatialReference",
+    listener: (value: MapViewSpatialReferenceLike | undefined) => void,
+  ): MapViewHandle;
+  public watch(propertyName: "popup.visible", listener: (value: boolean) => void): MapViewHandle;
+  public watch(propertyName: "popup.viewModel.active", listener: (value: boolean) => void): MapViewHandle;
+  public watch(propertyName: "popup.selectedFeatureIndex", listener: (value: number) => void): MapViewHandle;
+  public watch(propertyName: string, listener: (value: unknown) => void): MapViewHandle;
+  public watch(propertyName: string, listener: (value: any) => void): MapViewHandle {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -1011,7 +1095,7 @@ interface MapViewExtentBounds {
   ymin: number;
   xmax: number;
   ymax: number;
-  spatialReference?: unknown;
+  spatialReference?: MapViewSpatialReferenceLike;
 }
 
 const GEOMETRY_SEQUENCE_KEYS = ["points", "path", "paths", "ring", "rings"] as const;
@@ -1095,7 +1179,7 @@ function hasGoToOptions(options: MapViewGoToOptions): boolean {
   );
 }
 
-function extractGoToCenter(value: unknown, visited: Set<object> = new Set()): unknown {
+function extractGoToCenter(value: unknown, visited: Set<object> = new Set()): MapViewCenterLike | undefined {
   if (isCoordinatePair(value)) {
     return [value[0], value[1]];
   }
@@ -1246,7 +1330,7 @@ function extractPointCenterFromRecord(value: Record<string, any>): MapViewMapPoi
 
 function extractPointFromRecord(
   value: Record<string, any>,
-): { x: number; y: number; spatialReference?: unknown } | undefined {
+): { x: number; y: number; spatialReference?: MapViewSpatialReferenceLike } | undefined {
   const x = normalizeFiniteNumber(value.x);
   const y = normalizeFiniteNumber(value.y);
   if (x !== undefined && y !== undefined) {
@@ -1281,16 +1365,18 @@ function normalizeScreenshotDimension(value: number | undefined, fallback: numbe
   return Math.max(1, Math.trunc(value));
 }
 
-function normalizeScreenshotFormat(
-  format: MapViewTakeScreenshotOptions["format"],
-): "png" | "jpg" {
+function normalizeScreenshotFormat(format: MapViewTakeScreenshotOptions["format"]): "png" | "jpg" {
   if (format === "jpg" || format === "jpeg") {
     return "jpg";
   }
   return "png";
 }
 
-function createBoundsFromPoint(x: number, y: number, spatialReference?: unknown): MapViewExtentBounds {
+function createBoundsFromPoint(
+  x: number,
+  y: number,
+  spatialReference?: MapViewSpatialReferenceLike,
+): MapViewExtentBounds {
   return {
     xmin: x,
     ymin: y,
@@ -1374,10 +1460,8 @@ function normalizeUiOptions(input: MapViewUiPosition | MapViewUiAddOptions): Req
     };
   }
 
-  const position =
-    typeof input.position === "string" && input.position.length > 0 ? input.position : "manual";
-  const index =
-    typeof input.index === "number" && Number.isFinite(input.index) ? Math.trunc(input.index) : Number.NaN;
+  const position = typeof input.position === "string" && input.position.length > 0 ? input.position : "manual";
+  const index = typeof input.index === "number" && Number.isFinite(input.index) ? Math.trunc(input.index) : Number.NaN;
   return {
     position,
     index,
@@ -1403,19 +1487,18 @@ function normalizeFeatureIndex(index: number, length: number): number {
   return normalized;
 }
 
-function normalizeHighlightTargets(target: unknown | readonly unknown[]): unknown[] {
+function normalizeHighlightTargets(
+  target: Record<string, unknown> | number | string | readonly (Record<string, unknown> | number | string)[],
+): (Record<string, unknown> | number | string)[] {
   if (Array.isArray(target)) {
-    return [...target];
+    return [...target] as (Record<string, unknown> | number | string)[];
   }
-  return [target];
+  return [target as Record<string, unknown> | number | string];
 }
 
 function isQueryFeaturesProvider(value: unknown): value is QueryFeaturesProvider {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "queryFeatures" in value &&
-    typeof value.queryFeatures === "function"
+    typeof value === "object" && value !== null && "queryFeatures" in value && typeof value.queryFeatures === "function"
   );
 }
 
@@ -1481,14 +1564,14 @@ function normalizeCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function extractGraphicLayer(value: unknown): unknown {
-  if (typeof value !== "object" || value === null) {
+function extractGraphicLayer(value: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!("layer" in value) || value.layer === undefined || value.layer === null) {
     return undefined;
   }
-  if (!("layer" in value)) {
-    return undefined;
+  if (typeof value.layer === "object") {
+    return value.layer as Record<string, unknown>;
   }
-  return value.layer;
+  return undefined;
 }
 
 function safeInvokeListener(invoke: () => void): void {
@@ -1510,16 +1593,14 @@ function asRecord(value: unknown): Record<string, any> | undefined {
   return value;
 }
 
-function extractPopupOptions(popup: unknown): MapViewPopupCompatOptions {
+function extractPopupOptions(popup: Record<string, unknown> | unknown): MapViewPopupCompatOptions {
   if (!isRecord(popup)) {
     return {};
   }
 
   return {
-    autoOpenEnabled:
-      typeof popup.autoOpenEnabled === "boolean" ? popup.autoOpenEnabled : undefined,
-    dockEnabled:
-      typeof popup.dockEnabled === "boolean" ? popup.dockEnabled : undefined,
+    autoOpenEnabled: typeof popup.autoOpenEnabled === "boolean" ? popup.autoOpenEnabled : undefined,
+    dockEnabled: typeof popup.dockEnabled === "boolean" ? popup.dockEnabled : undefined,
     dockOptions: popup.dockOptions,
   };
 }

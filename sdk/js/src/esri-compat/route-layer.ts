@@ -139,19 +139,11 @@ export class RouteLayerCompat {
     if (index === undefined) {
       const startIndex = this.stopsInternal.length;
       this.stopsInternal.push(...normalized);
-      this.eventBus.emit(
-        "route-layer.stops-added",
-        { layerId: this.id, stops: normalized, index: startIndex },
-        this,
-      );
+      this.eventBus.emit("route-layer.stops-added", { layerId: this.id, stops: normalized, index: startIndex }, this);
     } else {
       const insertAt = normalizeInsertIndex(index, this.stopsInternal.length);
       this.stopsInternal.splice(insertAt, 0, ...normalized);
-      this.eventBus.emit(
-        "route-layer.stops-added",
-        { layerId: this.id, stops: normalized, index: insertAt },
-        this,
-      );
+      this.eventBus.emit("route-layer.stops-added", { layerId: this.id, stops: normalized, index: insertAt }, this);
     }
     this.notifyWatchers("stops", this.stops);
 

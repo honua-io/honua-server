@@ -81,8 +81,7 @@ export class LayerListCompat {
     this.view = options.view;
     this.map = options.map ?? extractMapFromView(options.view);
     this.container = options.container;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(this.view, this.map) ?? new CompatEventBus();
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(this.view, this.map) ?? new CompatEventBus();
     this.includeHidden = options.includeHidden ?? false;
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -200,8 +199,7 @@ export class LayerListCompat {
   }
 
   public triggerAction(actionId: string, layerOrId?: unknown | string | number): boolean {
-    const item =
-      layerOrId === undefined ? this.items[0] : this.findItem(layerOrId);
+    const item = layerOrId === undefined ? this.items[0] : this.findItem(layerOrId);
     if (!item) {
       return false;
     }
@@ -305,11 +303,7 @@ function getRootLayers(map: unknown): unknown[] {
   return [...map.layers];
 }
 
-function toLayerListItem(
-  layer: unknown,
-  includeHidden: boolean,
-  index: number,
-): LayerListItemCompat | undefined {
+function toLayerListItem(layer: unknown, includeHidden: boolean, index: number): LayerListItemCompat | undefined {
   if (!isLayerLike(layer)) {
     return undefined;
   }
@@ -366,10 +360,7 @@ function findActionById(
   return undefined;
 }
 
-function findItemByLayer(
-  items: readonly LayerListItemCompat[],
-  layer: unknown,
-): LayerListItemCompat | undefined {
+function findItemByLayer(items: readonly LayerListItemCompat[], layer: unknown): LayerListItemCompat | undefined {
   for (const item of items) {
     if (item.layer === layer) {
       return item;
@@ -382,10 +373,7 @@ function findItemByLayer(
   return undefined;
 }
 
-function findItemById(
-  items: readonly LayerListItemCompat[],
-  id: string | number,
-): LayerListItemCompat | undefined {
+function findItemById(items: readonly LayerListItemCompat[], id: string | number): LayerListItemCompat | undefined {
   const normalizedId = String(id);
   for (const item of items) {
     if (item.id !== undefined && String(item.id) === normalizedId) {

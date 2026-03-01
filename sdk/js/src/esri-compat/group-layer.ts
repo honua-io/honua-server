@@ -105,7 +105,11 @@ export class GroupLayerCompat {
       this.layersInternal.push(layer);
       this.notifyWatchers("layers", this.layers);
       this.notifyWatchers("allLayers", this.allLayers);
-      this.eventBus.emit("group-layer.layer-added", { groupLayerId: this.id, layer, index: this.layersInternal.length - 1 }, this);
+      this.eventBus.emit(
+        "group-layer.layer-added",
+        { groupLayerId: this.id, layer, index: this.layersInternal.length - 1 },
+        this,
+      );
       return;
     }
 
@@ -126,7 +130,11 @@ export class GroupLayerCompat {
       this.layersInternal.push(...layers);
       this.notifyWatchers("layers", this.layers);
       this.notifyWatchers("allLayers", this.allLayers);
-      this.eventBus.emit("group-layer.layers-added", { groupLayerId: this.id, layers: [...layers], index: startIndex }, this);
+      this.eventBus.emit(
+        "group-layer.layers-added",
+        { groupLayerId: this.id, layers: [...layers], index: startIndex },
+        this,
+      );
       return;
     }
 
@@ -134,7 +142,11 @@ export class GroupLayerCompat {
     this.layersInternal.splice(insertAt, 0, ...layers);
     this.notifyWatchers("layers", this.layers);
     this.notifyWatchers("allLayers", this.allLayers);
-    this.eventBus.emit("group-layer.layers-added", { groupLayerId: this.id, layers: [...layers], index: insertAt }, this);
+    this.eventBus.emit(
+      "group-layer.layers-added",
+      { groupLayerId: this.id, layers: [...layers], index: insertAt },
+      this,
+    );
   }
 
   public remove(layer: unknown): boolean {

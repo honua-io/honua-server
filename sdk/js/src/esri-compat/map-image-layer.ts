@@ -1,6 +1,13 @@
 import { HonuaClient } from "../core/client.js";
 import type {
   ExportMapRequest,
+  HonuaExportMapResponse,
+  HonuaFieldInfo,
+  HonuaFindResponse,
+  HonuaIdentifyResponse,
+  HonuaLegendResponse,
+  HonuaQueryResponse,
+  HonuaRelatedRecordsResponse,
   MapFindRequest,
   MapIdentifyRequest,
   MapLayerQueryRequest,
@@ -14,7 +21,7 @@ export interface MapImageLayerCompatOptions {
   url: string;
   id?: string;
   title?: string;
-  sublayers?: unknown[];
+  sublayers?: readonly Record<string, unknown>[];
   opacity?: number;
   visible?: boolean;
   minScale?: number;
@@ -46,7 +53,7 @@ export type MapImageLayerQueryExtentOptions = Pick<MapImageLayerQueryOptions, "l
 };
 export type MapImageLayerQueryRelatedFeaturesOptions = Omit<MapRelatedRecordsRequest, "serviceId">;
 export interface MapImageLayerQueryExtentResponse {
-  extent: unknown | null;
+  extent: Record<string, unknown> | null;
   count?: number;
 }
 export type MapImageSublayerQueryOptions = Omit<MapImageLayerQueryOptions, "layerId">;
@@ -55,10 +62,7 @@ export type MapImageSublayerCreateQueryResult = MapImageSublayerQueryOptions;
 export type MapImageSublayerQueryCountOptions = Omit<MapImageLayerQueryCountOptions, "layerId">;
 export type MapImageSublayerQueryObjectIdsOptions = Omit<MapImageLayerQueryObjectIdsOptions, "layerId">;
 export type MapImageSublayerQueryExtentOptions = Omit<MapImageLayerQueryExtentOptions, "layerId">;
-export type MapImageSublayerQueryRelatedFeaturesOptions = Omit<
-  MapImageLayerQueryRelatedFeaturesOptions,
-  "layerId"
->;
+export type MapImageSublayerQueryRelatedFeaturesOptions = Omit<MapImageLayerQueryRelatedFeaturesOptions, "layerId">;
 export type MapImageLayerSublayerLookupId = number | string;
 
 export type MapImageLayerLoadStatusCompat = "not-loaded" | "loading" | "loaded" | "failed";
@@ -70,7 +74,7 @@ export interface MapImageLayerHandleCompat {
 export interface MapImageSublayerCompatOptions {
   layer: MapImageLayerCompat;
   layerId: number;
-  source?: unknown;
+  source?: Record<string, unknown>;
 }
 
 export class MapImageLayerCompat {
@@ -86,14 +90,14 @@ export class MapImageLayerCompat {
   public legendEnabled: boolean;
   public loaded: boolean;
   public loadStatus: MapImageLayerLoadStatusCompat;
-  public metadata: unknown;
+  public metadata: Record<string, unknown> | undefined;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
   private readonly sublayerWrappersById: Map<number, MapImageSublayerCompat>;
-  private sublayerSources: unknown[];
+  private sublayerSources: Record<string, unknown>[];
 
   public constructor(options: MapImageLayerCompatOptions) {
     const parsed = parseMapServiceUrl(options.url);
@@ -101,7 +105,9 @@ export class MapImageLayerCompat {
     this.serviceId = parsed.serviceId;
     this.id = options.id ?? this.serviceId;
     this.title = options.title;
-    this.sublayerSources = Array.isArray(options.sublayers) ? [...options.sublayers] : [];
+    this.sublayerSources = Array.isArray(options.sublayers)
+      ? [...options.sublayers]
+      : ([] as Record<string, unknown>[]);
     this.opacity = options.opacity ?? 1;
     this.visible = options.visible ?? true;
     this.minScale = normalizeScale(options.minScale);
@@ -111,7 +117,8 @@ export class MapImageLayerCompat {
     this.loaded = false;
     this.loadStatus = "not-loaded";
     this.metadata = undefined;
-    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client, options.sublayers) ?? new CompatEventBus();
+    this.eventBus =
+      options.eventBus ?? resolveCompatEventBus(options.client, options.sublayers) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
     this.watchListeners = new Map();
     this.eventListeners = new Map();
@@ -124,7 +131,9 @@ export class MapImageLayerCompat {
       this.notifyWatchers("loadStatus", this.loadStatus);
       this.eventBus.emit("map-image-layer.loading", { serviceId: this.serviceId, id: this.id }, this);
       try {
-        this.metadata = await this.client.getMapServiceMetadata(this.serviceId);
+        this.metadata = (await this.client.getMapServiceMetadata(this.serviceId)) as unknown as
+          | Record<string, unknown>
+          | undefined;
         this.notifyWatchers("metadata", this.metadata);
         this.hydrateSublayersFromMetadataIfNeeded();
         this.loaded = true;
@@ -165,7 +174,20 @@ export class MapImageLayerCompat {
     this.eventBus.emit("map-image-layer.refreshed", { serviceId: this.serviceId, id: this.id }, this);
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): MapImageLayerHandleCompat {
+  public watch(
+    propertyName: "visible" | "loaded" | "legendEnabled",
+    listener: (value: boolean) => void,
+  ): MapImageLayerHandleCompat;
+  public watch(
+    propertyName: "opacity" | "minScale" | "maxScale",
+    listener: (value: number) => void,
+  ): MapImageLayerHandleCompat;
+  public watch(
+    propertyName: "loadStatus",
+    listener: (value: MapImageLayerLoadStatusCompat) => void,
+  ): MapImageLayerHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): MapImageLayerHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): MapImageLayerHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -197,7 +219,7 @@ export class MapImageLayerCompat {
     return wrappers;
   }
 
-  public set sublayers(sublayers: readonly unknown[]) {
+  public set sublayers(sublayers: readonly (Record<string, unknown> | MapImageSublayerCompat)[]) {
     this.setSublayers(sublayers);
   }
 
@@ -205,32 +227,32 @@ export class MapImageLayerCompat {
     return this.synchronizeSublayerWrapperCache();
   }
 
-  public exportImage(options: MapImageLayerExportOptions): Promise<unknown> {
+  public exportImage(options: MapImageLayerExportOptions): Promise<HonuaExportMapResponse> {
     return this.client.exportMap({
       ...options,
       serviceId: this.serviceId,
     });
   }
 
-  public getLegend(options: MapImageLayerLegendOptions = {}): Promise<unknown> {
+  public getLegend(options: MapImageLayerLegendOptions = {}): Promise<HonuaLegendResponse> {
     return this.client.getMapLegend({
       ...options,
       serviceId: this.serviceId,
     });
   }
 
-  public legend(options: MapImageLayerLegendOptions = {}): Promise<unknown> {
+  public legend(options: MapImageLayerLegendOptions = {}): Promise<HonuaLegendResponse> {
     return this.getLegend(options);
   }
 
-  public identify(options: MapImageLayerIdentifyOptions): Promise<unknown> {
+  public identify(options: MapImageLayerIdentifyOptions): Promise<HonuaIdentifyResponse> {
     return this.client.identifyMap({
       ...options,
       serviceId: this.serviceId,
     });
   }
 
-  public find(options: MapImageLayerFindOptions): Promise<unknown> {
+  public find(options: MapImageLayerFindOptions): Promise<HonuaFindResponse> {
     return this.client.findMap({
       ...options,
       serviceId: this.serviceId,
@@ -246,7 +268,7 @@ export class MapImageLayerCompat {
     };
   }
 
-  public queryFeatures(options: MapImageLayerQueryOptions): Promise<unknown> {
+  public queryFeatures(options: MapImageLayerQueryOptions): Promise<HonuaQueryResponse> {
     return this.client.queryMapLayer({
       ...options,
       serviceId: this.serviceId,
@@ -288,9 +310,7 @@ export class MapImageLayerCompat {
     return features;
   }
 
-  public async *queryFeaturesStream(
-    options: MapImageLayerQueryAllOptions,
-  ): AsyncGenerator<unknown[], void, undefined> {
+  public async *queryFeaturesStream(options: MapImageLayerQueryAllOptions): AsyncGenerator<unknown[], void, undefined> {
     const pageSize =
       typeof options.pageSize === "number" && Number.isFinite(options.pageSize)
         ? Math.max(1, Math.trunc(options.pageSize))
@@ -323,7 +343,7 @@ export class MapImageLayerCompat {
   }
 
   public async queryFeatureCount(options: MapImageLayerQueryCountOptions): Promise<number> {
-    const response = await this.queryFeatures({
+    const response = (await this.queryFeatures({
       layerId: options.layerId,
       where: options.where ?? "1=1",
       returnGeometry: false,
@@ -333,12 +353,12 @@ export class MapImageLayerCompat {
         returnCountOnly: true,
         ...options.extraParams,
       },
-    });
+    })) as HonuaQueryResponse & { count?: number };
     return extractFeatureCount(response);
   }
 
   public async queryObjectIds(options: MapImageLayerQueryObjectIdsOptions): Promise<number[]> {
-    const response = await this.queryFeatures({
+    const response = (await this.queryFeatures({
       layerId: options.layerId,
       where: options.where ?? "1=1",
       returnGeometry: false,
@@ -348,12 +368,12 @@ export class MapImageLayerCompat {
         returnIdsOnly: true,
         ...options.extraParams,
       },
-    });
+    })) as HonuaQueryResponse & { objectIds?: unknown[] };
     return extractObjectIds(response);
   }
 
   public async queryExtent(options: MapImageLayerQueryExtentOptions): Promise<MapImageLayerQueryExtentResponse> {
-    const response = await this.queryFeatures({
+    const response = (await this.queryFeatures({
       layerId: options.layerId,
       where: options.where ?? "1=1",
       returnGeometry: false,
@@ -362,18 +382,18 @@ export class MapImageLayerCompat {
         returnExtentOnly: true,
         ...options.extraParams,
       },
-    });
+    })) as HonuaQueryResponse & { extent?: Record<string, unknown> | null; count?: number };
     return extractExtent(response);
   }
 
-  public queryRelatedRecords(options: MapImageLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedRecords(options: MapImageLayerQueryRelatedFeaturesOptions): Promise<HonuaRelatedRecordsResponse> {
     return this.client.queryMapRelatedRecords({
       ...options,
       serviceId: this.serviceId,
     });
   }
 
-  public queryRelatedFeatures(options: MapImageLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedFeatures(options: MapImageLayerQueryRelatedFeaturesOptions): Promise<HonuaRelatedRecordsResponse> {
     return this.queryRelatedRecords(options);
   }
 
@@ -389,10 +409,10 @@ export class MapImageLayerCompat {
     this.eventBus.emit("layer.opacity-changed", { layerId: this.id, opacity: this.opacity }, this);
   }
 
-  public setSublayers(sublayers: readonly unknown[]): void {
+  public setSublayers(sublayers: readonly (Record<string, unknown> | MapImageSublayerCompat)[]): void {
     this.sublayerSources = sublayers.map((candidate) =>
       candidate instanceof MapImageSublayerCompat ? candidate.source : candidate,
-    );
+    ) as Record<string, unknown>[];
     const wrappers = this.sublayers;
     this.notifyWatchers("sublayers", wrappers);
     this.eventBus.emit("map-image-layer.sublayers-changed", { layerId: this.id }, this);
@@ -463,11 +483,22 @@ export class MapImageLayerCompat {
   public setLegendEnabled(legendEnabled: boolean): void {
     this.legendEnabled = legendEnabled;
     this.notifyWatchers("legendEnabled", this.legendEnabled);
-    this.eventBus.emit(
-      "map-image-layer.legend-enabled-changed",
-      { layerId: this.id, legendEnabled },
-      this,
-    );
+    this.eventBus.emit("map-image-layer.legend-enabled-changed", { layerId: this.id, legendEnabled }, this);
+  }
+
+  public listFields(): readonly HonuaFieldInfo[] {
+    return extractFieldDefinitions(this.metadata);
+  }
+
+  public getField(fieldName: string): HonuaFieldInfo | undefined {
+    const normalizedFieldName = fieldName.trim();
+    if (normalizedFieldName.length === 0) {
+      return undefined;
+    }
+
+    return this.listFields().find((field) => {
+      return field.name.trim() === normalizedFieldName;
+    });
   }
 
   private hydrateSublayersFromMetadataIfNeeded(): void {
@@ -486,7 +517,7 @@ export class MapImageLayerCompat {
     this.eventBus.emit("map-image-layer.sublayers-changed", { layerId: this.id, source: "metadata" }, this);
   }
 
-  public getOrCreateSublayerWrapper(layerId: number, source: unknown): MapImageSublayerCompat {
+  public getOrCreateSublayerWrapper(layerId: number, source: Record<string, unknown>): MapImageSublayerCompat {
     const existing = this.sublayerWrappersById.get(layerId);
     if (existing) {
       existing.setSource(source);
@@ -531,15 +562,15 @@ export class MapImageLayerCompat {
 export class MapImageSublayerCompat {
   public readonly layer: MapImageLayerCompat;
   public readonly layerId: number;
-  public source: unknown;
+  public source: Record<string, unknown>;
 
   public constructor(options: MapImageSublayerCompatOptions) {
     this.layer = options.layer;
     this.layerId = options.layerId;
-    this.source = options.source;
+    this.source = options.source ?? { id: options.layerId };
   }
 
-  public setSource(source: unknown): void {
+  public setSource(source: Record<string, unknown>): void {
     this.source = source;
   }
 
@@ -548,47 +579,39 @@ export class MapImageSublayerCompat {
   }
 
   public get visible(): boolean {
-    if (!isRecord(this.source) || typeof this.source.visible !== "boolean") {
+    if (typeof this.source.visible !== "boolean") {
       return true;
     }
     return this.source.visible;
   }
 
   public set visible(visible: boolean) {
-    if (!isRecord(this.source)) {
-      this.source = { id: this.layerId, visible };
-      return;
-    }
     this.source.visible = visible;
   }
 
   public get title(): string | undefined {
-    if (!isRecord(this.source) || typeof this.source.title !== "string") {
+    if (typeof this.source.title !== "string") {
       return undefined;
     }
     return this.source.title;
   }
 
   public get definitionExpression(): string | undefined {
-    if (!isRecord(this.source) || typeof this.source.definitionExpression !== "string") {
+    if (typeof this.source.definitionExpression !== "string") {
       return undefined;
     }
     return this.source.definitionExpression;
   }
 
   public set definitionExpression(definitionExpression: string | undefined) {
-    if (!isRecord(this.source)) {
-      this.source = { id: this.layerId };
-    }
-
     if (
       definitionExpression === undefined ||
       (typeof definitionExpression === "string" && definitionExpression.trim().length === 0)
     ) {
-      delete (this.source as Record<string, unknown>).definitionExpression;
+      delete this.source.definitionExpression;
       return;
     }
-    (this.source as Record<string, unknown>).definitionExpression = definitionExpression;
+    this.source.definitionExpression = definitionExpression;
   }
 
   public setVisibility(visible: boolean): void {
@@ -607,7 +630,7 @@ export class MapImageSublayerCompat {
     };
   }
 
-  public queryFeatures(options: MapImageSublayerQueryOptions = {}): Promise<unknown> {
+  public queryFeatures(options: MapImageSublayerQueryOptions = {}): Promise<HonuaQueryResponse> {
     return this.layer.queryFeatures({
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression ?? "1=1",
@@ -647,7 +670,9 @@ export class MapImageSublayerCompat {
     });
   }
 
-  public queryRelatedRecords(options: MapImageSublayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedRecords(
+    options: MapImageSublayerQueryRelatedFeaturesOptions,
+  ): Promise<HonuaRelatedRecordsResponse> {
     return this.layer.queryRelatedRecords({
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -655,7 +680,9 @@ export class MapImageSublayerCompat {
     });
   }
 
-  public queryRelatedFeatures(options: MapImageSublayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedFeatures(
+    options: MapImageSublayerQueryRelatedFeaturesOptions,
+  ): Promise<HonuaRelatedRecordsResponse> {
     return this.queryRelatedRecords(options);
   }
 
@@ -719,32 +746,26 @@ function normalizeSublayerId(id: MapImageLayerSublayerLookupId): number | undefi
   return Math.trunc(parsed);
 }
 
-function extractSublayerId(sublayer: unknown): number | undefined {
-  if (typeof sublayer !== "object" || sublayer === null) {
-    return undefined;
-  }
-  const id = (sublayer as { id?: unknown }).id;
+function extractSublayerId(sublayer: Record<string, unknown>): number | undefined {
+  const id = sublayer.id;
   if (id === undefined) {
     return undefined;
   }
   return normalizeSublayerId(id as MapImageLayerSublayerLookupId);
 }
 
-function getChildSublayers(source: unknown): unknown[] {
-  if (!isRecord(source)) {
-    return [];
-  }
+function getChildSublayers(source: Record<string, unknown>): Record<string, unknown>[] {
   if (Array.isArray(source.sublayers)) {
-    return [...source.sublayers];
+    return [...source.sublayers] as Record<string, unknown>[];
   }
   if (Array.isArray(source.allSublayers)) {
-    return [...source.allSublayers];
+    return [...source.allSublayers] as Record<string, unknown>[];
   }
   return [];
 }
 
 function collectSublayerWrappers(
-  sources: readonly unknown[],
+  sources: readonly Record<string, unknown>[],
   layer: MapImageLayerCompat,
   wrappers: MapImageSublayerCompat[],
   trackedIds: Set<number>,
@@ -762,9 +783,9 @@ function collectSublayerWrappers(
 }
 
 function findSublayerSourceById(
-  sources: readonly unknown[],
+  sources: readonly Record<string, unknown>[],
   expectedId: number,
-): unknown | undefined {
+): Record<string, unknown> | undefined {
   for (const source of sources) {
     if (extractSublayerId(source) === expectedId) {
       return source;
@@ -778,7 +799,7 @@ function findSublayerSourceById(
   return undefined;
 }
 
-function extractSublayersFromMetadata(metadata: unknown): unknown[] {
+function extractSublayersFromMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown>[] {
   if (!isRecord(metadata) || !Array.isArray(metadata.layers)) {
     return [];
   }
@@ -810,7 +831,7 @@ function extractSublayersFromMetadata(metadata: unknown): unknown[] {
     return [];
   }
 
-  const roots: unknown[] = [];
+  const roots: Record<string, unknown>[] = [];
   for (const layerId of orderedIds) {
     const hydrated = sublayersById.get(layerId);
     if (!hydrated) {
@@ -829,45 +850,58 @@ function extractSublayersFromMetadata(metadata: unknown): unknown[] {
   return roots;
 }
 
-function extractFeatureCount(response: unknown): number {
-  if (isRecord(response) && typeof response.count === "number" && Number.isFinite(response.count)) {
+function extractFeatureCount(response: HonuaQueryResponse & { count?: number }): number {
+  if (typeof response.count === "number" && Number.isFinite(response.count)) {
     return response.count;
   }
-  if (isRecord(response) && Array.isArray(response.features)) {
+  if (Array.isArray(response.features)) {
     return response.features.length;
   }
   return 0;
 }
 
-function extractFeatures(response: unknown): unknown[] {
-  if (!isRecord(response) || !Array.isArray(response.features)) {
+function extractFeatures(response: HonuaQueryResponse): unknown[] {
+  if (!Array.isArray(response.features)) {
     return [];
   }
   return response.features;
 }
 
-function extractObjectIds(response: unknown): number[] {
-  if (!isRecord(response) || !Array.isArray(response.objectIds)) {
+function extractObjectIds(response: HonuaQueryResponse & { objectIds?: unknown[] }): number[] {
+  if (!Array.isArray(response.objectIds)) {
     return [];
   }
-  return response.objectIds
-    .map((value) => Number(value))
-    .filter((value): value is number => Number.isFinite(value));
+  return response.objectIds.map((value) => Number(value)).filter((value): value is number => Number.isFinite(value));
 }
 
-function extractExtent(response: unknown): MapImageLayerQueryExtentResponse {
-  if (!isRecord(response)) {
-    return { extent: null };
-  }
-
-  const count =
-    typeof response.count === "number" && Number.isFinite(response.count)
-      ? response.count
-      : undefined;
+function extractExtent(
+  response: HonuaQueryResponse & { extent?: Record<string, unknown> | null; count?: number },
+): MapImageLayerQueryExtentResponse {
+  const count = typeof response.count === "number" && Number.isFinite(response.count) ? response.count : undefined;
   return {
-    extent: response.extent ?? null,
+    extent: (response.extent ?? null) as Record<string, unknown> | null,
     count,
   };
+}
+
+function extractFieldDefinitions(metadata: Record<string, unknown> | undefined): HonuaFieldInfo[] {
+  if (!isRecord(metadata)) {
+    return [];
+  }
+
+  const fields = metadata.fields;
+  if (!Array.isArray(fields)) {
+    return [];
+  }
+
+  const records: HonuaFieldInfo[] = [];
+  for (const field of fields) {
+    if (!isRecord(field) || typeof field.name !== "string" || typeof field.type !== "string") {
+      continue;
+    }
+    records.push(field as unknown as HonuaFieldInfo);
+  }
+  return records;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

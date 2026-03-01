@@ -112,9 +112,7 @@ export class QueryCompat {
       num: this.num,
       start: this.start,
       timeExtent: this.timeExtent,
-      groupByFieldsForStatistics: this.groupByFieldsForStatistics
-        ? [...this.groupByFieldsForStatistics]
-        : undefined,
+      groupByFieldsForStatistics: this.groupByFieldsForStatistics ? [...this.groupByFieldsForStatistics] : undefined,
       outStatistics: this.outStatistics ? [...this.outStatistics] : undefined,
     };
   }

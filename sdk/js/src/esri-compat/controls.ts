@@ -1,8 +1,20 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
+
+/** Structural type for viewpoint-like objects used by controls. */
+export interface ControlViewpointLike {
+  targetGeometry?: Record<string, unknown>;
+  scale?: number;
+  rotation?: number;
+}
 
 export interface HomeCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
   viewpoint?: HomeViewpointCompat;
 }
@@ -20,16 +32,16 @@ export interface ControlHandleCompat {
 
 export class HomeCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
   public viewpoint: HomeViewpointCompat;
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: HomeCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -64,7 +76,12 @@ export class HomeCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -122,7 +139,7 @@ export class HomeCompat {
 export interface BasemapToggleCompatOptions {
   view?: unknown;
   map?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   nextBasemap?: unknown;
   eventBus?: CompatEventBus;
 }
@@ -130,7 +147,7 @@ export interface BasemapToggleCompatOptions {
 export class BasemapToggleCompat {
   public readonly view: unknown;
   public readonly map: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
@@ -138,14 +155,13 @@ export class BasemapToggleCompat {
   public nextBasemap: unknown;
 
   private readonly subscriptions: CompatEventSubscription[];
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: BasemapToggleCompatOptions = {}) {
     this.view = options.view;
     this.map = options.map ?? extractViewMap(options.view);
-    this.container = options.container;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
+    this.container = options.container ?? null;
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
     this.activeBasemap = extractMapBasemap(this.map);
@@ -183,7 +199,12 @@ export class BasemapToggleCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -244,14 +265,14 @@ export type ScaleBarUnitCompat = "metric" | "imperial" | "dual";
 
 export interface ScaleBarCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   unit?: ScaleBarUnitCompat;
   eventBus?: CompatEventBus;
 }
 
 export class ScaleBarCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
@@ -260,11 +281,11 @@ export class ScaleBarCompat {
   public text: string;
 
   private readonly subscriptions: CompatEventSubscription[];
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: ScaleBarCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -305,7 +326,12 @@ export class ScaleBarCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -360,7 +386,7 @@ export class ScaleBarCompat {
 
 export interface LocateCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
   zoom?: number;
   locateProvider?: () => Promise<LocatePositionCompat>;
@@ -376,28 +402,28 @@ export interface LocatePositionCompat {
 
 export interface CompassCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
 }
 
 export interface ZoomCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
   layout?: "vertical" | "horizontal";
 }
 
 export interface FullscreenCompatOptions {
   view?: unknown;
-  container?: unknown;
-  element?: unknown;
+  container?: HTMLElement | string | null;
+  element?: HTMLElement | null;
   eventBus?: CompatEventBus;
 }
 
 export interface AttributionCompatOptions {
   view?: unknown;
   map?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
   itemDelimiter?: string;
   attributions?: readonly string[];
@@ -405,7 +431,7 @@ export interface AttributionCompatOptions {
 
 export class LocateCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
@@ -413,11 +439,11 @@ export class LocateCompat {
   public lastPosition: LocatePositionCompat | undefined;
 
   private readonly locateProvider: () => Promise<LocatePositionCompat>;
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: LocateCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -451,7 +477,12 @@ export class LocateCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -517,16 +548,16 @@ export class LocateCompat {
 
 export class CompassCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
   public orientation: number;
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: CompassCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -558,7 +589,12 @@ export class CompassCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -612,16 +648,16 @@ export class CompassCompat {
 
 export class ZoomCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
   public readonly layout: "vertical" | "horizontal";
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: ZoomCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -653,7 +689,12 @@ export class ZoomCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -706,18 +747,18 @@ export class ZoomCompat {
 
 export class FullscreenCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
-  public readonly element: unknown;
+  public readonly container: HTMLElement | string | null;
+  public readonly element: HTMLElement | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
   public active: boolean;
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: FullscreenCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
-    this.element = options.element;
+    this.container = options.container ?? null;
+    this.element = options.element ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -749,7 +790,12 @@ export class FullscreenCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -811,20 +857,19 @@ export class FullscreenCompat {
 export class AttributionCompat {
   public readonly view: unknown;
   public readonly map: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public loaded: boolean;
   public loadStatus: ControlLoadStatusCompat;
   public itemDelimiter: string;
   public attributions: string[];
-  private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly watchListeners: Map<string, Set<(value: any) => void>>;
 
   public constructor(options: AttributionCompatOptions = {}) {
     this.view = options.view;
     this.map = options.map ?? extractViewMap(options.view);
-    this.container = options.container;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
+    this.container = options.container ?? null;
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, options.map) ?? new CompatEventBus();
     this.loaded = false;
     this.loadStatus = "not-loaded";
     this.itemDelimiter = options.itemDelimiter ?? " | ";
@@ -856,7 +901,12 @@ export class AttributionCompat {
     return widget;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat {
+  public watch(propertyName: "visible", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "disabled", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): ControlHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: ControlLoadStatusCompat) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): ControlHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): ControlHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();

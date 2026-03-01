@@ -97,9 +97,7 @@ export function get(property: string, object?: Expr<unknown>): Expr<ExprValue> {
 
 /** Test whether a feature property exists. */
 export function has(property: string, object?: Expr<unknown>): Expr<boolean> {
-  return object !== undefined
-    ? new Expr<boolean>(["has", property, r(object)])
-    : new Expr<boolean>(["has", property]);
+  return object !== undefined ? new Expr<boolean>(["has", property, r(object)]) : new Expr<boolean>(["has", property]);
 }
 
 /** Get an element from an array by index. */
@@ -113,22 +111,14 @@ export function contains(needle: Resolvable, haystack: Resolvable): Expr<boolean
 }
 
 /** Find the first index of a value in an array or substring in a string. Returns -1 if not found. */
-export function indexOf(
-  needle: Resolvable,
-  haystack: Resolvable,
-  fromIndex?: NumberInput,
-): Expr<number> {
+export function indexOf(needle: Resolvable, haystack: Resolvable, fromIndex?: NumberInput): Expr<number> {
   return fromIndex !== undefined
     ? new Expr<number>(["index-of", r(needle), r(haystack), r(fromIndex)])
     : new Expr<number>(["index-of", r(needle), r(haystack)]);
 }
 
 /** Extract a subarray or substring. Negative indices count from the end. */
-export function slice(
-  input: Resolvable,
-  start: NumberInput,
-  end?: NumberInput,
-): Expr<ExprValue> {
+export function slice(input: Resolvable, start: NumberInput, end?: NumberInput): Expr<ExprValue> {
   return end !== undefined
     ? new Expr<ExprValue>(["slice", r(input), r(start), r(end)])
     : new Expr<ExprValue>(["slice", r(input), r(start)]);
@@ -256,9 +246,7 @@ export function any(...inputs: BooleanInput[]): Expr<boolean> {
  * )
  * ```
  */
-export function switchCase(
-  ...args: Array<[BooleanInput, Resolvable] | Resolvable>
-): Expr<ExprValue> {
+export function switchCase(...args: Array<[BooleanInput, Resolvable] | Resolvable>): Expr<ExprValue> {
   const json: unknown[] = ["case"];
   for (let i = 0; i < args.length - 1; i++) {
     const branch = args[i] as [BooleanInput, Resolvable];
@@ -311,9 +299,7 @@ export function add(...inputs: NumberInput[]): Expr<number> {
 
 /** Subtraction (two args) or negation (one arg). */
 export function subtract(a: NumberInput, b?: NumberInput): Expr<number> {
-  return b !== undefined
-    ? new Expr<number>(["-", r(a), r(b)])
-    : new Expr<number>(["-", r(a)]);
+  return b !== undefined ? new Expr<number>(["-", r(a), r(b)]) : new Expr<number>(["-", r(a)]);
 }
 
 /** Product of numbers. */
@@ -451,30 +437,17 @@ export function downcase(input: StringInput): Expr<string> {
 // ── Color ────────────────────────────────────────────────────
 
 /** Create a color from RGB components (0-255). */
-export function rgb(
-  red: NumberInput,
-  green: NumberInput,
-  blue: NumberInput,
-): Expr<ExprColor> {
+export function rgb(red: NumberInput, green: NumberInput, blue: NumberInput): Expr<ExprColor> {
   return new Expr<ExprColor>(["rgb", r(red), r(green), r(blue)]);
 }
 
 /** Create a color from RGBA components (RGB 0-255, alpha 0-1). */
-export function rgba(
-  red: NumberInput,
-  green: NumberInput,
-  blue: NumberInput,
-  alpha: NumberInput,
-): Expr<ExprColor> {
+export function rgba(red: NumberInput, green: NumberInput, blue: NumberInput, alpha: NumberInput): Expr<ExprColor> {
   return new Expr<ExprColor>(["rgba", r(red), r(green), r(blue), r(alpha)]);
 }
 
 /** Create a color from HSL components (hue 0-360, saturation/lightness 0-100%). */
-export function hsl(
-  hue: NumberInput,
-  saturation: NumberInput,
-  lightness: NumberInput,
-): Expr<ExprColor> {
+export function hsl(hue: NumberInput, saturation: NumberInput, lightness: NumberInput): Expr<ExprColor> {
   return new Expr<ExprColor>(["hsl", r(hue), r(saturation), r(lightness)]);
 }
 
@@ -506,12 +479,7 @@ export function exponential(base: number): unknown[] {
 }
 
 /** Cubic bezier interpolation method. */
-export function cubicBezier(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-): unknown[] {
+export function cubicBezier(x1: number, y1: number, x2: number, y2: number): unknown[] {
   return ["cubic-bezier", x1, y1, x2, y2];
 }
 
@@ -530,11 +498,7 @@ export function cubicBezier(
  * )
  * ```
  */
-export function step(
-  input: Resolvable,
-  defaultOutput: Resolvable,
-  ...stops: [number, Resolvable][]
-): Expr<ExprValue> {
+export function step(input: Resolvable, defaultOutput: Resolvable, ...stops: [number, Resolvable][]): Expr<ExprValue> {
   const json: unknown[] = ["step", r(input), r(defaultOutput)];
   for (const [threshold, output] of stops) {
     json.push(threshold, r(output));
@@ -555,11 +519,7 @@ export function step(
  * )
  * ```
  */
-export function interpolate(
-  method: unknown[],
-  input: Resolvable,
-  ...stops: [number, Resolvable][]
-): Expr<ExprValue> {
+export function interpolate(method: unknown[], input: Resolvable, ...stops: [number, Resolvable][]): Expr<ExprValue> {
   const json: unknown[] = ["interpolate", method, r(input)];
   for (const [stopInput, stopOutput] of stops) {
     json.push(stopInput, r(stopOutput));
@@ -611,10 +571,7 @@ export function zoom(): Expr<number> {
  * )
  * ```
  */
-export function letExpr(
-  bindings: Record<string, Resolvable>,
-  result: Resolvable,
-): Expr<ExprValue> {
+export function letExpr(bindings: Record<string, Resolvable>, result: Resolvable): Expr<ExprValue> {
   const json: unknown[] = ["let"];
   for (const [name, value] of Object.entries(bindings)) {
     json.push(name, r(value));
@@ -649,23 +606,16 @@ export interface FormatSegmentOptions {
  * )
  * ```
  */
-export function format(
-  ...segments: [StringInput, FormatSegmentOptions?][]
-): Expr<ExprFormatted> {
+export function format(...segments: [StringInput, FormatSegmentOptions?][]): Expr<ExprFormatted> {
   const json: unknown[] = ["format"];
   for (const [text, opts] of segments) {
     json.push(r(text));
     const resolvedOpts: Record<string, unknown> = {};
     if (opts) {
-      if (opts["font-scale"] !== undefined)
-        resolvedOpts["font-scale"] = r(opts["font-scale"]);
+      if (opts["font-scale"] !== undefined) resolvedOpts["font-scale"] = r(opts["font-scale"]);
       if (opts["text-font"] !== undefined)
-        resolvedOpts["text-font"] =
-          opts["text-font"] instanceof Expr
-            ? opts["text-font"].toJSON()
-            : opts["text-font"];
-      if (opts["text-color"] !== undefined)
-        resolvedOpts["text-color"] = r(opts["text-color"]);
+        resolvedOpts["text-font"] = opts["text-font"] instanceof Expr ? opts["text-font"].toJSON() : opts["text-font"];
+      if (opts["text-color"] !== undefined) resolvedOpts["text-color"] = r(opts["text-color"]);
     }
     json.push(resolvedOpts);
   }
@@ -681,18 +631,13 @@ export interface NumberFormatOptions {
 }
 
 /** Format a number using locale-sensitive formatting. */
-export function numberFormat(
-  input: NumberInput,
-  options?: NumberFormatOptions,
-): Expr<string> {
+export function numberFormat(input: NumberInput, options?: NumberFormatOptions): Expr<string> {
   const opts: Record<string, unknown> = {};
   if (options) {
     if (options.locale !== undefined) opts.locale = r(options.locale);
     if (options.currency !== undefined) opts.currency = r(options.currency);
-    if (options["min-fraction-digits"] !== undefined)
-      opts["min-fraction-digits"] = r(options["min-fraction-digits"]);
-    if (options["max-fraction-digits"] !== undefined)
-      opts["max-fraction-digits"] = r(options["max-fraction-digits"]);
+    if (options["min-fraction-digits"] !== undefined) opts["min-fraction-digits"] = r(options["min-fraction-digits"]);
+    if (options["max-fraction-digits"] !== undefined) opts["max-fraction-digits"] = r(options["max-fraction-digits"]);
   }
   return new Expr<string>(["number-format", r(input), opts]);
 }
@@ -713,10 +658,8 @@ export interface CollatorOptions {
 export function collator(options?: CollatorOptions): Expr<ExprCollator> {
   const opts: Record<string, unknown> = {};
   if (options) {
-    if (options["case-sensitive"] !== undefined)
-      opts["case-sensitive"] = r(options["case-sensitive"]);
-    if (options["diacritic-sensitive"] !== undefined)
-      opts["diacritic-sensitive"] = r(options["diacritic-sensitive"]);
+    if (options["case-sensitive"] !== undefined) opts["case-sensitive"] = r(options["case-sensitive"]);
+    if (options["diacritic-sensitive"] !== undefined) opts["diacritic-sensitive"] = r(options["diacritic-sensitive"]);
     if (options.locale !== undefined) opts.locale = r(options.locale);
   }
   return new Expr<ExprCollator>(["collator", opts]);

@@ -28,9 +28,7 @@ export interface HonuaErrorContext {
 }
 
 export interface HonuaRequestInterceptor {
-  before?(
-    context: HonuaRequestContext,
-  ): void | HonuaRequestMutation | Promise<void | HonuaRequestMutation>;
+  before?(context: HonuaRequestContext): void | HonuaRequestMutation | Promise<void | HonuaRequestMutation>;
   after?(context: HonuaResponseContext): void | Promise<void>;
   error?(context: HonuaErrorContext): void | Promise<void>;
 }

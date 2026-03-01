@@ -251,9 +251,18 @@ export class FeatureLayerCompat {
     );
   }
 
-  public watch(propertyName: "visible" | "loaded" | "labelsVisible" | "legendEnabled", listener: (value: boolean) => void): FeatureLayerHandleCompat;
-  public watch(propertyName: "opacity" | "minScale" | "maxScale", listener: (value: number) => void): FeatureLayerHandleCompat;
-  public watch(propertyName: "loadStatus", listener: (value: FeatureLayerLoadStatusCompat) => void): FeatureLayerHandleCompat;
+  public watch(
+    propertyName: "visible" | "loaded" | "labelsVisible" | "legendEnabled",
+    listener: (value: boolean) => void,
+  ): FeatureLayerHandleCompat;
+  public watch(
+    propertyName: "opacity" | "minScale" | "maxScale",
+    listener: (value: number) => void,
+  ): FeatureLayerHandleCompat;
+  public watch(
+    propertyName: "loadStatus",
+    listener: (value: FeatureLayerLoadStatusCompat) => void,
+  ): FeatureLayerHandleCompat;
   public watch(propertyName: string, listener: (value: unknown) => void): FeatureLayerHandleCompat;
   public watch(propertyName: string, listener: (value: any) => void): FeatureLayerHandleCompat {
     let listeners = this.watchListeners.get(propertyName);

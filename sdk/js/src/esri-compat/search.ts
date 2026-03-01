@@ -5,9 +5,24 @@ import {
   safeInvokeCompatListener,
 } from "./event-bus.js";
 
+/** Structural point-like type used for search result locations. */
+export interface SearchPointLike {
+  x: number;
+  y: number;
+}
+
+/** Structural extent-like type used for search result extents. */
+export interface SearchExtentLike {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+  spatialReference?: Record<string, unknown>;
+}
+
 export interface SearchCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
   sources?: readonly SearchSourceCompat[];
   includeDefaultSources?: boolean;
@@ -30,9 +45,9 @@ export interface SearchRequestCompat {
 
 export interface SearchResultCompat {
   name: string;
-  feature?: unknown;
-  location?: unknown;
-  extent?: unknown;
+  feature?: Record<string, unknown> | null;
+  location?: SearchPointLike | null;
+  extent?: SearchExtentLike | null;
   source?: unknown;
 }
 
@@ -71,7 +86,7 @@ const DEFAULT_SEARCH_SOURCE_MAX_SUGGESTIONS = 5;
 
 export class SearchCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public readonly autoNavigate: boolean;
   public includeDefaultSources: boolean;
@@ -100,7 +115,7 @@ export class SearchCompat {
 
   public constructor(options: SearchCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.autoNavigate = options.autoNavigate ?? true;
     this.includeDefaultSources = options.includeDefaultSources ?? true;
@@ -300,10 +315,7 @@ export class SearchCompat {
     this.eventBus.emit("search.cleared", undefined, this);
   }
 
-  public setSources(
-    sources: readonly SearchSourceCompat[],
-    options: { includeDefaultSources?: boolean } = {},
-  ): void {
+  public setSources(sources: readonly SearchSourceCompat[], options: { includeDefaultSources?: boolean } = {}): void {
     const includeDefaults = options.includeDefaultSources ?? this.includeDefaultSources;
     this.includeDefaultSources = includeDefaults;
     this.notifyWatchers("includeDefaultSources", this.includeDefaultSources);
@@ -520,11 +532,7 @@ function resolveViewSearchSources(view: unknown, limits: SearchSourceLimits): Se
         );
         const optimizedQueryOptions =
           !fieldSearchUnsupported && fieldSearchConfig.searchableFields.length > 0
-            ? createOptimizedLayerSearchQueryOptions(
-                fieldSearchConfig,
-                normalizedTerm,
-                limits.maxFeatureCandidates,
-              )
+            ? createOptimizedLayerSearchQueryOptions(fieldSearchConfig, normalizedTerm, limits.maxFeatureCandidates)
             : undefined;
 
         let response: unknown;
@@ -595,7 +603,7 @@ function buildLayerSearchSource(
         const name = describeFeature(feature, layer, matches.length);
         matches.push({
           name,
-          feature,
+          feature: isRecord(feature) ? feature : null,
           location: extractFeatureLocation(feature),
           source: layer,
         });
@@ -679,9 +687,7 @@ function createOptimizedLayerSearchQueryOptions(
 
 function createSearchWhereClause(searchableFields: readonly string[], normalizedTerm: string): string {
   const escapedTerm = escapeSqlLiteral(normalizedTerm.toUpperCase());
-  return searchableFields
-    .map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%' ESCAPE '\\\\'`)
-    .join(" OR ");
+  return searchableFields.map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%' ESCAPE '\\\\'`).join(" OR ");
 }
 
 function resolveLayerSearchFieldConfig(layer: QueryFeaturesProvider): LayerSearchFieldConfig {
@@ -1022,18 +1028,13 @@ function describeFeature(feature: unknown, layer: SearchLayerProvider, index: nu
     }
   }
 
-  const layerTitle =
-    typeof layer.title === "string"
-      ? layer.title
-      : typeof layer.id === "string"
-        ? layer.id
-        : "Result";
+  const layerTitle = typeof layer.title === "string" ? layer.title : typeof layer.id === "string" ? layer.id : "Result";
   return `${layerTitle} ${index + 1}`;
 }
 
-function extractFeatureLocation(feature: unknown): unknown {
+function extractFeatureLocation(feature: unknown): SearchPointLike | null {
   if (!isRecord(feature) || !isRecord(feature.geometry)) {
-    return undefined;
+    return null;
   }
 
   const x = feature.geometry.x;
@@ -1046,7 +1047,7 @@ function extractFeatureLocation(feature: unknown): unknown {
   if (point) {
     return point;
   }
-  return feature.geometry;
+  return feature.geometry as unknown as SearchPointLike;
 }
 
 function resolveFeatureProperties(feature: unknown): Record<string, unknown> | undefined {

@@ -2,11 +2,7 @@ import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from 
 
 export type MeasurementToolCompat = "distance" | "area" | "direct-line";
 export type LinearUnitCompat = "meters" | "kilometers" | "feet" | "miles";
-export type AreaUnitCompat =
-  | "square-meters"
-  | "square-kilometers"
-  | "square-feet"
-  | "square-miles";
+export type AreaUnitCompat = "square-meters" | "square-kilometers" | "square-feet" | "square-miles";
 
 export interface MeasurementCompatOptions {
   view?: unknown;

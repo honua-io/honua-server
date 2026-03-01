@@ -35,9 +35,7 @@ export class OAuthInfoCompat {
     this.popup = options.popup ?? false;
     this.flowType = options.flowType ?? "auto";
     this.expiration =
-      typeof options.expiration === "number" && Number.isFinite(options.expiration)
-        ? options.expiration
-        : undefined;
+      typeof options.expiration === "number" && Number.isFinite(options.expiration) ? options.expiration : undefined;
     this.authNamespace = options.authNamespace;
     this.preserveUrlHash = options.preserveUrlHash ?? false;
     this.watchListeners = new Map();
@@ -99,9 +97,7 @@ export class OAuthInfoCompat {
     }
     if (options.expiration !== undefined) {
       this.expiration =
-        typeof options.expiration === "number" && Number.isFinite(options.expiration)
-          ? options.expiration
-          : undefined;
+        typeof options.expiration === "number" && Number.isFinite(options.expiration) ? options.expiration : undefined;
       this.notifyWatchers("expiration", this.expiration);
     }
     if (options.authNamespace !== undefined) {

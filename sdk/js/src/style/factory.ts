@@ -9,8 +9,8 @@ import type { HonuaClient } from "../core/client.js";
 import {
   HonuaFeatureLayer,
   HonuaMapService,
-  HonuaOgcFeatures,
   type HonuaOgcFeatureCollection,
+  HonuaOgcFeatures,
 } from "../core/surfaces.js";
 import { parseFeatureLayerUrl, parseMapServiceUrl } from "../esri-compat/url.js";
 import type { HonuaStyleSpecification } from "./specification.js";
@@ -22,11 +22,7 @@ import {
 } from "./specification.js";
 
 /** A resolved Honua source: either a surface instance or `null` for non-Honua (MapLibre-native) sources. */
-export type ResolvedSource =
-  | HonuaFeatureLayer
-  | HonuaMapService
-  | HonuaOgcFeatureCollection
-  | null;
+export type ResolvedSource = HonuaFeatureLayer | HonuaMapService | HonuaOgcFeatureCollection | null;
 
 /**
  * Create Honua SDK surface instances for each source in a style.
@@ -43,10 +39,7 @@ export type ResolvedSource =
  * }
  * ```
  */
-export function createSources(
-  client: HonuaClient,
-  style: HonuaStyleSpecification,
-): Map<string, ResolvedSource> {
+export function createSources(client: HonuaClient, style: HonuaStyleSpecification): Map<string, ResolvedSource> {
   const result = new Map<string, ResolvedSource>();
 
   for (const [name, spec] of Object.entries(style.sources)) {

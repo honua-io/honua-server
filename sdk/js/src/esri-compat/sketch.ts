@@ -198,8 +198,7 @@ export class SketchCompat {
   }
 
   public delete(graphics?: unknown | readonly unknown[]): number {
-    const targets =
-      graphics !== undefined ? normalizeGraphicsInput(graphics) : [...this.activeUpdateGraphics];
+    const targets = graphics !== undefined ? normalizeGraphicsInput(graphics) : [...this.activeUpdateGraphics];
     let removed = 0;
     for (const target of targets) {
       if (removeGraphic(this.layer, target)) {

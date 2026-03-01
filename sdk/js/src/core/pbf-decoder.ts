@@ -387,9 +387,7 @@ function buildGeoServicesGeometry(
 ): Record<string, unknown> {
   switch (geometryType) {
     case "esriGeometryPoint":
-      return worldCoords.length > 0
-        ? { x: worldCoords[0][0], y: worldCoords[0][1] }
-        : { x: null, y: null };
+      return worldCoords.length > 0 ? { x: worldCoords[0][0], y: worldCoords[0][1] } : { x: null, y: null };
 
     case "esriGeometryMultipoint":
       return { points: worldCoords };
@@ -527,9 +525,7 @@ function decodeFeatureResult(reader: PbfReader): Record<string, unknown> {
   }
 
   // Now decode features with full field/transform context
-  const features = featureReaders.map((fr) =>
-    decodeFeature(fr, fields, transform, geometryType),
-  );
+  const features = featureReaders.map((fr) => decodeFeature(fr, fields, transform, geometryType));
 
   // Build JSON-compatible response matching f=json shape
   const result: Record<string, unknown> = {
@@ -559,20 +555,34 @@ function decodeFeatureResult(reader: PbfReader): Record<string, unknown> {
 
 function mapPbfFieldTypeToGeoServices(fieldType: number): string {
   switch (fieldType) {
-    case 0: return "esriFieldTypeSmallInteger";
-    case 1: return "esriFieldTypeInteger";
-    case 2: return "esriFieldTypeSingle";
-    case 3: return "esriFieldTypeDouble";
-    case 4: return "esriFieldTypeString";
-    case 5: return "esriFieldTypeDate";
-    case 6: return "esriFieldTypeOID";
-    case 7: return "esriFieldTypeGeometry";
-    case 8: return "esriFieldTypeBlob";
-    case 10: return "esriFieldTypeGUID";
-    case 11: return "esriFieldTypeGlobalID";
-    case 12: return "esriFieldTypeXML";
-    case 13: return "esriFieldTypeBigInteger";
-    default: return "esriFieldTypeString";
+    case 0:
+      return "esriFieldTypeSmallInteger";
+    case 1:
+      return "esriFieldTypeInteger";
+    case 2:
+      return "esriFieldTypeSingle";
+    case 3:
+      return "esriFieldTypeDouble";
+    case 4:
+      return "esriFieldTypeString";
+    case 5:
+      return "esriFieldTypeDate";
+    case 6:
+      return "esriFieldTypeOID";
+    case 7:
+      return "esriFieldTypeGeometry";
+    case 8:
+      return "esriFieldTypeBlob";
+    case 10:
+      return "esriFieldTypeGUID";
+    case 11:
+      return "esriFieldTypeGlobalID";
+    case 12:
+      return "esriFieldTypeXML";
+    case 13:
+      return "esriFieldTypeBigInteger";
+    default:
+      return "esriFieldTypeString";
   }
 }
 

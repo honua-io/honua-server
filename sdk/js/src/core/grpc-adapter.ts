@@ -1,13 +1,13 @@
 import { create } from "@bufbuild/protobuf";
 import {
-  QueryFeaturesRequestSchema,
+  type AttributeValue,
+  type FeaturePage,
   FieldType,
   GeometryType,
-  type QueryFeaturesResponse,
-  type FeaturePage,
   type Feature as ProtoFeature,
-  type AttributeValue,
   type FieldDefinition as ProtoFieldDefinition,
+  QueryFeaturesRequestSchema,
+  type QueryFeaturesResponse,
 } from "../gen/honua/v1/feature_service_pb.js";
 import { HonuaGrpcError } from "./errors.js";
 import type {
@@ -57,9 +57,7 @@ const GEOMETRY_TYPE_MAP: Record<number, string> = {
 /**
  * Converts a SDK QueryFeaturesRequest into a proto QueryFeaturesRequest message.
  */
-export function toProtoQueryRequest(
-  request: QueryFeaturesRequest,
-) {
+export function toProtoQueryRequest(request: QueryFeaturesRequest) {
   const msg = create(QueryFeaturesRequestSchema);
   msg.serviceId = request.serviceId;
   msg.layerId = request.layerId;
@@ -69,7 +67,10 @@ export function toProtoQueryRequest(
   if (request.outFields !== undefined) {
     const fields =
       typeof request.outFields === "string"
-        ? request.outFields.split(",").map((f) => f.trim()).filter(Boolean)
+        ? request.outFields
+            .split(",")
+            .map((f) => f.trim())
+            .filter(Boolean)
         : request.outFields;
     msg.outFields = fields;
   }
@@ -127,9 +128,7 @@ export function fromProtoQueryResponse(
         ymin: ext.ymin,
         xmax: ext.xmax,
         ymax: ext.ymax,
-        spatialReference: ext.spatialReference
-          ? convertSpatialReference(ext.spatialReference)
-          : undefined,
+        spatialReference: ext.spatialReference ? convertSpatialReference(ext.spatialReference) : undefined,
       },
     };
   }
@@ -138,9 +137,7 @@ export function fromProtoQueryResponse(
   return {
     objectIdFieldName: response.objectIdFieldName,
     geometryType: GEOMETRY_TYPE_MAP[response.geometryType] ?? "esriGeometryPoint",
-    spatialReference: response.spatialReference
-      ? convertSpatialReference(response.spatialReference)
-      : undefined,
+    spatialReference: response.spatialReference ? convertSpatialReference(response.spatialReference) : undefined,
     fields: response.fields.map(convertField),
     features: response.features.map(convertFeature),
     exceededTransferLimit: response.exceededTransferLimit || undefined,
@@ -178,11 +175,7 @@ export async function* streamProtoPages(
  * HonuaGrpcError for consistent `instanceof` discrimination.
  */
 export function wrapConnectError(error: unknown): Error {
-  if (
-    error instanceof Error &&
-    "code" in error &&
-    typeof (error as Record<string, unknown>).code === "number"
-  ) {
+  if (error instanceof Error && "code" in error && typeof (error as Record<string, unknown>).code === "number") {
     return new HonuaGrpcError(
       (error as Record<string, unknown>).code as number,
       error.message,
@@ -195,9 +188,7 @@ export function wrapConnectError(error: unknown): Error {
   return new Error(String(error));
 }
 
-function convertSpatialReference(
-  sr: { wkid: number; latestWkid: number; wkt: string },
-): HonuaSpatialReference {
+function convertSpatialReference(sr: { wkid: number; latestWkid: number; wkt: string }): HonuaSpatialReference {
   const result: HonuaSpatialReference = {};
   if (sr.wkid !== 0) {
     result.wkid = sr.wkid;
@@ -261,9 +252,7 @@ function convertAttributeValue(attr: AttributeValue): unknown {
   }
 }
 
-function convertGeometry(
-  geometry: NonNullable<ProtoFeature["geometry"]>,
-): Record<string, unknown> | null {
+function convertGeometry(geometry: NonNullable<ProtoFeature["geometry"]>): Record<string, unknown> | null {
   switch (geometry.shape.case) {
     case "point": {
       const p = geometry.shape.value;

@@ -26,9 +26,7 @@ export class BasemapCompat {
 
   public constructor(options: BasemapCompatOptions = {}) {
     this.eventBus =
-      options.eventBus ??
-      resolveCompatEventBus(options.baseLayers, options.referenceLayers) ??
-      new CompatEventBus();
+      options.eventBus ?? resolveCompatEventBus(options.baseLayers, options.referenceLayers) ?? new CompatEventBus();
     this.id = options.id;
     this.title = options.title ?? options.id;
     this.baseLayers = options.baseLayers ? [...options.baseLayers] : [];

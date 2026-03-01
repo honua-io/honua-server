@@ -193,11 +193,7 @@ function createComparableValue(value: unknown): unknown {
   return value;
 }
 
-function stableSerialize(
-  value: unknown,
-  depth: number,
-  seen: WeakSet<object>,
-): string {
+function stableSerialize(value: unknown, depth: number, seen: WeakSet<object>): string {
   if (value === null) {
     return "null";
   }

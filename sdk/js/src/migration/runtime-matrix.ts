@@ -1,9 +1,4 @@
-export type JsRuntimeParitySurface =
-  | "feature-layer"
-  | "map-image-layer"
-  | "map-view"
-  | "widget"
-  | "control";
+export type JsRuntimeParitySurface = "feature-layer" | "map-image-layer" | "map-view" | "widget" | "control";
 
 export type JsRuntimeParityStatus = "native" | "compat" | "assisted" | "unsupported";
 
@@ -76,7 +71,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "FeatureLayer.queryAttachments/listAttachments/deleteAttachments",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Attachment read/delete helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
+    notes:
+      "Attachment read/delete helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
@@ -84,7 +80,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "FeatureLayer.addAttachment/updateAttachment",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Multipart attachment upload/update helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
+    notes:
+      "Multipart attachment upload/update helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
@@ -172,7 +169,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapImageLayer.findSublayerById/allSublayers",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Sublayer lookup helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
+    notes:
+      "Sublayer lookup helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "map-image-layer",
@@ -206,7 +204,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "FeatureLayer.timeExtent / TimeSlider integration",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "TimeExtent property auto-appends time parameter to queryFeatures; TimeSliderCompat.connectLayer() for declarative binding.",
+    notes:
+      "TimeExtent property auto-appends time parameter to queryFeatures; TimeSliderCompat.connectLayer() for declarative binding.",
   },
   {
     surface: "feature-layer",
@@ -238,7 +237,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapView.hitTest",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Popup-backed hitTest helper is available through deterministic esri-leaflet target fallback to MapViewCompat.",
+    notes:
+      "Popup-backed hitTest helper is available through deterministic esri-leaflet target fallback to MapViewCompat.",
   },
   {
     surface: "map-view",
@@ -254,7 +254,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapView.ui.add/remove/move/getComponents",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "UI component container APIs are available through deterministic esri-leaflet target fallback to MapViewCompat.",
+    notes:
+      "UI component container APIs are available through deterministic esri-leaflet target fallback to MapViewCompat.",
   },
   {
     surface: "map-view",
@@ -262,7 +263,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapView.whenLayerView + layerView.query*",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Layer-view creation, querying, and highlight handles are compat-ready through deterministic esri-leaflet target fallback to MapViewCompat.",
+    notes:
+      "Layer-view creation, querying, and highlight handles are compat-ready through deterministic esri-leaflet target fallback to MapViewCompat.",
   },
   {
     surface: "widget",
@@ -270,7 +272,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "LayerList/Legend",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "LayerList/Legend are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
+    notes:
+      "LayerList/Legend are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
   },
   {
     surface: "widget",
@@ -278,7 +281,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "Popup/Search",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Popup/Search are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
+    notes:
+      "Popup/Search are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
   },
   {
     surface: "widget",
@@ -318,12 +322,12 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "Home/BasemapToggle/Locate/ScaleBar/Compass/Fullscreen/Zoom/Attribution",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Common map controls are deterministic in esri-leaflet target via compat fallback wrappers and event-bus integration.",
+    notes:
+      "Common map controls are deterministic in esri-leaflet target via compat fallback wrappers and event-bus integration.",
   },
 ]);
 
-export const JS_RUNTIME_PARITY_MATRIX: readonly JsRuntimeParityEntry[] =
-  Object.freeze([...BASE_RUNTIME_MATRIX]);
+export const JS_RUNTIME_PARITY_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([...BASE_RUNTIME_MATRIX]);
 
 export function getJsRuntimeParityMatrix(): readonly JsRuntimeParityEntry[] {
   return JS_RUNTIME_PARITY_MATRIX;

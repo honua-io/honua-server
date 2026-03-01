@@ -116,6 +116,7 @@ export type {
   CompassCompatOptions,
   ControlHandleCompat,
   ControlLoadStatusCompat,
+  ControlViewpointLike,
   FullscreenCompatOptions,
   HomeCompatOptions,
   HomeViewpointCompat,
@@ -442,8 +443,10 @@ export type {
 export { SearchCompat } from "./esri-compat/search.js";
 export type {
   SearchCompatOptions,
+  SearchExtentLike,
   SearchHandleCompat,
   SearchLoadStatusCompat,
+  SearchPointLike,
   SearchRequestCompat,
   SearchResponseCompat,
   SearchResultCompat,

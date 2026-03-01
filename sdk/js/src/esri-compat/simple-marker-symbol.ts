@@ -26,10 +26,7 @@ export class SimpleMarkerSymbolCompat {
     this.loadStatus = "not-loaded";
     this.style = options.style ?? "circle";
     this.color = options.color;
-    this.size =
-      typeof options.size === "number" && Number.isFinite(options.size)
-        ? options.size
-        : 8;
+    this.size = typeof options.size === "number" && Number.isFinite(options.size) ? options.size : 8;
     this.outline = options.outline;
     this.watchListeners = new Map();
   }

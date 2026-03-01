@@ -71,8 +71,7 @@ export class IdentifyCompat {
   public constructor(options: IdentifyCompatOptions = {}) {
     this.view = options.view;
     this.explicitLayers = options.layers;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.view, options.layers) ?? new CompatEventBus();
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, options.layers) ?? new CompatEventBus();
     this.autoOpenPopup = options.autoOpenPopup ?? true;
     this.includeHidden = options.includeHidden ?? false;
     this.loaded = false;

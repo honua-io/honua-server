@@ -106,9 +106,7 @@ export class BookmarksCompat {
 
   public async goTo(nameOrBookmark: string | BookmarkCompatItem): Promise<BookmarkCompatItem | undefined> {
     const bookmark =
-      typeof nameOrBookmark === "string"
-        ? this.bookmarks.find((item) => item.name === nameOrBookmark)
-        : nameOrBookmark;
+      typeof nameOrBookmark === "string" ? this.bookmarks.find((item) => item.name === nameOrBookmark) : nameOrBookmark;
     if (!bookmark) {
       return undefined;
     }

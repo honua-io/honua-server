@@ -1,12 +1,12 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
 
 export type TimeSliderModeCompat = "instant" | "time-window";
-export type TimeSliderIntervalUnitCompat =
-  | "milliseconds"
-  | "seconds"
-  | "minutes"
-  | "hours"
-  | "days";
+export type TimeSliderIntervalUnitCompat = "milliseconds" | "seconds" | "minutes" | "hours" | "days";
 
 export interface TimeExtentCompat {
   start: Date;
@@ -204,7 +204,9 @@ export class TimeSliderCompat {
     return this.timeExtent;
   }
 
-  public connectLayer(layer: { setTimeExtent(extent: { start: Date; end: Date } | undefined): void }): TimeSliderHandleCompat {
+  public connectLayer(layer: {
+    setTimeExtent(extent: { start: Date; end: Date } | undefined): void;
+  }): TimeSliderHandleCompat {
     if (this.timeExtent) {
       layer.setTimeExtent(this.timeExtent);
     }

@@ -209,9 +209,7 @@ export class RouteTaskCompat {
   }
 }
 
-function normalizeStops(
-  rawStops: RouteTaskSolveParametersCompat["stops"],
-): readonly RouteStopCompat[] {
+function normalizeStops(rawStops: RouteTaskSolveParametersCompat["stops"]): readonly RouteStopCompat[] {
   if (!rawStops) {
     return [];
   }
@@ -283,9 +281,7 @@ function buildSolveResult(
   };
 }
 
-function buildDirectionFeatures(
-  route: RouteSolveResultCompat,
-): readonly RouteTaskDirectionsFeatureCompat[] {
+function buildDirectionFeatures(route: RouteSolveResultCompat): readonly RouteTaskDirectionsFeatureCompat[] {
   if (route.path.length < 2 || route.totalLengthMeters <= 0) {
     return [];
   }
@@ -307,7 +303,12 @@ function buildDirectionFeatures(
         time: segmentTimeMinutes,
       },
       geometry: {
-        paths: [[[start[0], start[1]], [end[0], end[1]]]],
+        paths: [
+          [
+            [start[0], start[1]],
+            [end[0], end[1]],
+          ],
+        ],
         spatialReference: { wkid: 4326 },
       },
     });

@@ -129,23 +129,17 @@ export function isHonuaSource(source: { type: string }): source is HonuaSourceSp
 }
 
 /** Test whether a source is a `honua-feature-service`. */
-export function isFeatureServiceSource(
-  source: { type: string },
-): source is HonuaFeatureServiceSourceSpecification {
+export function isFeatureServiceSource(source: { type: string }): source is HonuaFeatureServiceSourceSpecification {
   return source.type === "honua-feature-service";
 }
 
 /** Test whether a source is a `honua-map-service`. */
-export function isMapServiceSource(
-  source: { type: string },
-): source is HonuaMapServiceSourceSpecification {
+export function isMapServiceSource(source: { type: string }): source is HonuaMapServiceSourceSpecification {
   return source.type === "honua-map-service";
 }
 
 /** Test whether a source is a `honua-ogc-features`. */
-export function isOgcFeaturesSource(
-  source: { type: string },
-): source is HonuaOgcFeaturesSourceSpecification {
+export function isOgcFeaturesSource(source: { type: string }): source is HonuaOgcFeaturesSourceSpecification {
   return source.type === "honua-ogc-features";
 }
 
@@ -170,9 +164,7 @@ export interface ParsedOgcFeaturesUrl {
  * - `https://gis.example.com/ogc` (collectionId provided separately)
  */
 export function parseOgcFeaturesUrl(url: string): ParsedOgcFeaturesUrl {
-  const collectionsMatch = url.match(
-    /^(https?:\/\/[^/]+(?:\/[^/]+)*?)\/collections\/([^/?#]+)/i,
-  );
+  const collectionsMatch = url.match(/^(https?:\/\/[^/]+(?:\/[^/]+)*?)\/collections\/([^/?#]+)/i);
   if (collectionsMatch) {
     return {
       baseUrl: collectionsMatch[1],

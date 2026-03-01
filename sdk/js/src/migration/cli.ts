@@ -2,18 +2,14 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
-import {
-  runEsriCompatCodemod,
-  type CodemodMetricsByKind,
-  type CodemodTarget,
-} from "./codemod.js";
-import { buildJsMigrationReport } from "./report.js";
-import { evaluateMigrationGates } from "./gating.js";
-import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
-import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
-import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
+import { type CodemodMetricsByKind, type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
 import { parseGeoservicesServiceUrl, runMigrationDemo } from "./demo.js";
+import { evaluateMigrationGates } from "./gating.js";
+import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
+import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
+import { buildJsMigrationReport } from "./report.js";
+import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
+import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 
 interface ParsedArgs {
   command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" | "demo";
@@ -211,9 +207,7 @@ function runScan(target: string, reportPath?: string): void {
 function runFixtures(args: ParsedArgs): void {
   const fixturesRoot = args.target;
   const fixtureNames =
-    args.fixtureNames && args.fixtureNames.length > 0
-      ? [...args.fixtureNames]
-      : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
+    args.fixtureNames && args.fixtureNames.length > 0 ? [...args.fixtureNames] : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
   const report = buildFixtureMetricsReport(fixturesRoot, fixtureNames, args.codemodTarget, {
     failOnManual: args.failOnManual,
     failOnUnhandled: args.failOnUnhandled,
@@ -324,38 +318,21 @@ function buildFixtureMetricSnapshot(
   };
 }
 
-function summarizeFixtureMetrics(
-  fixtures: readonly FixtureMetricSnapshot[],
-): FixtureMetricsSummary {
+function summarizeFixtureMetrics(fixtures: readonly FixtureMetricSnapshot[]): FixtureMetricsSummary {
   const ready = fixtures.filter((fixture) => fixture.readiness === "ready").length;
   const assisted = fixtures.filter((fixture) => fixture.readiness === "assisted").length;
   const blocked = fixtures.filter((fixture) => fixture.readiness === "blocked").length;
   const totalCallSites = fixtures.reduce((sum, fixture) => sum + fixture.totalCallSites, 0);
-  const autoMigratedCallSites = fixtures.reduce(
-    (sum, fixture) => sum + fixture.autoMigratedCallSites,
-    0,
-  );
+  const autoMigratedCallSites = fixtures.reduce((sum, fixture) => sum + fixture.autoMigratedCallSites, 0);
   const manualCallSites = fixtures.reduce((sum, fixture) => sum + fixture.manualCallSites, 0);
-  const manualRewriteNumerator = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualRewrite.numerator,
-    0,
-  );
-  const manualRewriteDenominator = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualRewrite.denominator,
-    0,
-  );
-  const manualInterventionNumerator = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualIntervention.numerator,
-    0,
-  );
+  const manualRewriteNumerator = fixtures.reduce((sum, fixture) => sum + fixture.manualRewrite.numerator, 0);
+  const manualRewriteDenominator = fixtures.reduce((sum, fixture) => sum + fixture.manualRewrite.denominator, 0);
+  const manualInterventionNumerator = fixtures.reduce((sum, fixture) => sum + fixture.manualIntervention.numerator, 0);
   const manualInterventionDenominator = fixtures.reduce(
     (sum, fixture) => sum + fixture.manualIntervention.denominator,
     0,
   );
-  const unhandledUsageHits = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualIntervention.unhandledUsageHits,
-    0,
-  );
+  const unhandledUsageHits = fixtures.reduce((sum, fixture) => sum + fixture.manualIntervention.unhandledUsageHits, 0);
 
   return {
     fixtureCount: fixtures.length,
@@ -368,14 +345,11 @@ function summarizeFixtureMetrics(
     unhandledUsageHits,
     manualRewriteNumerator,
     manualRewriteDenominator,
-    manualRewriteRatio:
-      manualRewriteDenominator === 0 ? 0 : manualRewriteNumerator / manualRewriteDenominator,
+    manualRewriteRatio: manualRewriteDenominator === 0 ? 0 : manualRewriteNumerator / manualRewriteDenominator,
     manualInterventionNumerator,
     manualInterventionDenominator,
     manualInterventionRatio:
-      manualInterventionDenominator === 0
-        ? 0
-        : manualInterventionNumerator / manualInterventionDenominator,
+      manualInterventionDenominator === 0 ? 0 : manualInterventionNumerator / manualInterventionDenominator,
   };
 }
 
@@ -412,10 +386,7 @@ function evaluateFixtureMetricsGates(
       `Blocked fixture readiness detected (${summary.blocked}): ${blockedFixtures.join(", ") || "unknown"}.`,
     );
   }
-  if (
-    options.maxManualRatio !== undefined &&
-    summary.manualRewriteRatio > options.maxManualRatio
-  ) {
+  if (options.maxManualRatio !== undefined && summary.manualRewriteRatio > options.maxManualRatio) {
     failures.push(
       `Manual rewrite ratio ${summary.manualRewriteRatio.toFixed(3)} exceeds max ${options.maxManualRatio.toFixed(3)}.`,
     );
@@ -543,9 +514,7 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
 
   process.stdout.write(`${summarizeLayerReconciliation(report)}\n`);
   process.stdout.write(
-    `checks=${report.checks
-      .map((check) => `${check.check}:${check.passed ? "pass" : "fail"}`)
-      .join(",")}\n`,
+    `checks=${report.checks.map((check) => `${check.check}:${check.passed ? "pass" : "fail"}`).join(",")}\n`,
   );
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
@@ -562,12 +531,9 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
 async function runDemo(args: ParsedArgs): Promise<void> {
   const fixtureName = args.fixtureName ?? DEFAULT_DEMO_FIXTURE_NAME;
   const fixturesRoot = args.fixturesRoot ?? path.join(process.cwd(), "test", "fixtures");
-  const outputDir =
-    args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
+  const outputDir = args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
   const sourceUrlDetails =
-    typeof args.sourceServiceUrl === "string"
-      ? parseGeoservicesServiceUrl(args.sourceServiceUrl)
-      : undefined;
+    typeof args.sourceServiceUrl === "string" ? parseGeoservicesServiceUrl(args.sourceServiceUrl) : undefined;
   const resolvedLayerId = args.layerId ?? sourceUrlDetails?.layerId;
   const adminApiKey = args.adminApiKey ?? process.env.HONUA_ADMIN_API_KEY;
 
@@ -617,7 +583,11 @@ async function runDemo(args: ParsedArgs): Promise<void> {
     skipImport: args.skipImport,
     skipReconciliation: args.skipReconcile,
     importOptions:
-      args.skipImport || !args.adminBaseUrl || !args.sourceServiceUrl || resolvedLayerId === undefined || !args.tableName
+      args.skipImport ||
+      !args.adminBaseUrl ||
+      !args.sourceServiceUrl ||
+      resolvedLayerId === undefined ||
+      !args.tableName
         ? undefined
         : {
             adminBaseUrl: args.adminBaseUrl,
@@ -721,9 +691,7 @@ async function runDemo(args: ParsedArgs): Promise<void> {
     passed: report.passed,
   };
 
-  process.stdout.write(
-    `demoPassed=${report.passed ? "yes" : "no"} outputDir=${report.workingAppDir}\n`,
-  );
+  process.stdout.write(`demoPassed=${report.passed ? "yes" : "no"} outputDir=${report.workingAppDir}\n`);
   process.stdout.write(`${JSON.stringify(stdoutSummary, null, 2)}\n`);
 
   if (args.reportPath) {
@@ -754,14 +722,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
 
   const maybeCommand = argv[0];
-  const command:
-    | "scan"
-    | "codemod"
-    | "reconcile"
-    | "matrix"
-    | "runtime-matrix"
-    | "fixtures"
-    | "demo" =
+  const command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" | "demo" =
     maybeCommand === "scan" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
@@ -1084,9 +1045,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     command,
     target:
       target ??
-      (command === "fixtures" || command === "demo"
-        ? path.join(process.cwd(), "test", "fixtures")
-        : process.cwd()),
+      (command === "fixtures" || command === "demo" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
     write,
     codemodTarget,
     annotateTodos,
@@ -1127,9 +1086,7 @@ function formatByKindMetrics(byKind: CodemodMetricsByKind): string {
     .join(",");
 }
 
-function formatManualDifficultyBreakdown(
-  todos: readonly { difficulty?: string }[],
-): string {
+function formatManualDifficultyBreakdown(todos: readonly { difficulty?: string }[]): string {
   let trivial = 0;
   let moderate = 0;
   let complex = 0;
@@ -1146,9 +1103,7 @@ function formatManualDifficultyBreakdown(
 }
 
 function formatGateResults(gates: readonly { gate: string; passed: boolean }[]): string {
-  return gates
-    .map((gate) => `${gate.gate}:${gate.passed ? "pass" : "fail"}`)
-    .join(",");
+  return gates.map((gate) => `${gate.gate}:${gate.passed ? "pass" : "fail"}`).join(",");
 }
 
 function printUsage(): void {

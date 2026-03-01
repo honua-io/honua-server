@@ -150,10 +150,7 @@ export class PopupTemplateCompat {
   }
 }
 
-function interpolateFieldTokens(
-  template: string,
-  attributes: Record<string, unknown>,
-): string {
+function interpolateFieldTokens(template: string, attributes: Record<string, unknown>): string {
   return template.replace(/\{([^}]+)\}/g, (_match, fieldName: string) => {
     const value = attributes[fieldName];
     return value === undefined || value === null ? "" : String(value);

@@ -1,9 +1,4 @@
-import type {
-  HonuaRequestContext,
-  HonuaRequestInterceptor,
-  HonuaRequestMutation,
-  QueryMethod,
-} from "../core/types.js";
+import type { HonuaRequestContext, HonuaRequestInterceptor, HonuaRequestMutation, QueryMethod } from "../core/types.js";
 
 export type EsriUrlPattern = string | RegExp;
 
@@ -125,9 +120,7 @@ export class EsriRequestInterceptorRegistry {
   }
 }
 
-export function createArcGisTokenInterceptor(
-  options: ArcGisTokenInterceptorOptions,
-): HonuaRequestInterceptor {
+export function createArcGisTokenInterceptor(options: ArcGisTokenInterceptorOptions): HonuaRequestInterceptor {
   const mode = options.mode ?? "query";
   const queryParamName = options.queryParamName ?? "token";
   const headerName = options.headerName ?? "Authorization";
@@ -171,9 +164,7 @@ function normalizeMethod(method: string | undefined, fallback: QueryMethod): Que
   return upper === "POST" ? "POST" : "GET";
 }
 
-function createHonuaInterceptorFromEsri(
-  interceptor: EsriRequestInterceptorCompat,
-): HonuaRequestInterceptor {
+function createHonuaInterceptorFromEsri(interceptor: EsriRequestInterceptorCompat): HonuaRequestInterceptor {
   return {
     before: async (context) => {
       if (!matchesPattern(context.url, interceptor.urls) || !interceptor.before) {
@@ -226,10 +217,7 @@ function fromEsriBeforeRequestParams(
   };
 }
 
-function applyMutationToContext(
-  context: HonuaRequestContext,
-  mutation: HonuaRequestMutation,
-): HonuaRequestContext {
+function applyMutationToContext(context: HonuaRequestContext, mutation: HonuaRequestMutation): HonuaRequestContext {
   const method = mutation.method ?? context.method;
   const nextInit =
     mutation.init === undefined

@@ -8,7 +8,19 @@ export {
   isHonuaError,
 } from "./core/errors.js";
 export type { HonuaError } from "./core/errors.js";
-export { QueryBuilder } from "./core/query-builder.js";
+export { QueryBuilder, MapLayerQueryBuilder, OgcQueryBuilder } from "./core/query-builder.js";
+export {
+  envelope,
+  point,
+  polygon,
+  buffer,
+  spatialIntersects,
+  spatialContains,
+  spatialWithin,
+} from "./core/spatial-filter.js";
+export type { SpatialFilter } from "./core/spatial-filter.js";
+export { batchQuery } from "./core/batch.js";
+export type { BatchQueryItem, BatchQueryOptions, BatchQueryResult } from "./core/batch.js";
 export { decodePbfQueryResponse, isPbfResponse } from "./core/pbf-decoder.js";
 export {
   isHonuaSource,
@@ -328,6 +340,7 @@ export type {
   CompassCompatOptions,
   ControlHandleCompat,
   ControlLoadStatusCompat,
+  ControlViewpointLike,
   FullscreenCompatOptions,
   HomeCompatOptions,
   HomeViewpointCompat,
@@ -617,13 +630,17 @@ export type {
 } from "./esri-compat/legend.js";
 export { MapViewCompat } from "./esri-compat/map-view.js";
 export type {
+  MapViewCenterLike,
   MapViewCompatOptions,
+  MapViewConstraintsLike,
+  MapViewExtentLike,
   MapViewGoToExtentLike,
   MapViewGoToInput,
   MapViewGoToOptions,
   MapViewGoToPointLike,
   MapViewGoToTarget,
   MapViewHandle,
+  MapViewHighlightOptionsLike,
   MapViewHitTestEvent,
   MapViewHitTestResult,
   MapViewHitTestResultItem,
@@ -632,8 +649,10 @@ export type {
   MapViewLayerViewHighlightRecord,
   MapViewLoadStatusCompat,
   MapViewMapPoint,
+  MapViewPaddingLike,
   MapViewPopupOpenOptions,
   MapViewScreenPoint,
+  MapViewSpatialReferenceLike,
   MapViewTakeScreenshotArea,
   MapViewTakeScreenshotOptions,
   MapViewTakeScreenshotResult,
@@ -691,8 +710,10 @@ export type {
 export { SearchCompat } from "./esri-compat/search.js";
 export type {
   SearchCompatOptions,
+  SearchExtentLike,
   SearchHandleCompat,
   SearchLoadStatusCompat,
+  SearchPointLike,
   SearchRequestCompat,
   SearchResponseCompat,
   SearchResultCompat,

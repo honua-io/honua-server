@@ -87,7 +87,19 @@ export {
   isHonuaError,
 } from "./core/errors.js";
 export type { HonuaError } from "./core/errors.js";
-export { QueryBuilder } from "./core/query-builder.js";
+export { QueryBuilder, MapLayerQueryBuilder, OgcQueryBuilder } from "./core/query-builder.js";
+export {
+  envelope,
+  point,
+  polygon,
+  buffer,
+  spatialIntersects,
+  spatialContains,
+  spatialWithin,
+} from "./core/spatial-filter.js";
+export type { SpatialFilter } from "./core/spatial-filter.js";
+export { batchQuery } from "./core/batch.js";
+export type { BatchQueryItem, BatchQueryOptions, BatchQueryResult } from "./core/batch.js";
 export { decodePbfQueryResponse, isPbfResponse } from "./core/pbf-decoder.js";
 export {
   createHonuaOgcFeatures,

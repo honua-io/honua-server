@@ -51,9 +51,7 @@ export class ClassBreaksRendererCompat {
         ? options.normalizationTotal
         : undefined;
     this.minValue =
-      typeof options.minValue === "number" && Number.isFinite(options.minValue)
-        ? options.minValue
-        : undefined;
+      typeof options.minValue === "number" && Number.isFinite(options.minValue) ? options.minValue : undefined;
     this.defaultSymbol = options.defaultSymbol;
     this.defaultLabel = options.defaultLabel;
     this.legendOptions = options.legendOptions;
@@ -117,7 +115,8 @@ export class ClassBreaksRendererCompat {
       this.notifyWatchers("normalizationTotal", this.normalizationTotal);
     }
     if (options.minValue !== undefined) {
-      this.minValue = typeof options.minValue === "number" && Number.isFinite(options.minValue) ? options.minValue : undefined;
+      this.minValue =
+        typeof options.minValue === "number" && Number.isFinite(options.minValue) ? options.minValue : undefined;
       this.notifyWatchers("minValue", this.minValue);
     }
     if (options.defaultSymbol !== undefined) {

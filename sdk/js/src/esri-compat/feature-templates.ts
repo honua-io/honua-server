@@ -72,10 +72,7 @@ export class FeatureTemplatesCompat {
     return widget;
   }
 
-  public watch(
-    propertyName: string,
-    listener: (value: unknown) => void,
-  ): FeatureTemplatesHandleCompat {
+  public watch(propertyName: string, listener: (value: unknown) => void): FeatureTemplatesHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -92,9 +89,7 @@ export class FeatureTemplatesCompat {
 
   public setTemplates(templates: readonly FeatureTemplateItemCompat[]): void {
     const filtered =
-      this.filterFunction === undefined
-        ? templates
-        : templates.filter((item) => this.filterFunction?.(item) ?? true);
+      this.filterFunction === undefined ? templates : templates.filter((item) => this.filterFunction?.(item) ?? true);
     this.templates = filtered.map((item) => ({ ...item }));
     this.notifyWatchers("templates", this.templates);
     this.eventBus.emit("feature-templates.updated", { count: this.templates.length }, this);

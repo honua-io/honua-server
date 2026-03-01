@@ -16,31 +16,27 @@ import type { HonuaClient } from "../core/client.js";
 import {
   HonuaFeatureLayer,
   HonuaMapService,
-  HonuaOgcFeatures,
   type HonuaOgcFeatureCollection,
+  HonuaOgcFeatures,
 } from "../core/surfaces.js";
 import { parseFeatureLayerUrl, parseMapServiceUrl } from "../esri-compat/url.js";
 import type {
-  HonuaStyleSpecification,
   HonuaLayerSpecification,
   HonuaSourceSpecification,
+  HonuaStyleSpecification,
 } from "../style/specification.js";
 import {
   isFeatureServiceSource,
+  isHonuaSource,
   isMapServiceSource,
   isOgcFeaturesSource,
-  isHonuaSource,
   parseOgcFeaturesUrl,
 } from "../style/specification.js";
 
 // ── Types ─────────────────────────────────────────────────────
 
 /** A resolved Honua source: either an SDK surface instance or `null` for native MapLibre sources. */
-export type ResolvedMapSource =
-  | HonuaFeatureLayer
-  | HonuaMapService
-  | HonuaOgcFeatureCollection
-  | null;
+export type ResolvedMapSource = HonuaFeatureLayer | HonuaMapService | HonuaOgcFeatureCollection | null;
 
 /** Options for constructing a {@link HonuaMap}. */
 export interface HonuaMapOptions {
@@ -104,7 +100,10 @@ export type HonuaMapEventListener = (event: HonuaMapEvent) => void;
  */
 export class HonuaMap {
   readonly #client: HonuaClient;
-  readonly #sources = new Map<string, { spec: HonuaSourceSpecification | { type: string; [key: string]: unknown }; resolved: ResolvedMapSource }>();
+  readonly #sources = new Map<
+    string,
+    { spec: HonuaSourceSpecification | { type: string; [key: string]: unknown }; resolved: ResolvedMapSource }
+  >();
   readonly #layers: Array<{ id: string; spec: HonuaLayerSpecification }> = [];
   readonly #listeners = new Set<HonuaMapEventListener>();
 
@@ -209,9 +208,7 @@ export class HonuaMap {
   addLayer(spec: HonuaLayerSpecification, beforeId?: string): void {
     const layerSource = spec.source;
     if (layerSource && !this.#sources.has(layerSource)) {
-      throw new Error(
-        `Cannot add layer "${spec.id}": source "${layerSource}" does not exist.`,
-      );
+      throw new Error(`Cannot add layer "${spec.id}": source "${layerSource}" does not exist.`);
     }
     if (this.#layers.some((l) => l.id === spec.id)) {
       throw new Error(`Layer "${spec.id}" already exists.`);
@@ -284,9 +281,7 @@ export class HonuaMap {
 
   /** Get all layers that reference a given source. */
   getLayersForSource(sourceId: string): HonuaLayerSpecification[] {
-    return this.#layers
-      .filter((l) => l.spec.source === sourceId)
-      .map((l) => l.spec);
+    return this.#layers.filter((l) => l.spec.source === sourceId).map((l) => l.spec);
   }
 
   // ── Style serialization ─────────────────────────────────────

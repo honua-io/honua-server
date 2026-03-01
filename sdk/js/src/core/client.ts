@@ -1,8 +1,9 @@
 import type { Client } from "@connectrpc/connect";
 import type { FeatureService } from "../gen/honua/v1/feature_service_pb.js";
-import { HonuaHttpError, HonuaTimeoutError, HonuaNetworkError, HonuaAbortError } from "./errors.js";
+import { HonuaAbortError, HonuaHttpError, HonuaNetworkError, HonuaTimeoutError } from "./errors.js";
+import { fromProtoQueryResponse, toProtoQueryRequest, wrapConnectError } from "./grpc-adapter.js";
 import { decodePbfQueryResponse, isPbfResponse } from "./pbf-decoder.js";
-import { toProtoQueryRequest, fromProtoQueryResponse, wrapConnectError } from "./grpc-adapter.js";
+import { HonuaFeatureLayer, HonuaMapLayer, HonuaMapService, HonuaOgcFeatures, HonuaService } from "./surfaces.js";
 import type {
   ApplyEditsRequest,
   ExportMapRequest,
@@ -25,19 +26,19 @@ import type {
   HonuaQueryResponse,
   HonuaRawRequest,
   HonuaRelatedRecordsResponse,
-  HonuaRetryOptions,
   HonuaRequestContext,
   HonuaRequestInterceptor,
   HonuaRequestMutation,
   HonuaResponseContext,
+  HonuaRetryOptions,
   HonuaServiceMetadata,
   HonuaServicesResponse,
   HonuaTransport,
   MapFindRequest,
   MapIdentifyRequest,
   MapLayerQueryRequest,
-  MapRelatedRecordsRequest,
   MapLegendRequest,
+  MapRelatedRecordsRequest,
   OgcCollectionRequest,
   OgcCreateItemRequest,
   OgcDeleteItemRequest,
@@ -50,13 +51,6 @@ import type {
   QueryMethod,
   QueryRelatedRecordsRequest,
 } from "./types.js";
-import {
-  HonuaFeatureLayer,
-  HonuaMapLayer,
-  HonuaMapService,
-  HonuaOgcFeatures,
-  HonuaService,
-} from "./surfaces.js";
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
@@ -221,9 +215,7 @@ export class HonuaClient {
     return this.transport === "grpc-web";
   }
 
-  public async *queryFeaturesStream(
-    request: QueryFeaturesRequest,
-  ): AsyncGenerator<HonuaFeature[], void, undefined> {
+  public async *queryFeaturesStream(request: QueryFeaturesRequest): AsyncGenerator<HonuaFeature[], void, undefined> {
     const client = await this.ensureConnectClient();
     const protoRequest = toProtoQueryRequest(request);
     const { streamProtoPages } = await import("./grpc-adapter.js");
@@ -283,10 +275,15 @@ export class HonuaClient {
 
     const normalizedPath = normalizePath(request.path);
     const pathWithQuery = params.size > 0 ? `${normalizedPath}?${params.toString()}` : normalizedPath;
-    return this.requestJson(method, pathWithQuery, {
-      headers: request.headers,
-      body: request.body,
-    }, request.signal) as Promise<T>;
+    return this.requestJson(
+      method,
+      pathWithQuery,
+      {
+        headers: request.headers,
+        body: request.body,
+      },
+      request.signal,
+    ) as Promise<T>;
   }
 
   public async getLayerMetadata(serviceId: string, layerId: number): Promise<HonuaLayerMetadata> {
@@ -312,25 +309,29 @@ export class HonuaClient {
 
   public async getOgcFeaturesConformance(request: OgcMetadataRequest = {}): Promise<HonuaOgcConformanceResponse> {
     const params = createOgcMetadataParams(request);
-    return this.requestJson("GET", `/ogc/features/conformance?${params.toString()}`) as Promise<HonuaOgcConformanceResponse>;
+    return this.requestJson(
+      "GET",
+      `/ogc/features/conformance?${params.toString()}`,
+    ) as Promise<HonuaOgcConformanceResponse>;
   }
 
   public async listOgcCollections(request: OgcMetadataRequest = {}): Promise<HonuaOgcCollectionsResponse> {
     const params = createOgcMetadataParams(request);
-    return this.requestJson("GET", `/ogc/features/collections?${params.toString()}`) as Promise<HonuaOgcCollectionsResponse>;
+    return this.requestJson(
+      "GET",
+      `/ogc/features/collections?${params.toString()}`,
+    ) as Promise<HonuaOgcCollectionsResponse>;
   }
 
   public async getOgcCollection(request: OgcCollectionRequest): Promise<HonuaOgcCollectionMetadata> {
     const params = createOgcMetadataParams(request);
-    const path =
-      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}`;
+    const path = `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}`;
     return this.requestJson("GET", `${path}?${params.toString()}`) as Promise<HonuaOgcCollectionMetadata>;
   }
 
   public async getOgcQueryables(request: OgcCollectionRequest): Promise<HonuaOgcQueryablesResponse> {
     const params = createOgcMetadataParams(request);
-    const path =
-      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/queryables`;
+    const path = `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/queryables`;
     return this.requestJson("GET", `${path}?${params.toString()}`) as Promise<HonuaOgcQueryablesResponse>;
   }
 
@@ -363,9 +364,13 @@ export class HonuaClient {
     if (request.crs !== undefined) {
       params.set("crs", request.crs);
     }
-    const path =
-      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/items`;
-    return this.requestJson("GET", `${path}?${params.toString()}`, undefined, request.signal) as Promise<HonuaOgcFeatureCollectionResponse>;
+    const path = `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/items`;
+    return this.requestJson(
+      "GET",
+      `${path}?${params.toString()}`,
+      undefined,
+      request.signal,
+    ) as Promise<HonuaOgcFeatureCollectionResponse>;
   }
 
   public async getOgcItem(request: OgcItemRequest): Promise<HonuaOgcFeatureResponse> {
@@ -376,18 +381,19 @@ export class HonuaClient {
     const path =
       `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
       `/items/${encodeURIComponent(String(request.featureId))}`;
-    return this.requestJson("GET", `${path}?${params.toString()}`, undefined, request.signal) as Promise<HonuaOgcFeatureResponse>;
+    return this.requestJson(
+      "GET",
+      `${path}?${params.toString()}`,
+      undefined,
+      request.signal,
+    ) as Promise<HonuaOgcFeatureResponse>;
   }
 
   public async createOgcItem(request: OgcCreateItemRequest): Promise<HonuaOgcFeatureResponse> {
     const params = createOgcMetadataParams(request);
-    const path =
-      `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/items`;
+    const path = `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}/items`;
     return this.requestJson("POST", `${path}?${params.toString()}`, {
-      headers: mergeHeaders(
-        { "Content-Type": "application/geo+json" },
-        request.headers,
-      ),
+      headers: mergeHeaders({ "Content-Type": "application/geo+json" }, request.headers),
       body: JSON.stringify(request.feature),
     }) as Promise<HonuaOgcFeatureResponse>;
   }
@@ -401,10 +407,7 @@ export class HonuaClient {
       `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
       `/items/${encodeURIComponent(String(request.featureId))}`;
     return this.requestJson("PUT", `${path}?${params.toString()}`, {
-      headers: mergeHeaders(
-        { "Content-Type": "application/geo+json" },
-        request.headers,
-      ),
+      headers: mergeHeaders({ "Content-Type": "application/geo+json" }, request.headers),
       body: JSON.stringify(request.feature),
     }) as Promise<HonuaOgcFeatureResponse>;
   }
@@ -418,10 +421,7 @@ export class HonuaClient {
       `/ogc/features/collections/${encodeURIComponent(String(request.collectionId))}` +
       `/items/${encodeURIComponent(String(request.featureId))}`;
     return this.requestJson("PATCH", `${path}?${params.toString()}`, {
-      headers: mergeHeaders(
-        { "Content-Type": "application/merge-patch+json" },
-        request.headers,
-      ),
+      headers: mergeHeaders({ "Content-Type": "application/merge-patch+json" }, request.headers),
       body: JSON.stringify(request.patch),
     }) as Promise<HonuaOgcFeatureResponse>;
   }
@@ -476,19 +476,34 @@ export class HonuaClient {
     const path = `/rest/services/${encodeURIComponent(request.serviceId)}/FeatureServer/${request.layerId}/query`;
 
     if (usePbf) {
-      return this.requestBinaryWithJsonFallback("GET", `${path}?${params.toString()}`, params, request.signal) as Promise<HonuaQueryResponse>;
+      return this.requestBinaryWithJsonFallback(
+        "GET",
+        `${path}?${params.toString()}`,
+        params,
+        request.signal,
+      ) as Promise<HonuaQueryResponse>;
     }
 
     if (method === "GET") {
-      return this.requestJson("GET", `${path}?${params.toString()}`, undefined, request.signal) as Promise<HonuaQueryResponse>;
+      return this.requestJson(
+        "GET",
+        `${path}?${params.toString()}`,
+        undefined,
+        request.signal,
+      ) as Promise<HonuaQueryResponse>;
     }
 
-    return this.requestJson("POST", path, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    return this.requestJson(
+      "POST",
+      path,
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    }, request.signal) as Promise<HonuaQueryResponse>;
+      request.signal,
+    ) as Promise<HonuaQueryResponse>;
   }
 
   public async queryMapLayer(request: MapLayerQueryRequest): Promise<HonuaQueryResponse> {
@@ -509,15 +524,25 @@ export class HonuaClient {
 
     const path = `/rest/services/${encodeURIComponent(request.serviceId)}/MapServer/${request.layerId}/query`;
     if (method === "GET") {
-      return this.requestJson("GET", `${path}?${params.toString()}`, undefined, request.signal) as Promise<HonuaQueryResponse>;
+      return this.requestJson(
+        "GET",
+        `${path}?${params.toString()}`,
+        undefined,
+        request.signal,
+      ) as Promise<HonuaQueryResponse>;
     }
 
-    return this.requestJson("POST", path, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    return this.requestJson(
+      "POST",
+      path,
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    }, request.signal) as Promise<HonuaQueryResponse>;
+      request.signal,
+    ) as Promise<HonuaQueryResponse>;
   }
 
   public async applyEdits(request: ApplyEditsRequest): Promise<HonuaApplyEditsResponse> {
@@ -568,15 +593,25 @@ export class HonuaClient {
       `/rest/services/${encodeURIComponent(request.serviceId)}` +
       `/FeatureServer/${request.layerId}/queryRelatedRecords`;
     if (method === "GET") {
-      return this.requestJson("GET", `${path}?${params.toString()}`, undefined, request.signal) as Promise<HonuaRelatedRecordsResponse>;
+      return this.requestJson(
+        "GET",
+        `${path}?${params.toString()}`,
+        undefined,
+        request.signal,
+      ) as Promise<HonuaRelatedRecordsResponse>;
     }
 
-    return this.requestJson("POST", path, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    return this.requestJson(
+      "POST",
+      path,
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    }, request.signal) as Promise<HonuaRelatedRecordsResponse>;
+      request.signal,
+    ) as Promise<HonuaRelatedRecordsResponse>;
   }
 
   public async queryMapRelatedRecords(request: MapRelatedRecordsRequest): Promise<HonuaRelatedRecordsResponse> {
@@ -601,18 +636,27 @@ export class HonuaClient {
     }
 
     const path =
-      `/rest/services/${encodeURIComponent(request.serviceId)}` +
-      `/MapServer/${request.layerId}/queryRelatedRecords`;
+      `/rest/services/${encodeURIComponent(request.serviceId)}` + `/MapServer/${request.layerId}/queryRelatedRecords`;
     if (method === "GET") {
-      return this.requestJson("GET", `${path}?${params.toString()}`, undefined, request.signal) as Promise<HonuaRelatedRecordsResponse>;
+      return this.requestJson(
+        "GET",
+        `${path}?${params.toString()}`,
+        undefined,
+        request.signal,
+      ) as Promise<HonuaRelatedRecordsResponse>;
     }
 
-    return this.requestJson("POST", path, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    return this.requestJson(
+      "POST",
+      path,
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    }, request.signal) as Promise<HonuaRelatedRecordsResponse>;
+      request.signal,
+    ) as Promise<HonuaRelatedRecordsResponse>;
   }
 
   public async exportMap(request: ExportMapRequest): Promise<HonuaExportMapResponse> {
@@ -802,11 +846,7 @@ export class HonuaClient {
       method,
       init: {
         method,
-        headers: mergeHeaders(
-          this.defaultHeaders,
-          { Accept: "application/json" },
-          init?.headers,
-        ),
+        headers: mergeHeaders(this.defaultHeaders, { Accept: "application/json" }, init?.headers),
         body: init?.body,
       },
     };
@@ -832,7 +872,11 @@ export class HonuaClient {
           await sleep(this.resolveRetryDelayMs(attempt));
           continue;
         }
-        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: normalizedError, durationMs });
+        await this.applyErrorInterceptors({
+          request: cloneRequestContext(request),
+          error: normalizedError,
+          durationMs,
+        });
         throw normalizedError;
       } finally {
         timeout.dispose();
@@ -876,10 +920,7 @@ export class HonuaClient {
       method,
       init: {
         method,
-        headers: mergeHeaders(
-          this.defaultHeaders,
-          { Accept: "application/x-protobuf, application/json;q=0.9" },
-        ),
+        headers: mergeHeaders(this.defaultHeaders, { Accept: "application/x-protobuf, application/json;q=0.9" }),
       },
     };
 
@@ -904,7 +945,11 @@ export class HonuaClient {
           await sleep(this.resolveRetryDelayMs(attempt));
           continue;
         }
-        await this.applyErrorInterceptors({ request: cloneRequestContext(request), error: normalizedError, durationMs });
+        await this.applyErrorInterceptors({
+          request: cloneRequestContext(request),
+          error: normalizedError,
+          durationMs,
+        });
         throw normalizedError;
       } finally {
         timeout.dispose();
@@ -959,7 +1004,11 @@ export class HonuaClient {
     return next;
   }
 
-  private async applyAfterInterceptors(request: HonuaRequestContext, response: Response, durationMs: number): Promise<void> {
+  private async applyAfterInterceptors(
+    request: HonuaRequestContext,
+    response: Response,
+    durationMs: number,
+  ): Promise<void> {
     for (const interceptor of this.interceptors) {
       const context: HonuaResponseContext = {
         request: cloneRequestContext(request),
@@ -1040,10 +1089,7 @@ function isObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function applyRequestMutation(
-  request: HonuaRequestContext,
-  mutation: HonuaRequestMutation,
-): HonuaRequestContext {
+function applyRequestMutation(request: HonuaRequestContext, mutation: HonuaRequestMutation): HonuaRequestContext {
   const nextInit =
     mutation.init === undefined
       ? request.init
@@ -1248,9 +1294,7 @@ function createTimeoutSignal(
   };
 }
 
-function createOgcMetadataParams(
-  request: OgcMetadataRequest,
-): URLSearchParams {
+function createOgcMetadataParams(request: OgcMetadataRequest): URLSearchParams {
   const params = new URLSearchParams();
   params.set("f", request.responseFormat ?? "json");
   if (request.extraParams) {
@@ -1261,10 +1305,7 @@ function createOgcMetadataParams(
   return params;
 }
 
-function serializeQueryParams(
-  params: URLSearchParams,
-  request: QueryFeaturesRequest | MapLayerQueryRequest,
-): void {
+function serializeQueryParams(params: URLSearchParams, request: QueryFeaturesRequest | MapLayerQueryRequest): void {
   if (request.orderByFields !== undefined) {
     params.set("orderByFields", request.orderByFields);
   }
@@ -1272,7 +1313,12 @@ function serializeQueryParams(
     params.set("objectIds", Array.isArray(request.objectIds) ? request.objectIds.join(",") : String(request.objectIds));
   }
   if (request.geometry !== undefined) {
-    params.set("geometry", typeof request.geometry === "object" && request.geometry !== null ? JSON.stringify(request.geometry) : String(request.geometry));
+    params.set(
+      "geometry",
+      typeof request.geometry === "object" && request.geometry !== null
+        ? JSON.stringify(request.geometry)
+        : String(request.geometry),
+    );
   }
   if (request.geometryType !== undefined) {
     params.set("geometryType", request.geometryType);
@@ -1290,7 +1336,10 @@ function serializeQueryParams(
     params.set("groupByFieldsForStatistics", request.groupByFieldsForStatistics);
   }
   if (request.outStatistics !== undefined) {
-    params.set("outStatistics", Array.isArray(request.outStatistics) ? JSON.stringify(request.outStatistics) : String(request.outStatistics));
+    params.set(
+      "outStatistics",
+      Array.isArray(request.outStatistics) ? JSON.stringify(request.outStatistics) : String(request.outStatistics),
+    );
   }
   if (request.resultOffset !== undefined) {
     params.set("resultOffset", String(request.resultOffset));
@@ -1300,9 +1349,7 @@ function serializeQueryParams(
   }
 }
 
-function normalizeCsv(
-  value: string | readonly (string | number)[],
-): string {
+function normalizeCsv(value: string | readonly (string | number)[]): string {
   if (typeof value === "string") {
     return value;
   }

@@ -238,12 +238,7 @@ interface LayerWithId {
 }
 
 function isLayerWithId(value: unknown): value is LayerWithId {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "id" in value &&
-    typeof value.id === "string"
-  );
+  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string";
 }
 
 function extractNestedLayers(layer: unknown): unknown[] {

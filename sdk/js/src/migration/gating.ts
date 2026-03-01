@@ -26,15 +26,10 @@ export function evaluateMigrationGates(
   }
 
   if (options.failOnUnhandled && report.unhandledArcGisModules.length > 0) {
-    failures.push(
-      `${report.unhandledArcGisModules.length} ArcGIS modules remain outside codemod scope`,
-    );
+    failures.push(`${report.unhandledArcGisModules.length} ArcGIS modules remain outside codemod scope`);
   }
 
-  if (
-    options.maxManualRatio !== undefined &&
-    report.manualRewriteMetric.ratio > options.maxManualRatio
-  ) {
+  if (options.maxManualRatio !== undefined && report.manualRewriteMetric.ratio > options.maxManualRatio) {
     failures.push(
       `manual rewrite ratio ${report.manualRewriteMetric.ratio.toFixed(3)} exceeds max ${options.maxManualRatio.toFixed(3)}`,
     );

@@ -1,6 +1,6 @@
+import type { QueryMethod } from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import type { FeatureLayerCompat } from "./feature-layer.js";
-import type { QueryMethod } from "../core/types.js";
 
 export interface FeatureTableCompatOptions {
   view?: unknown;
@@ -97,9 +97,7 @@ export class FeatureTableHighlightIdsCompat {
   }
 
   public push(...objectIds: readonly number[]): number {
-    const additions = normalizeUniqueObjectIds(objectIds).filter(
-      (objectId) => !this.values.includes(objectId),
-    );
+    const additions = normalizeUniqueObjectIds(objectIds).filter((objectId) => !this.values.includes(objectId));
     if (additions.length === 0) {
       return this.values.length;
     }
@@ -281,7 +279,10 @@ export class FeatureTableCompat {
     this.selectionMode = options.selectionMode ?? "multiple";
     this.rowSelectionEnabled = options.rowSelectionEnabled ?? true;
     this.highlightEnabled = options.highlightEnabled ?? true;
-    this.pageSize = typeof options.pageSize === "number" && Number.isFinite(options.pageSize) ? Math.max(1, Math.trunc(options.pageSize)) : 25;
+    this.pageSize =
+      typeof options.pageSize === "number" && Number.isFinite(options.pageSize)
+        ? Math.max(1, Math.trunc(options.pageSize))
+        : 25;
     this.autoRefreshEnabled = options.autoRefreshEnabled ?? true;
     this.highlightIds = new FeatureTableHighlightIdsCompat(options.highlightIds);
     this.rows = [];
@@ -486,10 +487,7 @@ export class FeatureTableCompat {
   }
 }
 
-function extractRows(
-  response: unknown,
-  objectIdField: string,
-): readonly FeatureTableRowCompat[] {
+function extractRows(response: unknown, objectIdField: string): readonly FeatureTableRowCompat[] {
   if (!isRecord(response) || !Array.isArray(response.features)) {
     return [];
   }
@@ -512,10 +510,7 @@ function extractRows(
   return rows;
 }
 
-function extractObjectId(
-  attributes: Record<string, unknown>,
-  objectIdField: string,
-): number | undefined {
+function extractObjectId(attributes: Record<string, unknown>, objectIdField: string): number | undefined {
   const preferred = Number(attributes[objectIdField]);
   if (Number.isFinite(preferred)) {
     return preferred;
@@ -562,11 +557,7 @@ function normalizeSpliceStart(start: number, length: number): number {
   return Math.min(integer, length);
 }
 
-function normalizeSpliceDeleteCount(
-  deleteCount: number | undefined,
-  start: number,
-  length: number,
-): number {
+function normalizeSpliceDeleteCount(deleteCount: number | undefined, start: number, length: number): number {
   if (deleteCount === undefined) {
     return Math.max(length - start, 0);
   }

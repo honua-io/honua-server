@@ -65,9 +65,7 @@ export class CoordinateConversionCompat {
     return this;
   }
 
-  public async when(
-    callback?: (widget: CoordinateConversionCompat) => void,
-  ): Promise<CoordinateConversionCompat> {
+  public async when(callback?: (widget: CoordinateConversionCompat) => void): Promise<CoordinateConversionCompat> {
     const widget = await this.load();
     if (callback) {
       callback(widget);
@@ -75,10 +73,7 @@ export class CoordinateConversionCompat {
     return widget;
   }
 
-  public watch(
-    propertyName: string,
-    listener: (value: unknown) => void,
-  ): CoordinateConversionHandleCompat {
+  public watch(propertyName: string, listener: (value: unknown) => void): CoordinateConversionHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();

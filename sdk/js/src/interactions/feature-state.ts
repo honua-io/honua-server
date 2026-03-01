@@ -16,19 +16,22 @@ export interface FeatureStateMap {
     target: { source: string; id: string | number; sourceLayer?: string },
     state: Record<string, unknown>,
   ): void;
-  getFeatureState(
-    target: { source: string; id: string | number; sourceLayer?: string },
-  ): Record<string, unknown>;
-  removeFeatureState(
-    target: { source: string; id: string | number; sourceLayer?: string },
-    key?: string,
-  ): void;
+  getFeatureState(target: { source: string; id: string | number; sourceLayer?: string }): Record<string, unknown>;
+  removeFeatureState(target: { source: string; id: string | number; sourceLayer?: string }, key?: string): void;
 }
 
 /** Minimal subset of a MapLibre `Map` needed for event subscription. */
 export interface MapEventTarget {
-  on(event: string, layerOrHandler: string | ((...args: unknown[]) => void), handler?: (...args: unknown[]) => void): void;
-  off(event: string, layerOrHandler: string | ((...args: unknown[]) => void), handler?: (...args: unknown[]) => void): void;
+  on(
+    event: string,
+    layerOrHandler: string | ((...args: unknown[]) => void),
+    handler?: (...args: unknown[]) => void,
+  ): void;
+  off(
+    event: string,
+    layerOrHandler: string | ((...args: unknown[]) => void),
+    handler?: (...args: unknown[]) => void,
+  ): void;
 }
 
 /** A map that supports both feature state and events. */
@@ -127,10 +130,7 @@ export interface HoverHandle {
  * hover.remove();
  * ```
  */
-export function createHoverHandler(
-  map: InteractiveMap,
-  options: HoverHandlerOptions,
-): HoverHandle {
+export function createHoverHandler(map: InteractiveMap, options: HoverHandlerOptions): HoverHandle {
   const { source, layer, stateKey = "hover", sourceLayer } = options;
   let hoveredId: string | number | undefined;
 
@@ -140,24 +140,15 @@ export function createHoverHandler(
     if (featureId === undefined || featureId === null) return;
 
     if (hoveredId !== undefined && hoveredId !== featureId) {
-      map.setFeatureState(
-        { source, id: hoveredId, sourceLayer },
-        { [stateKey]: false },
-      );
+      map.setFeatureState({ source, id: hoveredId, sourceLayer }, { [stateKey]: false });
     }
     hoveredId = featureId;
-    map.setFeatureState(
-      { source, id: hoveredId, sourceLayer },
-      { [stateKey]: true },
-    );
+    map.setFeatureState({ source, id: hoveredId, sourceLayer }, { [stateKey]: true });
   }
 
   function onMouseLeave(): void {
     if (hoveredId !== undefined) {
-      map.setFeatureState(
-        { source, id: hoveredId, sourceLayer },
-        { [stateKey]: false },
-      );
+      map.setFeatureState({ source, id: hoveredId, sourceLayer }, { [stateKey]: false });
       hoveredId = undefined;
     }
   }
@@ -225,27 +216,14 @@ export interface SelectionHandle {
  * });
  * ```
  */
-export function createSelectionHandler(
-  map: InteractiveMap,
-  options: SelectionHandlerOptions,
-): SelectionHandle {
-  const {
-    source,
-    layer,
-    stateKey = "selected",
-    multiSelect = false,
-    sourceLayer,
-    onChange,
-  } = options;
+export function createSelectionHandler(map: InteractiveMap, options: SelectionHandlerOptions): SelectionHandle {
+  const { source, layer, stateKey = "selected", multiSelect = false, sourceLayer, onChange } = options;
 
   const selected = new Set<string | number>();
 
   function clearAll(): void {
     for (const id of selected) {
-      map.setFeatureState(
-        { source, id, sourceLayer },
-        { [stateKey]: false },
-      );
+      map.setFeatureState({ source, id, sourceLayer }, { [stateKey]: false });
     }
     selected.clear();
   }
@@ -261,20 +239,14 @@ export function createSelectionHandler(
 
     if (selected.has(featureId)) {
       // Deselect
-      map.setFeatureState(
-        { source, id: featureId, sourceLayer },
-        { [stateKey]: false },
-      );
+      map.setFeatureState({ source, id: featureId, sourceLayer }, { [stateKey]: false });
       selected.delete(featureId);
     } else {
       // New selection
       if (!multiSelect) {
         clearAll();
       }
-      map.setFeatureState(
-        { source, id: featureId, sourceLayer },
-        { [stateKey]: true },
-      );
+      map.setFeatureState({ source, id: featureId, sourceLayer }, { [stateKey]: true });
       selected.add(featureId);
     }
     notifyChange();
@@ -298,19 +270,13 @@ export function createSelectionHandler(
       if (!multiSelect) {
         clearAll();
       }
-      map.setFeatureState(
-        { source, id, sourceLayer },
-        { [stateKey]: true },
-      );
+      map.setFeatureState({ source, id, sourceLayer }, { [stateKey]: true });
       selected.add(id);
       notifyChange();
     },
     deselect(id: string | number) {
       if (selected.has(id)) {
-        map.setFeatureState(
-          { source, id, sourceLayer },
-          { [stateKey]: false },
-        );
+        map.setFeatureState({ source, id, sourceLayer }, { [stateKey]: false });
         selected.delete(id);
         notifyChange();
       }
