@@ -60,6 +60,34 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/settings")]
+    public async Task GetServiceSettings_WithDefaultMetadata_IncludesGrpcInEnabledAndAvailableProtocols()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/services/test/settings");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        var enabledProtocols = data.GetProperty("enabledProtocols")
+            .EnumerateArray()
+            .Select(protocol => protocol.GetString())
+            .OfType<string>()
+            .ToArray();
+
+        var availableProtocols = data.GetProperty("availableProtocols")
+            .EnumerateArray()
+            .Select(protocol => protocol.GetString())
+            .OfType<string>()
+            .ToArray();
+
+        enabledProtocols.Should().Contain("Grpc");
+        availableProtocols.Should().Contain("Grpc");
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
     public async Task UpdateProtocols_WithValidPayload_ReturnsUpdatedOrNotFound()
     {
@@ -91,5 +119,100 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var response = await _client.PutAsync("/api/v1/admin/services/test/mapserver", content);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer")]
+    public async Task UpdateProtocols_DisableFeatureServer_BlocksFeatureServerServiceMetadata()
+    {
+        var body = """
+            {
+              "enabledProtocols": ["MapServer", "OgcFeatures", "OData", "Grpc"]
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var featureServerResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer?f=json");
+        featureServerResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
+    public async Task UpdateProtocols_DisableFeatureServer_BlocksFeatureServerLayerMetadata()
+    {
+        var body = """
+            {
+              "enabledProtocols": ["MapServer", "OgcFeatures", "OData", "Grpc"]
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var layerMetadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/1?f=json");
+        layerMetadataResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task UpdateProtocols_DisableFeatureServer_BlocksLayerTiles()
+    {
+        var body = """
+            {
+              "enabledProtocols": ["MapServer", "OgcFeatures", "OData", "Grpc"]
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var tileResponse = await _client.GetAsync("/tiles/1/0/0/0.mvt");
+        tileResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
+    [Endpoint("GET /odata/Layers({layerId})")]
+    public async Task UpdateProtocols_DisableOData_BlocksODataLayerMetadata()
+    {
+        var body = """
+            {
+              "enabledProtocols": ["FeatureServer", "MapServer", "OgcFeatures", "Grpc"]
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var odataResponse = await _client.GetAsync("/odata/Layers(1)");
+        odataResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    public async Task UpdateProtocols_DisableOgcFeatures_BlocksOgcCollectionMetadata()
+    {
+        var body = """
+            {
+              "enabledProtocols": ["FeatureServer", "MapServer", "OData", "Grpc"]
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var ogcResponse = await _client.GetAsync("/ogc/features/collections/1");
+        ogcResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

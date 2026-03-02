@@ -46,14 +46,15 @@
                 </MudButton>
             </MudStack>
             <MudStack Spacing="1">
-                <MudSwitch T="bool" Value="@_featureServerEnabled" ValueChanged="@(v => _featureServerEnabled = v)"
-                           Label="FeatureServer" Color="Color.Primary" data-testid="toggle-featureserver" />
-                <MudSwitch T="bool" Value="@_mapServerEnabled" ValueChanged="@(v => _mapServerEnabled = v)"
-                           Label="MapServer" Color="Color.Primary" data-testid="toggle-mapserver" />
-                <MudSwitch T="bool" Value="@_ogcFeaturesEnabled" ValueChanged="@(v => _ogcFeaturesEnabled = v)"
-                           Label="OGC Features" Color="Color.Primary" data-testid="toggle-ogcfeatures" />
-                <MudSwitch T="bool" Value="@_odataEnabled" ValueChanged="@(v => _odataEnabled = v)"
-                           Label="OData" Color="Color.Primary" data-testid="toggle-odata" />
+                @foreach (var protocol in _protocolToggles)
+                {
+                    <MudSwitch T="bool"
+                               Value="@protocol.Enabled"
+                               ValueChanged="@(enabled => SetProtocolEnabled(protocol.Name, enabled))"
+                               Label="@protocol.Label"
+                               Color="Color.Primary"
+                               data-testid="@protocol.TestId" />
+                }
             </MudStack>
         </MudPaper>
 
@@ -103,18 +104,23 @@
 </MudStack>
 
 @code {
+    private static readonly string[] _fallbackProtocols = ["FeatureServer", "MapServer", "OgcFeatures", "OData", "Grpc"];
+
+    private sealed class ProtocolToggle
+    {
+        public required string Name { get; init; }
+        public required string Label { get; init; }
+        public required string TestId { get; init; }
+        public bool Enabled { get; set; }
+    }
+
     private ServiceSummary[] _services = [];
     private string? _selectedService;
     private ServiceSettingsResponse? _settings;
     private string? _errorMessage;
     private bool _isLoadingServices;
     private bool _isSaving;
-
-    // Protocol toggles
-    private bool _featureServerEnabled;
-    private bool _mapServerEnabled;
-    private bool _ogcFeaturesEnabled;
-    private bool _odataEnabled;
+    private List<ProtocolToggle> _protocolToggles = [];
 
     // MapServer rendering fields
     private int _maxImageWidth;
@@ -187,10 +193,17 @@
 
     private void ApplySettingsToFields(ServiceSettingsResponse settings)
     {
-        _featureServerEnabled = settings.EnabledProtocols.Contains("FeatureServer");
-        _mapServerEnabled = settings.EnabledProtocols.Contains("MapServer");
-        _ogcFeaturesEnabled = settings.EnabledProtocols.Contains("OgcFeatures");
-        _odataEnabled = settings.EnabledProtocols.Contains("OData");
+        var enabledSet = new HashSet<string>(settings.EnabledProtocols ?? [], StringComparer.Ordinal);
+        var availableProtocols = NormalizeAvailableProtocols(settings.AvailableProtocols, enabledSet);
+        _protocolToggles = availableProtocols
+            .Select(protocol => new ProtocolToggle
+            {
+                Name = protocol,
+                Label = GetProtocolLabel(protocol),
+                TestId = $"toggle-{protocol.ToLowerInvariant()}",
+                Enabled = enabledSet.Contains(protocol)
+            })
+            .ToList();
 
         _maxImageWidth = settings.MapServer.MaxImageWidth;
         _maxImageHeight = settings.MapServer.MaxImageHeight;
@@ -211,13 +224,12 @@
         StateHasChanged();
         try
         {
-            var protocols = new List<string>();
-            if (_featureServerEnabled) protocols.Add("FeatureServer");
-            if (_mapServerEnabled) protocols.Add("MapServer");
-            if (_ogcFeaturesEnabled) protocols.Add("OgcFeatures");
-            if (_odataEnabled) protocols.Add("OData");
+            var protocols = _protocolToggles
+                .Where(static protocol => protocol.Enabled)
+                .Select(static protocol => protocol.Name)
+                .ToArray();
 
-            var result = await SettingsClient.UpdateProtocolsAsync(_selectedService, protocols.ToArray());
+            var result = await SettingsClient.UpdateProtocolsAsync(_selectedService, protocols);
             if (!result.Success)
             {
                 _errorMessage = result.Message ?? "Failed to update protocols.";
@@ -238,6 +250,43 @@
         {
             _isSaving = false;
         }
+    }
+
+    private void SetProtocolEnabled(string protocolName, bool enabled)
+    {
+        var toggle = _protocolToggles.FirstOrDefault(protocol => string.Equals(protocol.Name, protocolName, StringComparison.Ordinal));
+        if (toggle is not null)
+        {
+            toggle.Enabled = enabled;
+        }
+    }
+
+    private static string[] NormalizeAvailableProtocols(string[]? availableProtocols, HashSet<string> enabledProtocols)
+    {
+        var normalized = (availableProtocols is { Length: > 0 } ? availableProtocols : _fallbackProtocols)
+            .Where(static protocol => !string.IsNullOrWhiteSpace(protocol))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var enabledProtocol in enabledProtocols)
+        {
+            if (!normalized.Contains(enabledProtocol, StringComparer.Ordinal))
+            {
+                normalized.Add(enabledProtocol);
+            }
+        }
+
+        return normalized.ToArray();
+    }
+
+    private static string GetProtocolLabel(string protocolName)
+    {
+        return protocolName switch
+        {
+            "OgcFeatures" => "OGC Features",
+            "Grpc" => "gRPC",
+            _ => protocolName
+        };
     }
 
     private async Task SaveMapServerSettingsAsync()

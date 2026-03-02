@@ -493,16 +493,20 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var queryStopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, query, cancellationToken);
+                string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
+                    [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
+                var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+                var queryForExecution = shouldApplyDistinct
+                    ? query with { Limit = null, Offset = null }
+                    : query;
+                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken);
                 queryStopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "query", serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
 
-                string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
-                    [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
-
-                if (validatedParams.ReturnDistinctValues && outFields is { Length: > 0 })
+                if (shouldApplyDistinct)
                 {
-                    result = ApplyDistinctValues(result, outFields);
+                    result = ApplyDistinctValues(result, outFields!);
+                    result = ApplyPaginationWindow(result, query.Offset, query.Limit);
                 }
 
                 (object? formattedResponse, string? contentType) = _queryServices.FormatQueryResult(
@@ -1100,6 +1104,37 @@ internal sealed class FeatureServerQueryHandler(
         }
 
         return QueryResult<Feature>.Create(distinct.Count, distinct.ToImmutable());
+    }
+
+    private static QueryResult<Feature> ApplyPaginationWindow(
+        QueryResult<Feature> result,
+        int? offset,
+        int? limit)
+    {
+        if (result.Items.IsDefaultOrEmpty)
+        {
+            return result;
+        }
+
+        var totalCount = result.Items.Length;
+        var effectiveOffset = Math.Max(0, offset ?? 0);
+        if (effectiveOffset >= totalCount)
+        {
+            return QueryResult<Feature>.Create(totalCount, ImmutableArray<Feature>.Empty, false);
+        }
+
+        var remaining = totalCount - effectiveOffset;
+        var effectiveLimit = limit.HasValue
+            ? Math.Max(0, limit.Value)
+            : remaining;
+        var take = Math.Min(remaining, effectiveLimit);
+        var pageItems = result.Items
+            .Skip(effectiveOffset)
+            .Take(take)
+            .ToImmutableArray();
+        var hasMore = effectiveOffset + take < totalCount;
+
+        return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
     }
 
     private static string BuildDistinctKey(Feature feature, string[] outFields)

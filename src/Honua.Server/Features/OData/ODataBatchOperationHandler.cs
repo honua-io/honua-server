@@ -550,6 +550,11 @@ internal sealed partial class ODataBatchOperationHandler(
         CancellationToken cancellationToken)
     {
         var layerCache = new Dictionary<int, LayerDefinition?>();
+        var services = await _batchDependencies.LayerCatalog.ListServicesAsync(cancellationToken);
+        var protocolLayerIds = services
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
+            .SelectMany(service => service.Layers.Select(layer => layer.Id))
+            .ToHashSet();
         var requiresAuth = false;
         var hasDenied = false;
 
@@ -569,6 +574,18 @@ internal sealed partial class ODataBatchOperationHandler(
             if (layer == null)
             {
                 continue;
+            }
+
+            var protocolEnabled = protocolLayerIds.Count == 0
+                ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
+                : protocolLayerIds.Contains(layerId);
+            if (!protocolEnabled)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "ResourceNotFound",
+                    "OData is not enabled for this service.",
+                    StatusCodes.Status404NotFound);
             }
 
             var scope = IsMutationMethod(request.Method) ? AccessScope.Write : AccessScope.Read;

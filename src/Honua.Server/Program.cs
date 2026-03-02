@@ -494,6 +494,9 @@ app.UsePerformanceMonitoring();
 // Add global exception handling middleware (after correlation ID for exception logging)
 app.UseGlobalExceptionHandling();
 
+// Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
+app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
+
 // Add CORS middleware before auth to handle preflight requests
 app.UseHonuaCors(app.Environment);
 
@@ -567,6 +570,9 @@ app.MapCspViolationReportEndpoint();
 
 // Configure FeatureServer, OGC, and OData endpoints
 app.MapServerFeatureEndpoints();
+
+// Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
+app.MapGrpcService<Honua.Server.Features.Grpc.HonuaFeatureService>();
 
 // Configure file import endpoints
 app.MapImportEndpoints();

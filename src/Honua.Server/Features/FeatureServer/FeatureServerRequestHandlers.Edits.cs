@@ -202,14 +202,19 @@ internal static partial class FeatureServerEndpoints
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-        if (!resourceResult.IsValid)
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            return (null, StandardErrorHelpers.CreateNotFound(context, errorMessage));
+            return (null, validationResult.ErrorResult!);
         }
 
-        var layer = resourceResult.Resource!.Layer;
+        var layer = validationResult.Layer!;
         var query = new FeatureQuery
         {
             Where = whereClause,

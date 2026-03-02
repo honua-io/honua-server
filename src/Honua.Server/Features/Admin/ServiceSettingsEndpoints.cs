@@ -113,8 +113,18 @@ internal static class ServiceSettingsEndpoints
     {
         try
         {
+            if (request.EnabledProtocols is null)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Enabled protocols payload is required."));
+            }
+
+            var normalizedProtocols = request.EnabledProtocols
+                .Where(static protocol => !string.IsNullOrWhiteSpace(protocol))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
             // Validate protocol names
-            var invalid = request.EnabledProtocols.Except(ServiceProtocols.All).ToArray();
+            var invalid = normalizedProtocols.Except(ServiceProtocols.All, StringComparer.Ordinal).ToArray();
             if (invalid.Length > 0)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(
@@ -129,7 +139,7 @@ internal static class ServiceSettingsEndpoints
 
             var metadata = (service.Metadata ?? new CatalogMetadata()) with
             {
-                EnabledProtocols = request.EnabledProtocols
+                EnabledProtocols = normalizedProtocols
             };
 
             await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
@@ -206,11 +216,13 @@ internal static class ServiceSettingsEndpoints
     private static ServiceSettingsResponse BuildSettingsResponse(ServiceDefinition service)
     {
         var mapConfig = service.Metadata?.MapServer ?? new MapServerConfig();
+        var enabledProtocols = service.Metadata?.EnabledProtocols ?? ServiceProtocols.All;
 
         return new ServiceSettingsResponse
         {
             ServiceName = service.Name,
-            EnabledProtocols = service.Metadata?.EnabledProtocols ?? ServiceProtocols.All,
+            EnabledProtocols = enabledProtocols,
+            AvailableProtocols = ServiceProtocols.All,
             MapServer = new MapServerSettingsResponse
             {
                 MaxImageWidth = mapConfig.MaxImageWidth,

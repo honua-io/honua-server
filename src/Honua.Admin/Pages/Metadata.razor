@@ -1,0 +1,285 @@
+@page "/metadata"
+@attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
+@inject IMetadataClient MetadataClient
+
+<PageTitle>Metadata</PageTitle>
+
+<MudStack Spacing="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h4" HtmlTag="h1">Metadata</MudText>
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   Disabled="@_isLoading"
+                   OnClick="RefreshAsync"
+                   data-testid="metadata-refresh">
+            Refresh
+        </MudButton>
+    </MudStack>
+
+    <MudText Typo="Typo.body2">
+        Inspect control-plane metadata capabilities, manifest state, and registered resources.
+    </MudText>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Dense="true">@_errorMessage</MudAlert>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <MudAlert Severity="Severity.Success" Dense="true">@_statusMessage</MudAlert>
+    }
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.subtitle2">Server</MudText>
+                <MudText Typo="Typo.body2">Version: @(_version?.Version ?? "-")</MudText>
+                <MudText Typo="Typo.body2">Metadata API: @(_version?.MetadataApiVersion ?? "-")</MudText>
+                <MudText Typo="Typo.body2">
+                    Server time: @(_version?.ServerTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.subtitle2">Capabilities</MudText>
+                <MudText Typo="Typo.body2">
+                    Versions: @(_capabilities is null ? "-" : string.Join(", ", _capabilities.MetadataApiVersions))
+                </MudText>
+                <MudText Typo="Typo.body2">
+                    Resource kinds: @(_capabilities is null ? "-" : string.Join(", ", _capabilities.ResourceKinds))
+                </MudText>
+                <MudText Typo="Typo.body2">
+                    Manifest apply: @(_capabilities?.ManifestSupported == true ? "Enabled" : "Disabled")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.subtitle2">Manifest</MudText>
+            <MudButtonGroup Variant="Variant.Outlined" Color="Color.Primary">
+                <MudButton OnClick="@(() => ApplyManifestAsync(dryRun: true))"
+                           Disabled="@(_isLoading || _isApplyingManifest || _manifest?.Resources.Length is null or 0)"
+                           data-testid="metadata-manifest-dry-run">
+                    Dry run
+                </MudButton>
+                <MudButton OnClick="@(() => ApplyManifestAsync(dryRun: false))"
+                           Disabled="@(_isLoading || _isApplyingManifest || _manifest?.Resources.Length is null or 0)"
+                           data-testid="metadata-manifest-apply">
+                    Apply
+                </MudButton>
+            </MudButtonGroup>
+        </MudStack>
+        <MudText Typo="Typo.body2">Generated: @(_manifest?.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-")</MudText>
+        <MudText Typo="Typo.body2">Resources: @(_manifest?.Resources.Length ?? 0)</MudText>
+        <MudText Typo="Typo.body2">Drifted resources: @(_manifest?.DriftedResources.Length ?? 0)</MudText>
+        <MudText Typo="Typo.body2">Manifest hash: @(_manifest?.ManifestHash ?? "-")</MudText>
+        @if (_lastApplyResult is not null)
+        {
+            <MudDivider Class="my-2" />
+            <MudText Typo="Typo.body2">Last apply (dry run: @(_lastApplyResult.DryRun ? "yes" : "no"))</MudText>
+            <MudText Typo="Typo.body2">
+                Created: @_lastApplyResult.Summary.Created, Updated: @_lastApplyResult.Summary.Updated, Deleted: @_lastApplyResult.Summary.Deleted, Skipped: @_lastApplyResult.Summary.Skipped
+            </MudText>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Resources</MudText>
+        <MudTable Items="_resources" Dense="true" Hover="true" data-testid="metadata-resources-table">
+            <HeaderContent>
+                <MudTh>Kind</MudTh>
+                <MudTh>Namespace</MudTh>
+                <MudTh>Name</MudTh>
+                <MudTh>Version</MudTh>
+                <MudTh>Updated</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Kind">@context.Kind</MudTd>
+                <MudTd DataLabel="Namespace">@context.Metadata?.Namespace</MudTd>
+                <MudTd DataLabel="Name">@context.Metadata?.Name</MudTd>
+                <MudTd DataLabel="Version">@context.Metadata?.ResourceVersion</MudTd>
+                <MudTd DataLabel="Updated">@(context.Metadata?.UpdatedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "-")</MudTd>
+                <MudTd DataLabel="Actions" Style="text-align: right;">
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Error"
+                               Disabled="@(_isLoading || _isDeletingResource)"
+                               OnClick="@(() => DeleteResourceAsync(context))"
+                               data-testid="metadata-delete-resource">
+                        Delete
+                    </MudButton>
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2" Class="pa-4">No metadata resources found.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+</MudStack>
+
+@code {
+    private AdminVersionResponse? _version;
+    private AdminCapabilitiesResponse? _capabilities;
+    private MetadataManifest? _manifest;
+    private MetadataResource[] _resources = [];
+    private string? _errorMessage;
+    private string? _statusMessage;
+    private bool _isLoading;
+    private bool _isApplyingManifest;
+    private bool _isDeletingResource;
+    private ManifestApplyResult? _lastApplyResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private Task RefreshAsync()
+        => RefreshAsync(clearStatus: true);
+
+    private async Task RefreshAsync(bool clearStatus)
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        if (clearStatus)
+        {
+            _statusMessage = null;
+        }
+        StateHasChanged();
+
+        try
+        {
+            var versionTask = MetadataClient.GetVersionAsync();
+            var capabilitiesTask = MetadataClient.GetCapabilitiesAsync();
+            var manifestTask = MetadataClient.GetManifestAsync();
+            var resourcesTask = MetadataClient.ListResourcesAsync();
+
+            await Task.WhenAll(versionTask, capabilitiesTask, manifestTask, resourcesTask);
+
+            Assign(versionTask.Result, value => _version = value, "Failed to load metadata version.");
+            Assign(capabilitiesTask.Result, value => _capabilities = value, "Failed to load metadata capabilities.");
+            Assign(manifestTask.Result, value => _manifest = value, "Failed to load metadata manifest.");
+            Assign(resourcesTask.Result, value => _resources = value, "Failed to load metadata resources.");
+        }
+        catch (Exception)
+        {
+            _errorMessage = "Failed to load metadata information.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ApplyManifestAsync(bool dryRun)
+    {
+        if (_manifest?.Resources is null || _manifest.Resources.Length == 0)
+        {
+            _errorMessage = "Manifest has no resources to apply.";
+            return;
+        }
+
+        _isApplyingManifest = true;
+        _errorMessage = null;
+        _statusMessage = null;
+
+        try
+        {
+            var request = new ManifestApplyRequest
+            {
+                Resources = _manifest.Resources,
+                DryRun = dryRun,
+                Prune = false
+            };
+
+            var result = await MetadataClient.ApplyManifestAsync(request);
+            if (!result.Success || result.Data is null)
+            {
+                _errorMessage = result.Message ?? "Failed to apply manifest.";
+                return;
+            }
+
+            _lastApplyResult = result.Data;
+            _statusMessage = dryRun
+                ? "Manifest dry run completed."
+                : "Manifest applied successfully.";
+
+            if (!dryRun)
+            {
+                await RefreshAsync(clearStatus: false);
+            }
+        }
+        finally
+        {
+            _isApplyingManifest = false;
+        }
+    }
+
+    private async Task DeleteResourceAsync(MetadataResource resource)
+    {
+        var kind = resource.Kind;
+        var @namespace = resource.Metadata?.Namespace;
+        var name = resource.Metadata?.Name;
+        if (string.IsNullOrWhiteSpace(kind) ||
+            string.IsNullOrWhiteSpace(@namespace) ||
+            string.IsNullOrWhiteSpace(name))
+        {
+            _errorMessage = "Resource identifier is missing.";
+            return;
+        }
+
+        _isDeletingResource = true;
+        _errorMessage = null;
+        _statusMessage = null;
+        try
+        {
+            var getResult = await MetadataClient.GetResourceAsync(kind, @namespace, name);
+            if (!getResult.Success || getResult.Data is null)
+            {
+                _errorMessage = getResult.Message ?? "Failed to load resource for deletion.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(getResult.Data.ETag))
+            {
+                _errorMessage = "Resource ETag missing; cannot safely delete.";
+                return;
+            }
+
+            var deleteResult = await MetadataClient.DeleteResourceAsync(kind, @namespace, name, getResult.Data.ETag);
+            if (!deleteResult.Success)
+            {
+                _errorMessage = deleteResult.Message ?? "Failed to delete resource.";
+                return;
+            }
+
+            _statusMessage = "Resource deleted.";
+            await RefreshAsync(clearStatus: false);
+        }
+        finally
+        {
+            _isDeletingResource = false;
+        }
+    }
+
+    private void Assign<T>(ApiResult<T> result, Action<T> assignData, string fallbackMessage)
+    {
+        if (result.Success && result.Data is not null)
+        {
+            assignData(result.Data);
+            return;
+        }
+
+        _errorMessage ??= result.Message ?? fallbackMessage;
+    }
+}

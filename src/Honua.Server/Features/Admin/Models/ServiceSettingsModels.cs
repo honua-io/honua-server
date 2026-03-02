@@ -19,6 +19,11 @@ internal sealed class ServiceSettingsResponse
     public required string[] EnabledProtocols { get; init; }
 
     /// <summary>
+    /// Protocols supported by this server build.
+    /// </summary>
+    public required string[] AvailableProtocols { get; init; }
+
+    /// <summary>
     /// MapServer rendering configuration.
     /// </summary>
     public required MapServerSettingsResponse MapServer { get; init; }
@@ -60,7 +65,7 @@ internal sealed class MapServerSettingsResponse
 internal sealed class UpdateProtocolsRequest
 {
     /// <summary>
-    /// Protocols to enable. Valid values: "FeatureServer", "MapServer", "OgcFeatures", "OData".
+    /// Protocols to enable. Valid values: "FeatureServer", "MapServer", "OgcFeatures", "OData", "Grpc".
     /// </summary>
     public required string[] EnabledProtocols { get; init; }
 }

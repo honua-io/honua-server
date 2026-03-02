@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -51,6 +52,7 @@ internal static partial class FeatureServerEndpoints
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
             context,
             layerId,
+            requiredProtocol: ServiceProtocols.FeatureServer,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {

@@ -9,8 +9,8 @@ namespace Honua.Admin.Playwright;
 public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly string[] _defaultProtocols = { "FeatureServer", "MapServer", "OgcFeatures", "OData" };
-    private static readonly string[] _updatedProtocols = { "FeatureServer", "OgcFeatures" };
+    private static readonly string[] _defaultProtocols = { "FeatureServer", "MapServer", "OgcFeatures", "OData", "Grpc" };
+    private static readonly string[] _updatedProtocols = { "FeatureServer", "OgcFeatures", "Grpc" };
     private readonly PlaywrightFixture _fixture;
 
     public MapServerSettingsTests(PlaywrightFixture fixture)
@@ -54,6 +54,7 @@ public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
             await page.GetByTestId("toggle-mapserver").WaitForAsync();
             await page.GetByTestId("toggle-ogcfeatures").WaitForAsync();
             await page.GetByTestId("toggle-odata").WaitForAsync();
+            await page.GetByTestId("toggle-grpc").WaitForAsync();
         });
     }
 
@@ -81,6 +82,19 @@ public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
                 if (route.Request.Method.Equals("PUT", StringComparison.OrdinalIgnoreCase))
                 {
                     protocolsUpdated = true;
+                    var requestBody = route.Request.PostData ?? "{}";
+                    using var requestJson = JsonDocument.Parse(requestBody);
+                    var sentProtocols = requestJson.RootElement
+                        .GetProperty("enabledProtocols")
+                        .EnumerateArray()
+                        .Select(protocol => protocol.GetString())
+                        .OfType<string>()
+                        .ToArray();
+
+                    Assert.Contains("Grpc", sentProtocols);
+                    Assert.DoesNotContain("MapServer", sentProtocols);
+                    Assert.DoesNotContain("OData", sentProtocols);
+
                     var updatedSettings = CreateDefaultSettings();
                     updatedSettings.enabledProtocols = _updatedProtocols;
 
@@ -416,6 +430,7 @@ public sealed class MapServerSettingsTests : IClassFixture<PlaywrightFixture>
     {
         serviceName = "TestService1",
         enabledProtocols = _defaultProtocols,
+        availableProtocols = _defaultProtocols,
         mapServer = new
         {
             maxImageWidth = 1024,

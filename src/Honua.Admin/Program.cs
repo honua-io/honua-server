@@ -97,6 +97,7 @@ builder.Services.AddScoped<IGeoservicesImportClient, GeoservicesImportClient>();
 builder.Services.AddScoped<IFileImportClient, FileImportClient>();
 builder.Services.AddScoped<ILayerStyleClient, LayerStyleClient>();
 builder.Services.AddScoped<IServiceSettingsClient, ServiceSettingsClient>();
+builder.Services.AddScoped<IMetadataClient, MetadataClient>();
 
 await builder.Build().RunAsync();
 

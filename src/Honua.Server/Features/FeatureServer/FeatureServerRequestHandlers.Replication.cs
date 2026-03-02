@@ -24,14 +24,18 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                serviceResult.ErrorMessage ?? "Service not found.");
+            return serviceValidationResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
+        var service = serviceValidationResult.Service!;
         var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
         if (accessError != null)
         {
@@ -102,14 +106,18 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                serviceResult.ErrorMessage ?? "Service not found.");
+            return serviceValidationResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
+        var service = serviceValidationResult.Service!;
         var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
         if (accessError != null)
         {
@@ -198,14 +206,18 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                serviceResult.ErrorMessage ?? "Service not found.");
+            return serviceValidationResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
+        var service = serviceValidationResult.Service!;
         var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
         if (accessError != null)
         {
@@ -314,14 +326,18 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                serviceResult.ErrorMessage ?? "Service not found.");
+            return serviceValidationResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
+        var service = serviceValidationResult.Service!;
         var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
         if (accessError != null)
         {

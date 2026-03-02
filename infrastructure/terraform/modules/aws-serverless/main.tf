@@ -13,6 +13,11 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
+  use_existing_vpc = var.existing_vpc_id != ""
+  vpc_id           = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
+  vpc_cidr_block   = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
+  public_subnets   = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
+  private_subnets  = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
   db_use_existing  = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   redis_enabled    = var.redis_enabled || var.redis_connection_string != ""
   redis_create     = var.redis_enabled && var.redis_connection_string == ""
@@ -27,6 +32,16 @@ check "existing_db_inputs" {
       (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
     )
     error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
+  }
+}
+
+check "existing_vpc_inputs" {
+  assert {
+    condition = (
+      (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
+      (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
+    )
+    error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
   }
 }
 
@@ -63,6 +78,7 @@ locals {
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
 module "vpc" {
+  count = local.use_existing_vpc ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
   source  = "terraform-aws-modules/vpc/aws"
@@ -87,7 +103,7 @@ module "vpc" {
 }
 
 locals {
-  db_subnet_ids = var.db_publicly_accessible ? module.vpc.public_subnets : module.vpc.private_subnets
+  db_subnet_ids = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
 }
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to the Lambda function.
@@ -95,14 +111,14 @@ resource "aws_security_group" "lambda" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the Lambda function.
   name_prefix = "${local.name}-lambda-"
   description = "Lambda security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   egress {
     description = "PostgreSQL access"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
+    cidr_blocks = [local.vpc_cidr_block]
   }
 
   dynamic "egress" {
@@ -133,7 +149,7 @@ resource "aws_security_group" "rds" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the RDS instance.
   name_prefix = "${local.name}-rds-"
   description = "RDS security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "PostgreSQL from Lambda"
@@ -161,7 +177,7 @@ resource "aws_security_group" "redis" {
   count       = local.redis_create ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Redis security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Redis from Lambda"
@@ -177,7 +193,7 @@ resource "aws_security_group" "redis" {
 resource "aws_elasticache_subnet_group" "redis" {
   count       = local.redis_create ? 1 : 0
   name        = "${local.name}-redis"
-  subnet_ids  = module.vpc.private_subnets
+  subnet_ids  = local.private_subnets
   description = "Redis subnet group"
   tags        = local.tags
 }
@@ -233,10 +249,11 @@ module "rds" {
   max_allocated_storage = 100
   storage_encrypted     = true
 
-  db_name  = var.db_name
-  username = var.db_username
-  password = local.db_password
-  port     = 5432
+  db_name                     = var.db_name
+  username                    = var.db_username
+  password                    = local.db_password
+  manage_master_user_password = false
+  port                        = 5432
 
   vpc_security_group_ids = local.db_use_existing ? [] : [aws_security_group.rds[0].id]
   subnet_ids             = local.db_subnet_ids
@@ -348,7 +365,7 @@ resource "aws_lambda_function" "this" {
   reserved_concurrent_executions = var.lambda_reserved_concurrent_executions
 
   vpc_config {
-    subnet_ids         = module.vpc.private_subnets
+    subnet_ids         = local.private_subnets
     security_group_ids = [aws_security_group.lambda.id]
   }
 
@@ -356,7 +373,11 @@ resource "aws_lambda_function" "this" {
     variables = local.lambda_environment
   }
 
-  depends_on = [aws_cloudwatch_log_group.lambda]
+  depends_on = [
+    aws_cloudwatch_log_group.lambda,
+    aws_secretsmanager_secret_version.connection_string,
+    aws_secretsmanager_secret_version.admin_password
+  ]
 
   tags = local.tags
 }
@@ -482,19 +503,25 @@ resource "null_resource" "enable_postgis" {
     command = <<-EOT
       set -e
       echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
-      for attempt in $(seq 1 30); do
+      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
         if PGCONNECT_TIMEOUT=5 psql \
           --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
           --command="SELECT 1;" >/dev/null 2>&1; then
+          echo "PostgreSQL readiness check succeeded after $attempt attempt(s)"
           break
         fi
-        if [ "$attempt" -eq 30 ]; then
-          echo "PostgreSQL readiness check failed after 30 attempts" >&2
+        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
+          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
+          PGCONNECT_TIMEOUT=5 psql \
+            --host=${local.db_endpoint} \
+            --username=${var.db_username} \
+            --dbname=${var.db_name} \
+            --command="SELECT 1;" >&2 || true
           exit 1
         fi
-        sleep 10
+        sleep ${var.postgis_readiness_sleep_seconds}
       done
 
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"

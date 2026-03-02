@@ -41,6 +41,28 @@ internal static partial class FeatureServerEndpoints
                 [readError ?? "Invalid request body."]);
         }
 
+        // Determine target layer from request or default to layer 0
+        var layerIdStr = GetValueString(values, "layerId");
+        var layerId = 0;
+        if (!string.IsNullOrWhiteSpace(layerIdStr) &&
+            int.TryParse(layerIdStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            layerId = parsed;
+        }
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return validationResult.ErrorResult!;
+        }
+
         var (features, parseError) = TryParseEditsArray(values, context);
         if (parseError != null)
         {
@@ -51,15 +73,6 @@ internal static partial class FeatureServerEndpoints
         {
             var emptyResponse = new AppendResponse { Success = true, NumFeaturesAppended = 0, NumFeaturesFailed = 0 };
             return Results.Json(emptyResponse, FeatureServerJsonContext.Default.AppendResponse, contentType: "application/json");
-        }
-
-        // Determine target layer from request or default to layer 0
-        var layerIdStr = GetValueString(values, "layerId");
-        var layerId = 0;
-        if (!string.IsNullOrWhiteSpace(layerIdStr) &&
-            int.TryParse(layerIdStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-        {
-            layerId = parsed;
         }
 
         return await ExecuteAppendAsync(context, serviceId, layerId, features, cancellationToken);
@@ -81,6 +94,19 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid append request",
                 [readError ?? "Invalid request body."]);
+        }
+
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            return validationResult.ErrorResult!;
         }
 
         var (features, parseError) = TryParseEditsArray(values, context);
@@ -144,20 +170,20 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-        if (!resourceResult.IsValid)
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-            }
-
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return validationResult.ErrorResult!;
         }
 
-        var service = resourceResult.Resource!.Service;
-        var layer = resourceResult.Resource.Layer;
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
         var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
         if (accessError != null)
         {
@@ -332,14 +358,18 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                serviceResult.ErrorMessage ?? "Service not found.");
+            return serviceValidationResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
+        var service = serviceValidationResult.Service!;
         var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
         if (accessError != null)
         {
@@ -366,14 +396,18 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                serviceResult.ErrorMessage ?? "Service not found.");
+            return serviceValidationResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
+        var service = serviceValidationResult.Service!;
         var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
         if (accessError != null)
         {
@@ -705,20 +739,20 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-        if (!resourceResult.IsValid)
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-            }
-
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return validationResult.ErrorResult!;
         }
 
-        var service = resourceResult.Resource!.Service;
-        var layer = resourceResult.Resource.Layer;
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
         if (accessError != null)
         {

@@ -41,20 +41,20 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
-        if (!resourceResult.IsValid)
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!validationResult.IsValid)
         {
-            var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
-            if (resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-            }
-
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return validationResult.ErrorResult!;
         }
 
-        var service = resourceResult.Resource!.Service;
-        var layer = resourceResult.Resource.Layer;
+        var service = validationResult.Service!;
+        var layer = validationResult.Layer!;
         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
         if (accessError != null)
         {

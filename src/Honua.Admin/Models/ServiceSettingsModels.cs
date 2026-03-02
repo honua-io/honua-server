@@ -14,6 +14,9 @@ public sealed class ServiceSettingsResponse
     /// <summary>Protocols currently enabled for this service.</summary>
     public string[] EnabledProtocols { get; init; } = [];
 
+    /// <summary>Protocols supported by this server build.</summary>
+    public string[] AvailableProtocols { get; init; } = [];
+
     /// <summary>MapServer rendering configuration.</summary>
     public MapServerSettingsResponse MapServer { get; init; } = new();
 }

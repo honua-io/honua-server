@@ -44,16 +44,6 @@ public sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
             return AccessDecision.Forbidden("User does not have the required role.");
         }
 
-        var allowedTenants = scope == AccessScope.Read
-            ? policy.AllowedTenants
-            : policy.AllowedWriteTenants ?? policy.AllowedTenants;
-
-        if (allowedTenants is { Length: > 0 } &&
-            !IsInAllowedTenant(principal, policy.TenantClaimType, allowedTenants))
-        {
-            return AccessDecision.Forbidden("User does not belong to an allowed tenant.");
-        }
-
         return AccessDecision.Allowed();
     }
 
@@ -62,30 +52,6 @@ public sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
         foreach (var role in allowedRoles)
         {
             if (principal.IsInRole(role))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsInAllowedTenant(
-        ClaimsPrincipal principal,
-        string? claimType,
-        string[] allowedTenants)
-    {
-        var effectiveClaimType = string.IsNullOrWhiteSpace(claimType) ? "tenant_id" : claimType;
-        var tenantId = principal.FindFirst(effectiveClaimType)?.Value;
-
-        if (string.IsNullOrWhiteSpace(tenantId))
-        {
-            return false;
-        }
-
-        foreach (var allowed in allowedTenants)
-        {
-            if (string.Equals(tenantId, allowed, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

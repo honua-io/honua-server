@@ -1,0 +1,94 @@
+name: GeoServices Parity Nightly
+
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  parity:
+    name: External GeoServices Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build
+        run: dotnet build Honua.sln --no-restore --configuration Release
+
+      - name: Run external parity suite
+        env:
+          HONUA_TEST_ESRI_PARITY: '1'
+        run: |
+          mkdir -p tests/TestResults
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter GeoservicesParityIntegrationTests \
+            --logger "trx;LogFileName=geoservices-parity.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Collect scorecard artifact
+        id: collect
+        run: |
+          mkdir -p artifacts/parity
+          latest_scorecard="$(ls -1t /tmp/honua-parity-scorecards/geoservices-parity-scorecard-*.json 2>/dev/null | head -n 1 || true)"
+          if [[ -z "$latest_scorecard" ]]; then
+            echo "No generated parity scorecard found in /tmp/honua-parity-scorecards" >&2
+            exit 1
+          fi
+
+          cp "$latest_scorecard" artifacts/parity/current-scorecard.json
+          cp tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json artifacts/parity/baseline-scorecard.json
+          echo "scorecard_path=artifacts/parity/current-scorecard.json" >> "$GITHUB_OUTPUT"
+
+      - name: Baseline regression gate
+        run: |
+          bash scripts/check-parity-scorecard-regression.sh \
+            artifacts/parity/current-scorecard.json \
+            tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json
+
+      - name: Write parity summary
+        if: always()
+        run: |
+          if [[ ! -f artifacts/parity/current-scorecard.json ]]; then
+            exit 0
+          fi
+
+          {
+            echo "## GeoServices Parity Summary"
+            echo
+            echo "| Service Case | p95 Ratio (Honua/Source) | p99 Ratio (Honua/Source) | Transfer Limit Flag Match |"
+            echo "|---|---:|---:|---|"
+            jq -r '
+              .Cases[]
+              | . as $case
+              | ($case.Checks[] | select(.Name == "transfer_limit_flag_parity")) as $transfer
+              | "| \($case.ServiceCase) | \((($case.LatencyMetrics.HonuaToSourceP95Ratio // 0) | tostring)) | \((($case.LatencyMetrics.HonuaToSourceP99Ratio // 0) | tostring)) | \($transfer.Passed) |"
+            ' artifacts/parity/current-scorecard.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload parity artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geoservices-parity-artifacts-${{ github.run_id }}
+          path: |
+            artifacts/parity/
+            tests/TestResults/geoservices-parity.trx
