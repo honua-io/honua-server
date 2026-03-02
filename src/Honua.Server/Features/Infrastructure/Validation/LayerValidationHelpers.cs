@@ -81,7 +81,9 @@ internal static class LayerValidationHelpers
         }
 
         var layer = layerResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, effectiveToken);
+        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
@@ -96,7 +98,7 @@ internal static class LayerValidationHelpers
             }
             : requiredProtocol;
         if (!string.IsNullOrWhiteSpace(effectiveRequiredProtocol) &&
-            !await IsProtocolEnabledForLayerAsync(context, layer, effectiveRequiredProtocol, effectiveToken))
+            !IsProtocolEnabledForLayer(layer, relatedServices, effectiveRequiredProtocol))
         {
             var protocolError = protocol switch
             {
@@ -144,7 +146,9 @@ internal static class LayerValidationHelpers
         }
 
         var layer = layerResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
+        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
@@ -152,7 +156,7 @@ internal static class LayerValidationHelpers
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
-            if (!await IsProtocolEnabledForLayerAsync(context, layer, requiredProtocol, cancellationToken))
+            if (!IsProtocolEnabledForLayer(layer, relatedServices, requiredProtocol))
             {
                 var protocolError = StandardErrorHelpers.CreateNotFound(
                     context,
@@ -191,7 +195,9 @@ internal static class LayerValidationHelpers
         }
 
         var layer = collectionResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
+        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
@@ -199,7 +205,7 @@ internal static class LayerValidationHelpers
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
-            if (!await IsProtocolEnabledForLayerAsync(context, layer, requiredProtocol, cancellationToken))
+            if (!IsProtocolEnabledForLayer(layer, relatedServices, requiredProtocol))
             {
                 var protocolError = StandardErrorHelpers.CreateNotFound(
                     context,
@@ -324,19 +330,61 @@ internal static class LayerValidationHelpers
         };
     }
 
-    private static async Task<bool> IsProtocolEnabledForLayerAsync(
+    private static async Task<ServiceDefinition[]> GetRelatedServicesAsync(
         HttpContext context,
-        LayerDefinition layer,
-        string protocol,
+        int layerId,
         CancellationToken cancellationToken)
     {
-        var layerAllowsProtocol = ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol);
         var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
         var services = await layerCatalog.ListServicesAsync(cancellationToken);
-
-        var relatedServices = services
-            .Where(service => service.Layers.Any(candidate => candidate.Id == layer.Id))
+        return services
+            .Where(service => service.Layers.Any(candidate => candidate.Id == layerId))
             .ToArray();
+    }
+
+    private static AccessDecision EvaluateLayerAccess(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition[] relatedServices,
+        AccessScope scope)
+    {
+        if (relatedServices.Length == 0)
+        {
+            return AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope);
+        }
+
+        var requiresAuthentication = false;
+
+        foreach (var service in relatedServices)
+        {
+            var decision = AccessPolicyHelpers.EvaluateAccess(
+                context,
+                layer.Metadata?.AccessPolicy,
+                service.Metadata?.AccessPolicy,
+                scope);
+
+            if (decision.IsAllowed)
+            {
+                return decision;
+            }
+
+            if (decision.RequiresAuthentication)
+            {
+                requiresAuthentication = true;
+            }
+        }
+
+        return requiresAuthentication
+            ? AccessDecision.RequiresAuth("Authentication is required.")
+            : AccessDecision.Forbidden("Access to this resource is forbidden.");
+    }
+
+    private static bool IsProtocolEnabledForLayer(
+        LayerDefinition layer,
+        ServiceDefinition[] relatedServices,
+        string protocol)
+    {
+        var layerAllowsProtocol = ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol);
         if (relatedServices.Length == 0)
         {
             return layerAllowsProtocol;

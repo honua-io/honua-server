@@ -350,8 +350,9 @@
 ### P2-CFG-05 MEDIUM | Database migration failure in dev allows serving on stale schema
 - **File**: `src/Honua.Server/Program.cs:670-677`
 
-### P2-CFG-06 MEDIUM | Cache key doesn't include schema context for multi-tenant
+### P2-CFG-06 N/A | Cache key doesn't include schema context for multi-tenant
 - **File**: `src/Honua.Server/Features/Infrastructure/Caching/ResponseCacheUtilities.cs:116-130`
+- **Status**: N/A — multitenancy removed from MVP scope
 
 ### P2-CFG-07 MEDIUM | RedisCacheService _keyLocks dictionary grows unbounded
 - **File**: `src/Honua.Server/Features/Infrastructure/Caching/RedisCacheService.cs:42`

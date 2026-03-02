@@ -8,6 +8,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 |---|---|
 | **Consume geospatial data** | [Protocols Overview](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
 | **Manage the server** | [Admin API](user/CONTROL_PLANE_API.md) / [Admin UI](user/admin-ui.md) |
+| **Integrate AI agents** | [MCP Server](user/MCP_SERVER.md) |
 | **Deploy to production** | [Infrastructure & Deployment](devops/infrastructure.md) |
 | **Monitor and troubleshoot** | [Monitoring](devops/monitoring.md) / [Troubleshooting](devops/troubleshooting.md) |
 | **Evaluate protocol coverage** | [Coverage Matrices](#coverage-matrices) |
@@ -23,6 +24,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [Admin API](user/CONTROL_PLANE_API.md) — server management endpoints
 - [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) — SDK and upgrade workflow
 - [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md) — deprecation and compatibility guarantees
+- [MCP Server](user/MCP_SERVER.md) — AI/agent integration via Model Context Protocol
 - [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) — launch-ready protocol and limitation summary
 - [Admin UI](user/admin-ui.md) — browser interface guide
 - [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling

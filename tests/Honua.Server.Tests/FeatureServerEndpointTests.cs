@@ -1132,14 +1132,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Tests combining objectIds with where clause (objectIds should take precedence)
+    /// Tests combining objectIds with where clause (intersection semantics)
     /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task QueryFeatures_WithObjectIdsAndWhereClause_ObjectIdsHavePrecedence()
+    public async Task QueryFeatures_WithObjectIdsAndWhereClause_ReturnsIntersection()
     {
-        // Act - Request objectId 1 with a where clause that would normally filter it out
+        // Act - Request objectId 1 with a where clause that excludes it.
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?objectIds=1&where=objectid>100");
 
         // Assert
@@ -1151,11 +1151,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
-        queryResponse.Features.Should().HaveCount(1);
-
-        // Verify objectIds parameter took precedence over where clause
-        var objectIdValue = queryResponse.Features[0].Attributes["objectid"];
-        ReadObjectIdValue(objectIdValue).Should().Be(1);
+        queryResponse.Features.Should().BeEmpty();
     }
 
     /// <summary>

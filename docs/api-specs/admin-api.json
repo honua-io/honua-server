@@ -50,6 +50,10 @@
     {
       "name": "Observability",
       "description": "System monitoring and telemetry"
+    },
+    {
+      "name": "Services",
+      "description": "Service-level protocol and metadata settings"
     }
   ],
   "paths": {
@@ -874,6 +878,389 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "Get Admin OpenAPI Specification",
+        "description": "Returns the bundled OpenAPI contract snapshot for the admin/control-plane API.",
+        "operationId": "getAdminOpenApi",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Optional format selector.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin OpenAPI specification",
+            "content": {
+              "application/vnd.oai.openapi+json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/services": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "List Services",
+        "description": "List available services with enabled protocol metadata.",
+        "operationId": "listServices",
+        "responses": {
+          "200": {
+            "description": "Service list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSummaryArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/settings": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Get Service Settings",
+        "description": "Get protocol, access policy, temporal metadata, and MapServer settings for a service.",
+        "operationId": "getServiceSettings",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/protocols": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update Service Protocols",
+        "description": "Update enabled protocols for a service.",
+        "operationId": "updateServiceProtocols",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProtocolsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/mapserver": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update MapServer Settings",
+        "description": "Update MapServer rendering defaults and limits for a service.",
+        "operationId": "updateServiceMapServer",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMapServerSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/access-policy": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update Service Access Policy",
+        "description": "Update service-level read and write access policy.",
+        "operationId": "updateServiceAccessPolicy",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccessPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/timeinfo": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update Service Time Info",
+        "description": "Update service-level temporal metadata fields.",
+        "operationId": "updateServiceTimeInfo",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTimeInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/layers/{layerId}/metadata": {
+      "put": {
+        "tags": [
+          "Services",
+          "Layers"
+        ],
+        "summary": "Update Layer Metadata",
+        "description": "Patch layer-level access policy and temporal metadata for a service layer.",
+        "operationId": "updateLayerMetadata",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLayerMetadataRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated layer metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerMetadataResponse"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -1938,6 +2325,340 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseServiceSummaryArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceSummary"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseServiceSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ServiceSettingsResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseLayerMetadataResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerMetadataResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ServiceSummary": {
+        "type": "object",
+        "required": [
+          "serviceName",
+          "description",
+          "layerCount"
+        ],
+        "properties": {
+          "serviceName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "layerCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "enabledProtocols": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AccessPolicyResponse": {
+        "type": "object",
+        "properties": {
+          "allowAnonymous": {
+            "type": "boolean"
+          },
+          "allowAnonymousWrite": {
+            "type": "boolean"
+          },
+          "allowedRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedWriteRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TimeInfoResponse": {
+        "type": "object",
+        "properties": {
+          "startTimeField": {
+            "type": "string",
+            "nullable": true
+          },
+          "endTimeField": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackIdField": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MapServerSettingsResponse": {
+        "type": "object",
+        "required": [
+          "maxImageWidth",
+          "maxImageHeight",
+          "defaultImageWidth",
+          "defaultImageHeight",
+          "defaultDpi",
+          "defaultFormat",
+          "defaultTransparent",
+          "maxFeaturesPerLayer"
+        ],
+        "properties": {
+          "maxImageWidth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxImageHeight": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultImageWidth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultImageHeight": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultDpi": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultFormat": {
+            "type": "string"
+          },
+          "defaultTransparent": {
+            "type": "boolean"
+          },
+          "maxFeaturesPerLayer": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ServiceSettingsResponse": {
+        "type": "object",
+        "required": [
+          "serviceName",
+          "enabledProtocols",
+          "availableProtocols",
+          "mapServer"
+        ],
+        "properties": {
+          "serviceName": {
+            "type": "string"
+          },
+          "enabledProtocols": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "availableProtocols": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accessPolicy": {
+            "$ref": "#/components/schemas/AccessPolicyResponse"
+          },
+          "timeInfo": {
+            "$ref": "#/components/schemas/TimeInfoResponse"
+          },
+          "mapServer": {
+            "$ref": "#/components/schemas/MapServerSettingsResponse"
+          }
+        }
+      },
+      "LayerMetadataResponse": {
+        "type": "object",
+        "required": [
+          "layerId",
+          "layerName"
+        ],
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "layerName": {
+            "type": "string"
+          },
+          "accessPolicy": {
+            "$ref": "#/components/schemas/AccessPolicyResponse"
+          },
+          "timeInfo": {
+            "$ref": "#/components/schemas/TimeInfoResponse"
+          }
+        }
+      },
+      "UpdateProtocolsRequest": {
+        "type": "object",
+        "required": [
+          "enabledProtocols"
+        ],
+        "properties": {
+          "enabledProtocols": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FeatureServer",
+                "MapServer",
+                "OgcFeatures",
+                "OData",
+                "Grpc"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "UpdateMapServerSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "maxImageWidth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxImageHeight": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultImageWidth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultImageHeight": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultDpi": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultFormat": {
+            "type": "string"
+          },
+          "defaultTransparent": {
+            "type": "boolean"
+          },
+          "maxFeaturesPerLayer": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UpdateAccessPolicyRequest": {
+        "type": "object",
+        "properties": {
+          "allowAnonymous": {
+            "type": "boolean"
+          },
+          "allowAnonymousWrite": {
+            "type": "boolean"
+          },
+          "allowedRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedWriteRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateTimeInfoRequest": {
+        "type": "object",
+        "properties": {
+          "startTimeField": {
+            "type": "string",
+            "nullable": true
+          },
+          "endTimeField": {
+            "type": "string",
+            "nullable": true
+          },
+          "trackIdField": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "UpdateLayerMetadataRequest": {
+        "type": "object",
+        "properties": {
+          "accessPolicy": {
+            "$ref": "#/components/schemas/UpdateAccessPolicyRequest"
+          },
+          "timeInfo": {
+            "$ref": "#/components/schemas/UpdateTimeInfoRequest"
           }
         }
       }

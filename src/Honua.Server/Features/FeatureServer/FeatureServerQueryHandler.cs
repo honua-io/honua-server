@@ -637,13 +637,12 @@ internal sealed class FeatureServerQueryHandler(
         QueryLimits queryLimits)
     {
         var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
-        var effectiveSqlFilter = hasObjectIds ? null : sqlFilter;
-        var effectiveWhere = hasObjectIds ? null : queryParams.Where;
 
         var query = new FeatureQuery
         {
-            Where = effectiveWhere,
-            SqlFilter = effectiveSqlFilter,
+            // ArcGIS semantics apply objectIds and where as an intersection filter.
+            Where = queryParams.Where,
+            SqlFilter = sqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,
             Limit = hasObjectIds

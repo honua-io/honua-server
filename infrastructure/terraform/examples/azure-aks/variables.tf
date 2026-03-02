@@ -13,7 +13,7 @@ variable "environment" {
 variable "location" {
   description = "Azure region."
   type        = string
-  default     = "eastus"
+  default     = "westus"
 }
 
 variable "tags" {
@@ -31,7 +31,7 @@ variable "node_count" {
 variable "node_vm_size" {
   description = "AKS node VM size."
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_D2s_v3"
 }
 
 variable "node_os_disk_size_gb" {

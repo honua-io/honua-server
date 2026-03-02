@@ -180,6 +180,31 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/openapi.json")]
+    public async Task GetAdminOpenApiSpec_ReturnsValidOpenApiSpecification()
+    {
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/openapi.json");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().StartWith("application/vnd.oai.openapi+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("openapi").GetString().Should().StartWith("3.0");
+        json.RootElement.TryGetProperty("paths", out var pathsElement).Should().BeTrue();
+
+        var paths = pathsElement;
+        paths.TryGetProperty("/openapi.json", out _).Should().BeTrue();
+        paths.TryGetProperty("/services", out _).Should().BeTrue();
+        paths.TryGetProperty("/services/{serviceName}/settings", out _).Should().BeTrue();
+        paths.TryGetProperty("/services/{serviceName}/access-policy", out _).Should().BeTrue();
+        paths.TryGetProperty("/services/{serviceName}/timeinfo", out _).Should().BeTrue();
+        paths.TryGetProperty("/services/{serviceName}/layers/{layerId}/metadata", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/admin/config")]
     public async Task GetConfiguration_WithWrongHttpMethod_Returns405()

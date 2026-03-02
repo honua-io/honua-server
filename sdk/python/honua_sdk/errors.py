@@ -23,3 +23,13 @@ class HonuaHttpError(HonuaError):
         self.status_code = status_code
         self.message = message
         self.body = body
+
+
+class HonuaGrpcError(HonuaError):
+    """Raised when a gRPC call fails."""
+
+    def __init__(self, code: Any, message: str, details: Any = None) -> None:
+        super().__init__(f"gRPC {code}: {message}")
+        self.code = code
+        self.message = message
+        self.details = details

@@ -51,12 +51,47 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/services")]
+    public async Task ListServices_ResponseIncludesLayerCountAndEnabledProtocols()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/services");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        data.GetArrayLength().Should().BeGreaterThan(0);
+        var first = data[0];
+        first.TryGetProperty("layerCount", out _).Should().BeTrue();
+        first.TryGetProperty("enabledProtocols", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/settings")]
     public async Task GetServiceSettings_WithServiceName_ReturnsSettingsOrNotFound()
     {
         var response = await _client.GetAsync("/api/v1/admin/services/test/settings");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/settings")]
+    public async Task GetServiceSettings_ResponseIncludesAccessPolicyAndTimeInfo()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/services/test/settings");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var data = document.RootElement.GetProperty("data");
+
+        // accessPolicy and timeInfo should be present as properties (may be null)
+        data.TryGetProperty("accessPolicy", out _).Should().BeTrue("response should include accessPolicy field");
+        data.TryGetProperty("timeInfo", out _).Should().BeTrue("response should include timeInfo field");
     }
 
     [IntegrationTest]
@@ -104,6 +139,25 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/protocols")]
+    public async Task UpdateProtocols_WithEmptyArray_Returns400()
+    {
+        var body = """
+            {
+              "enabledProtocols": []
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("At least one protocol");
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/mapserver")]
     public async Task UpdateMapServerSettings_WithValidPayload_ReturnsUpdatedOrNotFound()
     {
@@ -117,6 +171,56 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/mapserver", content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/access-policy")]
+    public async Task UpdateAccessPolicy_WithValidPayload_ReturnsUpdatedOrNotFound()
+    {
+        var body = """
+            {
+              "allowAnonymous": true
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/access-policy", content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/timeinfo")]
+    public async Task UpdateTimeInfo_WithValidPayload_ReturnsUpdatedOrNotFound()
+    {
+        var body = """
+            {
+              "startTimeField": "created_at"
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/timeinfo", content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_WithValidPayload_ReturnsUpdatedOrNotFound()
+    {
+        var body = """
+            {
+              "accessPolicy": {
+                "allowAnonymous": true
+              }
+            }
+            """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
     }

@@ -534,7 +534,7 @@ run_k8s_checks() {
 
   HONUA_K8S_IMAGE="$K8S_IMAGE" \
     KUBECONFIG="$TEMP_KUBECONFIG_PATH" \
-    "$SCRIPT_DIR/run-k8s-terraform-integration.sh" "${args[@]}"
+    "$SCRIPT_DIR/../k8s/run-k8s-terraform-integration.sh" "${args[@]}"
 }
 
 destroy_cluster() {

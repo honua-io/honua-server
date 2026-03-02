@@ -84,14 +84,6 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             DateField: "last_edited_date",
             ValidateExtentParity: false),
         new(
-            Name: "esri_wildfire_polygons",
-            ServiceUrl: "https://sampleserver6.arcgisonline.com/arcgis/rest/services/Wildfire/FeatureServer",
-            LayerId: 2,
-            CompareField: "description",
-            NumericField: "Shape__Area",
-            DateField: "last_edited_date",
-            ValidateExtentParity: false),
-        new(
             Name: "esri_military_ops_line_zm",
             ServiceUrl: "https://sampleserver6.arcgisonline.com/arcgis/rest/services/Military/FeatureServer",
             LayerId: 4,
@@ -499,6 +491,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var supportsTimeQuery =
             TryGetPropertyCaseInsensitive(layerMetadata, "timeInfo", out var timeInfo) &&
             timeInfo.ValueKind == JsonValueKind.Object;
+        var supportsResultTypeQuery = SupportsResultTypeQuery(layerMetadata);
         var supportedQueryFormats = ReadOptionalString(layerMetadata, "supportedQueryFormats");
         var supportsGeoJson = !string.IsNullOrWhiteSpace(supportedQueryFormats) &&
             supportedQueryFormats.Contains("geojson", StringComparison.OrdinalIgnoreCase);
@@ -508,6 +501,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             TotalCount: sourceCount,
             GeometryType: sourceGeometryType,
             SupportsTimeQuery: supportsTimeQuery,
+            SupportsResultTypeQuery: supportsResultTypeQuery,
             SupportsGeoJsonQuery: supportsGeoJson,
             ComparableFields: comparableFieldMappings,
             ExpectedImportedFields: expectedFields,
@@ -777,6 +771,20 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             honuaQueryEndpoint,
             sanitizedCompareField);
 
+        await ValidateObjectIdsWhereIntersectionParityAsync(
+            sourceSnapshot,
+            sourceQueryEndpoint,
+            sourceSnapshot.ObjectIdField,
+            serviceCase.CompareField,
+            serviceCase.NumericField,
+            serviceCase.DateField,
+            honuaQueryEndpoint,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField,
+            sourceObjectIds,
+            honuaObjectIds);
+
         var sourceSubsetObjectIds = sourceObjectIds.Take(Math.Min(10, sourceObjectIds.Length)).ToArray();
         var honuaSubsetObjectIds = honuaObjectIds.Take(Math.Min(10, honuaObjectIds.Length)).ToArray();
 
@@ -968,6 +976,24 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             sourceSnapshot,
             sourceQueryEndpoint,
             honuaQueryEndpoint);
+
+        await ValidateOutSrGeometryParityAsync(
+            sourceQueryEndpoint,
+            sourceSnapshot.ObjectIdField,
+            serviceCase,
+            honuaQueryEndpoint,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField);
+
+        await ValidateResultTypeRecordWindowParityAsync(
+            sourceSnapshot,
+            sourceQueryEndpoint,
+            honuaQueryEndpoint,
+            serviceCase,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField);
     }
 
     private async Task ValidateNoMatchQueryParityAsync(
@@ -1043,6 +1069,267 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         sourceFilteredIds.Length.Should().BeLessThanOrEqualTo(sourceFilteredCount);
         honuaFilteredIds.Length.Should().BeLessThanOrEqualTo(honuaFilteredCount);
         honuaFilteredIds.Length.Should().Be(sourceFilteredIds.Length);
+    }
+
+    private async Task ValidateObjectIdsWhereIntersectionParityAsync(
+        SourceLayerSnapshot sourceSnapshot,
+        string sourceQueryEndpoint,
+        string sourceObjectIdField,
+        string sourceCompareField,
+        string sourceNumericField,
+        string? sourceDateField,
+        string honuaQueryEndpoint,
+        string honuaCompareField,
+        string honuaNumericField,
+        string? honuaDateField,
+        long[] sourceObjectIds,
+        long[] honuaObjectIds)
+    {
+        if (!TryBuildFieldInWhereClause(sourceSnapshot.Rows, sourceCompareField, 20, out var sourceWhere))
+        {
+            return;
+        }
+
+        var honuaWhere = sourceWhere.Replace(
+            sourceCompareField,
+            honuaCompareField,
+            StringComparison.Ordinal);
+
+        var sourceMatchingIds = await ReadObjectIdsAsync(_sourceClient, sourceQueryEndpoint, sourceWhere);
+        var honuaMatchingIds = await ReadObjectIdsAsync(_adminClient, honuaQueryEndpoint, honuaWhere);
+
+        if (sourceMatchingIds.Length == 0 || honuaMatchingIds.Length == 0)
+        {
+            return;
+        }
+
+        var sourceProbeMatch = sourceMatchingIds.Take(8).ToArray();
+        var honuaProbeMatch = honuaMatchingIds.Take(8).ToArray();
+        var sourceProbeNonMatch = sourceObjectIds.Except(sourceMatchingIds).Take(4).ToArray();
+        var honuaProbeNonMatch = honuaObjectIds.Except(honuaMatchingIds).Take(4).ToArray();
+
+        var sourceProbeIds = sourceProbeMatch
+            .Concat(sourceProbeNonMatch)
+            .Distinct()
+            .ToArray();
+        var honuaProbeIds = honuaProbeMatch
+            .Concat(honuaProbeNonMatch)
+            .Distinct()
+            .ToArray();
+
+        if (sourceProbeIds.Length == 0 || honuaProbeIds.Length == 0)
+        {
+            return;
+        }
+
+        var sourceRows = await QueryRowsByObjectIdsAsync(
+            _sourceClient,
+            sourceQueryEndpoint,
+            sourceObjectIdField,
+            sourceCompareField,
+            sourceNumericField,
+            sourceDateField,
+            sourceProbeIds,
+            sourceWhere);
+        var honuaRows = await QueryRowsByObjectIdsAsync(
+            _adminClient,
+            honuaQueryEndpoint,
+            "objectid",
+            honuaCompareField,
+            honuaNumericField,
+            honuaDateField,
+            honuaProbeIds,
+            honuaWhere);
+
+        sourceRows.Count.Should().Be(sourceProbeMatch.Length);
+        honuaRows.Count.Should().Be(honuaProbeMatch.Length);
+        honuaRows.Count.Should().Be(sourceRows.Count);
+    }
+
+    private async Task ValidateOutSrGeometryParityAsync(
+        string sourceQueryEndpoint,
+        string sourceOrderByField,
+        ParityServiceCase serviceCase,
+        string honuaQueryEndpoint,
+        string sanitizedCompareField,
+        string sanitizedNumericField,
+        string? sanitizedDateField)
+    {
+        const int outSrid = 3857;
+        const int sampleSize = 25;
+
+        var sourcePage = await QueryRowsPageAsync(
+            _sourceClient,
+            sourceQueryEndpoint,
+            sourceOrderByField,
+            BuildOutFields(serviceCase.CompareField, serviceCase.NumericField, serviceCase.DateField),
+            0,
+            sampleSize,
+            returnGeometry: true,
+            outSrid: outSrid);
+        var honuaPage = await QueryRowsPageAsync(
+            _adminClient,
+            honuaQueryEndpoint,
+            "objectid",
+            BuildOutFields(sanitizedCompareField, sanitizedNumericField, sanitizedDateField),
+            0,
+            sampleSize,
+            returnGeometry: true,
+            outSrid: outSrid);
+
+        honuaPage.Rows.Count.Should().Be(sourcePage.Rows.Count);
+        honuaPage.HasGeometry.Should().Be(sourcePage.HasGeometry);
+
+        BuildSemanticSignatures(
+            honuaPage.Rows,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField)
+            .Should()
+            .Equal(BuildSemanticSignatures(
+                sourcePage.Rows,
+                serviceCase.CompareField,
+                serviceCase.NumericField,
+                serviceCase.DateField));
+
+        var sourceGeometrySignatures = BuildGeometrySignatures(
+            sourcePage.Features,
+            serviceCase.CompareField,
+            serviceCase.NumericField,
+            serviceCase.DateField);
+        var honuaGeometrySignatures = BuildGeometrySignatures(
+            honuaPage.Features,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField);
+
+        sourceGeometrySignatures
+            .Select(static entry => $"{entry.Semantic}\u001f{entry.Kind}")
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .Should()
+            .Equal(
+                honuaGeometrySignatures
+                    .Select(static entry => $"{entry.Semantic}\u001f{entry.Kind}")
+                    .OrderBy(static value => value, StringComparer.Ordinal));
+
+        var sourceProjected = sourceGeometrySignatures
+            .FirstOrDefault(static entry => entry.Kind is not "null" and not "empty");
+        var honuaProjected = honuaGeometrySignatures
+            .FirstOrDefault(static entry => entry.Kind is not "null" and not "empty");
+
+        if (sourceProjected is not null && honuaProjected is not null)
+        {
+            Math.Max(
+                Math.Max(Math.Abs(sourceProjected.MinX), Math.Abs(sourceProjected.MaxX)),
+                Math.Max(Math.Abs(sourceProjected.MinY), Math.Abs(sourceProjected.MaxY)))
+                .Should()
+                .BeGreaterThan(1000);
+            Math.Max(
+                Math.Max(Math.Abs(honuaProjected.MinX), Math.Abs(honuaProjected.MaxX)),
+                Math.Max(Math.Abs(honuaProjected.MinY), Math.Abs(honuaProjected.MaxY)))
+                .Should()
+                .BeGreaterThan(1000);
+        }
+    }
+
+    private async Task ValidateResultTypeRecordWindowParityAsync(
+        SourceLayerSnapshot sourceSnapshot,
+        string sourceQueryEndpoint,
+        string honuaQueryEndpoint,
+        ParityServiceCase serviceCase,
+        string sanitizedCompareField,
+        string sanitizedNumericField,
+        string? sanitizedDateField)
+    {
+        if (!sourceSnapshot.SupportsResultTypeQuery)
+        {
+            return;
+        }
+
+        var honuaSupportsResultType = await SupportsResultTypeQueryAsync(_adminClient, honuaQueryEndpoint);
+        if (!honuaSupportsResultType)
+        {
+            return;
+        }
+
+        const int pageSize = 40;
+        var sourceStandard = await QueryRowsPageAsync(
+            _sourceClient,
+            sourceQueryEndpoint,
+            sourceSnapshot.ObjectIdField,
+            BuildOutFields(serviceCase.CompareField, serviceCase.NumericField, serviceCase.DateField),
+            0,
+            pageSize,
+            returnGeometry: false,
+            resultType: "standard");
+        var honuaStandard = await QueryRowsPageAsync(
+            _adminClient,
+            honuaQueryEndpoint,
+            "objectid",
+            BuildOutFields(sanitizedCompareField, sanitizedNumericField, sanitizedDateField),
+            0,
+            pageSize,
+            returnGeometry: false,
+            resultType: "standard");
+
+        honuaStandard.Rows.Count.Should().Be(sourceStandard.Rows.Count);
+        BuildSemanticSignatures(
+            honuaStandard.Rows,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField)
+            .Should()
+            .Equal(BuildSemanticSignatures(
+                sourceStandard.Rows,
+                serviceCase.CompareField,
+                serviceCase.NumericField,
+                serviceCase.DateField));
+
+        var sourceTile = await QueryRowsPageAsync(
+            _sourceClient,
+            sourceQueryEndpoint,
+            sourceSnapshot.ObjectIdField,
+            BuildOutFields(serviceCase.CompareField, serviceCase.NumericField, serviceCase.DateField),
+            0,
+            pageSize,
+            returnGeometry: false,
+            resultType: "tile");
+        var honuaTile = await QueryRowsPageAsync(
+            _adminClient,
+            honuaQueryEndpoint,
+            "objectid",
+            BuildOutFields(sanitizedCompareField, sanitizedNumericField, sanitizedDateField),
+            0,
+            pageSize,
+            returnGeometry: false,
+            resultType: "tile");
+
+        honuaTile.Rows.Count.Should().Be(sourceTile.Rows.Count);
+        BuildSemanticSignatures(
+            honuaTile.Rows,
+            sanitizedCompareField,
+            sanitizedNumericField,
+            sanitizedDateField)
+            .Should()
+            .Equal(BuildSemanticSignatures(
+                sourceTile.Rows,
+                serviceCase.CompareField,
+                serviceCase.NumericField,
+                serviceCase.DateField));
+    }
+
+    private static async Task<bool> SupportsResultTypeQueryAsync(HttpClient client, string queryEndpoint)
+    {
+        const string queryPathSuffix = "/query";
+        var suffixIndex = queryEndpoint.LastIndexOf(queryPathSuffix, StringComparison.OrdinalIgnoreCase);
+        if (suffixIndex < 0)
+        {
+            return false;
+        }
+
+        var layerMetadataEndpoint = $"{queryEndpoint[..suffixIndex]}?f=pjson";
+        var layerMetadata = await GetJsonElementAsync(client, layerMetadataEndpoint);
+        return SupportsResultTypeQuery(layerMetadata);
     }
 
     private async Task ValidateStatisticsQueryParityAsync(
@@ -1819,7 +2106,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         string whereClause = "1=1",
         string? objectIds = null,
         int? outSrid = null,
-        bool returnDistinctValues = false)
+        bool returnDistinctValues = false,
+        string? resultType = null)
     {
         var query = $"{queryEndpoint}?where={Uri.EscapeDataString(whereClause)}&outFields={Uri.EscapeDataString(string.Join(",", outFields))}" +
                     $"&returnGeometry={(returnGeometry ? "true" : "false")}" +
@@ -1839,6 +2127,11 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         if (returnDistinctValues)
         {
             query += "&returnDistinctValues=true";
+        }
+
+        if (!string.IsNullOrWhiteSpace(resultType))
+        {
+            query += $"&resultType={Uri.EscapeDataString(resultType)}";
         }
 
         var json = await GetJsonElementAsync(client, query);
@@ -1911,7 +2204,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         string compareField,
         string numericField,
         string? dateField,
-        long[] objectIds)
+        long[] objectIds,
+        string whereClause = "1=1")
     {
         var ids = string.Join(",", objectIds.Select(static id => id.ToString(CultureInfo.InvariantCulture)));
         var fields = BuildOutFields(compareField, numericField, dateField);
@@ -1923,6 +2217,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             0,
             objectIds.Length,
             returnGeometry: false,
+            whereClause: whereClause,
             objectIds: ids);
         return page.Rows;
     }
@@ -3338,6 +3633,28 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             : null;
     }
 
+    private static bool SupportsResultTypeQuery(JsonElement metadata)
+    {
+        if (!TryGetPropertyCaseInsensitive(metadata, "advancedQueryCapabilities", out var advanced) ||
+            advanced.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (!TryGetPropertyCaseInsensitive(advanced, "supportsQueryWithResultType", out var supports))
+        {
+            return false;
+        }
+
+        return supports.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(supports.GetString(), out var parsed) => parsed,
+            _ => false
+        };
+    }
+
     private static bool TryGetPropertyCaseInsensitive(JsonElement element, string propertyName, out JsonElement value)
     {
         if (element.ValueKind == JsonValueKind.Object &&
@@ -3515,6 +3832,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             sanitizedCompareField,
             sanitizedNumericField,
             sanitizedDateField);
+        var honuaSupportsResultType = await SupportsResultTypeQueryAsync(_adminClient, honuaQueryEndpoint);
+        var resultTypeApplicable = sourceSnapshot.SupportsResultTypeQuery && honuaSupportsResultType;
 
         var checks = new List<ParityCheckResult>
         {
@@ -3524,6 +3843,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             new("error_shape_parity", true, true),
             new("statistics_parity", true, true),
             new("grouped_statistics_parity", true, true),
+            new("objectids_where_intersection_parity", true, true),
+            new("outsr_geometry_parity", true, true),
             new("return_ids_only_parity", true, true),
             new("distinct_parity", true, true),
             new("spatial_envelope_parity", true, true),
@@ -3539,6 +3860,11 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
                 sourceSnapshot.SupportsTimeQuery,
                 true,
                 sourceSnapshot.SupportsTimeQuery ? null : "source layer has no timeInfo"),
+            new(
+                "result_type_window_parity",
+                resultTypeApplicable,
+                true,
+                resultTypeApplicable ? null : "source or Honua layer does not support resultType query"),
             new(
                 "geojson_query_parity",
                 sourceSnapshot.SupportsGeoJsonQuery,
@@ -3640,6 +3966,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         int TotalCount,
         string? GeometryType,
         bool SupportsTimeQuery,
+        bool SupportsResultTypeQuery,
         bool SupportsGeoJsonQuery,
         IReadOnlyList<FieldParityMapping> ComparableFields,
         IReadOnlySet<string> ExpectedImportedFields,

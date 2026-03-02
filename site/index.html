@@ -73,9 +73,10 @@
             <p class="eyebrow">Cloud Native GIS Server</p>
             <h1>The Modern Alternative to Legacy GIS Servers</h1>
             <p class="subhead secondary">
-              Serve features, maps, and tiles through six industry standards
-              from one codebase and one PostGIS database &mdash;
-              <span class="emphasis">without per-user licensing</span>.
+              Serve features, maps, and tiles through
+              <span class="emphasis">six industry standards</span>
+              from one codebase and one PostGIS database, with drop-in compatibility for ArcGIS, OGC, and BI clients.
+              No per-user licensing.
             </p>
             <div class="cta-row">
               <a
@@ -100,7 +101,7 @@
             </div>
             <div class="meta-list">
               <span class="meta-label">Built for</span>
-              <span>Organizations modernizing legacy GIS, reducing licensing costs, or adopting open standards</span>
+              <span>Organizations modernizing legacy GIS, adopting open standards, and consolidating delivery on cloud-native infrastructure</span>
             </div>
           </div>
           <div class="hero-panel reveal delay-1">
@@ -108,7 +109,7 @@
               <h3>Early access program</h3>
               <p>
                 We're working with early partners to validate migration paths from ArcGIS Server and Enterprise.
-                If you're evaluating alternatives or facing licensing pressure, let's talk.
+                If you're modernizing GIS infrastructure or expanding standards-based delivery, let's talk.
               </p>
               <div class="cta-row" style="margin-bottom: 0">
                 <a
@@ -121,11 +122,11 @@
             <div class="panel-card">
               <h3>Why modernize now</h3>
               <ul class="bullet-list">
-                <li>Concurrent licensing deprecated</li>
-                <li>Forced Desktop-to-Pro migration</li>
-                <li>Per-user costs rising</li>
-                <li>Cloud-native deployment gaps</li>
-                <li>Open standards mandates increasing</li>
+                <li>Legacy GIS platforms were built for static VM deployments</li>
+                <li>Interoperability demands now span Esri, OGC, and OData clients</li>
+                <li>Open standards mandates are increasing across procurement</li>
+                <li>Teams need phased migration without breaking existing apps</li>
+                <li>Vendor roadmap changes are accelerating modernization timelines</li>
               </ul>
             </div>
           </div>
@@ -375,19 +376,19 @@
           </div>
           <div class="grid three">
             <div class="card highlight-card">
-              <h3>Facing licensing pressure</h3>
-              <p>Concurrent licenses deprecated. Per-user costs rising. You need the same feature serving capability without the escalating price tag.</p>
-              <p class="note">Honua serves FeatureServer and MapServer endpoints that your existing ArcGIS clients already understand.</p>
-            </div>
-            <div class="card highlight-card">
-              <h3>Cutting infrastructure spend</h3>
-              <p>Always-on VMs, oversized instances, and enterprise middleware add up. You need GIS serving that scales with demand &mdash; including scaling to zero.</p>
-              <p class="note">Serverless-ready, container-native, single-dependency. Run on the cheapest compute that fits your traffic pattern.</p>
-            </div>
-            <div class="card highlight-card">
               <h3>Mandated open standards</h3>
               <p>INSPIRE, FAIR data, or procurement requirements demand OGC-compliant services. You need certified conformance, not partial support.</p>
               <p class="note">530 OGC conformance tests passing. 100% pass rate across all five CITE suites.</p>
+            </div>
+            <div class="card highlight-card">
+              <h3>Operating efficiently at any scale</h3>
+              <p>You need infrastructure that handles both burst traffic and quiet periods without re-architecting your services.</p>
+              <p class="note">Stateless runtime, horizontal scale, and optional serverless deployment let you match platform shape to workload shape.</p>
+            </div>
+            <div class="card highlight-card">
+              <h3>Navigating licensing and platform shifts</h3>
+              <p>Commercial licensing and roadmap changes can force rushed decisions. You need continuity for current clients while reducing long-term lock-in.</p>
+              <p class="note">Honua serves FeatureServer and MapServer patterns your ArcGIS clients already understand, with no per-user licensing.</p>
             </div>
           </div>
         </section>
@@ -409,6 +410,7 @@
                 <li>ERP and asset management integration</li>
                 <li>Analytics pipelines</li>
                 <li>Low-code platforms</li>
+                <li>MCP server support for AI assistants and agent workflows</li>
               </ul>
             </div>
             <div class="card">
@@ -456,31 +458,31 @@
 
         <section id="cloudnative" class="section reveal delay-4">
           <div class="section-header">
-            <h2>Cut Infrastructure Costs, Not Capability</h2>
-            <p>Legacy GIS servers run always-on VMs whether you're serving 10 requests or 10,000. Honua scales to zero when idle and out when demand spikes &mdash; you pay only for what you use.</p>
+            <h2>Cloud-Native Operations Without Tradeoffs</h2>
+            <p>Built for production geospatial workloads with elasticity, observability, and operational simplicity from day one.</p>
           </div>
           <div class="grid three">
             <div class="card highlight-card">
-              <h3>Scale to zero</h3>
+              <h3>Elastic runtime</h3>
               <ul class="bullet-list">
-                <li>Run on AWS Lambda or Azure Functions &mdash; no idle compute costs</li>
+                <li>Run on Kubernetes, ECS/Fargate, Container Apps, Lambda, or Azure Functions</li>
+                <li>Scale out for demand spikes and scale to zero for bursty workloads</li>
                 <li>Sub-second cold starts with AOT compilation</li>
-                <li>Container or serverless &mdash; match the deployment to the workload</li>
               </ul>
-              <p class="note">Stop paying for servers that sit idle nights and weekends.</p>
+              <p class="note">Choose deployment topology by latency, traffic profile, and operational constraints.</p>
             </div>
             <div class="card highlight-card">
-              <h3>Minimal footprint</h3>
+              <h3>Minimal operational footprint</h3>
               <ul class="bullet-list">
                 <li><strong>PostGIS</strong> &mdash; only required dependency</li>
                 <li><strong>Redis</strong> &mdash; optional, for multi-node caching</li>
                 <li>No GDAL, no Java runtime, no Windows Server</li>
                 <li>Single container, ~167 MB AOT image</li>
               </ul>
-              <p class="note">Fewer moving parts means lower hosting bills and less ops overhead.</p>
+              <p class="note">Fewer moving parts means faster upgrades, simpler incident response, and lower operational overhead.</p>
             </div>
             <div class="card highlight-card">
-              <h3>Cloud-native ops</h3>
+              <h3>Production-ready observability</h3>
               <ul class="bullet-list">
                 <li>Stateless, horizontal auto-scaling</li>
                 <li>OpenTelemetry traces and metrics built in</li>

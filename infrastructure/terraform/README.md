@@ -155,7 +155,7 @@ export HONUA_AWS_SERVERLESS_IMAGE="<ecr-image-uri>"
 
 ## Live AKS integration test (Terraform cluster + Kubernetes checks)
 
-Use the AKS integration runner to provision AKS via Terraform, run the Kubernetes integration checks against that cluster, and auto-destroy by default:
+Use the AKS integration runner to provision AKS via Terraform, run the Kubernetes integration checks against that cluster, and auto-destroy by default. The local defaults target `westus` with `Standard_D2s_v3` nodes:
 
 ```bash
 export ARM_CLIENT_ID="<service-principal-client-id>"

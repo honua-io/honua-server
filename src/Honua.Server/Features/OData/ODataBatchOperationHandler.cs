@@ -551,10 +551,21 @@ internal sealed partial class ODataBatchOperationHandler(
     {
         var layerCache = new Dictionary<int, LayerDefinition?>();
         var services = await _batchDependencies.LayerCatalog.ListServicesAsync(cancellationToken);
-        var protocolLayerIds = services
-            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
-            .SelectMany(service => service.Layers.Select(layer => layer.Id))
-            .ToHashSet();
+        var servicesByLayerId = new Dictionary<int, List<ServiceDefinition>>();
+        foreach (var service in services)
+        {
+            foreach (var layer in service.Layers)
+            {
+                if (!servicesByLayerId.TryGetValue(layer.Id, out var layerServices))
+                {
+                    layerServices = [];
+                    servicesByLayerId[layer.Id] = layerServices;
+                }
+
+                layerServices.Add(service);
+            }
+        }
+
         var requiresAuth = false;
         var hasDenied = false;
 
@@ -576,10 +587,15 @@ internal sealed partial class ODataBatchOperationHandler(
                 continue;
             }
 
-            var protocolEnabled = protocolLayerIds.Count == 0
-                ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
-                : protocolLayerIds.Contains(layerId);
-            if (!protocolEnabled)
+            servicesByLayerId.TryGetValue(layerId, out var allRelatedServices);
+            allRelatedServices ??= [];
+
+            var protocolEnabledServices = allRelatedServices
+                .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
+                .ToArray();
+
+            var layerAllowsProtocol = ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData);
+            if (protocolEnabledServices.Length == 0 && !layerAllowsProtocol)
             {
                 return ODataUtilityService.CreateODataError(
                     context,
@@ -589,7 +605,11 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             var scope = IsMutationMethod(request.Method) ? AccessScope.Write : AccessScope.Read;
-            var decision = AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope: scope);
+            var decision = EvaluateLayerAccess(
+                context,
+                layer,
+                protocolEnabledServices,
+                scope);
             if (decision.IsAllowed)
             {
                 if (scope == AccessScope.Write)
@@ -627,6 +647,41 @@ internal sealed partial class ODataBatchOperationHandler(
         return requiresAuth
             ? StandardErrorHelpers.CreateUnauthorized(context, detail)
             : StandardErrorHelpers.CreateForbidden(context, detail);
+    }
+
+    private static AccessDecision EvaluateLayerAccess(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition[] protocolEnabledServices,
+        AccessScope scope)
+    {
+        if (protocolEnabledServices.Length == 0)
+        {
+            return AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope);
+        }
+
+        var requiresAuthentication = false;
+        foreach (var service in protocolEnabledServices)
+        {
+            var decision = AccessPolicyHelpers.EvaluateAccess(
+                context,
+                layer.Metadata?.AccessPolicy,
+                service.Metadata?.AccessPolicy,
+                scope);
+            if (decision.IsAllowed)
+            {
+                return decision;
+            }
+
+            if (decision.RequiresAuthentication)
+            {
+                requiresAuthentication = true;
+            }
+        }
+
+        return requiresAuthentication
+            ? AccessDecision.RequiresAuth("Authentication is required.")
+            : AccessDecision.Forbidden("Access to one or more requested layers is forbidden.");
     }
 
     /// <summary>

@@ -15,7 +15,7 @@ module "aks" {
 
   name_prefix = "honua"
   environment = "it"
-  location    = "eastus"
+  location    = "westus"
 }
 ```
 

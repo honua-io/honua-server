@@ -22,11 +22,11 @@ if [[ -z "$REPO_ROOT" ]]; then
   exit 1
 fi
 
-LOCATION="${AZURE_LOCATION:-eastus}"
+LOCATION="${AZURE_LOCATION:-westus}"
 ENVIRONMENT="${AKS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
 NODE_COUNT="${AKS_NODE_COUNT:-2}"
-NODE_VM_SIZE="${AKS_NODE_VM_SIZE:-Standard_B2s}"
+NODE_VM_SIZE="${AKS_NODE_VM_SIZE:-Standard_D2s_v3}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
@@ -71,11 +71,11 @@ Usage:
   ./infrastructure/terraform/scripts/azure/run-aks-terraform-integration.sh [options]
 
 Options:
-  --location <azure-region>            Azure region (default: eastus)
+  --location <azure-region>            Azure region (default: westus)
   --environment <name>                 Environment suffix (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
   --node-count <n>                     AKS node count (default: 2)
-  --node-vm-size <sku>                 AKS node VM size (default: Standard_B2s)
+  --node-vm-size <sku>                 AKS node VM size (default: Standard_D2s_v3)
   --aot                                Use latest-aot when image is default
   --image <repo:tag>                   Honua image for Kubernetes checks
   --previous-image <repo:tag>          Previous image used for upgrade/rollback checks
@@ -561,7 +561,7 @@ run_k8s_checks() {
 
   HONUA_K8S_IMAGE="$K8S_IMAGE" \
     KUBECONFIG="$TEMP_KUBECONFIG_DIR/config" \
-    "$SCRIPT_DIR/run-k8s-terraform-integration.sh" "${args[@]}"
+    "$SCRIPT_DIR/../k8s/run-k8s-terraform-integration.sh" "${args[@]}"
 }
 
 destroy_cluster() {

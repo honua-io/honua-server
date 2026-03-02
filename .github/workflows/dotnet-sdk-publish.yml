@@ -1,0 +1,93 @@
+name: Publish .NET SDK Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run build and validation only (skip publish)"
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "dotnet-sdk-v*"
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  publish-dotnet-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build Admin SDK
+        run: dotnet build sdk/dotnet/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj --configuration Release /p:TreatWarningsAsErrors=true
+
+      - name: Test Admin SDK
+        run: dotnet test sdk/dotnet/Honua.Sdk.Admin.Tests/Honua.Sdk.Admin.Tests.csproj --configuration Release
+
+      - name: Build gRPC SDK
+        run: dotnet build sdk/dotnet/Honua.Sdk.Grpc/Honua.Sdk.Grpc.csproj --configuration Release /p:TreatWarningsAsErrors=true
+
+      - name: Test gRPC SDK
+        run: dotnet test sdk/dotnet/Honua.Sdk.Grpc.Tests/Honua.Sdk.Grpc.Tests.csproj --configuration Release
+
+      - name: Validate tag version
+        if: github.event_name == 'push'
+        run: |
+          tag_version="${GITHUB_REF_NAME#dotnet-sdk-v}"
+
+          admin_version="$(grep '<Version>' sdk/dotnet/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj | sed 's/.*<Version>\(.*\)<\/Version>/\1/' || echo '')"
+          grpc_version="$(grep '<Version>' sdk/dotnet/Honua.Sdk.Grpc/Honua.Sdk.Grpc.csproj | sed 's/.*<Version>\(.*\)<\/Version>/\1/' || echo '')"
+
+          errors=0
+          if [[ -n "$admin_version" && "$tag_version" != "$admin_version" ]]; then
+            echo "Tag version ($tag_version) does not match Honua.Sdk.Admin version ($admin_version)."
+            errors=1
+          fi
+          if [[ -n "$grpc_version" && "$tag_version" != "$grpc_version" ]]; then
+            echo "Tag version ($tag_version) does not match Honua.Sdk.Grpc version ($grpc_version)."
+            errors=1
+          fi
+          if [[ $errors -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Pack NuGet packages
+        run: |
+          dotnet pack sdk/dotnet/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj --configuration Release --no-build -o ./nupkgs
+          dotnet pack sdk/dotnet/Honua.Sdk.Grpc/Honua.Sdk.Grpc.csproj --configuration Release --no-build -o ./nupkgs
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-sdk-nupkgs-${{ github.run_id }}
+          path: ./nupkgs/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish to GitHub Packages
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        run: |
+          dotnet nuget push ./nupkgs/*.nupkg \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --skip-duplicate
+
+      - name: Dry-run summary
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' }}
+        run: |
+          echo "Dry run complete. Built packages:"
+          ls -la ./nupkgs/

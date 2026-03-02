@@ -1,5 +1,6 @@
 @page "/mapserver"
 @attribute [Authorize(Policy = AdminAuthorizationPolicies.AdminPolicy)]
+@using Honua.Sdk.Admin.Models
 @inject IServiceSettingsClient SettingsClient
 @inject ISnackbar Snackbar
 
@@ -56,6 +57,59 @@
                                data-testid="@protocol.TestId" />
                 }
             </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudText Typo="Typo.subtitle2">Access policy</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="SaveAccessPolicyAsync"
+                           Disabled="@_isSaving"
+                           data-testid="mapserver-save-access-policy">
+                    Save access policy
+                </MudButton>
+            </MudStack>
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudSwitch T="bool" @bind-Value="_allowAnonymous" Label="Allow anonymous access" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSwitch T="bool" @bind-Value="_allowAnonymousWrite" Label="Allow anonymous write" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" @bind-Value="_allowedRoles" Label="Allowed roles (comma-separated)" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField T="string" @bind-Value="_allowedWriteRoles" Label="Allowed write roles (comma-separated)" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudText Typo="Typo.subtitle2">Time info</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="SaveTimeInfoAsync"
+                           Disabled="@_isSaving"
+                           data-testid="mapserver-save-timeinfo">
+                    Save time info
+                </MudButton>
+            </MudStack>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudTextField T="string" @bind-Value="_startTimeField" Label="Start time field" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField T="string" @bind-Value="_endTimeField" Label="End time field" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField T="string" @bind-Value="_trackIdField" Label="Track ID field" />
+                </MudItem>
+            </MudGrid>
         </MudPaper>
 
         <MudPaper Class="pa-4" Elevation="1">
@@ -121,6 +175,17 @@
     private bool _isLoadingServices;
     private bool _isSaving;
     private List<ProtocolToggle> _protocolToggles = [];
+
+    // Access policy fields
+    private bool _allowAnonymous;
+    private bool _allowAnonymousWrite;
+    private string _allowedRoles = "";
+    private string _allowedWriteRoles = "";
+
+    // Time info fields
+    private string _startTimeField = "";
+    private string _endTimeField = "";
+    private string _trackIdField = "";
 
     // MapServer rendering fields
     private int _maxImageWidth;
@@ -205,6 +270,22 @@
             })
             .ToList();
 
+        // Access policy
+        _allowAnonymous = settings.AccessPolicy?.AllowAnonymous ?? false;
+        _allowAnonymousWrite = settings.AccessPolicy?.AllowAnonymousWrite ?? false;
+        _allowedRoles = settings.AccessPolicy?.AllowedRoles is { Length: > 0 } roles
+            ? string.Join(", ", roles)
+            : "";
+        _allowedWriteRoles = settings.AccessPolicy?.AllowedWriteRoles is { Length: > 0 } writeRoles
+            ? string.Join(", ", writeRoles)
+            : "";
+
+        // Time info
+        _startTimeField = settings.TimeInfo?.StartTimeField ?? "";
+        _endTimeField = settings.TimeInfo?.EndTimeField ?? "";
+        _trackIdField = settings.TimeInfo?.TrackIdField ?? "";
+
+        // MapServer rendering
         _maxImageWidth = settings.MapServer.MaxImageWidth;
         _maxImageHeight = settings.MapServer.MaxImageHeight;
         _defaultImageWidth = settings.MapServer.DefaultImageWidth;
@@ -289,6 +370,85 @@
         };
     }
 
+    private async Task SaveAccessPolicyAsync()
+    {
+        if (_selectedService is null) return;
+
+        _isSaving = true;
+        _errorMessage = null;
+        StateHasChanged();
+        try
+        {
+            var request = new UpdateAccessPolicyRequest
+            {
+                AllowAnonymous = _allowAnonymous,
+                AllowAnonymousWrite = _allowAnonymousWrite,
+                AllowedRoles = ParseRoles(_allowedRoles),
+                AllowedWriteRoles = ParseRoles(_allowedWriteRoles)
+            };
+
+            var result = await SettingsClient.UpdateAccessPolicyAsync(_selectedService, request);
+            if (!result.Success)
+            {
+                _errorMessage = result.Message ?? "Failed to update access policy.";
+                Snackbar.Add(_errorMessage, Severity.Error);
+                return;
+            }
+
+            _settings = result.Data;
+            ApplySettingsToFields(_settings!);
+            Snackbar.Add("Access policy updated.", Severity.Success);
+        }
+        catch (Exception)
+        {
+            _errorMessage = "Failed to update access policy.";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SaveTimeInfoAsync()
+    {
+        if (_selectedService is null) return;
+
+        _isSaving = true;
+        _errorMessage = null;
+        StateHasChanged();
+        try
+        {
+            var request = new UpdateTimeInfoRequest
+            {
+                StartTimeField = _startTimeField,
+                EndTimeField = _endTimeField,
+                TrackIdField = _trackIdField
+            };
+
+            var result = await SettingsClient.UpdateTimeInfoAsync(_selectedService, request);
+            if (!result.Success)
+            {
+                _errorMessage = result.Message ?? "Failed to update time info.";
+                Snackbar.Add(_errorMessage, Severity.Error);
+                return;
+            }
+
+            _settings = result.Data;
+            ApplySettingsToFields(_settings!);
+            Snackbar.Add("Time info updated.", Severity.Success);
+        }
+        catch (Exception)
+        {
+            _errorMessage = "Failed to update time info.";
+            Snackbar.Add(_errorMessage, Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
     private async Task SaveMapServerSettingsAsync()
     {
         if (_selectedService is null) return;
@@ -331,5 +491,21 @@
         {
             _isSaving = false;
         }
+    }
+
+    private static string[]? ParseRoles(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return null;
+        }
+
+        var roles = input
+            .Split(',')
+            .Select(static r => r.Trim())
+            .Where(static r => r.Length > 0)
+            .ToArray();
+
+        return roles.Length > 0 ? roles : null;
     }
 }

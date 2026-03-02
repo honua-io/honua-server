@@ -36,10 +36,19 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service.Name,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
@@ -218,10 +227,19 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service.Name,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
@@ -338,10 +356,19 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+        var accessError = AccessPolicyHelpers.RequireServiceWriteAccess(context, service);
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            service.Name,
+            cancellationToken);
+        if (rbacError != null)
+        {
+            return rbacError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();

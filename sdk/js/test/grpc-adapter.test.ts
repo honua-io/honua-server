@@ -23,6 +23,8 @@ import {
   FieldType,
   GeometryType,
   NullValue,
+  SpatialRelationship,
+  StatisticType,
 } from "../src/gen/honua/v1/feature_service_pb.js";
 
 describe("toProtoQueryRequest", () => {
@@ -105,6 +107,57 @@ describe("toProtoQueryRequest", () => {
     expect(result.orderBy).toBe("name ASC");
     expect(result.returnDistinct).toBe(true);
   });
+
+  it("maps returnCountOnly, returnExtentOnly, and returnIdsOnly from extraParams", () => {
+    const result = toProtoQueryRequest({
+      serviceId: "test",
+      layerId: 0,
+      extraParams: {
+        returnCountOnly: true,
+        returnExtentOnly: "1",
+        returnIdsOnly: "false",
+      },
+    });
+
+    expect(result.returnCountOnly).toBe(true);
+    expect(result.returnExtentOnly).toBe(true);
+    expect(result.returnIdsOnly).toBe(false);
+  });
+
+  it("maps outStatistics and groupByFieldsForStatistics", () => {
+    const result = toProtoQueryRequest({
+      serviceId: "test",
+      layerId: 0,
+      outStatistics: [
+        {
+          statisticType: "count",
+          onStatisticField: "OBJECTID",
+          outStatisticFieldName: "cnt",
+        },
+      ],
+      groupByFieldsForStatistics: "STATE, COUNTY",
+    });
+
+    expect(result.groupBy).toEqual(["STATE", "COUNTY"]);
+    expect(result.outStatistics).toHaveLength(1);
+    expect(result.outStatistics[0].statisticType).toBe(StatisticType.COUNT);
+    expect(result.outStatistics[0].onStatisticField).toBe("OBJECTID");
+    expect(result.outStatistics[0].outStatisticFieldName).toBe("cnt");
+  });
+
+  it("maps spatial filter from Esri geometry + spatialRel", () => {
+    const result = toProtoQueryRequest({
+      serviceId: "test",
+      layerId: 0,
+      geometry: { xmin: -120, ymin: 30, xmax: -110, ymax: 40, spatialReference: { wkid: 4326 } },
+      spatialRel: "esriSpatialRelIntersects",
+    });
+
+    expect(result.spatialFilter).toBeDefined();
+    expect(result.spatialFilter?.spatialRelationship).toBe(SpatialRelationship.INTERSECTS);
+    expect(result.spatialFilter?.spatialReference?.wkid).toBe(4326);
+    expect(result.spatialFilter?.geometry?.shape.case).toBe("polygon");
+  });
 });
 
 describe("fromProtoQueryResponse", () => {
@@ -160,6 +213,16 @@ describe("fromProtoQueryResponse", () => {
     const result = fromProtoQueryResponse(response) as any;
 
     expect(result.count).toBe(42);
+    expect(result.features).toBeUndefined();
+  });
+
+  it("converts zero-count count-only response", () => {
+    const response = create(QueryFeaturesResponseSchema);
+    response.count = 0n;
+
+    const result = fromProtoQueryResponse(response) as any;
+
+    expect(result.count).toBe(0);
     expect(result.features).toBeUndefined();
   });
 

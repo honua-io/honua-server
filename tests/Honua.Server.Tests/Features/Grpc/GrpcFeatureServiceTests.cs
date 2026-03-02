@@ -55,7 +55,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithWhereClause_ReturnsFeatures()
     {
         var features = ImmutableArray.Create(
@@ -80,7 +80,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_CountOnly_ReturnsCountWithNoFeatures()
     {
         _featureReader.CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -101,7 +101,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_IdsOnly_ReturnsObjectIds()
     {
         var features = ImmutableArray.Create(
@@ -123,7 +123,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ExtentOnly_ReturnsExtent()
     {
         _featureReader.GetExtentAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -147,7 +147,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_InvalidService_ThrowsNotFoundRpcException()
     {
         _resourceValidator
@@ -168,7 +168,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_GrpcDisabled_ThrowsNotFoundRpcException()
     {
         var grpcDisabledService = TestService with
@@ -197,7 +197,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ExceededTransferLimit_SetsFlag()
     {
         var features = ImmutableArray.Create(Feature.Create(1, null));
@@ -217,7 +217,7 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
-    [Endpoint("gRPC honua.v1.FeatureService/QueryFeaturesStream")]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_StreamsPages()
     {
         var features = Enumerable.Range(1, 5)
