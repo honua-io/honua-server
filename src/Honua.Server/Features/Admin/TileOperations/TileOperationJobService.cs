@@ -45,7 +45,10 @@ internal sealed partial class TileOperationJobService(
     private readonly TileLimits _tileLimits = limitsOptions?.Value?.Tiles ?? throw new ArgumentNullException(nameof(limitsOptions));
     private readonly ILogger<TileOperationJobService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    private readonly ConcurrentDictionary<string, TileOperationStartRequest> _jobRequests = new(StringComparer.Ordinal);
+    private const int JobRequestRetentionHours = 24;
+    private static readonly TimeSpan _jobRequestRetention = TimeSpan.FromHours(JobRequestRetentionHours);
+
+    private readonly ConcurrentDictionary<string, CachedTileOperationRequest> _jobRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _runningTokens = new(StringComparer.Ordinal);
     private readonly Channel<string> _jobQueue = Channel.CreateUnbounded<string>(
         new UnboundedChannelOptions
@@ -57,10 +60,11 @@ internal sealed partial class TileOperationJobService(
     public async Task<string> StartAsync(TileOperationStartRequest request, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        PruneExpiredJobRequests();
 
         var normalized = NormalizeRequest(request);
         var jobId = Guid.NewGuid().ToString("N");
-        _jobRequests[jobId] = normalized;
+        _jobRequests[jobId] = CreateCachedRequest(normalized);
 
         var progress = TileOperationProgress.CreateInitial(
             jobId,
@@ -126,12 +130,13 @@ internal sealed partial class TileOperationJobService(
 
         var cancelled = (TileOperationProgress)progress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
         await _progressStore.SetProgressAsync(jobId, cancelled, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+        RefreshJobRequestRetention(jobId);
         return true;
     }
 
     public async Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        if (!_jobRequests.TryGetValue(jobId, out var originalRequest))
+        if (!TryGetActiveJobRequest(jobId, out var originalRequest))
         {
             return null;
         }
@@ -143,6 +148,7 @@ internal sealed partial class TileOperationJobService(
             return null;
         }
 
+        _jobRequests.TryRemove(jobId, out _);
         return await StartAsync(originalRequest, cancellationToken).ConfigureAwait(false);
     }
 
@@ -153,7 +159,7 @@ internal sealed partial class TileOperationJobService(
 
     public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        if (!_jobRequests.TryGetValue(jobId, out var request))
+        if (!TryGetActiveJobRequest(jobId, out var request))
         {
             return;
         }
@@ -238,6 +244,15 @@ internal sealed partial class TileOperationJobService(
                 { "operation", request.Operation },
                 { "status", finalProgress.Status.ToString().ToLowerInvariant() }
             });
+
+        if (finalProgress.Status == OperationStatus.Completed)
+        {
+            _jobRequests.TryRemove(jobId, out _);
+        }
+        else
+        {
+            RefreshJobRequestRetention(jobId);
+        }
     }
 
     private async Task<TileOperationProgress> ExecuteInvalidationAsync(
@@ -472,7 +487,54 @@ internal sealed partial class TileOperationJobService(
         };
     }
 
+    private static CachedTileOperationRequest CreateCachedRequest(TileOperationStartRequest request)
+    {
+        return new CachedTileOperationRequest(request, DateTimeOffset.UtcNow.Add(_jobRequestRetention));
+    }
+
+    private bool TryGetActiveJobRequest(string jobId, out TileOperationStartRequest request)
+    {
+        if (!_jobRequests.TryGetValue(jobId, out var cachedRequest))
+        {
+            request = null!;
+            return false;
+        }
+
+        if (cachedRequest.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+        {
+            _jobRequests.TryRemove(jobId, out _);
+            request = null!;
+            return false;
+        }
+
+        request = cachedRequest.Request;
+        return true;
+    }
+
+    private void RefreshJobRequestRetention(string jobId)
+    {
+        if (!TryGetActiveJobRequest(jobId, out var request))
+        {
+            return;
+        }
+
+        _jobRequests[jobId] = CreateCachedRequest(request);
+    }
+
+    private void PruneExpiredJobRequests()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var (jobId, request) in _jobRequests)
+        {
+            if (request.ExpiresAtUtc <= now)
+            {
+                _jobRequests.TryRemove(jobId, out _);
+            }
+        }
+    }
+
     private readonly record struct TileCoordinate(int Z, int X, int Y);
+    private readonly record struct CachedTileOperationRequest(TileOperationStartRequest Request, DateTimeOffset ExpiresAtUtc);
 
     [LoggerMessage(EventId = 9200, Level = LogLevel.Warning, Message = "Tile job {JobId} failed during {Operation}.")]
     private static partial void LogJobFailed(ILogger logger, string jobId, string operation, Exception exception);

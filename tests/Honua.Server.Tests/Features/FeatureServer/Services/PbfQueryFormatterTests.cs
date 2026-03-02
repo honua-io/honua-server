@@ -182,6 +182,34 @@ public sealed class PbfQueryFormatterTests
     }
 
     [Fact]
+    public void FormatAsPbf_WithReturnM_EncodesMOrdinateInGeometryCoords()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(
+            1,
+            CreatePointWkbWithZm(1.25, 2.5, 3.0, 4.75),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var result = QueryResult<Feature>.Create(1, [feature]);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result,
+            layer,
+            returnGeometry: true,
+            outputSrid: null,
+            returnZ: false,
+            returnM: true,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: null);
+
+        var coords = ExtractGeometryCoords(response);
+        coords.Should().ContainInOrder(
+            (long)Math.Round(1.25 * 1_000_000d),
+            (long)Math.Round(2.5 * 1_000_000d),
+            (long)Math.Round(4.75 * 1_000_000d));
+    }
+
+    [Fact]
     public void FormatAsPbf_WithPolygonGeometry_DoesNotThrow()
     {
         var layer = CreateLayer(
@@ -394,5 +422,108 @@ public sealed class PbfQueryFormatterTests
         var point = new Point(x, y);
         var writer = new WKBWriter();
         return writer.Write(point);
+    }
+
+    private static byte[] CreatePointWkbWithZm(double x, double y, double z, double m)
+    {
+        var point = new Point(new CoordinateZM(x, y, z, m));
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true);
+        return writer.Write(point);
+    }
+
+    private static List<long> ExtractGeometryCoords(byte[] pbf)
+    {
+        var queryResult = GetFirstLengthDelimitedField(pbf, fieldNumber: 2);
+        var featureResult = GetFirstLengthDelimitedField(queryResult, fieldNumber: 1);
+        var feature = GetFirstLengthDelimitedField(featureResult, fieldNumber: 15);
+        var geometry = GetFirstLengthDelimitedField(feature, fieldNumber: 2);
+        var packedCoords = GetFirstLengthDelimitedField(geometry, fieldNumber: 3);
+        return DecodePackedSInt64Values(packedCoords);
+    }
+
+    private static byte[] GetFirstLengthDelimitedField(ReadOnlySpan<byte> message, int fieldNumber)
+    {
+        var offset = 0;
+        while (offset < message.Length)
+        {
+            var tag = ReadVarint(message, ref offset);
+            var currentField = (int)(tag >> 3);
+            var wireType = (int)(tag & 0x07);
+
+            switch (wireType)
+            {
+                case 0:
+                    _ = ReadVarint(message, ref offset);
+                    break;
+                case 1:
+                    offset += 8;
+                    break;
+                case 2:
+                {
+                    var length = checked((int)ReadVarint(message, ref offset));
+                    if (length < 0 || offset + length > message.Length)
+                    {
+                        throw new InvalidOperationException("Malformed protobuf length-delimited field.");
+                    }
+
+                    var payload = message.Slice(offset, length);
+                    offset += length;
+                    if (currentField == fieldNumber)
+                    {
+                        return payload.ToArray();
+                    }
+
+                    break;
+                }
+                case 5:
+                    offset += 4;
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unsupported protobuf wire type {wireType} in test parser.");
+            }
+        }
+
+        throw new InvalidOperationException($"Field {fieldNumber} was not found.");
+    }
+
+    private static List<long> DecodePackedSInt64Values(ReadOnlySpan<byte> payload)
+    {
+        var values = new List<long>();
+        var offset = 0;
+        while (offset < payload.Length)
+        {
+            var encoded = ReadVarint(payload, ref offset);
+            var decoded = (long)((encoded >> 1) ^ (ulong)-(long)(encoded & 1));
+            values.Add(decoded);
+        }
+
+        return values;
+    }
+
+    private static ulong ReadVarint(ReadOnlySpan<byte> data, ref int offset)
+    {
+        ulong value = 0;
+        var shift = 0;
+
+        while (true)
+        {
+            if (offset >= data.Length)
+            {
+                throw new InvalidOperationException("Unexpected end of protobuf payload.");
+            }
+
+            var b = data[offset++];
+            value |= ((ulong)(b & 0x7F)) << shift;
+            if ((b & 0x80) == 0)
+            {
+                return value;
+            }
+
+            shift += 7;
+            if (shift > 63)
+            {
+                throw new InvalidOperationException("Malformed protobuf varint.");
+            }
+        }
     }
 }

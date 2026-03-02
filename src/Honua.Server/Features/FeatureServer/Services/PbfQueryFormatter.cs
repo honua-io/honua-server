@@ -485,6 +485,12 @@ internal sealed class PbfQueryFormatter
         {
             coords.Add((long)Math.Round(coord.Z * scale));
         }
+
+        if (returnM)
+        {
+            var m = double.IsNaN(coord.M) ? 0d : coord.M;
+            coords.Add((long)Math.Round(m * scale));
+        }
     }
 
     private static void AppendCoordinateSequence(
@@ -508,6 +514,17 @@ internal sealed class PbfQueryFormatter
             if (returnZ && sequence.HasZ)
             {
                 coords.Add((long)Math.Round(sequence.GetZ(i) * scale));
+            }
+
+            if (returnM)
+            {
+                var m = sequence.HasM ? sequence.GetOrdinate(i, Ordinate.M) : double.NaN;
+                if (double.IsNaN(m))
+                {
+                    m = 0d;
+                }
+
+                coords.Add((long)Math.Round(m * scale));
             }
         }
     }
