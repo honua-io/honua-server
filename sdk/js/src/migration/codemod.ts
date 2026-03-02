@@ -14,23 +14,41 @@ const ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON =
   "No deterministic esri-leaflet mapping for this constructor; requires manual migration.";
 const ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON =
   "Dynamic import has no deterministic esri-leaflet mapping; requires manual migration.";
-const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON =
-  "ReactiveUtils import shape is unsupported for automatic migration.";
-const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON =
-  "esriConfig import shape is unsupported for automatic migration.";
+const REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON = "ReactiveUtils import shape is unsupported for automatic migration.";
+const ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON = "esriConfig import shape is unsupported for automatic migration.";
 const IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON =
   "IdentityManager import shape is unsupported for automatic migration.";
-const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON =
-  "esriRequest import shape is unsupported for automatic migration.";
+const ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON = "esriRequest import shape is unsupported for automatic migration.";
+const SHADOWED_IMPORT_CONSTRUCTOR_REASON =
+  "Constructor identifier is shadowed by a local declaration; requires manual migration.";
 
-const ESRI_LEAFLET_NATIVE_KINDS = new Set<CodemodConstructorKind>([
-  "feature-layer",
-  "map-image-layer",
-  "tile-layer",
-]);
+const ESRI_LEAFLET_NATIVE_KINDS = new Set<CodemodConstructorKind>(["feature-layer", "map-image-layer", "tile-layer"]);
 const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
+  "graphic",
+  "point-geometry",
+  "polyline-geometry",
+  "polygon-geometry",
+  "extent-geometry",
+  "spatial-reference",
+  "color",
+  "simple-line-symbol",
+  "simple-marker-symbol",
+  "picture-marker-symbol",
+  "text-symbol",
+  "label-class",
+  "simple-fill-symbol",
+  "class-breaks-renderer",
+  "simple-renderer",
+  "unique-value-renderer",
+  "graphics-layer",
+  "group-layer",
+  "route-layer",
+  "route-task",
+  "basemap",
   "map",
   "map-view",
+  "scene-view",
+  "web-map",
   "layer-list",
   "legend-widget",
   "popup-widget",
@@ -46,6 +64,31 @@ const ESRI_LEAFLET_COMPAT_FALLBACK_KINDS = new Set<CodemodConstructorKind>([
   "fullscreen-widget",
   "zoom-widget",
   "attribution-widget",
+  "table-list-widget",
+  "feature-widget",
+  "feature-templates-widget",
+  "feature-form-widget",
+  "feature-table-widget",
+  "feature-set",
+  "popup-template",
+  "swipe-widget",
+  "print-widget",
+  "basemap-layer-list-widget",
+  "sketch-widget",
+  "editor-widget",
+  "track-widget",
+  "distance-measurement-2d-widget",
+  "area-measurement-2d-widget",
+  "measurement-widget",
+  "time-slider-widget",
+  "directions-widget",
+  "coordinate-conversion-widget",
+  "query",
+  "oauth-info",
+  "identity-manager",
+  "esri-request",
+  "esri-config",
+  "reactive-utils",
 ]);
 
 export type CodemodTarget = "honua-compat" | "esri-leaflet";
@@ -130,10 +173,7 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "feature-layer",
     compatSymbol: "FeatureLayerCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/FeatureLayer",
-      "@arcgis/core/layers/FeatureLayer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/FeatureLayer", "@arcgis/core/layers/FeatureLayer.js"]),
   },
   {
     kind: "graphic",
@@ -163,10 +203,7 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "spatial-reference",
     compatSymbol: "SpatialReferenceCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/geometry/SpatialReference",
-      "@arcgis/core/geometry/SpatialReference.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/geometry/SpatialReference", "@arcgis/core/geometry/SpatialReference.js"]),
   },
   {
     kind: "color",
@@ -176,26 +213,17 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "simple-line-symbol",
     compatSymbol: "SimpleLineSymbolCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/symbols/SimpleLineSymbol",
-      "@arcgis/core/symbols/SimpleLineSymbol.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/symbols/SimpleLineSymbol", "@arcgis/core/symbols/SimpleLineSymbol.js"]),
   },
   {
     kind: "simple-marker-symbol",
     compatSymbol: "SimpleMarkerSymbolCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/symbols/SimpleMarkerSymbol",
-      "@arcgis/core/symbols/SimpleMarkerSymbol.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/symbols/SimpleMarkerSymbol", "@arcgis/core/symbols/SimpleMarkerSymbol.js"]),
   },
   {
     kind: "picture-marker-symbol",
     compatSymbol: "PictureMarkerSymbolCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/symbols/PictureMarkerSymbol",
-      "@arcgis/core/symbols/PictureMarkerSymbol.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/symbols/PictureMarkerSymbol", "@arcgis/core/symbols/PictureMarkerSymbol.js"]),
   },
   {
     kind: "text-symbol",
@@ -205,18 +233,12 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "label-class",
     compatSymbol: "LabelClassCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/support/LabelClass",
-      "@arcgis/core/layers/support/LabelClass.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/support/LabelClass", "@arcgis/core/layers/support/LabelClass.js"]),
   },
   {
     kind: "simple-fill-symbol",
     compatSymbol: "SimpleFillSymbolCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/symbols/SimpleFillSymbol",
-      "@arcgis/core/symbols/SimpleFillSymbol.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/symbols/SimpleFillSymbol", "@arcgis/core/symbols/SimpleFillSymbol.js"]),
   },
   {
     kind: "class-breaks-renderer",
@@ -229,10 +251,7 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "simple-renderer",
     compatSymbol: "SimpleRendererCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/renderers/SimpleRenderer",
-      "@arcgis/core/renderers/SimpleRenderer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/renderers/SimpleRenderer", "@arcgis/core/renderers/SimpleRenderer.js"]),
   },
   {
     kind: "unique-value-renderer",
@@ -245,50 +264,32 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "graphics-layer",
     compatSymbol: "GraphicsLayerCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/GraphicsLayer",
-      "@arcgis/core/layers/GraphicsLayer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/GraphicsLayer", "@arcgis/core/layers/GraphicsLayer.js"]),
   },
   {
     kind: "group-layer",
     compatSymbol: "GroupLayerCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/GroupLayer",
-      "@arcgis/core/layers/GroupLayer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/GroupLayer", "@arcgis/core/layers/GroupLayer.js"]),
   },
   {
     kind: "map-image-layer",
     compatSymbol: "MapImageLayerCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/MapImageLayer",
-      "@arcgis/core/layers/MapImageLayer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/MapImageLayer", "@arcgis/core/layers/MapImageLayer.js"]),
   },
   {
     kind: "tile-layer",
     compatSymbol: "TileLayerCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/TileLayer",
-      "@arcgis/core/layers/TileLayer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/TileLayer", "@arcgis/core/layers/TileLayer.js"]),
   },
   {
     kind: "route-layer",
     compatSymbol: "RouteLayerCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/layers/RouteLayer",
-      "@arcgis/core/layers/RouteLayer.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/layers/RouteLayer", "@arcgis/core/layers/RouteLayer.js"]),
   },
   {
     kind: "route-task",
     compatSymbol: "RouteTaskCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/rest/route/RouteTask",
-      "@arcgis/core/rest/route/RouteTask.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/rest/route/RouteTask", "@arcgis/core/rest/route/RouteTask.js"]),
   },
   {
     kind: "basemap",
@@ -303,10 +304,7 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "map-view",
     compatSymbol: "MapViewCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/views/MapView",
-      "@arcgis/core/views/MapView.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/views/MapView", "@arcgis/core/views/MapView.js"]),
   },
   {
     kind: "web-map",
@@ -316,234 +314,147 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "scene-view",
     compatSymbol: "SceneViewCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/views/SceneView",
-      "@arcgis/core/views/SceneView.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/views/SceneView", "@arcgis/core/views/SceneView.js"]),
   },
   {
     kind: "layer-list",
     compatSymbol: "LayerListCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/LayerList",
-      "@arcgis/core/widgets/LayerList.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/LayerList", "@arcgis/core/widgets/LayerList.js"]),
   },
   {
     kind: "table-list-widget",
     compatSymbol: "TableListCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/TableList",
-      "@arcgis/core/widgets/TableList.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/TableList", "@arcgis/core/widgets/TableList.js"]),
   },
   {
     kind: "feature-widget",
     compatSymbol: "FeatureCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Feature",
-      "@arcgis/core/widgets/Feature.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Feature", "@arcgis/core/widgets/Feature.js"]),
   },
   {
     kind: "feature-templates-widget",
     compatSymbol: "FeatureTemplatesCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/FeatureTemplates",
-      "@arcgis/core/widgets/FeatureTemplates.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/FeatureTemplates", "@arcgis/core/widgets/FeatureTemplates.js"]),
   },
   {
     kind: "feature-form-widget",
     compatSymbol: "FeatureFormCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/FeatureForm",
-      "@arcgis/core/widgets/FeatureForm.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/FeatureForm", "@arcgis/core/widgets/FeatureForm.js"]),
   },
   {
     kind: "feature-table-widget",
     compatSymbol: "FeatureTableCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/FeatureTable",
-      "@arcgis/core/widgets/FeatureTable.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/FeatureTable", "@arcgis/core/widgets/FeatureTable.js"]),
   },
   {
     kind: "feature-set",
     compatSymbol: "FeatureSetCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/rest/support/FeatureSet",
-      "@arcgis/core/rest/support/FeatureSet.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/rest/support/FeatureSet", "@arcgis/core/rest/support/FeatureSet.js"]),
   },
   {
     kind: "legend-widget",
     compatSymbol: "LegendCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Legend",
-      "@arcgis/core/widgets/Legend.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Legend", "@arcgis/core/widgets/Legend.js"]),
   },
   {
     kind: "popup-widget",
     compatSymbol: "PopupCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Popup",
-      "@arcgis/core/widgets/Popup.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Popup", "@arcgis/core/widgets/Popup.js"]),
   },
   {
     kind: "popup-template",
     compatSymbol: "PopupTemplateCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/PopupTemplate",
-      "@arcgis/core/PopupTemplate.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/PopupTemplate", "@arcgis/core/PopupTemplate.js"]),
   },
   {
     kind: "swipe-widget",
     compatSymbol: "SwipeCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Swipe",
-      "@arcgis/core/widgets/Swipe.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Swipe", "@arcgis/core/widgets/Swipe.js"]),
   },
   {
     kind: "print-widget",
     compatSymbol: "PrintCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Print",
-      "@arcgis/core/widgets/Print.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Print", "@arcgis/core/widgets/Print.js"]),
   },
   {
     kind: "home-widget",
     compatSymbol: "HomeCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Home",
-      "@arcgis/core/widgets/Home.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Home", "@arcgis/core/widgets/Home.js"]),
   },
   {
     kind: "basemap-toggle-widget",
     compatSymbol: "BasemapToggleCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/BasemapToggle",
-      "@arcgis/core/widgets/BasemapToggle.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/BasemapToggle", "@arcgis/core/widgets/BasemapToggle.js"]),
   },
   {
     kind: "locate-widget",
     compatSymbol: "LocateCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Locate",
-      "@arcgis/core/widgets/Locate.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Locate", "@arcgis/core/widgets/Locate.js"]),
   },
   {
     kind: "scale-bar-widget",
     compatSymbol: "ScaleBarCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/ScaleBar",
-      "@arcgis/core/widgets/ScaleBar.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/ScaleBar", "@arcgis/core/widgets/ScaleBar.js"]),
   },
   {
     kind: "search-widget",
     compatSymbol: "SearchCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Search",
-      "@arcgis/core/widgets/Search.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Search", "@arcgis/core/widgets/Search.js"]),
   },
   {
     kind: "basemap-layer-list-widget",
     compatSymbol: "BasemapLayerListCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/BasemapLayerList",
-      "@arcgis/core/widgets/BasemapLayerList.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/BasemapLayerList", "@arcgis/core/widgets/BasemapLayerList.js"]),
   },
   {
     kind: "basemap-gallery-widget",
     compatSymbol: "BasemapGalleryCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/BasemapGallery",
-      "@arcgis/core/widgets/BasemapGallery.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/BasemapGallery", "@arcgis/core/widgets/BasemapGallery.js"]),
   },
   {
     kind: "expand-widget",
     compatSymbol: "ExpandCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Expand",
-      "@arcgis/core/widgets/Expand.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Expand", "@arcgis/core/widgets/Expand.js"]),
   },
   {
     kind: "compass-widget",
     compatSymbol: "CompassCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Compass",
-      "@arcgis/core/widgets/Compass.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Compass", "@arcgis/core/widgets/Compass.js"]),
   },
   {
     kind: "bookmarks-widget",
     compatSymbol: "BookmarksCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Bookmarks",
-      "@arcgis/core/widgets/Bookmarks.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Bookmarks", "@arcgis/core/widgets/Bookmarks.js"]),
   },
   {
     kind: "fullscreen-widget",
     compatSymbol: "FullscreenCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Fullscreen",
-      "@arcgis/core/widgets/Fullscreen.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Fullscreen", "@arcgis/core/widgets/Fullscreen.js"]),
   },
   {
     kind: "zoom-widget",
     compatSymbol: "ZoomCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Zoom",
-      "@arcgis/core/widgets/Zoom.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Zoom", "@arcgis/core/widgets/Zoom.js"]),
   },
   {
     kind: "attribution-widget",
     compatSymbol: "AttributionCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Attribution",
-      "@arcgis/core/widgets/Attribution.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Attribution", "@arcgis/core/widgets/Attribution.js"]),
   },
   {
     kind: "sketch-widget",
     compatSymbol: "SketchCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Sketch",
-      "@arcgis/core/widgets/Sketch.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Sketch", "@arcgis/core/widgets/Sketch.js"]),
   },
   {
     kind: "editor-widget",
     compatSymbol: "EditorCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Editor",
-      "@arcgis/core/widgets/Editor.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Editor", "@arcgis/core/widgets/Editor.js"]),
   },
   {
     kind: "track-widget",
     compatSymbol: "TrackCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Track",
-      "@arcgis/core/widgets/Track.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Track", "@arcgis/core/widgets/Track.js"]),
   },
   {
     kind: "distance-measurement-2d-widget",
@@ -556,34 +467,22 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "area-measurement-2d-widget",
     compatSymbol: "AreaMeasurement2DCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/AreaMeasurement2D",
-      "@arcgis/core/widgets/AreaMeasurement2D.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/AreaMeasurement2D", "@arcgis/core/widgets/AreaMeasurement2D.js"]),
   },
   {
     kind: "measurement-widget",
     compatSymbol: "MeasurementCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Measurement",
-      "@arcgis/core/widgets/Measurement.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Measurement", "@arcgis/core/widgets/Measurement.js"]),
   },
   {
     kind: "time-slider-widget",
     compatSymbol: "TimeSliderCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/TimeSlider",
-      "@arcgis/core/widgets/TimeSlider.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/TimeSlider", "@arcgis/core/widgets/TimeSlider.js"]),
   },
   {
     kind: "directions-widget",
     compatSymbol: "DirectionsCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/widgets/Directions",
-      "@arcgis/core/widgets/Directions.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/widgets/Directions", "@arcgis/core/widgets/Directions.js"]),
   },
   {
     kind: "coordinate-conversion-widget",
@@ -596,26 +495,17 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "query",
     compatSymbol: "QueryCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/rest/support/Query",
-      "@arcgis/core/rest/support/Query.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/rest/support/Query", "@arcgis/core/rest/support/Query.js"]),
   },
   {
     kind: "oauth-info",
     compatSymbol: "OAuthInfoCompat",
-    arcGisModules: new Set([
-      "@arcgis/core/identity/OAuthInfo",
-      "@arcgis/core/identity/OAuthInfo.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/identity/OAuthInfo", "@arcgis/core/identity/OAuthInfo.js"]),
   },
   {
     kind: "identity-manager",
     compatSymbol: "identityManager",
-    arcGisModules: new Set([
-      "@arcgis/core/identity/IdentityManager",
-      "@arcgis/core/identity/IdentityManager.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/identity/IdentityManager", "@arcgis/core/identity/IdentityManager.js"]),
   },
   {
     kind: "esri-request",
@@ -630,32 +520,43 @@ const REWRITE_SPECS: readonly ConstructorRewriteSpec[] = [
   {
     kind: "reactive-utils",
     compatSymbol: "reactiveUtils",
-    arcGisModules: new Set([
-      "@arcgis/core/core/reactiveUtils",
-      "@arcgis/core/core/reactiveUtils.js",
-    ]),
+    arcGisModules: new Set(["@arcgis/core/core/reactiveUtils", "@arcgis/core/core/reactiveUtils.js"]),
   },
 ];
 
-const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> =
-  Object.freeze({
-    "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
-    "esri-leaflet": new Set([
-      ...ESRI_LEAFLET_NATIVE_KINDS,
-      ...ESRI_LEAFLET_COMPAT_FALLBACK_KINDS,
-    ]),
-  });
+const TARGET_SUPPORTED_KINDS: Readonly<Record<CodemodTarget, ReadonlySet<CodemodConstructorKind>>> = Object.freeze({
+  "honua-compat": new Set(REWRITE_SPECS.map((spec) => spec.kind)),
+  "esri-leaflet": new Set([...ESRI_LEAFLET_NATIVE_KINDS, ...ESRI_LEAFLET_COMPAT_FALLBACK_KINDS]),
+});
 
 export const SUPPORTED_ARCGIS_MODULES: readonly string[] = REWRITE_SPECS.flatMap((spec) =>
   Array.from(spec.arcGisModules),
 );
-export const SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH: Readonly<Record<string, CodemodConstructorKind>> =
-  Object.freeze(buildModuleToKindLookup(REWRITE_SPECS));
+export const SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH: Readonly<Record<string, CodemodConstructorKind>> = Object.freeze(
+  buildModuleToKindLookup(REWRITE_SPECS),
+);
+const ARCGIS_BARREL_KIND_BY_PATH: Readonly<Record<string, Readonly<Record<string, CodemodConstructorKind>>>> =
+  Object.freeze(buildBarrelKindLookup(REWRITE_SPECS));
+export const SUPPORTED_ARCGIS_BARREL_MODULES: readonly string[] = Object.freeze(
+  Object.keys(ARCGIS_BARREL_KIND_BY_PATH).sort(),
+);
 
 const MODULE_TO_SPEC = buildModuleToSpecLookup(REWRITE_SPECS);
 
 export function isKindSupportedForTarget(kind: CodemodConstructorKind, target: CodemodTarget): boolean {
   return TARGET_SUPPORTED_KINDS[target].has(kind);
+}
+
+export function isSupportedArcGisBarrelModulePath(modulePath: string): boolean {
+  return ARCGIS_BARREL_KIND_BY_PATH[normalizeArcGisModulePath(modulePath)] !== undefined;
+}
+
+export function resolveArcGisBarrelImportKind(
+  modulePath: string,
+  importedName: string,
+): CodemodConstructorKind | undefined {
+  const bySymbol = ARCGIS_BARREL_KIND_BY_PATH[normalizeArcGisModulePath(modulePath)];
+  return bySymbol?.[importedName];
 }
 
 interface TextEdit {
@@ -676,12 +577,15 @@ interface RequireBinding {
   localName: string;
 }
 
+export type MigrationTodoDifficulty = "trivial" | "moderate" | "complex";
+
 export interface MigrationTodo {
   kind: CodemodConstructorKind;
   file: string;
   line: number;
   column: number;
   reason: string;
+  difficulty: MigrationTodoDifficulty;
 }
 
 export interface CodemodKindMetrics {
@@ -718,6 +622,7 @@ export interface EsriCompatCodemodResult {
   metrics: CodemodMetrics;
   fileResults: CodemodFileResult[];
   manualTodos: MigrationTodo[];
+  errors?: CodemodFileError[];
 }
 
 export interface EsriCompatCodemodOptions {
@@ -728,9 +633,17 @@ export interface EsriCompatCodemodOptions {
   target?: CodemodTarget;
 }
 
+export interface CodemodFileError {
+  file: string;
+  stage: "read" | "transform" | "write";
+  message: string;
+}
+
 export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCompatCodemodResult {
   const rootDir = path.resolve(options.rootDir);
   const files = collectSourceFiles(rootDir);
+  const sourceFilesSet = new Set(files.map((file) => path.resolve(file)));
+  const localArcGisReExports = buildLocalArcGisReExportIndex(files, sourceFilesSet);
   const compatImportPath = options.compatImportPath ?? DEFAULT_COMPAT_IMPORT_PATH;
   const annotateTodos = options.annotateTodos ?? false;
   const target = options.target ?? "honua-compat";
@@ -743,10 +656,40 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
   };
   const fileResults: CodemodFileResult[] = [];
   const manualTodos: MigrationTodo[] = [];
+  const errors: CodemodFileError[] = [];
 
   for (const file of files) {
-    const source = fs.readFileSync(file, "utf8");
-    const fileResult = codemodFile(file, source, compatImportPath, annotateTodos, target);
+    let source: string;
+    try {
+      source = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      errors.push({
+        file,
+        stage: "read",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+
+    let fileResult: ReturnType<typeof codemodFile>;
+    try {
+      fileResult = codemodFile(
+        file,
+        source,
+        compatImportPath,
+        annotateTodos,
+        target,
+        localArcGisReExports,
+        sourceFilesSet,
+      );
+    } catch (error) {
+      errors.push({
+        file,
+        stage: "transform",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
 
     for (const kind of fileResult.rewrittenKinds) {
       metrics.byKind[kind].autoMigrated += 1;
@@ -771,7 +714,16 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
       fileResult.annotatedTodoComments > 0;
     if (hasChanges) {
       if (options.write) {
-        fs.writeFileSync(file, fileResult.nextSource, "utf8");
+        try {
+          fs.writeFileSync(file, fileResult.nextSource, "utf8");
+        } catch (error) {
+          errors.push({
+            file,
+            stage: "write",
+            message: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
       }
       fileResults.push({
         file,
@@ -813,7 +765,28 @@ export function runEsriCompatCodemod(options: EsriCompatCodemodOptions): EsriCom
     metrics,
     fileResults: fileResults.sort((a, b) => a.file.localeCompare(b.file)),
     manualTodos: manualTodos.sort(compareTodos),
+    errors: errors.length > 0 ? errors.sort(compareFileErrors) : undefined,
   };
+}
+
+function assertParsableSource(file: string, source: string): void {
+  const parseProbe = ts.transpileModule(source, {
+    fileName: file,
+    reportDiagnostics: true,
+    compilerOptions: {
+      allowJs: true,
+      jsx: ts.JsxEmit.Preserve,
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.ESNext,
+    },
+  });
+  const syntaxError = parseProbe.diagnostics?.find((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+  if (!syntaxError) {
+    return;
+  }
+
+  const message = ts.flattenDiagnosticMessageText(syntaxError.messageText, "\n");
+  throw new Error(`Unable to parse source file: ${message}`);
 }
 
 function codemodFile(
@@ -822,6 +795,8 @@ function codemodFile(
   compatImportPath: string,
   annotateTodos: boolean,
   target: CodemodTarget,
+  localArcGisReExports: ReadonlyMap<string, Readonly<Record<string, CodemodConstructorKind>>>,
+  sourceFilesSet: ReadonlySet<string>,
 ): {
   nextSource: string;
   rewrittenImports: number;
@@ -833,8 +808,9 @@ function codemodFile(
   annotatedTodoComments: number;
   manualTodos: MigrationTodo[];
 } {
+  assertParsableSource(file, source);
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  const imports = collectSupportedImports(sourceFile);
+  const imports = collectSupportedImports(sourceFile, file, localArcGisReExports, sourceFilesSet);
 
   const importsByLocalName = new Map<string, ArcGisImportBinding>();
   for (const importBinding of imports) {
@@ -842,6 +818,8 @@ function codemodFile(
       importsByLocalName.set(importBinding.localName, importBinding);
     }
   }
+  const shadowedImportLocalNames = collectShadowedImportLocalNames(sourceFile, new Set(importsByLocalName.keys()));
+  const identifierMemberUsage = buildIdentifierMemberUsageIndex(sourceFile);
 
   const constructorEdits: TextEdit[] = [];
   const dynamicImportEdits: TextEdit[] = [];
@@ -956,6 +934,7 @@ function codemodFile(
           line: location.line + 1,
           column: location.character + 1,
           reason: ESRI_LEAFLET_UNSUPPORTED_DYNAMIC_IMPORT_REASON,
+          difficulty: "complex",
         });
         if (annotateTodos) {
           const lineStart = findLineStartOffset(source, nodeStart);
@@ -981,6 +960,30 @@ function codemodFile(
     }
 
     const importBinding = rewriteTarget.binding;
+    if (shadowedImportLocalNames.has(importBinding.localName)) {
+      const nodeStart = node.getStart(sourceFile);
+      const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
+      manualTodos.push({
+        kind: importBinding.kind,
+        file,
+        line: location.line + 1,
+        column: location.character + 1,
+        reason: `${SHADOWED_IMPORT_CONSTRUCTOR_REASON} (${importBinding.localName})`,
+        difficulty: "trivial",
+      });
+      if (annotateTodos) {
+        const lineStart = findLineStartOffset(source, nodeStart);
+        if (shouldInsertTodoComment(source, lineStart, nodeStart)) {
+          todoCommentEdits.push({
+            start: lineStart,
+            end: lineStart,
+            text: `// ${TODO_MARKER}[${importBinding.kind}]: ${SHADOWED_IMPORT_CONSTRUCTOR_REASON}\n`,
+          });
+        }
+      }
+      return;
+    }
+
     if (isCommonJsModule && importBinding.sourceKind === "require") {
       const nodeStart = node.getStart(sourceFile);
       const location = sourceFile.getLineAndCharacterOfPosition(nodeStart);
@@ -990,6 +993,7 @@ function codemodFile(
         line: location.line + 1,
         column: location.character + 1,
         reason: CJS_REQUIRE_MANUAL_REASON,
+        difficulty: "moderate",
       });
       if (annotateTodos) {
         const lineStart = findLineStartOffset(source, nodeStart);
@@ -1013,6 +1017,23 @@ function codemodFile(
           start: rewriteTarget.start,
           end: rewriteTarget.end,
           text: spec.compatSymbol,
+        });
+        rewrittenKinds.push(importBinding.kind);
+        return;
+      }
+
+      const forcedFallbackSymbol = resolveEsriLeafletForcedCompatFallbackSymbol(
+        importBinding.kind,
+        node,
+        sourceFile,
+        identifierMemberUsage,
+      );
+      if (forcedFallbackSymbol) {
+        requiredCompatSymbols.add(forcedFallbackSymbol);
+        constructorEdits.push({
+          start: rewriteTarget.start,
+          end: rewriteTarget.end,
+          text: forcedFallbackSymbol,
         });
         rewrittenKinds.push(importBinding.kind);
         return;
@@ -1055,6 +1076,7 @@ function codemodFile(
         line: location.line + 1,
         column: location.character + 1,
         reason: ESRI_LEAFLET_UNSUPPORTED_CONSTRUCTOR_REASON,
+        difficulty: "complex",
       });
       if (annotateTodos) {
         const lineStart = findLineStartOffset(source, nodeStart);
@@ -1077,6 +1099,7 @@ function codemodFile(
       line: location.line + 1,
       column: location.character + 1,
       reason: safeCheck.reason,
+      difficulty: "moderate",
     });
     if (annotateTodos) {
       const lineStart = findLineStartOffset(source, nodeStart);
@@ -1116,12 +1139,7 @@ function codemodFile(
   let addedCompatImport = false;
   const compatSymbols = Array.from(requiredCompatSymbols).sort();
   if (compatSymbols.length > 0) {
-    const compatImportResult = ensureCompatNamedImports(
-      file,
-      transformed,
-      compatSymbols,
-      compatImportPath,
-    );
+    const compatImportResult = ensureCompatNamedImports(file, transformed, compatSymbols, compatImportPath);
     transformed = compatImportResult.nextSource;
     addedCompatImport = compatImportResult.changed;
   }
@@ -1174,11 +1192,7 @@ function rewriteReactiveUtilsImports(options: {
       continue;
     }
 
-    const replacement = buildReactiveUtilsCompatImport(
-      statement,
-      options.sourceFile,
-      options.compatImportPath,
-    );
+    const replacement = buildReactiveUtilsCompatImport(statement, options.sourceFile, options.compatImportPath);
     if (!replacement) {
       const nodeStart = statement.getStart(options.sourceFile);
       const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
@@ -1188,6 +1202,7 @@ function rewriteReactiveUtilsImports(options: {
         line: location.line + 1,
         column: location.character + 1,
         reason: REACTIVE_UTILS_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
       });
 
       if (options.annotateTodos) {
@@ -1257,6 +1272,7 @@ function rewriteEsriRequestImports(options: {
         line: location.line + 1,
         column: location.character + 1,
         reason: ESRI_REQUEST_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
       });
 
       if (options.annotateTodos) {
@@ -1354,11 +1370,7 @@ function rewriteIdentityManagerImports(options: {
       continue;
     }
 
-    const replacement = buildIdentityManagerCompatImport(
-      statement,
-      options.sourceFile,
-      options.compatImportPath,
-    );
+    const replacement = buildIdentityManagerCompatImport(statement, options.sourceFile, options.compatImportPath);
     if (!replacement) {
       const nodeStart = statement.getStart(options.sourceFile);
       const location = options.sourceFile.getLineAndCharacterOfPosition(nodeStart);
@@ -1368,6 +1380,7 @@ function rewriteIdentityManagerImports(options: {
         line: location.line + 1,
         column: location.character + 1,
         reason: IDENTITY_MANAGER_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
       });
 
       if (options.annotateTodos) {
@@ -1475,6 +1488,7 @@ function rewriteEsriConfigImports(options: {
         line: location.line + 1,
         column: location.character + 1,
         reason: ESRI_CONFIG_IMPORT_UNSUPPORTED_REASON,
+        difficulty: "complex",
       });
 
       if (options.annotateTodos) {
@@ -1610,9 +1624,7 @@ function buildModuleToSpecLookup(specs: readonly ConstructorRewriteSpec[]): Map<
   return result;
 }
 
-function buildModuleToKindLookup(
-  specs: readonly ConstructorRewriteSpec[],
-): Record<string, CodemodConstructorKind> {
+function buildModuleToKindLookup(specs: readonly ConstructorRewriteSpec[]): Record<string, CodemodConstructorKind> {
   const result: Record<string, CodemodConstructorKind> = {};
   for (const spec of specs) {
     for (const modulePath of spec.arcGisModules) {
@@ -1620,6 +1632,272 @@ function buildModuleToKindLookup(
     }
   }
   return result;
+}
+
+function buildBarrelKindLookup(
+  specs: readonly ConstructorRewriteSpec[],
+): Record<string, Readonly<Record<string, CodemodConstructorKind>>> {
+  const byPath = new Map<string, Map<string, CodemodConstructorKind>>();
+
+  for (const spec of specs) {
+    for (const rawModulePath of spec.arcGisModules) {
+      const modulePath = normalizeArcGisModulePath(rawModulePath);
+      const slashIndex = modulePath.lastIndexOf("/");
+      if (slashIndex < "@arcgis/core/".length) {
+        continue;
+      }
+      const barrelPath = modulePath.slice(0, slashIndex);
+      const symbol = modulePath.slice(slashIndex + 1);
+      if (!symbol) {
+        continue;
+      }
+
+      let symbols = byPath.get(barrelPath);
+      if (!symbols) {
+        symbols = new Map<string, CodemodConstructorKind>();
+        byPath.set(barrelPath, symbols);
+      }
+      if (!symbols.has(symbol)) {
+        symbols.set(symbol, spec.kind);
+      }
+    }
+  }
+
+  const result: Record<string, Readonly<Record<string, CodemodConstructorKind>>> = {};
+  for (const [barrelPath, symbols] of byPath.entries()) {
+    result[barrelPath] = Object.freeze(Object.fromEntries(symbols.entries()));
+  }
+  return result;
+}
+
+function normalizeArcGisModulePath(modulePath: string): string {
+  return modulePath.endsWith(".js") ? modulePath.slice(0, -3) : modulePath;
+}
+
+function resolveArcGisImportKindFromModule(
+  modulePath: string,
+  importedName: string,
+): CodemodConstructorKind | undefined {
+  const normalizedModulePath = normalizeArcGisModulePath(modulePath);
+  const spec = MODULE_TO_SPEC.get(modulePath) ?? MODULE_TO_SPEC.get(normalizedModulePath);
+  if (spec) {
+    if (importedName === "default") {
+      return spec.kind;
+    }
+    const inferredSymbol = normalizedModulePath.slice(normalizedModulePath.lastIndexOf("/") + 1);
+    if (importedName === inferredSymbol) {
+      return spec.kind;
+    }
+    return undefined;
+  }
+
+  return resolveArcGisBarrelImportKind(normalizedModulePath, importedName);
+}
+
+function resolveArcGisExportAllKinds(modulePath: string): ReadonlyArray<readonly [string, CodemodConstructorKind]> {
+  const normalizedModulePath = normalizeArcGisModulePath(modulePath);
+  const spec = MODULE_TO_SPEC.get(modulePath) ?? MODULE_TO_SPEC.get(normalizedModulePath);
+  if (spec) {
+    const inferredSymbol = normalizedModulePath.slice(normalizedModulePath.lastIndexOf("/") + 1);
+    if (!inferredSymbol) {
+      return [];
+    }
+    return [[inferredSymbol, spec.kind]];
+  }
+
+  const barrelKinds = ARCGIS_BARREL_KIND_BY_PATH[normalizedModulePath];
+  if (!barrelKinds) {
+    return [];
+  }
+  return Object.entries(barrelKinds);
+}
+
+function resolveLocalModulePath(
+  importerFile: string,
+  moduleSpecifier: string,
+  sourceFilesSet: ReadonlySet<string>,
+): string | undefined {
+  if (!moduleSpecifier.startsWith(".") && !moduleSpecifier.startsWith("/")) {
+    return undefined;
+  }
+
+  const basePath = path.resolve(path.dirname(importerFile), moduleSpecifier);
+  const candidates: string[] = [];
+
+  if (path.extname(basePath)) {
+    candidates.push(basePath);
+  } else {
+    candidates.push(basePath);
+    for (const extension of SOURCE_EXTENSIONS) {
+      candidates.push(`${basePath}${extension}`);
+    }
+    for (const extension of SOURCE_EXTENSIONS) {
+      candidates.push(path.join(basePath, `index${extension}`));
+    }
+  }
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (sourceFilesSet.has(resolved)) {
+      return resolved;
+    }
+  }
+  return undefined;
+}
+
+function buildLocalArcGisReExportIndex(
+  files: readonly string[],
+  sourceFilesSet: ReadonlySet<string>,
+): ReadonlyMap<string, Readonly<Record<string, CodemodConstructorKind>>> {
+  type ReExportEdge =
+    | {
+        kind: "all";
+        file: string;
+        moduleSpecifier: string;
+      }
+    | {
+        kind: "named";
+        file: string;
+        moduleSpecifier: string;
+        mappings: Array<{ importedName: string; exportedName: string }>;
+      };
+
+  const byFile = new Map<string, Map<string, CodemodConstructorKind>>();
+  const localEdges: ReExportEdge[] = [];
+
+  for (const file of files) {
+    let source: string;
+    try {
+      source = fs.readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+
+    const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const exportsBySymbol = new Map<string, CodemodConstructorKind>();
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier) {
+        continue;
+      }
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) {
+        continue;
+      }
+
+      const moduleSpecifier = statement.moduleSpecifier.text;
+      if (moduleSpecifier.startsWith("@arcgis/core/")) {
+        if (!statement.exportClause) {
+          for (const [symbol, kind] of resolveArcGisExportAllKinds(moduleSpecifier)) {
+            if (!exportsBySymbol.has(symbol)) {
+              exportsBySymbol.set(symbol, kind);
+            }
+          }
+          continue;
+        }
+
+        if (ts.isNamedExports(statement.exportClause)) {
+          for (const element of statement.exportClause.elements) {
+            const importedName = element.propertyName?.text ?? element.name.text;
+            const kind = resolveArcGisImportKindFromModule(moduleSpecifier, importedName);
+            if (!kind) {
+              continue;
+            }
+            const exportedName = element.name.text;
+            if (!exportsBySymbol.has(exportedName)) {
+              exportsBySymbol.set(exportedName, kind);
+            }
+          }
+        }
+        continue;
+      }
+
+      if (!moduleSpecifier.startsWith(".") && !moduleSpecifier.startsWith("/")) {
+        continue;
+      }
+      if (!statement.exportClause) {
+        localEdges.push({
+          kind: "all",
+          file,
+          moduleSpecifier,
+        });
+        continue;
+      }
+      if (!ts.isNamedExports(statement.exportClause)) {
+        continue;
+      }
+
+      const mappings: Array<{ importedName: string; exportedName: string }> = [];
+      for (const element of statement.exportClause.elements) {
+        mappings.push({
+          importedName: element.propertyName?.text ?? element.name.text,
+          exportedName: element.name.text,
+        });
+      }
+      if (mappings.length > 0) {
+        localEdges.push({
+          kind: "named",
+          file,
+          moduleSpecifier,
+          mappings,
+        });
+      }
+    }
+
+    if (exportsBySymbol.size > 0) {
+      byFile.set(path.resolve(file), exportsBySymbol);
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of localEdges) {
+      const sourcePath = resolveLocalModulePath(edge.file, edge.moduleSpecifier, sourceFilesSet);
+      if (!sourcePath) {
+        continue;
+      }
+
+      const sourceExports = byFile.get(sourcePath);
+      if (!sourceExports || sourceExports.size === 0) {
+        continue;
+      }
+
+      let targetExports = byFile.get(path.resolve(edge.file));
+      if (!targetExports) {
+        targetExports = new Map<string, CodemodConstructorKind>();
+        byFile.set(path.resolve(edge.file), targetExports);
+      }
+
+      if (edge.kind === "all") {
+        for (const [exportedName, kind] of sourceExports.entries()) {
+          if (targetExports.has(exportedName)) {
+            continue;
+          }
+          targetExports.set(exportedName, kind);
+          changed = true;
+        }
+        continue;
+      }
+
+      for (const mapping of edge.mappings) {
+        const kind = sourceExports.get(mapping.importedName);
+        if (!kind || targetExports.has(mapping.exportedName)) {
+          continue;
+        }
+        targetExports.set(mapping.exportedName, kind);
+        changed = true;
+      }
+    }
+  }
+
+  const frozen = new Map<string, Readonly<Record<string, CodemodConstructorKind>>>();
+  for (const [file, exportsBySymbol] of byFile.entries()) {
+    if (exportsBySymbol.size === 0) {
+      continue;
+    }
+    frozen.set(file, Object.freeze(Object.fromEntries(exportsBySymbol.entries())));
+  }
+  return frozen;
 }
 
 function createEmptyByKindMetrics(): CodemodMetricsByKind {
@@ -1695,7 +1973,12 @@ function createEmptyByKindMetrics(): CodemodMetricsByKind {
   };
 }
 
-function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding[] {
+function collectSupportedImports(
+  sourceFile: ts.SourceFile,
+  file: string,
+  localArcGisReExports: ReadonlyMap<string, Readonly<Record<string, CodemodConstructorKind>>>,
+  sourceFilesSet: ReadonlySet<string>,
+): ArcGisImportBinding[] {
   const result: ArcGisImportBinding[] = [];
 
   for (const statement of sourceFile.statements) {
@@ -1703,44 +1986,90 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
       continue;
     }
 
-    const spec = MODULE_TO_SPEC.get(statement.moduleSpecifier.text);
-    if (!spec) {
-      continue;
-    }
+    const modulePath = statement.moduleSpecifier.text;
+    const normalizedModulePath = normalizeArcGisModulePath(modulePath);
+    const spec = MODULE_TO_SPEC.get(modulePath) ?? MODULE_TO_SPEC.get(normalizedModulePath);
 
     const importClause = statement.importClause;
     if (!importClause) {
       continue;
     }
 
-    if (importClause.name) {
-      result.push({
-        kind: spec.kind,
-        localName: importClause.name.text,
-        importStyle: "identifier",
-        sourceKind: "import",
-      });
-    }
-
     const namedBindings = importClause.namedBindings;
-    if (namedBindings && ts.isNamedImports(namedBindings)) {
-      for (const element of namedBindings.elements) {
-        const importedName = element.propertyName?.text ?? element.name.text;
-        if (importedName === "default") {
-          result.push({
-            kind: spec.kind,
-            localName: element.name.text,
-            importStyle: "identifier",
-            sourceKind: "import",
-          });
+    if (spec) {
+      if (importClause.name) {
+        result.push({
+          kind: spec.kind,
+          localName: importClause.name.text,
+          importStyle: "identifier",
+          sourceKind: "import",
+        });
+      }
+
+      if (namedBindings && ts.isNamedImports(namedBindings)) {
+        for (const element of namedBindings.elements) {
+          const importedName = element.propertyName?.text ?? element.name.text;
+          if (importedName === "default") {
+            result.push({
+              kind: spec.kind,
+              localName: element.name.text,
+              importStyle: "identifier",
+              sourceKind: "import",
+            });
+          }
         }
       }
+      if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+        result.push({
+          kind: spec.kind,
+          localName: namedBindings.name.text,
+          importStyle: "namespace-default",
+          sourceKind: "import",
+        });
+      }
+      continue;
     }
-    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+
+    if (!namedBindings || !ts.isNamedImports(namedBindings)) {
+      continue;
+    }
+
+    if (modulePath.startsWith(".") || modulePath.startsWith("/")) {
+      const resolvedImportPath = resolveLocalModulePath(file, modulePath, sourceFilesSet);
+      if (!resolvedImportPath) {
+        continue;
+      }
+      const reExportedKindsBySymbol = localArcGisReExports.get(resolvedImportPath);
+      if (!reExportedKindsBySymbol) {
+        continue;
+      }
+
+      for (const element of namedBindings.elements) {
+        const importedName = element.propertyName?.text ?? element.name.text;
+        const kind = reExportedKindsBySymbol[importedName];
+        if (!kind) {
+          continue;
+        }
+        result.push({
+          kind,
+          localName: element.name.text,
+          importStyle: "identifier",
+          sourceKind: "import",
+        });
+      }
+      continue;
+    }
+
+    for (const element of namedBindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      const kind = resolveArcGisBarrelImportKind(normalizedModulePath, importedName);
+      if (!kind) {
+        continue;
+      }
       result.push({
-        kind: spec.kind,
-        localName: namedBindings.name.text,
-        importStyle: "namespace-default",
+        kind,
+        localName: element.name.text,
+        importStyle: "identifier",
         sourceKind: "import",
       });
     }
@@ -1772,6 +2101,82 @@ function collectSupportedImports(sourceFile: ts.SourceFile): ArcGisImportBinding
   }
 
   return result;
+}
+
+function collectShadowedImportLocalNames(
+  sourceFile: ts.SourceFile,
+  importLocalNames: ReadonlySet<string>,
+): Set<string> {
+  if (importLocalNames.size === 0) {
+    return new Set();
+  }
+
+  const shadowed = new Set<string>();
+  walk(sourceFile, (node) => {
+    if (!ts.isIdentifier(node) || !importLocalNames.has(node.text)) {
+      return;
+    }
+    if (!isShadowingDeclarationIdentifier(node)) {
+      return;
+    }
+    shadowed.add(node.text);
+  });
+
+  return shadowed;
+}
+
+function isShadowingDeclarationIdentifier(node: ts.Identifier): boolean {
+  const parent = node.parent;
+
+  if (ts.isImportClause(parent) || ts.isImportSpecifier(parent) || ts.isNamespaceImport(parent)) {
+    return false;
+  }
+  if (isArcGisRequireBindingIdentifier(node)) {
+    return false;
+  }
+
+  if (
+    (ts.isVariableDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isBindingElement(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isClassExpression(parent) ||
+      ts.isEnumDeclaration(parent)) &&
+    parent.name === node
+  ) {
+    return true;
+  }
+
+  if (ts.isCatchClause(parent) && parent.variableDeclaration?.name === node) {
+    return true;
+  }
+
+  return false;
+}
+
+function isArcGisRequireBindingIdentifier(node: ts.Identifier): boolean {
+  if (ts.isVariableDeclaration(node.parent) && node.parent.name === node) {
+    if (!node.parent.initializer) {
+      return false;
+    }
+    const modulePath = extractModulePathFromRequireInitializer(node.parent.initializer);
+    return modulePath !== undefined && MODULE_TO_SPEC.has(modulePath);
+  }
+
+  if (
+    ts.isBindingElement(node.parent) &&
+    node.parent.name === node &&
+    ts.isObjectBindingPattern(node.parent.parent) &&
+    ts.isVariableDeclaration(node.parent.parent.parent) &&
+    node.parent.parent.parent.initializer
+  ) {
+    const modulePath = extractModulePathFromRequireInitializer(node.parent.parent.parent.initializer);
+    return modulePath !== undefined && MODULE_TO_SPEC.has(modulePath);
+  }
+
+  return false;
 }
 
 function resolveConstructorRewriteTarget(
@@ -1842,11 +2247,7 @@ function ensureCompatNamedImports(
       }
 
       const mergedSymbols = [...existingSpecifiers, ...missing];
-      const replacement = buildNamedImportText(
-        importPath,
-        importClause?.name?.text,
-        mergedSymbols,
-      );
+      const replacement = buildNamedImportText(importPath, importClause?.name?.text, mergedSymbols);
 
       const nextSource = applyTextEdits(source, [
         {
@@ -1870,8 +2271,7 @@ function ensureCompatNamedImports(
   const suffix = source.slice(insertionIndex);
   const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
   const leading = needsLeadingNewline ? "\n" : "";
-  const needsTrailingNewline =
-    suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
+  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
   const trailing = needsTrailingNewline ? "\n" : "";
 
   return {
@@ -1932,8 +2332,7 @@ function ensureNamespaceImport(
   const suffix = source.slice(insertionIndex);
   const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith("\n");
   const leading = needsLeadingNewline ? "\n" : "";
-  const needsTrailingNewline =
-    suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
+  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith("\n") && !importLine.endsWith("\n");
   const trailing = needsTrailingNewline ? "\n" : "";
 
   return {
@@ -2025,19 +2424,186 @@ function esriLeafletMethodForKind(kind: CodemodConstructorKind): string | undefi
   }
 }
 
-function esriLeafletCompatFallbackSymbolForKind(
-  kind: CodemodConstructorKind,
-): string | undefined {
+function esriLeafletCompatFallbackSymbolForKind(kind: CodemodConstructorKind): string | undefined {
   if (!ESRI_LEAFLET_COMPAT_FALLBACK_KINDS.has(kind)) {
     return undefined;
   }
   return specForKind(kind).compatSymbol;
 }
 
-function removeUnusedArcGisImports(
-  file: string,
-  source: string,
-): { nextSource: string; removedCount: number } {
+function resolveEsriLeafletForcedCompatFallbackSymbol(
+  kind: CodemodConstructorKind,
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+  usageIndex: Map<string, Set<string>>,
+): string | undefined {
+  if (!ESRI_LEAFLET_NATIVE_KINDS.has(kind)) {
+    return undefined;
+  }
+
+  const assignedIdentifier = resolveAssignedIdentifierForNewExpression(node, sourceFile);
+  if (!assignedIdentifier) {
+    return undefined;
+  }
+
+  const memberUsage = usageIndex.get(assignedIdentifier);
+  if (!memberUsage || memberUsage.size === 0) {
+    return undefined;
+  }
+
+  if (kind === "feature-layer" && shouldForceFeatureLayerCompatFallback(memberUsage)) {
+    return specForKind(kind).compatSymbol;
+  }
+  if (kind === "map-image-layer" && shouldForceMapImageLayerCompatFallback(memberUsage)) {
+    return specForKind(kind).compatSymbol;
+  }
+
+  return undefined;
+}
+
+function shouldForceFeatureLayerCompatFallback(memberUsage: ReadonlySet<string>): boolean {
+  const methods = [
+    "queryFeatures",
+    "queryFeaturesAll",
+    "queryObjectIds",
+    "queryFeatureCount",
+    "queryExtent",
+    "queryRelatedFeatures",
+    "queryRelatedRecords",
+    "applyEdits",
+    "queryAttachments",
+    "listAttachments",
+    "deleteAttachments",
+    "addAttachment",
+    "updateAttachment",
+    "getField",
+    "listFields",
+    "createQuery",
+  ] as const;
+  for (const method of methods) {
+    if (memberUsage.has(method)) {
+      return true;
+    }
+  }
+  if (memberUsage.has("fields")) {
+    return true;
+  }
+  return false;
+}
+
+function shouldForceMapImageLayerCompatFallback(memberUsage: ReadonlySet<string>): boolean {
+  const methods = [
+    "exportImage",
+    "getLegend",
+    "legend",
+    "find",
+    "identify",
+    "createQuery",
+    "queryFeatures",
+    "queryFeaturesAll",
+    "queryFeatureCount",
+    "queryObjectIds",
+    "queryExtent",
+    "queryRelatedFeatures",
+    "queryRelatedRecords",
+    "sublayer",
+    "findSublayerById",
+  ] as const;
+  for (const method of methods) {
+    if (memberUsage.has(method)) {
+      return true;
+    }
+  }
+  if (memberUsage.has("allSublayers")) {
+    return true;
+  }
+  return false;
+}
+
+function resolveAssignedIdentifierForNewExpression(
+  node: ts.NewExpression,
+  sourceFile: ts.SourceFile,
+): string | undefined {
+  const parent = node.parent;
+  if (ts.isVariableDeclaration(parent) && parent.initializer === node && ts.isIdentifier(parent.name)) {
+    return parent.name.text;
+  }
+
+  if (
+    ts.isBinaryExpression(parent) &&
+    parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    parent.right === node &&
+    ts.isIdentifier(parent.left)
+  ) {
+    return parent.left.text;
+  }
+
+  if (
+    ts.isCallExpression(parent) &&
+    ts.isPropertyAccessExpression(parent.expression) &&
+    parent.expression.name.text === "push" &&
+    parent.arguments.some((argument) => argument === node)
+  ) {
+    // Constructor passed into a push call cannot be reliably tracked to subsequent member access.
+    return undefined;
+  }
+
+  if (
+    ts.isAsExpression(parent) &&
+    ts.isVariableDeclaration(parent.parent) &&
+    parent.parent.initializer === parent &&
+    ts.isIdentifier(parent.parent.name)
+  ) {
+    return parent.parent.name.text;
+  }
+
+  const nodeStart = node.getStart(sourceFile);
+  const statement = findEnclosingStatement(node);
+  if (!statement) {
+    return undefined;
+  }
+  if (statement.getStart(sourceFile) > nodeStart) {
+    return undefined;
+  }
+  return undefined;
+}
+
+function buildIdentifierMemberUsageIndex(sourceFile: ts.SourceFile): Map<string, Set<string>> {
+  const usageByIdentifier = new Map<string, Set<string>>();
+
+  walk(sourceFile, (node) => {
+    if (!ts.isPropertyAccessExpression(node) || !ts.isIdentifier(node.expression)) {
+      return;
+    }
+    const identifier = node.expression.text;
+    const member = node.name.text;
+    if (!identifier || !member) {
+      return;
+    }
+
+    let memberUsage = usageByIdentifier.get(identifier);
+    if (!memberUsage) {
+      memberUsage = new Set();
+      usageByIdentifier.set(identifier, memberUsage);
+    }
+    memberUsage.add(member);
+  });
+
+  return usageByIdentifier;
+}
+
+function findEnclosingStatement(node: ts.Node): ts.Statement | undefined {
+  let current: ts.Node | undefined = node;
+  while (current) {
+    if (ts.isStatement(current)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function removeUnusedArcGisImports(file: string, source: string): { nextSource: string; removedCount: number } {
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const removals: TextEdit[] = [];
 
@@ -2045,7 +2611,8 @@ function removeUnusedArcGisImports(
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
-    if (!MODULE_TO_SPEC.has(statement.moduleSpecifier.text)) {
+    const modulePath = statement.moduleSpecifier.text;
+    if (!MODULE_TO_SPEC.has(modulePath) && !isSupportedArcGisBarrelModulePath(modulePath)) {
       continue;
     }
 
@@ -2093,10 +2660,7 @@ function removeUnusedArcGisImports(
       continue;
     }
 
-    const references = countIdentifierUsagesExcludingImportsAndDefinitions(
-      sourceFile,
-      requireBinding.localName,
-    );
+    const references = countIdentifierUsagesExcludingImportsAndDefinitions(sourceFile, requireBinding.localName);
     if (references > 0) {
       continue;
     }
@@ -2146,9 +2710,7 @@ function extractModulePathFromRequireInitializer(initializer: ts.Expression): st
   return undefined;
 }
 
-function extractRequireBindingFromDeclaration(
-  declaration: ts.VariableDeclaration,
-): RequireBinding | undefined {
+function extractRequireBindingFromDeclaration(declaration: ts.VariableDeclaration): RequireBinding | undefined {
   if (!declaration.initializer) {
     return undefined;
   }
@@ -2232,10 +2794,7 @@ function countIdentifierUsagesExcludingImports(sourceFile: ts.SourceFile, name: 
   return count;
 }
 
-function countIdentifierUsagesExcludingImportsAndDefinitions(
-  sourceFile: ts.SourceFile,
-  name: string,
-): number {
+function countIdentifierUsagesExcludingImportsAndDefinitions(sourceFile: ts.SourceFile, name: string): number {
   let count = 0;
 
   walk(sourceFile, (node) => {
@@ -2320,15 +2879,36 @@ function shouldInsertTodoComment(source: string, lineStart: number, nodeStart: n
 }
 
 function applyTextEdits(source: string, edits: readonly TextEdit[]): string {
-  const sorted = edits
-    .slice()
-    .sort((a, b) => (a.start === b.start ? b.end - a.end : b.start - a.start));
+  const sorted = edits.slice().sort((a, b) => (a.start === b.start ? b.end - a.end : b.start - a.start));
+
+  let previousStart = source.length + 1;
+  for (const edit of sorted) {
+    if (edit.start < 0 || edit.end < edit.start || edit.end > source.length) {
+      throw new Error("Invalid text edit range.");
+    }
+    if (edit.end > previousStart) {
+      throw new Error("Overlapping text edits are not supported.");
+    }
+    previousStart = edit.start;
+  }
 
   let nextSource = source;
   for (const edit of sorted) {
     nextSource = `${nextSource.slice(0, edit.start)}${edit.text}${nextSource.slice(edit.end)}`;
   }
   return nextSource;
+}
+
+function collectUnsupportedPropertyNames(arg: ts.ObjectLiteralExpression, allowed: ReadonlySet<string>): string[] {
+  const unsupported: string[] = [];
+  for (const property of arg.properties) {
+    if (!isAssignableObjectProperty(property)) continue;
+    const name = getObjectPropertyName(property);
+    if (!name || !allowed.has(name)) {
+      unsupported.push(name ?? "<computed>");
+    }
+  }
+  return unsupported;
 }
 
 function isSafeConstructorCall(
@@ -2490,9 +3070,7 @@ function isSafeConstructorCall(
   }
 }
 
-function isSafeRouteLayerCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeRouteLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2530,22 +3108,20 @@ function isSafeRouteLayerCompatCall(
         reason: "RouteLayer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "RouteLayer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `RouteLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeRouteTaskCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeRouteTaskCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2576,22 +3152,20 @@ function isSafeRouteTaskCompatCall(
         reason: "RouteTask options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "RouteTask options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `RouteTask options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeBasemapCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeBasemapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2619,14 +3193,14 @@ function isSafeBasemapCompatCall(
         reason: "Basemap options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Basemap options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Basemap options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
@@ -2671,6 +3245,8 @@ function isSafeFeatureLayerCompatCall(
           "maxScale",
           "legendEnabled",
           "listMode",
+          "client",
+          "maxAttachmentBytes",
         ])
       : new Set(["url", "outFields", "definitionExpression"]);
 
@@ -2686,13 +3262,14 @@ function isSafeFeatureLayerCompatCall(
     if (name === "url") {
       hasUrlOption = true;
     }
+  }
 
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "FeatureLayer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   if (!hasUrlOption) {
@@ -2705,9 +3282,7 @@ function isSafeFeatureLayerCompatCall(
   return { ok: true };
 }
 
-function isSafeGraphicCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeGraphicCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2735,22 +3310,20 @@ function isSafeGraphicCompatCall(
         reason: "Graphic options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Graphic options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Graphic options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePointGeometryCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePointGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2778,22 +3351,20 @@ function isSafePointGeometryCompatCall(
         reason: "Point options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Point options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Point options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePolylineGeometryCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePolylineGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2821,22 +3392,20 @@ function isSafePolylineGeometryCompatCall(
         reason: "Polyline options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Polyline options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Polyline options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePolygonGeometryCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePolygonGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2864,22 +3433,20 @@ function isSafePolygonGeometryCompatCall(
         reason: "Polygon options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Polygon options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Polygon options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeExtentGeometryCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeExtentGeometryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2899,17 +3466,7 @@ function isSafeExtentGeometryCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "xmin",
-    "ymin",
-    "xmax",
-    "ymax",
-    "zmin",
-    "zmax",
-    "mmin",
-    "mmax",
-    "spatialReference",
-  ]);
+  const allowed = new Set(["xmin", "ymin", "xmax", "ymax", "zmin", "zmax", "mmin", "mmax", "spatialReference"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -2917,22 +3474,20 @@ function isSafeExtentGeometryCompatCall(
         reason: "Extent options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Extent options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Extent options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSpatialReferenceCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSpatialReferenceCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2957,26 +3512,23 @@ function isSafeSpatialReferenceCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason:
-          "SpatialReference options contain spread/method/computed property syntax; requires manual migration.",
+        reason: "SpatialReference options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "SpatialReference options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SpatialReference options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeColorCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeColorCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -2989,11 +3541,7 @@ function isSafeColorCompatCall(
   }
 
   const [arg] = args;
-  if (
-    ts.isStringLiteralLike(arg) ||
-    ts.isArrayLiteralExpression(arg) ||
-    ts.isObjectLiteralExpression(arg)
-  ) {
+  if (ts.isStringLiteralLike(arg) || ts.isArrayLiteralExpression(arg) || ts.isObjectLiteralExpression(arg)) {
     return { ok: true };
   }
 
@@ -3003,9 +3551,7 @@ function isSafeColorCompatCall(
   };
 }
 
-function isSafeSimpleLineSymbolCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSimpleLineSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3030,26 +3576,23 @@ function isSafeSimpleLineSymbolCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason:
-          "SimpleLineSymbol options contain spread/method/computed property syntax; requires manual migration.",
+        reason: "SimpleLineSymbol options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "SimpleLineSymbol options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleLineSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSimpleMarkerSymbolCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSimpleMarkerSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3074,26 +3617,23 @@ function isSafeSimpleMarkerSymbolCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason:
-          "SimpleMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
+        reason: "SimpleMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "SimpleMarkerSymbol options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleMarkerSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePictureMarkerSymbolCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePictureMarkerSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3122,22 +3662,20 @@ function isSafePictureMarkerSymbolCompatCall(
           "PictureMarkerSymbol options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "PictureMarkerSymbol options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `PictureMarkerSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeTextSymbolCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeTextSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3165,22 +3703,20 @@ function isSafeTextSymbolCompatCall(
         reason: "TextSymbol options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "TextSymbol options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TextSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeLabelClassCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeLabelClassCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3208,22 +3744,20 @@ function isSafeLabelClassCompatCall(
         reason: "LabelClass options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "LabelClass options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `LabelClass options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSimpleFillSymbolCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSimpleFillSymbolCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3248,26 +3782,23 @@ function isSafeSimpleFillSymbolCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason:
-          "SimpleFillSymbol options contain spread/method/computed property syntax; requires manual migration.",
+        reason: "SimpleFillSymbol options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "SimpleFillSymbol options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleFillSymbol options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeClassBreaksRendererCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeClassBreaksRendererCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3307,22 +3838,20 @@ function isSafeClassBreaksRendererCompatCall(
           "ClassBreaksRenderer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "ClassBreaksRenderer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `ClassBreaksRenderer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSimpleRendererCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSimpleRendererCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3347,26 +3876,23 @@ function isSafeSimpleRendererCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason:
-          "SimpleRenderer options contain spread/method/computed property syntax; requires manual migration.",
+        reason: "SimpleRenderer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "SimpleRenderer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SimpleRenderer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeUniqueValueRendererCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeUniqueValueRendererCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3386,14 +3912,7 @@ function isSafeUniqueValueRendererCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "field",
-    "field2",
-    "field3",
-    "defaultSymbol",
-    "defaultLabel",
-    "uniqueValueInfos",
-  ]);
+  const allowed = new Set(["field", "field2", "field3", "defaultSymbol", "defaultLabel", "uniqueValueInfos"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3402,14 +3921,14 @@ function isSafeUniqueValueRendererCompatCall(
           "UniqueValueRenderer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "UniqueValueRenderer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `UniqueValueRenderer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
@@ -3449,6 +3968,7 @@ function isSafeMapImageLayerCompatCall(
           "maxScale",
           "listMode",
           "legendEnabled",
+          "client",
         ])
       : new Set(["url", "sublayers", "opacity", "visible"]);
   for (const property of arg.properties) {
@@ -3463,13 +3983,14 @@ function isSafeMapImageLayerCompatCall(
     if (name === "url") {
       hasUrlOption = true;
     }
+  }
 
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "MapImageLayer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `MapImageLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   if (!hasUrlOption) {
@@ -3505,7 +4026,7 @@ function isSafeTileLayerCompatCall(
   let hasUrlOption = false;
   const allowed =
     target === "honua-compat"
-      ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode"])
+      ? new Set(["url", "id", "title", "opacity", "visible", "minScale", "maxScale", "listMode", "client"])
       : new Set(["url", "opacity", "visible"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -3519,13 +4040,14 @@ function isSafeTileLayerCompatCall(
     if (name === "url") {
       hasUrlOption = true;
     }
+  }
 
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "TileLayer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TileLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   if (!hasUrlOption) {
@@ -3538,9 +4060,7 @@ function isSafeTileLayerCompatCall(
   return { ok: true };
 }
 
-function isSafeGraphicsLayerCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeGraphicsLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3568,22 +4088,20 @@ function isSafeGraphicsLayerCompatCall(
         reason: "GraphicsLayer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "GraphicsLayer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `GraphicsLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeGroupLayerCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeGroupLayerCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3603,15 +4121,7 @@ function isSafeGroupLayerCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "layers",
-    "id",
-    "title",
-    "visible",
-    "opacity",
-    "listMode",
-    "visibilityMode",
-  ]);
+  const allowed = new Set(["layers", "id", "title", "visible", "opacity", "listMode", "visibilityMode"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3619,14 +4129,14 @@ function isSafeGroupLayerCompatCall(
         reason: "GroupLayer options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "GroupLayer options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `GroupLayer options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
@@ -3660,22 +4170,20 @@ function isSafeMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false
         reason: "Map options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Map options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Map options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeMapViewCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeMapViewCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3716,22 +4224,20 @@ function isSafeMapViewCompatCall(
         reason: "MapView options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "MapView options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `MapView options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeWebMapCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeWebMapCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3751,14 +4257,7 @@ function isSafeWebMapCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "portalItem",
-    "basemap",
-    "layers",
-    "ground",
-    "tables",
-    "spatialReference",
-  ]);
+  const allowed = new Set(["portalItem", "basemap", "layers", "ground", "tables", "spatialReference"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3766,22 +4265,20 @@ function isSafeWebMapCompatCall(
         reason: "WebMap options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "WebMap options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `WebMap options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSceneViewCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSceneViewCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3825,22 +4322,20 @@ function isSafeSceneViewCompatCall(
         reason: "SceneView options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "SceneView options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `SceneView options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeLayerListCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeLayerListCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3860,14 +4355,7 @@ function isSafeLayerListCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "map",
-    "container",
-    "includeHidden",
-    "autoRefresh",
-    "listItemCreatedFunction",
-  ]);
+  const allowed = new Set(["view", "map", "container", "includeHidden", "autoRefresh", "listItemCreatedFunction"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3875,22 +4363,20 @@ function isSafeLayerListCompatCall(
         reason: "LayerList options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "LayerList options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `LayerList options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeTableListWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeTableListWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3910,13 +4396,7 @@ function isSafeTableListWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "map",
-    "container",
-    "tables",
-    "autoRefresh",
-  ]);
+  const allowed = new Set(["view", "map", "container", "tables", "autoRefresh"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3924,22 +4404,20 @@ function isSafeTableListWidgetCompatCall(
         reason: "TableList options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "TableList options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TableList options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeFeatureWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeFeatureWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -3959,13 +4437,7 @@ function isSafeFeatureWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "map",
-    "container",
-    "graphic",
-    "title",
-  ]);
+  const allowed = new Set(["view", "map", "container", "graphic", "title"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -3973,22 +4445,20 @@ function isSafeFeatureWidgetCompatCall(
         reason: "Feature options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Feature options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Feature options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeFeatureTemplatesWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeFeatureTemplatesWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4008,13 +4478,7 @@ function isSafeFeatureTemplatesWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "layerInfos",
-    "container",
-    "filterFunction",
-    "groupBy",
-  ]);
+  const allowed = new Set(["view", "layerInfos", "container", "filterFunction", "groupBy"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4022,22 +4486,20 @@ function isSafeFeatureTemplatesWidgetCompatCall(
         reason: "FeatureTemplates options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "FeatureTemplates options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureTemplates options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeFeatureFormWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeFeatureFormWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4074,22 +4536,20 @@ function isSafeFeatureFormWidgetCompatCall(
         reason: "FeatureForm options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "FeatureForm options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureForm options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeFeatureTableWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeFeatureTableWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4129,6 +4589,11 @@ function isSafeFeatureTableWidgetCompatCall(
     "editingEnabled",
     "multiSortEnabled",
     "highlightIds",
+    "selectionMode",
+    "rowSelectionEnabled",
+    "highlightEnabled",
+    "pageSize",
+    "autoRefreshEnabled",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -4137,22 +4602,20 @@ function isSafeFeatureTableWidgetCompatCall(
         reason: "FeatureTable options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "FeatureTable options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureTable options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeFeatureSetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeFeatureSetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4187,22 +4650,20 @@ function isSafeFeatureSetCompatCall(
         reason: "FeatureSet options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "FeatureSet options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `FeatureSet options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeLegendWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeLegendWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4230,22 +4691,20 @@ function isSafeLegendWidgetCompatCall(
         reason: "Legend options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Legend options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Legend options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePopupWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePopupWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4273,22 +4732,20 @@ function isSafePopupWidgetCompatCall(
         reason: "Popup options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Popup options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Popup options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePopupTemplateCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePopupTemplateCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4313,26 +4770,23 @@ function isSafePopupTemplateCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason:
-          "PopupTemplate options contain spread/method/computed property syntax; requires manual migration.",
+        reason: "PopupTemplate options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "PopupTemplate options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `PopupTemplate options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSwipeWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSwipeWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4352,13 +4806,7 @@ function isSafeSwipeWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "container",
-    "leadingLayers",
-    "trailingLayers",
-    "position",
-  ]);
+  const allowed = new Set(["view", "container", "leadingLayers", "trailingLayers", "position"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4366,22 +4814,20 @@ function isSafeSwipeWidgetCompatCall(
         reason: "Swipe options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Swipe options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Swipe options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafePrintWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafePrintWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4401,12 +4847,7 @@ function isSafePrintWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "container",
-    "printServiceUrl",
-    "templateOptions",
-  ]);
+  const allowed = new Set(["view", "container", "printServiceUrl", "templateOptions"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -4414,22 +4855,20 @@ function isSafePrintWidgetCompatCall(
         reason: "Print options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Print options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Print options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeHomeWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeHomeWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4457,22 +4896,20 @@ function isSafeHomeWidgetCompatCall(
         reason: "Home options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Home options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Home options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeBasemapToggleWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeBasemapToggleWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4500,22 +4937,20 @@ function isSafeBasemapToggleWidgetCompatCall(
         reason: "BasemapToggle options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "BasemapToggle options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `BasemapToggle options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeLocateWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeLocateWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4543,22 +4978,20 @@ function isSafeLocateWidgetCompatCall(
         reason: "Locate options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Locate options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Locate options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeScaleBarWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeScaleBarWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4586,22 +5019,20 @@ function isSafeScaleBarWidgetCompatCall(
         reason: "ScaleBar options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "ScaleBar options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `ScaleBar options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSearchWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSearchWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4628,6 +5059,12 @@ function isSafeSearchWidgetCompatCall(
     "includeDefaultSources",
     "autoNavigate",
     "autoRefreshSources",
+    "searchAllEnabled",
+    "popupEnabled",
+    "maxResults",
+    "allPlaceholder",
+    "locationEnabled",
+    "resultGraphicEnabled",
   ]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
@@ -4636,22 +5073,20 @@ function isSafeSearchWidgetCompatCall(
         reason: "Search options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Search options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Search options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeBasemapLayerListWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeBasemapLayerListWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4679,22 +5114,20 @@ function isSafeBasemapLayerListWidgetCompatCall(
         reason: "BasemapLayerList options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "BasemapLayerList options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `BasemapLayerList options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeBasemapGalleryWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeBasemapGalleryWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4722,22 +5155,20 @@ function isSafeBasemapGalleryWidgetCompatCall(
         reason: "BasemapGallery options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "BasemapGallery options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `BasemapGallery options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeExpandWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeExpandWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4765,22 +5196,20 @@ function isSafeExpandWidgetCompatCall(
         reason: "Expand options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Expand options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Expand options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeCompassWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeCompassWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4808,22 +5237,20 @@ function isSafeCompassWidgetCompatCall(
         reason: "Compass options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Compass options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Compass options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeBookmarksWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeBookmarksWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4851,22 +5278,20 @@ function isSafeBookmarksWidgetCompatCall(
         reason: "Bookmarks options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Bookmarks options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Bookmarks options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeFullscreenWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeFullscreenWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4894,22 +5319,20 @@ function isSafeFullscreenWidgetCompatCall(
         reason: "Fullscreen options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Fullscreen options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Fullscreen options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeZoomWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeZoomWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4937,22 +5360,20 @@ function isSafeZoomWidgetCompatCall(
         reason: "Zoom options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Zoom options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Zoom options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeAttributionWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeAttributionWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -4980,22 +5401,20 @@ function isSafeAttributionWidgetCompatCall(
         reason: "Attribution options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Attribution options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Attribution options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeSketchWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeSketchWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5031,22 +5450,20 @@ function isSafeSketchWidgetCompatCall(
         reason: "Sketch options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Sketch options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Sketch options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeEditorWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeEditorWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5066,13 +5483,7 @@ function isSafeEditorWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "container",
-    "layerInfos",
-    "allowedWorkflows",
-    "supportingWidgetDefaults",
-  ]);
+  const allowed = new Set(["view", "container", "layerInfos", "allowedWorkflows", "supportingWidgetDefaults"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -5080,22 +5491,20 @@ function isSafeEditorWidgetCompatCall(
         reason: "Editor options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Editor options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Editor options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeTrackWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeTrackWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5132,14 +5541,14 @@ function isSafeTrackWidgetCompatCall(
         reason: "Track options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Track options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Track options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
@@ -5172,24 +5581,24 @@ function isSafeDistanceMeasurement2dWidgetCompatCall(
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason: "DistanceMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
+        reason:
+          "DistanceMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "DistanceMeasurement2D options include unsupported properties; requires manual migration.",
-      };
-    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `DistanceMeasurement2D options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeAreaMeasurement2dWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeAreaMeasurement2dWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5217,21 +5626,20 @@ function isSafeAreaMeasurement2dWidgetCompatCall(
         reason: "AreaMeasurement2D options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "AreaMeasurement2D options include unsupported properties; requires manual migration.",
-      };
-    }
+  }
+
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `AreaMeasurement2D options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeMeasurementWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeMeasurementWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5259,22 +5667,20 @@ function isSafeMeasurementWidgetCompatCall(
         reason: "Measurement options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Measurement options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Measurement options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeTimeSliderWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeTimeSliderWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5294,16 +5700,7 @@ function isSafeTimeSliderWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "container",
-    "fullTimeExtent",
-    "timeExtent",
-    "stops",
-    "mode",
-    "loop",
-    "playRate",
-  ]);
+  const allowed = new Set(["view", "container", "fullTimeExtent", "timeExtent", "stops", "mode", "loop", "playRate"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
@@ -5311,22 +5708,20 @@ function isSafeTimeSliderWidgetCompatCall(
         reason: "TimeSlider options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "TimeSlider options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `TimeSlider options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeDirectionsWidgetCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeDirectionsWidgetCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5362,14 +5757,14 @@ function isSafeDirectionsWidgetCompatCall(
         reason: "Directions options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Directions options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Directions options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
@@ -5397,36 +5792,29 @@ function isSafeCoordinateConversionWidgetCompatCall(
     };
   }
 
-  const allowed = new Set([
-    "view",
-    "container",
-    "formats",
-    "mode",
-    "multipleConversionsEnabled",
-  ]);
+  const allowed = new Set(["view", "container", "formats", "mode", "multipleConversionsEnabled"]);
   for (const property of arg.properties) {
     if (!isAssignableObjectProperty(property)) {
       return {
         ok: false,
-        reason: "CoordinateConversion options contain spread/method/computed property syntax; requires manual migration.",
+        reason:
+          "CoordinateConversion options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "CoordinateConversion options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `CoordinateConversion options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeQueryCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeQueryCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5468,22 +5856,20 @@ function isSafeQueryCompatCall(
         reason: "Query options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "Query options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `Query options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
 }
 
-function isSafeOAuthInfoCompatCall(
-  node: ts.NewExpression,
-): { ok: true } | { ok: false; reason: string } {
+function isSafeOAuthInfoCompatCall(node: ts.NewExpression): { ok: true } | { ok: false; reason: string } {
   const args = node.arguments;
   if (!args || args.length === 0) {
     return { ok: true };
@@ -5519,14 +5905,14 @@ function isSafeOAuthInfoCompatCall(
         reason: "OAuthInfo options contain spread/method/computed property syntax; requires manual migration.",
       };
     }
+  }
 
-    const name = getObjectPropertyName(property);
-    if (!name || !allowed.has(name)) {
-      return {
-        ok: false,
-        reason: "OAuthInfo options include unsupported properties; requires manual migration.",
-      };
-    }
+  const unsupported = collectUnsupportedPropertyNames(arg, allowed);
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: `OAuthInfo options include unsupported properties: ${unsupported.join(", ")}; requires manual migration.`,
+    };
   }
 
   return { ok: true };
@@ -5610,4 +5996,15 @@ function compareTodos(a: MigrationTodo, b: MigrationTodo): number {
     return a.kind.localeCompare(b.kind);
   }
   return a.reason.localeCompare(b.reason);
+}
+
+function compareFileErrors(a: CodemodFileError, b: CodemodFileError): number {
+  const fileCmp = a.file.localeCompare(b.file);
+  if (fileCmp !== 0) {
+    return fileCmp;
+  }
+  if (a.stage !== b.stage) {
+    return a.stage.localeCompare(b.stage);
+  }
+  return a.message.localeCompare(b.message);
 }

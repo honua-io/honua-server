@@ -23,6 +23,7 @@ The Server Management API powers the Honua Admin UI and supports headless automa
 |----------|---------|
 | `/api/v1/admin` | Admin API root |
 | `/api/v1/admin/config` | Runtime configuration and env var reference |
+| `/api/v1/admin/openapi.json` | Admin API OpenAPI schema snapshot served by runtime |
 | `/openapi.json` | OGC API Features OpenAPI schema |
 | `/healthz/live` | Liveness check |
 | `/healthz/ready` | Readiness check |
@@ -53,7 +54,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Exact endpoints and payloads vary by build. Use `/api/v1/admin/config` for runtime validation. `docs/api-specs/admin-api.json` is a curated contract snapshot and may lag some newly added endpoints.
+**Note**: Exact endpoints and payloads vary by build. Use `/api/v1/admin/config` for runtime validation. `/api/v1/admin/openapi.json` serves the bundled `docs/api-specs/admin-api.json` contract snapshot used for SDK generation.
 
 ## **SDKs and Contract Governance**
 
@@ -73,6 +74,9 @@ Additional metrics endpoints:
 
 - Migration and upgrade guidance:
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
+
+- AI/agent integration:
+- [MCP Server](MCP_SERVER.md)
 
 ---
 
@@ -167,6 +171,9 @@ Content-Type: application/json
 | `/api/v1/admin/services/{serviceName}/settings` | GET | Get protocol + MapServer settings for a service |
 | `/api/v1/admin/services/{serviceName}/protocols` | PUT | Update enabled protocols for a service |
 | `/api/v1/admin/services/{serviceName}/mapserver` | PUT | Update MapServer defaults/limits for a service |
+| `/api/v1/admin/services/{serviceName}/access-policy` | PUT | Update service access policy (read/write role + anonymous controls) |
+| `/api/v1/admin/services/{serviceName}/timeinfo` | PUT | Update service-level temporal metadata |
+| `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | PUT | Patch layer-level access policy and time info |
 
 ---
 

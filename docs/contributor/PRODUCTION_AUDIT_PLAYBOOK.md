@@ -65,6 +65,7 @@ Automated checks are necessary but not sufficient for production sign-off. Compl
 - QGIS against OGC API Features/Tiles
 - ArcGIS Pro against FeatureServer/MapServer
 - Web client (Leaflet/MapLibre) against MVT/WMTS/WMS
+- Run [Client Templates + Manual Smoke Runbook](../user/CLIENT_TEMPLATE_RUNBOOK.md) and update [Client Template Version Matrix](../user/CLIENT_TEMPLATE_VERSION_MATRIX.md)
 
 2. Geodetic reference verification:
 - Validate representative `ST_Transform` outputs for common CRSs (WGS84, Web Mercator, UTM/State Plane in scope) against authoritative EPSG/PROJ results.

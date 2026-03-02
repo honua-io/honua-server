@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface QueryCompatOptions {
   where?: string;
   outFields?: string | string[];
@@ -111,9 +112,7 @@ export class QueryCompat {
       num: this.num,
       start: this.start,
       timeExtent: this.timeExtent,
-      groupByFieldsForStatistics: this.groupByFieldsForStatistics
-        ? [...this.groupByFieldsForStatistics]
-        : undefined,
+      groupByFieldsForStatistics: this.groupByFieldsForStatistics ? [...this.groupByFieldsForStatistics] : undefined,
       outStatistics: this.outStatistics ? [...this.outStatistics] : undefined,
     };
   }
@@ -129,7 +128,7 @@ export class QueryCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

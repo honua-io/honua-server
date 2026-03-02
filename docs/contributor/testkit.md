@@ -157,6 +157,12 @@ Enable Geoportal-backed Esri import integration tests:
 export HONUA_TEST_ESRI_GEOPORTAL="1"
 ```
 
+Enable ArcGIS parity import checks (source snapshot vs imported table parity):
+
+```bash
+export HONUA_TEST_ESRI_PARITY="1"
+```
+
 #### Shared YAML Seed
 
 Apply shared YAML seed data to a schema:

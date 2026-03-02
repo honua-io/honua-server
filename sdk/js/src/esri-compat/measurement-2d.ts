@@ -1,8 +1,8 @@
-import { CompatEventBus } from "./event-bus.js";
+import { type CompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import {
-  MeasurementCompat,
   type AreaUnitCompat,
   type LinearUnitCompat,
+  MeasurementCompat,
   type MeasurementResultCompat,
 } from "./measurement.js";
 
@@ -78,9 +78,7 @@ export class DistanceMeasurement2DCompat {
     return this;
   }
 
-  public async when(
-    callback?: (widget: DistanceMeasurement2DCompat) => void,
-  ): Promise<DistanceMeasurement2DCompat> {
+  public async when(callback?: (widget: DistanceMeasurement2DCompat) => void): Promise<DistanceMeasurement2DCompat> {
     const widget = await this.load();
     if (callback) {
       callback(widget);
@@ -88,10 +86,7 @@ export class DistanceMeasurement2DCompat {
     return widget;
   }
 
-  public watch(
-    propertyName: string,
-    listener: (value: unknown) => void,
-  ): DistanceMeasurement2DHandleCompat {
+  public watch(propertyName: string, listener: (value: unknown) => void): DistanceMeasurement2DHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -135,7 +130,7 @@ export class DistanceMeasurement2DCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -194,10 +189,7 @@ export class AreaMeasurement2DCompat {
     return widget;
   }
 
-  public watch(
-    propertyName: string,
-    listener: (value: unknown) => void,
-  ): AreaMeasurement2DHandleCompat {
+  public watch(propertyName: string, listener: (value: unknown) => void): AreaMeasurement2DHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -241,7 +233,7 @@ export class AreaMeasurement2DCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

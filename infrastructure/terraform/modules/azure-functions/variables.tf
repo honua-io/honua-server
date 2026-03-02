@@ -23,9 +23,9 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image. Prefer Functions AOT tags (latest-functions-aot, vX.Y.Z-functions-aot). JIT functions tags are debug fallback."
+  description = "Container image. Prefer AOT tags (latest-aot, vX.Y.Z-aot). Functions-specific AOT tags can be used when published. JIT tags are debug fallback."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-functions-aot"
+  default     = "ghcr.io/honua-io/honua-server:latest-aot"
 }
 
 variable "container_port" {
@@ -46,8 +46,8 @@ variable "admin_password" {
   sensitive   = true
 
   validation {
-    condition     = length(var.admin_password) >= 12
-    error_message = "admin_password must be at least 12 characters."
+    condition     = length(var.admin_password) >= 32
+    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
   }
 }
 

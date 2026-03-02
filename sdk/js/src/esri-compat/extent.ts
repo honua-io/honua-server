@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface ExtentCompatOptions {
   xmin?: number;
   ymin?: number;
@@ -158,7 +159,7 @@ export class ExtentCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

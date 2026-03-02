@@ -8,6 +8,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Services;
 using Microsoft.Extensions.Options;
@@ -45,7 +46,10 @@ internal static class ODataServiceCollectionExtensions
                 sp.GetRequiredService<IGeometryService>(),
                 sp.GetRequiredService<FeatureMutationValidator>(),
                 sp.GetRequiredService<ICrsRegistry>(),
-                limitsOptions.Edits);
+                limitsOptions.Edits,
+                sp.GetRequiredService<ODataValidationService>(),
+                sp.GetRequiredService<IETagService>(),
+                sp.GetRequiredService<IFeatureChangeEventPublisher>());
         });
 
         services.AddScoped<ODataMetadataHandler>();

@@ -74,8 +74,8 @@ variable "admin_password" {
   sensitive   = true
 
   validation {
-    condition     = length(var.admin_password) >= 12
-    error_message = "admin_password must be at least 12 characters."
+    condition     = length(var.admin_password) >= 32
+    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
   }
 }
 

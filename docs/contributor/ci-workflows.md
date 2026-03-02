@@ -12,6 +12,9 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `container-security.yml` | Container image security scanning | PR + push + schedule |
 | `deploy.yml` | Build/publish container images | push to `trunk` and tags |
 | `terraform-manual-validation.yml` | On-demand Terraform static/policy/live/drift validation for AWS, Azure, Kubernetes, AKS, EKS | manual |
+| `sdk-ci.yml` | Focused SDK CI for JS/Python/.NET SDK trees | PR + push (sdk/proto paths) |
+| `dotnet-sdk-publish.yml` | Build/test/pack and publish .NET SDK packages | tag push + manual |
+| `python-sdk-publish.yml` | Build/test/package and publish Python SDK | tag push + manual |
 
 ## Conformance and Performance
 

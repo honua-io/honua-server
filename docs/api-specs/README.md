@@ -40,11 +40,11 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 **Protocol**: REST API
 **Base URL**: `/api/v1/admin`
 **OpenAPI Spec**: [admin-api.json](admin-api.json)
-**Runtime OpenAPI Endpoint**: Not currently exposed
+**Runtime OpenAPI Endpoint**: `https://your-honua-server.com/api/v1/admin/openapi.json`
 **Authentication**: API Key, OIDC bearer token, or optional HTTP Basic compatibility mode
 
-> **Note**: `admin-api.json` is a curated snapshot and may lag newly added admin endpoints.  
-> Use the [Server Management API guide](../user/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for runtime-validated behavior.
+> **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
+> Use the [Server Management API guide](../user/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
 
 **What you can do**:
 - Manage database connections (create, test, list)
@@ -91,6 +91,9 @@ curl https://your-honua-server.com/openapi.json
 
 # OGC API Tiles
 curl https://your-honua-server.com/ogc/tiles/openapi.json
+
+# Server Management API
+curl https://your-honua-server.com/api/v1/admin/openapi.json
 ```
 
 ### **Generate SDK Clients**

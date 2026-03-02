@@ -144,4 +144,50 @@ describe("TileLayerCompat", () => {
     expect(events).toContain("tile-layer.scale-range-changed");
     expect(events).toContain("tile-layer.list-mode-changed");
   });
+
+  it(".on() fires for namespaced events and handle.remove() stops delivery", () => {
+    const eventBus = new CompatEventBus();
+    const layer = new TileLayerCompat({
+      url: "https://example.test/rest/services/tiles/MapServer",
+      eventBus,
+    });
+
+    const received: unknown[] = [];
+    const handle = layer.on("scale-range-changed", (event) => {
+      received.push(event);
+    });
+
+    layer.setScaleRange(5000, 1000);
+    expect(received).toHaveLength(1);
+
+    handle.remove();
+    layer.setScaleRange(10000, 2000);
+    expect(received).toHaveLength(1);
+  });
+
+  it("destroy() clears watchers, event listeners, and emits tile-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new TileLayerCompat({
+      url: "https://example.test/rest/services/tiles/MapServer",
+      eventBus,
+    });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    const eventPayloads: unknown[] = [];
+    layer.on("scale-range-changed", (e) => eventPayloads.push(e));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("tile-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
+  });
 });

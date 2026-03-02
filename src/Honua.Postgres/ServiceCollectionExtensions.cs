@@ -88,6 +88,7 @@ internal static class ServiceCollectionExtensions
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
         services.AddScoped<IServiceMetadataUpdater, PostgresServiceMetadataUpdater>();
+        services.AddScoped<ILayerMetadataUpdater, PostgresLayerMetadataUpdater>();
 
         // Register metadata resource store (ADR-0023)
         services.AddScoped<IMetadataResourceStore>(serviceProvider =>

@@ -11,6 +11,27 @@ export interface CompatEventSubscription {
   remove(): void;
 }
 
+/** Well-known event payload types for the compat layer event bus. */
+export interface CompatEventPayloads {
+  "layer.visibility-changed": { layerId: string; serviceId?: string; sublayerId?: number; visible: boolean };
+  "layer.opacity-changed": { layerId: string; serviceId?: string; sublayerId?: number; opacity: number };
+  "feature-layer.loading": { serviceId: string; layerId: number; id: string };
+  "feature-layer.loaded": { serviceId: string; layerId: number; id: string };
+  "feature-layer.failed": { serviceId: string; layerId: number; id: string; error: unknown };
+  "feature-layer.refreshed": { serviceId: string; layerId: number; id: string };
+  "feature-layer.destroyed": { id: string };
+  "feature-layer.edits": { result: unknown; layerId: string };
+  "feature-layer.renderer-changed": { layerId: string };
+  "feature-layer.popup-template-changed": { layerId: string };
+  "feature-layer.labeling-changed": { layerId: string };
+  "feature-layer.definition-expression-changed": { layerId: string; definitionExpression: string | undefined };
+  "feature-layer.out-fields-changed": { layerId: string; outFields: string[] | undefined };
+  "feature-layer.labels-visible-changed": { layerId: string; labelsVisible: boolean };
+  "feature-layer.scale-range-changed": { layerId: string; minScale: number; maxScale: number };
+  "feature-layer.legend-enabled-changed": { layerId: string; legendEnabled: boolean };
+  "feature-layer.time-extent-change": { layerId: string; timeExtent: { start: Date; end: Date } | undefined };
+}
+
 type UntypedCompatEventListener = CompatEventListener<unknown>;
 
 export class CompatEventBus {
@@ -22,10 +43,12 @@ export class CompatEventBus {
     this.anyListeners = new Set();
   }
 
-  public on<TPayload = unknown>(
-    type: string,
-    listener: CompatEventListener<TPayload>,
-  ): CompatEventSubscription {
+  public on<K extends keyof CompatEventPayloads>(
+    type: K,
+    listener: CompatEventListener<CompatEventPayloads[K]>,
+  ): CompatEventSubscription;
+  public on<TPayload = unknown>(type: string, listener: CompatEventListener<TPayload>): CompatEventSubscription;
+  public on<TPayload = unknown>(type: string, listener: CompatEventListener<TPayload>): CompatEventSubscription {
     let listeners = this.listenersByType.get(type);
     if (!listeners) {
       listeners = new Set();
@@ -41,9 +64,7 @@ export class CompatEventBus {
     };
   }
 
-  public onAny<TPayload = unknown>(
-    listener: CompatEventListener<TPayload>,
-  ): CompatEventSubscription {
+  public onAny<TPayload = unknown>(listener: CompatEventListener<TPayload>): CompatEventSubscription {
     const untypedListener = listener as UntypedCompatEventListener;
     this.anyListeners.add(untypedListener);
     return {
@@ -53,11 +74,7 @@ export class CompatEventBus {
     };
   }
 
-  public emit<TPayload = unknown>(
-    type: string,
-    payload: TPayload,
-    source: unknown = undefined,
-  ): CompatEvent<TPayload> {
+  public emit<TPayload = unknown>(type: string, payload: TPayload, source: unknown = undefined): CompatEvent<TPayload> {
     const event: CompatEvent<TPayload> = {
       type,
       payload,
@@ -112,6 +129,14 @@ export function resolveCompatEventBus(...candidates: readonly unknown[]): Compat
   }
 
   return undefined;
+}
+
+export function safeInvokeCompatListener<TValue>(listener: (value: TValue) => void, value: TValue): void {
+  try {
+    listener(value);
+  } catch {
+    // Listener errors should not break compatibility flow.
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

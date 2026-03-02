@@ -1,7 +1,23 @@
 import { HonuaClient } from "../core/client.js";
-import type { QueryMethod } from "../core/types.js";
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import type {
+  ApplyEditsRequest,
+  HonuaAddAttachmentResponse,
+  HonuaApplyEditsResponse,
+  HonuaAttachmentListResponse,
+  HonuaDeleteAttachmentsResponse,
+  HonuaExtent,
+  HonuaFeature,
+  HonuaFieldInfo,
+  HonuaQueryAttachmentsResponse,
+  HonuaQueryResponse,
+  HonuaRelatedRecordsResponse,
+  HonuaUpdateAttachmentResponse,
+  QueryMethod,
+} from "../core/types.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseFeatureLayerUrl } from "./url.js";
+
+const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 export interface FeatureLayerCompatOptions {
   url: string;
@@ -19,6 +35,7 @@ export interface FeatureLayerCompatOptions {
   maxScale?: number;
   legendEnabled?: boolean;
   listMode?: string;
+  maxAttachmentBytes?: number;
   client?: HonuaClient;
   eventBus?: CompatEventBus;
 }
@@ -30,6 +47,11 @@ export interface FeatureLayerQueryOptions {
   method?: QueryMethod;
   extraParams?: Record<string, string | number | boolean>;
 }
+
+export type FeatureLayerQueryAllOptions = FeatureLayerQueryOptions & {
+  pageSize?: number;
+  maxPages?: number;
+};
 
 export interface FeatureLayerEditsOptions {
   adds?: unknown[];
@@ -88,6 +110,7 @@ export interface FeatureLayerAddAttachmentOptions {
   attachment: FeatureLayerAttachmentData;
   name?: string;
   contentType?: string;
+  maxAttachmentBytes?: number;
   responseFormat?: "json" | "pjson";
   extraParams?: Record<string, string | number | boolean>;
 }
@@ -97,7 +120,7 @@ export interface FeatureLayerUpdateAttachmentOptions extends FeatureLayerAddAtta
 }
 
 export interface FeatureLayerQueryExtentResult {
-  extent: unknown | null;
+  extent: HonuaExtent | null;
   count?: number;
 }
 
@@ -128,10 +151,13 @@ export class FeatureLayerCompat {
   public loaded: boolean;
   public loadStatus: FeatureLayerLoadStatusCompat;
   public metadata: unknown;
+  public timeExtent: { start: Date; end: Date } | undefined;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
+  private readonly maxAttachmentBytes: number;
 
   public constructor(options: FeatureLayerCompatOptions) {
     const parsed = parseFeatureLayerUrl(options.url);
@@ -160,9 +186,12 @@ export class FeatureLayerCompat {
     this.loaded = false;
     this.loadStatus = "not-loaded";
     this.metadata = undefined;
+    this.timeExtent = undefined;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
     this.watchListeners = new Map();
+    this.eventListeners = new Map();
+    this.maxAttachmentBytes = normalizeAttachmentSizeLimit(options.maxAttachmentBytes);
   }
 
   public async load(): Promise<FeatureLayerCompat> {
@@ -227,7 +256,20 @@ export class FeatureLayerCompat {
     );
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): FeatureLayerHandleCompat {
+  public watch(
+    propertyName: "visible" | "loaded" | "labelsVisible" | "legendEnabled",
+    listener: (value: boolean) => void,
+  ): FeatureLayerHandleCompat;
+  public watch(
+    propertyName: "opacity" | "minScale" | "maxScale",
+    listener: (value: number) => void,
+  ): FeatureLayerHandleCompat;
+  public watch(
+    propertyName: "loadStatus",
+    listener: (value: FeatureLayerLoadStatusCompat) => void,
+  ): FeatureLayerHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): FeatureLayerHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): FeatureLayerHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -283,16 +325,11 @@ export class FeatureLayerCompat {
   public setDefinitionExpression(definitionExpression: string | undefined): void {
     this.definitionExpression = definitionExpression;
     this.notifyWatchers("definitionExpression", this.definitionExpression);
-    this.eventBus.emit(
-      "feature-layer.definition-expression-changed",
-      { layerId: this.id, definitionExpression },
-      this,
-    );
+    this.eventBus.emit("feature-layer.definition-expression-changed", { layerId: this.id, definitionExpression }, this);
   }
 
   public setOutFields(outFields: string | readonly string[] | undefined): void {
-    this.outFields =
-      outFields === undefined ? undefined : Array.isArray(outFields) ? [...outFields] : [outFields];
+    this.outFields = outFields === undefined ? undefined : Array.isArray(outFields) ? [...outFields] : [outFields];
     this.notifyWatchers("outFields", this.outFields);
     this.eventBus.emit("feature-layer.out-fields-changed", { layerId: this.id, outFields: this.outFields }, this);
   }
@@ -321,19 +358,53 @@ export class FeatureLayerCompat {
     this.eventBus.emit("feature-layer.legend-enabled-changed", { layerId: this.id, legendEnabled }, this);
   }
 
-  public listFields(): readonly Record<string, unknown>[] {
+  public setTimeExtent(extent: { start: Date; end: Date } | undefined): void {
+    this.timeExtent = extent
+      ? { start: new Date(extent.start.getTime()), end: new Date(extent.end.getTime()) }
+      : undefined;
+    this.notifyWatchers("timeExtent", this.timeExtent);
+    this.eventBus.emit("feature-layer.time-extent-change", { layerId: this.id, timeExtent: this.timeExtent }, this);
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventListeners.clear();
+    this.eventBus.emit("feature-layer.destroyed", { id: this.id }, this);
+  }
+
+  public on(eventName: string, listener: (event: unknown) => void): FeatureLayerHandleCompat {
+    const namespacedEvent = `feature-layer.${eventName}`;
+    let listeners = this.eventListeners.get(eventName);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(eventName, listeners);
+    }
+    listeners.add(listener);
+
+    const subscription = this.eventBus.on(namespacedEvent, (event) => {
+      safeInvokeCompatListener(listener, event.payload);
+    });
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+        subscription.remove();
+      },
+    };
+  }
+
+  public listFields(): readonly HonuaFieldInfo[] {
     return extractFieldDefinitions(this.metadata);
   }
 
-  public getField(fieldName: string): Record<string, unknown> | undefined {
-    const normalizedFieldName = fieldName.trim().toLowerCase();
+  public getField(fieldName: string): HonuaFieldInfo | undefined {
+    const normalizedFieldName = fieldName.trim();
     if (normalizedFieldName.length === 0) {
       return undefined;
     }
 
     return this.listFields().find((field) => {
-      const candidate = field.name;
-      return typeof candidate === "string" && candidate.trim().toLowerCase() === normalizedFieldName;
+      return field.name.trim() === normalizedFieldName;
     });
   }
 
@@ -349,7 +420,8 @@ export class FeatureLayerCompat {
     };
   }
 
-  public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<unknown> {
+  public queryFeatures(options: FeatureLayerQueryOptions = {}): Promise<HonuaQueryResponse> {
+    const timeParam = buildTimeParam(this.timeExtent, options.extraParams);
     return this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -357,12 +429,83 @@ export class FeatureLayerCompat {
       outFields: options.outFields ?? this.outFields,
       returnGeometry: options.returnGeometry,
       method: options.method,
-      extraParams: options.extraParams,
+      extraParams: timeParam ? { ...(options.extraParams ?? {}), time: timeParam } : options.extraParams,
     });
   }
 
+  public async queryFeaturesAll(options: FeatureLayerQueryAllOptions = {}): Promise<HonuaFeature[]> {
+    const { pageSize: requestedPageSize, maxPages: requestedMaxPages, ...queryOptions } = options;
+    const pageSize =
+      typeof requestedPageSize === "number" && Number.isFinite(requestedPageSize)
+        ? Math.max(1, Math.trunc(requestedPageSize))
+        : 2000;
+    const maxPages =
+      typeof requestedMaxPages === "number" && Number.isFinite(requestedMaxPages)
+        ? Math.max(1, Math.trunc(requestedMaxPages))
+        : 100;
+
+    const features: HonuaFeature[] = [];
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await this.queryFeatures({
+        ...queryOptions,
+        extraParams: {
+          ...(queryOptions.extraParams ?? {}),
+          resultOffset: page * pageSize,
+          resultRecordCount: pageSize,
+        },
+      });
+
+      const pageFeatures = response.features ?? [];
+      if (pageFeatures.length === 0) {
+        break;
+      }
+
+      features.push(...pageFeatures);
+      if (pageFeatures.length < pageSize) {
+        break;
+      }
+    }
+
+    return features;
+  }
+
+  public async *queryFeaturesStream(
+    options: FeatureLayerQueryAllOptions = {},
+  ): AsyncGenerator<HonuaFeature[], void, undefined> {
+    const { pageSize: requestedPageSize, maxPages: requestedMaxPages, ...queryOptions } = options;
+    const pageSize =
+      typeof requestedPageSize === "number" && Number.isFinite(requestedPageSize)
+        ? Math.max(1, Math.trunc(requestedPageSize))
+        : 2000;
+    const maxPages =
+      typeof requestedMaxPages === "number" && Number.isFinite(requestedMaxPages)
+        ? Math.max(1, Math.trunc(requestedMaxPages))
+        : 100;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await this.queryFeatures({
+        ...queryOptions,
+        extraParams: {
+          ...(queryOptions.extraParams ?? {}),
+          resultOffset: page * pageSize,
+          resultRecordCount: pageSize,
+        },
+      });
+
+      const pageFeatures = response.features ?? [];
+      if (pageFeatures.length === 0) {
+        break;
+      }
+
+      yield pageFeatures;
+      if (pageFeatures.length < pageSize) {
+        break;
+      }
+    }
+  }
+
   public async queryObjectIds(options: FeatureLayerQueryCountOptions = {}): Promise<number[]> {
-    const response = await this.client.queryFeatures({
+    const response = (await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -372,26 +515,22 @@ export class FeatureLayerCompat {
         ...options.extraParams,
         returnIdsOnly: true,
       },
-    });
+    })) as HonuaQueryResponse & { objectIds?: unknown[] };
 
-    if (isRecord(response) && Array.isArray(response.objectIds)) {
-      return response.objectIds
-        .map((value) => Number(value))
-        .filter((value) => Number.isFinite(value));
+    if (Array.isArray(response.objectIds)) {
+      return response.objectIds.map((value) => Number(value)).filter((value) => Number.isFinite(value));
     }
 
-    const features = extractFeatures(response);
+    const features = response.features;
     if (!features) {
       return [];
     }
 
-    return features
-      .map((feature) => extractObjectId(feature))
-      .filter((value): value is number => value !== undefined);
+    return features.map((feature) => extractObjectId(feature)).filter((value): value is number => value !== undefined);
   }
 
   public async queryFeatureCount(options: FeatureLayerQueryCountOptions = {}): Promise<number> {
-    const response = await this.client.queryFeatures({
+    const response = (await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -401,20 +540,17 @@ export class FeatureLayerCompat {
         ...options.extraParams,
         returnCountOnly: true,
       },
-    });
+    })) as HonuaQueryResponse & { count?: number };
 
-    if (isRecord(response) && typeof response.count === "number") {
-      return Number.isFinite(response.count) ? response.count : 0;
+    if (typeof response.count === "number" && Number.isFinite(response.count)) {
+      return response.count;
     }
 
-    const features = extractFeatures(response);
-    return features?.length ?? 0;
+    return response.features?.length ?? 0;
   }
 
-  public async queryExtent(
-    options: FeatureLayerQueryCountOptions = {},
-  ): Promise<FeatureLayerQueryExtentResult> {
-    const response = await this.client.queryFeatures({
+  public async queryExtent(options: FeatureLayerQueryCountOptions = {}): Promise<FeatureLayerQueryExtentResult> {
+    const response = (await this.client.queryFeatures({
       serviceId: this.serviceId,
       layerId: this.layerId,
       where: options.where ?? this.definitionExpression,
@@ -424,32 +560,29 @@ export class FeatureLayerCompat {
         ...options.extraParams,
         returnExtentOnly: true,
       },
-    });
+    })) as HonuaQueryResponse & { extent?: HonuaExtent | null; count?: number };
 
-    if (!isRecord(response)) {
-      return { extent: null };
-    }
-
-    const count =
-      typeof response.count === "number" && Number.isFinite(response.count) ? response.count : undefined;
+    const count = typeof response.count === "number" && Number.isFinite(response.count) ? response.count : undefined;
     return {
       extent: response.extent ?? null,
       count,
     };
   }
 
-  public applyEdits(options: FeatureLayerEditsOptions): Promise<unknown> {
-    return this.client.applyEdits({
+  public async applyEdits(options: FeatureLayerEditsOptions): Promise<HonuaApplyEditsResponse> {
+    const result = await this.client.applyEdits({
       serviceId: this.serviceId,
       layerId: this.layerId,
-      adds: options.adds,
-      updates: options.updates,
+      adds: options.adds as ApplyEditsRequest["adds"],
+      updates: options.updates as ApplyEditsRequest["updates"],
       deletes: options.deletes,
       rollbackOnFailure: options.rollbackOnFailure,
     });
+    this.eventBus.emit("feature-layer.edits", { result, layerId: this.id }, this);
+    return result;
   }
 
-  public queryRelatedFeatures(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<unknown> {
+  public queryRelatedFeatures(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<HonuaRelatedRecordsResponse> {
     return this.client.queryRelatedRecords({
       serviceId: this.serviceId,
       layerId: this.layerId,
@@ -463,7 +596,11 @@ export class FeatureLayerCompat {
     });
   }
 
-  public queryAttachments(options: FeatureLayerQueryAttachmentsOptions = {}): Promise<unknown> {
+  public queryRelatedRecords(options: FeatureLayerQueryRelatedFeaturesOptions): Promise<HonuaRelatedRecordsResponse> {
+    return this.queryRelatedFeatures(options);
+  }
+
+  public queryAttachments(options: FeatureLayerQueryAttachmentsOptions = {}): Promise<HonuaQueryAttachmentsResponse> {
     return this.client.request({
       method: options.method ?? "GET",
       path: `/rest/services/${encodeURIComponent(this.serviceId)}/FeatureServer/${this.layerId}/queryAttachments`,
@@ -472,9 +609,7 @@ export class FeatureLayerCompat {
         ...(options.objectIds === undefined
           ? {}
           : {
-              objectIds: Array.isArray(options.objectIds)
-                ? options.objectIds.join(",")
-                : options.objectIds,
+              objectIds: Array.isArray(options.objectIds) ? options.objectIds.join(",") : options.objectIds,
             }),
         ...(options.where === undefined ? {} : { where: options.where }),
         ...(options.extraParams ?? {}),
@@ -482,7 +617,7 @@ export class FeatureLayerCompat {
     });
   }
 
-  public listAttachments(options: FeatureLayerListAttachmentsOptions): Promise<unknown> {
+  public listAttachments(options: FeatureLayerListAttachmentsOptions): Promise<HonuaAttachmentListResponse> {
     return this.client.request({
       method: "GET",
       path:
@@ -493,14 +628,12 @@ export class FeatureLayerCompat {
     });
   }
 
-  public deleteAttachments(options: FeatureLayerDeleteAttachmentsOptions): Promise<unknown> {
+  public deleteAttachments(options: FeatureLayerDeleteAttachmentsOptions): Promise<HonuaDeleteAttachmentsResponse> {
     const params = new URLSearchParams();
     params.set("f", options.responseFormat ?? "json");
     params.set(
       "attachmentIds",
-      Array.isArray(options.attachmentIds)
-        ? options.attachmentIds.join(",")
-        : String(options.attachmentIds),
+      Array.isArray(options.attachmentIds) ? options.attachmentIds.join(",") : String(options.attachmentIds),
     );
     if (options.extraParams) {
       for (const [key, value] of Object.entries(options.extraParams)) {
@@ -520,7 +653,8 @@ export class FeatureLayerCompat {
     });
   }
 
-  public addAttachment(options: FeatureLayerAddAttachmentOptions): Promise<unknown> {
+  public addAttachment(options: FeatureLayerAddAttachmentOptions): Promise<HonuaAddAttachmentResponse> {
+    enforceAttachmentSizeLimit(options.attachment, options.maxAttachmentBytes ?? this.maxAttachmentBytes);
     const form = buildAttachmentFormData(options);
     return this.client.request({
       method: "POST",
@@ -533,7 +667,8 @@ export class FeatureLayerCompat {
     });
   }
 
-  public updateAttachment(options: FeatureLayerUpdateAttachmentOptions): Promise<unknown> {
+  public updateAttachment(options: FeatureLayerUpdateAttachmentOptions): Promise<HonuaUpdateAttachmentResponse> {
+    enforceAttachmentSizeLimit(options.attachment, options.maxAttachmentBytes ?? this.maxAttachmentBytes);
     const form = buildAttachmentFormData(options);
     form.set("attachmentId", String(options.attachmentId));
     return this.client.request({
@@ -554,7 +689,7 @@ export class FeatureLayerCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -575,16 +710,6 @@ function normalizeScale(scale: number | undefined): number {
     return 0;
   }
   return Math.max(0, Math.trunc(scale));
-}
-
-function extractFeatures(value: unknown): unknown[] | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  if (!Array.isArray(value.features)) {
-    return undefined;
-  }
-  return value.features;
 }
 
 function extractObjectId(feature: unknown): number | undefined {
@@ -608,7 +733,7 @@ function extractObjectId(feature: unknown): number | undefined {
   return undefined;
 }
 
-function extractFieldDefinitions(metadata: unknown): Record<string, unknown>[] {
+function extractFieldDefinitions(metadata: unknown): HonuaFieldInfo[] {
   if (!isRecord(metadata)) {
     return [];
   }
@@ -618,12 +743,12 @@ function extractFieldDefinitions(metadata: unknown): Record<string, unknown>[] {
     return [];
   }
 
-  const records: Record<string, unknown>[] = [];
+  const records: HonuaFieldInfo[] = [];
   for (const field of fields) {
-    if (!isRecord(field)) {
+    if (!isRecord(field) || typeof field.name !== "string" || typeof field.type !== "string") {
       continue;
     }
-    records.push({ ...field });
+    records.push(field as unknown as HonuaFieldInfo);
   }
   return records;
 }
@@ -644,10 +769,38 @@ function buildAttachmentFormData(options: {
   return form;
 }
 
-function resolveAttachmentName(
-  attachment: FeatureLayerAttachmentData,
-  explicitName?: string,
-): string {
+function normalizeAttachmentSizeLimit(maxAttachmentBytes: number | undefined): number {
+  if (typeof maxAttachmentBytes !== "number" || !Number.isFinite(maxAttachmentBytes)) {
+    return DEFAULT_MAX_ATTACHMENT_BYTES;
+  }
+  return Math.max(1, Math.trunc(maxAttachmentBytes));
+}
+
+function enforceAttachmentSizeLimit(attachment: FeatureLayerAttachmentData, maxAttachmentBytes: number): void {
+  const sizeBytes = estimateAttachmentSizeBytes(attachment);
+  if (sizeBytes <= maxAttachmentBytes) {
+    return;
+  }
+  throw new Error(`Attachment payload exceeds maxAttachmentBytes (${sizeBytes} > ${maxAttachmentBytes}).`);
+}
+
+function estimateAttachmentSizeBytes(attachment: FeatureLayerAttachmentData): number {
+  if (attachment instanceof Blob) {
+    return attachment.size;
+  }
+
+  if (typeof attachment === "string") {
+    return new TextEncoder().encode(attachment).byteLength;
+  }
+
+  if (attachment instanceof ArrayBuffer) {
+    return attachment.byteLength;
+  }
+
+  return attachment.byteLength;
+}
+
+function resolveAttachmentName(attachment: FeatureLayerAttachmentData, explicitName?: string): string {
   if (explicitName && explicitName.trim().length > 0) {
     return explicitName.trim();
   }
@@ -662,10 +815,20 @@ function resolveAttachmentName(
   return "attachment.bin";
 }
 
-function normalizeAttachmentData(
-  attachment: FeatureLayerAttachmentData,
-  contentType?: string,
-): Blob {
+function buildTimeParam(
+  timeExtent: { start: Date; end: Date } | undefined,
+  extraParams?: Record<string, string | number | boolean>,
+): string | undefined {
+  if (!timeExtent) {
+    return undefined;
+  }
+  if (extraParams && "time" in extraParams) {
+    return undefined;
+  }
+  return `${timeExtent.start.getTime()},${timeExtent.end.getTime()}`;
+}
+
+function normalizeAttachmentData(attachment: FeatureLayerAttachmentData, contentType?: string): Blob {
   if (attachment instanceof Blob) {
     return attachment;
   }

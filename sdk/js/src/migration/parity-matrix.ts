@@ -1,7 +1,7 @@
 import {
-  isKindSupportedForTarget,
-  SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
   type CodemodConstructorKind,
+  SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
+  isKindSupportedForTarget,
 } from "./codemod.js";
 
 export type JsParityCategory = "layer" | "view" | "widget" | "control";
@@ -47,17 +47,11 @@ const LAYER_KINDS = new Set<CodemodConstructorKind>([
 
 const CANONICAL_MODULE_BY_KIND = buildCanonicalModuleMap();
 
-const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (
-  Object.keys(CANONICAL_MODULE_BY_KIND) as CodemodConstructorKind[]
-)
+const BASE_MATRIX_ROWS: JsParityMatrixEntry[] = (Object.keys(CANONICAL_MODULE_BY_KIND) as CodemodConstructorKind[])
   .sort()
   .map((kind) => {
-    const honuaCompat: JsParityStatus = isKindSupportedForTarget(kind, "honua-compat")
-      ? "compat"
-      : "unsupported";
-    const esriLeaflet: JsParityStatus = isKindSupportedForTarget(kind, "esri-leaflet")
-      ? "compat"
-      : "assisted";
+    const honuaCompat: JsParityStatus = isKindSupportedForTarget(kind, "honua-compat") ? "compat" : "unsupported";
+    const esriLeaflet: JsParityStatus = isKindSupportedForTarget(kind, "esri-leaflet") ? "compat" : "assisted";
     return {
       kind,
       category: classifyCategory(kind),
@@ -77,9 +71,7 @@ export function getJsParityMatrix(): readonly JsParityMatrixEntry[] {
   return JS_PARITY_MATRIX;
 }
 
-export function summarizeJsParityMatrix(
-  matrix: readonly JsParityMatrixEntry[] = JS_PARITY_MATRIX,
-): JsParitySummary {
+export function summarizeJsParityMatrix(matrix: readonly JsParityMatrixEntry[] = JS_PARITY_MATRIX): JsParitySummary {
   const summary: JsParitySummary = {
     honuaCompat: {
       native: 0,

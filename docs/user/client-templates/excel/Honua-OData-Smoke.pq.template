@@ -1,0 +1,21 @@
+let
+    BaseUrl = "${HONUA_BASE_URL}",
+    EntitySet = "${HONUA_ODATA_ENTITY_SET}",
+    ApiKey = "${HONUA_API_KEY}",
+    ServiceRoot = Text.TrimEnd(BaseUrl, "/") & "/odata/",
+    Source =
+        if Text.Length(Text.Trim(ApiKey)) = 0 then
+            OData.Feed(ServiceRoot, null, [Implementation = "2.0"])
+        else
+            OData.Feed(
+                ServiceRoot,
+                null,
+                [
+                    Implementation = "2.0",
+                    Headers = [#"x-api-key" = ApiKey]
+                ]
+            ),
+    Entity = Source{[Name = EntitySet, Signature = "table"]}[Data],
+    Result = Table.FirstN(Entity, 5000)
+in
+    Result

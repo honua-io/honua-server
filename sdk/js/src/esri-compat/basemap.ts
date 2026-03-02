@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export interface BasemapCompatOptions {
   id?: string;
@@ -26,9 +26,7 @@ export class BasemapCompat {
 
   public constructor(options: BasemapCompatOptions = {}) {
     this.eventBus =
-      options.eventBus ??
-      resolveCompatEventBus(options.baseLayers, options.referenceLayers) ??
-      new CompatEventBus();
+      options.eventBus ?? resolveCompatEventBus(options.baseLayers, options.referenceLayers) ?? new CompatEventBus();
     this.id = options.id;
     this.title = options.title ?? options.id;
     this.baseLayers = options.baseLayers ? [...options.baseLayers] : [];
@@ -107,7 +105,7 @@ export class BasemapCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

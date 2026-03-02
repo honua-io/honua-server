@@ -9,12 +9,14 @@ This section is for people **using Honua in production** — API consumers, GIS 
 ## Integration & Development
 - **[Integration Patterns](INTEGRATION_PATTERNS.md)** - Common integration approaches with code examples
 - **[Geospatial API Examples](API_EXAMPLES.md)** - Practical request/response examples for data access
+- **[Client Templates + Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)** - ArcGIS Pro, QGIS, Power BI, and Excel demo/client validation
 - **[Server Management API](CONTROL_PLANE_API.md)** - Admin + automation API for workflows and UI
 - **[Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)** - SDK generation + upgrade workflow
 
 ## Reference & Optimization
 - **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices
 - **[MVP Compatibility Contract](MVP_COMPATIBILITY_CONTRACT.md)** - Launch status and known limitations by protocol
+- **[Client Template Version Matrix](CLIENT_TEMPLATE_VERSION_MATRIX.md)** - Tested client version evidence tied to certification runs
 - **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri FeatureServer compatibility details
 - **[MapServer Coverage Matrix](map-server-matrix.md)** - Esri MapServer compatibility details
 - **[Protocols Overview](STANDARDS_APIS.md)** - Protocol selection and coverage links

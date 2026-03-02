@@ -30,6 +30,7 @@ public sealed class VerticalSliceIsolationTests
         "OgcTiles",
         "Tiles",
         "OData",
+        "Grpc",
         "Import",
         "FileStorage",
         "HealthCheck",
@@ -92,6 +93,12 @@ public sealed class VerticalSliceIsolationTests
                 .Any(File.Exists) ||
                 Directory.GetFiles(featurePath, "*Endpoints.cs").Length > 0 ||
                 Directory.GetFiles(featurePath, "*Handler.cs").Length > 0;
+
+            if (!hasEndpointsOrHandler &&
+                featureDir.Equals("Grpc", StringComparison.OrdinalIgnoreCase))
+            {
+                hasEndpointsOrHandler = Directory.GetFiles(featurePath, "*Service.cs").Length > 0;
+            }
 
             hasEndpointsOrHandler.Should().BeTrue(
                 $"Feature '{featureDir}' should follow vertical slice pattern with endpoints and/or handlers. " +

@@ -78,4 +78,24 @@ describe("RouteLayerCompat", () => {
     layer.clearStops();
     expect(layer.stops).toHaveLength(0);
   });
+
+  it("destroy() clears watchers and emits route-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new RouteLayerCompat({ eventBus });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("route-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
+  });
 });

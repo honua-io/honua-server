@@ -1,9 +1,4 @@
-export type JsRuntimeParitySurface =
-  | "feature-layer"
-  | "map-image-layer"
-  | "map-view"
-  | "widget"
-  | "control";
+export type JsRuntimeParitySurface = "feature-layer" | "map-image-layer" | "map-view" | "widget" | "control";
 
 export type JsRuntimeParityStatus = "native" | "compat" | "assisted" | "unsupported";
 
@@ -35,104 +30,198 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     capability: "query-object-ids",
     arcGisJsApi: "FeatureLayer.queryObjectIds",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "ObjectId query helper is implemented in compat; esri-leaflet requires adapter logic.",
+    esriLeaflet: "compat",
+    notes: "ObjectId query helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "query-feature-count",
     arcGisJsApi: "FeatureLayer.queryFeatureCount",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Count query helper is implemented in compat; esri-leaflet requires manual bridge.",
+    esriLeaflet: "compat",
+    notes: "Count query helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "query-extent",
     arcGisJsApi: "FeatureLayer.queryExtent",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Extent query helper is implemented in compat.",
+    esriLeaflet: "compat",
+    notes: "Extent query helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "query-related-features",
     arcGisJsApi: "FeatureLayer.queryRelatedFeatures",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Related-records helper is compat-only.",
+    esriLeaflet: "compat",
+    notes: "Related-records helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "apply-edits",
     arcGisJsApi: "FeatureLayer.applyEdits",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Edit helper is available in compat for migration-critical edits.",
+    esriLeaflet: "compat",
+    notes: "Edit helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "attachments-query-list-delete",
     arcGisJsApi: "FeatureLayer.queryAttachments/listAttachments/deleteAttachments",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Attachment read/delete helpers are compat-ready.",
+    esriLeaflet: "compat",
+    notes:
+      "Attachment read/delete helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "attachments-add-update",
     arcGisJsApi: "FeatureLayer.addAttachment/updateAttachment",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Multipart attachment upload/update helpers are compat-ready.",
+    esriLeaflet: "compat",
+    notes:
+      "Multipart attachment upload/update helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "feature-layer",
     capability: "schema-field-lookups",
     arcGisJsApi: "FeatureLayer.getField/fields",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Field schema helpers are available in compat.",
+    esriLeaflet: "compat",
+    notes: "Field schema helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "map-image-layer",
     capability: "export-image",
     arcGisJsApi: "MapImageLayer.exportImage",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Map export helper is mapped in compat runtime.",
+    esriLeaflet: "compat",
+    notes: "Map export helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "map-image-layer",
     capability: "legend",
     arcGisJsApi: "MapImageLayer.getLegend/legend",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Legend helper is mapped in compat runtime.",
+    esriLeaflet: "compat",
+    notes: "Legend helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "map-image-layer",
     capability: "find",
     arcGisJsApi: "MapImageLayer.find",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "MapServer find helper is mapped in compat runtime.",
+    esriLeaflet: "compat",
+    notes: "MapServer find helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
   },
   {
     surface: "map-image-layer",
     capability: "identify",
     arcGisJsApi: "MapImageLayer.identify",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Identify helper is mapped in compat runtime.",
+    esriLeaflet: "compat",
+    notes: "Identify helper is available via esri-leaflet target compat fallback for method-aware layer usage.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "query-features",
+    arcGisJsApi: "MapImageLayer/Sublayer.queryFeatures",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "MapServer layer query helper is available via compat query bridge on MapImageLayer wrappers.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "query-feature-count",
+    arcGisJsApi: "MapImageLayer/Sublayer.queryFeatureCount",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "MapServer layer count helper is available through query bridge wrappers on MapImageLayer.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "query-object-ids",
+    arcGisJsApi: "MapImageLayer/Sublayer.queryObjectIds",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "MapServer layer objectId helper is available through query bridge wrappers on MapImageLayer.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "query-extent",
+    arcGisJsApi: "MapImageLayer/Sublayer.queryExtent",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "MapServer layer extent helper is available through query bridge wrappers on MapImageLayer.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "query-related-features",
+    arcGisJsApi: "MapImageLayer/Sublayer.queryRelatedFeatures",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "MapServer related-record query helper is available through query bridge wrappers on MapImageLayer.",
   },
   {
     surface: "map-image-layer",
     capability: "sublayer-lookup",
     arcGisJsApi: "MapImageLayer.findSublayerById/allSublayers",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Sublayer lookup helpers are available in compat runtime.",
+    esriLeaflet: "compat",
+    notes:
+      "Sublayer lookup helpers are available via esri-leaflet target compat fallback for method-aware layer usage.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "sublayer-query-wrapper",
+    arcGisJsApi:
+      "MapImageLayer.sublayer(id).queryFeatures/queryFeatureCount/queryObjectIds/queryExtent/queryRelatedFeatures",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "Sublayer query wrapper is available through compat bridges for MapServer sublayer query ergonomics.",
+  },
+  {
+    surface: "map-image-layer",
+    capability: "sublayer-visibility-and-filters",
+    arcGisJsApi: "MapImageLayer.sublayer(id).visible/definitionExpression",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes:
+      "Sublayer visibility and definition-expression bridges are available on compat sublayer wrappers for TOC/query parity.",
+  },
+  {
+    surface: "feature-layer",
+    capability: "event-lifecycle",
+    arcGisJsApi: "FeatureLayer.on(edits/refresh/layerview-create)",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "Typed .on() method with event bus bridge for edits, refresh, and layerview-create events.",
+  },
+  {
+    surface: "feature-layer",
+    capability: "time-extent-filtering",
+    arcGisJsApi: "FeatureLayer.timeExtent / TimeSlider integration",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes:
+      "TimeExtent property auto-appends time parameter to queryFeatures; TimeSliderCompat.connectLayer() for declarative binding.",
+  },
+  {
+    surface: "feature-layer",
+    capability: "streaming-pagination",
+    arcGisJsApi: "FeatureLayer.queryFeaturesAll / queryFeaturesStream",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "Streaming async-generator pagination and typed query parameters for large result sets.",
+  },
+  {
+    surface: "feature-layer",
+    capability: "popup-template-interpolation",
+    arcGisJsApi: "PopupTemplate.getTitle/getContent with field expressions",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "PopupTemplate field expression interpolation and function-based title/content support.",
   },
   {
     surface: "map-view",
@@ -148,7 +237,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapView.hitTest",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Popup-backed hitTest helper is available through deterministic esri-leaflet target fallback to MapViewCompat.",
+    notes:
+      "Popup-backed hitTest helper is available through deterministic esri-leaflet target fallback to MapViewCompat.",
   },
   {
     surface: "map-view",
@@ -164,7 +254,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapView.ui.add/remove/move/getComponents",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "UI component container APIs are available through deterministic esri-leaflet target fallback to MapViewCompat.",
+    notes:
+      "UI component container APIs are available through deterministic esri-leaflet target fallback to MapViewCompat.",
   },
   {
     surface: "map-view",
@@ -172,7 +263,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "MapView.whenLayerView + layerView.query*",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Layer-view creation, querying, and highlight handles are compat-ready through deterministic esri-leaflet target fallback to MapViewCompat.",
+    notes:
+      "Layer-view creation, querying, and highlight handles are compat-ready through deterministic esri-leaflet target fallback to MapViewCompat.",
   },
   {
     surface: "widget",
@@ -180,7 +272,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "LayerList/Legend",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "LayerList/Legend are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
+    notes:
+      "LayerList/Legend are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
   },
   {
     surface: "widget",
@@ -188,7 +281,8 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "Popup/Search",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Popup/Search are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
+    notes:
+      "Popup/Search are deterministic in esri-leaflet target via compat fallback wrappers and shared event bus integration.",
   },
   {
     surface: "widget",
@@ -203,8 +297,24 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     capability: "editing-and-analysis",
     arcGisJsApi: "Sketch/Editor/Track/Measurement/TimeSlider/Directions",
     honuaCompat: "compat",
-    esriLeaflet: "assisted",
-    notes: "Common editing and analysis widgets are available in compat runtime.",
+    esriLeaflet: "compat",
+    notes: "Common editing and analysis widgets are deterministic in esri-leaflet target via compat fallback wrappers.",
+  },
+  {
+    surface: "widget",
+    capability: "search-expanded-options",
+    arcGisJsApi: "Search.searchAllEnabled/popupEnabled/maxResults/allPlaceholder/locationEnabled/resultGraphicEnabled",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "Expanded Search widget options for codemod auto-migration coverage.",
+  },
+  {
+    surface: "widget",
+    capability: "feature-table-expanded-options",
+    arcGisJsApi: "FeatureTable.selectionMode/rowSelectionEnabled/highlightEnabled/pageSize/autoRefreshEnabled",
+    honuaCompat: "compat",
+    esriLeaflet: "compat",
+    notes: "Expanded FeatureTable widget options for codemod auto-migration coverage.",
   },
   {
     surface: "control",
@@ -212,12 +322,12 @@ const BASE_RUNTIME_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([
     arcGisJsApi: "Home/BasemapToggle/Locate/ScaleBar/Compass/Fullscreen/Zoom/Attribution",
     honuaCompat: "compat",
     esriLeaflet: "compat",
-    notes: "Common map controls are deterministic in esri-leaflet target via compat fallback wrappers and event-bus integration.",
+    notes:
+      "Common map controls are deterministic in esri-leaflet target via compat fallback wrappers and event-bus integration.",
   },
 ]);
 
-export const JS_RUNTIME_PARITY_MATRIX: readonly JsRuntimeParityEntry[] =
-  Object.freeze([...BASE_RUNTIME_MATRIX]);
+export const JS_RUNTIME_PARITY_MATRIX: readonly JsRuntimeParityEntry[] = Object.freeze([...BASE_RUNTIME_MATRIX]);
 
 export function getJsRuntimeParityMatrix(): readonly JsRuntimeParityEntry[] {
   return JS_RUNTIME_PARITY_MATRIX;

@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Schema;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
@@ -254,6 +255,19 @@ builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistribut
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoservicesImportBackgroundService>();
 
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions.SectionName));
+builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions.SectionName));
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore, Honua.Server.Features.Infrastructure.Events.InMemoryFeatureChangeEventStore>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventQueue, Honua.Server.Features.Infrastructure.Events.FeatureChangeEventQueue>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventPublisher, Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher>();
+builder.Services.AddHttpClient("feature-change-webhook");
+builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>();
+
+builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOperationJobService, Honua.Server.Features.Admin.TileOperations.TileOperationJobService>();
+builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileOperationBackgroundService>();
+
 // Register OData services and handlers
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
@@ -327,6 +341,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
+        Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
+        Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
@@ -494,6 +510,9 @@ app.UsePerformanceMonitoring();
 // Add global exception handling middleware (after correlation ID for exception logging)
 app.UseGlobalExceptionHandling();
 
+// Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
+app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
+
 // Add CORS middleware before auth to handle preflight requests
 app.UseHonuaCors(app.Environment);
 
@@ -568,6 +587,16 @@ app.MapCspViolationReportEndpoint();
 // Configure FeatureServer, OGC, and OData endpoints
 app.MapServerFeatureEndpoints();
 
+// Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
+app.MapGrpcService<Honua.Server.Features.Grpc.HonuaFeatureService>();
+app.MapGrpcHealthChecksService();
+
+// Enable gRPC reflection for dev tooling (grpcurl, grpcui, Postman)
+if (app.Environment.IsDevelopment())
+{
+    app.MapGrpcReflectionService();
+}
+
 // Configure file import endpoints
 app.MapImportEndpoints();
 
@@ -579,6 +608,8 @@ app.MapTemporaryFileEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
+app.MapFeatureChangeEventsEndpoints();
+app.MapTileOperationsEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
 if (useAspire)

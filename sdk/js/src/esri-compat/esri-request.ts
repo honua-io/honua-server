@@ -45,10 +45,7 @@ export async function esriRequest<TData = unknown>(
   };
 }
 
-function appendQuery(
-  urlText: string,
-  query: Record<string, string | number | boolean> | undefined,
-): string {
+function appendQuery(urlText: string, query: Record<string, string | number | boolean> | undefined): string {
   if (!query || Object.keys(query).length === 0) {
     return urlText;
   }
@@ -69,10 +66,7 @@ function appendQuery(
   return `${withQuery}${hash}`;
 }
 
-async function parseResponseBody(
-  response: Response,
-  responseType: EsriRequestResponseTypeCompat,
-): Promise<unknown> {
+async function parseResponseBody(response: Response, responseType: EsriRequestResponseTypeCompat): Promise<unknown> {
   switch (responseType) {
     case "text":
       return response.text();

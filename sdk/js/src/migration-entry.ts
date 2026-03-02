@@ -40,6 +40,13 @@ export type {
   MigrationDemoReport,
   ParsedGeoservicesServiceUrl,
 } from "./migration/demo.js";
+export {
+  MIGRATION_DEMO_FALLBACK_TARGET,
+  MIGRATION_DEMO_ISSUE_NUMBER,
+  MIGRATION_DEMO_PRIMARY_TARGET,
+  MIGRATION_DEMO_TARGETS,
+} from "./migration/demo-targets.js";
+export type { MigrationDemoFixtureTarget } from "./migration/demo-targets.js";
 export { getJsParityMatrix, JS_PARITY_MATRIX, summarizeJsParityMatrix } from "./migration/parity-matrix.js";
 export type {
   JsParityCategory,

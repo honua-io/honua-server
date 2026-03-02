@@ -1,4 +1,9 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
 
 export interface LayerListCompatOptions {
   view?: unknown;
@@ -19,7 +24,7 @@ export interface LayerListActionCompat {
 }
 
 export interface LayerListItemCompat {
-  id: string | undefined;
+  id: string | number | undefined;
   title: string;
   visible: boolean;
   layer: unknown;
@@ -76,8 +81,7 @@ export class LayerListCompat {
     this.view = options.view;
     this.map = options.map ?? extractMapFromView(options.view);
     this.container = options.container;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(this.view, this.map) ?? new CompatEventBus();
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(this.view, this.map) ?? new CompatEventBus();
     this.includeHidden = options.includeHidden ?? false;
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -160,21 +164,25 @@ export class LayerListCompat {
     return this.items;
   }
 
-  public toggle(layerOrId: unknown | string, visible?: boolean): boolean {
+  public toggle(layerOrId: unknown | string | number, visible?: boolean): boolean {
     const layer = this.findLayer(layerOrId);
     if (!layer || !isLayerLike(layer)) {
       return false;
     }
 
     const nextVisible = visible ?? !toVisible(layer);
-    layer.visible = nextVisible;
-    this.eventBus.emit("layer.visibility-changed", { layerId: layer.id, visible: nextVisible }, this);
+    if (hasSetVisibility(layer)) {
+      layer.setVisibility(nextVisible);
+    } else {
+      layer.visible = nextVisible;
+      this.eventBus.emit("layer.visibility-changed", { layerId: layer.id, visible: nextVisible }, this);
+    }
     this.refresh();
     return true;
   }
 
   public setItemActions(
-    layerOrId: unknown | string,
+    layerOrId: unknown | string | number,
     actionsSections: readonly (readonly LayerListActionCompat[])[],
   ): boolean {
     const item = this.findItem(layerOrId);
@@ -190,9 +198,8 @@ export class LayerListCompat {
     return true;
   }
 
-  public triggerAction(actionId: string, layerOrId?: unknown | string): boolean {
-    const item =
-      layerOrId === undefined ? this.items[0] : this.findItem(layerOrId);
+  public triggerAction(actionId: string, layerOrId?: unknown | string | number): boolean {
+    const item = layerOrId === undefined ? this.items[0] : this.findItem(layerOrId);
     if (!item) {
       return false;
     }
@@ -240,16 +247,16 @@ export class LayerListCompat {
     this.watchListeners.clear();
   }
 
-  private findLayer(layerOrId: unknown | string): unknown {
+  private findLayer(layerOrId: unknown | string | number): unknown {
     const rootLayers = getRootLayers(this.map);
-    if (typeof layerOrId !== "string") {
+    if (typeof layerOrId !== "string" && typeof layerOrId !== "number") {
       return findLayerByReference(rootLayers, layerOrId);
     }
     return findLayerById(rootLayers, layerOrId);
   }
 
-  private findItem(layerOrId: unknown | string): LayerListItemCompat | undefined {
-    if (typeof layerOrId !== "string") {
+  private findItem(layerOrId: unknown | string | number): LayerListItemCompat | undefined {
+    if (typeof layerOrId !== "string" && typeof layerOrId !== "number") {
       return findItemByLayer(this.items, layerOrId);
     }
     return findItemById(this.items, layerOrId);
@@ -263,7 +270,7 @@ export class LayerListCompat {
 
     for (const listener of listeners) {
       try {
-        listener(event);
+        safeInvokeCompatListener(listener, event);
       } catch {
         // Listener errors should not break widget compatibility flow.
       }
@@ -277,7 +284,7 @@ export class LayerListCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -296,11 +303,7 @@ function getRootLayers(map: unknown): unknown[] {
   return [...map.layers];
 }
 
-function toLayerListItem(
-  layer: unknown,
-  includeHidden: boolean,
-  index: number,
-): LayerListItemCompat | undefined {
+function toLayerListItem(layer: unknown, includeHidden: boolean, index: number): LayerListItemCompat | undefined {
   if (!isLayerLike(layer)) {
     return undefined;
   }
@@ -357,10 +360,7 @@ function findActionById(
   return undefined;
 }
 
-function findItemByLayer(
-  items: readonly LayerListItemCompat[],
-  layer: unknown,
-): LayerListItemCompat | undefined {
+function findItemByLayer(items: readonly LayerListItemCompat[], layer: unknown): LayerListItemCompat | undefined {
   for (const item of items) {
     if (item.layer === layer) {
       return item;
@@ -373,12 +373,10 @@ function findItemByLayer(
   return undefined;
 }
 
-function findItemById(
-  items: readonly LayerListItemCompat[],
-  id: string,
-): LayerListItemCompat | undefined {
+function findItemById(items: readonly LayerListItemCompat[], id: string | number): LayerListItemCompat | undefined {
+  const normalizedId = String(id);
   for (const item of items) {
-    if (item.id === id) {
+    if (item.id !== undefined && String(item.id) === normalizedId) {
       return item;
     }
     const nested = findItemById(item.children, id);
@@ -402,9 +400,10 @@ function findLayerByReference(layers: readonly unknown[], target: unknown): unkn
   return undefined;
 }
 
-function findLayerById(layers: readonly unknown[], id: string): unknown {
+function findLayerById(layers: readonly unknown[], id: string | number): unknown {
+  const normalizedId = String(id);
   for (const layer of layers) {
-    if (isLayerLike(layer) && layer.id === id) {
+    if (isLayerLike(layer) && layer.id !== undefined && String(layer.id) === normalizedId) {
       return layer;
     }
     const nested = findLayerById(getChildLayers(layer), id);
@@ -416,21 +415,41 @@ function findLayerById(layers: readonly unknown[], id: string): unknown {
 }
 
 interface LayerLike {
-  id: string | undefined;
+  id: string | number | undefined;
   title: string | undefined;
   visible: boolean | undefined;
   layers?: unknown[];
+}
+
+interface LayerVisibilitySetter {
+  setVisibility(visible: boolean): void;
 }
 
 function isLayerLike(value: unknown): value is LayerLike {
   return typeof value === "object" && value !== null;
 }
 
+function hasSetVisibility(value: unknown): value is LayerLike & LayerVisibilitySetter {
+  if (!isLayerLike(value)) {
+    return false;
+  }
+  return typeof (value as { setVisibility?: unknown }).setVisibility === "function";
+}
+
 function getChildLayers(layer: unknown): unknown[] {
-  if (!isRecord(layer) || !Array.isArray(layer.layers)) {
+  if (!isRecord(layer)) {
     return [];
   }
-  return [...layer.layers];
+  if (Array.isArray(layer.layers)) {
+    return [...layer.layers];
+  }
+  if (Array.isArray(layer.allSublayers)) {
+    return [...layer.allSublayers];
+  }
+  if (Array.isArray(layer.sublayers)) {
+    return [...layer.sublayers];
+  }
+  return [];
 }
 
 function toLayerTitle(layer: LayerLike, index: number): string {
@@ -439,6 +458,9 @@ function toLayerTitle(layer: LayerLike, index: number): string {
   }
   if (typeof layer.id === "string" && layer.id.trim().length > 0) {
     return layer.id;
+  }
+  if (typeof layer.id === "number" && Number.isFinite(layer.id)) {
+    return String(layer.id);
   }
   return `Layer ${index + 1}`;
 }

@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface SimpleLineSymbolCompatOptions {
   style?: string;
   color?: unknown;
@@ -23,10 +24,7 @@ export class SimpleLineSymbolCompat {
     this.loadStatus = "not-loaded";
     this.style = options.style ?? "solid";
     this.color = options.color;
-    this.width =
-      typeof options.width === "number" && Number.isFinite(options.width)
-        ? options.width
-        : 1;
+    this.width = typeof options.width === "number" && Number.isFinite(options.width) ? options.width : 1;
     this.watchListeners = new Map();
   }
 
@@ -105,7 +103,7 @@ export class SimpleLineSymbolCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

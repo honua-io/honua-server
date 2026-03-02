@@ -39,7 +39,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly IFeatureReader _featureReader = dependencies?.FeatureReader
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IStreamingFeatureStore _streamingFeatureStore = dependencies.StreamingFeatureStore;
-    private readonly IResourceValidator _resourceValidator = dependencies.ResourceValidator;
     private readonly ICommonQueryValidator _queryValidator = dependencies.QueryValidator;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFilterProcessor _filterProcessor = dependencies.FilterProcessor;
@@ -92,23 +91,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             collectionId = collectionValidation.Value!;
 
-            // Use centralized resource validation
-            var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
-            if (!collectionResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+                context,
+                collectionId,
+                cancellationToken: cancellationToken,
+                requiredProtocol: ServiceProtocols.OgcFeatures);
+            if (!layerValidation.IsValid)
             {
-                return StandardErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
+                return layerValidation.ErrorResult!;
             }
-            var layer = collectionResult.Resource!;
+
+            var layer = layerValidation.Layer!;
             var layerId = layer.Id;
             var activity = Activity.Current;
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
             activity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "query",
@@ -387,23 +385,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
             collectionId = collectionValidation.Value!;
             featureId = featureValidation.Value!;
 
-            // Use centralized resource validation
-            var collectionResult = await _resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
-            if (!collectionResult.IsValid)
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+                context,
+                collectionId,
+                cancellationToken: cancellationToken,
+                requiredProtocol: ServiceProtocols.OgcFeatures);
+            if (!layerValidation.IsValid)
             {
-                return StandardErrorHelpers.CreateNotFound(context, collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.");
+                return layerValidation.ErrorResult!;
             }
-            var layer = collectionResult.Resource!;
+
+            var layer = layerValidation.Layer!;
             var layerId = layer.Id;
             var activity = Activity.Current;
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
             activity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "feature",

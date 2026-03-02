@@ -1,15 +1,15 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
-import { FeatureLayerCompat } from "./feature-layer.js";
-import type { QueryMethod } from "../core/types.js";
+import type { HonuaRelatedRecordsResponse, QueryMethod } from "../core/types.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import type { FeatureLayerCompat } from "./feature-layer.js";
 
 export interface FeatureTableCompatOptions {
   view?: unknown;
   layer?: FeatureLayerCompat;
   container?: unknown;
   eventBus?: CompatEventBus;
-  title?: unknown;
+  title?: string | null;
   description?: string;
-  actionColumnConfig?: unknown;
+  actionColumnConfig?: Record<string, unknown> | null;
   attachmentsEnabled?: boolean;
   paginationEnabled?: boolean;
   editingEnabled?: boolean;
@@ -17,12 +17,17 @@ export interface FeatureTableCompatOptions {
   relatedRecordsEnabled?: boolean;
   objectIdField?: string;
   where?: string;
-  filterGeometry?: unknown;
+  filterGeometry?: Record<string, unknown> | null;
   filterBySelectionEnabled?: boolean;
   highlightIds?: readonly number[];
-  tableTemplate?: unknown;
-  visibleElements?: unknown;
-  fieldConfigs?: unknown;
+  tableTemplate?: Record<string, unknown> | null;
+  visibleElements?: Record<string, unknown> | null;
+  fieldConfigs?: Record<string, unknown>[] | null;
+  selectionMode?: string;
+  rowSelectionEnabled?: boolean;
+  highlightEnabled?: boolean;
+  pageSize?: number;
+  autoRefreshEnabled?: boolean;
 }
 
 export type FeatureTableStateCompat = "loading" | "loaded" | "error";
@@ -92,9 +97,7 @@ export class FeatureTableHighlightIdsCompat {
   }
 
   public push(...objectIds: readonly number[]): number {
-    const additions = normalizeUniqueObjectIds(objectIds).filter(
-      (objectId) => !this.values.includes(objectId),
-    );
+    const additions = normalizeUniqueObjectIds(objectIds).filter((objectId) => !this.values.includes(objectId));
     if (additions.length === 0) {
       return this.values.length;
     }
@@ -205,12 +208,11 @@ export class FeatureTableHighlightIdsCompat {
 
 export class FeatureTableCompat {
   public readonly view: unknown;
-  public readonly layer: FeatureLayerCompat | undefined;
   public readonly container: unknown;
   public readonly eventBus: CompatEventBus;
-  public title: unknown;
+  public title: string | null;
   public description: string | undefined;
-  public actionColumnConfig: unknown;
+  public actionColumnConfig: Record<string, unknown> | null;
   public attachmentsEnabled: boolean;
   public paginationEnabled: boolean;
   public editingEnabled: boolean;
@@ -219,19 +221,33 @@ export class FeatureTableCompat {
   public readonly objectIdField: string;
   public state: FeatureTableStateCompat;
   public loadStatus: FeatureTableLoadStatusCompat;
-  public filterGeometry: unknown;
+  public filterGeometry: Record<string, unknown> | null;
   public filterBySelectionEnabled: boolean;
   public where: string;
-  public tableTemplate: unknown;
-  public visibleElements: unknown;
-  public fieldConfigs: unknown;
+  public tableTemplate: Record<string, unknown> | null;
+  public visibleElements: Record<string, unknown> | null;
+  public fieldConfigs: Record<string, unknown>[] | null;
+  public selectionMode: string;
+  public rowSelectionEnabled: boolean;
+  public highlightEnabled: boolean;
+  public pageSize: number;
+  public autoRefreshEnabled: boolean;
   public readonly highlightIds: FeatureTableHighlightIdsCompat;
   public rows: readonly FeatureTableRowCompat[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
   private refreshRevision: number;
+  private layerInternal: FeatureLayerCompat | undefined;
 
   public get size(): number {
     return this.rows.length;
+  }
+
+  public get layer(): FeatureLayerCompat | undefined {
+    return this.layerInternal;
+  }
+
+  public set layer(layer: FeatureLayerCompat | undefined) {
+    this.setLayer(layer);
   }
 
   public get loaded(): boolean {
@@ -240,12 +256,12 @@ export class FeatureTableCompat {
 
   public constructor(options: FeatureTableCompatOptions = {}) {
     this.view = options.view;
-    this.layer = options.layer;
+    this.layerInternal = options.layer;
     this.container = options.container;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, options.layer) ?? new CompatEventBus();
-    this.title = options.title;
+    this.title = options.title ?? null;
     this.description = options.description;
-    this.actionColumnConfig = options.actionColumnConfig;
+    this.actionColumnConfig = options.actionColumnConfig ?? null;
     this.attachmentsEnabled = options.attachmentsEnabled ?? false;
     this.paginationEnabled = options.paginationEnabled ?? false;
     this.editingEnabled = options.editingEnabled ?? false;
@@ -255,11 +271,19 @@ export class FeatureTableCompat {
     this.state = "loading";
     this.loadStatus = "not-loaded";
     this.where = options.where ?? "1=1";
-    this.filterGeometry = options.filterGeometry;
+    this.filterGeometry = options.filterGeometry ?? null;
     this.filterBySelectionEnabled = options.filterBySelectionEnabled ?? false;
-    this.tableTemplate = options.tableTemplate;
-    this.visibleElements = options.visibleElements;
-    this.fieldConfigs = options.fieldConfigs;
+    this.tableTemplate = options.tableTemplate ?? null;
+    this.visibleElements = options.visibleElements ?? null;
+    this.fieldConfigs = options.fieldConfigs ?? null;
+    this.selectionMode = options.selectionMode ?? "multiple";
+    this.rowSelectionEnabled = options.rowSelectionEnabled ?? true;
+    this.highlightEnabled = options.highlightEnabled ?? true;
+    this.pageSize =
+      typeof options.pageSize === "number" && Number.isFinite(options.pageSize)
+        ? Math.max(1, Math.trunc(options.pageSize))
+        : 25;
+    this.autoRefreshEnabled = options.autoRefreshEnabled ?? true;
     this.highlightIds = new FeatureTableHighlightIdsCompat(options.highlightIds);
     this.rows = [];
     this.watchListeners = new Map();
@@ -323,6 +347,9 @@ export class FeatureTableCompat {
     this.eventBus.emit("feature-table.state-changed", { state: this.state }, this);
 
     if (!this.layer) {
+      if (refreshRevision !== this.refreshRevision) {
+        return this.rows;
+      }
       this.rows = [];
       this.notifyWatchers("rows", this.rows);
       this.notifyWatchers("size", this.size);
@@ -372,13 +399,23 @@ export class FeatureTableCompat {
     }
   }
 
+  public setLayer(layer: FeatureLayerCompat | undefined): void {
+    if (Object.is(this.layerInternal, layer)) {
+      return;
+    }
+    this.nextRefreshRevision();
+    this.layerInternal = layer;
+    this.notifyWatchers("layer", this.layerInternal);
+    this.eventBus.emit("feature-table.layer-changed", { hasLayer: Boolean(layer) }, this);
+  }
+
   public setWhere(where: string): void {
     this.where = where;
     this.notifyWatchers("where", this.where);
     this.eventBus.emit("feature-table.filter-changed", { where }, this);
   }
 
-  public setFilterGeometry(filterGeometry: unknown): void {
+  public setFilterGeometry(filterGeometry: Record<string, unknown> | null): void {
     this.filterGeometry = filterGeometry;
     this.notifyWatchers("filterGeometry", this.filterGeometry);
     this.eventBus.emit("feature-table.filter-geometry-changed", { filterGeometry }, this);
@@ -404,7 +441,14 @@ export class FeatureTableCompat {
     return this.rows.filter((row) => selectedIds.has(row.objectId));
   }
 
-  public async queryRelatedRecords(options: FeatureTableQueryRelatedRecordsOptions): Promise<unknown> {
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventBus.emit("feature-table.destroyed", undefined, this);
+  }
+
+  public async queryRelatedRecords(
+    options: FeatureTableQueryRelatedRecordsOptions,
+  ): Promise<HonuaRelatedRecordsResponse> {
     if (!this.layer) {
       return { relatedRecordGroups: [] };
     }
@@ -435,7 +479,7 @@ export class FeatureTableCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 
@@ -445,10 +489,7 @@ export class FeatureTableCompat {
   }
 }
 
-function extractRows(
-  response: unknown,
-  objectIdField: string,
-): readonly FeatureTableRowCompat[] {
+function extractRows(response: unknown, objectIdField: string): readonly FeatureTableRowCompat[] {
   if (!isRecord(response) || !Array.isArray(response.features)) {
     return [];
   }
@@ -471,10 +512,7 @@ function extractRows(
   return rows;
 }
 
-function extractObjectId(
-  attributes: Record<string, unknown>,
-  objectIdField: string,
-): number | undefined {
+function extractObjectId(attributes: Record<string, unknown>, objectIdField: string): number | undefined {
   const preferred = Number(attributes[objectIdField]);
   if (Number.isFinite(preferred)) {
     return preferred;
@@ -521,11 +559,7 @@ function normalizeSpliceStart(start: number, length: number): number {
   return Math.min(integer, length);
 }
 
-function normalizeSpliceDeleteCount(
-  deleteCount: number | undefined,
-  start: number,
-  length: number,
-): number {
+function normalizeSpliceDeleteCount(deleteCount: number | undefined, start: number, length: number): number {
   if (deleteCount === undefined) {
     return Math.max(length - start, 0);
   }

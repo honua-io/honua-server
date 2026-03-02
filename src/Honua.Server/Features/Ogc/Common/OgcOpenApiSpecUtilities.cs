@@ -102,12 +102,22 @@ internal static class OgcOpenApiSpecUtilities
 
     private static async Task<string?> ReadOpenApiContentAsync(string contentRootPath, string openApiFileName)
     {
-        var openApiPath = Path.Combine(contentRootPath, openApiFileName);
-        if (!File.Exists(openApiPath))
+        var searchPaths = new[]
         {
-            return null;
+            Path.Combine(contentRootPath, openApiFileName),
+            Path.Combine(AppContext.BaseDirectory, openApiFileName)
+        };
+
+        foreach (var openApiPath in searchPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(openApiPath))
+            {
+                continue;
+            }
+
+            return await File.ReadAllTextAsync(openApiPath);
         }
 
-        return await File.ReadAllTextAsync(openApiPath);
+        return null;
     }
 }

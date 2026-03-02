@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
@@ -37,7 +38,24 @@ internal sealed class ODataMetadataHandler(
 
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
         var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, layers);
+        var services = await _layerCatalog.ListServicesAsync(effectiveToken);
+        var protocolLayerIds = services
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
+            .SelectMany(service => service.Layers.Select(layer => layer.Id))
+            .ToHashSet();
+        var protocolLayers = protocolLayerIds.Count > 0
+            ? layers.Where(layer => protocolLayerIds.Contains(layer.Id)).ToArray()
+            : layers.Where(layer => ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)).ToArray();
+        if (protocolLayers.Length == 0)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "ResourceNotFound",
+                "OData is not enabled for any available service.",
+                StatusCodes.Status404NotFound);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, protocolLayers);
         if (accessError != null)
         {
             return accessError;
@@ -76,12 +94,29 @@ internal sealed class ODataMetadataHandler(
         ODataUtilityService.SetODataHeaders(context);
         var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
         var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
-        var visibleLayers = layers
+        var services = await _layerCatalog.ListServicesAsync(effectiveToken);
+        var protocolLayerIds = services
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
+            .SelectMany(service => service.Layers.Select(layer => layer.Id))
+            .ToHashSet();
+        var protocolLayers = protocolLayerIds.Count > 0
+            ? layers.Where(layer => protocolLayerIds.Contains(layer.Id)).ToArray()
+            : layers.Where(layer => ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)).ToArray();
+        if (protocolLayers.Length == 0)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "ResourceNotFound",
+                "OData is not enabled for any available service.",
+                StatusCodes.Status404NotFound);
+        }
+
+        var visibleLayers = protocolLayers
             .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
             .ToArray();
         if (visibleLayers.Length == 0)
         {
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, layers);
+            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, protocolLayers);
             if (accessError != null)
             {
                 return accessError;

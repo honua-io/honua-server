@@ -20,7 +20,7 @@ public sealed record CatalogMetadata
 
     /// <summary>
     /// Protocols enabled for this service. When null, all protocols are enabled.
-    /// Valid values: "FeatureServer", "MapServer", "OgcFeatures", "OData"
+    /// Valid values: "FeatureServer", "MapServer", "OgcFeatures", "OData", "Grpc".
     /// </summary>
     public string[]? EnabledProtocols { get; init; }
 
@@ -93,22 +93,6 @@ public sealed record AccessPolicy
     /// When true, anonymous write access is allowed regardless of other constraints.
     /// </summary>
     public bool AllowAnonymousWrite { get; init; }
-
-    /// <summary>
-    /// Claim type used to resolve tenant identifiers (default: tenant_id).
-    /// </summary>
-    public string? TenantClaimType { get; init; } = "tenant_id";
-
-    /// <summary>
-    /// Allowed tenant identifiers for access (case-insensitive).
-    /// </summary>
-    public string[]? AllowedTenants { get; init; }
-
-    /// <summary>
-    /// Allowed tenant identifiers for write access (case-insensitive).
-    /// Falls back to AllowedTenants when not specified.
-    /// </summary>
-    public string[]? AllowedWriteTenants { get; init; }
 
     /// <summary>
     /// Allowed role names for access (case-insensitive).

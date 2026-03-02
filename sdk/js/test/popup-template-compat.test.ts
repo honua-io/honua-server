@@ -49,8 +49,8 @@ describe("PopupTemplateCompat", () => {
   it("stores template options and defensively copies option arrays", () => {
     const eventBus = new CompatEventBus();
     const fieldInfos = [{ fieldName: "OBJECTID" }];
-    const actions = [{ id: "zoom-to" }];
-    const expressionInfos = [{ name: "calc" }];
+    const actions = [{ id: "zoom-to", title: "Zoom To" }];
+    const expressionInfos = [{ name: "calc", expression: "$feature.VALUE * 2" }];
     const outFields = ["OBJECTID", "NAME"];
 
     const template = new PopupTemplateCompat({
@@ -126,8 +126,8 @@ describe("PopupTemplateCompat", () => {
       title: "Title",
       content: "Body",
       fieldInfos: [{ fieldName: "OBJECTID" }],
-      actions: [{ id: "open" }],
-      expressionInfos: [{ name: "expr" }],
+      actions: [{ id: "open", title: "Open" }],
+      expressionInfos: [{ name: "expr", expression: "$feature.TOTAL" }],
       outFields: ["OBJECTID"],
       eventBus,
     });
@@ -146,5 +146,71 @@ describe("PopupTemplateCompat", () => {
     expect(cloned.actions).not.toBe(template.actions);
     expect(cloned.expressionInfos).not.toBe(template.expressionInfos);
     expect(cloned.outFields).not.toBe(template.outFields);
+  });
+
+  it("getTitle interpolates field tokens from attributes", () => {
+    const template = new PopupTemplateCompat({
+      title: "{NAME}",
+    });
+
+    expect(template.getTitle({ NAME: "Parcel A" })).toBe("Parcel A");
+  });
+
+  it("getTitle interpolates multiple fields", () => {
+    const template = new PopupTemplateCompat({
+      title: "{NAME} ({TYPE})",
+    });
+
+    expect(template.getTitle({ NAME: "Parcel A", TYPE: "residential" })).toBe("Parcel A (residential)");
+  });
+
+  it("getTitle replaces missing fields with empty string", () => {
+    const template = new PopupTemplateCompat({
+      title: "Name: {NAME}",
+    });
+
+    expect(template.getTitle({})).toBe("Name: ");
+  });
+
+  it("getTitle replaces null/undefined values with empty string", () => {
+    const template = new PopupTemplateCompat({
+      title: "{A} and {B}",
+    });
+
+    expect(template.getTitle({ A: null, B: undefined })).toBe(" and ");
+  });
+
+  it("getTitle returns empty string for null title", () => {
+    const template = new PopupTemplateCompat({
+      title: null,
+    });
+
+    expect(template.getTitle({ NAME: "X" })).toBe("");
+  });
+
+  it("getTitle returns template as-is when no tokens", () => {
+    const template = new PopupTemplateCompat({
+      title: "Static Title",
+    });
+
+    expect(template.getTitle({ NAME: "X" })).toBe("Static Title");
+  });
+
+  it("getContent interpolates field tokens", () => {
+    const template = new PopupTemplateCompat({
+      content: "Owner: {OWNER}, Area: {AREA} sqft",
+    });
+
+    expect(template.getContent({ OWNER: "John", AREA: 5000 })).toBe("Owner: John, Area: 5000 sqft");
+  });
+
+  it("getTitle returns empty string for undefined title", () => {
+    const template = new PopupTemplateCompat({});
+    expect(template.getTitle({})).toBe("");
+  });
+
+  it("getContent returns empty string for undefined content", () => {
+    const template = new PopupTemplateCompat({});
+    expect(template.getContent({})).toBe("");
   });
 });

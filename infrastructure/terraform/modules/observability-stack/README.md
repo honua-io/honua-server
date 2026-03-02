@@ -22,6 +22,7 @@ module "observability" {
 
   namespace            = "honua-observability"
   honua_metrics_target = "honua-honua.default.svc.cluster.local:80"
+  helm_timeout_seconds = 900
 
   grafana_ingress_enabled = true
   grafana_ingress_host    = "grafana.example.com"

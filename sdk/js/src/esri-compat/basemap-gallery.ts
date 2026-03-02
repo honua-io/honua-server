@@ -1,4 +1,9 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
 
 export interface BasemapGalleryCompatOptions {
   view?: unknown;
@@ -33,8 +38,7 @@ export class BasemapGalleryCompat {
     this.view = options.view;
     this.map = options.map ?? extractViewMap(options.view);
     this.container = options.container;
-    this.eventBus =
-      options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
+    this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view, this.map) ?? new CompatEventBus();
     this.autoRefresh = options.autoRefresh ?? true;
     this.loaded = false;
     this.loadStatus = "not-loaded";
@@ -48,11 +52,7 @@ export class BasemapGalleryCompat {
         this.eventBus.on("map.basemap-changed", (event) => {
           this.activeBasemap = extractPayloadBasemap(event.payload);
           this.notifyWatchers("activeBasemap", this.activeBasemap);
-          this.eventBus.emit(
-            "basemap-gallery.active-basemap-changed",
-            { basemap: this.activeBasemap },
-            this,
-          );
+          this.eventBus.emit("basemap-gallery.active-basemap-changed", { basemap: this.activeBasemap }, this);
         }),
       );
     }
@@ -125,11 +125,7 @@ export class BasemapGalleryCompat {
   public refresh(): unknown {
     this.activeBasemap = extractMapBasemap(this.map);
     this.notifyWatchers("activeBasemap", this.activeBasemap);
-    this.eventBus.emit(
-      "basemap-gallery.active-basemap-changed",
-      { basemap: this.activeBasemap },
-      this,
-    );
+    this.eventBus.emit("basemap-gallery.active-basemap-changed", { basemap: this.activeBasemap }, this);
     return this.activeBasemap;
   }
 
@@ -164,7 +160,7 @@ export class BasemapGalleryCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

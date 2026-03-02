@@ -17,14 +17,12 @@ internal static class HealthEndpoints
     /// </summary>
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Use Map with explicit HTTP method to avoid MapGet reflection
+        // Use Map (all methods) and enforce GET in handler so non-GET returns 405.
         _ = endpoints.Map("/healthz/live", HandleLivenessProbe)
-            .WithDisplayName("Liveness Probe")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithDisplayName("Liveness Probe");
 
         _ = endpoints.Map("/healthz/ready", HandleReadinessProbe)
-            .WithDisplayName("Readiness Probe")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithDisplayName("Readiness Probe");
 
         // PERFORMANCE OPTIMIZATION: Add performance metrics endpoint for monitoring
         var metricsEndpoint = endpoints.Map("/healthz/metrics", HandlePerformanceMetrics)

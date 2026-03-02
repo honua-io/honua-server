@@ -32,6 +32,13 @@ resource "azurerm_resource_group" "this" {
   tags     = local.tags
 }
 
+resource "azurerm_user_assigned_identity" "function" {
+  name                = "${local.name}-func-identity"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = local.tags
+}
+
 resource "azurerm_storage_account" "this" {
   name                     = local.storage_account_name
   resource_group_name      = azurerm_resource_group.this.name
@@ -206,17 +213,18 @@ resource "azurerm_key_vault_secret" "admin_password" {
 
 locals {
   base_app_settings = {
-    FUNCTIONS_WORKER_RUNTIME             = var.functions_worker_runtime
-    FUNCTIONS_CUSTOMHANDLER_PORT         = tostring(var.container_port)
-    WEBSITES_PORT                        = tostring(var.container_port)
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE  = "false"
-    AzureWebJobsStorage                  = azurerm_storage_account.this.primary_connection_string
-    ConnectionStrings__DefaultConnection = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
-    HONUA_ADMIN_PASSWORD                 = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    HONUA_SERVE_ADMIN_UI                 = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                       = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                  = "true"
-    HONUA_SKIP_MIGRATIONS                = var.skip_migrations ? "true" : "false"
+    FUNCTIONS_WORKER_RUNTIME                  = var.functions_worker_runtime
+    FUNCTIONS_CUSTOMHANDLER_PORT              = tostring(var.container_port)
+    WEBSITES_PORT                             = tostring(var.container_port)
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE       = "false"
+    AzureWebJobsStorage                       = azurerm_storage_account.this.primary_connection_string
+    ConnectionStrings__DefaultConnection      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
+    HONUA_ADMIN_PASSWORD                      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    Security__ConnectionEncryption__MasterKey = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                       = "true"
+    HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
   }
   redis_settings = local.redis_connection != "" ? {
     ConnectionStrings__redis = local.redis_connection
@@ -231,6 +239,16 @@ locals {
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.this[0].instrumentation_key
   } : {}
   app_settings = merge(local.base_app_settings, local.redis_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
+
+  image_parts         = split("/", var.image)
+  image_registry      = local.image_parts[0]
+  image_path_and_tag  = join("/", slice(local.image_parts, 1, length(local.image_parts)))
+  image_path_parts    = split(":", local.image_path_and_tag)
+  image_name          = local.image_path_parts[0]
+  image_tag           = length(local.image_path_parts) > 1 ? local.image_path_parts[1] : "latest"
+  image_registry_url  = var.registry_server != "" ? (startswith(var.registry_server, "http") ? var.registry_server : "https://${var.registry_server}") : "https://${local.image_registry}"
+  image_registry_user = var.registry_username != "" ? var.registry_username : null
+  image_registry_pass = var.registry_password != "" ? var.registry_password : null
 }
 
 resource "azurerm_linux_function_app" "this" {
@@ -239,8 +257,9 @@ resource "azurerm_linux_function_app" "this" {
   location            = azurerm_resource_group.this.location
   service_plan_id     = azurerm_service_plan.this.id
 
-  storage_account_name          = azurerm_storage_account.this.name
-  storage_uses_managed_identity = true
+  storage_account_name            = azurerm_storage_account.this.name
+  storage_uses_managed_identity   = true
+  key_vault_reference_identity_id = azurerm_user_assigned_identity.function.id
 
   https_only                  = true
   functions_extension_version = var.functions_extension_version
@@ -248,30 +267,74 @@ resource "azurerm_linux_function_app" "this" {
   app_settings = local.app_settings
 
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.function.id]
   }
 
   site_config {
-    linux_fx_version  = "DOCKER|${var.image}"
-    always_on         = var.plan_sku_name != "Y1"
-    health_check_path = "/healthz/ready"
+    always_on                         = var.plan_sku_name != "Y1"
+    health_check_path                 = "/healthz/ready"
+    health_check_eviction_time_in_min = 2
+
+    application_stack {
+      docker {
+        registry_url      = local.image_registry_url
+        image_name        = local.image_name
+        image_tag         = local.image_tag
+        registry_username = local.image_registry_user
+        registry_password = local.image_registry_pass
+      }
+    }
   }
 
   tags = local.tags
+
+  # Azure injects and normalizes several Function App settings after create
+  # (for example storage/account telemetry settings), which otherwise causes
+  # perpetual drift during idempotency checks.
+  lifecycle {
+    ignore_changes = [
+      app_settings["APPINSIGHTS_INSTRUMENTATIONKEY"],
+      app_settings["APPLICATIONINSIGHTS_CONNECTION_STRING"],
+      app_settings["AzureWebJobsStorage"],
+      storage_account_access_key,
+      site_config[0].application_insights_connection_string,
+      site_config[0].application_insights_key
+    ]
+  }
+
+  depends_on = [
+    azurerm_key_vault_access_policy.function_app,
+    azurerm_role_assignment.function_storage_blob,
+    azurerm_role_assignment.function_storage_queue,
+    azurerm_role_assignment.function_storage_table
+  ]
 }
 
 resource "azurerm_key_vault_access_policy" "function_app" {
   key_vault_id = azurerm_key_vault.this.id
   tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_linux_function_app.this.identity[0].principal_id
+  object_id    = azurerm_user_assigned_identity.function.principal_id
 
   secret_permissions = ["Get"]
 }
 
-resource "azurerm_role_assignment" "function_storage" {
+resource "azurerm_role_assignment" "function_storage_blob" {
   scope                = azurerm_storage_account.this.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = azurerm_linux_function_app.this.identity[0].principal_id
+  principal_id         = azurerm_user_assigned_identity.function.principal_id
+}
+
+resource "azurerm_role_assignment" "function_storage_queue" {
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage Queue Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.function.principal_id
+}
+
+resource "azurerm_role_assignment" "function_storage_table" {
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage Table Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.function.principal_id
 }
 
 resource "null_resource" "enable_postgis" {

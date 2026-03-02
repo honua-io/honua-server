@@ -73,7 +73,9 @@ public static class CorsConfiguration
             }
 
             policy.WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                  .WithHeaders("Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID")
+                  .WithHeaders("Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID",
+                      "X-Grpc-Web", "X-User-Agent")
+                  .WithExposedHeaders("Grpc-Status", "Grpc-Message", "Grpc-Encoding", "Grpc-Accept-Encoding")
                   .SetIsOriginAllowed(origin => IsOriginAllowed(origin, allowedOrigins))
                   .SetPreflightMaxAge(TimeSpan.FromMinutes(preflightMaxAgeMinutes));
 

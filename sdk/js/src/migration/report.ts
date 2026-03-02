@@ -1,11 +1,13 @@
 import {
-  isKindSupportedForTarget,
-  SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
   type CodemodConstructorKind,
   type EsriCompatCodemodResult,
   type MigrationTodo,
+  SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH,
+  isKindSupportedForTarget,
+  isSupportedArcGisBarrelModulePath,
+  resolveArcGisBarrelImportKind,
 } from "./codemod.js";
-import { scanArcGisUsage, summarizeArcGisScan, type ArcGisScanReport } from "./scanner.js";
+import { type ArcGisScanReport, scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 
 export interface ManualRewriteMetric {
   numerator: number;
@@ -61,10 +63,7 @@ export interface MigrationGateResult {
   detail: string;
 }
 
-const BLOCKING_FLAGS = new Set([
-  "scene-3d-detected",
-  "advanced-widget-or-networking-detected",
-]);
+const BLOCKING_FLAGS = new Set(["scene-3d-detected", "advanced-widget-or-networking-detected"]);
 
 export function buildJsMigrationReport(
   rootDir: string,
@@ -80,14 +79,10 @@ export function buildJsMigrationReport(
   const manualTodosByKind = summarizeManualTodosByKind(codemodResult.manualTodos);
   const manualTodoReasons = summarizeManualTodoReasons(codemodResult.manualTodos);
   const unhandledArcGisModules = summarizeUnhandledModules(resolvedScan, codemodResult);
-  const unhandledUsageHits = unhandledArcGisModules.reduce(
-    (total, moduleItem) => total + moduleItem.count,
-    0,
-  );
+  const unhandledUsageHits = unhandledArcGisModules.reduce((total, moduleItem) => total + moduleItem.count, 0);
   const interventionNumerator = numerator + unhandledUsageHits;
   const interventionDenominator = denominator + unhandledUsageHits;
-  const interventionRatio =
-    interventionDenominator === 0 ? 0 : interventionNumerator / interventionDenominator;
+  const interventionRatio = interventionDenominator === 0 ? 0 : interventionNumerator / interventionDenominator;
   const gates = buildMigrationGates(codemodResult, resolvedScan, unhandledArcGisModules);
   const readiness = determineReadiness(gates);
 
@@ -108,8 +103,7 @@ export function buildJsMigrationReport(
       numerator: interventionNumerator,
       denominator: interventionDenominator,
       ratio: interventionRatio,
-      scope:
-        "Codemod-scoped call sites plus unhandled ArcGIS module usage hits (static-import/dynamic-import/require)",
+      scope: "Codemod-scoped call sites plus unhandled ArcGIS module usage hits (static-import/dynamic-import/require)",
       manualCodemodCallSites: numerator,
       unhandledUsageHits,
     },
@@ -122,9 +116,7 @@ export function buildJsMigrationReport(
   };
 }
 
-function summarizeManualTodosByKind(
-  todos: readonly MigrationTodo[],
-): Record<CodemodConstructorKind, number> {
+function summarizeManualTodosByKind(todos: readonly MigrationTodo[]): Record<CodemodConstructorKind, number> {
   const summary: Record<CodemodConstructorKind, number> = {
     "feature-layer": 0,
     graphic: 0,
@@ -234,18 +226,22 @@ function summarizeUnhandledModules(
 
   for (const hit of scanReport.imports) {
     const usageStyle = classifyUsageStyle(hit.importClause);
+    const isReExport = hit.importClause.startsWith("export ");
     const isSideEffectImport = hit.importClause === "side-effect-import";
-    const supportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
+    const supportedKinds = resolveSupportedKindsForImportHit(hit);
+    const hasSupportedKind = supportedKinds.length > 0;
     const moduleSupportedForTarget =
       !isSideEffectImport &&
-      supportedKind !== undefined &&
-      isKindSupportedForTarget(supportedKind, codemodResult.target);
+      !isReExport &&
+      hasSupportedKind &&
+      supportedKinds.every((kind) => isKindSupportedForTarget(kind, codemodResult.target));
+    const directSupportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
     const requireCoveredByCodemod =
       usageStyle === "require" &&
       moduleSupportedForTarget &&
-      codemodResult.metrics.byKind[supportedKind].total > 0;
-    const isHandledByCodemodScope =
-      moduleSupportedForTarget && (usageStyle !== "require" || requireCoveredByCodemod);
+      directSupportedKind !== undefined &&
+      codemodResult.metrics.byKind[directSupportedKind].total > 0;
+    const isHandledByCodemodScope = moduleSupportedForTarget && (usageStyle !== "require" || requireCoveredByCodemod);
     if (isHandledByCodemodScope) {
       continue;
     }
@@ -272,6 +268,63 @@ function summarizeUnhandledModules(
       }
       return a.usageStyle.localeCompare(b.usageStyle);
     });
+}
+
+function resolveSupportedKindsForImportHit(hit: ArcGisScanReport["imports"][number]): CodemodConstructorKind[] {
+  const directSupportedKind = SUPPORTED_ARCGIS_MODULE_KIND_BY_PATH[hit.modulePath];
+  if (directSupportedKind !== undefined) {
+    return [directSupportedKind];
+  }
+  if (!isSupportedArcGisBarrelModulePath(hit.modulePath)) {
+    return [];
+  }
+  if (
+    hit.importClause === "side-effect-import" ||
+    hit.importClause === "import(...)" ||
+    hit.importClause === "require(...)" ||
+    hit.importClause.startsWith("*")
+  ) {
+    return [];
+  }
+
+  const importedNames = extractImportedNamesFromClause(hit.importClause);
+  const kinds: CodemodConstructorKind[] = [];
+  for (const importedName of importedNames) {
+    const kind = resolveArcGisBarrelImportKind(hit.modulePath, importedName);
+    if (!kind || kinds.includes(kind)) {
+      continue;
+    }
+    kinds.push(kind);
+  }
+  return kinds;
+}
+
+function extractImportedNamesFromClause(importClause: string): string[] {
+  const names: string[] = [];
+  const namedMatch = importClause.match(/\{([^}]+)\}/);
+  if (!namedMatch) {
+    return names;
+  }
+
+  for (const token of namedMatch[1].split(",")) {
+    const value = token.trim();
+    if (!value || value === "*") {
+      continue;
+    }
+
+    const aliasMatch = value.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s+as\s+[A-Za-z_$][A-Za-z0-9_$]*$/);
+    if (aliasMatch) {
+      names.push(aliasMatch[1]);
+      continue;
+    }
+
+    const directMatch = value.match(/^([A-Za-z_$][A-Za-z0-9_$]*)$/);
+    if (directMatch) {
+      names.push(directMatch[1]);
+    }
+  }
+
+  return names;
 }
 
 function classifyUsageStyle(importClause: string): ArcGisUsageStyle {

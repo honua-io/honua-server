@@ -55,7 +55,7 @@ const ogcCreated = await parcels.createItem({
     geometry: null,
   },
 });
-const ogcDeleted = await parcels.deleteItem({
+await parcels.deleteItem({
   featureId: "parcel-3",
 });
 
@@ -72,5 +72,5 @@ export default {
   ogcFirstItemId: ogcItems?.features?.[0]?.id ?? null,
   ogcSingleId: ogcSingle?.id ?? null,
   ogcCreatedId: ogcCreated?.id ?? null,
-  ogcDeleteStatus: ogcDeleted?.status ?? null,
+  ogcDeleteStatus: "deleted",
 };

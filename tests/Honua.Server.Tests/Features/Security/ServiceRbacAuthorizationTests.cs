@@ -163,6 +163,106 @@ public sealed class FeatureServerServiceRbacTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithReadOnlyRole_ReturnsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "rbac-replica",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_WithReadOnlyRole_ReturnsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        using var readerClient = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var createPayload = JsonSerializer.Serialize(new
+        {
+            replicaName = "rbac-sync",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+        var createResponse = await adminClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+        await ServiceRbacTestFixture.AssertStatusAsync(createResponse, HttpStatusCode.OK);
+
+        var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var replicaId = createDocument.RootElement.GetProperty("replicaID").GetString();
+        replicaId.Should().NotBeNullOrWhiteSpace();
+
+        var syncPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            f = "json"
+        });
+        var syncResponse = await readerClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
+            new StringContent(syncPayload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(syncResponse, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.FeatureServer)]
+    [Operation(Operations.UnRegisterReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica")]
+    public async Task UnRegisterReplica_WithReadOnlyRole_ReturnsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
+        using var readerClient = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var createPayload = JsonSerializer.Serialize(new
+        {
+            replicaName = "rbac-unregister",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+        var createResponse = await adminClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+        await ServiceRbacTestFixture.AssertStatusAsync(createResponse, HttpStatusCode.OK);
+
+        var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var replicaId = createDocument.RootElement.GetProperty("replicaID").GetString();
+        replicaId.Should().NotBeNullOrWhiteSpace();
+
+        var unregisterPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            f = "json"
+        });
+        var unregisterResponse = await readerClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
+            new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(unregisterResponse, HttpStatusCode.Forbidden);
+    }
 }
 
 public sealed class OgcServiceRbacTests
@@ -213,6 +313,33 @@ public sealed class OgcServiceRbacTests
             ServiceRbacTestFixture.CreateOgcFeatureContent());
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Created);
+    }
+}
+
+public sealed class OgcServiceAccessPolicyTests
+{
+    [IntegrationTest]
+    [Protocol(Protocols.OgcApiFeatures)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WithAdminRole_RespectsServiceWritePolicy()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                betaServiceMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowedWriteRoles = ["beta-writer"]
+                    }
+                }));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
+
+        var response = await client.PostAsync(
+            $"/ogc/features/collections/{ServiceRbacTestFixture.BetaLayerId}/items",
+            ServiceRbacTestFixture.CreateOgcFeatureContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
 }
 
@@ -346,6 +473,75 @@ public sealed class ODataServiceRbacTests
     }
 }
 
+public sealed class ODataServiceAccessPolicyTests
+{
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task CreateFeature_WithAdminRole_RespectsServiceWritePolicy()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                betaServiceMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowedWriteRoles = ["beta-writer"]
+                    }
+                }));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
+
+        var response = await client.PostAsync(
+            $"/odata/Layers({ServiceRbacTestFixture.BetaLayerId})/Features",
+            ServiceRbacTestFixture.CreateODataFeatureContent());
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithAdminRole_RespectsServiceWritePolicy()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                betaServiceMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowedWriteRoles = ["beta-writer"]
+                    }
+                }));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "create-beta",
+                Method = "POST",
+                Url = $"Layers({ServiceRbacTestFixture.BetaLayerId})/Features",
+                Body = new Dictionary<string, object?>
+                {
+                    ["Attributes"] = new Dictionary<string, object?>
+                    {
+                        ["name"] = "Policy-protected write"
+                    }
+                }
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+}
+
 internal static class ServiceRbacTestFixture
 {
     public const string AlphaService = "alpha";
@@ -353,8 +549,10 @@ internal static class ServiceRbacTestFixture
     public const int AlphaLayerId = 0;
     public const int BetaLayerId = 1;
 
-    public static WebApplicationFactory<Program> CreateFactory()
+    public static WebApplicationFactory<Program> CreateFactory(Func<ILayerCatalog>? layerCatalogFactory = null)
     {
+        layerCatalogFactory ??= static () => new RbacTestLayerCatalog();
+
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
@@ -376,7 +574,7 @@ internal static class ServiceRbacTestFixture
                 builder.ConfigureTestServices(services =>
                 {
                     services.RemoveAll<ILayerCatalog>();
-                    services.AddScoped<ILayerCatalog>(_ => new RbacTestLayerCatalog());
+                    services.AddScoped<ILayerCatalog>(_ => layerCatalogFactory());
                     services.AddSingleton<ICrsRegistry, TestCrsRegistry>();
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
 
@@ -527,13 +725,17 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
     private readonly LayerDefinition _alphaLayer;
     private readonly LayerDefinition _betaLayer;
 
-    public RbacTestLayerCatalog()
+    public RbacTestLayerCatalog(
+        CatalogMetadata? alphaServiceMetadata = null,
+        CatalogMetadata? betaServiceMetadata = null,
+        CatalogMetadata? alphaLayerMetadata = null,
+        CatalogMetadata? betaLayerMetadata = null)
     {
         var spatialRef = SpatialReference.Create(4326);
         var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
 
-        _alphaLayer = CreateLayer(ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", spatialRef, extent);
-        _betaLayer = CreateLayer(ServiceRbacTestFixture.BetaLayerId, "Beta Layer", spatialRef, extent);
+        _alphaLayer = CreateLayer(ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", spatialRef, extent, alphaLayerMetadata);
+        _betaLayer = CreateLayer(ServiceRbacTestFixture.BetaLayerId, "Beta Layer", spatialRef, extent, betaLayerMetadata);
 
         _alphaService = new ServiceDefinition(
             Name: ServiceRbacTestFixture.AlphaService,
@@ -542,7 +744,8 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
-            ServiceExtent: extent);
+            ServiceExtent: extent,
+            Metadata: alphaServiceMetadata);
 
         _betaService = new ServiceDefinition(
             Name: ServiceRbacTestFixture.BetaService,
@@ -551,7 +754,8 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
-            ServiceExtent: extent);
+            ServiceExtent: extent,
+            Metadata: betaServiceMetadata);
     }
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
@@ -599,7 +803,12 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
     public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
         => Task.FromResult(Array.Empty<Relationship>());
 
-    private static LayerDefinition CreateLayer(int layerId, string name, SpatialReference spatialRef, FeatureExtent extent)
+    private static LayerDefinition CreateLayer(
+        int layerId,
+        string name,
+        SpatialReference spatialRef,
+        FeatureExtent extent,
+        CatalogMetadata? metadata = null)
     {
         var fields = new[]
         {
@@ -615,7 +824,8 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             Fields: fields,
             Extent: extent,
-            DefaultVisibility: true);
+            DefaultVisibility: true,
+            Metadata: metadata);
     }
 }
 

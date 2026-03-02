@@ -1,13 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { runEsriCompatCodemod, type CodemodTarget } from "./codemod.js";
+import { type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
 import {
-  runLayerReconciliation,
   type LayerReconciliationOptions,
   type LayerReconciliationReport,
+  runLayerReconciliation,
 } from "./reconcile.js";
-import { buildJsMigrationReport, type JsMigrationReport } from "./report.js";
+import { type JsMigrationReport, buildJsMigrationReport } from "./report.js";
 import { scanArcGisUsage } from "./scanner.js";
 
 const IMPORT_STATUS_BY_ENUM_VALUE = new Map<number, string>([
@@ -81,6 +81,7 @@ export interface MigrationDemoOptions {
 
 export interface MigrationDemoReport {
   generatedAt: string;
+  elapsedMs: number;
   fixtureName: string;
   codemodTarget: CodemodTarget;
   workingAppDir: string;
@@ -90,9 +91,8 @@ export interface MigrationDemoReport {
   passed: boolean;
 }
 
-export async function runMigrationDemo(
-  options: MigrationDemoOptions,
-): Promise<MigrationDemoReport> {
+export async function runMigrationDemo(options: MigrationDemoOptions): Promise<MigrationDemoReport> {
+  const startedAtMs = Date.now();
   const codemodTarget = options.codemodTarget ?? "honua-compat";
   const fixtureRootDir = path.resolve(options.fixturesRoot);
   const fixtureDir = path.join(fixtureRootDir, options.fixtureName);
@@ -128,9 +128,7 @@ export async function runMigrationDemo(
   let reconciliationReport: LayerReconciliationReport | undefined;
   if (!options.skipReconciliation) {
     if (!options.reconciliationOptions) {
-      throw new Error(
-        "Reconciliation options are required unless --skip-reconcile is set.",
-      );
+      throw new Error("Reconciliation options are required unless --skip-reconcile is set.");
     }
     reconciliationReport = await runLayerReconciliation(options.reconciliationOptions);
   }
@@ -138,9 +136,11 @@ export async function runMigrationDemo(
   const importPassed = !importReport || importReport.status === "Completed";
   const migrationPassed = migrationReport.readiness === "ready";
   const reconciliationPassed = !reconciliationReport || reconciliationReport.passed;
+  const elapsedMs = Math.max(0, Date.now() - startedAtMs);
 
   return {
     generatedAt: new Date().toISOString(),
+    elapsedMs,
     fixtureName: options.fixtureName,
     codemodTarget,
     workingAppDir,
@@ -189,10 +189,7 @@ export async function runGeoservicesImportJob(
   if (typeof options.batchSize === "number" && Number.isFinite(options.batchSize)) {
     startPayload.batchSize = Math.max(1, Math.trunc(options.batchSize));
   }
-  if (
-    typeof options.requestTimeoutSeconds === "number" &&
-    Number.isFinite(options.requestTimeoutSeconds)
-  ) {
+  if (typeof options.requestTimeoutSeconds === "number" && Number.isFinite(options.requestTimeoutSeconds)) {
     startPayload.requestTimeoutSeconds = Math.max(1, Math.trunc(options.requestTimeoutSeconds));
   }
   if (typeof options.maxRetries === "number" && Number.isFinite(options.maxRetries)) {
@@ -227,9 +224,7 @@ export async function runGeoservicesImportJob(
     }
 
     if (Date.now() >= deadline) {
-      throw new Error(
-        `Timed out waiting for import job ${jobId} after ${timeoutMs}ms.`,
-      );
+      throw new Error(`Timed out waiting for import job ${jobId} after ${timeoutMs}ms.`);
     }
 
     await delay(pollIntervalMs);
@@ -244,9 +239,7 @@ export async function runGeoservicesImportJob(
   const errorMessage = readOptionalString(latestProgress, "errorMessage");
 
   if (status !== "Completed") {
-    throw new Error(
-      `Import job ${jobId} ended with status ${status}${errorMessage ? `: ${errorMessage}` : ""}`,
-    );
+    throw new Error(`Import job ${jobId} ended with status ${status}${errorMessage ? `: ${errorMessage}` : ""}`);
   }
 
   return {
@@ -264,9 +257,7 @@ export async function runGeoservicesImportJob(
   };
 }
 
-export function parseGeoservicesServiceUrl(
-  serviceUrl: string,
-): ParsedGeoservicesServiceUrl | undefined {
+export function parseGeoservicesServiceUrl(serviceUrl: string): ParsedGeoservicesServiceUrl | undefined {
   let parsed: URL;
   try {
     parsed = new URL(serviceUrl);
@@ -287,17 +278,12 @@ export function parseGeoservicesServiceUrl(
   const featureIndex = lowerAfterMarker.indexOf("/featureserver");
   const mapIndex = lowerAfterMarker.indexOf("/mapserver");
   const serviceTypeIndex =
-    featureIndex >= 0 && mapIndex >= 0
-      ? Math.min(featureIndex, mapIndex)
-      : featureIndex >= 0
-        ? featureIndex
-        : mapIndex;
+    featureIndex >= 0 && mapIndex >= 0 ? Math.min(featureIndex, mapIndex) : featureIndex >= 0 ? featureIndex : mapIndex;
   if (serviceTypeIndex < 0) {
     return undefined;
   }
 
-  const serviceType =
-    featureIndex >= 0 && featureIndex === serviceTypeIndex ? "FeatureServer" : "MapServer";
+  const serviceType = featureIndex >= 0 && featureIndex === serviceTypeIndex ? "FeatureServer" : "MapServer";
   const serviceId = decodeURIComponent(afterMarker.slice(0, serviceTypeIndex));
   const remainder = afterMarker.slice(serviceTypeIndex + `/${serviceType}`.length);
 
@@ -337,8 +323,7 @@ async function fetchJson(fetchFn: typeof fetch, url: string, init: RequestInit):
   }
 
   if (!response.ok) {
-    const preview =
-      text.length > 0 ? text.slice(0, 300) : `${response.status} ${response.statusText}`;
+    const preview = text.length > 0 ? text.slice(0, 300) : `${response.status} ${response.statusText}`;
     throw new Error(`HTTP ${response.status} for ${url}: ${preview}`);
   }
 
@@ -399,11 +384,7 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-function resolveJobStatusUrl(
-  importApiBase: string,
-  providedStatusUrl: string | undefined,
-  jobId: string,
-): string {
+function resolveJobStatusUrl(importApiBase: string, providedStatusUrl: string | undefined, jobId: string): string {
   const statusPath = providedStatusUrl && providedStatusUrl.length > 0 ? providedStatusUrl : `jobs/${jobId}`;
   if (/^https?:\/\//i.test(statusPath)) {
     return statusPath;

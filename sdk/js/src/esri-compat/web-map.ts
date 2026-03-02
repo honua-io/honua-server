@@ -1,9 +1,4 @@
-import {
-  MapCompat,
-  type MapCompatHandle,
-  type MapCompatOptions,
-  type MapLoadStatusCompat,
-} from "./map.js";
+import { MapCompat, type MapCompatHandle, type MapCompatOptions, type MapLoadStatusCompat } from "./map.js";
 
 export interface WebMapCompatOptions extends MapCompatOptions {
   portalItem?: unknown;

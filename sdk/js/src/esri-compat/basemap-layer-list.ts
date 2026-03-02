@@ -1,4 +1,9 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
 
 export interface BasemapLayerListCompatOptions {
   view?: unknown;
@@ -67,9 +72,7 @@ export class BasemapLayerListCompat {
     return this;
   }
 
-  public async when(
-    callback?: (widget: BasemapLayerListCompat) => void,
-  ): Promise<BasemapLayerListCompat> {
+  public async when(callback?: (widget: BasemapLayerListCompat) => void): Promise<BasemapLayerListCompat> {
     const widget = await this.load();
     if (callback) {
       callback(widget);
@@ -77,10 +80,7 @@ export class BasemapLayerListCompat {
     return widget;
   }
 
-  public watch(
-    propertyName: string,
-    listener: (value: unknown) => void,
-  ): BasemapLayerListHandleCompat {
+  public watch(propertyName: string, listener: (value: unknown) => void): BasemapLayerListHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -134,7 +134,7 @@ export class BasemapLayerListCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -163,10 +163,7 @@ function extractMapBasemap(map: unknown): unknown {
   return map.basemap;
 }
 
-function extractBasemapLayerCollection(
-  basemap: unknown,
-  key: "baseLayers" | "referenceLayers",
-): unknown[] {
+function extractBasemapLayerCollection(basemap: unknown, key: "baseLayers" | "referenceLayers"): unknown[] {
   if (!isRecord(basemap)) {
     return [];
   }

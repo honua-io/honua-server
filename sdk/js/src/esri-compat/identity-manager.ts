@@ -42,10 +42,7 @@ class IdentityManagerCompatStore {
     const next: IdentityCredentialCompat = {
       server: token.server,
       token: token.token,
-      expires:
-        typeof token.expires === "number" && Number.isFinite(token.expires)
-          ? token.expires
-          : undefined,
+      expires: typeof token.expires === "number" && Number.isFinite(token.expires) ? token.expires : undefined,
       userId: token.userId,
     };
 

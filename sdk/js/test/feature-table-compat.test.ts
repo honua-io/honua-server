@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CompatEventBus, FeatureTableCompat } from "../src/index.js";
-import { FeatureLayerCompat } from "../src/esri-compat/feature-layer.js";
+import type { FeatureLayerCompat } from "../src/esri-compat/feature-layer.js";
 
 describe("FeatureTableCompat", () => {
   it("supports when() and watch() for state/rows/filter changes", async () => {
@@ -196,5 +196,143 @@ describe("FeatureTableCompat", () => {
     expect(response).toMatchObject({
       relatedRecordGroups: [{ objectId: 1 }],
     });
+  });
+
+  it("supports layer switching via property assignment and refreshes against the new layer", async () => {
+    const eventBus = new CompatEventBus();
+    const layerChanges: unknown[] = [];
+    eventBus.on("feature-table.layer-changed", (event) => {
+      layerChanges.push(event.payload);
+    });
+
+    const firstLayer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 1, name: "A" }, geometry: null }],
+      }),
+    } as unknown as FeatureLayerCompat;
+    const secondLayer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 2, name: "B" }, geometry: null }],
+      }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer: firstLayer, eventBus });
+    const seenLayerValues: unknown[] = [];
+    const layerHandle = table.watch("layer", (value) => {
+      seenLayerValues.push(value);
+    });
+
+    await table.refresh();
+    expect(table.rows[0]).toMatchObject({ objectId: 1, attributes: { name: "A" } });
+
+    table.layer = secondLayer;
+    await table.refresh();
+    layerHandle.remove();
+
+    expect(table.rows[0]).toMatchObject({ objectId: 2, attributes: { name: "B" } });
+    expect(seenLayerValues).toEqual([secondLayer]);
+    expect(layerChanges).toEqual([{ hasLayer: true }]);
+  });
+
+  it("does not emit layer-changed events when assigning the same layer instance", () => {
+    const eventBus = new CompatEventBus();
+    const changes: unknown[] = [];
+    eventBus.on("feature-table.layer-changed", (event) => {
+      changes.push(event.payload);
+    });
+
+    const layer = {
+      queryFeatures: async () => ({ features: [] }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer, eventBus });
+    table.layer = layer;
+    table.setLayer(layer);
+
+    expect(changes).toEqual([]);
+  });
+
+  it("invalidates in-flight refresh results when layer changes", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    const firstResponse = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    const firstLayer = {
+      queryFeatures: async () => firstResponse,
+    } as unknown as FeatureLayerCompat;
+    const secondLayer = {
+      queryFeatures: async () => ({
+        features: [{ attributes: { OBJECTID: 2, name: "new" }, geometry: null }],
+      }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer: firstLayer });
+    const firstRefresh = table.refresh();
+
+    table.setLayer(secondLayer);
+    await table.refresh();
+    resolveFirst?.({
+      features: [{ attributes: { OBJECTID: 1, name: "stale" }, geometry: null }],
+    });
+    await firstRefresh;
+
+    expect(table.rows).toHaveLength(1);
+    expect(table.rows[0]).toMatchObject({ objectId: 2, attributes: { name: "new" } });
+  });
+
+  it("stores expanded table options and provides defaults", () => {
+    const layer = {
+      queryFeatures: async () => ({ features: [] }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({
+      layer,
+      selectionMode: "single",
+      rowSelectionEnabled: false,
+      highlightEnabled: false,
+      pageSize: 50,
+      autoRefreshEnabled: false,
+    });
+
+    expect(table.selectionMode).toBe("single");
+    expect(table.rowSelectionEnabled).toBe(false);
+    expect(table.highlightEnabled).toBe(false);
+    expect(table.pageSize).toBe(50);
+    expect(table.autoRefreshEnabled).toBe(false);
+  });
+
+  it("uses default values for expanded table options when not provided", () => {
+    const layer = {
+      queryFeatures: async () => ({ features: [] }),
+    } as unknown as FeatureLayerCompat;
+
+    const table = new FeatureTableCompat({ layer });
+
+    expect(table.selectionMode).toBe("multiple");
+    expect(table.rowSelectionEnabled).toBe(true);
+    expect(table.highlightEnabled).toBe(true);
+    expect(table.pageSize).toBe(25);
+    expect(table.autoRefreshEnabled).toBe(true);
+  });
+
+  it("destroy() clears watchers and emits feature-table.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const table = new FeatureTableCompat({ eventBus });
+
+    const watchValues: unknown[] = [];
+    table.watch("state", (v) => watchValues.push(v));
+
+    table.destroy();
+
+    expect(eventTypes).toContain("feature-table.destroyed");
+
+    table.setWhere("1=0");
+    expect(watchValues).toHaveLength(0);
   });
 });

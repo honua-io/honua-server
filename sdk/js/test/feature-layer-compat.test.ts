@@ -21,6 +21,20 @@ describe("parseFeatureLayerUrl", () => {
     expect(parsed.layerId).toBe(8);
   });
 
+  it("parses relative URL shape", () => {
+    const parsed = parseFeatureLayerUrl("/rest/services/transport/FeatureServer/8");
+    expect(parsed.baseUrl).toBe("");
+    expect(parsed.serviceId).toBe("transport");
+    expect(parsed.layerId).toBe(8);
+  });
+
+  it("parses relative URL with path prefix", () => {
+    const parsed = parseFeatureLayerUrl("/honua/rest/services/transport/FeatureServer/8");
+    expect(parsed.baseUrl).toBe("/honua");
+    expect(parsed.serviceId).toBe("transport");
+    expect(parsed.layerId).toBe(8);
+  });
+
   it("throws on invalid URL shape", () => {
     expect(() =>
       parseFeatureLayerUrl("https://example.test/rest/services/transport/MapServer"),
@@ -59,6 +73,58 @@ describe("FeatureLayerCompat", () => {
     expect(requestedUrl).toContain("\"serviceId\":\"default\"");
     expect(requestedUrl).toContain("\"layerId\":1000");
     expect(requestedUrl).toContain("\"where\":\"1=1\"");
+  });
+
+  it("supports relative service URLs with default client requests", async () => {
+    const requestedUrls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrls.push(String(input));
+      return new Response(JSON.stringify({ features: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const layer = new FeatureLayerCompat({
+        url: "/rest/services/default/FeatureServer/2",
+      });
+
+      await layer.queryFeatures({
+        where: "1=1",
+        outFields: ["*"],
+        returnGeometry: false,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(requestedUrls[0]).toContain("/rest/services/default/FeatureServer/2/query?");
+    expect(requestedUrls[0]).not.toContain("honua.invalid");
+  });
+
+  it("supports prefixed relative service URLs with default client requests", async () => {
+    const requestedUrls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrls.push(String(input));
+      return new Response(JSON.stringify({ features: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const layer = new FeatureLayerCompat({
+        url: "/honua/rest/services/default/FeatureServer/2",
+      });
+
+      await layer.queryFeatures({
+        where: "1=1",
+        outFields: ["*"],
+        returnGeometry: false,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(requestedUrls[0]).toContain("/honua/rest/services/default/FeatureServer/2/query?");
+    expect(requestedUrls[0]).not.toContain("honua.invalid");
   });
 
   it("supports load/when lifecycle helpers", async () => {
@@ -163,13 +229,16 @@ describe("FeatureLayerCompat", () => {
 
     await layer.load();
 
-    expect(layer.hasField("objectid")).toBe(true);
-    expect(layer.hasField("NAME")).toBe(true);
+    expect(layer.hasField("OBJECTID")).toBe(true);
+    expect(layer.hasField("Name")).toBe(true);
+    expect(layer.hasField("objectid")).toBe(false);
+    expect(layer.hasField("NAME")).toBe(false);
     expect(layer.hasField("missing")).toBe(false);
-    expect(layer.getField("name")).toEqual({
+    expect(layer.getField("Name")).toEqual({
       name: "Name",
       type: "esriFieldTypeString",
     });
+    expect(layer.getField("name")).toBeUndefined();
     expect(layer.getField("")).toBeUndefined();
 
     const fields = layer.listFields();
@@ -177,7 +246,7 @@ describe("FeatureLayerCompat", () => {
       { name: "OBJECTID", type: "esriFieldTypeOID" },
       { name: "Name", type: "esriFieldTypeString" },
     ]);
-    (fields as Array<Record<string, unknown>>).push({ name: "MUTATED" });
+    (fields as unknown as Array<Record<string, unknown>>).push({ name: "MUTATED" });
     expect(layer.listFields()).toHaveLength(2);
   });
 
@@ -392,6 +461,55 @@ describe("FeatureLayerCompat", () => {
     expect(JSON.stringify(firstRequest)).toContain('"returnCountOnly":true');
   });
 
+  it("supports queryFeaturesAll pagination helper", async () => {
+    const capturedQueries: Array<Record<string, unknown>> = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(request: unknown): Promise<unknown> {
+          const typed = request as Record<string, unknown>;
+          capturedQueries.push(typed);
+          const extraParams = (typed.extraParams ?? {}) as Record<string, unknown>;
+          const offset = Number(extraParams.resultOffset ?? 0);
+          if (offset === 0) {
+            return Promise.resolve({ features: [{ id: 1 }, { id: 2 }] });
+          }
+          if (offset === 2) {
+            return Promise.resolve({ features: [{ id: 3 }] });
+          }
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+      })() as any,
+    });
+
+    const features = await layer.queryFeaturesAll({
+      pageSize: 2,
+      extraParams: {
+        resultOffset: 9999,
+        resultRecordCount: 1,
+      },
+    });
+
+    expect(features).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    expect(capturedQueries).toHaveLength(2);
+    expect(capturedQueries[0]?.extraParams).toMatchObject({
+      resultOffset: 0,
+      resultRecordCount: 2,
+    });
+    expect(capturedQueries[1]?.extraParams).toMatchObject({
+      resultOffset: 2,
+      resultRecordCount: 2,
+    });
+  });
+
   it("supports queryExtent with returnExtentOnly passthrough", async () => {
     let lastQuery: unknown;
     const layer = new FeatureLayerCompat({
@@ -499,6 +617,48 @@ describe("FeatureLayerCompat", () => {
     expect(JSON.stringify(relatedRequest)).toContain('"returnGeometry":false');
   });
 
+  it("maps queryRelatedRecords alias to related records request", async () => {
+    let relatedRequest: unknown;
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      definitionExpression: "status = 1",
+      outFields: ["OBJECTID", "NAME"],
+      client: new (class {
+        public getLayerMetadata(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryFeatures(): Promise<unknown> {
+          return Promise.resolve({ features: [] });
+        }
+
+        public applyEdits(): Promise<unknown> {
+          return Promise.resolve({});
+        }
+
+        public queryRelatedRecords(request: unknown): Promise<unknown> {
+          relatedRequest = request;
+          return Promise.resolve({ relatedRecordGroups: [{ objectId: 2, relatedRecords: [] }] });
+        }
+      })() as any,
+    });
+
+    const result = await layer.queryRelatedRecords({
+      relationshipId: 5,
+      objectIds: [20, 21],
+      returnGeometry: false,
+    });
+
+    expect(result).toEqual({ relatedRecordGroups: [{ objectId: 2, relatedRecords: [] }] });
+    expect(JSON.stringify(relatedRequest)).toContain('"serviceId":"default"');
+    expect(JSON.stringify(relatedRequest)).toContain('"layerId":1000');
+    expect(JSON.stringify(relatedRequest)).toContain('"relationshipId":5');
+    expect(JSON.stringify(relatedRequest)).toContain('"objectIds":[20,21]');
+    expect(JSON.stringify(relatedRequest)).toContain('"where":"status = 1"');
+    expect(JSON.stringify(relatedRequest)).toContain('"outFields":["OBJECTID","NAME"]');
+    expect(JSON.stringify(relatedRequest)).toContain('"returnGeometry":false');
+  });
+
   it("maps attachment helper calls to attachment endpoints", async () => {
     const requests: Array<{
       method?: string;
@@ -571,6 +731,38 @@ describe("FeatureLayerCompat", () => {
     expect(updateAttachmentBody.get("attachmentId")).toBe("7");
     expect(updateAttachmentBody.get("name")).toBe("capture.bin");
     expect(updateAttachmentBody.get("attachment")).toBeInstanceOf(Blob);
+  });
+
+  it("rejects attachment payloads larger than maxAttachmentBytes", () => {
+    const requests: unknown[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/default/FeatureServer/1000",
+      maxAttachmentBytes: 4,
+      client: new (class {
+        public request(request: unknown): Promise<unknown> {
+          requests.push(request);
+          return Promise.resolve({ ok: true });
+        }
+      })() as any,
+    });
+
+    expect(() =>
+      layer.addAttachment({
+        objectId: 99,
+        attachment: "hello-world",
+      }),
+    ).toThrow("exceeds maxAttachmentBytes");
+    expect(requests).toHaveLength(0);
+
+    expect(() =>
+      layer.updateAttachment({
+        objectId: 99,
+        attachmentId: 7,
+        attachment: new Uint8Array([1, 2, 3, 4, 5]),
+        maxAttachmentBytes: 4,
+      }),
+    ).toThrow("exceeds maxAttachmentBytes");
+    expect(requests).toHaveLength(0);
   });
 
   it("preserves common display options and emits event bus lifecycle changes", async () => {
@@ -668,5 +860,205 @@ describe("FeatureLayerCompat", () => {
     expect(events).toContain("feature-layer.scale-range-changed");
     expect(events).toContain("feature-layer.legend-enabled-changed");
     expect(events).toContain("feature-layer.refreshed");
+  });
+
+  it("queryFeaturesStream yields pages via compat layer", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          const offset = (request.extraParams as Record<string, number>)?.resultOffset ?? 0;
+          if (offset === 0) {
+            return { features: [{ attributes: { OBJECTID: 1 } }, { attributes: { OBJECTID: 2 } }] };
+          }
+          return { features: [{ attributes: { OBJECTID: 3 } }] };
+        },
+      } as never,
+    });
+
+    const pages: unknown[][] = [];
+    for await (const page of layer.queryFeaturesStream({ pageSize: 2 })) {
+      pages.push(page);
+    }
+
+    expect(pages).toEqual([
+      [{ attributes: { OBJECTID: 1 } }, { attributes: { OBJECTID: 2 } }],
+      [{ attributes: { OBJECTID: 3 } }],
+    ]);
+  });
+
+  it(".on('edits') fires after applyEdits with result payload", async () => {
+    const editResult = { addResults: [{ objectId: 1, success: true }] };
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        applyEdits: async () => editResult,
+      } as never,
+    });
+
+    const received: unknown[] = [];
+    layer.on("edits", (event) => {
+      received.push(event);
+    });
+
+    await layer.applyEdits({ adds: [{ attributes: { name: "Test" } }] });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ result: editResult });
+  });
+
+  it(".on() returns a handle with .remove() that stops listener", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        applyEdits: async () => ({ success: true }),
+      } as never,
+    });
+
+    const received: unknown[] = [];
+    const handle = layer.on("edits", (event) => {
+      received.push(event);
+    });
+
+    await layer.applyEdits({ adds: [] });
+    handle.remove();
+    await layer.applyEdits({ adds: [] });
+
+    expect(received).toHaveLength(1);
+  });
+
+  it(".on() with unsupported event name does not throw", () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+    });
+
+    expect(() => layer.on("unsupported-event", () => {})).not.toThrow();
+  });
+
+  it("multiple .on() listeners for same event all fire", async () => {
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        applyEdits: async () => ({ ok: true }),
+      } as never,
+    });
+
+    const firstReceived: unknown[] = [];
+    const secondReceived: unknown[] = [];
+    layer.on("edits", (event) => firstReceived.push(event));
+    layer.on("edits", (event) => secondReceived.push(event));
+
+    await layer.applyEdits({ adds: [] });
+
+    expect(firstReceived).toHaveLength(1);
+    expect(secondReceived).toHaveLength(1);
+  });
+
+  it("setTimeExtent stores extent and emits event", () => {
+    const eventBus = new CompatEventBus();
+    const events: string[] = [];
+    eventBus.onAny((event) => events.push(event.type));
+
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      eventBus,
+    });
+
+    const start = new Date("2024-01-01");
+    const end = new Date("2024-06-01");
+    layer.setTimeExtent({ start, end });
+
+    expect(layer.timeExtent).toBeDefined();
+    expect(layer.timeExtent!.start.getTime()).toBe(start.getTime());
+    expect(layer.timeExtent!.end.getTime()).toBe(end.getTime());
+    expect(events).toContain("feature-layer.time-extent-change");
+  });
+
+  it("queryFeatures includes time param when timeExtent is set", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          capturedParams.push(request);
+          return { features: [] };
+        },
+      } as never,
+    });
+
+    const start = new Date("2024-01-01");
+    const end = new Date("2024-06-01");
+    layer.setTimeExtent({ start, end });
+
+    await layer.queryFeatures({ where: "1=1" });
+
+    const extraParams = capturedParams[0]?.extraParams as Record<string, string>;
+    expect(extraParams?.time).toBe(`${start.getTime()},${end.getTime()}`);
+  });
+
+  it("queryFeatures does NOT include time when timeExtent is unset", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          capturedParams.push(request);
+          return { features: [] };
+        },
+      } as never,
+    });
+
+    await layer.queryFeatures({ where: "1=1" });
+
+    expect(capturedParams[0]?.extraParams).toBeUndefined();
+  });
+
+  it("queryFeatures does NOT override explicit time param in extraParams", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/transport/FeatureServer/3",
+      client: {
+        queryFeatures: async (request: Record<string, unknown>) => {
+          capturedParams.push(request);
+          return { features: [] };
+        },
+      } as never,
+    });
+
+    layer.setTimeExtent({ start: new Date("2024-01-01"), end: new Date("2024-06-01") });
+
+    await layer.queryFeatures({
+      where: "1=1",
+      extraParams: { time: "custom-value" },
+    });
+
+    const extraParams = capturedParams[0]?.extraParams as Record<string, string>;
+    expect(extraParams?.time).toBe("custom-value");
+  });
+
+  it("destroy() clears watchers, event listeners, and emits feature-layer.destroyed", () => {
+    const eventBus = new CompatEventBus();
+    const eventTypes: string[] = [];
+    eventBus.onAny((event) => {
+      eventTypes.push(event.type);
+    });
+
+    const layer = new FeatureLayerCompat({
+      url: "https://example.test/rest/services/svc/FeatureServer/0",
+      eventBus,
+    });
+
+    const watchValues: unknown[] = [];
+    layer.watch("visible", (v) => watchValues.push(v));
+
+    const eventPayloads: unknown[] = [];
+    layer.on("edits", (e) => eventPayloads.push(e));
+
+    layer.destroy();
+
+    expect(eventTypes).toContain("feature-layer.destroyed");
+
+    layer.setVisibility(false);
+    expect(watchValues).toHaveLength(0);
   });
 });

@@ -1,13 +1,29 @@
-# Honua JS SDK (Scaffold)
+# Honua JS SDK
+
+## Quickstart
+
+```bash
+npm install @honua/sdk-js
+```
+
+```ts
+import { HonuaClient } from "@honua/sdk-js/honua";
+
+const client = new HonuaClient({ baseUrl: "https://your-honua-server.com" });
+const result = await client.queryFeatures({ serviceId: "parcels", layerId: 0 });
+console.log(result.features); // fully typed HonuaFeature[]
+```
+
+---
 
 Initial JavaScript SDK scaffold for the JS-first migration phase (`#324`).
 
 This package currently provides:
 
-- core HTTP client (`HonuaClient`) for FeatureServer, MapServer export, and catalog operations,
-- first-class OGC API Features client/wrappers (`client.ogcFeatures()`) for landing page, conformance, collections, queryables, items, and item CRUD,
+- core HTTP client (`HonuaClient`) for FeatureServer, MapServer export/query/related-record operations, and catalog operations, plus fluent layer wrappers (`client.featureLayer(...)`, `client.mapLayer(...)`, `service.featureLayer(...)`, `service.featureLayers()`, `service.mapLayer(...)`, `service.mapLayers()`, `service.mapService().layer(...)`),
+- first-class OGC API Features client/wrappers (`client.ogcFeatures()`) for landing page, conformance, collections, queryables, items, paged `itemsAll` helpers, and item CRUD,
 - Esri-style compatibility wrappers (`FeatureLayerCompat`, `MapImageLayerCompat`, `TileLayerCompat`, `RouteLayerCompat`, `MapCompat`, `MapViewCompat`, `SceneViewCompat`, `WebMapCompat`) for migration-critical patterns,
-  including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()/addAttachment()/updateAttachment()/listFields()/getField()`, `MapImageLayer.when()/refresh()/exportImage()/getLegend()/find()/identify()/findSublayerById()`, `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`/`takeScreenshot()` and `view.ui.add/remove/move/getComponents` compatibility,
+  including basic `when()` lifecycle support, `FeatureLayer.refresh()/createQuery()/queryFeaturesAll()/queryObjectIds()/queryFeatureCount()/queryExtent()/queryRelatedFeatures()/addAttachment()/updateAttachment()/listFields()/getField()`, `MapImageLayer.when()/refresh()/createQuery()/exportImage()/getLegend()/find()/identify()/queryFeatures()/queryFeaturesAll()/queryFeatureCount()/queryObjectIds()/queryExtent()/queryRelatedFeatures()/findSublayerById()/sublayer(...).query*()` where writable `layer.sublayers` and sublayer lookups return query-capable `MapImageSublayerCompat` wrappers (and auto-hydrate from metadata when not explicitly configured) with nested `sublayer.sublayers/allSublayers`, `sublayer.visible`, and `sublayer.definitionExpression` bridging to query defaults, `FeatureTableCompat` row/query helpers with runtime `layer` switching (`table.layer = nextLayer` / `table.setLayer(nextLayer)`), `Map` layer collection helpers, `GraphicsLayerCompat`/`GroupLayerCompat`, and `MapView` watch/event handles with popup/layer-view bridges plus `toMap`/`toScreen`/`hitTest`/`takeScreenshot()` and `view.ui.add/remove/move/getComponents` compatibility,
 - identify controller (`IdentifyCompat`) for cross-layer MapServer identify workflows with optional popup auto-open,
 - compat widgets/components (`LayerListCompat`, `LegendCompat`, `PopupCompat`, `SearchCompat`, `BasemapGalleryCompat`, `BookmarksCompat`, `ExpandCompat`, `SketchCompat`, `EditorCompat`, `TrackCompat`, `MeasurementCompat`, `TimeSliderCompat`, `DirectionsCompat`) backed by a shared `CompatEventBus` so widgets/components can subscribe to layer/view changes, including popup feature-selection navigation and search source/result state helpers (default search sources support both ArcGIS `queryFeatures` layers and OGC collection-style `items()` layers),
 - common map controls (`HomeCompat`, `BasemapToggleCompat`, `LocateCompat`, `ScaleBarCompat`, `CompassCompat`, `FullscreenCompat`, `ZoomCompat`, `AttributionCompat`) wired to the same event bus for shared view state updates,
@@ -118,6 +134,7 @@ const ogc = client.ogcFeatures();
 const collections = await ogc.collections();
 const parcels = ogc.collection("0");
 const items = await parcels.items({ limit: 100, filter: "status = 'active'" });
+const allItems = await parcels.itemsAll({ pageSize: 500, maxPages: 20 });
 const feature = await parcels.item({ featureId: "123" });
 ```
 
@@ -137,6 +154,107 @@ const [features, items] = await Promise.all([
 ]);
 ```
 
+## MapServer query helpers
+
+```ts
+import { HonuaClient } from "@honua/sdk-js/honua";
+
+const client = new HonuaClient({
+  baseUrl: "https://example.test",
+  timeoutMs: 15000,
+  retry: { maxRetries: 2, retryStatuses: [429, 503] },
+});
+
+const mapLayer = client.mapLayer("basemap", 4);
+const allMapLayerFeatures = await mapLayer.queryFeaturesAll({ pageSize: 2000, maxPages: 25 });
+
+const mapService = client.mapService("basemap");
+const allServiceLayerFeatures = await mapService.queryLayerFeaturesAll({
+  layerId: 4,
+  pageSize: 2000,
+  maxPages: 25,
+});
+
+const related = await mapService.queryLayerRelatedRecords({
+  layerId: 4,
+  relationshipId: 1,
+  objectIds: [1001, 1002],
+});
+
+const mapLayerRelated = await mapLayer.queryRelatedFeatures({
+  relationshipId: 1,
+  objectIds: [1001],
+});
+```
+
+## Streaming Pagination
+
+```ts
+import { FeatureLayerCompat, CompatEventBus } from "@honua/sdk-js/esri-compat";
+
+const layer = new FeatureLayerCompat({
+  url: "https://example.test/rest/services/transport/FeatureServer/0",
+});
+
+// Collect all pages in one call
+const allFeatures = await layer.queryFeaturesAll({ pageSize: 500, maxPages: 50 });
+
+// Stream pages one at a time with an async generator
+for await (const page of layer.queryFeaturesStream({ pageSize: 500 })) {
+  console.log(`Received ${page.length} features`);
+}
+```
+
+## Event Lifecycle (.on)
+
+```ts
+import { FeatureLayerCompat, CompatEventBus } from "@honua/sdk-js/esri-compat";
+
+const eventBus = new CompatEventBus();
+const layer = new FeatureLayerCompat({
+  url: "https://example.test/rest/services/transport/FeatureServer/0",
+  eventBus,
+});
+
+// Listen for edit completions
+const handle = layer.on("edits", (result) => {
+  console.log("Edits applied:", result);
+});
+
+await layer.applyEdits({ adds: [{ attributes: { name: "New" } }] });
+
+// Clean up when done
+handle.remove();
+```
+
+## TimeSlider Integration
+
+```ts
+import { FeatureLayerCompat, TimeSliderCompat, CompatEventBus } from "@honua/sdk-js/esri-compat";
+
+const eventBus = new CompatEventBus();
+
+const layer = new FeatureLayerCompat({
+  url: "https://example.test/rest/services/events/FeatureServer/0",
+  eventBus,
+});
+
+const slider = new TimeSliderCompat({
+  eventBus,
+  timeExtent: { start: new Date("2024-01-01"), end: new Date("2024-06-01") },
+  stops: { interval: { value: 1, unit: "days" } },
+});
+
+// Connect slider to layer — time extent changes auto-filter queries
+const connection = slider.connectLayer(layer);
+
+// Queries now include the time parameter automatically
+const features = await layer.queryFeatures({ where: "1=1" });
+
+// Disconnect when done
+connection.remove();
+```
+
 ## Migration CLI
 
 ```bash
@@ -148,6 +266,9 @@ node dist/src/migration/cli.js codemod ./src --report migration-report.json
 
 # Safe codemod (write changes)
 node dist/src/migration/cli.js codemod ./src --write --report migration-report.json
+
+# Safe codemod (explicit honua target alias)
+node dist/src/migration/cli.js codemod ./src --target honua --write --report migration-report.json
 
 # Safe codemod (write changes targeting esri-leaflet for supported subset)
 node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json
@@ -168,10 +289,10 @@ node dist/src/migration/cli.js fixtures --report reports/real-sample-metrics.jso
 node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/real-sample-metrics.json
 
 # Enforce strict readiness gates for the demo target fixture only
-node dist/src/migration/cli.js fixtures --fixtures esri-real-sample-incident-command-app --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/demo-target-metrics.json
+node dist/src/migration/cli.js fixtures --target honua --fixtures esri-demo-feature-table-relates-app --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/demo-featuretable-primary-metrics.json
 
 # Limit fixture metrics to a subset and esri-leaflet target mode
-node dist/src/migration/cli.js fixtures --target esri-leaflet --fixtures esri-real-sample-network-app --report reports/network-metrics.json
+node dist/src/migration/cli.js fixtures --target esri-leaflet --fixtures esri-demo-feature-table-popup-interaction-app --report reports/demo-featuretable-fallback-esri-leaflet-metrics.json
 
 # Gate in CI (non-zero exit if migration constraints fail)
 node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3
@@ -180,9 +301,48 @@ node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandle
 node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json
 ```
 
+## FeatureTable Demo Lane (#327)
+
+Primary target:
+- fixture: `esri-demo-feature-table-relates-app`
+- sample: `FeatureTable with related records`
+- source: `https://developers.arcgis.com/javascript/latest/sample-code/widgets-featuretable-relates/`
+
+Fallback target:
+- fixture: `esri-demo-feature-table-popup-interaction-app`
+- sample: `Feature table with popup interaction`
+- source: `https://developers.arcgis.com/javascript/latest/sample-code/widgets-featuretable-popup-interaction/`
+
+Pinned attribution metadata is tracked in `test/fixtures/DEMO_TARGETS.md` and fixture-local `ATTRIBUTION.md` files.
+
+Runbook (codemod-only CI reproducible path):
+
+```bash
+# 1) Run primary demo lane migration (honua target)
+npm run demo:migration:featuretable
+
+# 2) Validate primary lane readiness gates and report metrics
+npm run gate:migration:demo-target
+
+# 3) Validate fallback lane deterministic esri-leaflet mapping
+npm run gate:migration:esri-leaflet-target
+```
+
+Report metrics to capture:
+- elapsed time: `reports/demo-featuretable-codemod-report.json -> elapsedMs`
+- manual rewrite ratio: `migration.manualRewriteMetric.ratio`
+- manual intervention count: `migration.manualInterventionMetric.numerator`
+- manual rewrite count: `migration.manualRewriteMetric.numerator`
+
+Quick metric extract:
+
+```bash
+node -e 'const r=require("./reports/demo-featuretable-codemod-report.json"); console.log({elapsedMs:r.elapsedMs, manualRewriteRatio:r.migration.manualRewriteMetric.ratio, manualInterventionCount:r.migration.manualInterventionMetric.numerator, manualRewriteCount:r.migration.manualRewriteMetric.numerator});'
+```
+
 The codemod is intentionally conservative:
-- default target (`--target honua-compat`) rewrites safe constructors:
-  - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `labelsVisible`, `opacity`, `visible`, `minScale`, `maxScale`, `legendEnabled`, and `listMode`)
+- default target (`--target honua` alias of `honua-compat`) rewrites safe constructors:
+  - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `labelsVisible`, `opacity`, `visible`, `minScale`, `maxScale`, `legendEnabled`, and `listMode`; `url` may be absolute or relative, including path-prefixed deployments)
   - `new Polyline(...)` -> `new PolylineCompat(...)`
   - `new Polygon(...)` -> `new PolygonCompat(...)`
   - `new Extent(...)` -> `new ExtentCompat(...)`
@@ -197,8 +357,8 @@ The codemod is intentionally conservative:
   - `new UniqueValueRenderer(...)` -> `new UniqueValueRendererCompat(...)`
   - `new GraphicsLayer(...)` -> `new GraphicsLayerCompat(...)`
   - `new GroupLayer(...)` -> `new GroupLayerCompat(...)`
-  - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `id`, `title`, `sublayers`, `opacity`, `visible`, `minScale`, `maxScale`, `listMode`, and `legendEnabled`)
-  - `new TileLayer({ url: ... })` -> `new TileLayerCompat({ url: ... })` (supports `id`, `title`, `opacity`, `visible`, `minScale`, `maxScale`, and `listMode`)
+  - `new MapImageLayer({ url: ... })` -> `new MapImageLayerCompat({ url: ... })` (supports `id`, `title`, `sublayers`, `opacity`, `visible`, `minScale`, `maxScale`, `listMode`, and `legendEnabled`; runtime helpers include `exportImage/getLegend/find/identify/queryFeatures/queryFeaturesAll/queryFeatureCount/queryObjectIds/queryExtent/queryRelatedFeatures` plus `sublayer(...).query*()`, `sublayer(...).queryFeaturesAll()`, `sublayer(...).queryRelatedFeatures()`, and `sublayer.visible/definitionExpression`; `url` may be absolute or relative, including path-prefixed deployments)
+  - `new TileLayer({ url: ... })` -> `new TileLayerCompat({ url: ... })` (supports `id`, `title`, `opacity`, `visible`, `minScale`, `maxScale`, and `listMode`; `url` may be absolute or relative, including path-prefixed deployments)
   - `new RouteLayer(...)` -> `new RouteLayerCompat(...)`
   - `new Map(...)` -> `new MapCompat(...)` (supports `basemap`, `layers`, `ground`, `tables`, `portalItem`, and `spatialReference`)
   - `new MapView(...)` -> `new MapViewCompat(...)` (supports `map`, `container`, `center`, `zoom`, `scale`, `rotation`, `extent`, `constraints`, `padding`, `highlightOptions`, `spatialReference`, and `popup`)
@@ -228,12 +388,13 @@ The codemod is intentionally conservative:
   - `new Measurement(...)` -> `new MeasurementCompat(...)`
   - `new TimeSlider(...)` -> `new TimeSliderCompat(...)`
   - `new Directions(...)` -> `new DirectionsCompat(...)`
-- alternate target (`--target esri-leaflet`) rewrites deterministic subset plus selected compat fallbacks:
+- alternate target (`--target esri-leaflet`) rewrites deterministic subset plus broad compat fallbacks:
   - `new FeatureLayer({ ... })` -> `HonuaEsriLeaflet.featureLayer({ ... })`
   - `new MapImageLayer({ ... })` -> `HonuaEsriLeaflet.dynamicMapLayer({ ... })`
   - `new TileLayer({ ... })` -> `HonuaEsriLeaflet.tiledMapLayer({ ... })`
   - `new Map({ ... })` -> `new MapCompat({ ... })`
   - `new MapView({ ... })` -> `new MapViewCompat({ ... })`
+  - `new SceneView({ ... })` -> `new SceneViewCompat({ ... })`
   - `new LayerList({ ... })` -> `new LayerListCompat({ ... })`
   - `new Legend({ ... })` -> `new LegendCompat({ ... })`
   - `new Popup({ ... })` -> `new PopupCompat({ ... })`
@@ -241,7 +402,8 @@ The codemod is intentionally conservative:
   - `new Home/BasemapToggle/Locate/ScaleBar/BasemapGallery/Expand/Compass/Bookmarks/Fullscreen/Zoom/Attribution(...)` -> corresponding `*Compat` constructor
   - dynamic imports for those modules -> `Promise.resolve({ default: HonuaEsriLeaflet.* })`
   - dynamic imports for compat fallback modules -> `import("@honua/sdk-esri-compat").then((m) => ({ default: m.*Compat }))`
-  - non-deterministic APIs (for example `SceneView`, `WebMap`, `Polyline`, `Polygon`, `Extent`, `SpatialReference`, `Color`, `PictureMarkerSymbol`, `TextSymbol`, `LabelClass`, `SimpleFillSymbol`, `ClassBreaksRenderer`, `SimpleRenderer`, `UniqueValueRenderer`, `GraphicsLayer`, `GroupLayer`, `Sketch`, `Editor`, `Track`, `Measurement`, `TimeSlider`, `RouteLayer`, `Directions`) are emitted as manual TODO/report entries
+  - advanced 3D-only modules (for example `Slice` and external-renderer style APIs) are emitted as manual TODO/report entries
+- `--target esri-leaflet` is for ArcGIS JS (`@arcgis/core`) inputs; existing Esri Leaflet apps generally do not need codemod migration
 - it rewrites supported dynamic imports to compat bridge expressions when safe (for example SceneView dynamic import),
 - it skips complex constructors and records manual TODO entries in the report,
 - it keeps CommonJS `require(...)` constructor sites as manual TODOs (for example `.cjs` or `.js` files exporting via `module.exports`/`exports.*`),

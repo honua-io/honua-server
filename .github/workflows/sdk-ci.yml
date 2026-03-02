@@ -1,0 +1,124 @@
+name: SDK CI
+
+on:
+  push:
+    branches: [trunk]
+    paths:
+      - 'sdk/mcp/**'
+      - 'sdk/python/**'
+      - 'sdk/dotnet/**'
+      - 'proto/**'
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'sdk/mcp/**'
+      - 'sdk/python/**'
+      - 'sdk/dotnet/**'
+      - 'proto/**'
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+
+jobs:
+  mcp-sdk:
+    name: MCP SDK
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: sdk/mcp/package-lock.json
+
+      - name: Build JS SDK dependency
+        run: |
+          npm ci --prefix ../js
+          npm run build --prefix ../js
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Dist smoke tests
+        run: npx vitest run test/dist-smoke.test.ts
+
+  python-sdk:
+    name: Python SDK
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: sdk/python/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[grpc]"
+          pip install pytest
+
+      - name: Run tests
+        run: python -m pytest tests/ -q --tb=short
+
+  dotnet-admin-sdk:
+    name: .NET Admin SDK
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build
+        run: dotnet build sdk/dotnet/Honua.Sdk.Admin/Honua.Sdk.Admin.csproj --configuration Release /p:TreatWarningsAsErrors=true
+
+      - name: Test
+        run: dotnet test sdk/dotnet/Honua.Sdk.Admin.Tests/Honua.Sdk.Admin.Tests.csproj --configuration Release
+
+  dotnet-grpc-sdk:
+    name: .NET gRPC SDK
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build
+        run: dotnet build sdk/dotnet/Honua.Sdk.Grpc/Honua.Sdk.Grpc.csproj --configuration Release /p:TreatWarningsAsErrors=true
+
+      - name: Test
+        run: dotnet test sdk/dotnet/Honua.Sdk.Grpc.Tests/Honua.Sdk.Grpc.Tests.csproj --configuration Release

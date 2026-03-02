@@ -165,8 +165,45 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
                 });
             });
 
-            // Setup layer publishing mocks
-            await page.RouteAsync("**/api/v1/admin/layers/publish", async route =>
+            await page.RouteAsync($"**/api/v1/admin/connections/{connectionId}/tables", async route =>
+            {
+                await FulfillJsonAsync(route, new
+                {
+                    tables = new[]
+                    {
+                        new
+                        {
+                            schema = "public",
+                            table = "test_points",
+                            geometryColumn = "shape",
+                            geometryType = "Point",
+                            srid = 4326,
+                            estimatedRows = 150,
+                            columns = new[]
+                            {
+                                new
+                                {
+                                    name = "objectid",
+                                    dataType = "integer",
+                                    isNullable = false,
+                                    isPrimaryKey = true,
+                                    maxLength = (int?)null
+                                },
+                                new
+                                {
+                                    name = "name",
+                                    dataType = "text",
+                                    isNullable = true,
+                                    isPrimaryKey = false,
+                                    maxLength = (int?)null
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+
+            await page.RouteAsync($"**/api/v1/admin/connections/{connectionId}/layers", async route =>
             {
                 if (route.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
                 {
@@ -178,20 +215,21 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
                         timestamp = now,
                         data = new
                         {
-                            layerId = $"test_points_{layerId}",
+                            layerId,
                             layerName = "Test Points",
-                            connectionId,
-                            tableName = "test_points",
-                            isPublished = true,
+                            schema = "public",
+                            table = "test_points",
                             geometryType = "Point",
-                            featureCount = 150
+                            srid = 4326,
+                            primaryKey = "objectid",
+                            fieldCount = 2,
+                            enabled = true,
+                            serviceName = "test"
                         }
                     });
+                    return;
                 }
-            });
 
-            await page.RouteAsync($"**/api/v1/admin/connections/{connectionId}/layers", async route =>
-            {
                 if (layerPublished)
                 {
                     await FulfillJsonAsync(route, new
@@ -203,13 +241,16 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
                         {
                             new
                             {
-                                layerId = $"test_points_{layerId}",
+                                layerId,
                                 layerName = "Test Points",
-                                tableName = "test_points",
-                                isPublished = true,
+                                schema = "public",
+                                table = "test_points",
                                 geometryType = "Point",
-                                featureCount = 150,
-                                createdAt = now
+                                srid = 4326,
+                                primaryKey = "objectid",
+                                fieldCount = 2,
+                                enabled = true,
+                                serviceName = "test"
                             }
                         }
                     });
@@ -256,8 +297,6 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
             // Step 3: Configure and start import
             await page.GetByTestId($"import-layer-select-{layerId}").ClickAsync();
             await page.GetByTestId($"import-layer-table-{layerId}").Locator("input").FillAsync("test_points");
-            await page.GetByTestId($"import-layer-connection-{layerId}").ClickAsync();
-            await page.GetByText("e2e-test-connection").ClickAsync();
 
             await page.GetByTestId("import-start").ClickAsync();
             Assert.True(importStarted, "Import should have been started");
@@ -267,24 +306,20 @@ public sealed class EndToEndWorkflowTests : IClassFixture<PlaywrightFixture>
 
             // Step 4: Navigate to layers and publish the imported data
             await page.GotoAsync($"{baseUrl.TrimEnd('/')}/layers");
-            await page.GetByTestId("layer-connection-select").ClickAsync();
-            await page.GetByText("e2e-test-connection").ClickAsync();
-
-            // Wait for layers to load, then publish
             await page.GetByText("test_points").WaitForAsync();
-            await page.GetByTestId("layer-publish-test_points").ClickAsync();
-            await page.GetByTestId("publish-layer-name").FillAsync("Test Points");
-            await page.GetByTestId("publish-save").ClickAsync();
+            await page.GetByTestId("table-publish-public-test_points").ClickAsync();
+            await page.GetByLabel("Layer name").FillAsync("Test Points");
+            await page.GetByTestId("layer-publish-submit").ClickAsync();
 
             Assert.True(layerPublished, "Layer should have been published");
-            await WaitForTextAsync(page, "Layer published");
+            await WaitForTextAsync(page, "published.");
 
             // Step 5: Navigate to preview and verify the layer appears
             await page.GotoAsync($"{baseUrl.TrimEnd('/')}/preview");
-            await page.GetByTestId("preview-service-select").WaitForAsync();
+            await page.GetByTestId("preview-layer-select").WaitForAsync();
 
             // The layer should be available for preview
-            await WaitForTextAsync(page, "Test Points");
+            await WaitForTextAsync(page, "Test Points (test)");
 
             // Verify the complete workflow was successful
             Assert.True(connectionCreated, "Connection creation failed");

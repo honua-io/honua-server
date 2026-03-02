@@ -4,6 +4,7 @@
 using Honua.Server.Features.FeatureServer;
 using Honua.Server.Features.GeometryService;
 using Honua.Server.Features.GeoservicesCatalog;
+using Honua.Server.Features.Grpc;
 using Honua.Server.Features.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
@@ -36,6 +37,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcMaps();
         services.AddOData();
         services.AddGeometryService();
+        services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration);
 
         return services;

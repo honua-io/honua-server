@@ -20,6 +20,7 @@ public static class EndpointRegistry
         new("GET", "/metrics"),
 
         new("GET", "/api/v1/admin/config"),
+        new("GET", "/api/v1/admin/openapi.json"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/tables"),
         new("GET", "/api/v1/admin/connections/{*path}"),
@@ -35,6 +36,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/services/{serviceName}/settings"),
         new("PUT", "/api/v1/admin/services/{serviceName}/protocols"),
         new("PUT", "/api/v1/admin/services/{serviceName}/mapserver"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/access-policy"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/timeinfo"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata"),
 
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
@@ -80,6 +84,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/operations/{operationId}/cancel"),
         new("GET", "/api/v1/admin/operations/active"),
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
+        new("GET", "/api/v1/admin/feature-events/replay"),
+        new("POST", "/api/v1/admin/tile-operations/jobs"),
+        new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
+        new("GET", "/api/v1/admin/tile-operations/jobs"),
+        new("POST", "/api/v1/admin/tile-operations/jobs/{jobId}/cancel"),
+        new("POST", "/api/v1/admin/tile-operations/jobs/{jobId}/retry"),
 
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),

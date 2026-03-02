@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export type ColorCompatInput = string | number[] | Record<string, unknown>;
 
 export type ColorLoadStatusCompat = "not-loaded" | "loading" | "loaded";
@@ -110,7 +111,7 @@ export class ColorCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

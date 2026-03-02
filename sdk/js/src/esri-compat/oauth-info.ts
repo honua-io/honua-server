@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface OAuthInfoCompatOptions {
   appId?: string;
   portalUrl?: string;
@@ -34,9 +35,7 @@ export class OAuthInfoCompat {
     this.popup = options.popup ?? false;
     this.flowType = options.flowType ?? "auto";
     this.expiration =
-      typeof options.expiration === "number" && Number.isFinite(options.expiration)
-        ? options.expiration
-        : undefined;
+      typeof options.expiration === "number" && Number.isFinite(options.expiration) ? options.expiration : undefined;
     this.authNamespace = options.authNamespace;
     this.preserveUrlHash = options.preserveUrlHash ?? false;
     this.watchListeners = new Map();
@@ -98,9 +97,7 @@ export class OAuthInfoCompat {
     }
     if (options.expiration !== undefined) {
       this.expiration =
-        typeof options.expiration === "number" && Number.isFinite(options.expiration)
-          ? options.expiration
-          : undefined;
+        typeof options.expiration === "number" && Number.isFinite(options.expiration) ? options.expiration : undefined;
       this.notifyWatchers("expiration", this.expiration);
     }
     if (options.authNamespace !== undefined) {
@@ -140,7 +137,7 @@ export class OAuthInfoCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

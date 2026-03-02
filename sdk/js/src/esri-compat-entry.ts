@@ -7,6 +7,7 @@ export type {
   FeatureLayerHandleCompat,
   FeatureLayerLoadStatusCompat,
   FeatureLayerListAttachmentsOptions,
+  FeatureLayerQueryAllOptions,
   FeatureLayerQueryAttachmentsOptions,
   FeatureLayerQueryCountOptions,
   FeatureLayerUpdateAttachmentOptions,
@@ -115,6 +116,7 @@ export type {
   CompassCompatOptions,
   ControlHandleCompat,
   ControlLoadStatusCompat,
+  ControlViewpointLike,
   FullscreenCompatOptions,
   HomeCompatOptions,
   HomeViewpointCompat,
@@ -262,8 +264,9 @@ export type {
 } from "./esri-compat/group-layer.js";
 export { MapCompat } from "./esri-compat/map.js";
 export type { MapCompatHandle, MapCompatOptions, MapLoadStatusCompat } from "./esri-compat/map.js";
-export { MapImageLayerCompat } from "./esri-compat/map-image-layer.js";
+export { MapImageLayerCompat, MapImageSublayerCompat } from "./esri-compat/map-image-layer.js";
 export type {
+  MapImageLayerCreateQueryResult,
   MapImageLayerHandleCompat,
   MapImageLayerFindOptions,
   MapImageLayerIdentifyOptions,
@@ -271,6 +274,21 @@ export type {
   MapImageLayerExportOptions,
   MapImageLayerLoadStatusCompat,
   MapImageLayerLegendOptions,
+  MapImageLayerQueryCountOptions,
+  MapImageLayerQueryAllOptions,
+  MapImageLayerQueryExtentOptions,
+  MapImageLayerQueryExtentResponse,
+  MapImageLayerQueryObjectIdsOptions,
+  MapImageLayerQueryRelatedFeaturesOptions,
+  MapImageLayerQueryOptions,
+  MapImageSublayerCompatOptions,
+  MapImageSublayerCreateQueryResult,
+  MapImageSublayerQueryCountOptions,
+  MapImageSublayerQueryAllOptions,
+  MapImageSublayerQueryExtentOptions,
+  MapImageSublayerQueryObjectIdsOptions,
+  MapImageSublayerQueryRelatedFeaturesOptions,
+  MapImageSublayerQueryOptions,
   MapImageLayerSublayerLookupId,
 } from "./esri-compat/map-image-layer.js";
 export { TileLayerCompat } from "./esri-compat/tile-layer.js";
@@ -385,7 +403,10 @@ export type {
 } from "./esri-compat/popup.js";
 export { PopupTemplateCompat } from "./esri-compat/popup-template.js";
 export type {
+  PopupTemplateAction,
   PopupTemplateCompatOptions,
+  PopupTemplateExpressionInfo,
+  PopupTemplateFieldInfo,
   PopupTemplateHandleCompat,
   PopupTemplateLoadStatusCompat,
 } from "./esri-compat/popup-template.js";
@@ -425,8 +446,10 @@ export type {
 export { SearchCompat } from "./esri-compat/search.js";
 export type {
   SearchCompatOptions,
+  SearchExtentLike,
   SearchHandleCompat,
   SearchLoadStatusCompat,
+  SearchPointLike,
   SearchRequestCompat,
   SearchResponseCompat,
   SearchResultCompat,

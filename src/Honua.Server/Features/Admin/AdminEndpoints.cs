@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Frozen;
 using System.Text.Json;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.Admin;
 
@@ -18,6 +20,9 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminEndpoints
 {
+    private static readonly FrozenSet<string> _openApiAllowedQueryParameters =
+        new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Configure admin endpoints using AOT-compatible routing with formal API versioning
     /// </summary>
@@ -33,6 +38,11 @@ internal static class AdminEndpoints
         // Configuration documentation endpoint (self-documenting)
         _ = adminGroup.Map("/config", HandleGetConfiguration)
             .WithDisplayName("Get Configuration Documentation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        // Runtime OpenAPI endpoint for admin/control-plane contract.
+        _ = adminGroup.Map("/openapi.json", HandleGetOpenApiSpec)
+            .WithDisplayName("Get Admin OpenAPI Specification")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
@@ -214,5 +224,36 @@ internal static class AdminEndpoints
                     "An error occurred while discovering tables. Please check the connection and try again.")
                 .ExecuteAsync(context);
         }
+    }
+
+    private static async Task<IResult> HandleGetOpenApiSpec(
+        HttpContext context,
+        string? f,
+        IWebHostEnvironment environment)
+    {
+        const string fallbackSpec = """
+        {
+          "openapi": "3.0.3",
+          "info": {
+            "title": "Honua Server Management API",
+            "description": "Administrative API for server configuration, connections, and metadata management.",
+            "version": "1.0.0"
+          },
+          "servers": [
+            {
+              "url": "/api/v1/admin"
+            }
+          ],
+          "paths": {}
+        }
+        """;
+
+        return await OgcOpenApiSpecUtilities.GetOpenApiSpecAsync(
+            context,
+            f,
+            environment,
+            _openApiAllowedQueryParameters,
+            "admin-openapi.json",
+            fallbackSpec);
     }
 }

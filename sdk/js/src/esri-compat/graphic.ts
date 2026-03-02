@@ -1,8 +1,19 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
+
+/** Structural type for geometry-like objects (point, polyline, polygon, extent, etc.). */
+export type CompatGeometryLike = Record<string, unknown>;
+
+/** Structural type for symbol-like objects (marker, line, fill, text, etc.). */
+export type CompatSymbolLike = Record<string, unknown>;
+
+/** Structural type for popup template-like objects. */
+export type CompatPopupTemplateLike = Record<string, unknown>;
+
 export interface GraphicCompatOptions {
-  geometry?: unknown;
-  symbol?: unknown;
+  geometry?: CompatGeometryLike | null;
+  symbol?: CompatSymbolLike | null;
   attributes?: Record<string, unknown>;
-  popupTemplate?: unknown;
+  popupTemplate?: CompatPopupTemplateLike | null;
   layer?: unknown;
 }
 
@@ -15,20 +26,20 @@ export interface GraphicHandleCompat {
 export class GraphicCompat {
   public loaded: boolean;
   public loadStatus: GraphicLoadStatusCompat;
-  public geometry: unknown;
-  public symbol: unknown;
+  public geometry: CompatGeometryLike | null;
+  public symbol: CompatSymbolLike | null;
   public attributes: Record<string, unknown>;
-  public popupTemplate: unknown;
+  public popupTemplate: CompatPopupTemplateLike | null;
   public layer: unknown;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
 
   public constructor(options: GraphicCompatOptions = {}) {
     this.loaded = false;
     this.loadStatus = "not-loaded";
-    this.geometry = options.geometry;
-    this.symbol = options.symbol;
+    this.geometry = options.geometry ?? null;
+    this.symbol = options.symbol ?? null;
     this.attributes = options.attributes ? { ...options.attributes } : {};
-    this.popupTemplate = options.popupTemplate;
+    this.popupTemplate = options.popupTemplate ?? null;
     this.layer = options.layer;
     this.watchListeners = new Map();
   }
@@ -55,7 +66,13 @@ export class GraphicCompat {
     return graphic;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): GraphicHandleCompat {
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): GraphicHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: GraphicLoadStatusCompat) => void): GraphicHandleCompat;
+  public watch(propertyName: "geometry", listener: (value: CompatGeometryLike | null) => void): GraphicHandleCompat;
+  public watch(propertyName: "symbol", listener: (value: CompatSymbolLike | null) => void): GraphicHandleCompat;
+  public watch(propertyName: "attributes", listener: (value: Record<string, unknown>) => void): GraphicHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): GraphicHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): GraphicHandleCompat {
     let listeners = this.watchListeners.get(propertyName);
     if (!listeners) {
       listeners = new Set();
@@ -70,12 +87,12 @@ export class GraphicCompat {
     };
   }
 
-  public setGeometry(geometry: unknown): void {
+  public setGeometry(geometry: CompatGeometryLike | null): void {
     this.geometry = geometry;
     this.notifyWatchers("geometry", this.geometry);
   }
 
-  public setSymbol(symbol: unknown): void {
+  public setSymbol(symbol: CompatSymbolLike | null): void {
     this.symbol = symbol;
     this.notifyWatchers("symbol", this.symbol);
   }
@@ -85,7 +102,7 @@ export class GraphicCompat {
     this.notifyWatchers("attributes", this.attributes);
   }
 
-  public setPopupTemplate(popupTemplate: unknown): void {
+  public setPopupTemplate(popupTemplate: CompatPopupTemplateLike | null): void {
     this.popupTemplate = popupTemplate;
     this.notifyWatchers("popupTemplate", this.popupTemplate);
   }
@@ -126,7 +143,7 @@ export class GraphicCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

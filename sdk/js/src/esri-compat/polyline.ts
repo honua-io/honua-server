@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface PolylineCompatOptions {
   paths?: unknown[][][];
   spatialReference?: unknown;
@@ -124,7 +125,7 @@ export class PolylineCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

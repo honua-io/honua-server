@@ -1,12 +1,8 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export type MeasurementToolCompat = "distance" | "area" | "direct-line";
 export type LinearUnitCompat = "meters" | "kilometers" | "feet" | "miles";
-export type AreaUnitCompat =
-  | "square-meters"
-  | "square-kilometers"
-  | "square-feet"
-  | "square-miles";
+export type AreaUnitCompat = "square-meters" | "square-kilometers" | "square-feet" | "square-miles";
 
 export interface MeasurementCompatOptions {
   view?: unknown;
@@ -154,7 +150,7 @@ export class MeasurementCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

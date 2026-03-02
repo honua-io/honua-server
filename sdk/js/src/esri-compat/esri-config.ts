@@ -1,7 +1,4 @@
-import {
-  createEsriRequestInterceptors,
-  type EsriRequestInterceptorCompat,
-} from "./request.js";
+import { type EsriRequestInterceptorCompat, createEsriRequestInterceptors } from "./request.js";
 
 export interface EsriConfigRequestCompat {
   timeout: number;

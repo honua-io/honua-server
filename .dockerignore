@@ -44,6 +44,8 @@ docker-compose*
 # Documentation
 *.md
 docs/
+!docs/api-specs/
+!docs/api-specs/admin-api.json
 
 # CI/CD
 .github/

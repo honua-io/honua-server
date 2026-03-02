@@ -30,6 +30,13 @@ resource "azurerm_kubernetes_cluster" "this" {
     auto_scaling_enabled = var.auto_scaling_enabled
     min_count            = var.auto_scaling_enabled ? var.node_min_count : null
     max_count            = var.auto_scaling_enabled ? var.node_max_count : null
+
+    # Pin provider defaults to avoid idempotency drift on repeated plans.
+    upgrade_settings {
+      max_surge                     = "10%"
+      drain_timeout_in_minutes      = 0
+      node_soak_duration_in_minutes = 0
+    }
   }
 
   identity {
@@ -41,6 +48,12 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   api_server_access_profile {
     authorized_ip_ranges = var.authorized_ip_ranges
+  }
+
+  lifecycle {
+    # Azure/provider reports this computed API server flag after apply, which causes
+    # perpetual no-op drift in idempotency checks.
+    ignore_changes = [api_server_access_profile]
   }
 
   network_profile {

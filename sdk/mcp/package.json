@@ -1,0 +1,41 @@
+{
+  "name": "@honua/mcp-server",
+  "version": "0.0.1-alpha.0",
+  "description": "MCP server for Honua geospatial feature services",
+  "type": "module",
+  "bin": {
+    "honua-mcp": "./dist/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build --silent && vitest run --coverage",
+    "test:unit": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome lint src/ test/",
+    "lint:fix": "biome lint --write src/ test/",
+    "format": "biome format src/ test/",
+    "format:fix": "biome format --write src/ test/",
+    "check": "biome check src/ test/",
+    "check:fix": "biome check --write src/ test/"
+  },
+  "dependencies": {
+    "@honua/sdk-js": "file:../js",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^24.3.1",
+    "@vitest/coverage-v8": "^4.0.16",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.16"
+  },
+  "files": [
+    "dist/src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

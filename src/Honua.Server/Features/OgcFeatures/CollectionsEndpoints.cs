@@ -113,7 +113,17 @@ internal static class CollectionsEndpoints
 
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var visibleLayers = layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer)).ToList();
+            var services = await layerCatalog.ListServicesAsync(cancellationToken);
+            var protocolLayerIds = services
+                .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OgcFeatures))
+                .SelectMany(service => service.Layers.Select(layer => layer.Id))
+                .ToHashSet();
+            var visibleLayers = layers
+                .Where(layer => protocolLayerIds.Count == 0
+                    ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OgcFeatures)
+                    : protocolLayerIds.Contains(layer.Id))
+                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+                .ToList();
             var collectionTasks = visibleLayers
                 .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
             var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
@@ -176,7 +186,6 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
         [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
@@ -213,17 +222,18 @@ internal static class CollectionsEndpoints
             collectionId = resolvedCollectionId;
 
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId,
+                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
+                requiredProtocol: ServiceProtocols.OgcFeatures,
+                cancellationToken: cancellationToken);
+            if (!layerValidation.IsValid)
             {
-                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return layerValidation.ErrorResult!;
             }
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+
+            var layer = layerValidation.Layer!;
 
             var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken);
             var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}";
@@ -284,7 +294,6 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         try
@@ -321,19 +330,19 @@ internal static class CollectionsEndpoints
             collectionId = resolvedCollectionId;
             OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
-            // Verify collection/layer exists
             var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, effectiveToken);
-            if (layer == null)
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                context,
+                layerId,
+                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
+                requiredProtocol: ServiceProtocols.OgcFeatures,
+                cancellationToken: effectiveToken);
+            if (!layerValidation.IsValid)
             {
-                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return layerValidation.ErrorResult!;
             }
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+
+            var layer = layerValidation.Layer!;
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var queryablesId = $"{baseUrl}/ogc/features/collections/{collectionId}/queryables";

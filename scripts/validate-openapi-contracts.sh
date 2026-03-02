@@ -372,7 +372,17 @@ if admin_doc is not None:
         if not any(isinstance(entry, dict) and "BearerAuth" in entry for entry in top_level_security):
             fail(f"{admin_path}: top-level security must include BearerAuth.")
 
-    required_admin_paths = ["/config", "/connections", "/connections/{id}/tables"]
+    required_admin_paths = [
+        "/config",
+        "/openapi.json",
+        "/connections",
+        "/connections/{id}/tables",
+        "/services",
+        "/services/{serviceName}/settings",
+        "/services/{serviceName}/access-policy",
+        "/services/{serviceName}/timeinfo",
+        "/services/{serviceName}/layers/{layerId}/metadata",
+    ]
     available_admin_paths = admin_doc.get("paths", {})
     for required_path in required_admin_paths:
         if required_path not in available_admin_paths:

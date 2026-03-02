@@ -1,4 +1,9 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
 
 export interface LegendCompatOptions {
   view?: unknown;
@@ -128,7 +133,13 @@ export class LegendCompat {
         continue;
       }
 
-      const entries = await extractLegendEntries(layer);
+      let entries: LegendItemCompat[];
+      try {
+        entries = await extractLegendEntries(layer);
+      } catch (error) {
+        this.eventBus.emit("legend.layer-failed", { layer, error }, this);
+        continue;
+      }
       if (entries.length === 0) {
         continue;
       }
@@ -161,7 +172,7 @@ export class LegendCompat {
       return [...this.explicitLayers];
     }
 
-    return getRootLayers(this.map);
+    return getAllLegendLayers(this.map);
   }
 
   private nextRefreshRevision(): number {
@@ -176,7 +187,7 @@ export class LegendCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -236,6 +247,48 @@ function getRootLayers(map: unknown): unknown[] {
     return [];
   }
   return [...map.layers];
+}
+
+function getAllLegendLayers(map: unknown): unknown[] {
+  if (!isRecord(map)) {
+    return [];
+  }
+
+  const candidates = Array.isArray(map.allLayers) ? map.allLayers : getRootLayers(map);
+  const layers: unknown[] = [];
+  const seen = new Set<unknown>();
+  for (const candidate of candidates) {
+    collectLegendLayer(candidate, layers, seen);
+  }
+  return layers;
+}
+
+function collectLegendLayer(layer: unknown, layers: unknown[], seen: Set<unknown>): void {
+  if (seen.has(layer)) {
+    return;
+  }
+  seen.add(layer);
+  layers.push(layer);
+
+  for (const child of getChildLayers(layer)) {
+    collectLegendLayer(child, layers, seen);
+  }
+}
+
+function getChildLayers(layer: unknown): unknown[] {
+  if (!isRecord(layer)) {
+    return [];
+  }
+  if (Array.isArray(layer.layers)) {
+    return [...layer.layers];
+  }
+  if (Array.isArray(layer.allSublayers)) {
+    return [...layer.allSublayers];
+  }
+  if (Array.isArray(layer.sublayers)) {
+    return [...layer.sublayers];
+  }
+  return [];
 }
 
 function isLayerVisible(layer: unknown): boolean {

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -8,6 +9,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Services;
 using Honua.Server.Features.OgcFeatures;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
 
@@ -45,6 +47,7 @@ internal static class LayerValidationHelpers
     /// <param name="layerId">Layer ID to validate</param>
     /// <param name="protocol">Protocol format for error responses</param>
     /// <param name="scope">Access scope required for the request</param>
+    /// <param name="requiredProtocol">Protocol that must be enabled for the resolved layer.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Validation result with layer or error response</returns>
     public static async Task<LayerValidationResult> ValidateLayerWithAccessAsync(
@@ -52,6 +55,7 @@ internal static class LayerValidationHelpers
         int layerId,
         ValidationProtocol protocol,
         AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         var effectiveToken = protocol == ValidationProtocol.OData
@@ -77,10 +81,39 @@ internal static class LayerValidationHelpers
         }
 
         var layer = layerResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, effectiveToken);
+        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
+        }
+
+        var effectiveRequiredProtocol = string.IsNullOrWhiteSpace(requiredProtocol)
+            ? protocol switch
+            {
+                ValidationProtocol.OData => ServiceProtocols.OData,
+                ValidationProtocol.OgcFeatures => ServiceProtocols.OgcFeatures,
+                _ => null
+            }
+            : requiredProtocol;
+        if (!string.IsNullOrWhiteSpace(effectiveRequiredProtocol) &&
+            !IsProtocolEnabledForLayer(layer, relatedServices, effectiveRequiredProtocol))
+        {
+            var protocolError = protocol switch
+            {
+                ValidationProtocol.OData => CreateODataError(
+                    context,
+                    $"{effectiveRequiredProtocol} is not enabled for this service.",
+                    StatusCodes.Status404NotFound),
+                ValidationProtocol.OgcFeatures => CreateOgcError(
+                    context,
+                    $"{effectiveRequiredProtocol} is not enabled for this service.",
+                    StatusCodes.Status404NotFound),
+                _ => throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unsupported validation protocol")
+            };
+
+            return new LayerValidationResult(false, null, protocolError);
         }
 
         return new LayerValidationResult(true, layer, null);
@@ -92,12 +125,14 @@ internal static class LayerValidationHelpers
     /// <param name="context">HTTP context containing request services and user information</param>
     /// <param name="layerId">Layer ID to validate</param>
     /// <param name="scope">Access scope required for the request</param>
+    /// <param name="requiredProtocol">Protocol that must be enabled for the resolved layer.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Validation result with layer or error response</returns>
     public static async Task<LayerValidationResult> ValidateLayerWithAccessAsync(
         HttpContext context,
         int layerId,
         AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
@@ -111,10 +146,23 @@ internal static class LayerValidationHelpers
         }
 
         var layer = layerResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
+        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
+        }
+
+        if (!string.IsNullOrWhiteSpace(requiredProtocol))
+        {
+            if (!IsProtocolEnabledForLayer(layer, relatedServices, requiredProtocol))
+            {
+                var protocolError = StandardErrorHelpers.CreateNotFound(
+                    context,
+                    $"{requiredProtocol} is not enabled for this service.");
+                return new LayerValidationResult(false, null, protocolError);
+            }
         }
 
         return new LayerValidationResult(true, layer, null);
@@ -126,12 +174,14 @@ internal static class LayerValidationHelpers
     /// <param name="context">HTTP context containing request services and user information</param>
     /// <param name="collectionId">Collection ID string to validate and parse</param>
     /// <param name="scope">Access scope required for the request</param>
+    /// <param name="requiredProtocol">Protocol that must be enabled for the resolved collection layer.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Validation result with layer or error response</returns>
     public static async Task<LayerValidationResult> ValidateCollectionWithAccessAsync(
         HttpContext context,
         string collectionId,
         AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
@@ -145,10 +195,23 @@ internal static class LayerValidationHelpers
         }
 
         var layer = collectionResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, scope: scope);
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
+        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
             return new LayerValidationResult(false, null, accessError);
+        }
+
+        if (!string.IsNullOrWhiteSpace(requiredProtocol))
+        {
+            if (!IsProtocolEnabledForLayer(layer, relatedServices, requiredProtocol))
+            {
+                var protocolError = StandardErrorHelpers.CreateNotFound(
+                    context,
+                    $"{requiredProtocol} is not enabled for this service.");
+                return new LayerValidationResult(false, null, protocolError);
+            }
         }
 
         return new LayerValidationResult(true, layer, null);
@@ -156,7 +219,7 @@ internal static class LayerValidationHelpers
 
     /// <summary>
     /// Validates layer existence, write access, and RBAC data-editor role in a single call.
-    /// Combines <see cref="ValidateLayerWithAccessAsync(HttpContext, int, AccessScope, CancellationToken)"/>
+    /// Combines <see cref="ValidateLayerWithAccessAsync(HttpContext, int, AccessScope, string, CancellationToken)"/>
     /// with <see cref="ServiceDataEditorAuthorization.RequireLayerDataEditorAsync"/>.
     /// </summary>
     public static async Task<LayerValidationResult> ValidateWriteAccessAsync(
@@ -216,7 +279,12 @@ internal static class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var layerValidation = await ValidateLayerWithAccessAsync(
-            context, layerId, ValidationProtocol.OData, scope: AccessScope.Write, cancellationToken: cancellationToken);
+            context,
+            layerId,
+            ValidationProtocol.OData,
+            scope: AccessScope.Write,
+            requiredProtocol: ServiceProtocols.OData,
+            cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation;
@@ -260,5 +328,68 @@ internal static class LayerValidationHelpers
             404 => StandardErrorHelpers.CreateNotFound(context, message),
             _ => StandardErrorHelpers.CreateInternalServerError(context, message)
         };
+    }
+
+    private static async Task<ServiceDefinition[]> GetRelatedServicesAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+        return services
+            .Where(service => service.Layers.Any(candidate => candidate.Id == layerId))
+            .ToArray();
+    }
+
+    private static AccessDecision EvaluateLayerAccess(
+        HttpContext context,
+        LayerDefinition layer,
+        ServiceDefinition[] relatedServices,
+        AccessScope scope)
+    {
+        if (relatedServices.Length == 0)
+        {
+            return AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope);
+        }
+
+        var requiresAuthentication = false;
+
+        foreach (var service in relatedServices)
+        {
+            var decision = AccessPolicyHelpers.EvaluateAccess(
+                context,
+                layer.Metadata?.AccessPolicy,
+                service.Metadata?.AccessPolicy,
+                scope);
+
+            if (decision.IsAllowed)
+            {
+                return decision;
+            }
+
+            if (decision.RequiresAuthentication)
+            {
+                requiresAuthentication = true;
+            }
+        }
+
+        return requiresAuthentication
+            ? AccessDecision.RequiresAuth("Authentication is required.")
+            : AccessDecision.Forbidden("Access to this resource is forbidden.");
+    }
+
+    private static bool IsProtocolEnabledForLayer(
+        LayerDefinition layer,
+        ServiceDefinition[] relatedServices,
+        string protocol)
+    {
+        var layerAllowsProtocol = ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol);
+        if (relatedServices.Length == 0)
+        {
+            return layerAllowsProtocol;
+        }
+
+        return relatedServices.Any(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, protocol));
     }
 }

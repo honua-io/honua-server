@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
@@ -18,11 +20,13 @@ namespace Honua.Server.Features.OData;
 internal sealed class ODataCrudHandler(
     ODataCrudService crudService,
     ODataValidationService validationService,
-    Honua.Server.Features.Infrastructure.Caching.IETagService etagService)
+    Honua.Server.Features.Infrastructure.Caching.IETagService etagService,
+    IFeatureChangeEventPublisher featureChangeEventPublisher)
 {
     private readonly ODataCrudService _crudService = crudService ?? throw new ArgumentNullException(nameof(crudService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Server.Features.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
 
     /// <summary>
     /// Handles getting a single feature by ID
@@ -308,6 +312,20 @@ internal sealed class ODataCrudHandler(
             }
 
             await InvalidateCacheAsync(context, resolvedLayerId.Value, effectiveToken);
+            if (TryExtractObjectId(result.Data, out var createdObjectId))
+            {
+                await _featureChangeEventPublisher.PublishAsync(
+                    new FeatureChangeEventRequest
+                    {
+                        ServiceId = "odata",
+                        LayerId = resolvedLayerId.Value,
+                        ObjectId = createdObjectId,
+                        Operation = "create",
+                        Protocol = HonuaTelemetry.Protocols.OData,
+                        RequestId = context.TraceIdentifier
+                    },
+                    effectiveToken).ConfigureAwait(false);
+            }
             HonuaTelemetry.SetSuccess(activity);
         }
 
@@ -408,6 +426,17 @@ internal sealed class ODataCrudHandler(
             }
 
             await InvalidateCacheAsync(context, layerId, effectiveToken);
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = "odata",
+                    LayerId = layerId,
+                    ObjectId = objectId,
+                    Operation = "update",
+                    Protocol = HonuaTelemetry.Protocols.OData,
+                    RequestId = context.TraceIdentifier
+                },
+                effectiveToken).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
         }
 
@@ -453,6 +482,17 @@ internal sealed class ODataCrudHandler(
         if (result.IsSuccess)
         {
             await InvalidateCacheAsync(context, layerId, effectiveToken);
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = "odata",
+                    LayerId = layerId,
+                    ObjectId = objectId,
+                    Operation = "delete",
+                    Protocol = HonuaTelemetry.Protocols.OData,
+                    RequestId = context.TraceIdentifier
+                },
+                effectiveToken).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
         }
 
@@ -472,6 +512,29 @@ internal sealed class ODataCrudHandler(
         {
             await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
         }
+    }
+
+    private static bool TryExtractObjectId(object? payload, out long objectId)
+    {
+        objectId = 0;
+        if (payload is not Dictionary<string, object?> dictionary)
+        {
+            return false;
+        }
+
+        if (!dictionary.TryGetValue("ObjectId", out var value) ||
+            value == null)
+        {
+            return false;
+        }
+
+        return value switch
+        {
+            long l => (objectId = l) >= 0,
+            int i => (objectId = i) >= 0,
+            string s => long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId),
+            _ => long.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId)
+        };
     }
 
 }

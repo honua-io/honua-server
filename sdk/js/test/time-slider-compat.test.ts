@@ -106,4 +106,68 @@ describe("TimeSliderCompat", () => {
     slider.stop();
     expect(slider.playing).toBe(false);
   });
+
+  it("connectLayer propagates time extent changes to the layer", () => {
+    const eventBus = new CompatEventBus();
+    const slider = new TimeSliderCompat({
+      eventBus,
+      timeExtent: {
+        start: "2024-01-01T00:00:00.000Z",
+        end: "2024-03-01T00:00:00.000Z",
+      },
+      stops: {
+        interval: { value: 1, unit: "days" },
+      },
+    });
+
+    const extents: Array<{ start: Date; end: Date } | undefined> = [];
+    const mockLayer = {
+      setTimeExtent(extent: { start: Date; end: Date } | undefined) {
+        extents.push(extent);
+      },
+    };
+
+    slider.connectLayer(mockLayer);
+
+    // Initial connection should propagate current extent
+    expect(extents).toHaveLength(1);
+    expect(extents[0]?.start.toISOString()).toBe("2024-01-01T00:00:00.000Z");
+
+    // Advancing slider should propagate
+    slider.next();
+    expect(extents).toHaveLength(2);
+    expect(extents[1]?.start.toISOString()).toBe("2024-01-02T00:00:00.000Z");
+  });
+
+  it("connectLayer disconnect handle stops propagation", () => {
+    const eventBus = new CompatEventBus();
+    const slider = new TimeSliderCompat({
+      eventBus,
+      timeExtent: {
+        start: "2024-01-01T00:00:00.000Z",
+        end: "2024-03-01T00:00:00.000Z",
+      },
+      stops: {
+        interval: { value: 1, unit: "days" },
+      },
+    });
+
+    const extents: Array<{ start: Date; end: Date } | undefined> = [];
+    const mockLayer = {
+      setTimeExtent(extent: { start: Date; end: Date } | undefined) {
+        extents.push(extent);
+      },
+    };
+
+    const handle = slider.connectLayer(mockLayer);
+
+    // Initial propagation
+    expect(extents).toHaveLength(1);
+
+    handle.remove();
+
+    // After disconnect, updates should NOT propagate
+    slider.next();
+    expect(extents).toHaveLength(1);
+  });
 });

@@ -16,6 +16,30 @@ variable "name_prefix" {
   default     = "honuaecs"
 }
 
+variable "existing_vpc_id" {
+  description = "Existing VPC ID to reuse."
+  type        = string
+  default     = ""
+}
+
+variable "existing_vpc_cidr" {
+  description = "CIDR for existing_vpc_id."
+  type        = string
+  default     = ""
+}
+
+variable "existing_public_subnet_ids" {
+  description = "Public subnet IDs in existing_vpc_id."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_private_subnet_ids" {
+  description = "Private subnet IDs in existing_vpc_id."
+  type        = list(string)
+  default     = []
+}
+
 variable "honua_admin_password" {
   description = "Admin password for Honua."
   type        = string
@@ -66,6 +90,18 @@ variable "enable_postgis" {
   default     = true
 }
 
+variable "postgis_readiness_max_attempts" {
+  description = "Maximum readiness attempts before PostGIS enablement fails."
+  type        = number
+  default     = 90
+}
+
+variable "postgis_readiness_sleep_seconds" {
+  description = "Seconds to sleep between PostgreSQL readiness attempts."
+  type        = number
+  default     = 10
+}
+
 variable "redis_enabled" {
   description = "Provision ElastiCache Redis."
   type        = bool
@@ -83,6 +119,24 @@ variable "desired_count" {
   description = "Desired number of ECS tasks."
   type        = number
   default     = 1
+}
+
+variable "alb_deletion_protection" {
+  description = "Enable ALB deletion protection."
+  type        = bool
+  default     = false
+}
+
+variable "alb_access_logs_enabled" {
+  description = "Enable ALB access logs."
+  type        = bool
+  default     = false
+}
+
+variable "alb_access_logs_force_destroy" {
+  description = "Force destroy ALB access logs bucket when managed by this stack."
+  type        = bool
+  default     = true
 }
 
 variable "alb_certificate_arn" {

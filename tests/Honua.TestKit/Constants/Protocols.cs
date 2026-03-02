@@ -83,4 +83,9 @@ public static class Protocols
     /// GeoServices REST service directory and root metadata endpoints.
     /// </summary>
     public const string GeoservicesCatalog = "GeoservicesCatalog";
+
+    /// <summary>
+    /// gRPC/gRPC-Web protocol.
+    /// </summary>
+    public const string Grpc = "Grpc";
 }

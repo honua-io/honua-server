@@ -30,6 +30,7 @@
 
 * [Admin API Reference](user/CONTROL_PLANE_API.md)
 * [Admin UI](user/admin-ui.md)
+* [MCP Server](user/MCP_SERVER.md)
 * [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md)
 * [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md)
 

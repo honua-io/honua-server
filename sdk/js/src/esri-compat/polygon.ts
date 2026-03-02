@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface PolygonCompatOptions {
   rings?: unknown[][][];
   spatialReference?: unknown;
@@ -124,7 +125,7 @@ export class PolygonCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

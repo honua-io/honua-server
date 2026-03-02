@@ -205,6 +205,18 @@ internal sealed class FeatureServerQueryHandler(
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
             }
 
+            async Task<IResult> CreateCachedBytesResultAsync(byte[] payload, string contentType)
+            {
+                if (!canCache || cacheKey is null)
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
+                var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
+                await _responseCache.SetAsync(cacheKey, cachedResponse, cacheTtl, cancellationToken);
+                return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+            }
+
             GeoServicesGeometry? parsedGeometry = null;
             if (!FeatureServerGeometryParser.TryParseGeoServicesGeometry(validatedParams.Geometry, validatedParams.GeometryType, out parsedGeometry, out var geometryError))
             {
@@ -469,7 +481,8 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
-            var useStreaming = effectiveLimit > StreamingThreshold;
+            var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf;
 
             if (!useStreaming)
             {
@@ -480,16 +493,20 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var queryStopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, query, cancellationToken);
+                string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
+                    [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
+                var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+                var queryForExecution = shouldApplyDistinct
+                    ? query with { Limit = null, Offset = null }
+                    : query;
+                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken);
                 queryStopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "query", serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
 
-                string[]? outFields = string.IsNullOrEmpty(validatedParams.OutFields) ? null :
-                    [.. validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(f => f.Trim())];
-
-                if (validatedParams.ReturnDistinctValues && outFields is { Length: > 0 })
+                if (shouldApplyDistinct)
                 {
-                    result = ApplyDistinctValues(result, outFields);
+                    result = ApplyDistinctValues(result, outFields!);
+                    result = ApplyPaginationWindow(result, query.Offset, query.Limit);
                 }
 
                 (object? formattedResponse, string? contentType) = _queryServices.FormatQueryResult(
@@ -506,6 +523,13 @@ internal sealed class FeatureServerQueryHandler(
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
+
+                if (isPbf)
+                {
+                    return await CreateCachedBytesResultAsync(
+                        (byte[])formattedResponse!,
+                        contentType ?? "application/x-protobuf");
+                }
 
                 return format.ToLowerInvariant() switch
                 {
@@ -613,13 +637,12 @@ internal sealed class FeatureServerQueryHandler(
         QueryLimits queryLimits)
     {
         var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
-        var effectiveSqlFilter = hasObjectIds ? null : sqlFilter;
-        var effectiveWhere = hasObjectIds ? null : queryParams.Where;
 
         var query = new FeatureQuery
         {
-            Where = effectiveWhere,
-            SqlFilter = effectiveSqlFilter,
+            // ArcGIS semantics apply objectIds and where as an intersection filter.
+            Where = queryParams.Where,
+            SqlFilter = sqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
             Offset = queryParams.ResultOffset,
             Limit = hasObjectIds
@@ -1080,6 +1103,37 @@ internal sealed class FeatureServerQueryHandler(
         }
 
         return QueryResult<Feature>.Create(distinct.Count, distinct.ToImmutable());
+    }
+
+    private static QueryResult<Feature> ApplyPaginationWindow(
+        QueryResult<Feature> result,
+        int? offset,
+        int? limit)
+    {
+        if (result.Items.IsDefaultOrEmpty)
+        {
+            return result;
+        }
+
+        var totalCount = result.Items.Length;
+        var effectiveOffset = Math.Max(0, offset ?? 0);
+        if (effectiveOffset >= totalCount)
+        {
+            return QueryResult<Feature>.Create(totalCount, ImmutableArray<Feature>.Empty, false);
+        }
+
+        var remaining = totalCount - effectiveOffset;
+        var effectiveLimit = limit.HasValue
+            ? Math.Max(0, limit.Value)
+            : remaining;
+        var take = Math.Min(remaining, effectiveLimit);
+        var pageItems = result.Items
+            .Skip(effectiveOffset)
+            .Take(take)
+            .ToImmutableArray();
+        var hasMore = effectiveOffset + take < totalCount;
+
+        return QueryResult<Feature>.Create(totalCount, pageItems, hasMore);
     }
 
     private static string BuildDistinctKey(Feature feature, string[] outFields)

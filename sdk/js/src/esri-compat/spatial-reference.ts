@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface SpatialReferenceCompatOptions {
   wkid?: number;
   latestWkid?: number;
@@ -118,7 +119,7 @@ export class SpatialReferenceCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

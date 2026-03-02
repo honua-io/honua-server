@@ -41,6 +41,18 @@ variable "db_storage_mb" {
   default     = 32768
 }
 
+variable "db_geo_redundant_backup_enabled" {
+  description = "Enable geo-redundant backups for PostgreSQL."
+  type        = bool
+  default     = false
+}
+
+variable "db_backup_retention_days" {
+  description = "Backup retention period in days for PostgreSQL."
+  type        = number
+  default     = 7
+}
+
 variable "db_public_network_access" {
   description = "Enable public network access to PostgreSQL for validation runs."
   type        = bool

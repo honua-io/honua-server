@@ -1,8 +1,28 @@
-import { CompatEventBus, type CompatEventSubscription, resolveCompatEventBus } from "./event-bus.js";
+import {
+  CompatEventBus,
+  type CompatEventSubscription,
+  resolveCompatEventBus,
+  safeInvokeCompatListener,
+} from "./event-bus.js";
+
+/** Structural point-like type used for search result locations. */
+export interface SearchPointLike {
+  x: number;
+  y: number;
+}
+
+/** Structural extent-like type used for search result extents. */
+export interface SearchExtentLike {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+  spatialReference?: Record<string, unknown>;
+}
 
 export interface SearchCompatOptions {
   view?: unknown;
-  container?: unknown;
+  container?: HTMLElement | string | null;
   eventBus?: CompatEventBus;
   sources?: readonly SearchSourceCompat[];
   includeDefaultSources?: boolean;
@@ -11,6 +31,12 @@ export interface SearchCompatOptions {
   defaultSourceMaxFeatureCandidates?: number;
   defaultSourceMaxResults?: number;
   defaultSourceMaxSuggestions?: number;
+  searchAllEnabled?: boolean;
+  popupEnabled?: boolean;
+  maxResults?: number;
+  allPlaceholder?: string;
+  locationEnabled?: boolean;
+  resultGraphicEnabled?: boolean;
 }
 
 export interface SearchRequestCompat {
@@ -19,9 +45,9 @@ export interface SearchRequestCompat {
 
 export interface SearchResultCompat {
   name: string;
-  feature?: unknown;
-  location?: unknown;
-  extent?: unknown;
+  feature?: Record<string, unknown> | null;
+  location?: SearchPointLike | null;
+  extent?: SearchExtentLike | null;
   source?: unknown;
 }
 
@@ -60,7 +86,7 @@ const DEFAULT_SEARCH_SOURCE_MAX_SUGGESTIONS = 5;
 
 export class SearchCompat {
   public readonly view: unknown;
-  public readonly container: unknown;
+  public readonly container: HTMLElement | string | null;
   public readonly eventBus: CompatEventBus;
   public readonly autoNavigate: boolean;
   public includeDefaultSources: boolean;
@@ -76,6 +102,12 @@ export class SearchCompat {
   public readonly defaultSourceMaxFeatureCandidates: number;
   public readonly defaultSourceMaxResults: number;
   public readonly defaultSourceMaxSuggestions: number;
+  public searchAllEnabled: boolean;
+  public popupEnabled: boolean;
+  public maxResults: number;
+  public allPlaceholder: string;
+  public locationEnabled: boolean;
+  public resultGraphicEnabled: boolean;
 
   private readonly subscriptions: CompatEventSubscription[];
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
@@ -83,7 +115,7 @@ export class SearchCompat {
 
   public constructor(options: SearchCompatOptions = {}) {
     this.view = options.view;
-    this.container = options.container;
+    this.container = options.container ?? null;
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.view) ?? new CompatEventBus();
     this.autoNavigate = options.autoNavigate ?? true;
     this.includeDefaultSources = options.includeDefaultSources ?? true;
@@ -109,6 +141,12 @@ export class SearchCompat {
       options.defaultSourceMaxSuggestions,
       DEFAULT_SEARCH_SOURCE_MAX_SUGGESTIONS,
     );
+    this.searchAllEnabled = options.searchAllEnabled ?? true;
+    this.popupEnabled = options.popupEnabled ?? true;
+    this.maxResults = normalizeSearchLimit(options.maxResults, DEFAULT_SEARCH_SOURCE_MAX_RESULTS);
+    this.allPlaceholder = options.allPlaceholder ?? "";
+    this.locationEnabled = options.locationEnabled ?? true;
+    this.resultGraphicEnabled = options.resultGraphicEnabled ?? true;
     this.subscriptions = [];
     this.watchListeners = new Map();
     this.refreshSourceSubscriptions();
@@ -166,18 +204,25 @@ export class SearchCompat {
     this.notifyWatchers("searchTerm", this.searchTerm);
     this.eventBus.emit("search.started", { searchTerm }, this);
 
-    const allResults: SearchResultCompat[] = [];
-    for (const source of this.sources) {
-      try {
-        const sourceResults = await source.search({ searchTerm });
-        for (const result of sourceResults) {
-          allResults.push({
-            ...result,
-            source: result.source ?? source,
-          });
+    const sourceResults = await Promise.all(
+      this.sources.map(async (source) => {
+        try {
+          const results = await source.search({ searchTerm });
+          return { source, results };
+        } catch (error) {
+          this.eventBus.emit("search.source-error", { searchTerm, error }, this);
+          return { source, results: [] as readonly SearchResultCompat[] };
         }
-      } catch (error) {
-        this.eventBus.emit("search.source-error", { searchTerm, error }, this);
+      }),
+    );
+
+    const allResults: SearchResultCompat[] = [];
+    for (const sourceResult of sourceResults) {
+      for (const result of sourceResult.results) {
+        allResults.push({
+          ...result,
+          source: result.source ?? sourceResult.source,
+        });
       }
     }
 
@@ -214,22 +259,29 @@ export class SearchCompat {
           ? termOrRequest.searchTerm
           : "";
 
-    const suggestions: SearchSuggestionCompat[] = [];
-    for (const source of this.sources) {
-      if (!source.suggest) {
-        continue;
-      }
-
-      try {
-        const sourceSuggestions = await source.suggest({ searchTerm });
-        for (const suggestion of sourceSuggestions) {
-          suggestions.push({
-            ...suggestion,
-            source: suggestion.source ?? source,
-          });
+    const suggestionSources = this.sources.filter((source) => typeof source.suggest === "function");
+    const sourceSuggestions = await Promise.all(
+      suggestionSources.map(async (source) => {
+        if (!source.suggest) {
+          return { source, suggestions: [] as readonly SearchSuggestionCompat[] };
         }
-      } catch (error) {
-        this.eventBus.emit("search.suggest-error", { searchTerm, error }, this);
+        try {
+          const suggestions = await source.suggest({ searchTerm });
+          return { source, suggestions };
+        } catch (error) {
+          this.eventBus.emit("search.suggest-error", { searchTerm, error }, this);
+          return { source, suggestions: [] as readonly SearchSuggestionCompat[] };
+        }
+      }),
+    );
+
+    const suggestions: SearchSuggestionCompat[] = [];
+    for (const sourceSuggestion of sourceSuggestions) {
+      for (const suggestion of sourceSuggestion.suggestions) {
+        suggestions.push({
+          ...suggestion,
+          source: suggestion.source ?? sourceSuggestion.source,
+        });
       }
     }
 
@@ -263,10 +315,7 @@ export class SearchCompat {
     this.eventBus.emit("search.cleared", undefined, this);
   }
 
-  public setSources(
-    sources: readonly SearchSourceCompat[],
-    options: { includeDefaultSources?: boolean } = {},
-  ): void {
+  public setSources(sources: readonly SearchSourceCompat[], options: { includeDefaultSources?: boolean } = {}): void {
     const includeDefaults = options.includeDefaultSources ?? this.includeDefaultSources;
     this.includeDefaultSources = includeDefaults;
     this.notifyWatchers("includeDefaultSources", this.includeDefaultSources);
@@ -418,7 +467,7 @@ export class SearchCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -476,14 +525,14 @@ function resolveViewSearchSources(view: unknown, limits: SearchSourceLimits): Se
           fieldSearchConfig = resolveLayerSearchFieldConfig(layer);
         }
 
-        const fallbackQueryOptions = createFallbackLayerSearchQueryOptions(limits.maxFeatureCandidates);
+        const fallbackQueryOptions = createFallbackLayerSearchQueryOptions(
+          limits.maxFeatureCandidates,
+          normalizedTerm,
+          fieldSearchConfig.outFields,
+        );
         const optimizedQueryOptions =
           !fieldSearchUnsupported && fieldSearchConfig.searchableFields.length > 0
-            ? createOptimizedLayerSearchQueryOptions(
-                fieldSearchConfig,
-                normalizedTerm,
-                limits.maxFeatureCandidates,
-              )
+            ? createOptimizedLayerSearchQueryOptions(fieldSearchConfig, normalizedTerm, limits.maxFeatureCandidates)
             : undefined;
 
         let response: unknown;
@@ -554,7 +603,7 @@ function buildLayerSearchSource(
         const name = describeFeature(feature, layer, matches.length);
         matches.push({
           name,
-          feature,
+          feature: isRecord(feature) ? feature : null,
           location: extractFeatureLocation(feature),
           source: layer,
         });
@@ -603,12 +652,17 @@ const COMMON_SEARCH_FIELD_NAMES = [
 const MAX_SERVER_SEARCH_FIELDS = 6;
 const MAX_SERVER_OUT_FIELDS = 16;
 
-function createFallbackLayerSearchQueryOptions(maxFeatureCandidates: number): Record<string, unknown> {
+function createFallbackLayerSearchQueryOptions(
+  maxFeatureCandidates: number,
+  normalizedTerm: string,
+  outFields: readonly string[],
+): Record<string, unknown> {
   return {
     where: "1=1",
-    outFields: ["*"],
+    outFields: normalizeFallbackOutFields(outFields),
     returnGeometry: true,
     extraParams: {
+      text: normalizedTerm,
       resultOffset: 0,
       resultRecordCount: maxFeatureCandidates,
     },
@@ -633,7 +687,7 @@ function createOptimizedLayerSearchQueryOptions(
 
 function createSearchWhereClause(searchableFields: readonly string[], normalizedTerm: string): string {
   const escapedTerm = escapeSqlLiteral(normalizedTerm.toUpperCase());
-  return searchableFields.map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%'`).join(" OR ");
+  return searchableFields.map((field) => `UPPER(${field}) LIKE '%${escapedTerm}%' ESCAPE '\\\\'`).join(" OR ");
 }
 
 function resolveLayerSearchFieldConfig(layer: QueryFeaturesProvider): LayerSearchFieldConfig {
@@ -810,6 +864,29 @@ function resolveLayerOutFields(layer: QueryFeaturesProvider): string[] {
   return [];
 }
 
+function normalizeFallbackOutFields(outFields: readonly string[]): string[] {
+  if (outFields.includes("*")) {
+    return ["*"];
+  }
+
+  const normalized = new Set<string>();
+  for (const outField of outFields) {
+    const fieldName = normalizeFieldIdentifier(outField);
+    if (!fieldName || fieldName === "*") {
+      continue;
+    }
+    normalized.add(fieldName);
+    if (normalized.size >= MAX_SERVER_OUT_FIELDS) {
+      break;
+    }
+  }
+
+  if (normalized.size > 0) {
+    return Array.from(normalized);
+  }
+  return ["*"];
+}
+
 function resolveLayerDisplayField(layer: QueryFeaturesProvider): string | undefined {
   const fromLayer = normalizeFieldIdentifier(typeof layer.displayField === "string" ? layer.displayField : undefined);
   if (fromLayer) {
@@ -866,7 +943,7 @@ function isStringFieldType(type: string | undefined): boolean {
 }
 
 function escapeSqlLiteral(value: string): string {
-  return value.replace(/'/g, "''");
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "''").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 function extractMapFromView(view: unknown): unknown {
@@ -951,18 +1028,13 @@ function describeFeature(feature: unknown, layer: SearchLayerProvider, index: nu
     }
   }
 
-  const layerTitle =
-    typeof layer.title === "string"
-      ? layer.title
-      : typeof layer.id === "string"
-        ? layer.id
-        : "Result";
+  const layerTitle = typeof layer.title === "string" ? layer.title : typeof layer.id === "string" ? layer.id : "Result";
   return `${layerTitle} ${index + 1}`;
 }
 
-function extractFeatureLocation(feature: unknown): unknown {
+function extractFeatureLocation(feature: unknown): SearchPointLike | null {
   if (!isRecord(feature) || !isRecord(feature.geometry)) {
-    return undefined;
+    return null;
   }
 
   const x = feature.geometry.x;
@@ -975,7 +1047,7 @@ function extractFeatureLocation(feature: unknown): unknown {
   if (point) {
     return point;
   }
-  return feature.geometry;
+  return feature.geometry as unknown as SearchPointLike;
 }
 
 function resolveFeatureProperties(feature: unknown): Record<string, unknown> | undefined {

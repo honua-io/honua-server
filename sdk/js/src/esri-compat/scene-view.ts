@@ -1,10 +1,19 @@
 import {
+  type MapViewCenterLike,
   MapViewCompat,
-  type MapViewHandle,
   type MapViewCompatOptions,
+  type MapViewConstraintsLike,
+  type MapViewExtentLike,
   type MapViewGoToInput,
   type MapViewGoToOptions,
+  type MapViewHandle,
+  type MapViewHighlightOptionsLike,
+  type MapViewLayerViewCompat,
   type MapViewLoadStatusCompat,
+  type MapViewMapPoint,
+  type MapViewPaddingLike,
+  type MapViewScreenPoint,
+  type MapViewSpatialReferenceLike,
 } from "./map-view.js";
 
 export interface SceneViewCompatOptions extends MapViewCompatOptions {
@@ -41,7 +50,40 @@ export class SceneViewCompat extends MapViewCompat {
     return view;
   }
 
-  public watch(propertyName: string, listener: (value: unknown) => void): SceneViewHandleCompat {
+  public watch(propertyName: "zoom", listener: (value: number | undefined) => void): SceneViewHandleCompat;
+  public watch(propertyName: "scale", listener: (value: number | undefined) => void): SceneViewHandleCompat;
+  public watch(propertyName: "rotation", listener: (value: number | undefined) => void): SceneViewHandleCompat;
+  public watch(propertyName: "center", listener: (value: MapViewCenterLike | undefined) => void): SceneViewHandleCompat;
+  public watch(propertyName: "extent", listener: (value: MapViewExtentLike | undefined) => void): SceneViewHandleCompat;
+  public watch(propertyName: "loaded", listener: (value: boolean) => void): SceneViewHandleCompat;
+  public watch(propertyName: "loadStatus", listener: (value: MapViewLoadStatusCompat) => void): SceneViewHandleCompat;
+  public watch(
+    propertyName: "container",
+    listener: (value: HTMLElement | string | null | undefined) => void,
+  ): SceneViewHandleCompat;
+  public watch(
+    propertyName: "padding",
+    listener: (value: MapViewPaddingLike | undefined) => void,
+  ): SceneViewHandleCompat;
+  public watch(
+    propertyName: "constraints",
+    listener: (value: MapViewConstraintsLike | undefined) => void,
+  ): SceneViewHandleCompat;
+  public watch(
+    propertyName: "highlightOptions",
+    listener: (value: MapViewHighlightOptionsLike | undefined) => void,
+  ): SceneViewHandleCompat;
+  public watch(
+    propertyName: "spatialReference",
+    listener: (value: MapViewSpatialReferenceLike | undefined) => void,
+  ): SceneViewHandleCompat;
+  public watch(propertyName: "popup.visible", listener: (value: boolean) => void): SceneViewHandleCompat;
+  public watch(propertyName: "popup.viewModel.active", listener: (value: boolean) => void): SceneViewHandleCompat;
+  public watch(propertyName: "popup.selectedFeatureIndex", listener: (value: number) => void): SceneViewHandleCompat;
+  public watch(propertyName: "viewingMode", listener: (value: "global" | "local") => void): SceneViewHandleCompat;
+  public watch(propertyName: "camera", listener: (value: unknown) => void): SceneViewHandleCompat;
+  public watch(propertyName: string, listener: (value: unknown) => void): SceneViewHandleCompat;
+  public watch(propertyName: string, listener: (value: any) => void): SceneViewHandleCompat {
     return super.watch(propertyName, listener);
   }
 

@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface SimpleMarkerSymbolCompatOptions {
   style?: string;
   color?: unknown;
@@ -25,10 +26,7 @@ export class SimpleMarkerSymbolCompat {
     this.loadStatus = "not-loaded";
     this.style = options.style ?? "circle";
     this.color = options.color;
-    this.size =
-      typeof options.size === "number" && Number.isFinite(options.size)
-        ? options.size
-        : 8;
+    this.size = typeof options.size === "number" && Number.isFinite(options.size) ? options.size : 8;
     this.outline = options.outline;
     this.watchListeners = new Map();
   }
@@ -113,7 +111,7 @@ export class SimpleMarkerSymbolCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

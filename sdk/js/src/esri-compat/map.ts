@@ -1,4 +1,4 @@
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 
 export interface MapCompatOptions {
   basemap?: unknown;
@@ -210,6 +210,11 @@ export class MapCompat {
     this.eventBus.emit("map.portal-item-changed", { portalItem }, this);
   }
 
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventBus.emit("map.destroyed", { layerCount: this.layersInternal.length }, this);
+  }
+
   public setSpatialReference(spatialReference: unknown): void {
     this.spatialReference = spatialReference;
     this.notifyWatchers("spatialReference", this.spatialReference);
@@ -223,7 +228,7 @@ export class MapCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }
@@ -233,12 +238,7 @@ interface LayerWithId {
 }
 
 function isLayerWithId(value: unknown): value is LayerWithId {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "id" in value &&
-    typeof value.id === "string"
-  );
+  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string";
 }
 
 function extractNestedLayers(layer: unknown): unknown[] {

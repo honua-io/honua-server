@@ -13,6 +13,8 @@ module "data" {
   db_admin_password                   = var.db_admin_password
   db_sku_name                         = var.db_sku_name
   db_storage_mb                       = var.db_storage_mb
+  db_geo_redundant_backup_enabled     = var.db_geo_redundant_backup_enabled
+  db_backup_retention_days            = var.db_backup_retention_days
   db_public_network_access            = var.db_public_network_access
   db_firewall_start_ip                = var.db_firewall_start_ip
   db_firewall_end_ip                  = var.db_firewall_end_ip

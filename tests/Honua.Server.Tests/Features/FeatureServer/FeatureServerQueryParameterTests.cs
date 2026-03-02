@@ -46,20 +46,15 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithPbfFormat_ReturnsBadRequest()
+    public async Task Query_WithPbfFormat_ReturnsOk()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=pbf");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(content);
-        var details = document.RootElement.GetProperty("error").GetProperty("details")
-            .EnumerateArray()
-            .Select(element => element.GetString())
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToList();
-        details.Should().Contain(detail => detail!.Contains("Output format 'pbf' is not supported"));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/x-protobuf");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
     }
 
     [IntegrationTest]

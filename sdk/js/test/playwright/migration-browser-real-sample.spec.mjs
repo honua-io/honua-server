@@ -173,6 +173,60 @@ test("migrated complex ops-center sample executes in browser runtime", async ({ 
   });
 });
 
+test("migrated feature-table related-records demo sample executes in browser runtime", async ({ page }) => {
+  await runMigratedFixtureBrowserSmoke(page, {
+    fixtureName: "esri-demo-feature-table-relates-app",
+    expectedCallSites: 8,
+    assertResult: (migrationResult) => {
+      expect(migrationResult).toMatchObject({
+        mapCtor: "MapCompat",
+        viewCtor: "MapViewCompat",
+        layerCtors: ["FeatureLayerCompat", "FeatureLayerCompat"],
+        tableSizeBeforeFilter: 3,
+        tableSizeAfterFilter: 2,
+        selectedObjectIds: [101],
+        popupSelectedId: "hydrant-101",
+        popupAfterNextId: "hydrant-102",
+        filterBySelectionEnabled: true,
+        filterGeometryApplied: true,
+        tableMapSyncOpened: true,
+        relatedGroupCount: 1,
+        relatedRecordCount: 2,
+        layerActionTriggered: true,
+      });
+      expect(migrationResult.layerListCount).toBeGreaterThanOrEqual(2);
+      expect(migrationResult.legendLayerCount).toBeGreaterThanOrEqual(1);
+      expect(migrationResult.legendEntryCount).toBeGreaterThanOrEqual(1);
+    },
+  });
+});
+
+test("migrated feature-table popup-interaction fallback sample executes in browser runtime", async ({
+  page,
+}) => {
+  await runMigratedFixtureBrowserSmoke(page, {
+    fixtureName: "esri-demo-feature-table-popup-interaction-app",
+    expectedCallSites: 5,
+    assertResult: (migrationResult) => {
+      expect(migrationResult).toMatchObject({
+        mapCtor: "MapCompat",
+        viewCtor: "MapViewCompat",
+        layerCtor: "FeatureLayerCompat",
+        tableCtor: "FeatureTableCompat",
+        popupCtor: "PopupCompat",
+        tableSizeBeforeFilter: 3,
+        tableSizeAfterFilter: 2,
+        selectedObjectIds: [202],
+        popupSelectedId: "incident-202",
+        popupVisible: true,
+        where: "priority = 'high'",
+        filterBySelectionEnabled: true,
+        tableMapSyncOpened: true,
+      });
+    },
+  });
+});
+
 test("migrated incident command demo sample executes in browser runtime", async ({ page }) => {
   await runMigratedFixtureBrowserSmoke(page, {
     fixtureName: "esri-real-sample-incident-command-app",

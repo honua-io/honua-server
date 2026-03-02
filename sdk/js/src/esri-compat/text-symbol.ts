@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface TextSymbolCompatOptions {
   text?: string;
   color?: unknown;
@@ -142,7 +143,7 @@ export class TextSymbolCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

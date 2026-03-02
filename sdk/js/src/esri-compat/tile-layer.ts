@@ -1,5 +1,6 @@
 import { HonuaClient } from "../core/client.js";
-import { CompatEventBus, resolveCompatEventBus } from "./event-bus.js";
+import type { HonuaServiceMetadata } from "../core/types.js";
+import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseMapServiceUrl } from "./url.js";
 
 export interface TileLayerCompatOptions {
@@ -33,12 +34,13 @@ export class TileLayerCompat {
   public listMode: string;
   public loaded: boolean;
   public loadStatus: TileLayerLoadStatusCompat;
-  public metadata: unknown;
+  public metadata: HonuaServiceMetadata | undefined;
   public readonly eventBus: CompatEventBus;
 
   private readonly client: HonuaClient;
   private readonly baseUrl: string;
   private readonly watchListeners: Map<string, Set<(value: unknown) => void>>;
+  private readonly eventListeners: Map<string, Set<(event: unknown) => void>>;
 
   public constructor(options: TileLayerCompatOptions) {
     const parsed = parseMapServiceUrl(options.url);
@@ -58,6 +60,7 @@ export class TileLayerCompat {
     this.eventBus = options.eventBus ?? resolveCompatEventBus(options.client) ?? new CompatEventBus();
     this.client = options.client ?? new HonuaClient({ baseUrl: parsed.baseUrl });
     this.watchListeners = new Map();
+    this.eventListeners = new Map();
   }
 
   public async load(): Promise<TileLayerCompat> {
@@ -144,6 +147,33 @@ export class TileLayerCompat {
     );
   }
 
+  public on(eventName: string, listener: (event: unknown) => void): TileLayerHandleCompat {
+    const namespacedEvent = `tile-layer.${eventName}`;
+    let listeners = this.eventListeners.get(eventName);
+    if (!listeners) {
+      listeners = new Set();
+      this.eventListeners.set(eventName, listeners);
+    }
+    listeners.add(listener);
+
+    const subscription = this.eventBus.on(namespacedEvent, (event) => {
+      safeInvokeCompatListener(listener, event.payload);
+    });
+
+    return {
+      remove: () => {
+        listeners?.delete(listener);
+        subscription.remove();
+      },
+    };
+  }
+
+  public destroy(): void {
+    this.watchListeners.clear();
+    this.eventListeners.clear();
+    this.eventBus.emit("tile-layer.destroyed", { id: this.id }, this);
+  }
+
   public setListMode(listMode: string): void {
     this.listMode = listMode;
     this.notifyWatchers("listMode", this.listMode);
@@ -161,7 +191,7 @@ export class TileLayerCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

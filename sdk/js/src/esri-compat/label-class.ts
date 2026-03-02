@@ -1,3 +1,4 @@
+import { safeInvokeCompatListener } from "./event-bus.js";
 export interface LabelClassCompatOptions {
   labelExpressionInfo?: unknown;
   symbol?: unknown;
@@ -118,7 +119,7 @@ export class LabelClassCompat {
     }
 
     for (const listener of listeners) {
-      listener(value);
+      safeInvokeCompatListener(listener, value);
     }
   }
 }

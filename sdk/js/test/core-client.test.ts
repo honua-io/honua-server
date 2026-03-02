@@ -33,6 +33,91 @@ describe("HonuaClient", () => {
     expect(requestedInit?.method).toBe("GET");
   });
 
+  it("keeps empty outFields array as blank outFields value", async () => {
+    let requestedUrl: string | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      outFields: [],
+      method: "GET",
+    });
+
+    const parsed = new URL(requestedUrl ?? "https://example.test");
+    expect(parsed.searchParams.get("outFields")).toBe("");
+  });
+
+  it("queries map layers using MapServer layer query endpoint", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryMapLayer({
+      serviceId: "default",
+      layerId: 3,
+      where: "status = 'open'",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: false,
+      method: "GET",
+    });
+
+    expect(response).toEqual({ features: [] });
+    expect(requestedUrl).toContain("/rest/services/default/MapServer/3/query?");
+    expect(requestedUrl).toContain("where=status+%3D+%27open%27");
+    expect(requestedUrl).toContain("outFields=OBJECTID%2CNAME");
+    expect(requestedUrl).toContain("returnGeometry=false");
+    expect(requestedInit?.method).toBe("GET");
+  });
+
+  it("queries map layers using MapServer layer query POST payload", async () => {
+    let requestedInit: RequestInit | undefined;
+    let requestedBody = "";
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (_input, init) => {
+        requestedInit = init;
+        requestedBody = String(init?.body ?? "");
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryMapLayer({
+      serviceId: "default",
+      layerId: 3,
+      where: "status = 'open'",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: false,
+      method: "POST",
+      extraParams: {
+        orderByFields: "NAME ASC",
+      },
+    });
+
+    expect(response).toEqual({ features: [] });
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedBody).toContain("f=json");
+    expect(requestedBody).toContain("where=status+%3D+%27open%27");
+    expect(requestedBody).toContain("outFields=OBJECTID%2CNAME");
+    expect(requestedBody).toContain("returnGeometry=false");
+    expect(requestedBody).toContain("orderByFields=NAME+ASC");
+  });
+
   it("retrieves map service metadata", async () => {
     let requestedUrl: string | undefined;
     const client = new HonuaClient({
@@ -102,6 +187,77 @@ describe("HonuaClient", () => {
     expect(requestedUrl).toContain("outFields=OBJECTID%2CNAME");
     expect(requestedUrl).toContain("returnGeometry=false");
     expect(requestedInit?.method).toBe("GET");
+  });
+
+  it("queries map related records endpoint with expected params", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(JSON.stringify({ relatedRecordGroups: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryMapRelatedRecords({
+      serviceId: "default",
+      layerId: 2,
+      relationshipId: 3,
+      objectIds: [1, 2],
+      where: "status = 'open'",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: false,
+    });
+
+    expect(response).toEqual({ relatedRecordGroups: [] });
+    expect(requestedUrl).toContain("/rest/services/default/MapServer/2/queryRelatedRecords?");
+    expect(requestedUrl).toContain("relationshipId=3");
+    expect(requestedUrl).toContain("objectIds=1%2C2");
+    expect(requestedUrl).toContain("where=status+%3D+%27open%27");
+    expect(requestedUrl).toContain("outFields=OBJECTID%2CNAME");
+    expect(requestedUrl).toContain("returnGeometry=false");
+    expect(requestedInit?.method).toBe("GET");
+  });
+
+  it("queries map related records endpoint using POST payload", async () => {
+    let requestedInit: RequestInit | undefined;
+    let requestedBody = "";
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (_input, init) => {
+        requestedInit = init;
+        requestedBody = String(init?.body ?? "");
+        return new Response(JSON.stringify({ relatedRecordGroups: [] }), { status: 200 });
+      },
+    });
+
+    const response = await client.queryMapRelatedRecords({
+      serviceId: "default",
+      layerId: 5,
+      relationshipId: 4,
+      objectIds: [2, 3],
+      where: "status = 'open'",
+      outFields: ["OBJECTID", "NAME"],
+      returnGeometry: false,
+      method: "POST",
+      extraParams: {
+        orderByFields: "NAME ASC",
+      },
+    });
+
+    expect(response).toEqual({ relatedRecordGroups: [] });
+    expect(requestedInit?.method).toBe("POST");
+    expect(requestedBody).toContain("f=json");
+    expect(requestedBody).toContain("relationshipId=4");
+    expect(requestedBody).toContain("objectIds=2%2C3");
+    expect(requestedBody).toContain("where=status+%3D+%27open%27");
+    expect(requestedBody).toContain("outFields=OBJECTID%2CNAME");
+    expect(requestedBody).toContain("returnGeometry=false");
+    expect(requestedBody).toContain("orderByFields=NAME+ASC");
   });
 
   it("exports map image metadata from MapServer using GET params", async () => {
@@ -473,7 +629,197 @@ describe("HonuaClient", () => {
     });
 
     await expect(client.listServices()).rejects.toThrow("network-down");
-    expect(intercepted).toEqual([networkError]);
+    expect(intercepted).toHaveLength(1);
+    expect((intercepted[0] as Error).message).toBe("network-down");
+  });
+
+  it("retries transient network failures when retry policy is configured", async () => {
+    let attempts = 0;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      retry: {
+        maxRetries: 2,
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+      },
+      fetchFn: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error("temporary-network-failure");
+        }
+        return new Response(JSON.stringify({ services: [] }), { status: 200 });
+      },
+    });
+
+    await expect(client.listServices()).resolves.toEqual({ services: [] });
+    expect(attempts).toBe(3);
+  });
+
+  it("retries configured HTTP status codes and succeeds", async () => {
+    let attempts = 0;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      retry: {
+        maxRetries: 2,
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        retryStatuses: [503],
+      },
+      fetchFn: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          return new Response(JSON.stringify({ error: { message: "service-unavailable" } }), { status: 503 });
+        }
+        return new Response(JSON.stringify({ services: [{ id: "ok" }] }), { status: 200 });
+      },
+    });
+
+    await expect(client.listServices()).resolves.toEqual({ services: [{ id: "ok" }] });
+    expect(attempts).toBe(3);
+  });
+
+  it("does not retry non-retryable HTTP status codes", async () => {
+    let attempts = 0;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      retry: {
+        maxRetries: 3,
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        retryStatuses: [503],
+      },
+      fetchFn: async () => {
+        attempts += 1;
+        return new Response(JSON.stringify({ error: { message: "bad-request" } }), { status: 400 });
+      },
+    });
+
+    await expect(client.listServices()).rejects.toMatchObject({
+      name: "HonuaHttpError",
+      statusCode: 400,
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("aborts requests when timeoutMs is exceeded", async () => {
+    const intercepted: unknown[] = [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      timeoutMs: 10,
+      interceptors: [
+        {
+          error: (context) => {
+            intercepted.push(context.error);
+          },
+        },
+      ],
+      fetchFn: async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal | undefined;
+          if (!signal) {
+            reject(new Error("missing signal"));
+            return;
+          }
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject(new Error("aborted"));
+            },
+            { once: true },
+          );
+        }),
+    });
+
+    await expect(client.listServices()).rejects.toThrow("Request timed out after 10ms");
+    expect(intercepted).toHaveLength(1);
+    expect(intercepted[0]).toBeInstanceOf(Error);
+    expect((intercepted[0] as Error).message).toBe("Request timed out after 10ms");
+  });
+
+  it("continues calling error interceptors when one interceptor throws", async () => {
+    const seen: string[] = [];
+    const networkError = new Error("network-down");
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          error: () => {
+            seen.push("first");
+            throw new Error("interceptor-failed");
+          },
+        },
+        {
+          error: () => {
+            seen.push("second");
+          },
+        },
+      ],
+      fetchFn: async () => {
+        throw networkError;
+      },
+    });
+
+    await expect(client.listServices()).rejects.toThrow("network-down");
+    expect(seen).toEqual(["first", "second"]);
+  });
+
+  it("allows after interceptors to read response bodies without consuming returned payload", async () => {
+    let afterPayload: unknown;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: async ({ response }) => {
+            afterPayload = await response.json();
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ services: [{ id: "default" }] }), { status: 200 }),
+    });
+
+    const response = await client.listServices();
+    expect(afterPayload).toEqual({ services: [{ id: "default" }] });
+    expect(response).toEqual({ services: [{ id: "default" }] });
+  });
+
+  it("invokes only error interceptors for HTTP error responses", async () => {
+    const seen: string[] = [];
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      interceptors: [
+        {
+          after: () => {
+            seen.push("after");
+          },
+          error: () => {
+            seen.push("error");
+          },
+        },
+      ],
+      fetchFn: async () =>
+        new Response(JSON.stringify({ error: { message: "missing" } }), { status: 404 }),
+    });
+
+    await expect(client.listServices()).rejects.toMatchObject({
+      name: "HonuaHttpError",
+      statusCode: 404,
+    });
+    expect(seen).toEqual(["error"]);
+  });
+
+  it("rejects cross-origin absolute request paths", async () => {
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    });
+
+    await expect(
+      client.request({
+        path: "https://attacker.test/rest/services/default/FeatureServer/0/query",
+        method: "GET",
+      }),
+    ).rejects.toThrow("Cross-origin request URL is not allowed");
   });
 
   it("calls OGC metadata endpoints with explicit response formats", async () => {
@@ -610,4 +956,236 @@ describe("HonuaClient", () => {
     });
     expect(calls[3]?.url).toContain("/ogc/features/collections/3/items/1?f=json");
   });
+
+  it("serializes first-class query parameters on queryFeatures", async () => {
+    let requestedUrl: string | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      where: "1=1",
+      method: "GET",
+      orderByFields: "NAME DESC",
+      objectIds: [1, 2, 3],
+      geometry: { xmin: 0, ymin: 0, xmax: 1, ymax: 1 },
+      geometryType: "esriGeometryEnvelope",
+      spatialRel: "esriSpatialRelIntersects",
+      returnDistinctValues: true,
+      returnCentroid: false,
+      groupByFieldsForStatistics: "TYPE",
+      outStatistics: [{ statisticType: "count", onStatisticField: "OBJECTID", outStatisticFieldName: "cnt" }],
+      resultOffset: 10,
+      resultRecordCount: 50,
+    });
+
+    const url = new URL(requestedUrl ?? "https://example.test");
+    expect(url.searchParams.get("orderByFields")).toBe("NAME DESC");
+    expect(url.searchParams.get("objectIds")).toBe("1,2,3");
+    expect(url.searchParams.get("geometryType")).toBe("esriGeometryEnvelope");
+    expect(url.searchParams.get("spatialRel")).toBe("esriSpatialRelIntersects");
+    expect(url.searchParams.get("returnDistinctValues")).toBe("true");
+    expect(url.searchParams.get("returnCentroid")).toBe("false");
+    expect(url.searchParams.get("groupByFieldsForStatistics")).toBe("TYPE");
+    expect(url.searchParams.get("resultOffset")).toBe("10");
+    expect(url.searchParams.get("resultRecordCount")).toBe("50");
+
+    const geometry = JSON.parse(url.searchParams.get("geometry") ?? "{}");
+    expect(geometry).toEqual({ xmin: 0, ymin: 0, xmax: 1, ymax: 1 });
+
+    const stats = JSON.parse(url.searchParams.get("outStatistics") ?? "[]");
+    expect(stats).toEqual([{ statisticType: "count", onStatisticField: "OBJECTID", outStatisticFieldName: "cnt" }]);
+  });
+
+  it("serializes string objectIds and string geometry and string outStatistics", async () => {
+    let requestedUrl: string | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+      objectIds: "1,2,3",
+      geometry: "-180,-90,180,90",
+      outStatistics: "[{\"statisticType\":\"count\"}]",
+    });
+
+    const url = new URL(requestedUrl ?? "https://example.test");
+    expect(url.searchParams.get("objectIds")).toBe("1,2,3");
+    expect(url.searchParams.get("geometry")).toBe("-180,-90,180,90");
+    expect(url.searchParams.get("outStatistics")).toBe("[{\"statisticType\":\"count\"}]");
+  });
+
+  it("serializes first-class query parameters on queryMapLayer", async () => {
+    let requestedUrl: string | undefined;
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryMapLayer({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+      orderByFields: "POP DESC",
+      objectIds: [10, 20],
+      returnDistinctValues: true,
+    });
+
+    const url = new URL(requestedUrl ?? "https://example.test");
+    expect(url.searchParams.get("orderByFields")).toBe("POP DESC");
+    expect(url.searchParams.get("objectIds")).toBe("10,20");
+    expect(url.searchParams.get("returnDistinctValues")).toBe("true");
+  });
+
+  it("uses f=pbf when preferBinary is true and method is GET", async () => {
+    let requestedUrl: string | undefined;
+    let requestedInit: RequestInit | undefined;
+
+    // Minimal valid PBF: version="1.0", queryResult with empty featureResult
+    const pbfBytes = buildMinimalPbf();
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: true,
+      fetchFn: async (input, init) => {
+        requestedUrl = String(input);
+        requestedInit = init;
+        return new Response(pbfBytes as unknown as BodyInit, {
+          status: 200,
+          headers: { "Content-Type": "application/x-protobuf" },
+        });
+      },
+    });
+
+    const result = await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+    });
+
+    expect(requestedUrl).toContain("f=pbf");
+    expect(requestedInit?.method).toBe("GET");
+    expect(result).toHaveProperty("objectIdFieldName");
+  });
+
+  it("falls back to JSON when PBF decode fails", async () => {
+    let callCount = 0;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: true,
+      fetchFn: async (input) => {
+        callCount += 1;
+        const url = String(input);
+        if (url.includes("f=pbf")) {
+          // Return garbage bytes that will fail PBF decode
+          return new Response(new Uint8Array([0xff, 0xff, 0xff]), {
+            status: 200,
+            headers: { "Content-Type": "application/x-protobuf" },
+          });
+        }
+        // JSON fallback
+        return new Response(JSON.stringify({ features: [], fallback: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    const result = await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+    });
+
+    expect(callCount).toBe(2);
+    expect(result).toEqual({ features: [], fallback: true });
+  });
+
+  it("does not use PBF when preferBinary is false", async () => {
+    let requestedUrl: string | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: false,
+      fetchFn: async (input) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "GET",
+    });
+
+    expect(requestedUrl).toContain("f=json");
+    expect(requestedUrl).not.toContain("f=pbf");
+  });
+
+  it("does not use PBF for POST requests even with preferBinary", async () => {
+    let requestedBody: string | undefined;
+
+    const client = new HonuaClient({
+      baseUrl: "https://example.test",
+      preferBinary: true,
+      fetchFn: async (_input, init) => {
+        requestedBody = init?.body as string;
+        return new Response(JSON.stringify({ features: [] }), { status: 200 });
+      },
+    });
+
+    await client.queryFeatures({
+      serviceId: "default",
+      layerId: 0,
+      method: "POST",
+    });
+
+    expect(requestedBody).toContain("f=json");
+    expect(requestedBody).not.toContain("f=pbf");
+  });
 });
+
+/** Build a minimal valid PBF (FeatureCollectionPBuffer) for testing. */
+function buildMinimalPbf(): Uint8Array {
+  // Encode helpers
+  function vi(value: number): number[] {
+    const bytes: number[] = [];
+    let v = value;
+    while (v > 0x7f) {
+      bytes.push((v & 0x7f) | 0x80);
+      v >>>= 7;
+    }
+    bytes.push(v & 0x7f);
+    return bytes;
+  }
+  function tg(field: number, wire: number) { return vi((field << 3) | wire); }
+  function ld(field: number, data: number[]) { return [...tg(field, 2), ...vi(data.length), ...data]; }
+  function sf(field: number, str: string) {
+    return ld(field, Array.from(new TextEncoder().encode(str)));
+  }
+
+  // FeatureResult: objectIdFieldName + one OID field
+  const fieldDef = [...sf(1, "OBJECTID"), ...tg(2, 0), ...vi(6)]; // name + fieldType=OID
+  const featureResult = [...sf(1, "OBJECTID"), ...ld(13, fieldDef)];
+  const queryResult = ld(1, featureResult);
+  const fcpb = [...sf(1, "1.0"), ...ld(2, queryResult)];
+  return new Uint8Array(fcpb);
+}

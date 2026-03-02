@@ -20,10 +20,13 @@ public static class ServiceProtocols
     /// <summary>OData v4 protocol.</summary>
     public const string OData = "OData";
 
+    /// <summary>gRPC/gRPC-Web protocol.</summary>
+    public const string Grpc = "Grpc";
+
     /// <summary>
     /// All supported protocol identifiers.
     /// </summary>
-    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, OData];
+    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, OData, Grpc];
 
     /// <summary>
     /// Checks whether a protocol is enabled for a service based on its metadata.

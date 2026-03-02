@@ -40,6 +40,12 @@ function createSdkPackage() {
   fs.mkdirSync(packageRoot, { recursive: true });
 
   copyDirectory(path.join(DIST_SRC_ROOT, "core"), path.join(packageRoot, "core"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "esri-compat"), path.join(packageRoot, "esri-compat"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "expr"), path.join(packageRoot, "expr"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "gen"), path.join(packageRoot, "gen"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "interactions"), path.join(packageRoot, "interactions"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "map"), path.join(packageRoot, "map"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "style"), path.join(packageRoot, "style"));
   copyFile(path.join(DIST_SRC_ROOT, "honua.js"), path.join(packageRoot, "index.js"));
   copyFile(path.join(DIST_SRC_ROOT, "honua.d.ts"), path.join(packageRoot, "index.d.ts"));
 
@@ -53,6 +59,27 @@ function createSdkPackage() {
         types: "./index.d.ts",
         default: "./index.js",
       },
+      "./expr": {
+        types: "./expr/index.d.ts",
+        default: "./expr/index.js",
+      },
+      "./interactions": {
+        types: "./interactions/index.d.ts",
+        default: "./interactions/index.js",
+      },
+      "./map": {
+        types: "./map/index.d.ts",
+        default: "./map/index.js",
+      },
+      "./style": {
+        types: "./style/index.d.ts",
+        default: "./style/index.js",
+      },
+    },
+    dependencies: {
+      "@bufbuild/protobuf": rootPackageJson.dependencies["@bufbuild/protobuf"],
+      "@connectrpc/connect": rootPackageJson.dependencies["@connectrpc/connect"],
+      "@connectrpc/connect-web": rootPackageJson.dependencies["@connectrpc/connect-web"],
     },
   });
 
@@ -74,6 +101,7 @@ function createCompatPackage() {
 
   copyDirectory(path.join(DIST_SRC_ROOT, "core"), path.join(packageRoot, "core"));
   copyDirectory(path.join(DIST_SRC_ROOT, "esri-compat"), path.join(packageRoot, "esri-compat"));
+  copyDirectory(path.join(DIST_SRC_ROOT, "gen"), path.join(packageRoot, "gen"));
   copyFile(path.join(DIST_SRC_ROOT, "esri-compat-entry.js"), path.join(packageRoot, "index.js"));
   copyFile(path.join(DIST_SRC_ROOT, "esri-compat-entry.d.ts"), path.join(packageRoot, "index.d.ts"));
 
@@ -87,6 +115,11 @@ function createCompatPackage() {
         types: "./index.d.ts",
         default: "./index.js",
       },
+    },
+    dependencies: {
+      "@bufbuild/protobuf": rootPackageJson.dependencies["@bufbuild/protobuf"],
+      "@connectrpc/connect": rootPackageJson.dependencies["@connectrpc/connect"],
+      "@connectrpc/connect-web": rootPackageJson.dependencies["@connectrpc/connect-web"],
     },
   });
 

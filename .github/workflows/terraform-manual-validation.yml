@@ -193,7 +193,7 @@ jobs:
 
       - name: Run Terraform policy gate script
         shell: bash
-        run: ./scripts/terraform-policy-gate.sh
+        run: ./infrastructure/terraform/scripts/shared/terraform-policy-gate.sh
 
   azure-live:
     name: Azure Live Validation
@@ -416,7 +416,7 @@ jobs:
             ARM_TENANT_ID="$arm_tenant_id" \
             ARM_SUBSCRIPTION_ID="$arm_subscription_id" \
             HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-azure-${stack}" \
-            ./scripts/run-azure-terraform-integration.sh "${args[@]}"
+            ./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh "${args[@]}"
           }
 
           ACA_ARM_CLIENT_ID=""
@@ -677,7 +677,7 @@ jobs:
             AWS_SECRET_ACCESS_KEY="$secret_access_key" \
             AWS_SESSION_TOKEN="" \
             HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-aws-${stack}" \
-            ./scripts/run-aws-terraform-integration.sh "${args[@]}"
+            ./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh "${args[@]}"
           }
 
           ECS_AWS_ACCESS_KEY_ID=""
@@ -806,7 +806,7 @@ jobs:
             args+=(--skip-protocol-checks)
           fi
 
-          ./scripts/run-k8s-terraform-integration.sh "${args[@]}"
+          ./infrastructure/terraform/scripts/k8s/run-k8s-terraform-integration.sh "${args[@]}"
 
   aks-live:
     name: AKS Live Validation
@@ -972,7 +972,7 @@ jobs:
           ARM_TENANT_ID="$AKS_ARM_TENANT_ID" \
           ARM_SUBSCRIPTION_ID="$AKS_ARM_SUBSCRIPTION_ID" \
           HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-aks" \
-          ./scripts/run-aks-terraform-integration.sh "${args[@]}"
+          ./infrastructure/terraform/scripts/azure/run-aks-terraform-integration.sh "${args[@]}"
 
       - name: Upload AKS plan artifacts
         if: always()
@@ -1137,7 +1137,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY="$EKS_AWS_SECRET_ACCESS_KEY" \
           AWS_SESSION_TOKEN="" \
           HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-eks" \
-          ./scripts/run-eks-terraform-integration.sh "${args[@]}"
+          ./infrastructure/terraform/scripts/aws/run-eks-terraform-integration.sh "${args[@]}"
 
       - name: Upload EKS plan artifacts
         if: always()
@@ -1224,7 +1224,7 @@ jobs:
             done
           fi
 
-          ./scripts/run-terraform-drift-detection.sh "${args[@]}"
+          ./infrastructure/terraform/scripts/shared/run-terraform-drift-detection.sh "${args[@]}"
 
       - name: Upload drift artifacts
         if: always()

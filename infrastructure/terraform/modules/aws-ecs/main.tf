@@ -15,6 +15,11 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
+  use_existing_vpc    = var.existing_vpc_id != ""
+  vpc_id              = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
+  vpc_cidr_block      = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
+  public_subnets      = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
+  private_subnets     = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
   db_use_existing     = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   use_managed_cert    = var.domain_name != "" && var.route53_zone_id != ""
   use_https           = var.alb_certificate_arn != "" || local.use_managed_cert
@@ -25,6 +30,7 @@ locals {
   redis_create        = var.redis_enabled && var.redis_connection_string == ""
   redis_auth_token    = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  db_subnet_ids       = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
 }
 
 check "existing_db_inputs" {
@@ -37,9 +43,20 @@ check "existing_db_inputs" {
   }
 }
 
+check "existing_vpc_inputs" {
+  assert {
+    condition = (
+      (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
+      (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
+    )
+    error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
+  }
+}
+
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
 module "vpc" {
+  count = local.use_existing_vpc ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
   source  = "terraform-aws-modules/vpc/aws"
@@ -65,7 +82,7 @@ module "vpc" {
 
 check "nat_gateway_required" {
   assert {
-    condition     = var.enable_nat_gateway || var.assign_public_ip
+    condition     = local.use_existing_vpc || var.enable_nat_gateway || var.assign_public_ip
     error_message = "Tasks in private subnets require either NAT gateway or public IP assignment for outbound connectivity."
   }
 }
@@ -75,7 +92,7 @@ resource "aws_security_group" "alb" {
   #checkov:skip=CKV_AWS_260: HTTP ingress is optional and disabled by default.
   name_prefix = "${local.name}-alb-"
   description = "ALB security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   dynamic "ingress" {
     for_each = length(local.http_ingress_cidrs) > 0 ? [1] : []
@@ -104,7 +121,7 @@ resource "aws_security_group" "alb" {
     from_port   = var.container_port
     to_port     = var.container_port
     protocol    = "tcp"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
+    cidr_blocks = [local.vpc_cidr_block]
   }
 
   tags = local.tags
@@ -115,7 +132,7 @@ resource "aws_security_group" "ecs" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the ECS service.
   name_prefix = "${local.name}-ecs-"
   description = "ECS service security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "ALB ingress"
@@ -130,7 +147,7 @@ resource "aws_security_group" "ecs" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = local.db_use_existing ? ["0.0.0.0/0"] : [module.vpc.vpc_cidr_block]
+    cidr_blocks = local.db_use_existing ? ["0.0.0.0/0"] : [local.vpc_cidr_block]
   }
 
   egress {
@@ -148,7 +165,7 @@ resource "aws_security_group" "ecs" {
       from_port   = var.redis_port
       to_port     = var.redis_port
       protocol    = "tcp"
-      cidr_blocks = [module.vpc.vpc_cidr_block]
+      cidr_blocks = [local.vpc_cidr_block]
     }
   }
 
@@ -161,7 +178,7 @@ resource "aws_security_group" "rds" {
   #checkov:skip=CKV2_AWS_5: Security group is attached via the RDS module.
   name_prefix = "${local.name}-rds-"
   description = "RDS security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "PostgreSQL from ECS"
@@ -197,7 +214,7 @@ resource "aws_security_group" "redis" {
   count       = local.redis_create ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Redis security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "Redis from ECS"
@@ -212,7 +229,7 @@ resource "aws_security_group" "redis" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [module.vpc.vpc_cidr_block]
+    cidr_blocks = [local.vpc_cidr_block]
   }
 
   tags = local.tags
@@ -221,7 +238,7 @@ resource "aws_security_group" "redis" {
 resource "aws_elasticache_subnet_group" "redis" {
   count       = local.redis_create ? 1 : 0
   name        = "${local.name}-redis"
-  subnet_ids  = module.vpc.private_subnets
+  subnet_ids  = local.private_subnets
   description = "Redis subnet group"
   tags        = local.tags
 }
@@ -235,8 +252,8 @@ resource "aws_elasticache_replication_group" "redis" {
   engine_version             = var.redis_engine_version
   port                       = var.redis_port
   parameter_group_name       = var.redis_parameter_group_name
-  automatic_failover_enabled = true
-  multi_az_enabled           = true
+  automatic_failover_enabled = var.redis_num_cache_clusters > 1
+  multi_az_enabled           = var.redis_num_cache_clusters > 1
   num_cache_clusters         = var.redis_num_cache_clusters
   subnet_group_name          = aws_elasticache_subnet_group.redis[0].name
   security_group_ids         = [aws_security_group.redis[0].id]
@@ -249,8 +266,8 @@ resource "aws_elasticache_replication_group" "redis" {
 
   lifecycle {
     precondition {
-      condition     = var.redis_num_cache_clusters >= 2
-      error_message = "redis_num_cache_clusters must be >= 2 when provisioning Redis with multi-AZ failover."
+      condition     = var.redis_num_cache_clusters >= 1
+      error_message = "redis_num_cache_clusters must be >= 1."
     }
   }
 }
@@ -263,7 +280,7 @@ resource "aws_lb" "this" {
   load_balancer_type         = "application"
   internal                   = false
   security_groups            = [aws_security_group.alb.id]
-  subnets                    = module.vpc.public_subnets
+  subnets                    = local.public_subnets
   enable_deletion_protection = var.alb_deletion_protection
   drop_invalid_header_fields = var.alb_drop_invalid_headers
 
@@ -272,6 +289,9 @@ resource "aws_lb" "this" {
     bucket  = local.alb_logs_bucket_name
     prefix  = var.alb_access_logs_prefix
   }
+
+  # Ensure bucket policy is in place before ALB logging is configured.
+  depends_on = [aws_s3_bucket_policy.alb_logs]
 
   tags = local.tags
 }
@@ -381,7 +401,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
           Service = "logdelivery.elasticloadbalancing.amazonaws.com"
         }
         Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.alb_logs[0].arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Resource = "${aws_s3_bucket.alb_logs[0].arn}/${var.alb_access_logs_prefix != "" ? "${var.alb_access_logs_prefix}/" : ""}AWSLogs/${data.aws_caller_identity.current.account_id}/*"
       },
       {
         Effect = "Allow"
@@ -401,7 +421,7 @@ resource "aws_lb_target_group" "this" {
   name        = "${local.name}-tg"
   port        = var.container_port
   protocol    = "HTTP"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = local.vpc_id
   target_type = "ip"
 
   health_check {
@@ -511,8 +531,13 @@ resource "aws_iam_policy" "secrets" {
         Resource = compact([
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
-          local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [local.kms_key_arn]
       }
     ]
   })
@@ -554,6 +579,26 @@ data "aws_iam_policy_document" "kms" {
     principals {
       type        = "AWS"
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "AllowCloudWatchLogsUse"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${data.aws_region.current.name}.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid       = "AllowEcsTaskExecutionDecrypt"
+    actions   = ["kms:Decrypt", "kms:DescribeKey"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.task_execution.arn]
     }
   }
 }
@@ -607,13 +652,15 @@ module "rds" {
   max_allocated_storage = var.db_max_allocated_storage
   storage_encrypted     = true
 
-  db_name  = var.db_name
-  username = var.db_username
-  password = local.db_password
-  port     = 5432
+  db_name                     = var.db_name
+  username                    = var.db_username
+  password                    = local.db_password
+  manage_master_user_password = false
+  port                        = 5432
 
   vpc_security_group_ids = local.db_use_existing ? [] : [aws_security_group.rds[0].id]
-  subnet_ids             = module.vpc.private_subnets
+  subnet_ids             = local.db_subnet_ids
+  create_db_subnet_group = true
 
   publicly_accessible = var.db_publicly_accessible
   multi_az            = var.db_multi_az
@@ -655,7 +702,7 @@ resource "aws_secretsmanager_secret_version" "admin_password" {
 #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
 resource "aws_secretsmanager_secret" "redis_connection" {
   #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
-  count       = local.redis_connection != "" ? 1 : 0
+  count       = local.redis_enabled ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Honua Redis connection string"
   kms_key_id  = local.kms_key_arn
@@ -663,7 +710,7 @@ resource "aws_secretsmanager_secret" "redis_connection" {
 }
 
 resource "aws_secretsmanager_secret_version" "redis_connection" {
-  count         = local.redis_connection != "" ? 1 : 0
+  count         = local.redis_enabled ? 1 : 0
   secret_id     = aws_secretsmanager_secret.redis_connection[0].id
   secret_string = local.redis_connection
 }
@@ -703,8 +750,12 @@ resource "aws_ecs_task_definition" "this" {
         {
           name      = "HONUA_ADMIN_PASSWORD"
           valueFrom = aws_secretsmanager_secret.admin_password.arn
+        },
+        {
+          name      = "Security__ConnectionEncryption__MasterKey"
+          valueFrom = aws_secretsmanager_secret.admin_password.arn
         }
-        ], local.redis_connection != "" ? [
+        ], local.redis_enabled ? [
         {
           name      = "ConnectionStrings__redis"
           valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
@@ -728,6 +779,12 @@ resource "aws_ecs_task_definition" "this" {
     }
   ])
 
+  depends_on = [
+    aws_secretsmanager_secret_version.db_connection,
+    aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.redis_connection
+  ]
+
   tags = local.tags
 }
 
@@ -744,7 +801,7 @@ resource "aws_ecs_service" "this" {
   }
 
   network_configuration {
-    subnets          = module.vpc.private_subnets
+    subnets          = local.private_subnets
     security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = var.assign_public_ip
   }
@@ -805,12 +862,35 @@ resource "null_resource" "enable_postgis" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}" \
-        && psql \
+      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
+      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
+        if PGCONNECT_TIMEOUT=5 psql \
           --host=${local.db_endpoint} \
           --username=${var.db_username} \
           --dbname=${var.db_name} \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
+          --command="SELECT 1;" >/dev/null 2>&1; then
+          echo "PostgreSQL readiness check succeeded after $attempt attempt(s)"
+          break
+        fi
+        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
+          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
+          PGCONNECT_TIMEOUT=5 psql \
+            --host=${local.db_endpoint} \
+            --username=${var.db_username} \
+            --dbname=${var.db_name} \
+            --command="SELECT 1;" >&2 || true
+          exit 1
+        fi
+        sleep ${var.postgis_readiness_sleep_seconds}
+      done
+
+      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${local.db_endpoint} \
+        --username=${var.db_username} \
+        --dbname=${var.db_name} \
+        --set=ON_ERROR_STOP=1 \
+        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
     environment = {
       PGPASSWORD = local.db_password

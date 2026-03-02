@@ -2,18 +2,15 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
-import {
-  runEsriCompatCodemod,
-  type CodemodMetricsByKind,
-  type CodemodTarget,
-} from "./codemod.js";
-import { buildJsMigrationReport } from "./report.js";
-import { evaluateMigrationGates } from "./gating.js";
-import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
-import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
-import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
+import { type CodemodMetricsByKind, type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
+import { MIGRATION_DEMO_PRIMARY_TARGET } from "./demo-targets.js";
 import { parseGeoservicesServiceUrl, runMigrationDemo } from "./demo.js";
+import { evaluateMigrationGates } from "./gating.js";
+import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
+import { runLayerReconciliation, summarizeLayerReconciliation } from "./reconcile.js";
+import { buildJsMigrationReport } from "./report.js";
+import { getJsRuntimeParityMatrix, summarizeJsRuntimeParity } from "./runtime-matrix.js";
+import { scanArcGisUsage, summarizeArcGisScan } from "./scanner.js";
 
 interface ParsedArgs {
   command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" | "demo";
@@ -117,7 +114,7 @@ const DEFAULT_REAL_SAMPLE_FIXTURE_NAMES = [
   "esri-real-sample-editing-app",
   "esri-real-sample-network-app",
 ] as const;
-const DEFAULT_DEMO_FIXTURE_NAME = "esri-real-sample-incident-command-app";
+const DEFAULT_DEMO_FIXTURE_NAME = MIGRATION_DEMO_PRIMARY_TARGET.fixtureName;
 
 const parsed = parseArgs(process.argv.slice(2));
 if (!parsed) {
@@ -211,9 +208,7 @@ function runScan(target: string, reportPath?: string): void {
 function runFixtures(args: ParsedArgs): void {
   const fixturesRoot = args.target;
   const fixtureNames =
-    args.fixtureNames && args.fixtureNames.length > 0
-      ? [...args.fixtureNames]
-      : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
+    args.fixtureNames && args.fixtureNames.length > 0 ? [...args.fixtureNames] : [...DEFAULT_REAL_SAMPLE_FIXTURE_NAMES];
   const report = buildFixtureMetricsReport(fixturesRoot, fixtureNames, args.codemodTarget, {
     failOnManual: args.failOnManual,
     failOnUnhandled: args.failOnUnhandled,
@@ -324,38 +319,21 @@ function buildFixtureMetricSnapshot(
   };
 }
 
-function summarizeFixtureMetrics(
-  fixtures: readonly FixtureMetricSnapshot[],
-): FixtureMetricsSummary {
+function summarizeFixtureMetrics(fixtures: readonly FixtureMetricSnapshot[]): FixtureMetricsSummary {
   const ready = fixtures.filter((fixture) => fixture.readiness === "ready").length;
   const assisted = fixtures.filter((fixture) => fixture.readiness === "assisted").length;
   const blocked = fixtures.filter((fixture) => fixture.readiness === "blocked").length;
   const totalCallSites = fixtures.reduce((sum, fixture) => sum + fixture.totalCallSites, 0);
-  const autoMigratedCallSites = fixtures.reduce(
-    (sum, fixture) => sum + fixture.autoMigratedCallSites,
-    0,
-  );
+  const autoMigratedCallSites = fixtures.reduce((sum, fixture) => sum + fixture.autoMigratedCallSites, 0);
   const manualCallSites = fixtures.reduce((sum, fixture) => sum + fixture.manualCallSites, 0);
-  const manualRewriteNumerator = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualRewrite.numerator,
-    0,
-  );
-  const manualRewriteDenominator = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualRewrite.denominator,
-    0,
-  );
-  const manualInterventionNumerator = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualIntervention.numerator,
-    0,
-  );
+  const manualRewriteNumerator = fixtures.reduce((sum, fixture) => sum + fixture.manualRewrite.numerator, 0);
+  const manualRewriteDenominator = fixtures.reduce((sum, fixture) => sum + fixture.manualRewrite.denominator, 0);
+  const manualInterventionNumerator = fixtures.reduce((sum, fixture) => sum + fixture.manualIntervention.numerator, 0);
   const manualInterventionDenominator = fixtures.reduce(
     (sum, fixture) => sum + fixture.manualIntervention.denominator,
     0,
   );
-  const unhandledUsageHits = fixtures.reduce(
-    (sum, fixture) => sum + fixture.manualIntervention.unhandledUsageHits,
-    0,
-  );
+  const unhandledUsageHits = fixtures.reduce((sum, fixture) => sum + fixture.manualIntervention.unhandledUsageHits, 0);
 
   return {
     fixtureCount: fixtures.length,
@@ -368,14 +346,11 @@ function summarizeFixtureMetrics(
     unhandledUsageHits,
     manualRewriteNumerator,
     manualRewriteDenominator,
-    manualRewriteRatio:
-      manualRewriteDenominator === 0 ? 0 : manualRewriteNumerator / manualRewriteDenominator,
+    manualRewriteRatio: manualRewriteDenominator === 0 ? 0 : manualRewriteNumerator / manualRewriteDenominator,
     manualInterventionNumerator,
     manualInterventionDenominator,
     manualInterventionRatio:
-      manualInterventionDenominator === 0
-        ? 0
-        : manualInterventionNumerator / manualInterventionDenominator,
+      manualInterventionDenominator === 0 ? 0 : manualInterventionNumerator / manualInterventionDenominator,
   };
 }
 
@@ -412,10 +387,7 @@ function evaluateFixtureMetricsGates(
       `Blocked fixture readiness detected (${summary.blocked}): ${blockedFixtures.join(", ") || "unknown"}.`,
     );
   }
-  if (
-    options.maxManualRatio !== undefined &&
-    summary.manualRewriteRatio > options.maxManualRatio
-  ) {
+  if (options.maxManualRatio !== undefined && summary.manualRewriteRatio > options.maxManualRatio) {
     failures.push(
       `Manual rewrite ratio ${summary.manualRewriteRatio.toFixed(3)} exceeds max ${options.maxManualRatio.toFixed(3)}.`,
     );
@@ -452,7 +424,7 @@ function runCodemod(args: ParsedArgs): void {
       `filesScanned=${codemodResult.filesScanned}`,
       `filesChanged=${codemodResult.filesChanged}`,
       `autoMigrated=${codemodResult.metrics.autoMigratedCallSites}`,
-      `manual=${codemodResult.metrics.manualCallSites}`,
+      `manual=${formatManualDifficultyBreakdown(report.manualTodos)}`,
       `manualRewrite=${report.manualRewriteMetric.numerator}/${report.manualRewriteMetric.denominator}`,
       `manualIntervention=${report.manualInterventionMetric.numerator}/${report.manualInterventionMetric.denominator}`,
       `writeMode=${args.write ? "enabled" : "dry-run"}`,
@@ -465,6 +437,15 @@ function runCodemod(args: ParsedArgs): void {
   process.stdout.write("\n");
 
   process.stdout.write(`gates=${formatGateResults(report.gates)}\n`);
+
+  if (
+    (scanReport.imports.length === 0 || scanReport.filesWithArcGisImports === 0) &&
+    (scanReport.esriLeafletImportCount ?? 0) > 0
+  ) {
+    process.stdout.write(
+      "note=esri-leaflet-imports-detected-without-arcgis-js; codemod targets @arcgis/core inputs (not migrations from esri-leaflet)\n",
+    );
+  }
 
   if (report.manualTodos.length > 0) {
     process.stdout.write("manualTodos:\n");
@@ -534,9 +515,7 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
 
   process.stdout.write(`${summarizeLayerReconciliation(report)}\n`);
   process.stdout.write(
-    `checks=${report.checks
-      .map((check) => `${check.check}:${check.passed ? "pass" : "fail"}`)
-      .join(",")}\n`,
+    `checks=${report.checks.map((check) => `${check.check}:${check.passed ? "pass" : "fail"}`).join(",")}\n`,
   );
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
@@ -553,12 +532,9 @@ async function runReconcile(args: ParsedArgs): Promise<void> {
 async function runDemo(args: ParsedArgs): Promise<void> {
   const fixtureName = args.fixtureName ?? DEFAULT_DEMO_FIXTURE_NAME;
   const fixturesRoot = args.fixturesRoot ?? path.join(process.cwd(), "test", "fixtures");
-  const outputDir =
-    args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
+  const outputDir = args.outputDir ?? path.join(process.cwd(), ".tmp", "migration-demo", fixtureName);
   const sourceUrlDetails =
-    typeof args.sourceServiceUrl === "string"
-      ? parseGeoservicesServiceUrl(args.sourceServiceUrl)
-      : undefined;
+    typeof args.sourceServiceUrl === "string" ? parseGeoservicesServiceUrl(args.sourceServiceUrl) : undefined;
   const resolvedLayerId = args.layerId ?? sourceUrlDetails?.layerId;
   const adminApiKey = args.adminApiKey ?? process.env.HONUA_ADMIN_API_KEY;
 
@@ -608,7 +584,11 @@ async function runDemo(args: ParsedArgs): Promise<void> {
     skipImport: args.skipImport,
     skipReconciliation: args.skipReconcile,
     importOptions:
-      args.skipImport || !args.adminBaseUrl || !args.sourceServiceUrl || resolvedLayerId === undefined || !args.tableName
+      args.skipImport ||
+      !args.adminBaseUrl ||
+      !args.sourceServiceUrl ||
+      resolvedLayerId === undefined ||
+      !args.tableName
         ? undefined
         : {
             adminBaseUrl: args.adminBaseUrl,
@@ -677,6 +657,7 @@ async function runDemo(args: ParsedArgs): Promise<void> {
   const stdoutSummary = {
     fixture: report.fixtureName,
     codemodTarget: report.codemodTarget,
+    elapsedMs: report.elapsedMs,
     workingAppDir: report.workingAppDir,
     import: report.import
       ? {
@@ -713,7 +694,7 @@ async function runDemo(args: ParsedArgs): Promise<void> {
   };
 
   process.stdout.write(
-    `demoPassed=${report.passed ? "yes" : "no"} outputDir=${report.workingAppDir}\n`,
+    `demoPassed=${report.passed ? "yes" : "no"} elapsedMs=${report.elapsedMs} outputDir=${report.workingAppDir}\n`,
   );
   process.stdout.write(`${JSON.stringify(stdoutSummary, null, 2)}\n`);
 
@@ -745,14 +726,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
   }
 
   const maybeCommand = argv[0];
-  const command:
-    | "scan"
-    | "codemod"
-    | "reconcile"
-    | "matrix"
-    | "runtime-matrix"
-    | "fixtures"
-    | "demo" =
+  const command: "scan" | "codemod" | "reconcile" | "matrix" | "runtime-matrix" | "fixtures" | "demo" =
     maybeCommand === "scan" ||
     maybeCommand === "codemod" ||
     maybeCommand === "reconcile" ||
@@ -869,10 +843,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--target") {
       const next = positional[i + 1];
-      if (next !== "honua-compat" && next !== "esri-leaflet") {
+      if (next !== "honua" && next !== "honua-compat" && next !== "esri-leaflet") {
         return undefined;
       }
-      codemodTarget = next;
+      codemodTarget = next === "honua" ? "honua-compat" : next;
       i += 1;
       continue;
     }
@@ -1075,9 +1049,7 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     command,
     target:
       target ??
-      (command === "fixtures" || command === "demo"
-        ? path.join(process.cwd(), "test", "fixtures")
-        : process.cwd()),
+      (command === "fixtures" || command === "demo" ? path.join(process.cwd(), "test", "fixtures") : process.cwd()),
     write,
     codemodTarget,
     annotateTodos,
@@ -1118,10 +1090,24 @@ function formatByKindMetrics(byKind: CodemodMetricsByKind): string {
     .join(",");
 }
 
+function formatManualDifficultyBreakdown(todos: readonly { difficulty?: string }[]): string {
+  let trivial = 0;
+  let moderate = 0;
+  let complex = 0;
+  for (const todo of todos) {
+    if (todo.difficulty === "trivial") {
+      trivial += 1;
+    } else if (todo.difficulty === "complex") {
+      complex += 1;
+    } else {
+      moderate += 1;
+    }
+  }
+  return `[trivial:${trivial} moderate:${moderate} complex:${complex}]`;
+}
+
 function formatGateResults(gates: readonly { gate: string; passed: boolean }[]): string {
-  return gates
-    .map((gate) => `${gate.gate}:${gate.passed ? "pass" : "fail"}`)
-    .join(",");
+  return gates.map((gate) => `${gate.gate}:${gate.passed ? "pass" : "fail"}`).join(",");
 }
 
 function printUsage(): void {
@@ -1129,12 +1115,12 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate codemod <path> [--target <honua|honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
       "  honua-migrate runtime-matrix [--report <file>]",
-      "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate fixtures [<fixtures-root>] [--target <honua|honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
-      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua-compat|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
+      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
@@ -1147,6 +1133,12 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3",
       "  node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json",
       "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --report demo-report.json",
+      "",
+      "Target semantics:",
+      "  honua: alias of honua-compat.",
+      "  honua-compat: migrate ArcGIS JS (@arcgis/core) to @honua/sdk-esri-compat.",
+      "  esri-leaflet: migrate ArcGIS JS (@arcgis/core) to a mixed esri-leaflet + compat output.",
+      "  Existing esri-leaflet apps generally do not need this codemod.",
     ].join("\n"),
   );
   process.stdout.write("\n");

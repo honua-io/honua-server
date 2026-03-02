@@ -120,6 +120,7 @@ resource "azurerm_postgresql_flexible_server" "this" {
 }
 
 resource "azurerm_postgresql_flexible_server_configuration" "require_secure_transport" {
+  count     = local.db_use_existing ? 0 : 1
   name      = "require_secure_transport"
   server_id = azurerm_postgresql_flexible_server.this[0].id
   value     = "on"
@@ -284,6 +285,11 @@ resource "azurerm_container_app" "this" {
 
       env {
         name        = "HONUA_ADMIN_PASSWORD"
+        secret_name = "admin-password"
+      }
+
+      env {
+        name        = "Security__ConnectionEncryption__MasterKey"
         secret_name = "admin-password"
       }
 
