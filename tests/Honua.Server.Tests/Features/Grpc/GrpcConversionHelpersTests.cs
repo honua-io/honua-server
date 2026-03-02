@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -93,6 +94,36 @@ public sealed class GrpcConversionHelpersTests
 
         query.ObjectIds.Should().NotBeNull();
         query.ObjectIds!.Value.Should().BeEquivalentTo(new long[] { 1, 2, 3 });
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithOutSr_SetsOutputSrid()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { Wkid = 3857 }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.OutputSrid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithOutSrLatestWkid_SetsOutputSrid()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { LatestWkid = 4326 }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.OutputSrid.Should().Be(4326);
     }
 
     [UnitTest]
@@ -371,6 +402,44 @@ public sealed class GrpcConversionHelpersTests
         proto.Geometry.Should().BeNull();
     }
 
+    [UnitTest]
+    public void ToProtoFeature_IncludeGeometryFalse_OmitsGeometry()
+    {
+        var point = new Point(10.5, 20.3);
+        var wkb = WkbWriter.Write(point);
+        var feature = Feature.Create(1, wkb);
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature, includeGeometry: false);
+
+        proto.Geometry.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void CreateEffectiveGeometryLimits_UsesRequestOverrides()
+    {
+        var baseLimits = new GeometryLimits
+        {
+            MaxCoordinatePrecision = 8,
+            SimplifyTolerance = null,
+            MaxVerticesPerGeometry = 1000,
+            MaxGeometrySize = 1_000_000
+        };
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            GeometryPrecision = 3,
+            MaxAllowableOffset = 2.5
+        };
+
+        var effective = GrpcConversionHelpers.CreateEffectiveGeometryLimits(baseLimits, request);
+
+        effective.MaxCoordinatePrecision.Should().Be(3);
+        effective.SimplifyTolerance.Should().Be(2.5);
+        effective.MaxVerticesPerGeometry.Should().Be(0);
+    }
+
     // ── Enum mappings ───────────────────────────────────────────
 
     [UnitTest]
@@ -458,5 +527,61 @@ public sealed class GrpcConversionHelpersTests
         query.SpatialFilter!.Value.SpatialRelationship.Should().Be(SpatialRelationship.Within);
         query.SpatialFilter.Value.Srid.Should().Be(4326);
         query.SpatialFilter.Value.Geometry.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithMultiPolygonSpatialFilter_ConvertsGeometry()
+    {
+        var poly1 = new Proto.PolygonGeometry();
+        poly1.Rings.Add(new Proto.CoordinateSequence
+        {
+            Coords =
+            {
+                new Proto.Coordinate { X = 0, Y = 0 },
+                new Proto.Coordinate { X = 10, Y = 0 },
+                new Proto.Coordinate { X = 10, Y = 10 },
+                new Proto.Coordinate { X = 0, Y = 10 },
+                new Proto.Coordinate { X = 0, Y = 0 }
+            }
+        });
+
+        var poly2 = new Proto.PolygonGeometry();
+        poly2.Rings.Add(new Proto.CoordinateSequence
+        {
+            Coords =
+            {
+                new Proto.Coordinate { X = 20, Y = 20 },
+                new Proto.Coordinate { X = 30, Y = 20 },
+                new Proto.Coordinate { X = 30, Y = 30 },
+                new Proto.Coordinate { X = 20, Y = 30 },
+                new Proto.Coordinate { X = 20, Y = 20 }
+            }
+        });
+
+        var multiPoly = new Proto.MultiPolygonGeometry();
+        multiPoly.Polygons.Add(poly1);
+        multiPoly.Polygons.Add(poly2);
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            SpatialFilter = new Proto.SpatialFilter
+            {
+                Geometry = new Proto.Geometry { MultiPolygon = multiPoly },
+                SpatialRelationship = Proto.SpatialRelationship.Intersects
+            }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.SpatialFilter.Should().NotBeNull();
+        query.SpatialFilter!.Value.Geometry.Should().NotBeEmpty();
+
+        // Round-trip: WKB should deserialize back to a MultiPolygon with 2 polygons
+        var reader = new WKBReader();
+        var ntsGeom = reader.Read(query.SpatialFilter.Value.Geometry);
+        ntsGeom.Should().BeOfType<MultiPolygon>();
+        ((MultiPolygon)ntsGeom).NumGeometries.Should().Be(2);
     }
 }

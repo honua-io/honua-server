@@ -84,6 +84,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/operations/{operationId}/cancel"),
         new("GET", "/api/v1/admin/operations/active"),
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
+        new("GET", "/api/v1/admin/feature-events/replay"),
+        new("POST", "/api/v1/admin/tile-operations/jobs"),
+        new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
+        new("GET", "/api/v1/admin/tile-operations/jobs"),
+        new("POST", "/api/v1/admin/tile-operations/jobs/{jobId}/cancel"),
+        new("POST", "/api/v1/admin/tile-operations/jobs/{jobId}/retry"),
 
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),

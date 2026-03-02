@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Grpc.Core;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Microsoft.Extensions.Options;
 using Proto = Honua.Server.Features.Grpc.Proto;
 
 namespace Honua.Server.Features.Grpc;
@@ -16,22 +19,26 @@ namespace Honua.Server.Features.Grpc;
 /// </summary>
 internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
 {
-    private const int StreamBatchSize = 1000;
-
     private readonly IResourceValidator _resourceValidator;
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly ILogger<HonuaFeatureService> _logger;
+    private readonly GeometryLimits _geometryLimits;
+    private readonly int _streamBatchSize;
 
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
         IFeatureReader featureReader,
         IStreamingFeatureStore streamingFeatureStore,
+        IOptions<LimitsOptions> limitsOptions,
+        IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
         _streamingFeatureStore = streamingFeatureStore;
+        _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _streamBatchSize = grpcOptions?.Value?.StreamBatchSize ?? 1000;
         _logger = logger;
     }
 
@@ -53,14 +60,15 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
-        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+        var queryContext = CreateQueryContext(request, layer);
+        var query = queryContext.Query;
         var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
 
         var response = new Proto.QueryFeaturesResponse
         {
             ObjectIdFieldName = pkField,
             GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType),
-            SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(layer.SpatialReference)
+            SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference)
         };
 
         // Count-only query
@@ -87,7 +95,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 request.LayerId, query, context.CancellationToken).ConfigureAwait(false);
             if (extent.HasValue)
             {
-                response.Extent = GrpcConversionHelpers.ToProtoExtent(extent.Value, layer.SpatialReference);
+                response.Extent = GrpcConversionHelpers.ToProtoExtent(extent.Value, queryContext.ResponseSpatialReference);
             }
             return response;
         }
@@ -103,7 +111,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         foreach (var feature in result.Items)
         {
-            response.Features.Add(GrpcConversionHelpers.ToProtoFeature(feature));
+            response.Features.Add(GrpcConversionHelpers.ToProtoFeature(
+                feature,
+                queryContext.ReturnGeometry,
+                queryContext.GeometryLimits));
         }
 
         response.ExceededTransferLimit = result.HasMoreResults;
@@ -129,35 +140,74 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
-        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+        var queryContext = CreateQueryContext(request, layer);
+        var query = queryContext.Query;
         var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
 
         var isFirstPage = true;
-        var batch = new List<Proto.Feature>(StreamBatchSize);
+        var batch = new List<Proto.Feature>(_streamBatchSize);
 
-        await foreach (var feature in _streamingFeatureStore
+        await using var enumerator = _streamingFeatureStore
             .StreamFeaturesAsync(request.LayerId, query, context.CancellationToken)
-            .ConfigureAwait(false))
-        {
-            batch.Add(GrpcConversionHelpers.ToProtoFeature(feature));
+            .GetAsyncEnumerator(context.CancellationToken);
 
-            if (batch.Count >= StreamBatchSize)
+        while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+        {
+            batch.Add(GrpcConversionHelpers.ToProtoFeature(
+                enumerator.Current,
+                queryContext.ReturnGeometry,
+                queryContext.GeometryLimits));
+
+            if (batch.Count < _streamBatchSize)
             {
-                var page = CreatePage(batch, layer, pkField, isFirstPage, isLastPage: false);
-                await responseStream.WriteAsync(page, context.CancellationToken).ConfigureAwait(false);
-                isFirstPage = false;
-                batch.Clear();
+                continue;
             }
+
+            var hasMore = await enumerator.MoveNextAsync().ConfigureAwait(false);
+            if (!hasMore)
+            {
+                var lastFullPage = CreatePage(
+                    batch,
+                    layer,
+                    queryContext.ResponseSpatialReference,
+                    pkField,
+                    isFirstPage,
+                    isLastPage: true);
+                await responseStream.WriteAsync(lastFullPage, context.CancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var page = CreatePage(
+                batch,
+                layer,
+                queryContext.ResponseSpatialReference,
+                pkField,
+                isFirstPage,
+                isLastPage: false);
+            await responseStream.WriteAsync(page, context.CancellationToken).ConfigureAwait(false);
+            isFirstPage = false;
+            batch.Clear();
+
+            batch.Add(GrpcConversionHelpers.ToProtoFeature(
+                enumerator.Current,
+                queryContext.ReturnGeometry,
+                queryContext.GeometryLimits));
         }
 
-        // Send the final page (may be empty if count was exact multiple of batch size)
-        var lastPage = CreatePage(batch, layer, pkField, isFirstPage, isLastPage: true);
+        var lastPage = CreatePage(
+            batch,
+            layer,
+            queryContext.ResponseSpatialReference,
+            pkField,
+            isFirstPage,
+            isLastPage: true);
         await responseStream.WriteAsync(lastPage, context.CancellationToken).ConfigureAwait(false);
     }
 
     private static Proto.FeaturePage CreatePage(
         List<Proto.Feature> features,
-        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
+        LayerDefinition layer,
+        SpatialReference responseSpatialReference,
         string pkField,
         bool isFirstPage,
         bool isLastPage)
@@ -171,7 +221,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         {
             page.ObjectIdFieldName = pkField;
             page.GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType);
-            page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(layer.SpatialReference);
+            page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(responseSpatialReference);
 
             foreach (var field in layer.AttributeFields)
             {
@@ -183,6 +233,35 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         return page;
     }
 
+    private QueryContext CreateQueryContext(Proto.QueryFeaturesRequest request, LayerDefinition layer)
+    {
+        var query = GrpcConversionHelpers.ToFeatureQuery(request) with
+        {
+            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+        };
+
+        var outputSrid = query.OutputSrid;
+        if (request.OutSr != null && !outputSrid.HasValue)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid out_sr value."));
+        }
+
+        var responseSpatialReference = outputSrid.HasValue
+            ? SpatialReference.Create(
+                outputSrid.Value,
+                request.OutSr?.LatestWkid > 0 ? request.OutSr.LatestWkid : null,
+                vcsWkid: null,
+                latestVcsWkid: null,
+                wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
+            : layer.SpatialReference;
+
+        return new QueryContext(
+            query,
+            responseSpatialReference,
+            GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
+            request.ReturnGeometry);
+    }
+
     private static void EnsureGrpcEnabled(ServiceDefinition service)
     {
         if (ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Grpc))
@@ -192,4 +271,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         throw new RpcException(new Status(StatusCode.NotFound, "Grpc is not enabled for this service."));
     }
+
+    private readonly record struct QueryContext(
+        FeatureQuery Query,
+        SpatialReference ResponseSpatialReference,
+        GeometryLimits GeometryLimits,
+        bool ReturnGeometry);
 }

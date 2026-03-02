@@ -37,7 +37,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcMaps();
         services.AddOData();
         services.AddGeometryService();
-        services.AddHonuaGrpc();
+        services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration);
 
         return services;

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OgcFeatures.Services;
 
@@ -15,13 +16,15 @@ internal sealed class OgcFeaturesTransactionDependencies
         IFeatureWriter featureWriter,
         ICrsRegistry crsRegistry,
         OgcFeaturesGeometryServices geometryServices,
-        FeatureMutationValidator mutationValidator)
+        FeatureMutationValidator mutationValidator,
+        IFeatureChangeEventPublisher featureChangeEventPublisher)
     {
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
         CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         GeometryServices = geometryServices ?? throw new ArgumentNullException(nameof(geometryServices));
         MutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
+        FeatureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
     }
 
     public IFeatureReader FeatureReader { get; }
@@ -29,4 +32,5 @@ internal sealed class OgcFeaturesTransactionDependencies
     public ICrsRegistry CrsRegistry { get; }
     public OgcFeaturesGeometryServices GeometryServices { get; }
     public FeatureMutationValidator MutationValidator { get; }
+    public IFeatureChangeEventPublisher FeatureChangeEventPublisher { get; }
 }

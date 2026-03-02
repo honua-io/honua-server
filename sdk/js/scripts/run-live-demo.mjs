@@ -23,14 +23,14 @@ if (missing.length > 0) {
   process.exit(0);
 }
 
-const fixture = env("HONUA_DEMO_FIXTURE", "esri-real-sample-incident-command-app");
+const fixture = env("HONUA_DEMO_FIXTURE", "esri-demo-feature-table-relates-app");
 const fixturesRoot = env("HONUA_DEMO_FIXTURES_ROOT", "test/fixtures");
 const outputDir = env("HONUA_DEMO_OUTPUT_DIR", ".tmp/migration-demo-live");
 const codemodTarget = env("HONUA_DEMO_CODEMOD_TARGET", "honua-compat");
 const targetBaseUrl = env("HONUA_DEMO_TARGET_BASE_URL");
 const sourceServiceUrl = env("HONUA_DEMO_SOURCE_SERVICE_URL");
 const tableName = env("HONUA_DEMO_TABLE_NAME");
-const reportPath = env("HONUA_DEMO_REPORT_PATH", "reports/demo-incident-live-report.json");
+const reportPath = env("HONUA_DEMO_REPORT_PATH", "reports/demo-featuretable-live-report.json");
 const sampleSize = env("HONUA_DEMO_SAMPLE_SIZE", "200");
 const timeoutSeconds = env("HONUA_DEMO_TIMEOUT_SECONDS", "900");
 

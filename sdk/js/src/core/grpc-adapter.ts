@@ -618,7 +618,7 @@ function convertAttributeValue(attr: AttributeValue): unknown {
     case "datetimeValue":
       return Number(attr.value.value);
     case "bytesValue":
-      return null;
+      return attr.value.value;
     case "nullValue":
       return null;
     default:

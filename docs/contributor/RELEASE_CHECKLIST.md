@@ -14,12 +14,14 @@ Use this checklist for every MVP release.
 ## Compatibility Contract Updates (Required)
 
 - [ ] Update [MVP Compatibility Contract](../user/MVP_COMPATIBILITY_CONTRACT.md)
+- [ ] Execute [Client Templates + Manual Smoke Runbook](../user/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Confirm supported/partial/unsupported protocol notes are current
 - [ ] Confirm replication limitations section reflects runtime behavior
 
 ### Tested Client Versions (Required)
 
 Update from certification workflow outputs and manual validation logs:
+- [ ] Update [Client Template Version Matrix](../user/CLIENT_TEMPLATE_VERSION_MATRIX.md) with exact client versions, run date, and evidence links from `#320`
 
 | Client | Version tested | Protocol(s) | Result | Notes |
 |---|---|---|---|---|

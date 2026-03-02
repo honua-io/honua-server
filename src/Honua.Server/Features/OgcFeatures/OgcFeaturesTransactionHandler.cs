@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
@@ -33,6 +34,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = dependencies.FeatureChangeEventPublisher;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -95,6 +97,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     var result = await ProcessBatchOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
                     results.Add(result);
+
+                    if (result.IsSuccess &&
+                        TryGetBatchEventOperation(operation, result, out var eventOperation, out var objectId))
+                    {
+                        await _featureChangeEventPublisher.PublishAsync(
+                            new FeatureChangeEventRequest
+                            {
+                                ServiceId = collectionId,
+                                LayerId = layerId,
+                                ObjectId = objectId,
+                                Operation = eventOperation,
+                                Protocol = HonuaTelemetry.Protocols.OgcFeatures,
+                                RequestId = $"{context.TraceIdentifier}:{operation.Id ?? "batch"}"
+                            },
+                            cancellationToken).ConfigureAwait(false);
+                    }
 
                     if (!result.IsSuccess)
                     {
@@ -247,6 +265,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
                 await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+                await _featureChangeEventPublisher.PublishAsync(
+                    new FeatureChangeEventRequest
+                    {
+                        ServiceId = collectionId,
+                        LayerId = layerId,
+                        ObjectId = updated.Id,
+                        Operation = "update",
+                        Protocol = HonuaTelemetry.Protocols.OgcFeatures,
+                        RequestId = context.TraceIdentifier
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -447,6 +476,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
                 await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+                await _featureChangeEventPublisher.PublishAsync(
+                    new FeatureChangeEventRequest
+                    {
+                        ServiceId = collectionId,
+                        LayerId = layerId,
+                        ObjectId = updated.Id,
+                        Operation = "update",
+                        Protocol = HonuaTelemetry.Protocols.OgcFeatures,
+                        RequestId = context.TraceIdentifier
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -837,6 +877,52 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
         result = 0;
         return false;
+    }
+
+    private static bool TryGetBatchEventOperation(
+        BatchOperation operation,
+        BatchOperationResult result,
+        out string eventOperation,
+        out long objectId)
+    {
+        eventOperation = "update";
+        objectId = 0;
+
+        if (!result.IsSuccess)
+        {
+            return false;
+        }
+
+        var normalized = operation.Type.Trim().ToUpperInvariant();
+        switch (normalized)
+        {
+            case "CREATE":
+                if (!long.TryParse(result.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId))
+                {
+                    return false;
+                }
+
+                eventOperation = "create";
+                return true;
+            case "UPDATE":
+                if (!long.TryParse(result.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId))
+                {
+                    return false;
+                }
+
+                eventOperation = "update";
+                return true;
+            case "DELETE":
+                if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out objectId))
+                {
+                    return false;
+                }
+
+                eventOperation = "delete";
+                return true;
+            default:
+                return false;
+        }
     }
 
     private sealed record PatchRequest(

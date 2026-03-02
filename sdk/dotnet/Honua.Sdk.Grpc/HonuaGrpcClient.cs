@@ -99,6 +99,8 @@ public sealed class HonuaGrpcClient : IHonuaGrpcClient, IDisposable
             metadata.Add("x-api-key", opts.ApiKey);
         if (!string.IsNullOrEmpty(opts.BearerToken))
             metadata.Add("authorization", $"Bearer {opts.BearerToken}");
+        if (opts.EnableCompressionNegotiation && !string.IsNullOrWhiteSpace(opts.AcceptedCompressionEncodings))
+            metadata.Add("grpc-accept-encoding", opts.AcceptedCompressionEncodings);
         return metadata;
     }
 }

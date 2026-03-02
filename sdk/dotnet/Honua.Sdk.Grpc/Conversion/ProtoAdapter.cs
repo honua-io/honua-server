@@ -135,7 +135,7 @@ internal static class ProtoAdapter
             Proto.AttributeValue.ValueOneofCase.FloatValue => (double)attr.FloatValue,
             Proto.AttributeValue.ValueOneofCase.BoolValue => attr.BoolValue,
             Proto.AttributeValue.ValueOneofCase.DatetimeValue => attr.DatetimeValue,
-            Proto.AttributeValue.ValueOneofCase.BytesValue => null,
+            Proto.AttributeValue.ValueOneofCase.BytesValue => attr.BytesValue.ToByteArray(),
             Proto.AttributeValue.ValueOneofCase.NullValue => null,
             Proto.AttributeValue.ValueOneofCase.None => null,
             _ => null,

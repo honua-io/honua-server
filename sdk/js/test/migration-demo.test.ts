@@ -139,6 +139,7 @@ describe("migration demo helpers", () => {
     });
 
     expect(report.passed).toBe(true);
+    expect(report.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(report.migration.readiness).toBe("ready");
     expect(report.migration.codemodResult.metrics.manualCallSites).toBe(0);
     expect(fs.existsSync(path.join(report.workingAppDir, "src", "main.ts"))).toBe(true);

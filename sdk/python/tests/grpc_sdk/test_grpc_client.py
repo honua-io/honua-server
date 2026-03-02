@@ -32,7 +32,9 @@ class TestClientConstruction:
         mock_insecure.return_value = MagicMock()
         client = HonuaGrpcClient("localhost:50051")
 
-        mock_insecure.assert_called_once_with("localhost:50051", compression=None)
+        mock_insecure.assert_called_once_with(
+            "localhost:50051", compression=grpc.Compression.Gzip
+        )
         mock_stub_cls.assert_called_once()
         assert client._owns_channel is True
         client.close()

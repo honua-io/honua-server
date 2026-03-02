@@ -58,6 +58,8 @@ def to_proto_request(request: models.QueryFeaturesRequest) -> pb2.QueryFeaturesR
             msg.spatial_filter.spatial_reference.wkid = sf.spatial_reference.wkid
             msg.spatial_filter.spatial_reference.latest_wkid = sf.spatial_reference.latest_wkid
             msg.spatial_filter.spatial_reference.wkt = sf.spatial_reference.wkt
+        if sf.geometry:
+            msg.spatial_filter.geometry.CopyFrom(_to_proto_geometry(sf.geometry))
 
     return msg
 
@@ -145,7 +147,7 @@ def _convert_attribute(attr: Any) -> Any:
     elif which == "datetime_value":
         return attr.datetime_value  # UTC milliseconds since epoch
     elif which == "bytes_value":
-        return None
+        return bytes(attr.bytes_value)
     elif which == "null_value":
         return None
     return None
@@ -209,3 +211,49 @@ def _convert_geometry(geom: Any) -> dict[str, Any] | None:
                 rings.append(coords_list)
         return {"rings": rings}
     return None
+
+
+def _to_proto_geometry(geom: dict[str, Any]) -> Any:
+    """Convert an Esri JSON geometry dict to a proto Geometry message."""
+    from honua_sdk.grpc._generated.honua.v1 import feature_service_pb2 as pb2
+
+    msg = pb2.Geometry()
+
+    if "x" in geom and "y" in geom:
+        point = pb2.PointGeometry(x=geom["x"], y=geom["y"])
+        if "z" in geom:
+            point.z = geom["z"]
+        if "m" in geom:
+            point.m = geom["m"]
+        msg.point.CopyFrom(point)
+    elif "xmin" in geom and "ymin" in geom and "xmax" in geom and "ymax" in geom:
+        ring = pb2.CoordinateSequence(coords=[
+            pb2.Coordinate(x=geom["xmin"], y=geom["ymin"]),
+            pb2.Coordinate(x=geom["xmax"], y=geom["ymin"]),
+            pb2.Coordinate(x=geom["xmax"], y=geom["ymax"]),
+            pb2.Coordinate(x=geom["xmin"], y=geom["ymax"]),
+            pb2.Coordinate(x=geom["xmin"], y=geom["ymin"]),
+        ])
+        msg.polygon.CopyFrom(pb2.PolygonGeometry(rings=[ring]))
+    elif "points" in geom:
+        points = []
+        for pt in geom["points"]:
+            p = pb2.PointGeometry(x=pt[0], y=pt[1])
+            if len(pt) > 2:
+                p.z = pt[2]
+            points.append(p)
+        msg.multi_point.CopyFrom(pb2.MultiPointGeometry(points=points))
+    elif "paths" in geom:
+        paths = []
+        for path in geom["paths"]:
+            coords = [pb2.Coordinate(x=c[0], y=c[1]) for c in path]
+            paths.append(pb2.CoordinateSequence(coords=coords))
+        msg.polyline.CopyFrom(pb2.PolylineGeometry(paths=paths))
+    elif "rings" in geom:
+        rings = []
+        for ring in geom["rings"]:
+            coords = [pb2.Coordinate(x=c[0], y=c[1]) for c in ring]
+            rings.append(pb2.CoordinateSequence(coords=coords))
+        msg.polygon.CopyFrom(pb2.PolygonGeometry(rings=rings))
+
+    return msg

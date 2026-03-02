@@ -550,6 +550,10 @@ destroy_cluster() {
 verify_no_leaks() {
   local count
   local i
+  local -a arns=()
+  local -a existing_arns=()
+  local -a stale_arns=()
+  local arn
 
   for i in {1..10}; do
     count="$(aws resourcegroupstaggingapi get-resources --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" --query 'length(ResourceTagMappingList)' --output text 2>/dev/null || echo 0)"
@@ -560,7 +564,119 @@ verify_no_leaks() {
     sleep 15
   done
 
+  mapfile -t arns < <(
+    aws resourcegroupstaggingapi get-resources \
+      --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" \
+      --query 'ResourceTagMappingList[].ResourceARN' \
+      --output text 2>/dev/null | tr '\t' '\n' | sed '/^$/d'
+  )
+
+  resource_arn_exists() {
+    local resource_arn="$1"
+    local id
+    local exists
+    local resource_path
+    local cluster_name
+    local nodegroup_name
+
+    case "$resource_arn" in
+      arn:aws:ec2:*:*:instance/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-instances --instance-ids "$id" --query 'length(Reservations[].Instances[])' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:volume/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-volumes --volume-ids "$id" --query 'length(Volumes)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:natgateway/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-nat-gateways --nat-gateway-ids "$id" --query 'length(NatGateways)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:subnet/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-subnets --subnet-ids "$id" --query 'length(Subnets)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:vpc/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-vpcs --vpc-ids "$id" --query 'length(Vpcs)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:security-group/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-security-groups --group-ids "$id" --query 'length(SecurityGroups)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:network-interface/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-network-interfaces --network-interface-ids "$id" --query 'length(NetworkInterfaces)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:route-table/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-route-tables --route-table-ids "$id" --query 'length(RouteTables)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:internet-gateway/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-internet-gateways --internet-gateway-ids "$id" --query 'length(InternetGateways)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:ec2:*:*:eip-allocation/*)
+        id="${resource_arn##*/}"
+        exists="$(aws ec2 describe-addresses --allocation-ids "$id" --query 'length(Addresses)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:elasticloadbalancing:*:*:loadbalancer/*)
+        exists="$(aws elbv2 describe-load-balancers --load-balancer-arns "$resource_arn" --query 'length(LoadBalancers)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:elasticloadbalancing:*:*:targetgroup/*)
+        exists="$(aws elbv2 describe-target-groups --target-group-arns "$resource_arn" --query 'length(TargetGroups)' --output text 2>/dev/null || echo 0)"
+        [[ "$exists" != "0" && "$exists" != "None" ]]
+        ;;
+      arn:aws:eks:*:*:cluster/*)
+        id="${resource_arn##*/}"
+        aws eks describe-cluster --name "$id" >/dev/null 2>&1
+        ;;
+      arn:aws:eks:*:*:nodegroup/*)
+        resource_path="${resource_arn##*:}"
+        IFS='/' read -r _ cluster_name nodegroup_name _ <<< "$resource_path"
+        aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$nodegroup_name" >/dev/null 2>&1
+        ;;
+      *)
+        log_warn "Leak janitor cannot verify ARN type: $resource_arn (treating as existing)"
+        return 0
+        ;;
+    esac
+  }
+
+  if (( ${#arns[@]} == 0 )); then
+    log_error "Leak janitor check failed: tagged resources remain but no ARNs were returned"
+    return 1
+  fi
+
+  for arn in "${arns[@]}"; do
+    if resource_arn_exists "$arn"; then
+      existing_arns+=("$arn")
+    else
+      stale_arns+=("$arn")
+    fi
+  done
+
+  if (( ${#existing_arns[@]} == 0 )); then
+    log_warn "Leak janitor found only stale tag-index entries; no live resources remain"
+    return 0
+  fi
+
   log_error "Leak janitor check failed: resources tagged ValidationRunId=$VALIDATION_RUN_ID still exist"
+  printf '%s\n' "${existing_arns[@]}" | sed 's/^/[ERROR] live resource: /'
+  if (( ${#stale_arns[@]} > 0 )); then
+    printf '%s\n' "${stale_arns[@]}" | sed 's/^/[WARN] stale tag-index entry: /'
+  fi
   aws resourcegroupstaggingapi get-resources --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" --output json || true
   return 1
 }

@@ -12,6 +12,7 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -35,6 +36,7 @@ internal sealed class FeatureServerEditsHandler(
     private readonly IFeatureServerGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = dependencies.FeatureChangeEventPublisher;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -123,6 +125,7 @@ internal sealed class FeatureServerEditsHandler(
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
             {
                 await InvalidateCacheAsync(httpContext, serviceId, layerId, cancellationToken);
+                await PublishFeatureChangeEventsAsync(serviceId, layerId, editContext, cancellationToken);
             }
 
             // Build and return final response
@@ -403,6 +406,63 @@ internal sealed class FeatureServerEditsHandler(
         if (cacheInvalidator != null)
         {
             await cacheInvalidator.InvalidateLayerAsync(serviceId, layerId, cancellationToken);
+        }
+    }
+
+    private async Task PublishFeatureChangeEventsAsync(
+        string serviceId,
+        int layerId,
+        EditOperationContext context,
+        CancellationToken cancellationToken)
+    {
+        var requestId = _httpContextAccessor.HttpContext?.TraceIdentifier ?? "unknown";
+
+        var addResults = FinalizeResults(context.AddResults) ?? [];
+        foreach (var result in addResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        {
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = serviceId,
+                    LayerId = layerId,
+                    ObjectId = result.ObjectId!.Value,
+                    Operation = "create",
+                    Protocol = HonuaTelemetry.Protocols.FeatureServer,
+                    RequestId = requestId
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var updateResults = FinalizeResults(context.UpdateResults) ?? [];
+        foreach (var result in updateResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        {
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = serviceId,
+                    LayerId = layerId,
+                    ObjectId = result.ObjectId!.Value,
+                    Operation = "update",
+                    Protocol = HonuaTelemetry.Protocols.FeatureServer,
+                    RequestId = requestId
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var deleteResults = FinalizeResults(context.DeleteResults) ?? [];
+        foreach (var result in deleteResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        {
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = serviceId,
+                    LayerId = layerId,
+                    ObjectId = result.ObjectId!.Value,
+                    Operation = "delete",
+                    Protocol = HonuaTelemetry.Protocols.FeatureServer,
+                    RequestId = requestId
+                },
+                cancellationToken).ConfigureAwait(false);
         }
     }
 

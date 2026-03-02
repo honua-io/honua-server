@@ -234,6 +234,10 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 **OData v4:**
 - [OData v4 Coverage](specifications/odata-v4-coverage.md)
 
+**Client validation artifacts:**
+- [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
+- [Client Template Version Matrix](CLIENT_TEMPLATE_VERSION_MATRIX.md)
+
 **OGC CITE conformance (100% pass rate):**
 - OGC API Features: 137/137 tests
 - OGC API Tiles: 16/16 tests

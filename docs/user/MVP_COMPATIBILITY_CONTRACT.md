@@ -44,3 +44,4 @@ This checklist requires:
 - refreshed supported/partial/unsupported status
 - tested client versions from compatibility certification
 - known caveats and workarounds
+- client template validation via [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)

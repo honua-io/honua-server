@@ -81,6 +81,7 @@ export interface MigrationDemoOptions {
 
 export interface MigrationDemoReport {
   generatedAt: string;
+  elapsedMs: number;
   fixtureName: string;
   codemodTarget: CodemodTarget;
   workingAppDir: string;
@@ -91,6 +92,7 @@ export interface MigrationDemoReport {
 }
 
 export async function runMigrationDemo(options: MigrationDemoOptions): Promise<MigrationDemoReport> {
+  const startedAtMs = Date.now();
   const codemodTarget = options.codemodTarget ?? "honua-compat";
   const fixtureRootDir = path.resolve(options.fixturesRoot);
   const fixtureDir = path.join(fixtureRootDir, options.fixtureName);
@@ -134,9 +136,11 @@ export async function runMigrationDemo(options: MigrationDemoOptions): Promise<M
   const importPassed = !importReport || importReport.status === "Completed";
   const migrationPassed = migrationReport.readiness === "ready";
   const reconciliationPassed = !reconciliationReport || reconciliationReport.passed;
+  const elapsedMs = Math.max(0, Date.now() - startedAtMs);
 
   return {
     generatedAt: new Date().toISOString(),
+    elapsedMs,
     fixtureName: options.fixtureName,
     codemodTarget,
     workingAppDir,

@@ -114,18 +114,18 @@ jobs:
       - name: Esri Leaflet deterministic target gate
         run: npm run gate:migration:esri-leaflet-target
 
-      - name: Incident demo codemod pipeline report
+      - name: FeatureTable demo codemod pipeline report
         continue-on-error: true
         run: |
-          npm run demo:migration:incident || (
-            echo "Retrying incident demo codemod pipeline report once after transient failure..."
-            npm run demo:migration:incident
+          npm run demo:migration:featuretable || (
+            echo "Retrying feature-table demo codemod pipeline report once after transient failure..."
+            npm run demo:migration:featuretable
           )
 
       - name: Constructor parity matrix artifact
         run: npm run matrix:parity
 
-      - name: Incident demo live migration pipeline (optional)
+      - name: FeatureTable demo live migration pipeline (optional)
         continue-on-error: true
         env:
           HONUA_DEMO_TARGET_BASE_URL: ${{ secrets.HONUA_DEMO_TARGET_BASE_URL }}
@@ -138,7 +138,7 @@ jobs:
           HONUA_DEMO_TARGET_SERVICE_ID: ${{ secrets.HONUA_DEMO_TARGET_SERVICE_ID }}
           HONUA_DEMO_SAMPLE_SIZE: ${{ vars.HONUA_DEMO_SAMPLE_SIZE }}
           HONUA_DEMO_TIMEOUT_SECONDS: ${{ vars.HONUA_DEMO_TIMEOUT_SECONDS }}
-        run: npm run demo:migration:incident:live
+        run: npm run demo:migration:featuretable:live
 
       - name: Runtime parity matrix artifact
         run: npm run matrix:runtime
@@ -157,9 +157,9 @@ jobs:
         with:
           name: js-migration-artifacts
           path: |
-            sdk/js/reports/demo-target-metrics.json
-            sdk/js/reports/esri-leaflet-target-metrics.json
-            sdk/js/reports/demo-incident-codemod-report.json
+            sdk/js/reports/demo-featuretable-primary-metrics.json
+            sdk/js/reports/demo-featuretable-fallback-esri-leaflet-metrics.json
+            sdk/js/reports/demo-featuretable-codemod-report.json
             sdk/js/reports/parity-matrix.json
             sdk/js/reports/real-sample-metrics.json
             sdk/js/reports/runtime-parity-matrix.json
@@ -168,7 +168,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: js-live-demo-artifacts
-          path: sdk/js/reports/demo-incident-live-report.json
+          path: sdk/js/reports/demo-featuretable-live-report.json
           if-no-files-found: ignore
 
   mcp-sdk-validation:

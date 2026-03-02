@@ -33,6 +33,7 @@ curl http://localhost:8080/healthz/ready
 
 **Next Steps:**
 - [Geospatial API Examples](API_EXAMPLES.md)
+- [Client Templates + Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
 - [MapServer Coverage Matrix](map-server-matrix.md)
 - [Protocols Overview](STANDARDS_APIS.md)
@@ -59,6 +60,7 @@ http://<host>/odata/Features?$select=id,name,population&$filter=population%20gt%
 
 **Next Steps:**
 - [OData API Examples](API_EXAMPLES.md#odata-v4-api)
+- [Client Templates + Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
 - [Data Modeling Guide](DATA_MODELING_GUIDE.md)
 
 ---

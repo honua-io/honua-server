@@ -267,6 +267,9 @@ node dist/src/migration/cli.js codemod ./src --report migration-report.json
 # Safe codemod (write changes)
 node dist/src/migration/cli.js codemod ./src --write --report migration-report.json
 
+# Safe codemod (explicit honua target alias)
+node dist/src/migration/cli.js codemod ./src --target honua --write --report migration-report.json
+
 # Safe codemod (write changes targeting esri-leaflet for supported subset)
 node dist/src/migration/cli.js codemod ./src --target esri-leaflet --write --report migration-report.json
 
@@ -286,10 +289,10 @@ node dist/src/migration/cli.js fixtures --report reports/real-sample-metrics.jso
 node dist/src/migration/cli.js fixtures --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/real-sample-metrics.json
 
 # Enforce strict readiness gates for the demo target fixture only
-node dist/src/migration/cli.js fixtures --fixtures esri-real-sample-incident-command-app --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/demo-target-metrics.json
+node dist/src/migration/cli.js fixtures --target honua --fixtures esri-demo-feature-table-relates-app --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0 --max-manual-intervention-ratio 0 --report reports/demo-featuretable-primary-metrics.json
 
 # Limit fixture metrics to a subset and esri-leaflet target mode
-node dist/src/migration/cli.js fixtures --target esri-leaflet --fixtures esri-real-sample-network-app --report reports/network-metrics.json
+node dist/src/migration/cli.js fixtures --target esri-leaflet --fixtures esri-demo-feature-table-popup-interaction-app --report reports/demo-featuretable-fallback-esri-leaflet-metrics.json
 
 # Gate in CI (non-zero exit if migration constraints fail)
 node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandled --fail-on-blocked --max-manual-ratio 0.2 --max-manual-intervention-ratio 0.3
@@ -298,8 +301,47 @@ node dist/src/migration/cli.js codemod ./src --fail-on-manual --fail-on-unhandle
 node dist/src/migration/cli.js reconcile --source-base-url https://source.example --source-service-id parcels --target-base-url https://target.example --target-service-id parcels --layer-id 0 --sample-size 200 --report reconcile-report.json
 ```
 
+## FeatureTable Demo Lane (#327)
+
+Primary target:
+- fixture: `esri-demo-feature-table-relates-app`
+- sample: `FeatureTable with related records`
+- source: `https://developers.arcgis.com/javascript/latest/sample-code/widgets-featuretable-relates/`
+
+Fallback target:
+- fixture: `esri-demo-feature-table-popup-interaction-app`
+- sample: `Feature table with popup interaction`
+- source: `https://developers.arcgis.com/javascript/latest/sample-code/widgets-featuretable-popup-interaction/`
+
+Pinned attribution metadata is tracked in `test/fixtures/DEMO_TARGETS.md` and fixture-local `ATTRIBUTION.md` files.
+
+Runbook (codemod-only CI reproducible path):
+
+```bash
+# 1) Run primary demo lane migration (honua target)
+npm run demo:migration:featuretable
+
+# 2) Validate primary lane readiness gates and report metrics
+npm run gate:migration:demo-target
+
+# 3) Validate fallback lane deterministic esri-leaflet mapping
+npm run gate:migration:esri-leaflet-target
+```
+
+Report metrics to capture:
+- elapsed time: `reports/demo-featuretable-codemod-report.json -> elapsedMs`
+- manual rewrite ratio: `migration.manualRewriteMetric.ratio`
+- manual intervention count: `migration.manualInterventionMetric.numerator`
+- manual rewrite count: `migration.manualRewriteMetric.numerator`
+
+Quick metric extract:
+
+```bash
+node -e 'const r=require("./reports/demo-featuretable-codemod-report.json"); console.log({elapsedMs:r.elapsedMs, manualRewriteRatio:r.migration.manualRewriteMetric.ratio, manualInterventionCount:r.migration.manualInterventionMetric.numerator, manualRewriteCount:r.migration.manualRewriteMetric.numerator});'
+```
+
 The codemod is intentionally conservative:
-- default target (`--target honua-compat`) rewrites safe constructors:
+- default target (`--target honua` alias of `honua-compat`) rewrites safe constructors:
   - `new FeatureLayer({ url: ... })` -> `new FeatureLayerCompat({ url: ... })` (supports `id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `labelsVisible`, `opacity`, `visible`, `minScale`, `maxScale`, `legendEnabled`, and `listMode`; `url` may be absolute or relative, including path-prefixed deployments)
   - `new Polyline(...)` -> `new PolylineCompat(...)`
   - `new Polygon(...)` -> `new PolygonCompat(...)`

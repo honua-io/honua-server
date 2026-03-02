@@ -86,6 +86,36 @@ afterEach(() => {
 });
 
 describe("migration cli target selection", () => {
+  it("accepts --target honua as alias of honua-compat", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const appFile = path.join(root, "app.ts");
+    const reportPath = path.join(root, "report-honua.json");
+
+    fs.writeFileSync(
+      appFile,
+      [
+        "import Map from '@arcgis/core/Map';",
+        "const map = new Map({ basemap: 'streets' });",
+        "void map;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runCli(
+      ["codemod", root, "--target", "honua", "--write", "--report", reportPath],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("target=honua-compat");
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const migrated = fs.readFileSync(appFile, "utf8");
+    expect(migrated).toContain('import { MapCompat } from "@honua/sdk-esri-compat";');
+    expect(migrated).toContain("const map = new MapCompat({ basemap: 'streets' });");
+  }, 60_000);
+
   it("runs codemod with --target esri-leaflet and emits a deterministic mixed mapping report", () => {
     ensureBuiltCliArtifacts();
     const root = makeTempDir();
@@ -163,5 +193,49 @@ describe("migration cli target selection", () => {
     expect(result.stdout).toContain(
       "note=esri-leaflet-imports-detected-without-arcgis-js; codemod targets @arcgis/core inputs (not migrations from esri-leaflet)",
     );
+  }, 60_000);
+
+  it("emits explicit TODO annotations for unsupported esri-leaflet mappings", () => {
+    ensureBuiltCliArtifacts();
+    const root = makeTempDir();
+    const appFile = path.join(root, "app.ts");
+    const reportPath = path.join(root, "unsupported-report.json");
+
+    fs.writeFileSync(
+      appFile,
+      [
+        "import SceneView from '@arcgis/core/views/SceneView';",
+        "const scene = new SceneView({",
+        "  container: 'viewDiv',",
+        "  viewingMode: 'global',",
+        "  environment: { starsEnabled: true }",
+        "});",
+        "void scene;",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = runCli(
+      ["codemod", root, "--target", "esri-leaflet", "--write", "--annotate-todos", "--report", reportPath],
+      getProjectRoot(),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("target=esri-leaflet");
+    expect(result.stdout).toContain("manual=[");
+    expect(fs.existsSync(reportPath)).toBe(true);
+
+    const migrated = fs.readFileSync(appFile, "utf8");
+    expect(migrated).toContain("TODO(honua-migrate)");
+    expect(migrated).toContain("requires manual migration");
+
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+      readiness: string;
+      manualTodos: Array<{ kind: string; reason: string }>;
+    };
+    expect(report.readiness).toBe("blocked");
+    expect(report.manualTodos).toHaveLength(1);
+    expect(report.manualTodos[0]?.kind).toBe("scene-view");
+    expect(report.manualTodos[0]?.reason).toContain("unsupported properties");
   }, 60_000);
 });

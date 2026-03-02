@@ -146,3 +146,9 @@ variable "grafana_ingress_tls_secret" {
   type        = string
   default     = ""
 }
+
+variable "helm_timeout_seconds" {
+  description = "Timeout in seconds for Helm release install/upgrade operations."
+  type        = number
+  default     = 900
+}

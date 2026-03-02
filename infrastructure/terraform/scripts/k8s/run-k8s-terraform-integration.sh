@@ -69,6 +69,9 @@ PREVIOUS_IMAGE_REPOSITORY=""
 PREVIOUS_IMAGE_TAG=""
 HONUA_DEPLOYMENT_NAME=""
 HONUA_SERVICE_NAME=""
+K8S_HELPER_DIR=""
+K8S_ADMIN_PASSWORD=""
+K8S_MASTER_KEY=""
 
 if [[ -n "${KUBECONFIG:-}" ]]; then
   KUBECONFIG_PATH="${KUBECONFIG%%:*}"
@@ -309,6 +312,36 @@ parse_image() {
   printf -v "$tag_var" "%s" "$tag"
 }
 
+resolve_k8s_helper_dir() {
+  K8S_HELPER_DIR="$SCRIPT_DIR/k8s"
+  if [[ -d "$K8S_HELPER_DIR" ]]; then
+    return
+  fi
+
+  log_error "Could not locate helper scripts directory: $K8S_HELPER_DIR"
+  exit 1
+}
+
+resolve_secret_values() {
+  local default_admin_password="HonuaK8sValidationAdminPassword2026!"
+  local default_master_key="HonuaK8sValidationMasterKey-2026-0123456789"
+
+  K8S_ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-}"
+  if [[ -z "$K8S_ADMIN_PASSWORD" ]]; then
+    K8S_ADMIN_PASSWORD="$default_admin_password"
+    log_warn "HONUA_ADMIN_PASSWORD not set; using generated validation default"
+  elif (( ${#K8S_ADMIN_PASSWORD} < 12 )); then
+    log_warn "HONUA_ADMIN_PASSWORD shorter than 12 characters; using generated validation default"
+    K8S_ADMIN_PASSWORD="$default_admin_password"
+  fi
+
+  K8S_MASTER_KEY="${SECURITY_MASTER_KEY:-$K8S_ADMIN_PASSWORD}"
+  if (( ${#K8S_MASTER_KEY} < 32 )); then
+    log_warn "SECURITY_MASTER_KEY shorter than 32 characters; using generated validation default"
+    K8S_MASTER_KEY="$default_master_key"
+  fi
+}
+
 assert_idempotent_plan() {
   local root="$1"
   local log_file
@@ -354,6 +387,8 @@ run_load_probe() {
   local failures
   local error_rate
   local url
+  local pid
+  local pids=()
   local curl_args=()
 
   url="$(http_base_url)/healthz/ready"
@@ -369,13 +404,19 @@ run_load_probe() {
         echo "1" >> "$fail_file"
       fi
     ) &
+    pids+=("$!")
 
-    if (( i % concurrency == 0 )); then
-      wait
+    if (( ${#pids[@]} >= concurrency )); then
+      for pid in "${pids[@]}"; do
+        wait "$pid"
+      done
+      pids=()
     fi
   done
 
-  wait
+  for pid in "${pids[@]}"; do
+    wait "$pid"
+  done
 
   failures="$(wc -l < "$fail_file" | tr -d ' ')"
   rm -f "$fail_file"
@@ -458,7 +499,7 @@ verify_protocol_endpoints() {
   local curl_args=()
 
   base="$(http_base_url)"
-  admin_api_key="${HONUA_ADMIN_PASSWORD:-change-me}"
+  admin_api_key="$K8S_ADMIN_PASSWORD"
   if [[ "$ACCESS_MODE" == "ingress" ]]; then
     curl_args=(-H "Host: ${INGRESS_HOSTNAME}")
   fi
@@ -552,7 +593,7 @@ run_admin_api_crud_smoke() {
   local curl_args=()
 
   base="$(http_base_url)"
-  admin_api_key="${HONUA_ADMIN_PASSWORD:-change-me}"
+  admin_api_key="$K8S_ADMIN_PASSWORD"
 
   if [[ "$ACCESS_MODE" == "ingress" ]]; then
     curl_args=(-H "Host: ${INGRESS_HOSTNAME}")
@@ -735,6 +776,8 @@ run_helm_static_validation() {
     --set ingress.hosts[0].paths[0].pathType='Prefix' \
     --set postgresql.enabled=false \
     --set-string secret.env.ConnectionStrings__DefaultConnection='Host=honua-postgis;Port=5432;Database=honua;Username=honua;Password=honua' \
+    --set secret.env.HONUA_ADMIN_PASSWORD="$K8S_ADMIN_PASSWORD" \
+    --set-string secret.env.Security__ConnectionEncryption__MasterKey="$K8S_MASTER_KEY" \
     --set image.repository="$HONUA_IMAGE_REPOSITORY" \
     --set image.tag="$HONUA_IMAGE_TAG" >/dev/null
 
@@ -747,6 +790,8 @@ run_helm_static_validation() {
     --set ingress.hosts[0].paths[0].pathType='Prefix' \
     --set postgresql.enabled=false \
     --set-string secret.env.ConnectionStrings__DefaultConnection='Host=honua-postgis;Port=5432;Database=honua;Username=honua;Password=honua' \
+    --set secret.env.HONUA_ADMIN_PASSWORD="$K8S_ADMIN_PASSWORD" \
+    --set-string secret.env.Security__ConnectionEncryption__MasterKey="$K8S_MASTER_KEY" \
     --set image.repository="$HONUA_IMAGE_REPOSITORY" \
     --set image.tag="$HONUA_IMAGE_TAG" > "$rendered"
 
@@ -780,10 +825,10 @@ create_cluster() {
   fi
 
   CLUSTER_NAME="$CLUSTER_NAME" \
-    K3D_HTTP_PORT="$HTTP_PORT" \
-    K3D_HTTPS_PORT="$HTTPS_PORT" \
-    K3D_API_PORT="$API_PORT" \
-    "$SCRIPT_DIR/k8s/k3d-up.sh"
+  K3D_HTTP_PORT="$HTTP_PORT" \
+  K3D_HTTPS_PORT="$HTTPS_PORT" \
+  K3D_API_PORT="$API_PORT" \
+    "$K8S_HELPER_DIR/k3d-up.sh"
 
   kubectl config use-context "k3d-${CLUSTER_NAME}" >/dev/null
 }
@@ -805,10 +850,12 @@ deploy_honua_release() {
     INGRESS_HOSTNAME="$INGRESS_HOSTNAME" \
     LOCAL_HTTP_PORT="$HTTP_PORT" \
     POSTGRESQL_ENABLED="false" \
-    DEFAULT_CONNECTION_STRING="Host=honua-postgis;Port=5432;Database=honua;Username=honua;Password=honua" \
-    HONUA_IMAGE_REPOSITORY="$image_repository" \
-    HONUA_IMAGE_TAG="$image_tag" \
-    "$SCRIPT_DIR/k8s/helm-install.sh"
+  DEFAULT_CONNECTION_STRING="Host=honua-postgis;Port=5432;Database=honua;Username=honua;Password=honua" \
+  HONUA_ADMIN_PASSWORD="$K8S_ADMIN_PASSWORD" \
+  SECURITY_MASTER_KEY="$K8S_MASTER_KEY" \
+  HONUA_IMAGE_REPOSITORY="$image_repository" \
+  HONUA_IMAGE_TAG="$image_tag" \
+    "$K8S_HELPER_DIR/helm-install.sh"
 
   HONUA_APPLIED=true
 
@@ -821,7 +868,7 @@ deploy_honua_release() {
   fi
 
   kubectl -n "$NAMESPACE" rollout status "deployment/${HONUA_DEPLOYMENT_NAME}" --timeout="${TIMEOUT_SECONDS}s"
-  RELEASE_NAME="$RELEASE_NAME" NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/k8s/helm-test.sh"
+  RELEASE_NAME="$RELEASE_NAME" NAMESPACE="$NAMESPACE" "$K8S_HELPER_DIR/helm-test.sh"
   start_port_forward
 
   log_info "Release deployment complete for phase: $label"
@@ -886,7 +933,7 @@ run_scale_check() {
 deploy_honua_stack() {
   log_info "Deploying k8s PostGIS and Honua Helm release"
 
-  NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/k8s/postgis-up.sh"
+  NAMESPACE="$NAMESPACE" "$K8S_HELPER_DIR/postgis-up.sh"
   POSTGIS_APPLIED=true
 
   if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
@@ -933,6 +980,8 @@ apply_observability_stack() {
   export TF_VAR_namespace="$OBS_NAMESPACE"
   export TF_VAR_honua_metrics_target="${HONUA_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local:80"
   export TF_VAR_grafana_ingress_host=""
+  export TF_VAR_prometheus_persistence_enabled=false
+  export TF_VAR_grafana_persistence_enabled=false
 
   terraform -chdir="$root" init -input=false -no-color
   terraform -chdir="$root" plan -input=false -no-color -out=observability.tfplan
@@ -964,6 +1013,8 @@ destroy_observability_stack() {
   export TF_VAR_namespace="$OBS_NAMESPACE"
   export TF_VAR_honua_metrics_target="${HONUA_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local:80"
   export TF_VAR_grafana_ingress_host=""
+  export TF_VAR_prometheus_persistence_enabled=false
+  export TF_VAR_grafana_persistence_enabled=false
   terraform -chdir="$root" destroy -input=false -auto-approve -no-color || log_warn "Observability destroy encountered errors"
 }
 
@@ -977,7 +1028,7 @@ destroy_honua_stack() {
 
   if [[ "$POSTGIS_APPLIED" == "true" ]]; then
     log_info "Removing PostGIS deployment"
-    NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/k8s/postgis-down.sh" || log_warn "PostGIS cleanup encountered errors"
+    NAMESPACE="$NAMESPACE" "$K8S_HELPER_DIR/postgis-down.sh" || log_warn "PostGIS cleanup encountered errors"
   fi
 }
 
@@ -992,7 +1043,7 @@ destroy_cluster() {
   fi
 
   log_info "Deleting k3d cluster '$CLUSTER_NAME'"
-  CLUSTER_NAME="$CLUSTER_NAME" "$SCRIPT_DIR/k8s/k3d-down.sh" || log_warn "k3d cluster deletion encountered errors"
+  CLUSTER_NAME="$CLUSTER_NAME" "$K8S_HELPER_DIR/k3d-down.sh" || log_warn "k3d cluster deletion encountered errors"
 }
 
 cleanup() {
@@ -1036,6 +1087,9 @@ main() {
 
   export KUBECONFIG="$KUBECONFIG_PATH"
 
+  resolve_k8s_helper_dir
+  resolve_secret_values
+
   parse_image "$HONUA_IMAGE" HONUA_IMAGE_REPOSITORY HONUA_IMAGE_TAG
   if [[ -n "$PREVIOUS_IMAGE" ]]; then
     parse_image "$PREVIOUS_IMAGE" PREVIOUS_IMAGE_REPOSITORY PREVIOUS_IMAGE_TAG
@@ -1064,6 +1118,7 @@ main() {
   log_info "Ready SLO seconds: $READY_SLO_SECONDS"
   log_info "Max load error rate: ${MAX_LOAD_ERROR_RATE_PERCENT}%"
   log_info "Kubeconfig path: $KUBECONFIG_PATH"
+  log_info "Helper scripts path: $K8S_HELPER_DIR"
   if [[ -n "$KUBE_CONTEXT" ]]; then
     log_info "Kube context: $KUBE_CONTEXT"
   fi

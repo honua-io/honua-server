@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
@@ -25,6 +26,7 @@ internal sealed partial class ODataBatchOperationHandler(
     ODataBatchDependencies batchDependencies,
     ODataValidationService validationService,
     IETagService etagService,
+    IFeatureChangeEventPublisher featureChangeEventPublisher,
     ILogger<ODataBatchOperationHandler> logger)
 {
     private const int MaxBatchOperationCount = 1000;
@@ -37,6 +39,7 @@ internal sealed partial class ODataBatchOperationHandler(
     private readonly ODataBatchDependencies _batchDependencies = batchDependencies ?? throw new ArgumentNullException(nameof(batchDependencies));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
     private readonly ILogger<ODataBatchOperationHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -89,6 +92,7 @@ internal sealed partial class ODataBatchOperationHandler(
 
             // Handle cache invalidation for mutated layers
             await InvalidateCacheForBatchAsync(context, batchRequest, effectiveToken);
+            await PublishBatchFeatureEventsAsync(context, batchRequest, response, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
 
@@ -684,6 +688,56 @@ internal sealed partial class ODataBatchOperationHandler(
             : AccessDecision.Forbidden("Access to one or more requested layers is forbidden.");
     }
 
+    private async Task PublishBatchFeatureEventsAsync(
+        HttpContext context,
+        ODataBatchRequest batchRequest,
+        ODataBatchResponse response,
+        CancellationToken cancellationToken)
+    {
+        var requestsById = batchRequest.Requests
+            .GroupBy(static request => request.Id, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+
+        foreach (var responseItem in response.Responses)
+        {
+            if (responseItem.Status < 200 || responseItem.Status >= 300)
+            {
+                continue;
+            }
+
+            if (!requestsById.TryGetValue(responseItem.Id, out var request) ||
+                !IsMutationMethod(request.Method))
+            {
+                continue;
+            }
+
+            if (!TryResolveLayerId(request, out var layerId) ||
+                !TryResolveObjectId(request, responseItem, out var objectId))
+            {
+                continue;
+            }
+
+            var eventOperation = request.Method.ToUpperInvariant() switch
+            {
+                "POST" => "create",
+                "DELETE" => "delete",
+                _ => "update"
+            };
+
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = "odata",
+                    LayerId = layerId,
+                    ObjectId = objectId,
+                    Operation = eventOperation,
+                    Protocol = Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData,
+                    RequestId = $"{context.TraceIdentifier}:{responseItem.Id}"
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// Invalidates cache for layers modified in the batch operation
     /// </summary>
@@ -770,7 +824,15 @@ internal sealed partial class ODataBatchOperationHandler(
 
         if (!ODataPathParser.TryParse(request.Url, out var parsed, out _))
         {
-            return false;
+            if (request.Body == null ||
+                !ODataFeaturePayloadParser.TryParse(request.Body, out var fallbackPayload, out _) ||
+                !fallbackPayload.LayerId.HasValue)
+            {
+                return false;
+            }
+
+            layerId = fallbackPayload.LayerId.Value;
+            return true;
         }
 
         if (parsed.LayerId.HasValue)
@@ -792,6 +854,126 @@ internal sealed partial class ODataBatchOperationHandler(
         }
 
         return false;
+    }
+
+    private static bool TryResolveObjectId(
+        ODataBatchRequestItem request,
+        ODataBatchResponseItem response,
+        out long objectId)
+    {
+        objectId = 0;
+        var method = request.Method.ToUpperInvariant();
+        if (method is "PATCH" or "DELETE" or "PUT")
+        {
+            if (!ODataPathParser.TryParse(request.Url, out var parsed, out _) ||
+                !parsed.ObjectId.HasValue)
+            {
+                return false;
+            }
+
+            objectId = parsed.ObjectId.Value;
+            return true;
+        }
+
+        if (method != "POST")
+        {
+            return false;
+        }
+
+        if (TryGetObjectIdFromBody(response.Body, out objectId))
+        {
+            return true;
+        }
+
+        if (response.Headers != null)
+        {
+            if (response.Headers.TryGetValue("OData-EntityId", out var entityId) &&
+                TryGetObjectIdFromLocation(entityId, out objectId))
+            {
+                return true;
+            }
+
+            if (response.Headers.TryGetValue("Location", out var location) &&
+                TryGetObjectIdFromLocation(location, out objectId))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetObjectIdFromBody(object? body, out long objectId)
+    {
+        objectId = 0;
+        if (body is Dictionary<string, object?> dictionary)
+        {
+            if (!dictionary.TryGetValue("ObjectId", out var raw) || raw == null)
+            {
+                return false;
+            }
+
+            return long.TryParse(
+                Convert.ToString(raw, CultureInfo.InvariantCulture),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out objectId);
+        }
+
+        if (body is JsonElement element &&
+            element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("ObjectId", out var property))
+        {
+            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out objectId))
+            {
+                return true;
+            }
+
+            if (property.ValueKind == JsonValueKind.String)
+            {
+                return long.TryParse(
+                    property.GetString(),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out objectId);
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetObjectIdFromLocation(string? location, out long objectId)
+    {
+        objectId = 0;
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return false;
+        }
+
+        const string key = "ObjectId=";
+        var index = location.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var start = index + key.Length;
+        var end = start;
+        while (end < location.Length && char.IsDigit(location[end]))
+        {
+            end++;
+        }
+
+        if (end <= start)
+        {
+            return false;
+        }
+
+        return long.TryParse(
+            location[start..end],
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out objectId);
     }
 
     /// <summary>

@@ -3,9 +3,11 @@
 
 using System.Collections.Immutable;
 using Google.Protobuf;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using DomainDistanceUnit = Honua.Core.Features.FeatureStore.Domain.DistanceUnit;
@@ -21,10 +23,15 @@ namespace Honua.Server.Features.Grpc;
 /// </summary>
 internal static class GrpcConversionHelpers
 {
+    private static readonly GeometryFactory GeoFactory = new();
+
     [ThreadStatic]
     private static WKBReader? _wkbReader;
+    [ThreadStatic]
+    private static WKBWriter? _wkbWriter;
 
     private static WKBReader WkbReader => _wkbReader ??= new WKBReader();
+    private static WKBWriter WkbWriter => _wkbWriter ??= new WKBWriter();
 
     /// <summary>
     /// Converts a proto QueryFeaturesRequest into a domain FeatureQuery.
@@ -42,6 +49,7 @@ internal static class GrpcConversionHelpers
                 : null,
             Offset = request.ResultOffset > 0 ? request.ResultOffset : null,
             Limit = request.ResultRecordCount > 0 ? request.ResultRecordCount : null,
+            OutputSrid = TryResolveOutputSrid(request.OutSr),
             Distinct = request.ReturnDistinct,
             SpatialFilter = request.SpatialFilter != null
                 ? ToSpatialFilter(request.SpatialFilter)
@@ -72,9 +80,50 @@ internal static class GrpcConversionHelpers
     }
 
     /// <summary>
+    /// Resolves an output SRID from proto spatial reference parameters.
+    /// </summary>
+    public static int? TryResolveOutputSrid(Proto.SpatialReference? spatialReference)
+    {
+        if (spatialReference == null)
+        {
+            return null;
+        }
+
+        if (spatialReference.Wkid > 0)
+        {
+            return spatialReference.Wkid;
+        }
+
+        if (spatialReference.LatestWkid > 0)
+        {
+            return spatialReference.LatestWkid;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Builds effective geometry limits for a gRPC request.
+    /// </summary>
+    public static GeometryLimits CreateEffectiveGeometryLimits(GeometryLimits baseLimits, Proto.QueryFeaturesRequest request)
+    {
+        var precisionOverride = request.GeometryPrecision > 0 ? (int?)request.GeometryPrecision : null;
+        var simplifyToleranceOverride = request.MaxAllowableOffset > 0 ? (double?)request.MaxAllowableOffset : null;
+
+        return GeometryOutputProcessor.CreateEffectiveLimits(
+            baseLimits,
+            precisionOverride,
+            simplifyToleranceOverride,
+            forceSimplify: simplifyToleranceOverride.HasValue);
+    }
+
+    /// <summary>
     /// Converts a domain Feature to a proto Feature message.
     /// </summary>
-    public static Proto.Feature ToProtoFeature(Feature feature)
+    public static Proto.Feature ToProtoFeature(
+        Feature feature,
+        bool includeGeometry = true,
+        GeometryLimits? geometryLimits = null)
     {
         var proto = new Proto.Feature { Id = feature.Id };
 
@@ -83,9 +132,9 @@ internal static class GrpcConversionHelpers
             proto.Attributes[key] = ToAttributeValue(value);
         }
 
-        if (feature.Geometry is { Length: > 0 })
+        if (includeGeometry && feature.Geometry is { Length: > 0 })
         {
-            proto.Geometry = ToProtoGeometry(feature.Geometry);
+            proto.Geometry = ToProtoGeometry(feature.Geometry, geometryLimits);
         }
 
         return proto;
@@ -206,9 +255,14 @@ internal static class GrpcConversionHelpers
         return av;
     }
 
-    private static Proto.Geometry ToProtoGeometry(byte[] wkb)
+    private static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
     {
         var geometry = WkbReader.Read(wkb);
+        if (geometryLimits != null)
+        {
+            geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits) ?? geometry;
+        }
+
         var proto = new Proto.Geometry();
 
         switch (geometry)
@@ -287,7 +341,7 @@ internal static class GrpcConversionHelpers
     private static Proto.CoordinateSequence ToCoordinateSequence(
         NetTopologySuite.Geometries.CoordinateSequence coords)
     {
-        var seq = new Proto.CoordinateSequence();
+        var seq = new Proto.CoordinateSequence { Coords = { Capacity = coords.Count } };
         for (var i = 0; i < coords.Count; i++)
         {
             var c = new Proto.Coordinate
@@ -362,14 +416,14 @@ internal static class GrpcConversionHelpers
             Proto.Geometry.ShapeOneofCase.Polygon => BuildPolygon(geometry.Polygon),
             Proto.Geometry.ShapeOneofCase.Polyline => BuildPolyline(geometry.Polyline),
             Proto.Geometry.ShapeOneofCase.MultiPoint => BuildMultiPoint(geometry.MultiPoint),
+            Proto.Geometry.ShapeOneofCase.MultiPolygon => BuildMultiPolygon(geometry.MultiPolygon),
             _ => null
         };
 
         if (ntsGeometry == null)
             return null;
 
-        var writer = new WKBWriter();
-        return writer.Write(ntsGeometry);
+        return WkbWriter.Write(ntsGeometry);
     }
 
     private static Polygon BuildPolygon(Proto.PolygonGeometry poly)
@@ -377,31 +431,34 @@ internal static class GrpcConversionHelpers
         if (poly.Rings.Count == 0)
             return Polygon.Empty;
 
-        var factory = new GeometryFactory();
-        var shell = factory.CreateLinearRing(
+        var shell = GeoFactory.CreateLinearRing(
             poly.Rings[0].Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray());
         var holes = poly.Rings.Skip(1)
-            .Select(r => factory.CreateLinearRing(
+            .Select(r => GeoFactory.CreateLinearRing(
                 r.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
             .ToArray();
 
-        return factory.CreatePolygon(shell, holes);
+        return GeoFactory.CreatePolygon(shell, holes);
     }
 
     private static MultiLineString BuildPolyline(Proto.PolylineGeometry polyline)
     {
-        var factory = new GeometryFactory();
         var lines = polyline.Paths.Select(p =>
-            factory.CreateLineString(p.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
+            GeoFactory.CreateLineString(p.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
             .ToArray();
-        return factory.CreateMultiLineString(lines);
+        return GeoFactory.CreateMultiLineString(lines);
     }
 
     private static MultiPoint BuildMultiPoint(Proto.MultiPointGeometry mp)
     {
-        var factory = new GeometryFactory();
-        var points = mp.Points.Select(p => factory.CreatePoint(new Coordinate(p.X, p.Y))).ToArray();
-        return factory.CreateMultiPoint(points);
+        var points = mp.Points.Select(p => GeoFactory.CreatePoint(new Coordinate(p.X, p.Y))).ToArray();
+        return GeoFactory.CreateMultiPoint(points);
+    }
+
+    private static MultiPolygon BuildMultiPolygon(Proto.MultiPolygonGeometry multiPoly)
+    {
+        var polygons = multiPoly.Polygons.Select(BuildPolygon).ToArray();
+        return GeoFactory.CreateMultiPolygon(polygons);
     }
 
     private static DomainSpatialRelationship ToDomainSpatialRelationship(

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Grpc.Core;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,7 +14,10 @@ using Honua.Server.Features.Grpc;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Proto = Honua.Server.Features.Grpc.Proto;
 
 namespace Honua.Server.Tests.Features.Grpc;
@@ -46,6 +50,8 @@ public sealed class GrpcFeatureServiceTests
     {
         _sut = new HonuaFeatureService(
             _resourceValidator, _featureReader, _streamingStore,
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance);
 
         // Default: valid service/layer
@@ -217,6 +223,72 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_ReturnGeometryFalse_OmitsGeometryFromResponse()
+    {
+        var geometry = new WKBWriter().Write(new Point(10, 20));
+        var features = ImmutableArray.Create(Feature.Create(1, geometry));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnGeometry = false
+        };
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.Features.Should().HaveCount(1);
+        response.Features[0].Geometry.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithOutSr_UsesRequestedSpatialReference()
+    {
+        var features = ImmutableArray.Create(Feature.Create(1, null));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { Wkid = 3857 }
+        };
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.SpatialReference.Wkid.Should().Be(3857);
+        await _featureReader.Received(1).QueryAsync(
+            0,
+            Arg.Is<FeatureQuery>(q =>
+                q.OutputSrid == 3857 &&
+                q.SpatialReferenceSrid == TestLayer.SpatialReference.ToSrid()),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithInvalidOutSr_ThrowsInvalidArgument()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference()
+        };
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Be("Invalid out_sr value.");
+    }
+
+    [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_StreamsPages()
     {
@@ -248,6 +320,32 @@ public sealed class GrpcFeatureServiceTests
         // All features accounted for
         var totalFeatures = writer.Pages.Sum(p => p.Features.Count);
         totalFeatures.Should().Be(5);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_ExactBatchSize_DoesNotEmitEmptyTerminalPage()
+    {
+        var features = Enumerable.Range(1, 1000)
+            .Select(i => Feature.Create(i, null))
+            .ToAsyncEnumerable();
+
+        _streamingStore.StreamFeaturesAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(features);
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnGeometry = true
+        };
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        await _sut.QueryFeaturesStream(request, writer, CreateCallContext());
+
+        writer.Pages.Should().HaveCount(1);
+        writer.Pages[0].IsLastPage.Should().BeTrue();
+        writer.Pages[0].Features.Should().HaveCount(1000);
     }
 
     private static TestServerCallContext CreateCallContext()

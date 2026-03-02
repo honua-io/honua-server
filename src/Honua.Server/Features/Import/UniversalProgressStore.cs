@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.Admin.TileOperations;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
@@ -510,6 +511,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
         {
             nameof(ImportProgress) => OperationType.Import,
             nameof(GeoservicesImportProgress) => OperationType.ExternalImport,
+            nameof(TileOperationProgress) => OperationType.TileCache,
             _ => null
         };
     }
@@ -535,6 +537,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(GeoservicesImportProgress))]
 [JsonSerializable(typeof(UploadProgress))]
 [JsonSerializable(typeof(IngestProgress))]
+[JsonSerializable(typeof(TileOperationProgress))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

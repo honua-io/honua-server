@@ -292,11 +292,12 @@ public class ProtoAdapterTests
     }
 
     [Fact]
-    public void ConvertAttribute_BytesValue_ReturnsNull()
+    public void ConvertAttribute_BytesValue_ReturnsByteArray()
     {
         var attr = new Proto.AttributeValue { BytesValue = Google.Protobuf.ByteString.CopyFrom([1, 2, 3]) };
         var result = ProtoAdapter.ConvertAttribute(attr);
-        Assert.Null(result);
+        Assert.IsType<byte[]>(result);
+        Assert.Equal(new byte[] { 1, 2, 3 }, (byte[])result!);
     }
 
     [Fact]

@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type CodemodMetricsByKind, type CodemodTarget, runEsriCompatCodemod } from "./codemod.js";
+import { MIGRATION_DEMO_PRIMARY_TARGET } from "./demo-targets.js";
 import { parseGeoservicesServiceUrl, runMigrationDemo } from "./demo.js";
 import { evaluateMigrationGates } from "./gating.js";
 import { getJsParityMatrix, summarizeJsParityMatrix } from "./parity-matrix.js";
@@ -113,7 +114,7 @@ const DEFAULT_REAL_SAMPLE_FIXTURE_NAMES = [
   "esri-real-sample-editing-app",
   "esri-real-sample-network-app",
 ] as const;
-const DEFAULT_DEMO_FIXTURE_NAME = "esri-real-sample-incident-command-app";
+const DEFAULT_DEMO_FIXTURE_NAME = MIGRATION_DEMO_PRIMARY_TARGET.fixtureName;
 
 const parsed = parseArgs(process.argv.slice(2));
 if (!parsed) {
@@ -656,6 +657,7 @@ async function runDemo(args: ParsedArgs): Promise<void> {
   const stdoutSummary = {
     fixture: report.fixtureName,
     codemodTarget: report.codemodTarget,
+    elapsedMs: report.elapsedMs,
     workingAppDir: report.workingAppDir,
     import: report.import
       ? {
@@ -691,7 +693,9 @@ async function runDemo(args: ParsedArgs): Promise<void> {
     passed: report.passed,
   };
 
-  process.stdout.write(`demoPassed=${report.passed ? "yes" : "no"} outputDir=${report.workingAppDir}\n`);
+  process.stdout.write(
+    `demoPassed=${report.passed ? "yes" : "no"} elapsedMs=${report.elapsedMs} outputDir=${report.workingAppDir}\n`,
+  );
   process.stdout.write(`${JSON.stringify(stdoutSummary, null, 2)}\n`);
 
   if (args.reportPath) {
@@ -839,10 +843,10 @@ function parseArgs(argv: string[]): ParsedArgs | undefined {
     }
     if (token === "--target") {
       const next = positional[i + 1];
-      if (next !== "honua-compat" && next !== "esri-leaflet") {
+      if (next !== "honua" && next !== "honua-compat" && next !== "esri-leaflet") {
         return undefined;
       }
-      codemodTarget = next;
+      codemodTarget = next === "honua" ? "honua-compat" : next;
       i += 1;
       continue;
     }
@@ -1111,12 +1115,12 @@ function printUsage(): void {
     [
       "Usage:",
       "  honua-migrate [scan] <path> [--report <file>]",
-      "  honua-migrate codemod <path> [--target <honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate codemod <path> [--target <honua|honua-compat|esri-leaflet>] [--write] [--annotate-todos] [--report <file>] [--compat-import-path <pkg>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate matrix [--report <file>]",
       "  honua-migrate runtime-matrix [--report <file>]",
-      "  honua-migrate fixtures [<fixtures-root>] [--target <honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
+      "  honua-migrate fixtures [<fixtures-root>] [--target <honua|honua-compat|esri-leaflet>] [--fixtures <name1,name2,...>] [--report <file>] [--fail-on-manual] [--fail-on-unhandled] [--fail-on-blocked] [--max-manual-ratio <0..1>] [--max-manual-intervention-ratio <0..1>]",
       "  honua-migrate reconcile --source-base-url <url> --source-service-id <id> --target-base-url <url> --target-service-id <id> --layer-id <n> [--sample-size <n>] [--report <file>]",
-      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua-compat|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
+      "  honua-migrate demo [<fixture-name>] [--fixtures-root <dir>] [--output-dir <dir>] [--target <honua|honua-compat|esri-leaflet>] [--admin-base-url <url>] [--admin-api-key <key>] [--source-service-url <url>] [--layer-id <n>] [--table-name <name>] [--source-base-url <url>] [--source-service-id <id>] [--target-base-url <url>] [--target-service-id <id>] [--sample-size <n>] [--poll-interval-ms <n>] [--timeout-seconds <n>] [--skip-import] [--skip-reconcile] [--report <file>]",
       "",
       "Examples:",
       "  node dist/src/migration/cli.js scan ./src",
@@ -1131,6 +1135,7 @@ function printUsage(): void {
       "  node dist/src/migration/cli.js demo --admin-base-url http://localhost:5000 --source-service-url https://arcgis.example/rest/services/incidents/FeatureServer/0 --layer-id 0 --table-name incidents --source-base-url https://arcgis.example --source-service-id incidents --target-base-url http://localhost:5000 --target-service-id incidents --report demo-report.json",
       "",
       "Target semantics:",
+      "  honua: alias of honua-compat.",
       "  honua-compat: migrate ArcGIS JS (@arcgis/core) to @honua/sdk-esri-compat.",
       "  esri-leaflet: migrate ArcGIS JS (@arcgis/core) to a mixed esri-leaflet + compat output.",
       "  Existing esri-leaflet apps generally do not need this codemod.",

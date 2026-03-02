@@ -22,4 +22,14 @@ public sealed class HonuaGrpcClientOptions
     /// Bearer token for authentication.
     /// </summary>
     public string? BearerToken { get; set; }
+
+    /// <summary>
+    /// Enables gRPC compression negotiation for responses.
+    /// </summary>
+    public bool EnableCompressionNegotiation { get; set; } = true;
+
+    /// <summary>
+    /// Accepted gRPC compression algorithms advertised to the server.
+    /// </summary>
+    public string AcceptedCompressionEncodings { get; set; } = "gzip,identity";
 }

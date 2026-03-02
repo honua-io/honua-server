@@ -1,0 +1,59 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Infrastructure.Domain;
+
+namespace Honua.Server.Features.Admin.TileOperations;
+
+/// <summary>
+/// Progress entry for asynchronous tile lifecycle operations.
+/// </summary>
+internal sealed record TileOperationProgress : IOperationProgress, ICancellableOperationProgress
+{
+    public required string JobId { get; init; }
+    public required string Operation { get; init; }
+    public string? ServiceId { get; init; }
+    public int? LayerId { get; init; }
+    public string? TileMatrixSetId { get; init; }
+    public required OperationStatus Status { get; init; }
+    public long TotalTiles { get; init; }
+    public long ProcessedTiles { get; init; }
+    public long SuccessfulTiles { get; init; }
+    public long FailedTiles { get; init; }
+    public DateTimeOffset StartedAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
+    public string? ErrorMessage { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+    public string? CurrentPhase { get; init; }
+
+    public double? PercentComplete => TotalTiles > 0
+        ? Math.Clamp((double)ProcessedTiles / TotalTiles * 100.0, 0.0, 100.0)
+        : null;
+
+    public TimeSpan Duration => (CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt;
+
+    string IOperationProgress.OperationId => JobId;
+    OperationType IOperationProgress.Type => OperationType.TileCache;
+
+    public IOperationProgress WithCancellation(DateTimeOffset completedAt, string? currentPhase)
+        => this with
+        {
+            Status = OperationStatus.Cancelled,
+            CompletedAt = completedAt,
+            CurrentPhase = currentPhase ?? "Cancelled"
+        };
+
+    public static TileOperationProgress CreateInitial(string jobId, TileOperationStartRequest request)
+        => new()
+        {
+            JobId = jobId,
+            Operation = request.Operation,
+            ServiceId = request.ServiceId,
+            LayerId = request.LayerId,
+            TileMatrixSetId = request.TileMatrixSetId,
+            Status = OperationStatus.Queued,
+            StartedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Queued"
+        };
+}
+

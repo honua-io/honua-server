@@ -114,5 +114,10 @@ public enum OperationType
     /// <summary>
     /// External service import (e.g., ArcGIS to database).
     /// </summary>
-    ExternalImport
+    ExternalImport,
+
+    /// <summary>
+    /// Tile cache lifecycle operation (seed/warm/invalidate/purge).
+    /// </summary>
+    TileCache
 }

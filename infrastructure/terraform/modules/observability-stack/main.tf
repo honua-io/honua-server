@@ -192,6 +192,7 @@ resource "helm_release" "prometheus" {
   version          = var.prometheus_chart_version
   namespace        = var.namespace
   create_namespace = false
+  timeout          = var.helm_timeout_seconds
 
   values = [yamlencode(local.prometheus_values)]
 
@@ -205,6 +206,7 @@ resource "helm_release" "grafana" {
   version          = var.grafana_chart_version
   namespace        = var.namespace
   create_namespace = false
+  timeout          = var.helm_timeout_seconds
 
   values = [yamlencode(local.grafana_values)]
 

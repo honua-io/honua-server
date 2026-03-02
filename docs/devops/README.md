@@ -17,6 +17,8 @@ Installing, configuring, operating, and upgrading Honua in production.
 
 - [Monitoring & Alerting](monitoring.md) — health endpoints, metrics, OpenTelemetry, cloud-native alerting, optional Prometheus/Grafana
 - [Operations](operations.md) — backups, migrations, connection pools, query tuning, caching, memory
+- [Tile Operations Runbook](tile-operations-runbook.md) — async tile seed/warm/invalidate/purge controls and metrics
+- [Feature Change Webhooks](feature-change-webhooks.md) — signed webhook delivery, replay cursor recovery, idempotency guidance
 
 ## Troubleshooting
 

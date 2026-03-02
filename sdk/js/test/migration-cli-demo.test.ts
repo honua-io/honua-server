@@ -98,7 +98,7 @@ describe("migration cli demo", () => {
         "--fixtures-root",
         path.join(getProjectRoot(), "test", "fixtures"),
         "--fixture",
-        "esri-real-sample-incident-command-app",
+        "esri-demo-feature-table-relates-app",
         "--output-dir",
         outputDir,
         "--skip-import",

@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
@@ -29,6 +30,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = dependencies.FeatureChangeEventPublisher;
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -84,6 +86,17 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
             await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = collectionId,
+                    LayerId = layerId,
+                    ObjectId = created.Id,
+                    Operation = "create",
+                    Protocol = HonuaTelemetry.Protocols.OgcFeatures,
+                    RequestId = context.TraceIdentifier
+                },
+                cancellationToken).ConfigureAwait(false);
             var createLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                 context.Request,
                 collectionId,
@@ -151,6 +164,17 @@ internal sealed partial class OgcFeaturesCrudHandler(
             }
 
             await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+            await _featureChangeEventPublisher.PublishAsync(
+                new FeatureChangeEventRequest
+                {
+                    ServiceId = collectionId,
+                    LayerId = layerId,
+                    ObjectId = objectId,
+                    Operation = "delete",
+                    Protocol = HonuaTelemetry.Protocols.OgcFeatures,
+                    RequestId = context.TraceIdentifier
+                },
+                cancellationToken).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
             return Results.NoContent();
         }

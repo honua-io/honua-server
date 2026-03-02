@@ -31,7 +31,7 @@ class HonuaGrpcClient:
         channel: grpc.Channel | None = None,
         credentials: grpc.ChannelCredentials | None = None,
         metadata: list[tuple[str, str]] | None = None,
-        compression: grpc.Compression | None = None,
+        compression: grpc.Compression | None = grpc.Compression.Gzip,
     ) -> None:
         self._metadata = metadata or []
         self._owns_channel = channel is None
@@ -94,7 +94,7 @@ class HonuaGrpcAsyncClient:
         channel: grpc.aio.Channel | None = None,
         credentials: grpc.ChannelCredentials | None = None,
         metadata: list[tuple[str, str]] | None = None,
-        compression: grpc.Compression | None = None,
+        compression: grpc.Compression | None = grpc.Compression.Gzip,
     ) -> None:
         self._metadata = metadata or []
         self._owns_channel = channel is None
