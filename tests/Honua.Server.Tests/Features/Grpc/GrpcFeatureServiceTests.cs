@@ -15,9 +15,9 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NSubstitute;
 using Proto = Honua.Server.Features.Grpc.Proto;
 
 namespace Honua.Server.Tests.Features.Grpc;

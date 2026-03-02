@@ -301,7 +301,7 @@ class TestConvertAttribute:
     def test_bytes_value(self) -> None:
         attr = pb2.AttributeValue()
         attr.bytes_value = b"\x00\x01"
-        assert adapter._convert_attribute(attr) is None
+        assert adapter._convert_attribute(attr) == b"\x00\x01"
 
     def test_null_value(self) -> None:
         attr = pb2.AttributeValue()

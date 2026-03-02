@@ -1,7 +1,6 @@
 import type { Client } from "@connectrpc/connect";
 import type { FeatureService } from "../gen/honua/v1/feature_service_pb.js";
 import { HonuaAbortError, HonuaHttpError, HonuaNetworkError, HonuaTimeoutError } from "./errors.js";
-import { fromProtoQueryResponse, toProtoQueryRequest, wrapConnectError } from "./grpc-adapter.js";
 import { decodePbfQueryResponse, isPbfResponse } from "./pbf-decoder.js";
 import { HonuaFeatureLayer, HonuaMapLayer, HonuaMapService, HonuaOgcFeatures, HonuaService } from "./surfaces.js";
 import type {
@@ -211,15 +210,19 @@ export class HonuaClient {
     return this.connectClient;
   }
 
+  private static async loadGrpcAdapter() {
+    return import("./grpc-adapter.js");
+  }
+
   public get isGrpcWeb(): boolean {
     return this.transport === "grpc-web";
   }
 
   public async *queryFeaturesStream(request: QueryFeaturesRequest): AsyncGenerator<HonuaFeature[], void, undefined> {
     const client = await this.ensureConnectClient();
-    const protoRequest = toProtoQueryRequest(request);
-    const { streamProtoPages } = await import("./grpc-adapter.js");
-    yield* streamProtoPages(client.queryFeaturesStream(protoRequest));
+    const grpcAdapter = await HonuaClient.loadGrpcAdapter();
+    const protoRequest = grpcAdapter.toProtoQueryRequest(request);
+    yield* grpcAdapter.streamProtoPages(client.queryFeaturesStream(protoRequest));
   }
 
   public service(serviceId: string): HonuaService {
@@ -448,12 +451,13 @@ export class HonuaClient {
   public async queryFeatures(request: QueryFeaturesRequest): Promise<HonuaQueryResponse> {
     if (this.transport === "grpc-web") {
       const client = await this.ensureConnectClient();
-      const protoRequest = toProtoQueryRequest(request);
+      const grpcAdapter = await HonuaClient.loadGrpcAdapter();
+      const protoRequest = grpcAdapter.toProtoQueryRequest(request);
       try {
         const response = await client.queryFeatures(protoRequest);
-        return fromProtoQueryResponse(response) as HonuaQueryResponse;
+        return grpcAdapter.fromProtoQueryResponse(response) as HonuaQueryResponse;
       } catch (error) {
-        throw wrapConnectError(error);
+        throw grpcAdapter.wrapConnectError(error);
       }
     }
 

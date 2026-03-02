@@ -3,8 +3,8 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.FeatureServer.Services;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.FeatureServer;
