@@ -295,6 +295,22 @@ function convertGeometry(geometry: NonNullable<ProtoFeature["geometry"]>): Recor
         ),
       };
     }
+    case "multiPolygon": {
+      const mpg = geometry.shape.value;
+      const rings: number[][][] = [];
+      for (const poly of mpg.polygons) {
+        for (const ring of poly.rings) {
+          rings.push(
+            ring.coords.map((c) => {
+              const coords: number[] = [c.x, c.y];
+              if (c.z !== undefined) coords.push(c.z);
+              return coords;
+            }),
+          );
+        }
+      }
+      return { rings };
+    }
     default:
       return null;
   }
