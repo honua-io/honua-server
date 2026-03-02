@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Grpc;
 [Operation(Operations.Query)]
 public sealed class GrpcConversionHelpersTests
 {
-    private static readonly WKBWriter WkbWriter = new();
+    private static readonly WKBWriter _wkbWriter = new();
 
     // ── ToFeatureQuery ──────────────────────────────────────────
 
@@ -260,7 +260,7 @@ public sealed class GrpcConversionHelpersTests
     public void ToProtoFeature_WithPointGeometry_MapsToPointGeometry()
     {
         var point = new Point(10.5, 20.3);
-        var wkb = WkbWriter.Write(point);
+        var wkb = _wkbWriter.Write(point);
         var feature = Feature.Create(1, wkb);
 
         var proto = GrpcConversionHelpers.ToProtoFeature(feature);
@@ -281,7 +281,7 @@ public sealed class GrpcConversionHelpersTests
             new Coordinate(10, 10), new Coordinate(0, 10), new Coordinate(0, 0)
         });
         var polygon = factory.CreatePolygon(shell);
-        var wkb = WkbWriter.Write(polygon);
+        var wkb = _wkbWriter.Write(polygon);
         var feature = Feature.Create(1, wkb);
 
         var proto = GrpcConversionHelpers.ToProtoFeature(feature);
@@ -299,7 +299,7 @@ public sealed class GrpcConversionHelpersTests
         {
             new Coordinate(0, 0), new Coordinate(5, 5), new Coordinate(10, 0)
         });
-        var wkb = WkbWriter.Write(line);
+        var wkb = _wkbWriter.Write(line);
         var feature = Feature.Create(1, wkb);
 
         var proto = GrpcConversionHelpers.ToProtoFeature(feature);
@@ -326,7 +326,7 @@ public sealed class GrpcConversionHelpersTests
         var poly1 = factory.CreatePolygon(shell1);
         var poly2 = factory.CreatePolygon(shell2);
         var multiPolygon = factory.CreateMultiPolygon(new[] { poly1, poly2 });
-        var wkb = WkbWriter.Write(multiPolygon);
+        var wkb = _wkbWriter.Write(multiPolygon);
         var feature = Feature.Create(1, wkb);
 
         var proto = GrpcConversionHelpers.ToProtoFeature(feature);
@@ -364,7 +364,7 @@ public sealed class GrpcConversionHelpersTests
         var simplePolygon = factory.CreatePolygon(shell2);
 
         var multiPolygon = factory.CreateMultiPolygon(new[] { polyWithHole, simplePolygon });
-        var wkb = WkbWriter.Write(multiPolygon);
+        var wkb = _wkbWriter.Write(multiPolygon);
         var feature = Feature.Create(1, wkb);
 
         var proto = GrpcConversionHelpers.ToProtoFeature(feature);
@@ -383,7 +383,7 @@ public sealed class GrpcConversionHelpersTests
         var point = factory.CreatePoint(new Coordinate(1, 2));
         var line = factory.CreateLineString(new[] { new Coordinate(0, 0), new Coordinate(1, 1) });
         var collection = factory.CreateGeometryCollection(new Geometry[] { point, line });
-        var wkb = WkbWriter.Write(collection);
+        var wkb = _wkbWriter.Write(collection);
         var feature = Feature.Create(1, wkb);
 
         var act = () => GrpcConversionHelpers.ToProtoFeature(feature);
@@ -406,7 +406,7 @@ public sealed class GrpcConversionHelpersTests
     public void ToProtoFeature_IncludeGeometryFalse_OmitsGeometry()
     {
         var point = new Point(10.5, 20.3);
-        var wkb = WkbWriter.Write(point);
+        var wkb = _wkbWriter.Write(point);
         var feature = Feature.Create(1, wkb);
 
         var proto = GrpcConversionHelpers.ToProtoFeature(feature, includeGeometry: false);

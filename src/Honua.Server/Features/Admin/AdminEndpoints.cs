@@ -20,7 +20,7 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminEndpoints
 {
-    private static readonly FrozenSet<string> OpenApiAllowedQueryParameters =
+    private static readonly FrozenSet<string> _openApiAllowedQueryParameters =
         new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -252,7 +252,7 @@ internal static class AdminEndpoints
             context,
             f,
             environment,
-            OpenApiAllowedQueryParameters,
+            _openApiAllowedQueryParameters,
             "admin-openapi.json",
             fallbackSpec);
     }

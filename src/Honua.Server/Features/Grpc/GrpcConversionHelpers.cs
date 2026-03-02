@@ -23,7 +23,7 @@ namespace Honua.Server.Features.Grpc;
 /// </summary>
 internal static class GrpcConversionHelpers
 {
-    private static readonly GeometryFactory GeoFactory = new();
+    private static readonly GeometryFactory _geoFactory = new();
 
     [ThreadStatic]
     private static WKBReader? _wkbReader;
@@ -431,34 +431,34 @@ internal static class GrpcConversionHelpers
         if (poly.Rings.Count == 0)
             return Polygon.Empty;
 
-        var shell = GeoFactory.CreateLinearRing(
+        var shell = _geoFactory.CreateLinearRing(
             poly.Rings[0].Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray());
         var holes = poly.Rings.Skip(1)
-            .Select(r => GeoFactory.CreateLinearRing(
+            .Select(r => _geoFactory.CreateLinearRing(
                 r.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
             .ToArray();
 
-        return GeoFactory.CreatePolygon(shell, holes);
+        return _geoFactory.CreatePolygon(shell, holes);
     }
 
     private static MultiLineString BuildPolyline(Proto.PolylineGeometry polyline)
     {
         var lines = polyline.Paths.Select(p =>
-            GeoFactory.CreateLineString(p.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
+            _geoFactory.CreateLineString(p.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
             .ToArray();
-        return GeoFactory.CreateMultiLineString(lines);
+        return _geoFactory.CreateMultiLineString(lines);
     }
 
     private static MultiPoint BuildMultiPoint(Proto.MultiPointGeometry mp)
     {
-        var points = mp.Points.Select(p => GeoFactory.CreatePoint(new Coordinate(p.X, p.Y))).ToArray();
-        return GeoFactory.CreateMultiPoint(points);
+        var points = mp.Points.Select(p => _geoFactory.CreatePoint(new Coordinate(p.X, p.Y))).ToArray();
+        return _geoFactory.CreateMultiPoint(points);
     }
 
     private static MultiPolygon BuildMultiPolygon(Proto.MultiPolygonGeometry multiPoly)
     {
         var polygons = multiPoly.Polygons.Select(BuildPolygon).ToArray();
-        return GeoFactory.CreateMultiPolygon(polygons);
+        return _geoFactory.CreateMultiPolygon(polygons);
     }
 
     private static DomainSpatialRelationship ToDomainSpatialRelationship(

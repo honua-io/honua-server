@@ -31,7 +31,7 @@ public sealed class GrpcFeatureServiceTests
     private readonly IStreamingFeatureStore _streamingStore = Substitute.For<IStreamingFeatureStore>();
     private readonly HonuaFeatureService _sut;
 
-    private static readonly LayerDefinition TestLayer = new(
+    private static readonly LayerDefinition _testLayer = new(
         Id: 0,
         Name: "test",
         Description: null,
@@ -43,8 +43,8 @@ public sealed class GrpcFeatureServiceTests
             new FieldDefinition("name", FieldType.String, Length: 255)
         });
 
-    private static readonly ServiceDefinition TestService = new(
-        "test", "test", new[] { TestLayer }, SpatialReference.WGS84);
+    private static readonly ServiceDefinition _testService = new(
+        "test", "test", new[] { _testLayer }, SpatialReference.WGS84);
 
     public GrpcFeatureServiceTests()
     {
@@ -57,7 +57,7 @@ public sealed class GrpcFeatureServiceTests
         // Default: valid service/layer
         _resourceValidator
             .ValidateServiceLayerAsync("test", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((TestService, TestLayer)));
+            .Returns(ResourceValidationResult.Success((_testService, _testLayer)));
     }
 
     [UnitTest]
@@ -177,7 +177,7 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_GrpcDisabled_ThrowsNotFoundRpcException()
     {
-        var grpcDisabledService = TestService with
+        var grpcDisabledService = _testService with
         {
             Metadata = new CatalogMetadata
             {
@@ -187,7 +187,7 @@ public sealed class GrpcFeatureServiceTests
 
         _resourceValidator
             .ValidateServiceLayerAsync("grpc-disabled", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((grpcDisabledService, TestLayer)));
+            .Returns(ResourceValidationResult.Success((grpcDisabledService, _testLayer)));
 
         var request = new Proto.QueryFeaturesRequest
         {
@@ -266,7 +266,7 @@ public sealed class GrpcFeatureServiceTests
             0,
             Arg.Is<FeatureQuery>(q =>
                 q.OutputSrid == 3857 &&
-                q.SpatialReferenceSrid == TestLayer.SpatialReference.ToSrid()),
+                q.SpatialReferenceSrid == _testLayer.SpatialReference.ToSrid()),
             Arg.Any<CancellationToken>());
     }
 

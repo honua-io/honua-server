@@ -11,7 +11,7 @@ namespace Honua.Admin.Tests.Services;
 
 public sealed class ServiceSettingsClientIntegrationTests
 {
-    private static readonly JsonSerializerOptions CamelCaseOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _camelCaseOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
     public async Task UpdateAccessPolicyAsync_SdkBackedPath_ReturnsWrappedResult()
@@ -92,7 +92,7 @@ public sealed class ServiceSettingsClientIntegrationTests
             timestamp = DateTimeOffset.UtcNow
         };
 
-        var json = JsonSerializer.Serialize(envelope, CamelCaseOptions);
+        var json = JsonSerializer.Serialize(envelope, _camelCaseOptions);
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
