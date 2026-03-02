@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.Admin.TileOperations;
+namespace Honua.Server.Features.Infrastructure.Progress;
 
 /// <summary>
 /// Progress entry for asynchronous tile lifecycle operations.
@@ -43,17 +43,21 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
             CurrentPhase = currentPhase ?? "Cancelled"
         };
 
-    public static TileOperationProgress CreateInitial(string jobId, TileOperationStartRequest request)
+    public static TileOperationProgress CreateInitial(
+        string jobId,
+        string operation,
+        string? serviceId,
+        int? layerId,
+        string? tileMatrixSetId)
         => new()
         {
             JobId = jobId,
-            Operation = request.Operation,
-            ServiceId = request.ServiceId,
-            LayerId = request.LayerId,
-            TileMatrixSetId = request.TileMatrixSetId,
+            Operation = operation,
+            ServiceId = serviceId,
+            LayerId = layerId,
+            TileMatrixSetId = tileMatrixSetId,
             Status = OperationStatus.Queued,
             StartedAt = DateTimeOffset.UtcNow,
             CurrentPhase = "Queued"
         };
 }
-

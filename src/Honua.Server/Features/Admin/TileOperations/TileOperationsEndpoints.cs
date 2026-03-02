@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -252,4 +253,3 @@ internal sealed record TileOperationListResponse
 internal sealed partial class TileOperationsJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }
-

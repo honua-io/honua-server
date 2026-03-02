@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -61,7 +62,12 @@ internal sealed partial class TileOperationJobService(
         var jobId = Guid.NewGuid().ToString("N");
         _jobRequests[jobId] = normalized;
 
-        var progress = TileOperationProgress.CreateInitial(jobId, normalized);
+        var progress = TileOperationProgress.CreateInitial(
+            jobId,
+            normalized.Operation,
+            normalized.ServiceId,
+            normalized.LayerId,
+            normalized.TileMatrixSetId);
         await _progressStore.SetProgressAsync(jobId, progress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
         await _jobQueue.Writer.WriteAsync(jobId, cancellationToken).ConfigureAwait(false);
 
@@ -155,7 +161,12 @@ internal sealed partial class TileOperationJobService(
         TileOperationMetrics.QueueDepth.Add(-1, new TagList { { "operation", request.Operation } });
 
         var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false)
-            ?? TileOperationProgress.CreateInitial(jobId, request);
+            ?? TileOperationProgress.CreateInitial(
+                jobId,
+                request.Operation,
+                request.ServiceId,
+                request.LayerId,
+                request.TileMatrixSetId);
 
         if (progress.Status == OperationStatus.Cancelled)
         {

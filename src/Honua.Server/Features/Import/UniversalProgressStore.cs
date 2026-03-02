@@ -8,7 +8,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 

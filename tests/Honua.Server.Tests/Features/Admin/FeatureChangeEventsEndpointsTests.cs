@@ -88,6 +88,7 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/feature-events/replay")]
     public async Task Replay_WithTimeWindow_FiltersEvents()
     {
         var now = DateTimeOffset.UtcNow;
@@ -139,4 +140,3 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
         throw new KeyNotFoundException($"Property '{propertyName}' was not found.");
     }
 }
-

@@ -6,7 +6,10 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.OData;
 
 namespace Honua.Server.Features.OData.Services;
 
@@ -22,7 +25,10 @@ internal sealed class ODataBatchDependencies
         IGeometryService geometryService,
         FeatureMutationValidator mutationValidator,
         ICrsRegistry crsRegistry,
-        EditLimits editLimits)
+        EditLimits editLimits,
+        ODataValidationService validationService,
+        IETagService eTagService,
+        IFeatureChangeEventPublisher featureChangeEventPublisher)
     {
         LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
@@ -31,6 +37,9 @@ internal sealed class ODataBatchDependencies
         MutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
         CrsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         EditLimits = editLimits ?? throw new ArgumentNullException(nameof(editLimits));
+        ValidationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
+        ETagService = eTagService ?? throw new ArgumentNullException(nameof(eTagService));
+        FeatureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
     }
 
     public ILayerCatalog LayerCatalog { get; }
@@ -46,4 +55,10 @@ internal sealed class ODataBatchDependencies
     public ICrsRegistry CrsRegistry { get; }
 
     public EditLimits EditLimits { get; }
+
+    public ODataValidationService ValidationService { get; }
+
+    public IETagService ETagService { get; }
+
+    public IFeatureChangeEventPublisher FeatureChangeEventPublisher { get; }
 }

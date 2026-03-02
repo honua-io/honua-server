@@ -24,9 +24,6 @@ namespace Honua.Server.Features.OData;
 /// </summary>
 internal sealed partial class ODataBatchOperationHandler(
     ODataBatchDependencies batchDependencies,
-    ODataValidationService validationService,
-    IETagService etagService,
-    IFeatureChangeEventPublisher featureChangeEventPublisher,
     ILogger<ODataBatchOperationHandler> logger)
 {
     private const int MaxBatchOperationCount = 1000;
@@ -37,9 +34,6 @@ internal sealed partial class ODataBatchOperationHandler(
         "Batch operation payload exceeds the maximum allowed size of 10485760 bytes.";
 
     private readonly ODataBatchDependencies _batchDependencies = batchDependencies ?? throw new ArgumentNullException(nameof(batchDependencies));
-    private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
-    private readonly IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
-    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
     private readonly ILogger<ODataBatchOperationHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -53,7 +47,7 @@ internal sealed partial class ODataBatchOperationHandler(
         {
             var queryValidation = ODataRequestValidation.ValidateAllowedParameters(
                 context,
-                _validationService,
+                _batchDependencies.ValidationService,
                 AllowedQueryParameters.None);
             if (queryValidation != null)
             {
@@ -87,7 +81,7 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             // Process the batch
-            var handler = new ODataBatchHandler(_batchDependencies, _etagService, _logger);
+            var handler = new ODataBatchHandler(_batchDependencies, _batchDependencies.ETagService, _logger);
             var response = await handler.ProcessBatchAsync(batchRequest, baseUrl, effectiveToken);
 
             // Handle cache invalidation for mutated layers
@@ -724,7 +718,7 @@ internal sealed partial class ODataBatchOperationHandler(
                 _ => "update"
             };
 
-            await _featureChangeEventPublisher.PublishAsync(
+            await _batchDependencies.FeatureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
                     ServiceId = "odata",
