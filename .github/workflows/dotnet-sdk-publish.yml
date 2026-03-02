@@ -71,7 +71,7 @@ jobs:
           dotnet pack sdk/dotnet/Honua.Sdk.Grpc/Honua.Sdk.Grpc.csproj --configuration Release --no-build -o ./nupkgs
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dotnet-sdk-nupkgs-${{ github.run_id }}
           path: ./nupkgs/*.nupkg
