@@ -236,10 +236,20 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
-builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
+builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(sp =>
     new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.FeatureServer.DistributedReplicaStore>>()));
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
+    new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
+    new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
+    new Honua.Server.Features.FeatureServer.Services.CachingReplicaStore(
+        sp.GetRequiredService<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(),
+        sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 
 // Register Geoservices import job manager and background service
 builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(sp =>

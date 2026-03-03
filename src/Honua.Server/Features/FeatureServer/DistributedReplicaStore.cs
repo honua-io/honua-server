@@ -194,4 +194,6 @@ internal sealed record ReplicaState(
     DateTimeOffset CreatedAt)
 {
     public DateTimeOffset LastSyncTime { get; init; } = CreatedAt;
+
+    public long LastSyncGeneration { get; init; }
 }

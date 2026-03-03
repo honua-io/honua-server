@@ -153,6 +153,24 @@ public sealed class ExtractChangesResponse
     /// </summary>
     [JsonPropertyName("layerChanges")]
     public LayerChanges[]? LayerChanges { get; set; }
+
+    /// <summary>
+    /// Current server generation number.
+    /// </summary>
+    [JsonPropertyName("serverGen")]
+    public long ServerGen { get; set; }
+
+    /// <summary>
+    /// Minimum generation number in the returned change set.
+    /// </summary>
+    [JsonPropertyName("minServerGen")]
+    public long MinServerGen { get; set; }
+
+    /// <summary>
+    /// Maximum generation number in the returned change set.
+    /// </summary>
+    [JsonPropertyName("maxServerGen")]
+    public long MaxServerGen { get; set; }
 }
 
 /// <summary>
@@ -237,6 +255,12 @@ public sealed class SynchronizeReplicaResponse
     /// </summary>
     [JsonPropertyName("syncDirection")]
     public string? SyncDirection { get; set; }
+
+    /// <summary>
+    /// Current server generation number after synchronization.
+    /// </summary>
+    [JsonPropertyName("serverGen")]
+    public long ServerGen { get; set; }
 }
 
 /// <summary>

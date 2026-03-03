@@ -11,6 +11,9 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 
+// Behavior reference: Replication durability (#383)
+// Uses IChangeTracker for monotonic generation counters and incremental delta extraction
+
 namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
@@ -81,13 +84,19 @@ internal static partial class FeatureServerEndpoints
         var replicaId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
 
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+
         var record = new ReplicaState(
             replicaId,
             replicaName,
             serviceId,
             syncModel,
             layerIds,
-            now);
+            now)
+        {
+            LastSyncGeneration = currentGen
+        };
         await replicaStore.SetAsync(record, cancellationToken: cancellationToken);
 
         var response = new CreateReplicaResponse
@@ -98,7 +107,7 @@ internal static partial class FeatureServerEndpoints
             Layers = layerIds.Select(id => new ReplicaLayerInfo
             {
                 Id = id,
-                ServerGen = now.ToUnixTimeMilliseconds()
+                ServerGen = currentGen
             }).ToArray(),
             CreationDate = now.ToUnixTimeMilliseconds()
         };
@@ -172,35 +181,76 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        // Query real feature counts from the database for each layer in the replica.
-        // For the first sync (LastSyncTime == CreatedAt), all features are reported as adds.
-        // For subsequent syncs, without dedicated change tracking tables, report zero changes.
-        var isFirstSync = replica.LastSyncTime == replica.CreatedAt;
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
         var layerChanges = new List<LayerChanges>();
 
-        foreach (var layer in replicaLayers)
+        // Special case: LastSyncGeneration == 0 means pre-migration data or first sync;
+        // fall back to "all features as adds" for backward compatibility.
+        if (replica.LastSyncGeneration == 0)
         {
-            var adds = 0L;
-            if (isFirstSync)
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            foreach (var layer in replicaLayers)
             {
-                adds = await featureReader.CountAsync(layer.Id, new FeatureQuery(), cancellationToken);
+                var count = await featureReader.CountAsync(layer.Id, new FeatureQuery(), cancellationToken);
+                layerChanges.Add(new LayerChanges
+                {
+                    Id = layer.Id,
+                    Adds = (int)Math.Min(count, int.MaxValue),
+                    Updates = 0,
+                    Deletes = 0
+                });
             }
-
-            layerChanges.Add(new LayerChanges
-            {
-                Id = layer.Id,
-                Adds = (int)Math.Min(adds, int.MaxValue),
-                Updates = 0,
-                Deletes = 0
-            });
         }
+        else
+        {
+            // Query real incremental deltas from the change log
+            var changes = await changeTracker.GetChangesSinceAsync(
+                replica.LastSyncGeneration,
+                replica.LayerIds,
+                cancellationToken);
+
+            // Group collapsed changes by layer
+            var changesByLayer = changes
+                .GroupBy(c => c.LayerId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var layer in replicaLayers)
+            {
+                if (changesByLayer.TryGetValue(layer.Id, out var layerChangeList))
+                {
+                    layerChanges.Add(new LayerChanges
+                    {
+                        Id = layer.Id,
+                        Adds = layerChangeList.Count(c => c.Operation == FeatureChangeOperation.Insert),
+                        Updates = layerChangeList.Count(c => c.Operation == FeatureChangeOperation.Update),
+                        Deletes = layerChangeList.Count(c => c.Operation == FeatureChangeOperation.Delete)
+                    });
+                }
+                else
+                {
+                    layerChanges.Add(new LayerChanges
+                    {
+                        Id = layer.Id,
+                        Adds = 0,
+                        Updates = 0,
+                        Deletes = 0
+                    });
+                }
+            }
+        }
+
+        var minGen = replica.LastSyncGeneration;
+        var maxGen = currentGen;
 
         var response = new ExtractChangesResponse
         {
             Success = true,
             ReplicaId = replicaId,
-            LayerChanges = layerChanges.ToArray()
+            LayerChanges = layerChanges.ToArray(),
+            ServerGen = currentGen,
+            MinServerGen = minGen,
+            MaxServerGen = maxGen
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
@@ -321,15 +371,22 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // Update the last sync time in distributed store.
-        var updated = replica with { LastSyncTime = DateTimeOffset.UtcNow };
+        // Update the last sync time and generation in distributed store.
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+        var updated = replica with
+        {
+            LastSyncTime = DateTimeOffset.UtcNow,
+            LastSyncGeneration = currentGen
+        };
         await replicaStore.SetAsync(updated, cancellationToken: cancellationToken);
 
         var response = new SynchronizeReplicaResponse
         {
             Success = true,
             ReplicaId = replicaId,
-            SyncDirection = syncDirection
+            SyncDirection = syncDirection,
+            ServerGen = currentGen
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
