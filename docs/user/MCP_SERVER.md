@@ -1,6 +1,6 @@
 # MCP Server
 
-Honua ships an MCP server package at `sdk/mcp` (`@honua/mcp-server`) so AI clients can safely discover services, inspect layer schema, and run filtered geospatial queries.
+Honua ships an MCP server package in the `honua-sdk-js` repository (path `mcp`, package `@honua/mcp-server`) so AI clients can safely discover services, inspect layer schema, and run filtered geospatial queries.
 
 ## Capabilities
 
@@ -16,12 +16,22 @@ Set these environment variables before launching the MCP server:
 - `HONUA_BASE_URL` (required): absolute server URL, for example `https://honua.example.com`
 - `HONUA_TRANSPORT` (optional): `grpc-web` (default) or `rest`
 - `HONUA_API_KEY` (optional): API key if your deployment requires it
+- `HONUA_TIMEOUT_MS` (optional): request timeout in milliseconds (default `30000`)
+- `HONUA_RETRY_MAX_RETRIES` (optional): retry attempts for transient failures (default `2`)
+
+When `HONUA_API_KEY` is set, use `https://` for non-localhost servers.
+
+## Source Repository
+
+- GitHub: `https://github.com/honua-io/honua-sdk-js`
+- Package path: `mcp/`
 
 ## Run
 
 ```bash
-cd sdk/mcp
-npm install
+git clone https://github.com/honua-io/honua-sdk-js.git
+cd honua-sdk-js/mcp
+npm ci
 npm run build
 HONUA_BASE_URL="https://honua.example.com" HONUA_TRANSPORT="grpc-web" node dist/src/index.js
 ```
@@ -38,7 +48,7 @@ HONUA_BASE_URL="https://honua.example.com" HONUA_TRANSPORT="grpc-web" node dist/
 ## Exposed MCP Resources
 
 - `honua://services`
-- `honua://services/{encodedServiceId}/layers/{layerId}/schema`
+- `honua://services/{encodedServiceId}/layers/{layerId}`
 
 ## Notes
 
