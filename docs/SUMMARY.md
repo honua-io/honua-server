@@ -4,6 +4,7 @@
 
 * [Documentation Overview](README.md)
 * [User Journeys](user/USER_JOURNEYS.md)
+* [MVP Sales Playbook + Launch GTM](user/MVP_LAUNCH_GTM_PLAYBOOK.md)
 * [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
 * [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
 
@@ -89,6 +90,7 @@
 * [CI Monitoring](contributor/CI_MONITORING.md)
 * [CI Workflows](contributor/ci-workflows.md)
 * [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
+* [Repo Split Documentation Strategy](contributor/REPO_SPLIT_DOCUMENTATION_STRATEGY.md)
 * [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 * [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)
 * [CodeCov Setup](contributor/CODECOV_SETUP.md)
