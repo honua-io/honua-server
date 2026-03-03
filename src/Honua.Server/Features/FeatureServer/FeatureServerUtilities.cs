@@ -138,6 +138,59 @@ internal static partial class FeatureServerEndpoints
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        public static readonly FrozenSet<string> GetEstimates =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryTopFeatures = new[]
+            {
+                "topFilter",
+                "where",
+                "outFields",
+                "orderByFields",
+                "geometry",
+                "inSR",
+                "outSR",
+                "geometryType",
+                "spatialRel",
+                "returnGeometry",
+                "returnZ",
+                "returnM",
+                "resultOffset",
+                "resultRecordCount",
+                "time",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryDateBins = new[]
+            {
+                "binField",
+                "bin",
+                "where",
+                "outStatistics",
+                "geometry",
+                "inSR",
+                "geometryType",
+                "spatialRel",
+                "time",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryBins = new[]
+            {
+                "bin",
+                "where",
+                "outStatistics",
+                "geometry",
+                "inSR",
+                "geometryType",
+                "spatialRel",
+                "time",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
         public static readonly FrozenSet<string> Tiles =
             new[] { "where" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }

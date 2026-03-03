@@ -108,6 +108,20 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         return QueryResult<Feature>.Create(totalCount, features, false);
     }
 
+    public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var objectIdsQuery = _queryBuilder.BuildObjectIdsQuery(layerId, query, geometryStorageType);
+        return await _dataAccess.ExecuteSelectObjectIdsQueryAsync(
+            objectIdsQuery,
+            query,
+            layerId,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var isKnnQuery = query.SpatialFilter.HasValue &&
@@ -158,6 +172,55 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var statisticsQuery = _queryBuilder.BuildStatisticsQuery(layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(statisticsQuery, query, layerId, cancellationToken);
+    }
+
+    public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        var countTask = CountAsync(layerId, new FeatureQuery(), cancellationToken);
+        var extentTask = GetExtentAsync(layerId, null, cancellationToken);
+        await Task.WhenAll(countTask, extentTask).ConfigureAwait(false);
+
+        return new EstimateResult
+        {
+            EstimatedCount = countTask.Result,
+            Extent = extentTask.Result
+        };
+    }
+
+    public async Task<QueryResult<Feature>> QueryTopFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var topFeaturesQuery = _queryBuilder.BuildTopFeaturesQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectQueryAsync(topFeaturesQuery, query, layerId, cancellationToken);
+
+        return features.Length == 0
+            ? QueryResult<Feature>.Empty()
+            : QueryResult<Feature>.Create(features.Length, features, false);
+    }
+
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
+        int layerId,
+        FeatureQuery query,
+        DateBinDefinition dateBin,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var dateBinsQuery = _queryBuilder.BuildDateBinsQuery(layerId, query, dateBin, geometryStorageType);
+        return await _dataAccess.ExecuteStatisticsQueryAsync(dateBinsQuery, query, layerId, cancellationToken);
+    }
+
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
+        int layerId,
+        FeatureQuery query,
+        BinDefinition binDefinition,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var binsQuery = _queryBuilder.BuildBinsQuery(layerId, query, binDefinition, geometryStorageType);
+        return await _dataAccess.ExecuteStatisticsQueryAsync(binsQuery, query, layerId, cancellationToken);
     }
 
     #endregion

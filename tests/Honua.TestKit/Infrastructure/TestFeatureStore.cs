@@ -166,6 +166,15 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             hasMoreResults));
     }
 
+    public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        return result.Items.Select(static feature => feature.Id).ToImmutableArray();
+    }
+
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId,
         FeatureQuery query,
@@ -1113,4 +1122,67 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
     }
 
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+
+    public Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        if (!_layerFeatures.TryGetValue(layerId, out var features))
+        {
+            return Task.FromResult(new EstimateResult { EstimatedCount = 0, Extent = null });
+        }
+
+        var extent = new FeatureExtent
+        {
+            MinX = -122.5,
+            MinY = 37.3,
+            MaxX = -121.9,
+            MaxY = 37.8,
+            SpatialReference = 4326
+        };
+
+        return Task.FromResult(new EstimateResult
+        {
+            EstimatedCount = features.Count,
+            Extent = extent
+        });
+    }
+
+    public async Task<QueryResult<Feature>> QueryTopFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        // Simple stub: query features and return them (no real windowing in test store)
+        return await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
+        int layerId,
+        FeatureQuery query,
+        DateBinDefinition dateBin,
+        CancellationToken cancellationToken = default)
+    {
+        // Return a simple test bin result
+        var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["boundary"] = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            ["count"] = 5L
+        };
+        return Task.FromResult(ImmutableArray.Create<IReadOnlyDictionary<string, object?>>(row));
+    }
+
+    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
+        int layerId,
+        FeatureQuery query,
+        BinDefinition binDefinition,
+        CancellationToken cancellationToken = default)
+    {
+        // Return a simple test bin result
+        var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["lowerBoundary"] = 0.0,
+            ["upperBoundary"] = 10.0,
+            ["count"] = 5L
+        };
+        return Task.FromResult(ImmutableArray.Create<IReadOnlyDictionary<string, object?>>(row));
+    }
 }

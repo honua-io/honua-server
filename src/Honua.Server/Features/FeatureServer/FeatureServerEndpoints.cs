@@ -221,6 +221,68 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .RequireAuthorization();
 
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/getEstimates", HandleGetEstimates)
+            .WithDisplayName("Get Estimates (Layer)")
+            .WithName("GetEstimatesLayer")
+            .WithSummary("Get approximate count and extent estimates for a layer")
+            .WithDescription("Returns estimated feature count and spatial extent using catalog statistics")
+            .WithTags("FeatureServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/getEstimates", HandleServiceGetEstimates)
+            .WithDisplayName("Get Estimates (Service)")
+            .WithName("GetEstimatesService")
+            .WithSummary("Get approximate count and extent estimates for a service")
+            .WithDescription("Returns aggregated estimated feature count and spatial extent across all layers")
+            .WithTags("FeatureServer");
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryTopFeatures", HandleQueryTopFeaturesGet)
+            .WithDisplayName("Query Top Features (GET)")
+            .WithName("QueryTopFeaturesGet")
+            .WithSummary("Query top features per group using GET")
+            .WithDescription("Returns top N features per group based on a topFilter specification")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryTopFeatures", HandleQueryTopFeaturesPost)
+            .WithDisplayName("Query Top Features (POST)")
+            .WithName("QueryTopFeaturesPost")
+            .WithSummary("Query top features per group using POST")
+            .WithDescription("Returns top N features per group based on a topFilter specification")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryDateBins", HandleQueryDateBinsGet)
+            .WithDisplayName("Query Date Bins (GET)")
+            .WithName("QueryDateBinsGet")
+            .WithSummary("Query features binned by date intervals using GET")
+            .WithDescription("Groups features into temporal bins and returns aggregate statistics per bin")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryDateBins", HandleQueryDateBinsPost)
+            .WithDisplayName("Query Date Bins (POST)")
+            .WithName("QueryDateBinsPost")
+            .WithSummary("Query features binned by date intervals using POST")
+            .WithDescription("Groups features into temporal bins and returns aggregate statistics per bin")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryBins", HandleQueryBinsGet)
+            .WithDisplayName("Query Bins (GET)")
+            .WithName("QueryBinsGet")
+            .WithSummary("Query features binned by numeric or classification intervals using GET")
+            .WithDescription("Groups features into bins using various algorithms and returns aggregate statistics per bin")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryBins", HandleQueryBinsPost)
+            .WithDisplayName("Query Bins (POST)")
+            .WithName("QueryBinsPost")
+            .WithSummary("Query features binned by numeric or classification intervals using POST")
+            .WithDescription("Groups features into bins using various algorithms and returns aggregate statistics per bin")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/queryDomains", HandleQueryDomains)
             .WithDisplayName("Query Domains")
             .WithName("QueryDomains")

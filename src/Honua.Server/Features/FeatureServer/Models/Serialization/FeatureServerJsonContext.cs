@@ -116,4 +116,6 @@ namespace Honua.Server.Features.FeatureServer.Models;
 [JsonSerializable(typeof(DomainCodedValueInfo[]))]
 [JsonSerializable(typeof(ValidateSqlRequest))]
 [JsonSerializable(typeof(ValidateSqlResponse))]
+// Advanced query models
+[JsonSerializable(typeof(GetEstimatesResponse))]
 internal sealed partial class FeatureServerJsonContext : JsonSerializerContext;

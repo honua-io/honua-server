@@ -89,6 +89,11 @@ public readonly record struct FeatureQuery
     public ImmutableArray<string>? GroupByFields { get; init; }
 
     /// <summary>
+    /// Top features filter for queryTopFeatures operations (window-function partitioning)
+    /// </summary>
+    public TopFilter? TopFilter { get; init; }
+
+    /// <summary>
     /// Creates a simple WHERE clause query
     /// </summary>
     /// <param name="where">WHERE clause expression</param>
