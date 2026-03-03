@@ -3,7 +3,6 @@
 
 using Honua.Admin;
 using Honua.Admin.Services;
-using Honua.Sdk.Admin;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
@@ -91,8 +90,6 @@ if (oidcEnabled)
 
 builder.Services.AddScoped(sp =>
     new HonuaApiClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("AdminApi")));
-builder.Services.AddScoped<IHonuaAdminClient>(sp =>
-    new HonuaAdminClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("AdminApi")));
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddScoped<ISecureConnectionsClient, SecureConnectionsClient>();
 builder.Services.AddScoped<ILayerPublishingClient, LayerPublishingClient>();

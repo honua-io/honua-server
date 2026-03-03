@@ -3,9 +3,8 @@
 
 using System.Net;
 using System.Text.Json;
+using Honua.Admin.Models;
 using Honua.Admin.Services;
-using Honua.Sdk.Admin;
-using Honua.Sdk.Admin.Models;
 
 namespace Honua.Admin.Tests.Services;
 
@@ -14,7 +13,7 @@ public sealed class ServiceSettingsClientIntegrationTests
     private static readonly JsonSerializerOptions _camelCaseOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
-    public async Task UpdateAccessPolicyAsync_SdkBackedPath_ReturnsWrappedResult()
+    public async Task UpdateAccessPolicyAsync_HttpPath_ReturnsWrappedResult()
     {
         HttpMethod? observedMethod = null;
         string? observedPath = null;
@@ -45,7 +44,7 @@ public sealed class ServiceSettingsClientIntegrationTests
             }
         };
 
-        var sdkClient = new HonuaAdminClient(new HttpClient(new MockHttpHandler(async request =>
+        var httpClient = new HttpClient(new MockHttpHandler(async request =>
         {
             observedMethod = request.Method;
             observedPath = request.RequestUri?.AbsolutePath;
@@ -54,9 +53,9 @@ public sealed class ServiceSettingsClientIntegrationTests
         }))
         {
             BaseAddress = new Uri("http://localhost:5000")
-        });
+        };
 
-        var client = new ServiceSettingsClient(sdkClient);
+        var client = new ServiceSettingsClient(new MockHttpClientFactory(httpClient));
 
         var result = await client.UpdateAccessPolicyAsync("default", new UpdateAccessPolicyRequest
         {
@@ -70,7 +69,7 @@ public sealed class ServiceSettingsClientIntegrationTests
         Assert.NotNull(result.Data);
         Assert.Null(result.Message);
         Assert.Equal(HttpMethod.Put, observedMethod);
-        Assert.Equal("/api/v1/admin/services/default/access-policy", observedPath);
+        Assert.Equal("/services/default/access-policy", observedPath);
         Assert.NotNull(observedBody);
         Assert.Contains("\"allowAnonymous\":false", observedBody, StringComparison.Ordinal);
         Assert.Contains("\"allowAnonymousWrite\":false", observedBody, StringComparison.Ordinal);
@@ -111,6 +110,21 @@ public sealed class ServiceSettingsClientIntegrationTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return _handler(request);
+        }
+    }
+
+    private sealed class MockHttpClientFactory : IHttpClientFactory
+    {
+        private readonly HttpClient _httpClient;
+
+        public MockHttpClientFactory(HttpClient httpClient)
+        {
+            _httpClient = httpClient;
+        }
+
+        public HttpClient CreateClient(string name)
+        {
+            return _httpClient;
         }
     }
 }

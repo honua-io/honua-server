@@ -19,10 +19,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\sdk\dotnet\Honua.Sdk.Admin\Honua.Sdk.Admin.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <InternalsVisibleTo Include="Honua.Admin.Tests" />
   </ItemGroup>
 

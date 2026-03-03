@@ -1,9 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Sdk.Admin;
-using Honua.Sdk.Admin.Exceptions;
-using Honua.Sdk.Admin.Models;
+using System.Net.Http.Json;
+using Honua.Admin.Models;
 
 namespace Honua.Admin.Services;
 
@@ -39,19 +38,23 @@ public interface IServiceSettingsClient
 /// </summary>
 internal sealed class ServiceSettingsClient : IServiceSettingsClient
 {
-    private readonly IHonuaAdminClient _adminClient;
+    private readonly HttpClient _httpClient;
 
-    public ServiceSettingsClient(IHonuaAdminClient adminClient)
+    public ServiceSettingsClient(IHttpClientFactory httpClientFactory)
     {
-        _adminClient = adminClient ?? throw new ArgumentNullException(nameof(adminClient));
+        ArgumentNullException.ThrowIfNull(httpClientFactory);
+        _httpClient = httpClientFactory.CreateClient("AdminApi");
     }
 
     public async Task<ApiResult<ServiceSummary[]>> ListServicesAsync(CancellationToken ct = default)
     {
         try
         {
-            var services = await _adminClient.ListServicesAsync(ct);
-            return ApiResult.Ok(services.ToArray());
+            using var response = await _httpClient.GetAsync("services/", ct);
+            var result = await ApiResponseReader.ReadWrappedAsync<ServiceSummary[]>(response, ct);
+            return result.Success
+                ? ApiResult.Ok(result.Data ?? [])
+                : ApiResult.Fail<ServiceSummary[]>(result.Message ?? "Failed to load services.");
         }
         catch (Exception ex)
         {
@@ -63,8 +66,10 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         try
         {
-            var settings = await _adminClient.GetServiceSettingsAsync(serviceName, ct);
-            return ApiResult.Ok(settings);
+            using var response = await _httpClient.GetAsync(
+                $"services/{Uri.EscapeDataString(serviceName)}/settings",
+                ct);
+            return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(response, ct);
         }
         catch (Exception ex)
         {
@@ -76,8 +81,12 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         try
         {
-            var updated = await _adminClient.UpdateProtocolsAsync(serviceName, protocols, ct);
-            return ApiResult.Ok(updated);
+            var request = new UpdateProtocolsRequest { EnabledProtocols = protocols ?? [] };
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"services/{Uri.EscapeDataString(serviceName)}/protocols",
+                request,
+                ct);
+            return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(response, ct);
         }
         catch (Exception ex)
         {
@@ -90,8 +99,11 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         try
         {
-            var updated = await _adminClient.UpdateMapServerSettingsAsync(serviceName, request, ct);
-            return ApiResult.Ok(updated);
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"services/{Uri.EscapeDataString(serviceName)}/mapserver",
+                request,
+                ct);
+            return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(response, ct);
         }
         catch (Exception ex)
         {
@@ -104,8 +116,11 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         try
         {
-            var updated = await _adminClient.UpdateAccessPolicyAsync(serviceName, request, ct);
-            return ApiResult.Ok(updated);
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"services/{Uri.EscapeDataString(serviceName)}/access-policy",
+                request,
+                ct);
+            return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(response, ct);
         }
         catch (Exception ex)
         {
@@ -118,8 +133,11 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         try
         {
-            var updated = await _adminClient.UpdateTimeInfoAsync(serviceName, request, ct);
-            return ApiResult.Ok(updated);
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"services/{Uri.EscapeDataString(serviceName)}/timeinfo",
+                request,
+                ct);
+            return await ApiResponseReader.ReadWrappedAsync<ServiceSettingsResponse>(response, ct);
         }
         catch (Exception ex)
         {
@@ -132,8 +150,11 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
     {
         try
         {
-            var updated = await _adminClient.UpdateLayerMetadataAsync(serviceName, layerId, request, ct);
-            return ApiResult.Ok(updated);
+            using var response = await _httpClient.PutAsJsonAsync(
+                $"services/{Uri.EscapeDataString(serviceName)}/layers/{layerId}/metadata",
+                request,
+                ct);
+            return await ApiResponseReader.ReadWrappedAsync<LayerMetadataResponse>(response, ct);
         }
         catch (Exception ex)
         {
@@ -143,11 +164,6 @@ internal sealed class ServiceSettingsClient : IServiceSettingsClient
 
     private static string GetFailureMessage(Exception ex, string fallbackMessage)
     {
-        return ex switch
-        {
-            HonuaAdminApiException apiException => apiException.Message,
-            HonuaAdminOperationException operationException => operationException.Message,
-            _ => fallbackMessage
-        };
+        return string.IsNullOrWhiteSpace(ex.Message) ? fallbackMessage : ex.Message;
     }
 }
