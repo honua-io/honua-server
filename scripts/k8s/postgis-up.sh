@@ -34,7 +34,7 @@ wait_for_query_ready() {
 
 wait_for_query_ready
 
-# Ensure both PostGIS extensions required by Terraform smoke checks exist.
+# Ensure both PostGIS extensions required by integration smoke checks exist.
 kubectl -n "${NAMESPACE}" exec deployment/honua-postgis -- sh -c "\
   export PGPASSWORD=honua; \
   psql -h 127.0.0.1 -U honua -d honua -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS postgis;'; \

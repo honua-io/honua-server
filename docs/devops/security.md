@@ -66,7 +66,7 @@ Honua does not include application-level rate limiting. Enforce limits at the ed
 
 | Platform | Template | Purpose |
 |---|---|---|
-| AWS | `docs/devops/examples/aws-waf-rate-limit.tf` | ALB + WAFv2 rate-limit rules |
+| AWS | Use your IaC stack template (WAFv2 Web ACL + ALB association) | ALB + WAFv2 rate-limit rules |
 | Azure | `docs/devops/examples/azure-application-gateway-waf-rate-limit-policy.json` | Application Gateway WAF custom rules |
 
 ### Recommended Starting Limits
@@ -86,9 +86,11 @@ Honua does not include application-level rate limiting. Enforce limits at the ed
 
 ### AWS (ALB + WAFv2)
 
-1. Copy `docs/devops/examples/aws-waf-rate-limit.tf` into your Terraform stack.
-2. Set `alb_arn` to the ALB that fronts Honua.
-3. Apply and verify `waf_web_acl_arn` output.
+1. Define a WAFv2 Web ACL in your IaC stack.
+2. Associate the ACL with the ALB that fronts Honua.
+3. Verify Web ACL association and rate-limit rule matches in WAF metrics/logs.
+
+If you use Honua-maintained Terraform, use the separate `honua-terraform` repository.
 
 ### Azure (Application Gateway + WAF)
 

@@ -1,0 +1,76 @@
+# syntax=docker/dockerfile:1.7
+# Simplified AWS Lambda-compatible Dockerfile using AL2 runtime deps
+
+# Build stage - Use official .NET SDK but target linux-x64 for AL2 compatibility
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Install dependencies for targeting Amazon Linux 2
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY Honua.sln Directory.Build.props .editorconfig ./
+COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
+COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
+COPY src/Honua.Admin/*.csproj src/Honua.Admin/
+COPY src/Honua.Server/*.csproj src/Honua.Server/
+
+ARG TARGETARCH
+
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) RUNTIME_ID="linux-x64" ;; \
+      arm64) RUNTIME_ID="linux-arm64" ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet restore src/Honua.Server/Honua.Server.csproj \
+      --runtime "$RUNTIME_ID" \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeAdminUi=false
+
+COPY . .
+
+ARG CONFIGURATION=Release
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) RUNTIME_ID="linux-x64" ; ILC_SINGLE_THREADED="false" ;; \
+      arm64) RUNTIME_ID="linux-arm64" ; ILC_SINGLE_THREADED="true" ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    dotnet publish src/Honua.Server/Honua.Server.csproj \
+      --configuration "$CONFIGURATION" \
+      --runtime "$RUNTIME_ID" \
+      --self-contained true \
+      --output /app \
+      -p:RuntimeIdentifier="$RUNTIME_ID" \
+      -p:HonuaIncludeAdminUi=false \
+      -p:PublishAot=true \
+      -p:DebugType=None \
+      -p:DebugSymbols=false \
+      -p:StripSymbols=true \
+      -p:OptimizationPreference=Speed \
+      -p:IlcOptimizationPreference=Speed \
+      -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" && \
+    rm -rf /app/BlazorDebugProxy /app/wwwroot && \
+    find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
+
+# Runtime stage - Use Amazon Linux 2 runtime
+FROM public.ecr.aws/lambda/provided:al2-x86_64 AS runtime
+
+# Copy AWS Lambda Web Adapter
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+COPY --from=build /app ${LAMBDA_TASK_ROOT}
+
+RUN chmod +x ${LAMBDA_TASK_ROOT}/Honua.Server
+
+ENV PORT=8080 \
+    AWS_LWA_PORT=8080 \
+    ASPNETCORE_ENVIRONMENT=Production \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_EnableDiagnostics=0
+
+EXPOSE 8080
+
+CMD ["./Honua.Server"]

@@ -1,0 +1,618 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+syntax = "proto3";
+
+package honua.v1;
+
+option csharp_namespace = "Honua.Server.Features.Grpc.Proto";
+
+import "honua/v1/feature_service.proto";
+
+// FormService provides gRPC-native form definition and submission capabilities.
+// Designed as an alternative to OpenRosa XML with type-safe mobile optimization.
+service FormService {
+  // GetFormDefinition retrieves a form definition for mobile rendering.
+  rpc GetFormDefinition(GetFormDefinitionRequest) returns (GetFormDefinitionResponse);
+
+  // SubmitFormData submits completed form data as feature edits.
+  rpc SubmitFormData(SubmitFormDataRequest) returns (SubmitFormDataResponse);
+
+  // StreamFormUpdates enables real-time collaborative form editing.
+  rpc StreamFormUpdates(stream FormUpdateRequest) returns (stream FormUpdateResponse);
+
+  // ValidateFormData validates form data against form definition rules.
+  rpc ValidateFormData(ValidateFormDataRequest) returns (ValidateFormDataResponse);
+
+  // GetFormMetadata retrieves form catalog and availability information.
+  rpc GetFormMetadata(GetFormMetadataRequest) returns (GetFormMetadataResponse);
+}
+
+// GetFormDefinitionRequest specifies which form definition to retrieve.
+message GetFormDefinitionRequest {
+  string form_id = 1;
+  string version = 2; // Optional specific version, defaults to latest
+  string service_id = 3; // Target feature service for data submission
+  int32 layer_id = 4; // Target layer for feature creation
+  MobileCapabilities mobile_capabilities = 5; // Device capabilities for optimization
+}
+
+// GetFormDefinitionResponse contains the complete form definition.
+message GetFormDefinitionResponse {
+  FormDefinition form = 1;
+  FormMetadata metadata = 2;
+  repeated ValidationRule validation_rules = 3;
+  MobileOptimizations mobile_optimizations = 4;
+}
+
+// FormDefinition is the core form structure (gRPC equivalent of OpenRosa XForm).
+message FormDefinition {
+  string form_id = 1;
+  string title = 2;
+  string description = 3;
+  string version = 4;
+  string target_service_id = 5; // Feature service for data submission
+  int32 target_layer_id = 6; // Layer for feature creation
+  repeated FormControl controls = 7;
+  repeated FormBinding bindings = 8;
+  FormLayout layout_hints = 9;
+  repeated FormGroup groups = 10;
+}
+
+// FormControl represents individual form elements (gRPC equivalent of OpenRosa controls).
+message FormControl {
+  string control_id = 1;
+  string label = 2;
+  string hint = 3;
+  bool required = 4;
+  string bind_reference = 5; // Links to FormBinding
+  string group_id = 6; // Optional group membership
+  int32 display_order = 7;
+
+  // Control-specific configuration
+  oneof control_type {
+    TextInputControl text_input = 10;
+    NumericInputControl numeric_input = 11;
+    SelectControl select_control = 12;
+    DateTimeControl datetime_control = 13;
+    LocationControl location_control = 14;
+    MediaControl media_control = 15;
+    BooleanControl boolean_control = 16;
+    GroupControl group_control = 17;
+    SeparatorControl separator_control = 18;
+  }
+
+  // Mobile-specific optimizations
+  MobileControlHints mobile_hints = 20;
+}
+
+// TextInputControl for single-line or multi-line text entry.
+message TextInputControl {
+  bool multiline = 1;
+  int32 max_length = 2;
+  string placeholder = 3;
+  TextInputType input_type = 4;
+  string validation_pattern = 5; // Regular expression
+}
+
+enum TextInputType {
+  TEXT_INPUT_TYPE_UNSPECIFIED = 0;
+  TEXT_INPUT_TYPE_TEXT = 1;
+  TEXT_INPUT_TYPE_EMAIL = 2;
+  TEXT_INPUT_TYPE_URL = 3;
+  TEXT_INPUT_TYPE_PHONE = 4;
+  TEXT_INPUT_TYPE_PASSWORD = 5;
+}
+
+// NumericInputControl for number entry with validation.
+message NumericInputControl {
+  NumericType numeric_type = 1;
+  double min_value = 2;
+  double max_value = 3;
+  int32 decimal_places = 4;
+  string placeholder = 5;
+}
+
+enum NumericType {
+  NUMERIC_TYPE_UNSPECIFIED = 0;
+  NUMERIC_TYPE_INTEGER = 1;
+  NUMERIC_TYPE_DECIMAL = 2;
+  NUMERIC_TYPE_CURRENCY = 3;
+  NUMERIC_TYPE_PERCENTAGE = 4;
+}
+
+// SelectControl for single or multi-choice selection.
+message SelectControl {
+  bool allow_multiple = 1;
+  repeated SelectOption options = 2;
+  SelectStyle style_hint = 3;
+  bool allow_other = 4; // Enable "Other" option with text input
+}
+
+message SelectOption {
+  string value = 1;
+  string label = 2;
+  string icon_url = 3; // Optional icon for mobile display
+  bool default_selected = 4;
+}
+
+enum SelectStyle {
+  SELECT_STYLE_UNSPECIFIED = 0;
+  SELECT_STYLE_DROPDOWN = 1; // Traditional picker/dropdown
+  SELECT_STYLE_RADIO_GROUP = 2; // Radio buttons (single select)
+  SELECT_STYLE_CHECKBOX_GROUP = 3; // Checkboxes (multi-select)
+  SELECT_STYLE_BUTTON_GROUP = 4; // Toggle buttons
+}
+
+// DateTimeControl for date/time selection.
+message DateTimeControl {
+  DateTimeType datetime_type = 1;
+  int64 min_date = 2; // UTC milliseconds since epoch
+  int64 max_date = 3; // UTC milliseconds since epoch
+  bool default_to_now = 4;
+}
+
+enum DateTimeType {
+  DATETIME_TYPE_UNSPECIFIED = 0;
+  DATETIME_TYPE_DATE = 1;
+  DATETIME_TYPE_TIME = 2;
+  DATETIME_TYPE_DATETIME = 3;
+}
+
+// LocationControl for GPS coordinate capture.
+message LocationControl {
+  bool require_accuracy = 1;
+  double min_accuracy_meters = 2; // Required GPS accuracy
+  bool enable_map_selection = 3; // Allow manual map selection
+  bool capture_altitude = 4;
+  bool auto_capture = 5; // Capture location on form load
+}
+
+// MediaControl for photo, video, or file attachment.
+message MediaControl {
+  MediaType media_type = 1;
+  bool required = 2;
+  int32 max_file_size_mb = 3;
+  repeated string accepted_formats = 4; // MIME types or extensions
+  bool enable_annotation = 5; // Allow drawing on photos
+  MediaQuality quality_hint = 6;
+}
+
+enum MediaType {
+  MEDIA_TYPE_UNSPECIFIED = 0;
+  MEDIA_TYPE_PHOTO = 1;
+  MEDIA_TYPE_VIDEO = 2;
+  MEDIA_TYPE_AUDIO = 3;
+  MEDIA_TYPE_FILE = 4;
+}
+
+enum MediaQuality {
+  MEDIA_QUALITY_UNSPECIFIED = 0;
+  MEDIA_QUALITY_LOW = 1; // Optimized for bandwidth
+  MEDIA_QUALITY_MEDIUM = 2;
+  MEDIA_QUALITY_HIGH = 3;
+}
+
+// BooleanControl for yes/no or true/false input.
+message BooleanControl {
+  BooleanStyle style = 1;
+  string true_label = 2; // Custom label for true value
+  string false_label = 3; // Custom label for false value
+}
+
+enum BooleanStyle {
+  BOOLEAN_STYLE_UNSPECIFIED = 0;
+  BOOLEAN_STYLE_CHECKBOX = 1;
+  BOOLEAN_STYLE_SWITCH = 2;
+  BOOLEAN_STYLE_RADIO = 3; // Yes/No radio buttons
+}
+
+// GroupControl for organizing related fields.
+message GroupControl {
+  string group_title = 1;
+  bool collapsible = 2;
+  bool default_collapsed = 3;
+  GroupStyle style = 4;
+}
+
+enum GroupStyle {
+  GROUP_STYLE_UNSPECIFIED = 0;
+  GROUP_STYLE_CARD = 1; // Visual card container
+  GROUP_STYLE_SECTION = 2; // Section header
+  GROUP_STYLE_TABS = 3; // Tabbed interface
+}
+
+// SeparatorControl for visual separation.
+message SeparatorControl {
+  string label = 1; // Optional separator label
+  SeparatorStyle style = 2;
+}
+
+enum SeparatorStyle {
+  SEPARATOR_STYLE_UNSPECIFIED = 0;
+  SEPARATOR_STYLE_LINE = 1;
+  SEPARATOR_STYLE_SPACE = 2;
+  SEPARATOR_STYLE_DIVIDER = 3;
+}
+
+// FormBinding links controls to feature attributes (equivalent to OpenRosa bind).
+message FormBinding {
+  string binding_id = 1;
+  string control_id = 2;
+  string target_field_name = 3; // Feature attribute field
+  FieldType field_type = 4; // From feature_service.proto
+  bool required = 5;
+  repeated ValidationRule validation_rules = 6;
+  DefaultValue default_value = 7;
+  CalculatedValue calculated_value = 8; // For computed fields
+}
+
+// DefaultValue specifies default value for a form field.
+message DefaultValue {
+  oneof default_type {
+    AttributeValue static_value = 1; // Static default value
+    DefaultValueFunction function = 2; // Dynamic default (now(), uuid(), etc.)
+  }
+}
+
+enum DefaultValueFunction {
+  DEFAULT_VALUE_FUNCTION_UNSPECIFIED = 0;
+  DEFAULT_VALUE_FUNCTION_NOW = 1; // Current timestamp
+  DEFAULT_VALUE_FUNCTION_TODAY = 2; // Current date
+  DEFAULT_VALUE_FUNCTION_UUID = 3; // Generate UUID
+  DEFAULT_VALUE_FUNCTION_CURRENT_LOCATION = 4; // GPS location
+  DEFAULT_VALUE_FUNCTION_DEVICE_ID = 5; // Device identifier
+  DEFAULT_VALUE_FUNCTION_USER_ID = 6; // Current user
+}
+
+// CalculatedValue for computed fields based on other form values.
+message CalculatedValue {
+  string expression = 1; // Expression language (e.g., JSONPath, XPath-like)
+  repeated string dependency_fields = 2; // Fields this calculation depends on
+  bool recalculate_on_change = 3;
+}
+
+// ValidationRule defines field validation logic.
+message ValidationRule {
+  string rule_id = 1;
+  ValidationType validation_type = 2;
+  string error_message = 3;
+  ValidationSeverity severity = 4;
+
+  oneof rule_config {
+    RangeValidation range = 10;
+    LengthValidation length = 11;
+    PatternValidation pattern = 12;
+    CustomValidation custom = 13;
+    ConditionalValidation conditional = 14;
+  }
+}
+
+enum ValidationType {
+  VALIDATION_TYPE_UNSPECIFIED = 0;
+  VALIDATION_TYPE_REQUIRED = 1;
+  VALIDATION_TYPE_RANGE = 2;
+  VALIDATION_TYPE_LENGTH = 3;
+  VALIDATION_TYPE_PATTERN = 4;
+  VALIDATION_TYPE_CUSTOM = 5;
+  VALIDATION_TYPE_CONDITIONAL = 6;
+}
+
+enum ValidationSeverity {
+  VALIDATION_SEVERITY_UNSPECIFIED = 0;
+  VALIDATION_SEVERITY_ERROR = 1; // Prevents submission
+  VALIDATION_SEVERITY_WARNING = 2; // Shows warning but allows submission
+  VALIDATION_SEVERITY_INFO = 3; // Informational only
+}
+
+message RangeValidation {
+  double min_value = 1;
+  double max_value = 2;
+  bool inclusive = 3;
+}
+
+message LengthValidation {
+  int32 min_length = 1;
+  int32 max_length = 2;
+}
+
+message PatternValidation {
+  string regex_pattern = 1;
+  bool case_sensitive = 2;
+}
+
+message CustomValidation {
+  string validation_expression = 1; // Custom validation logic
+  repeated string dependency_fields = 2;
+}
+
+message ConditionalValidation {
+  string condition_expression = 1; // When to apply this validation
+  ValidationRule nested_rule = 2; // Rule to apply when condition is true
+}
+
+// FormGroup organizes related controls.
+message FormGroup {
+  string group_id = 1;
+  string title = 2;
+  string description = 3;
+  repeated string control_ids = 4; // Controls in this group
+  int32 display_order = 5;
+  GroupLayout layout = 6;
+}
+
+message GroupLayout {
+  LayoutType layout_type = 1;
+  int32 columns = 2; // For grid layout
+  bool collapsible = 3;
+  bool default_collapsed = 4;
+}
+
+enum LayoutType {
+  LAYOUT_TYPE_UNSPECIFIED = 0;
+  LAYOUT_TYPE_VERTICAL = 1; // Stack vertically
+  LAYOUT_TYPE_HORIZONTAL = 2; // Side by side
+  LAYOUT_TYPE_GRID = 3; // Grid layout
+  LAYOUT_TYPE_TABS = 4; // Tabbed interface
+}
+
+// FormLayout provides overall form layout hints.
+message FormLayout {
+  LayoutType default_layout = 1;
+  bool show_progress_indicator = 2;
+  bool enable_navigation_buttons = 3;
+  NavigationStyle navigation_style = 4;
+  FormTheme theme = 5;
+}
+
+enum NavigationStyle {
+  NAVIGATION_STYLE_UNSPECIFIED = 0;
+  NAVIGATION_STYLE_BUTTONS = 1; // Previous/Next buttons
+  NAVIGATION_STYLE_TABS = 2; // Tab navigation
+  NAVIGATION_STYLE_PAGES = 3; // Paginated form
+  NAVIGATION_STYLE_SINGLE_PAGE = 4; // All on one page
+}
+
+message FormTheme {
+  string primary_color = 1; // Hex color
+  string accent_color = 2;
+  string background_color = 3;
+  bool dark_mode = 4;
+  string font_family = 5;
+}
+
+// Mobile-specific optimizations and hints.
+message MobileCapabilities {
+  bool has_camera = 1;
+  bool has_gps = 2;
+  bool has_accelerometer = 3;
+  bool has_gyroscope = 4;
+  bool has_nfc = 5;
+  string platform = 6; // "ios", "android", "windows"
+  string device_type = 7; // "phone", "tablet", "desktop"
+  NetworkType network_type = 8;
+  BatteryLevel battery_level = 9;
+}
+
+enum NetworkType {
+  NETWORK_TYPE_UNSPECIFIED = 0;
+  NETWORK_TYPE_WIFI = 1;
+  NETWORK_TYPE_CELLULAR = 2;
+  NETWORK_TYPE_OFFLINE = 3;
+  NETWORK_TYPE_LIMITED = 4; // Poor connection
+}
+
+enum BatteryLevel {
+  BATTERY_LEVEL_UNSPECIFIED = 0;
+  BATTERY_LEVEL_HIGH = 1; // >50%
+  BATTERY_LEVEL_MEDIUM = 2; // 20-50%
+  BATTERY_LEVEL_LOW = 3; // <20%
+}
+
+message MobileOptimizations {
+  bool compress_media = 1;
+  MediaQuality default_media_quality = 2;
+  int32 location_accuracy_meters = 3;
+  bool enable_offline_mode = 4;
+  int32 auto_save_interval_seconds = 5;
+  bool reduce_animations = 6; // For low battery
+  bool prefer_native_controls = 7;
+}
+
+message MobileControlHints {
+  InputMethod preferred_input_method = 1;
+  KeyboardType keyboard_type = 2;
+  bool auto_focus = 3;
+  bool auto_capitalize = 4;
+  bool spell_check = 5;
+  int32 max_display_lines = 6; // For multi-line text
+}
+
+enum InputMethod {
+  INPUT_METHOD_UNSPECIFIED = 0;
+  INPUT_METHOD_KEYBOARD = 1;
+  INPUT_METHOD_VOICE = 2;
+  INPUT_METHOD_HANDWRITING = 3;
+  INPUT_METHOD_CAMERA_OCR = 4; // Text recognition from camera
+}
+
+enum KeyboardType {
+  KEYBOARD_TYPE_UNSPECIFIED = 0;
+  KEYBOARD_TYPE_DEFAULT = 1;
+  KEYBOARD_TYPE_NUMERIC = 2;
+  KEYBOARD_TYPE_EMAIL = 3;
+  KEYBOARD_TYPE_URL = 4;
+  KEYBOARD_TYPE_PHONE = 5;
+  KEYBOARD_TYPE_DECIMAL = 6;
+}
+
+// Form submission messages.
+message SubmitFormDataRequest {
+  string form_id = 1;
+  string form_version = 2;
+  FormInstance instance = 3;
+  repeated FormAttachment attachments = 4;
+  SubmissionMetadata metadata = 5;
+}
+
+message SubmitFormDataResponse {
+  SubmissionResult result = 1;
+  int64 created_feature_id = 2; // ID of created feature
+  repeated ValidationIssue validation_issues = 3;
+  SubmissionMetadata response_metadata = 4;
+}
+
+message FormInstance {
+  string instance_id = 1;
+  string form_id = 2;
+  map<string, AttributeValue> field_values = 3; // Field ID → value
+  int64 created_at = 4; // UTC milliseconds
+  int64 modified_at = 5; // UTC milliseconds
+  string created_by = 6; // User ID
+  InstanceStatus status = 7;
+}
+
+enum InstanceStatus {
+  INSTANCE_STATUS_UNSPECIFIED = 0;
+  INSTANCE_STATUS_DRAFT = 1;
+  INSTANCE_STATUS_COMPLETE = 2;
+  INSTANCE_STATUS_SUBMITTED = 3;
+  INSTANCE_STATUS_ERROR = 4;
+}
+
+message FormAttachment {
+  string attachment_id = 1;
+  string field_id = 2; // Form field this attachment belongs to
+  string filename = 3;
+  string content_type = 4;
+  int64 file_size = 5;
+  bytes content = 6; // File content (for small files)
+  string upload_url = 7; // For large files, upload separately
+  AttachmentMetadata metadata = 8;
+}
+
+message AttachmentMetadata {
+  double latitude = 1; // GPS location when captured
+  double longitude = 2;
+  double altitude = 3;
+  double accuracy = 4;
+  int64 timestamp = 5; // Capture timestamp
+  string device_id = 6;
+  map<string, string> exif_data = 7; // For photos
+}
+
+message SubmissionMetadata {
+  string device_id = 1;
+  string app_version = 2;
+  string platform = 3;
+  double latitude = 4; // Submission location
+  double longitude = 5;
+  int64 submission_time = 6;
+  map<string, string> custom_metadata = 7;
+}
+
+message SubmissionResult {
+  bool success = 1;
+  string message = 2;
+  repeated ValidationIssue issues = 3;
+  int64 server_timestamp = 4;
+}
+
+message ValidationIssue {
+  string field_id = 1;
+  ValidationSeverity severity = 2;
+  string message = 3;
+  string suggested_value = 4; // Optional suggestion
+}
+
+// Real-time collaboration messages.
+message FormUpdateRequest {
+  string session_id = 1;
+  string form_id = 2;
+  string instance_id = 3;
+  FormUpdate update = 4;
+}
+
+message FormUpdateResponse {
+  string session_id = 1;
+  FormUpdate update = 2;
+  repeated string active_users = 3; // Other users editing
+  UpdateStatus status = 4;
+}
+
+message FormUpdate {
+  UpdateType update_type = 1;
+  string field_id = 2;
+  AttributeValue new_value = 3;
+  string user_id = 4;
+  int64 timestamp = 5;
+}
+
+enum UpdateType {
+  UPDATE_TYPE_UNSPECIFIED = 0;
+  UPDATE_TYPE_FIELD_CHANGED = 1;
+  UPDATE_TYPE_USER_JOINED = 2;
+  UPDATE_TYPE_USER_LEFT = 3;
+  UPDATE_TYPE_FORM_SUBMITTED = 4;
+}
+
+enum UpdateStatus {
+  UPDATE_STATUS_UNSPECIFIED = 0;
+  UPDATE_STATUS_APPLIED = 1;
+  UPDATE_STATUS_CONFLICT = 2;
+  UPDATE_STATUS_ERROR = 3;
+}
+
+// Form metadata and catalog.
+message FormMetadata {
+  string form_id = 1;
+  string title = 2;
+  string description = 3;
+  string version = 4;
+  string author = 5;
+  int64 created_at = 6;
+  int64 modified_at = 7;
+  FormStatus status = 8;
+  repeated string tags = 9;
+  string target_service_id = 10;
+  int32 target_layer_id = 11;
+  FormCompatibility compatibility = 12;
+}
+
+enum FormStatus {
+  FORM_STATUS_UNSPECIFIED = 0;
+  FORM_STATUS_DRAFT = 1;
+  FORM_STATUS_PUBLISHED = 2;
+  FORM_STATUS_DEPRECATED = 3;
+  FORM_STATUS_ARCHIVED = 4;
+}
+
+message FormCompatibility {
+  string min_app_version = 1;
+  repeated string supported_platforms = 2;
+  bool requires_online = 3;
+  repeated string required_permissions = 4;
+}
+
+// Validation request/response.
+message ValidateFormDataRequest {
+  string form_id = 1;
+  FormInstance instance = 2;
+}
+
+message ValidateFormDataResponse {
+  bool is_valid = 1;
+  repeated ValidationIssue issues = 2;
+}
+
+// Form metadata request/response.
+message GetFormMetadataRequest {
+  repeated string form_ids = 1; // Empty = all forms
+  repeated string tags = 2; // Filter by tags
+  string service_id = 3; // Filter by target service
+}
+
+message GetFormMetadataResponse {
+  repeated FormMetadata forms = 1;
+  int32 total_count = 2;
+}

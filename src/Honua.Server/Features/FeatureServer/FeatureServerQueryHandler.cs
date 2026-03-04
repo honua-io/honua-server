@@ -154,8 +154,12 @@ internal sealed class FeatureServerQueryHandler(
                     [unsupportedError!]);
             }
 
+            var requestedFormat = FeatureServerEndpoints.ResolveRequestedQueryFormat(
+                validatedParams,
+                context.Request.Headers.Accept);
+
             if (!FeatureServerEndpoints.TryValidateOutputFormat(
-                validatedParams.F,
+                requestedFormat,
                 FeatureServerEndpoints.FeatureServerQueryFormats,
                 out var format,
                 out var formatError))
@@ -482,7 +486,8 @@ internal sealed class FeatureServerQueryHandler(
 
             var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
             var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf;
+            var isFgb = string.Equals(format, "fgb", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb;
 
             if (!useStreaming)
             {
@@ -490,6 +495,28 @@ internal sealed class FeatureServerQueryHandler(
                 if (cached != null)
                 {
                     return cached;
+                }
+
+                if (isFgb)
+                {
+                    if (validatedParams.ReturnDistinctValues)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Unsupported query parameters",
+                            ["returnDistinctValues is not supported when f=fgb."]);
+                    }
+
+                    var fgbStopwatch = Stopwatch.StartNew();
+                    var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(layerId, query, cancellationToken);
+                    fgbStopwatch.Stop();
+                    FeatureServerLog.QueryExecuted(_logger, "query_fgb", serviceId, layerId, fgbStopwatch.Elapsed.TotalMilliseconds);
+
+                    var payload = flatGeobufPayload ?? [];
+                    FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, payload.Length > 0 ? 1 : 0, payload.Length > 0 ? 1 : 0);
+                    HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
+
+                    return await CreateCachedBytesResultAsync(payload, "application/vnd.flatgeobuf");
                 }
 
                 var queryStopwatch = Stopwatch.StartNew();

@@ -175,6 +175,12 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         return result.Items.Select(static feature => feature.Id).ToImmutableArray();
     }
 
+    public async Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+    {
+        var result = await QueryAsync(layerId, query, cancellationToken);
+        return result.Items.Length == 0 ? [] : [0x66, 0x67, 0x62];
+    }
+
     public async IAsyncEnumerable<Feature> StreamFeaturesAsync(
         int layerId,
         FeatureQuery query,

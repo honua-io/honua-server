@@ -122,6 +122,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(layerId, query, geometryStorageType);
+        return await _dataAccess.ExecuteSelectFlatGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
+    }
+
     public async Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var isKnnQuery = query.SpatialFilter.HasValue &&

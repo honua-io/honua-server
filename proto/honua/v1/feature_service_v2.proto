@@ -1,0 +1,777 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+syntax = "proto3";
+
+package honua.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Honua.Server.Features.Grpc.Proto.V2";
+
+// FeatureService provides typed RPC access to geospatial feature queries and editing.
+// Enhanced with geo-grpc patterns for improved mobile performance and compatibility.
+service FeatureService {
+  // QueryFeatures executes a feature query and returns all results in a single response.
+  rpc QueryFeatures(QueryFeaturesRequest) returns (QueryFeaturesResponse);
+
+  // QueryFeaturesStream executes a feature query and streams results as pages.
+  rpc QueryFeaturesStream(QueryFeaturesRequest) returns (stream FeaturePage);
+
+  // ApplyEdits applies add/update/delete mutations and returns per-operation results.
+  rpc ApplyEdits(ApplyEditsRequest) returns (ApplyEditsResponse);
+
+  // ApplyEditsStream applies edits using bidirectional streaming for large datasets.
+  rpc ApplyEditsStream(stream EditBatch) returns (stream EditResults);
+
+  // SyncFeatures performs bidirectional synchronization for offline/online scenarios.
+  rpc SyncFeatures(stream SyncRequest) returns (stream SyncResponse);
+
+  // GetServiceMetadata returns service and layer metadata for optimization.
+  rpc GetServiceMetadata(ServiceMetadataRequest) returns (ServiceMetadataResponse);
+}
+
+// QueryFeaturesRequest specifies the full set of query parameters.
+message QueryFeaturesRequest {
+  string service_id = 1;
+  int32 layer_id = 2;
+
+  // Enhanced query filtering
+  QueryFilter filter = 3; // Replaces simple 'where' clause
+  repeated int64 object_ids = 4;
+  repeated string out_fields = 5;
+
+  // Geometry options
+  bool return_geometry = 6;
+  GeometryEncoding geometry_encoding = 7; // NEW: Flexible geometry formats
+  SpatialReference out_sr = 8;
+
+  // Pagination and ordering
+  int32 result_offset = 9;
+  int32 result_record_count = 10;
+  string order_by = 11;
+
+  // Result types
+  bool return_distinct = 12;
+  bool return_count_only = 13;
+  bool return_ids_only = 14;
+  bool return_extent_only = 15;
+
+  // Statistics and grouping
+  repeated StatisticDefinition out_statistics = 16;
+  repeated string group_by = 17;
+
+  // Geometry precision and simplification
+  int32 geometry_precision = 18;
+  double max_allowable_offset = 19;
+  LevelOfDetail level_of_detail = 20; // NEW: Mobile optimization
+
+  // Mobile optimizations
+  MobileOptimizations mobile_options = 21; // NEW: Mobile-specific hints
+}
+
+// Enhanced geometry encoding options
+enum GeometryEncoding {
+  GEOMETRY_ENCODING_UNSPECIFIED = 0;
+  GEOMETRY_ENCODING_STRUCTURED = 1;  // Current proto structure
+  GEOMETRY_ENCODING_WKB = 2;          // Well-Known Binary (compact)
+  GEOMETRY_ENCODING_WKT = 3;          // Well-Known Text (readable)
+  GEOMETRY_ENCODING_GEOJSON = 4;      // GeoJSON (web-friendly)
+  GEOMETRY_ENCODING_ESRI_SHAPE = 5;   // ESRI Shape format
+}
+
+// Enhanced query filtering with compound logic
+message QueryFilter {
+  oneof filter_type {
+    AttributeFilter attribute_filter = 1;
+    SpatialFilter spatial_filter = 2;
+    TemporalFilter temporal_filter = 3; // NEW: Time-based filtering
+    CompoundFilter compound_filter = 4; // NEW: Complex logic
+  }
+}
+
+message AttributeFilter {
+  string expression = 1; // SQL-like WHERE clause
+}
+
+message TemporalFilter {
+  string time_field = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  TemporalRelationship relationship = 4;
+}
+
+enum TemporalRelationship {
+  TEMPORAL_RELATIONSHIP_UNSPECIFIED = 0;
+  TEMPORAL_RELATIONSHIP_DURING = 1;
+  TEMPORAL_RELATIONSHIP_CONTAINS = 2;
+  TEMPORAL_RELATIONSHIP_OVERLAPS = 3;
+  TEMPORAL_RELATIONSHIP_INTERSECTS = 4;
+  TEMPORAL_RELATIONSHIP_BEFORE = 5;
+  TEMPORAL_RELATIONSHIP_AFTER = 6;
+}
+
+message CompoundFilter {
+  LogicalOperator operator = 1;
+  repeated QueryFilter filters = 2;
+}
+
+enum LogicalOperator {
+  LOGICAL_OPERATOR_UNSPECIFIED = 0;
+  LOGICAL_OPERATOR_AND = 1;
+  LOGICAL_OPERATOR_OR = 2;
+  LOGICAL_OPERATOR_NOT = 3;
+}
+
+// Mobile optimization hints
+message MobileOptimizations {
+  // Progressive loading priorities
+  repeated string priority_fields = 1;
+
+  // Caching hints
+  CachePolicy cache_policy = 2;
+
+  // Network optimization
+  CompressionLevel compression = 3;
+
+  // Battery optimization
+  bool low_power_mode = 4;
+}
+
+message CachePolicy {
+  int32 max_age_seconds = 1;
+  bool allow_stale_while_revalidate = 2;
+  repeated string cache_tags = 3;
+}
+
+enum CompressionLevel {
+  COMPRESSION_LEVEL_UNSPECIFIED = 0;
+  COMPRESSION_LEVEL_NONE = 1;
+  COMPRESSION_LEVEL_LOW = 2;
+  COMPRESSION_LEVEL_MEDIUM = 3;
+  COMPRESSION_LEVEL_HIGH = 4;
+}
+
+// Level of detail for geometry simplification
+message LevelOfDetail {
+  double min_scale = 1;
+  double max_scale = 2;
+  double tolerance = 3;
+  GeometryType simplified_type = 4;
+  bool preserve_topology = 5;
+}
+
+// Enhanced geometry with multiple encoding support
+message Geometry {
+  oneof encoding {
+    // Structured geometry (current approach)
+    StructuredGeometry structured = 1;
+
+    // Compact binary formats
+    bytes wkb = 2;
+    string wkt = 3;
+    string geojson = 4;
+    bytes esri_shape = 5;
+  }
+
+  // Optional metadata for all formats
+  SpatialReference spatial_reference = 6;
+  BoundingBox envelope = 7; // Quick spatial indexing
+  GeometryQuality quality = 8; // Mobile optimization metadata
+}
+
+message StructuredGeometry {
+  oneof shape {
+    PointGeometry point = 1;
+    MultiPointGeometry multi_point = 2;
+    PolylineGeometry polyline = 3;
+    PolygonGeometry polygon = 4;
+    MultiPolygonGeometry multi_polygon = 5;
+  }
+}
+
+message BoundingBox {
+  double xmin = 1;
+  double ymin = 2;
+  double xmax = 3;
+  double ymax = 4;
+}
+
+message GeometryQuality {
+  double simplification_tolerance = 1;
+  int32 coordinate_precision = 2;
+  bool topology_preserved = 3;
+  double original_area = 4; // For validation
+}
+
+// Enhanced spatial reference with rich metadata
+message SpatialReference {
+  // Standard identifiers
+  int32 wkid = 1;
+  int32 latest_wkid = 2;
+  string authority_code = 3; // e.g., "EPSG:4326"
+
+  // Full definitions
+  string wkt = 4;
+  string proj4 = 5;
+
+  // Metadata for mobile optimization
+  CoordinateSystemType type = 6;
+  GeographicBounds bounds = 7;
+  double linear_unit_scale = 8;
+  double angular_unit_scale = 9;
+  string display_name = 10;
+}
+
+enum CoordinateSystemType {
+  COORDINATE_SYSTEM_TYPE_UNSPECIFIED = 0;
+  COORDINATE_SYSTEM_TYPE_GEOGRAPHIC = 1;
+  COORDINATE_SYSTEM_TYPE_PROJECTED = 2;
+  COORDINATE_SYSTEM_TYPE_GEOCENTRIC = 3;
+  COORDINATE_SYSTEM_TYPE_LOCAL = 4;
+}
+
+message GeographicBounds {
+  double west_longitude = 1;
+  double east_longitude = 2;
+  double south_latitude = 3;
+  double north_latitude = 4;
+}
+
+// Enhanced spatial filter with distance relationships
+message SpatialFilter {
+  Geometry geometry = 1;
+  SpatialRelationship spatial_relationship = 2;
+  SpatialReference spatial_reference = 3;
+  double distance = 4;
+  DistanceUnit distance_unit = 5;
+  int32 nearest_count = 6;
+  bool return_distance = 7;
+
+  // NEW: Advanced options
+  double buffer_distance = 8;
+  bool use_spatial_index = 9;
+  double precision_threshold = 10;
+}
+
+// Enhanced error handling with structured details
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+  repeated ErrorDetail details = 3;
+  map<string, string> metadata = 4;
+  string request_id = 5; // For debugging
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_INVALID_QUERY = 1;
+  ERROR_CODE_GEOMETRY_ERROR = 2;
+  ERROR_CODE_SPATIAL_REFERENCE_ERROR = 3;
+  ERROR_CODE_AUTHENTICATION_ERROR = 4;
+  ERROR_CODE_AUTHORIZATION_ERROR = 5;
+  ERROR_CODE_RATE_LIMIT_EXCEEDED = 6;
+  ERROR_CODE_SERVICE_UNAVAILABLE = 7;
+  ERROR_CODE_TIMEOUT = 8;
+  ERROR_CODE_INVALID_PARAMETERS = 9;
+  ERROR_CODE_LAYER_NOT_FOUND = 10;
+  ERROR_CODE_FEATURE_NOT_FOUND = 11;
+  ERROR_CODE_EDIT_CONFLICT = 12;
+}
+
+message ErrorDetail {
+  string field_name = 1;
+  string violation = 2;
+  string description = 3;
+  string help_url = 4; // Link to documentation
+}
+
+// Bidirectional streaming for sync operations
+message SyncRequest {
+  oneof request_type {
+    SyncMetadata sync_metadata = 1;
+    FeatureChanges feature_changes = 2;
+    ConflictResolution conflict_resolution = 3;
+    SyncComplete sync_complete = 4;
+  }
+}
+
+message SyncResponse {
+  oneof response_type {
+    SyncAck ack = 1;
+    ConflictDetection conflicts = 2;
+    SyncProgress progress = 3;
+    SyncComplete complete = 4;
+    Error error = 5;
+  }
+}
+
+message SyncMetadata {
+  string client_id = 1;
+  int64 last_sync_generation = 2;
+  repeated LayerSyncInfo layers = 3;
+  SyncStrategy strategy = 4;
+}
+
+message LayerSyncInfo {
+  string service_id = 1;
+  int32 layer_id = 2;
+  int64 last_generation = 3;
+  BoundingBox sync_extent = 4;
+}
+
+enum SyncStrategy {
+  SYNC_STRATEGY_UNSPECIFIED = 0;
+  SYNC_STRATEGY_FULL = 1;
+  SYNC_STRATEGY_INCREMENTAL = 2;
+  SYNC_STRATEGY_CONFLICT_RESOLUTION = 3;
+}
+
+message FeatureChanges {
+  repeated FeatureChange changes = 1;
+}
+
+message FeatureChange {
+  ChangeOperation operation = 1;
+  Feature feature = 2;
+  int64 generation = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  string change_id = 5;
+}
+
+enum ChangeOperation {
+  CHANGE_OPERATION_UNSPECIFIED = 0;
+  CHANGE_OPERATION_INSERT = 1;
+  CHANGE_OPERATION_UPDATE = 2;
+  CHANGE_OPERATION_DELETE = 3;
+}
+
+message ConflictDetection {
+  repeated FeatureConflict conflicts = 1;
+}
+
+message FeatureConflict {
+  int64 object_id = 1;
+  Feature server_version = 2;
+  Feature client_version = 3;
+  ConflictType conflict_type = 4;
+  repeated string conflicting_fields = 5;
+}
+
+enum ConflictType {
+  CONFLICT_TYPE_UNSPECIFIED = 0;
+  CONFLICT_TYPE_UPDATE_UPDATE = 1;
+  CONFLICT_TYPE_UPDATE_DELETE = 2;
+  CONFLICT_TYPE_DELETE_UPDATE = 3;
+  CONFLICT_TYPE_GEOMETRY_MISMATCH = 4;
+}
+
+message ConflictResolution {
+  repeated FeatureResolution resolutions = 1;
+}
+
+message FeatureResolution {
+  int64 object_id = 1;
+  ResolutionStrategy strategy = 2;
+  Feature resolved_feature = 3;
+}
+
+enum ResolutionStrategy {
+  RESOLUTION_STRATEGY_UNSPECIFIED = 0;
+  RESOLUTION_STRATEGY_CLIENT_WINS = 1;
+  RESOLUTION_STRATEGY_SERVER_WINS = 2;
+  RESOLUTION_STRATEGY_MANUAL_MERGE = 3;
+  RESOLUTION_STRATEGY_SKIP = 4;
+}
+
+message SyncProgress {
+  int32 completed_items = 1;
+  int32 total_items = 2;
+  string current_operation = 3;
+  double percent_complete = 4;
+  repeated string warnings = 5;
+}
+
+message SyncAck {
+  string request_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+message SyncComplete {
+  int64 final_generation = 1;
+  int32 changes_applied = 2;
+  int32 conflicts_resolved = 3;
+  repeated string warnings = 4;
+  google.protobuf.Timestamp completion_time = 5;
+}
+
+// Streaming edit operations
+message EditBatch {
+  repeated Feature adds = 1;
+  repeated Feature updates = 2;
+  repeated int64 deletes = 3;
+  bool rollback_on_failure = 4;
+  int32 batch_id = 5;
+  bool is_final_batch = 6;
+}
+
+message EditResults {
+  int32 batch_id = 1;
+  repeated EditResult add_results = 2;
+  repeated EditResult update_results = 3;
+  repeated EditResult delete_results = 4;
+  Error error = 5;
+  bool is_final_result = 6;
+}
+
+// Service metadata for mobile optimization
+message ServiceMetadataRequest {
+  string service_id = 1;
+  repeated int32 layer_ids = 2;
+  bool include_schema = 3;
+  bool include_capabilities = 4;
+}
+
+message ServiceMetadataResponse {
+  ServiceInfo service_info = 1;
+  repeated LayerInfo layers = 2;
+  Error error = 3;
+}
+
+message ServiceInfo {
+  string service_id = 1;
+  string name = 2;
+  string description = 3;
+  SpatialReference default_spatial_reference = 4;
+  BoundingBox full_extent = 5;
+  repeated string supported_formats = 6;
+  ServiceCapabilities capabilities = 7;
+}
+
+message ServiceCapabilities {
+  bool supports_editing = 1;
+  bool supports_streaming = 2;
+  bool supports_sync = 3;
+  repeated GeometryEncoding supported_encodings = 4;
+  int32 max_record_count = 5;
+  int32 max_batch_size = 6;
+}
+
+message LayerInfo {
+  int32 layer_id = 1;
+  string name = 2;
+  string description = 3;
+  GeometryType geometry_type = 4;
+  repeated FieldDefinition fields = 5;
+  LayerCapabilities capabilities = 6;
+  SpatialIndexInfo spatial_index = 7;
+}
+
+message LayerCapabilities {
+  bool supports_query = 1;
+  bool supports_editing = 2;
+  bool supports_attachments = 3;
+  repeated SpatialRelationship supported_relationships = 4;
+  int32 max_features = 5;
+}
+
+message SpatialIndexInfo {
+  string index_type = 1;
+  double tolerance = 2;
+  BoundingBox index_extent = 3;
+  bool is_optimized_for_mobile = 4;
+}
+
+// Reuse existing message definitions with enhancements
+message QueryFeaturesResponse {
+  string object_id_field_name = 1;
+  GeometryType geometry_type = 2;
+  SpatialReference spatial_reference = 3;
+  repeated FieldDefinition fields = 4;
+  repeated Feature features = 5;
+  bool exceeded_transfer_limit = 6;
+
+  // For specialized queries
+  int64 count = 7;
+  repeated int64 object_ids = 8;
+  Extent extent = 9;
+
+  // Enhanced metadata
+  QueryMetadata metadata = 10; // NEW: Performance and optimization info
+  Error error = 11; // NEW: Structured error handling
+}
+
+message QueryMetadata {
+  google.protobuf.Timestamp execution_time = 1;
+  int32 execution_duration_ms = 2;
+  bool used_spatial_index = 3;
+  string query_plan = 4; // For debugging
+  repeated string warnings = 5;
+  int32 geometry_simplification_level = 6;
+}
+
+message FeaturePage {
+  // Metadata populated on first page only
+  string object_id_field_name = 1;
+  GeometryType geometry_type = 2;
+  SpatialReference spatial_reference = 3;
+  repeated FieldDefinition fields = 4;
+
+  // Page content
+  repeated Feature features = 5;
+  bool is_last_page = 6;
+
+  // Enhanced pagination info
+  int32 page_number = 7;
+  int32 total_pages = 8;
+  int32 page_size = 9;
+  QueryMetadata metadata = 10;
+}
+
+message ApplyEditsRequest {
+  string service_id = 1;
+  int32 layer_id = 2;
+  repeated Feature adds = 3;
+  repeated Feature updates = 4;
+  repeated int64 deletes = 5;
+  bool rollback_on_failure = 6;
+  bool force_write = 7;
+
+  // Enhanced options
+  ConflictResolutionStrategy conflict_strategy = 8; // NEW
+  bool validate_geometry = 9; // NEW
+  EditMetadata metadata = 10; // NEW: Audit trail
+}
+
+enum ConflictResolutionStrategy {
+  CONFLICT_RESOLUTION_STRATEGY_UNSPECIFIED = 0;
+  CONFLICT_RESOLUTION_STRATEGY_FAIL = 1;
+  CONFLICT_RESOLUTION_STRATEGY_SERVER_WINS = 2;
+  CONFLICT_RESOLUTION_STRATEGY_CLIENT_WINS = 3;
+  CONFLICT_RESOLUTION_STRATEGY_MANUAL = 4;
+}
+
+message EditMetadata {
+  string client_id = 1;
+  string user_id = 2;
+  string session_id = 3;
+  map<string, string> custom_attributes = 4;
+  google.protobuf.Timestamp client_timestamp = 5;
+}
+
+message ApplyEditsResponse {
+  repeated EditResult add_results = 1;
+  repeated EditResult update_results = 2;
+  repeated EditResult delete_results = 3;
+  Error error = 4;
+
+  // Enhanced metadata
+  EditSummary summary = 5; // NEW: Summary statistics
+}
+
+message EditSummary {
+  int32 total_edits = 1;
+  int32 successful_edits = 2;
+  int32 failed_edits = 3;
+  int32 conflicts_detected = 4;
+  google.protobuf.Timestamp server_timestamp = 5;
+  int64 new_generation = 6; // For sync tracking
+}
+
+// Enhanced edit result with detailed error information
+message EditResult {
+  int64 object_id = 1;
+  bool success = 2;
+  Error error = 3; // Enhanced error structure
+
+  // Additional metadata
+  int64 generation = 4; // For sync tracking
+  google.protobuf.Timestamp timestamp = 5;
+  map<string, string> metadata = 6; // Custom edit metadata
+}
+
+// Maintain compatibility with existing definitions
+message Feature {
+  int64 id = 1;
+  map<string, AttributeValue> attributes = 2;
+  Geometry geometry = 3;
+
+  // Enhanced metadata
+  FeatureMetadata metadata = 4; // NEW: Audit and sync info
+}
+
+message FeatureMetadata {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp modified_at = 2;
+  string created_by = 3;
+  string modified_by = 4;
+  int64 generation = 5; // For sync tracking
+  map<string, string> custom_metadata = 6;
+}
+
+// Reuse existing definitions with enhancements as needed
+message AttributeValue {
+  oneof value {
+    string string_value = 1;
+    int32 int32_value = 2;
+    int64 int64_value = 3;
+    double double_value = 4;
+    float float_value = 5;
+    bool bool_value = 6;
+    int64 datetime_value = 7; // UTC milliseconds since epoch
+    bytes bytes_value = 8;
+    NullValue null_value = 9;
+
+    // NEW: Enhanced types
+    google.protobuf.Timestamp timestamp_value = 10; // Structured timestamp
+    repeated string string_array = 11; // Array support
+    repeated int64 int_array = 12;
+    repeated double double_array = 13;
+  }
+}
+
+enum NullValue {
+  NULL_VALUE = 0;
+}
+
+// Keep existing geometry definitions (PointGeometry, etc.)
+message PointGeometry {
+  double x = 1;
+  double y = 2;
+  optional double z = 3;
+  optional double m = 4;
+}
+
+message MultiPointGeometry {
+  repeated PointGeometry points = 1;
+}
+
+message Coordinate {
+  double x = 1;
+  double y = 2;
+  optional double z = 3;
+  optional double m = 4;
+}
+
+message CoordinateSequence {
+  repeated Coordinate coords = 1;
+}
+
+message PolylineGeometry {
+  repeated CoordinateSequence paths = 1;
+}
+
+message PolygonGeometry {
+  repeated CoordinateSequence rings = 1;
+}
+
+message MultiPolygonGeometry {
+  repeated PolygonGeometry polygons = 1;
+}
+
+// Keep existing field and statistic definitions
+message FieldDefinition {
+  string name = 1;
+  FieldType field_type = 2;
+  int32 length = 3;
+  bool nullable = 4;
+
+  // Enhanced metadata
+  string display_name = 5; // NEW: User-friendly name
+  string description = 6; // NEW: Field description
+  bool is_primary_key = 7; // NEW: Schema metadata
+  AttributeValue default_value = 8; // NEW: Default values
+}
+
+enum FieldType {
+  FIELD_TYPE_UNSPECIFIED = 0;
+  FIELD_TYPE_STRING = 1;
+  FIELD_TYPE_INTEGER = 2;
+  FIELD_TYPE_BIG_INTEGER = 3;
+  FIELD_TYPE_DOUBLE = 4;
+  FIELD_TYPE_FLOAT = 5;
+  FIELD_TYPE_BOOLEAN = 6;
+  FIELD_TYPE_DATE_TIME = 7;
+  FIELD_TYPE_DATE = 8;
+  FIELD_TYPE_TIME = 9;
+  FIELD_TYPE_GEOMETRY = 10;
+  FIELD_TYPE_JSON = 11;
+  FIELD_TYPE_BINARY = 12;
+  FIELD_TYPE_UUID = 13;
+
+  // NEW: Enhanced types
+  FIELD_TYPE_STRING_ARRAY = 14;
+  FIELD_TYPE_INTEGER_ARRAY = 15;
+  FIELD_TYPE_DOUBLE_ARRAY = 16;
+  FIELD_TYPE_TIMESTAMP = 17;
+}
+
+enum GeometryType {
+  GEOMETRY_TYPE_UNSPECIFIED = 0;
+  GEOMETRY_TYPE_POINT = 1;
+  GEOMETRY_TYPE_MULTI_POINT = 2;
+  GEOMETRY_TYPE_LINE_STRING = 3;
+  GEOMETRY_TYPE_MULTI_LINE_STRING = 4;
+  GEOMETRY_TYPE_POLYGON = 5;
+  GEOMETRY_TYPE_MULTI_POLYGON = 6;
+  GEOMETRY_TYPE_GEOMETRY_COLLECTION = 7;
+  GEOMETRY_TYPE_NONE = 8;
+}
+
+enum SpatialRelationship {
+  SPATIAL_RELATIONSHIP_UNSPECIFIED = 0;
+  SPATIAL_RELATIONSHIP_INTERSECTS = 1;
+  SPATIAL_RELATIONSHIP_WITHIN = 2;
+  SPATIAL_RELATIONSHIP_CONTAINS = 3;
+  SPATIAL_RELATIONSHIP_ENVELOPE_INTERSECTS = 4;
+  SPATIAL_RELATIONSHIP_CROSSES = 5;
+  SPATIAL_RELATIONSHIP_TOUCHES = 6;
+  SPATIAL_RELATIONSHIP_OVERLAPS = 7;
+  SPATIAL_RELATIONSHIP_DISJOINT = 8;
+  SPATIAL_RELATIONSHIP_EQUALS = 9;
+  SPATIAL_RELATIONSHIP_WITHIN_DISTANCE = 10;
+  SPATIAL_RELATIONSHIP_BEYOND_DISTANCE = 11;
+  SPATIAL_RELATIONSHIP_NEAREST_NEIGHBOR = 12;
+}
+
+enum DistanceUnit {
+  DISTANCE_UNIT_UNSPECIFIED = 0;
+  DISTANCE_UNIT_METERS = 1;
+  DISTANCE_UNIT_FEET = 2;
+  DISTANCE_UNIT_KILOMETERS = 3;
+  DISTANCE_UNIT_MILES = 4;
+  DISTANCE_UNIT_NAUTICAL_MILES = 5; // NEW
+  DISTANCE_UNIT_DEGREES = 6; // NEW
+}
+
+message StatisticDefinition {
+  string on_statistic_field = 1;
+  StatisticType statistic_type = 2;
+  string out_statistic_field_name = 3;
+}
+
+enum StatisticType {
+  STATISTIC_TYPE_UNSPECIFIED = 0;
+  STATISTIC_TYPE_COUNT = 1;
+  STATISTIC_TYPE_SUM = 2;
+  STATISTIC_TYPE_MIN = 3;
+  STATISTIC_TYPE_MAX = 4;
+  STATISTIC_TYPE_AVG = 5;
+  STATISTIC_TYPE_STDDEV = 6;
+  STATISTIC_TYPE_VAR = 7;
+
+  // NEW: Additional statistics
+  STATISTIC_TYPE_MEDIAN = 8;
+  STATISTIC_TYPE_MODE = 9;
+  STATISTIC_TYPE_PERCENTILE = 10;
+}
+
+message Extent {
+  double xmin = 1;
+  double ymin = 2;
+  double xmax = 3;
+  double ymax = 4;
+  SpatialReference spatial_reference = 5;
+}

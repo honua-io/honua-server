@@ -4,8 +4,7 @@ Installing, configuring, operating, and upgrading Honua in production.
 
 ## Deployment
 
-- [Infrastructure & Deployment](infrastructure.md) — deployment paths (Docker Compose, Helm, Terraform AWS/Azure)
-- [Terraform Validation Runbook](terraform-validation.md) — on-demand AWS/Azure/Kubernetes Terraform validation and integration testing
+- [Infrastructure & Deployment](infrastructure.md) — deployment paths (Docker Compose, Helm, and cloud IaC handoff)
 - [Docker Compose Sample](docker-compose.md) — pre-built image with PostGIS, Redis, MinIO
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md) — patterns by team size
 

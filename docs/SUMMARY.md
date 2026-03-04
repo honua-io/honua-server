@@ -39,7 +39,6 @@
 
 * [DevOps Overview](devops/README.md)
 * [Infrastructure & Deployment](devops/infrastructure.md)
-* [Terraform Validation Runbook](devops/terraform-validation.md)
 * [Docker Compose Sample](devops/docker-compose.md)
 * [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md)
 * [Security](devops/security.md)

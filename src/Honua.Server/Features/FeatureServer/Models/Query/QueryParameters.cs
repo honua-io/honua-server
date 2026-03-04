@@ -48,9 +48,14 @@ public sealed class QueryParameters
     public bool ReturnExtentOnly { get; init; }
 
     /// <summary>
-    /// Output format (json, pjson, geojson)
+    /// Output format (json, pjson, geojson, pbf, fgb)
     /// </summary>
     public string F { get; init; } = "json";
+
+    /// <summary>
+    /// Indicates whether the request explicitly provided the <c>f</c> query parameter.
+    /// </summary>
+    public bool FormatSpecified { get; init; }
 
     /// <summary>
     /// Number of records to offset for pagination

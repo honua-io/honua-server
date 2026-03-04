@@ -11,7 +11,6 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `codeql.yml` | CodeQL static analysis | PR + push + schedule |
 | `container-security.yml` | Container image security scanning | PR + push + schedule |
 | `deploy.yml` | Build/publish container images | push to `trunk` and tags |
-| `terraform-manual-validation.yml` | On-demand Terraform static/policy/live/drift validation for AWS, Azure, Kubernetes, AKS, EKS | manual |
 
 ## Conformance and Performance
 

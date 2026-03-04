@@ -1,0 +1,294 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+syntax = "proto3";
+
+package honua.v1;
+
+option csharp_namespace = "Honua.Mobile.Core.Proto";
+
+// FeatureService provides typed RPC access to geospatial feature queries.
+service FeatureService {
+  // QueryFeatures executes a feature query and returns all results in a single response.
+  rpc QueryFeatures(QueryFeaturesRequest) returns (QueryFeaturesResponse);
+
+  // QueryFeaturesStream executes a feature query and streams results as pages.
+  rpc QueryFeaturesStream(QueryFeaturesRequest) returns (stream FeaturePage);
+
+  // ApplyEdits applies add/update/delete mutations and returns per-operation results.
+  rpc ApplyEdits(ApplyEditsRequest) returns (ApplyEditsResponse);
+}
+
+// QueryFeaturesRequest specifies the full set of query parameters.
+message QueryFeaturesRequest {
+  string service_id = 1;
+  int32 layer_id = 2;
+  string where = 3;
+  repeated int64 object_ids = 4;
+  repeated string out_fields = 5;
+  bool return_geometry = 6;
+  SpatialReference out_sr = 7;
+  int32 result_offset = 8;
+  int32 result_record_count = 9;
+  string order_by = 10;
+  bool return_distinct = 11;
+  bool return_count_only = 12;
+  bool return_ids_only = 13;
+  bool return_extent_only = 14;
+  repeated StatisticDefinition out_statistics = 15;
+  repeated string group_by = 16;
+  int32 geometry_precision = 17;
+  double max_allowable_offset = 18;
+  SpatialFilter spatial_filter = 19;
+}
+
+// QueryFeaturesResponse contains the full result of a unary feature query.
+message QueryFeaturesResponse {
+  string object_id_field_name = 1;
+  GeometryType geometry_type = 2;
+  SpatialReference spatial_reference = 3;
+  repeated FieldDefinition fields = 4;
+  repeated Feature features = 5;
+  bool exceeded_transfer_limit = 6;
+  // For count-only queries.
+  int64 count = 7;
+  // For ids-only queries.
+  repeated int64 object_ids = 8;
+  // For extent-only queries.
+  Extent extent = 9;
+}
+
+// FeaturePage is a single page in a streaming query response.
+message FeaturePage {
+  // Metadata is populated on the first page only.
+  string object_id_field_name = 1;
+  GeometryType geometry_type = 2;
+  SpatialReference spatial_reference = 3;
+  repeated FieldDefinition fields = 4;
+  // Features in this page.
+  repeated Feature features = 5;
+  // True when this is the final page.
+  bool is_last_page = 6;
+}
+
+// ApplyEditsRequest specifies feature edits for a single service/layer.
+message ApplyEditsRequest {
+  string service_id = 1;
+  int32 layer_id = 2;
+  repeated Feature adds = 3;
+  repeated Feature updates = 4;
+  repeated int64 deletes = 5;
+  bool rollback_on_failure = 6;
+  bool force_write = 7;
+}
+
+// ApplyEditsResponse contains add/update/delete results.
+message ApplyEditsResponse {
+  repeated EditResult add_results = 1;
+  repeated EditResult update_results = 2;
+  repeated EditResult delete_results = 3;
+  EditError error = 4;
+}
+
+// EditResult is the outcome of a single create/update/delete operation.
+message EditResult {
+  int64 object_id = 1;
+  bool success = 2;
+  EditError error = 3;
+}
+
+// EditError provides details for a failed edit operation.
+message EditError {
+  int32 code = 1;
+  string message = 2;
+}
+
+// Feature represents a single geographic feature.
+message Feature {
+  int64 id = 1;
+  map<string, AttributeValue> attributes = 2;
+  Geometry geometry = 3;
+}
+
+// AttributeValue wraps the possible types for a feature attribute.
+message AttributeValue {
+  oneof value {
+    string string_value = 1;
+    int32 int32_value = 2;
+    int64 int64_value = 3;
+    double double_value = 4;
+    float float_value = 5;
+    bool bool_value = 6;
+    int64 datetime_value = 7; // UTC milliseconds since epoch
+    bytes bytes_value = 8;
+    NullValue null_value = 9;
+  }
+}
+
+// NullValue represents a null attribute value.
+enum NullValue {
+  NULL_VALUE = 0;
+}
+
+// Geometry wraps the possible geometry types using structured proto fields.
+message Geometry {
+  oneof shape {
+    PointGeometry point = 1;
+    MultiPointGeometry multi_point = 2;
+    PolylineGeometry polyline = 3;
+    PolygonGeometry polygon = 4;
+    MultiPolygonGeometry multi_polygon = 5;
+  }
+}
+
+// PointGeometry represents a single point.
+message PointGeometry {
+  double x = 1;
+  double y = 2;
+  optional double z = 3;
+  optional double m = 4;
+}
+
+// MultiPointGeometry represents a collection of points.
+message MultiPointGeometry {
+  repeated PointGeometry points = 1;
+}
+
+// Coordinate is a single coordinate in a path or ring.
+message Coordinate {
+  double x = 1;
+  double y = 2;
+  optional double z = 3;
+  optional double m = 4;
+}
+
+// CoordinateSequence is a sequence of coordinates forming a path or ring.
+message CoordinateSequence {
+  repeated Coordinate coords = 1;
+}
+
+// PolylineGeometry represents one or more paths.
+message PolylineGeometry {
+  repeated CoordinateSequence paths = 1;
+}
+
+// PolygonGeometry represents one or more rings (first is exterior, rest are holes).
+message PolygonGeometry {
+  repeated CoordinateSequence rings = 1;
+}
+
+// MultiPolygonGeometry represents a collection of polygons.
+message MultiPolygonGeometry {
+  repeated PolygonGeometry polygons = 1;
+}
+
+// SpatialReference identifies a coordinate system.
+message SpatialReference {
+  int32 wkid = 1;
+  int32 latest_wkid = 2;
+  string wkt = 3;
+}
+
+// FieldDefinition describes a field in the layer schema.
+message FieldDefinition {
+  string name = 1;
+  FieldType field_type = 2;
+  int32 length = 3;
+  bool nullable = 4;
+}
+
+// FieldType enumerates supported attribute field types.
+enum FieldType {
+  FIELD_TYPE_UNSPECIFIED = 0;
+  FIELD_TYPE_STRING = 1;
+  FIELD_TYPE_INTEGER = 2;
+  FIELD_TYPE_BIG_INTEGER = 3;
+  FIELD_TYPE_DOUBLE = 4;
+  FIELD_TYPE_FLOAT = 5;
+  FIELD_TYPE_BOOLEAN = 6;
+  FIELD_TYPE_DATE_TIME = 7;
+  FIELD_TYPE_DATE = 8;
+  FIELD_TYPE_TIME = 9;
+  FIELD_TYPE_GEOMETRY = 10;
+  FIELD_TYPE_JSON = 11;
+  FIELD_TYPE_BINARY = 12;
+  FIELD_TYPE_UUID = 13;
+}
+
+// GeometryType enumerates supported geometry types.
+enum GeometryType {
+  GEOMETRY_TYPE_UNSPECIFIED = 0;
+  GEOMETRY_TYPE_POINT = 1;
+  GEOMETRY_TYPE_MULTI_POINT = 2;
+  GEOMETRY_TYPE_LINE_STRING = 3;
+  GEOMETRY_TYPE_MULTI_LINE_STRING = 4;
+  GEOMETRY_TYPE_POLYGON = 5;
+  GEOMETRY_TYPE_MULTI_POLYGON = 6;
+  GEOMETRY_TYPE_GEOMETRY_COLLECTION = 7;
+  GEOMETRY_TYPE_NONE = 8;
+}
+
+// SpatialRelationship enumerates spatial relationship types for filtering.
+enum SpatialRelationship {
+  SPATIAL_RELATIONSHIP_UNSPECIFIED = 0;
+  SPATIAL_RELATIONSHIP_INTERSECTS = 1;
+  SPATIAL_RELATIONSHIP_WITHIN = 2;
+  SPATIAL_RELATIONSHIP_CONTAINS = 3;
+  SPATIAL_RELATIONSHIP_ENVELOPE_INTERSECTS = 4;
+  SPATIAL_RELATIONSHIP_CROSSES = 5;
+  SPATIAL_RELATIONSHIP_TOUCHES = 6;
+  SPATIAL_RELATIONSHIP_OVERLAPS = 7;
+  SPATIAL_RELATIONSHIP_DISJOINT = 8;
+  SPATIAL_RELATIONSHIP_EQUALS = 9;
+  SPATIAL_RELATIONSHIP_WITHIN_DISTANCE = 10;
+  SPATIAL_RELATIONSHIP_BEYOND_DISTANCE = 11;
+  SPATIAL_RELATIONSHIP_NEAREST_NEIGHBOR = 12;
+}
+
+// SpatialFilter specifies a spatial query constraint.
+message SpatialFilter {
+  Geometry geometry = 1;
+  SpatialRelationship spatial_relationship = 2;
+  SpatialReference spatial_reference = 3;
+  double distance = 4;
+  DistanceUnit distance_unit = 5;
+  int32 nearest_count = 6;
+  bool return_distance = 7;
+}
+
+// DistanceUnit enumerates supported distance measurement units.
+enum DistanceUnit {
+  DISTANCE_UNIT_UNSPECIFIED = 0;
+  DISTANCE_UNIT_METERS = 1;
+  DISTANCE_UNIT_FEET = 2;
+  DISTANCE_UNIT_KILOMETERS = 3;
+  DISTANCE_UNIT_MILES = 4;
+}
+
+// StatisticDefinition specifies an aggregate statistic to compute.
+message StatisticDefinition {
+  string on_statistic_field = 1;
+  StatisticType statistic_type = 2;
+  string out_statistic_field_name = 3;
+}
+
+// StatisticType enumerates supported aggregate functions.
+enum StatisticType {
+  STATISTIC_TYPE_UNSPECIFIED = 0;
+  STATISTIC_TYPE_COUNT = 1;
+  STATISTIC_TYPE_SUM = 2;
+  STATISTIC_TYPE_MIN = 3;
+  STATISTIC_TYPE_MAX = 4;
+  STATISTIC_TYPE_AVG = 5;
+  STATISTIC_TYPE_STDDEV = 6;
+  STATISTIC_TYPE_VAR = 7;
+}
+
+// Extent represents a bounding box.
+message Extent {
+  double xmin = 1;
+  double ymin = 2;
+  double xmax = 3;
+  double ymax = 4;
+  SpatialReference spatial_reference = 5;
+}

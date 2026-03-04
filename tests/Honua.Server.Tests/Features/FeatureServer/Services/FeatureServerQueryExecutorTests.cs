@@ -44,6 +44,37 @@ public sealed class FeatureServerQueryExecutorTests
         thrown.Which.Should().BeSameAs(expected);
     }
 
+    [Fact]
+    public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader.QueryFlatGeobufAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new ArgumentException("Invalid where clause")));
+
+        var sut = CreateSut(featureReader);
+
+        Func<Task> act = () => sut.QueryFlatGeobufWithValidationAsync(1, default, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Invalid query:*");
+    }
+
+    [Fact]
+    public async Task QueryFlatGeobufWithValidationAsync_WhenReaderThrowsSqlWordedException_PropagatesOriginalException()
+    {
+        var expected = new TimeoutException("SQL connection dropped unexpectedly");
+        var featureReader = Substitute.For<IFeatureReader>();
+        featureReader.QueryFlatGeobufAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(expected));
+
+        var sut = CreateSut(featureReader);
+
+        Func<Task> act = () => sut.QueryFlatGeobufWithValidationAsync(1, default, CancellationToken.None);
+
+        var thrown = await act.Should().ThrowExactlyAsync<TimeoutException>();
+        thrown.Which.Should().BeSameAs(expected);
+    }
+
     private static FeatureServerQueryExecutor CreateSut(IFeatureReader featureReader)
     {
         var streamingStore = Substitute.For<IStreamingFeatureStore>();

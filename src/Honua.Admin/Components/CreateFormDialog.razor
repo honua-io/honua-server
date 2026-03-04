@@ -1,0 +1,347 @@
+@using Honua.Admin.Models
+@using Honua.Admin.Services
+@using Honua.Core.Features.Catalog.Abstractions
+@using Honua.Core.Features.Catalog.Domain
+@inject IXlsFormService XlsFormService
+@inject ILayerCatalog LayerCatalog
+@inject IServiceCatalog ServiceCatalog
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudContainer Class="pa-0">
+            <MudText Typo="Typo.h6" GutterBottom="true">Create New Form</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Choose how to create your OpenRosa-compatible data collection form.
+            </MudText>
+
+            <MudTabs Elevation="1" Rounded="true" Color="Color.Primary">
+                <!-- Create from Layer -->
+                <MudTabPanel Text="From Layer Schema" Icon="@Icons.Material.Filled.Layers">
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle1" GutterBottom="true">
+                                Generate form from existing Honua layer
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                                Automatically create form fields based on layer attribute schema.
+                                Perfect for spatial data collection workflows.
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudSelect @bind-Value="selectedServiceId"
+                                      Label="Service"
+                                      Variant="Variant.Outlined"
+                                      OnSelectionChanged="OnServiceChanged">
+                                @foreach (var service in services)
+                                {
+                                    <MudSelectItem Value="service.Id">@service.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+
+                        @if (!string.IsNullOrEmpty(selectedServiceId) && layers.Any())
+                        {
+                            <MudItem xs="12">
+                                <MudSelect @bind-Value="selectedLayerId"
+                                          Label="Layer"
+                                          Variant="Variant.Outlined">
+                                    @foreach (var layer in layers)
+                                    {
+                                        <MudSelectItem Value="layer.Id">
+                                            @layer.Name
+                                            <MudText Typo="Typo.caption" Class="ml-2">
+                                                (@layer.GeometryType, @layer.AttributeFields.Count fields)
+                                            </MudText>
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+
+                            @if (selectedLayerId > 0)
+                            {
+                                var selectedLayer = layers.FirstOrDefault(l => l.Id == selectedLayerId);
+                                if (selectedLayer != null)
+                                {
+                                    <MudItem xs="12">
+                                        <MudCard Elevation="1">
+                                            <MudCardContent>
+                                                <MudText Typo="Typo.subtitle2" GutterBottom="true">
+                                                    Layer Preview: @selectedLayer.Name
+                                                </MudText>
+                                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                                    @selectedLayer.Description
+                                                </MudText>
+
+                                                <MudText Typo="Typo.caption" Class="mt-2">
+                                                    <strong>Geometry:</strong> @selectedLayer.GeometryType<br/>
+                                                    <strong>Fields:</strong> @selectedLayer.AttributeFields.Count<br/>
+                                                    <strong>Editable:</strong> @(selectedLayer.IsEditable ? "Yes" : "No")
+                                                </MudText>
+
+                                                <MudExpansionPanels Elevation="0" Class="mt-2">
+                                                    <MudExpansionPanel Title="Attribute Fields">
+                                                        <MudSimpleTable Dense="true" Hover="true">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Field Name</th>
+                                                                    <th>Type</th>
+                                                                    <th>Nullable</th>
+                                                                    <th>Suggested Form Type</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var field in selectedLayer.AttributeFields)
+                                                                {
+                                                                    var suggestion = XlsFormService.SuggestFormField(field);
+                                                                    <tr>
+                                                                        <td>@(field.Alias ?? field.Name)</td>
+                                                                        <td>@field.Type</td>
+                                                                        <td>@(field.IsNullable ? "Yes" : "No")</td>
+                                                                        <td>
+                                                                            <MudChip Size="Size.Small" Color="Color.Secondary">
+                                                                                @suggestion.SuggestedType
+                                                                            </MudChip>
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </MudSimpleTable>
+                                                    </MudExpansionPanel>
+                                                </MudExpansionPanels>
+                                            </MudCardContent>
+                                        </MudCard>
+                                    </MudItem>
+                                }
+                            }
+                        }
+
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="formName"
+                                         Label="Form Name"
+                                         Variant="Variant.Outlined"
+                                         Required="true"
+                                         HelperText="Give your form a descriptive name" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="formDescription"
+                                         Label="Description (Optional)"
+                                         Variant="Variant.Outlined"
+                                         Lines="3"
+                                         HelperText="Describe the purpose of this form" />
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+
+                <!-- Create Blank -->
+                <MudTabPanel Text="Blank Form" Icon="@Icons.Material.Filled.NoteAdd">
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle1" GutterBottom="true">
+                                Start with blank form
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                                Create a custom form from scratch using the visual form designer.
+                                Add questions, logic, and styling as needed.
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="blankFormName"
+                                         Label="Form Name"
+                                         Variant="Variant.Outlined"
+                                         Required="true" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="blankFormDescription"
+                                         Label="Description"
+                                         Variant="Variant.Outlined"
+                                         Lines="3" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info" Class="mt-2">
+                                <strong>Coming Soon!</strong> Visual form designer with drag-and-drop question types,
+                                conditional logic, and real-time preview. For now, create from layer schema or import Excel.
+                            </MudAlert>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+
+                <!-- Import Template -->
+                <MudTabPanel Text="From Template" Icon="@Icons.Material.Filled.ContentCopy">
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle1" GutterBottom="true">
+                                Use form template
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                                Start with a pre-built template for common data collection scenarios.
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudSelect Label="Template Category" Variant="Variant.Outlined">
+                                <MudSelectItem Value="infrastructure">Infrastructure Inspection</MudSelectItem>
+                                <MudSelectItem Value="environmental">Environmental Monitoring</MudSelectItem>
+                                <MudSelectItem Value="asset">Asset Management</MudSelectItem>
+                                <MudSelectItem Value="survey">Survey & Mapping</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info">
+                                <strong>Coming Soon!</strong> Pre-built form templates for common use cases.
+                                Templates will include best practices for mobile data collection, validation rules, and styling.
+                            </MudAlert>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+            </MudTabs>
+        </MudContainer>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                  Variant="Variant.Filled"
+                  OnClick="CreateForm"
+                  Disabled="!CanCreate()">
+            Create Form
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+
+    private List<ServiceDefinition> services = new();
+    private List<LayerDefinition> layers = new();
+
+    private string selectedServiceId = string.Empty;
+    private int selectedLayerId = 0;
+    private string formName = string.Empty;
+    private string formDescription = string.Empty;
+
+    private string blankFormName = string.Empty;
+    private string blankFormDescription = string.Empty;
+
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServices();
+    }
+
+    private async Task LoadServices()
+    {
+        try
+        {
+            // Load all available services for form creation
+            // This would typically come from the service catalog
+            services = new List<ServiceDefinition>
+            {
+                new() { Id = "sample_service", Name = "Sample GIS Service", Description = "Example service for demonstration" }
+                // In production: services = await ServiceCatalog.GetServicesAsync();
+            };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading services: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OnServiceChanged()
+    {
+        if (string.IsNullOrEmpty(selectedServiceId))
+        {
+            layers.Clear();
+            return;
+        }
+
+        try
+        {
+            // Load layers for selected service
+            layers = new List<LayerDefinition>
+            {
+                new()
+                {
+                    Id = 0,
+                    Name = "Sample Layer",
+                    Description = "Example layer with common field types",
+                    GeometryType = GeometryType.Point,
+                    IsEditable = true,
+                    AttributeFields = new[]
+                    {
+                        new FieldDefinition { Name = "NAME", Type = FieldType.String, Alias = "Feature Name", IsNullable = false },
+                        new FieldDefinition { Name = "STATUS", Type = FieldType.String, Alias = "Status", IsNullable = true },
+                        new FieldDefinition { Name = "PRIORITY", Type = FieldType.Integer, Alias = "Priority", IsNullable = true },
+                        new FieldDefinition { Name = "NOTES", Type = FieldType.String, Alias = "Notes", Length = 255, IsNullable = true },
+                        new FieldDefinition { Name = "CREATED_DATE", Type = FieldType.Date, Alias = "Created Date", IsNullable = false }
+                    }
+                }
+            };
+            // In production: layers = await LayerCatalog.GetLayersAsync(selectedServiceId);
+
+            selectedLayerId = 0;
+            formName = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading layers: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private bool CanCreate()
+    {
+        // Check if we have enough information to create a form
+        if (!string.IsNullOrEmpty(selectedServiceId) && selectedLayerId > 0 && !string.IsNullOrEmpty(formName))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(blankFormName))
+        {
+            return true; // Would be enabled when visual designer is ready
+        }
+
+        return false;
+    }
+
+    private async Task CreateForm()
+    {
+        if (!CanCreate()) return;
+
+        isLoading = true;
+        try
+        {
+            if (!string.IsNullOrEmpty(selectedServiceId) && selectedLayerId > 0)
+            {
+                // Create from layer schema
+                var template = await XlsFormService.CreateFormFromLayerAsync(
+                    selectedServiceId, selectedLayerId, formName);
+
+                template.Description = formDescription;
+                MudDialog.Close(DialogResult.Ok(template));
+            }
+            else if (!string.IsNullOrEmpty(blankFormName))
+            {
+                // Create blank form (when visual designer is ready)
+                Snackbar.Add("Blank form creation coming soon!", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error creating form: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

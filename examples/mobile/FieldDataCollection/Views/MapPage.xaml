@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="FieldDataCollection.Views.MapPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:maps="clr-namespace:Microsoft.Maui.Controls.Maps;assembly=Microsoft.Maui.Controls.Maps"
+             xmlns:vm="clr-namespace:FieldDataCollection.ViewModels"
+             xmlns:models="clr-namespace:Honua.Mobile.Core.Models;assembly=Honua.Mobile.Core"
+             x:DataType="vm:MapViewModel"
+             Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Create" Command="{Binding CreateFeatureCommand}" IconImageSource="add.png" />
+        <ToolbarItem Text="Location" Command="{Binding CenterOnLocationCommand}" IconImageSource="location.png" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Search Bar -->
+        <SearchBar Grid.Row="0"
+                   Text="{Binding SearchText}"
+                   SearchCommand="{Binding SearchCommand}"
+                   SearchCommandParameter="{Binding SearchText}"
+                   Placeholder="Search features..." />
+
+        <!-- Map View -->
+        <maps:Map Grid.Row="1"
+                  x:Name="MapView"
+                  IsShowingUser="True"
+                  MapType="Street">
+
+            <!-- Map pins will be added programmatically -->
+
+        </maps:Map>
+
+        <!-- Status Bar -->
+        <Grid Grid.Row="2"
+              BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}"
+              Padding="16,8">
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Location Status -->
+            <StackLayout Grid.Column="0" Orientation="Horizontal">
+                <Label Text="📍" FontSize="16" />
+                <Label Text="{Binding LocationAccuracy, StringFormat='Accuracy: {0:F1}m'}"
+                       IsVisible="{Binding IsLocationEnabled}"
+                       FontSize="12" />
+                <Label Text="Location disabled"
+                       IsVisible="{Binding IsLocationEnabled, Converter={StaticResource InvertedBoolConverter}}"
+                       FontSize="12"
+                       TextColor="Orange" />
+            </StackLayout>
+
+            <!-- Feature Count -->
+            <Label Grid.Column="1"
+                   Text="{Binding Features.Count, StringFormat='{0} features'}"
+                   FontSize="12"
+                   Margin="16,0" />
+
+            <!-- Loading Indicator -->
+            <ActivityIndicator Grid.Column="2"
+                              IsVisible="{Binding IsBusy}"
+                              IsRunning="{Binding IsBusy}"
+                              Color="{StaticResource Primary}" />
+
+        </Grid>
+
+    </Grid>
+
+    <!-- Feature List (hidden by default, can be shown via toggle) -->
+    <ContentPage.Resources>
+        <DataTemplate x:Key="FeatureItemTemplate" x:DataType="models:Feature">
+            <ViewCell>
+                <Grid Padding="16,8" ColumnDefinitions="*,Auto">
+                    <StackLayout Grid.Column="0">
+                        <Label Text="{Binding Attributes[NAME]}" FontAttributes="Bold" />
+                        <Label Text="{Binding Attributes[STATUS]}" FontSize="12" />
+                    </StackLayout>
+                    <Label Grid.Column="1"
+                           Text="{Binding Id}"
+                           FontSize="12"
+                           VerticalOptions="Center" />
+                </Grid>
+            </ViewCell>
+        </DataTemplate>
+    </ContentPage.Resources>
+
+</ContentPage>

@@ -8,10 +8,7 @@ All deployment options require a PostGIS-enabled PostgreSQL database. Redis is o
 |----------|--------|-------|
 | **Local dev / single-server** | Docker Compose | [Docker Compose Sample](docker-compose.md) |
 | **Kubernetes** | Helm chart | `infrastructure/helm/honua/README.md` |
-| **AWS (containers)** | Terraform — ECS/Fargate | `infrastructure/terraform/modules/aws-ecs/` |
-| **Azure (containers)** | Terraform — Container Apps | `infrastructure/terraform/modules/azure-aca/` |
-| **AWS (serverless)** | Terraform — Lambda | `infrastructure/terraform/modules/aws-serverless/` |
-| **Azure (serverless)** | Terraform — Functions | `infrastructure/terraform/modules/azure-functions/` |
+| **AWS / Azure (managed cloud)** | Terraform (separate repo) | Use the dedicated `honua-terraform` repository |
 
 If you just want to try Honua locally, the root `docker-compose.yml` in the repo root is the fastest option — see the Quick Start in the main README.
 
@@ -97,19 +94,13 @@ AOT images start faster and use less memory. Keep JIT serverless tags as debug f
 - [ ] Set `HONUA_SKIP_MIGRATIONS=true` for serverless (run migrations out-of-band)
 - [ ] Set up health check probes: `/healthz/live` (liveness), `/healthz/ready` (readiness)
 
-## Terraform bootstrap
+## Cloud IaC Handoff
 
-Before deploying with Terraform, create least-privilege service accounts. Bootstrap templates are in the `infrastructure/terraform/bootstrap/` directory for each cloud provider.
-
-## Terraform validation
-
-For AWS/Azure/Kubernetes integration testing (including Redis, PostGIS raster checks, scale checks, and auto-destroy defaults), use the on-demand runbook:
-
-- [Terraform Validation Runbook](terraform-validation.md)
+Terraform modules, examples, and validation workflows have been moved out of `honua-server`.
+Use the dedicated `honua-terraform` repository for AWS/Azure infrastructure provisioning and Terraform CI.
 
 ## Related Docs
 
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md)
 - [Security](security.md)
 - [Monitoring](monitoring.md)
-- [Terraform Validation Runbook](terraform-validation.md)

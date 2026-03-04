@@ -82,22 +82,11 @@ Authentication: Managed Identity with Azure Monitor workspace permissions. Defin
 
 Use this only when you want self-hosted dashboards and alerts in Kubernetes. If you are on AWS/Azure managed monitoring, prefer the cloud-native path above.
 
-The Terraform module `infrastructure/terraform/modules/observability-stack` provisions:
+Recommended approach:
 
-- Prometheus + Grafana Helm charts
-- A configurable Honua scrape job (`honua_metrics_target`, `honua_metrics_path`, `honua_metrics_format`)
-- Alert rules from `docker/prometheus/alerts.yml`
-- Dashboard provisioning from `docker/grafana/dashboards/honua-overview.json`
-- Grafana admin credentials in a Kubernetes secret
+- Deploy `kube-prometheus-stack` (Prometheus + Grafana) via Helm.
+- Configure a scrape target for Honua `GET /metrics`.
+- Import dashboard JSON from `docker/grafana/dashboards/honua-overview.json`.
+- Apply alert rules from `docker/prometheus/alerts.yml`.
 
-```bash
-terraform -chdir=infrastructure/terraform/examples/observability init
-terraform -chdir=infrastructure/terraform/examples/observability apply \
-  -var "honua_metrics_target=honua-honua.default.svc.cluster.local:80"
-```
-
-Key variables: `honua_metrics_target`, `namespace`, `scrape_interval`, `evaluation_interval`, `alert_rules_file`, `honua_dashboard_file`, `prometheus_persistence_enabled/size`, `grafana_persistence_enabled/size`, `grafana_ingress_enabled/host`.
-
-Outputs: `prometheus_url`, `grafana_url`, `grafana_admin_secret_name`, `grafana_admin_secret_keys`, `dashboard_configmap_name`.
-
-Set `honua_metrics_path` to `/metrics` (default in the Terraform module) unless you have overridden `Observability:Prometheus:Path`.
+If you use Terraform for observability, use the separate `honua-terraform` repository.

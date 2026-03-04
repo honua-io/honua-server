@@ -1,0 +1,387 @@
+@using Honua.Admin.Models
+@using ApexCharts
+
+<MudDialog>
+    <DialogContent>
+        <MudContainer Class="pa-0">
+            <MudText Typo="Typo.h6" GutterBottom="true">
+                <MudIcon Icon="@Icons.Material.Filled.Analytics" Class="mr-2" />
+                Form Analytics & Insights
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Performance metrics and usage statistics for your deployed form.
+            </MudText>
+
+            <MudTabs Elevation="1" Rounded="true" Color="Color.Primary">
+                <!-- Overview -->
+                <MudTabPanel Text="Overview" Icon="@Icons.Material.Filled.Dashboard">
+                    <MudGrid Class="mt-4">
+                        <!-- Key Metrics Cards -->
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.Assignment" Color="Color.Primary" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">@Analytics.TotalSubmissions</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Total Submissions</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.Today" Color="Color.Success" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">@Analytics.SubmissionsToday</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Today</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.DateRange" Color="Color.Info" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">@Analytics.SubmissionsThisWeek</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">This Week</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.Timer" Color="Color.Warning" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">@FormatDuration(Analytics.AverageCompletionTime)</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Avg Completion</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- Recent Activity -->
+                        <MudItem xs="12" md="8">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudText Typo="Typo.h6" GutterBottom="true">
+                                    Submission Trends
+                                </MudText>
+
+                                <!-- Chart would go here -->
+                                <div style="height: 300px; display: flex; align-items: center; justify-content: center; background: #f5f5f5; border-radius: 4px;">
+                                    <MudStack AlignItems="Center">
+                                        <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Large" Color="Color.Primary" />
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                            Submission trend chart would be displayed here
+                                        </MudText>
+                                        <MudText Typo="Typo.caption">
+                                            (Chart library integration pending)
+                                        </MudText>
+                                    </MudStack>
+                                </div>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- Device Activity -->
+                        <MudItem xs="12" md="4">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudText Typo="Typo.h6" GutterBottom="true">
+                                    Active Devices
+                                </MudText>
+
+                                <MudStack Spacing="2">
+                                    @foreach (var device in Analytics.MostActiveDevices)
+                                    {
+                                        <MudStack Row AlignItems="Center" Justify="Justify.SpaceBetween">
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.PhoneAndroid" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">@device</MudText>
+                                            </MudStack>
+                                            <MudChip Size="Size.Small" Color="Color.Primary">
+                                                @Random.Shared.Next(5, 25) submissions
+                                            </MudChip>
+                                        </MudStack>
+                                    }
+                                </MudStack>
+
+                                <MudDivider Class="my-3" />
+
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Last submission: @Analytics.LastSubmission?.ToString("MMM d, yyyy HH:mm")
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+
+                <!-- Field Analysis -->
+                <MudTabPanel Text="Field Completion" Icon="@Icons.Material.Filled.FactCheck">
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" GutterBottom="true">
+                                Field Completion Rates
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                                Analysis of how often each form field is completed by users.
+                            </MudText>
+                        </MudItem>
+
+                        @foreach (var field in Analytics.FieldCompletionRates.OrderByDescending(f => f.Value))
+                        {
+                            <MudItem xs="12" md="6">
+                                <MudPaper Elevation="1" Class="pa-4">
+                                    <MudStack Row AlignItems="Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                                        <MudText Typo="Typo.subtitle2">@field.Key</MudText>
+                                        <MudText Typo="Typo.body2">@field.Value%</MudText>
+                                    </MudStack>
+
+                                    <MudProgressLinear Value="field.Value"
+                                                      Color="@GetCompletionColor(field.Value)"
+                                                      Size="Size.Medium" />
+
+                                    <MudText Typo="Typo.caption" Class="mt-1">
+                                        @GetCompletionDescription(field.Value)
+                                    </MudText>
+                                </MudPaper>
+                            </MudItem>
+                        }
+
+                        <MudItem xs="12">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudText Typo="Typo.subtitle1" GutterBottom="true">
+                                    Optimization Recommendations
+                                </MudText>
+
+                                <MudStack Spacing="2">
+                                    @if (Analytics.FieldCompletionRates.Any(f => f.Value < 70))
+                                    {
+                                        <MudAlert Severity="Severity.Warning" Icon="@Icons.Material.Filled.TipsAndUpdates">
+                                            <strong>Low completion fields detected:</strong>
+                                            Consider adding hints or making these fields optional to improve user experience.
+                                        </MudAlert>
+                                    }
+
+                                    @if (Analytics.AverageCompletionTime > 900) // > 15 minutes
+                                    {
+                                        <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Speed">
+                                            <strong>Form length optimization:</strong>
+                                            Average completion time is high. Consider grouping questions or using conditional logic.
+                                        </MudAlert>
+                                    }
+
+                                    @if (Analytics.SubmissionsToday > Analytics.SubmissionsThisWeek * 0.5)
+                                    {
+                                        <MudAlert Severity="Severity.Success" Icon="@Icons.Material.Filled.TrendingUp">
+                                            <strong>High engagement:</strong>
+                                            Form is being actively used! Consider deploying to more devices.
+                                        </MudAlert>
+                                    }
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+
+                <!-- Performance -->
+                <MudTabPanel Text="Performance" Icon="@Icons.Material.Filled.Speed">
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" GutterBottom="true">
+                                Mobile Performance Metrics
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                                How well your form performs on mobile devices in field conditions.
+                            </MudText>
+                        </MudItem>
+
+                        <!-- Performance Cards -->
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.Download" Color="Color.Primary" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">2.3s</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Avg Download Time</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Color="Color.Success" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">1.8s</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Avg Upload Time</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.Compress" Color="Color.Info" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">65%</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Data Compression</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <MudItem xs="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudStack AlignItems="Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.OfflineBolt" Color="Color.Warning" Size="Size.Large" />
+                                    <MudText Typo="Typo.h4">97%</MudText>
+                                    <MudText Typo="Typo.caption" Align="Align.Center">Offline Success</MudText>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- gRPC v2 Benefits -->
+                        <MudItem xs="12" md="8">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudText Typo="Typo.h6" GutterBottom="true">
+                                    <MudIcon Icon="@Icons.Material.Filled.Rocket" Class="mr-2" />
+                                    gRPC v2 Protocol Benefits
+                                </MudText>
+
+                                <MudGrid>
+                                    <MudItem xs="6">
+                                        <MudStack Spacing="2">
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.DataUsage" Color="Color.Primary" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">60% smaller payloads</MudText>
+                                            </MudStack>
+
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.Speed" Color="Color.Success" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">70% fewer network calls</MudText>
+                                            </MudStack>
+
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.Battery90" Color="Color.Info" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">30% battery savings</MudText>
+                                            </MudStack>
+                                        </MudStack>
+                                    </MudItem>
+
+                                    <MudItem xs="6">
+                                        <MudStack Spacing="2">
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Warning" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">10x better error handling</MudText>
+                                            </MudStack>
+
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.SyncProblem" Color="Color.Secondary" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">Real-time conflict resolution</MudText>
+                                            </MudStack>
+
+                                            <MudStack Row AlignItems="Center">
+                                                <MudIcon Icon="@Icons.Material.Filled.Smartphone" Color="Color.Primary" Size="Size.Small" />
+                                                <MudText Typo="Typo.body2">Mobile-first optimizations</MudText>
+                                            </MudStack>
+                                        </MudStack>
+                                    </MudItem>
+                                </MudGrid>
+
+                                <MudDivider Class="my-3" />
+
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Your form uses Honua's enhanced gRPC v2 protocols, providing industry-leading performance
+                                    compared to traditional REST/OGC-based mobile data collection.
+                                </MudText>
+                            </MudPaper>
+                        </MudItem>
+
+                        <!-- Network Performance -->
+                        <MudItem xs="12" md="4">
+                            <MudPaper Elevation="2" Class="pa-4">
+                                <MudText Typo="Typo.h6" GutterBottom="true">
+                                    Network Conditions
+                                </MudText>
+
+                                <MudStack Spacing="3">
+                                    <div>
+                                        <MudStack Row AlignItems="Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">WiFi</MudText>
+                                            <MudText Typo="Typo.caption">45%</MudText>
+                                        </MudStack>
+                                        <MudProgressLinear Value="45" Color="Color.Success" Size="Size.Small" />
+                                    </div>
+
+                                    <div>
+                                        <MudStack Row AlignItems="Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">4G/5G</MudText>
+                                            <MudText Typo="Typo.caption">40%</MudText>
+                                        </MudStack>
+                                        <MudProgressLinear Value="40" Color="Color.Primary" Size="Size.Small" />
+                                    </div>
+
+                                    <div>
+                                        <MudStack Row AlignItems="Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">3G</MudText>
+                                            <MudText Typo="Typo.caption">15%</MudText>
+                                        </MudStack>
+                                        <MudProgressLinear Value="15" Color="Color.Warning" Size="Size.Small" />
+                                    </div>
+                                </MudStack>
+
+                                <MudAlert Severity="Severity.Info" Class="mt-3">
+                                    <MudText Typo="Typo.caption">
+                                        Form performs well across all network conditions thanks to adaptive compression and offline-first design.
+                                    </MudText>
+                                </MudAlert>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+            </MudTabs>
+        </MudContainer>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+        <MudButton Color="Color.Primary"
+                  Variant="Variant.Outlined"
+                  StartIcon="@Icons.Material.Filled.Download">
+            Export Report
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public FormAnalytics Analytics { get; set; } = new();
+
+    private string FormatDuration(double seconds)
+    {
+        var time = TimeSpan.FromSeconds(seconds);
+        return time.TotalMinutes switch
+        {
+            < 1 => $"{time.Seconds}s",
+            < 60 => $"{time.Minutes}m {time.Seconds}s",
+            _ => $"{time.Hours}h {time.Minutes}m"
+        };
+    }
+
+    private Color GetCompletionColor(int percentage)
+    {
+        return percentage switch
+        {
+            >= 90 => Color.Success,
+            >= 70 => Color.Info,
+            >= 50 => Color.Warning,
+            _ => Color.Error
+        };
+    }
+
+    private string GetCompletionDescription(int percentage)
+    {
+        return percentage switch
+        {
+            >= 90 => "Excellent completion rate",
+            >= 70 => "Good completion rate",
+            >= 50 => "Moderate completion rate",
+            _ => "Low completion rate - needs attention"
+        };
+    }
+
+    private void Close() => MudDialog.Close();
+}

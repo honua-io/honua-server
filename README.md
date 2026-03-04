@@ -140,7 +140,6 @@ src/
 infrastructure/
   docker-compose/     Compose reference configs
   helm/               Helm chart with PostGIS subchart
-  terraform/          Modules for AWS ECS, AWS Lambda, Azure Container Apps, Azure Functions
 ```
 
 ## Documentation

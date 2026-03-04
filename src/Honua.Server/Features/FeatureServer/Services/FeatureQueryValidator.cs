@@ -59,6 +59,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
             ReturnTrueCurves = queryParams.ReturnTrueCurves,
             ReturnExceededLimitFeatures = queryParams.ReturnExceededLimitFeatures,
             F = queryParams.F,
+            FormatSpecified = queryParams.FormatSpecified,
             ResultOffset = pagination.Offset,
             ResultRecordCount = pagination.Limit,
             Geometry = queryParams.Geometry,

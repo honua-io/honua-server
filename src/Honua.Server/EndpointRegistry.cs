@@ -59,6 +59,14 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("GET", "/api/v1/admin/alerts/zones"),
+        new("POST", "/api/v1/admin/alerts/zones"),
+        new("PUT", "/api/v1/admin/alerts/zones/{zoneId}"),
+        new("DELETE", "/api/v1/admin/alerts/zones/{zoneId}"),
+        new("GET", "/api/v1/admin/alerts/rules"),
+        new("POST", "/api/v1/admin/alerts/rules"),
+        new("PUT", "/api/v1/admin/alerts/rules/{ruleId}"),
+        new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
 
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),

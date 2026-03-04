@@ -66,6 +66,29 @@ internal sealed class FeatureServerQueryExecutor
         }
     }
 
+    public async Task<byte[]?> QueryFlatGeobufWithValidationAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _featureReader.QueryFlatGeobufAsync(layerId, query, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException($"Invalid query: {ex.Message}");
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+        }
+        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
+        {
+            throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+        }
+    }
+
     public async Task StreamQueryAsync(
         int layerId,
         FeatureQuery query,

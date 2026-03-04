@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="FieldDataCollection.Views.RecordDetailPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:FieldDataCollection.ViewModels"
+             x:DataType="vm:RecordDetailViewModel"
+             Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <!-- View Mode Toolbar -->
+        <ToolbarItem Text="Edit"
+                     Command="{Binding EditCommand}"
+                     IconImageSource="edit.png"
+                     IsVisible="{Binding IsViewMode}" />
+
+        <!-- Edit Mode Toolbar -->
+        <ToolbarItem Text="Save"
+                     Command="{Binding SaveCommand}"
+                     IconImageSource="save.png"
+                     IsVisible="{Binding IsEditing}" />
+
+        <ToolbarItem Text="Cancel"
+                     Command="{Binding CancelCommand}"
+                     IsVisible="{Binding IsEditing}" />
+
+        <!-- Delete (not in create mode) -->
+        <ToolbarItem Text="Delete"
+                     Command="{Binding DeleteCommand}"
+                     IconImageSource="delete.png"
+                     IsVisible="{Binding IsViewMode}" />
+    </ContentPage.ToolbarItems>
+
+    <ScrollView>
+        <StackLayout Padding="16" Spacing="20">
+
+            <!-- Feature ID (read-only) -->
+            <StackLayout IsVisible="{Binding IsViewMode}">
+                <Label Text="Feature ID" FontAttributes="Bold" />
+                <Label Text="{Binding Feature.Id}"
+                       FontSize="16" />
+            </StackLayout>
+
+            <!-- Attributes List -->
+            <StackLayout>
+                <Label Text="Attributes" FontAttributes="Bold" FontSize="18" />
+
+                <CollectionView ItemsSource="{Binding Attributes}"
+                               SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AttributeViewModel">
+                            <Grid ColumnDefinitions="120,*"
+                                  RowDefinitions="Auto,Auto"
+                                  Padding="0,8">
+
+                                <!-- Attribute Name -->
+                                <Label Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding Name}"
+                                       FontAttributes="Bold"
+                                       VerticalOptions="Center" />
+
+                                <!-- Attribute Value -->
+                                <Entry Grid.Row="0" Grid.Column="1"
+                                       Text="{Binding Value}"
+                                       IsReadOnly="{Binding IsReadOnly}"
+                                       Placeholder="Enter value..."
+                                       IsVisible="{Binding IsReadOnly, Converter={StaticResource InvertedBoolConverter}}" />
+
+                                <Label Grid.Row="0" Grid.Column="1"
+                                       Text="{Binding Value}"
+                                       VerticalOptions="Center"
+                                       IsVisible="{Binding IsReadOnly}" />
+
+                                <!-- Separator -->
+                                <BoxView Grid.Row="1" Grid.ColumnSpan="2"
+                                         HeightRequest="1"
+                                         Color="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                                         Margin="0,8,0,0" />
+
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </StackLayout>
+
+            <!-- Location Information -->
+            <StackLayout>
+                <Label Text="Location" FontAttributes="Bold" FontSize="18" />
+
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+
+                    <Label Grid.Row="0" Grid.Column="0"
+                           Text="Coordinates" FontAttributes="Bold" />
+
+                    <Button Grid.Row="0" Grid.Column="1"
+                            Text="Update"
+                            Command="{Binding UpdateLocationCommand}"
+                            IsVisible="{Binding IsEditing}"
+                            FontSize="12" />
+
+                    <Label Grid.Row="1" Grid.ColumnSpan="2"
+                           IsVisible="{Binding Feature.Geometry, Converter={StaticResource IsNotNullConverter}}">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="Latitude: " FontAttributes="Bold" />
+                                <Span Text="{Binding Feature.Geometry.Y, StringFormat='{0:F6}'}" />
+                                <Span Text="&#x0a;Longitude: " FontAttributes="Bold" />
+                                <Span Text="{Binding Feature.Geometry.X, StringFormat='{0:F6}'}" />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+
+                    <Label Grid.Row="2" Grid.ColumnSpan="2"
+                           Text="No location data"
+                           IsVisible="{Binding Feature.Geometry, Converter={StaticResource IsNullConverter}}"
+                           TextColor="Gray" />
+
+                </Grid>
+            </StackLayout>
+
+            <!-- Photo Actions -->
+            <StackLayout IsVisible="{Binding IsEditing}">
+                <Label Text="Media" FontAttributes="Bold" FontSize="18" />
+
+                <Button Text="📷 Take Photo"
+                        Command="{Binding TakePhotoCommand}"
+                        BackgroundColor="{StaticResource Secondary}" />
+
+                <!-- Future: Photo gallery would go here -->
+
+            </StackLayout>
+
+            <!-- Create Mode Instructions -->
+            <Frame IsVisible="{Binding IsCreateMode}"
+                   BackgroundColor="{AppThemeBinding Light={StaticResource Warning}, Dark={StaticResource WarningDark}}"
+                   Padding="12">
+                <Label Text="💡 Fill in the required information and tap Save to create this feature. The feature will be created at your current location."
+                       TextColor="White" />
+            </Frame>
+
+            <!-- Loading Indicator -->
+            <StackLayout IsVisible="{Binding IsBusy}"
+                        HorizontalOptions="Center">
+                <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                  Color="{StaticResource Primary}" />
+                <Label Text="Loading..."
+                       HorizontalOptions="Center" />
+            </StackLayout>
+
+        </StackLayout>
+    </ScrollView>
+
+</ContentPage>

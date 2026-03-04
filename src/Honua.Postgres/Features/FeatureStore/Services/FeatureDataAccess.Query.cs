@@ -117,6 +117,49 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    public async Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+            {
+                stopwatch.Stop();
+                _cacheManager.RecordQueryMetrics("select_fgb", stopwatch.ElapsedMilliseconds, 0);
+                RecordPerformanceQuery("select_fgb", layerId, stopwatch.ElapsedMilliseconds, 0);
+                LogSlowQuery("select_fgb", stopwatch.ElapsedMilliseconds, layerId, 0);
+                return null;
+            }
+
+            var payload = reader.GetFieldValue<byte[]>(0);
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_fgb", stopwatch.ElapsedMilliseconds, payload.Length > 0 ? 1 : 0);
+            RecordPerformanceQuery("select_fgb", layerId, stopwatch.ElapsedMilliseconds, payload.Length > 0 ? 1 : 0);
+            LogSlowQuery("select_fgb", stopwatch.ElapsedMilliseconds, layerId, payload.Length > 0 ? 1 : 0);
+
+            return payload;
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_fgb_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

@@ -378,6 +378,7 @@ internal static partial class FeatureServerEndpoints
             SpatialRel = GetValueString(values, "spatialRel"),
             Units = GetValueString(values, "units"),
             F = GetValueString(values, "f") ?? "json",
+            FormatSpecified = values.ContainsKey("f"),
             Time = GetValueString(values, "time"),
             TimeRelation = GetValueString(values, "timeRelation"),
             ReturnGeometry = returnGeometry,

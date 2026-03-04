@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="FieldDataCollection.Views.SyncCenterPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:FieldDataCollection.ViewModels"
+             x:DataType="vm:SyncCenterViewModel"
+             Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Sync Now"
+                     Command="{Binding ManualSyncCommand}"
+                     IconImageSource="sync.png" />
+        <ToolbarItem Text="Refresh"
+                     Command="{Binding RefreshStatusCommand}"
+                     IconImageSource="refresh.png" />
+    </ContentPage.ToolbarItems>
+
+    <ScrollView>
+        <StackLayout Padding="16" Spacing="24">
+
+            <!-- Sync Status Card -->
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource Gray50}, Dark={StaticResource Gray800}}"
+                   Padding="16"
+                   CornerRadius="8">
+                <StackLayout Spacing="12">
+
+                    <Label Text="Sync Status" FontAttributes="Bold" FontSize="18" />
+
+                    <!-- Current Status -->
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Label Grid.Column="0" Text="Status:" FontAttributes="Bold" />
+                        <Label Grid.Column="1" Text="{Binding SyncStatusText}" Margin="8,0,0,0" />
+                    </Grid>
+
+                    <!-- Online Status -->
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Label Grid.Column="0" Text="Connection:" FontAttributes="Bold" />
+                        <Label Grid.Column="1"
+                               Text="{Binding OnlineStatusText}"
+                               TextColor="{Binding IsOnline, Converter={StaticResource BoolToColorConverter}, ConverterParameter='Green,Red'}"
+                               Margin="8,0,0,0" />
+                    </Grid>
+
+                    <!-- Last Sync Time -->
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Label Grid.Column="0" Text="Last Sync:" FontAttributes="Bold" />
+                        <Label Grid.Column="1" Text="{Binding LastSyncTimeText}" Margin="8,0,0,0" />
+                    </Grid>
+
+                    <!-- Pending Changes -->
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Label Grid.Column="0" Text="Pending:" FontAttributes="Bold" />
+                        <Label Grid.Column="1" Text="{Binding PendingChangesText}" Margin="8,0,0,0" />
+                    </Grid>
+
+                    <!-- Progress -->
+                    <StackLayout IsVisible="{Binding IsBusy}">
+                        <Label Text="{Binding SyncProgress}" FontSize="12" />
+                        <ProgressBar Progress="0.5" />
+                    </StackLayout>
+
+                </StackLayout>
+            </Frame>
+
+            <!-- Sync Controls -->
+            <StackLayout Spacing="16">
+
+                <Label Text="Sync Controls" FontAttributes="Bold" FontSize="18" />
+
+                <!-- Manual Sync Button -->
+                <Button Text="🔄 Sync Now"
+                        Command="{Binding ManualSyncCommand}"
+                        IsEnabled="{Binding CanSync}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        CornerRadius="8"
+                        HeightRequest="50" />
+
+                <!-- Auto Sync Toggle -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Grid.Column="0"
+                           Text="Enable automatic sync"
+                           VerticalOptions="Center" />
+                    <Switch Grid.Column="1"
+                            IsToggled="{Binding AutoSyncEnabled}"
+                            ToggledCommand="{Binding ToggleAutoSyncCommand}" />
+                </Grid>
+
+                <Label Text="When enabled, data will sync automatically in the background"
+                       FontSize="12"
+                       TextColor="Gray" />
+
+            </StackLayout>
+
+            <!-- Sync History -->
+            <StackLayout Spacing="16">
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Grid.Column="0"
+                           Text="Recent Activity"
+                           FontAttributes="Bold"
+                           FontSize="18" />
+                    <Button Grid.Column="1"
+                            Text="View All"
+                            Command="{Binding ViewSyncHistoryCommand}"
+                            FontSize="12"
+                            BackgroundColor="Transparent" />
+                </Grid>
+
+                <CollectionView ItemsSource="{Binding SyncHistory}"
+                               MaximumHeightRequest="200"
+                               SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SyncHistoryItem">
+                            <Grid ColumnDefinitions="Auto,*,Auto"
+                                  Padding="12,8"
+                                  RowDefinitions="Auto,Auto">
+
+                                <!-- Status Icon -->
+                                <Label Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding StatusIcon}"
+                                       FontSize="16"
+                                       VerticalOptions="Center" />
+
+                                <!-- Summary -->
+                                <StackLayout Grid.Row="0" Grid.Column="1"
+                                           Margin="12,0,0,0">
+                                    <Label Text="{Binding Timestamp, StringFormat='{0:MMM dd, h:mm tt}'}"
+                                           FontAttributes="Bold" />
+                                    <Label Text="{Binding DownloadedChanges, StringFormat='Downloaded: {0} changes'}"
+                                           FontSize="12"
+                                           IsVisible="{Binding DownloadedChanges, Converter={StaticResource IsGreaterThanZeroConverter}}" />
+                                    <Label Text="{Binding UploadedChanges, StringFormat='Uploaded: {0} changes'}"
+                                           FontSize="12"
+                                           IsVisible="{Binding UploadedChanges, Converter={StaticResource IsGreaterThanZeroConverter}}" />
+                                </StackLayout>
+
+                                <!-- Duration -->
+                                <Label Grid.Row="0" Grid.Column="2"
+                                       Text="{Binding Duration, StringFormat='{0:ss}s'}"
+                                       FontSize="12"
+                                       VerticalOptions="Center" />
+
+                                <!-- Error Message -->
+                                <Label Grid.Row="1" Grid.ColumnSpan="3"
+                                       Text="{Binding ErrorMessage}"
+                                       TextColor="Red"
+                                       FontSize="12"
+                                       Margin="0,4,0,0"
+                                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullOrEmptyConverter}}" />
+
+                                <!-- Separator -->
+                                <BoxView Grid.Row="1" Grid.ColumnSpan="3"
+                                         HeightRequest="1"
+                                         Color="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                                         Margin="0,8,0,0" />
+
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Label Text="No sync history available"
+                       IsVisible="{Binding SyncHistory.Count, Converter={StaticResource IsZeroConverter}}"
+                       TextColor="Gray"
+                       HorizontalOptions="Center" />
+
+            </StackLayout>
+
+            <!-- Loading Indicator -->
+            <StackLayout IsVisible="{Binding IsBusy}"
+                        HorizontalOptions="Center">
+                <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                  Color="{StaticResource Primary}" />
+                <Label Text="Synchronizing..."
+                       HorizontalOptions="Center" />
+            </StackLayout>
+
+        </StackLayout>
+    </ScrollView>
+
+</ContentPage>
