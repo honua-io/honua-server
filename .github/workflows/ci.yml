@@ -168,7 +168,7 @@ jobs:
         run: npm run verify:split-packages
 
       - name: Upload JS migration artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: js-migration-artifacts
           path: |
@@ -180,7 +180,7 @@ jobs:
             sdk/js/reports/runtime-parity-matrix.json
 
       - name: Upload JS live demo artifact (optional)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: js-live-demo-artifacts
           path: sdk/js/reports/demo-featuretable-live-report.json
@@ -743,7 +743,7 @@ jobs:
         working-directory: tests/js
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:

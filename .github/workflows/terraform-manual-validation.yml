@@ -462,7 +462,7 @@ jobs:
 
       - name: Upload Azure plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: azure-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/azure
@@ -711,7 +711,7 @@ jobs:
 
       - name: Upload AWS plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aws-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/aws
@@ -976,7 +976,7 @@ jobs:
 
       - name: Upload AKS plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aks-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/aks
@@ -1141,7 +1141,7 @@ jobs:
 
       - name: Upload EKS plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eks-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/eks
@@ -1228,7 +1228,7 @@ jobs:
 
       - name: Upload drift artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: drift-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/drift
