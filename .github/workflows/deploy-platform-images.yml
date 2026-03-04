@@ -6,20 +6,17 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions: {}
+
 env:
   ECR_REGION: ${{ vars.AWS_ECR_REGION }}
   ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-  ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-  ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
 
 jobs:
   build-and-push-lambda:
     name: Build & Push Lambda JIT Image (Debug Fallback)
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,17 +31,17 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.ECR_REGION }}
 
       - name: Resolve ECR registry
         id: ecr
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,26 +66,27 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' && env.ACR_USERNAME != '' && env.ACR_PASSWORD != '' }}
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ env.ACR_USERNAME }}
-          password: ${{ env.ACR_PASSWORD }}
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Resolve target image names
         id: targets
         shell: bash
         env:
-          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
           set -euo pipefail
           ecr_repo="${ECR_REPOSITORY:-honua-server}"
           acr_repo="${ACR_REPOSITORY:-honua-server}"
           images=()
 
-          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
-            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          if [ -n "$ECR_REGISTRY" ]; then
+            images+=("${ECR_REGISTRY}/${ecr_repo}")
           fi
           if [ -n "$ACR_LOGIN_SERVER" ]; then
             images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
@@ -152,6 +150,7 @@ jobs:
 
   build-and-push-lambda-aot:
     name: Build & Push Lambda AOT Image (Multi-Arch)
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -166,17 +165,17 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.ECR_REGION }}
 
       - name: Resolve ECR registry
         id: ecr
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -201,26 +200,27 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' && env.ACR_USERNAME != '' && env.ACR_PASSWORD != '' }}
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ env.ACR_USERNAME }}
-          password: ${{ env.ACR_PASSWORD }}
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Resolve target image names
         id: targets
         shell: bash
         env:
-          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
           set -euo pipefail
           ecr_repo="${ECR_REPOSITORY:-honua-server}"
           acr_repo="${ACR_REPOSITORY:-honua-server}"
           images=()
 
-          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
-            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          if [ -n "$ECR_REGISTRY" ]; then
+            images+=("${ECR_REGISTRY}/${ecr_repo}")
           fi
           if [ -n "$ACR_LOGIN_SERVER" ]; then
             images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
@@ -284,6 +284,7 @@ jobs:
 
   build-and-push-functions:
     name: Build & Push Functions JIT Image (Debug Fallback)
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -298,17 +299,17 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.ECR_REGION }}
 
       - name: Resolve ECR registry
         id: ecr
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -333,26 +334,27 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' && env.ACR_USERNAME != '' && env.ACR_PASSWORD != '' }}
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ env.ACR_USERNAME }}
-          password: ${{ env.ACR_PASSWORD }}
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Resolve target image names
         id: targets
         shell: bash
         env:
-          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
           set -euo pipefail
           ecr_repo="${ECR_REPOSITORY:-honua-server}"
           acr_repo="${ACR_REPOSITORY:-honua-server}"
           images=()
 
-          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
-            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          if [ -n "$ECR_REGISTRY" ]; then
+            images+=("${ECR_REGISTRY}/${ecr_repo}")
           fi
           if [ -n "$ACR_LOGIN_SERVER" ]; then
             images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
@@ -416,6 +418,7 @@ jobs:
 
   build-and-push-functions-aot:
     name: Build & Push Functions AOT Image (Multi-Arch)
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -430,17 +433,17 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.ECR_REGION }}
 
       - name: Resolve ECR registry
         id: ecr
-        if: ${{ env.ECR_REGION != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' }}
+        if: ${{ env.ECR_REGION != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -465,26 +468,27 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' && env.ACR_USERNAME != '' && env.ACR_PASSWORD != '' }}
+        if: ${{ secrets.ACR_LOGIN_SERVER != '' && secrets.ACR_USERNAME != '' && secrets.ACR_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.ACR_LOGIN_SERVER }}
-          username: ${{ env.ACR_USERNAME }}
-          password: ${{ env.ACR_PASSWORD }}
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Resolve target image names
         id: targets
         shell: bash
         env:
-          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
           set -euo pipefail
           ecr_repo="${ECR_REPOSITORY:-honua-server}"
           acr_repo="${ACR_REPOSITORY:-honua-server}"
           images=()
 
-          if [ -n "${{ steps.ecr.outputs.registry }}" ]; then
-            images+=("${{ steps.ecr.outputs.registry }}/${ecr_repo}")
+          if [ -n "$ECR_REGISTRY" ]; then
+            images+=("${ECR_REGISTRY}/${ecr_repo}")
           fi
           if [ -n "$ACR_LOGIN_SERVER" ]; then
             images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
