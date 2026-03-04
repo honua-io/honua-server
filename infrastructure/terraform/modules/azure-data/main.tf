@@ -41,6 +41,10 @@ resource "azurerm_key_vault" "this" {
     ip_rules       = var.key_vault_ip_rules
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = local.tags
 }
 
@@ -115,6 +119,10 @@ resource "azurerm_postgresql_flexible_server" "this" {
   public_network_access_enabled = var.db_public_network_access
   geo_redundant_backup_enabled  = var.db_geo_redundant_backup_enabled
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = local.tags
 }
 
@@ -160,9 +168,9 @@ resource "null_resource" "enable_postgis" {
       echo "Waiting for PostgreSQL readiness on ${azurerm_postgresql_flexible_server.this.fqdn}"
       for attempt in $(seq 1 30); do
         if PGCONNECT_TIMEOUT=5 psql \
-          --host=${azurerm_postgresql_flexible_server.this.fqdn} \
-          --username=${var.db_admin_username} \
-          --dbname=${var.db_name} \
+          --host="${azurerm_postgresql_flexible_server.this.fqdn}" \
+          --username="${var.db_admin_username}" \
+          --dbname="${var.db_name}" \
           --command="SELECT 1;" >/dev/null 2>&1; then
           break
         fi
@@ -175,9 +183,9 @@ resource "null_resource" "enable_postgis" {
 
       echo "Enabling PostGIS + PostGIS Raster on ${azurerm_postgresql_flexible_server.this.fqdn}"
       PGCONNECT_TIMEOUT=5 psql \
-        --host=${azurerm_postgresql_flexible_server.this.fqdn} \
-        --username=${var.db_admin_username} \
-        --dbname=${var.db_name} \
+        --host="${azurerm_postgresql_flexible_server.this.fqdn}" \
+        --username="${var.db_admin_username}" \
+        --dbname="${var.db_name}" \
         --set=ON_ERROR_STOP=1 \
         --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
@@ -210,4 +218,8 @@ resource "azurerm_redis_cache" "this" {
   subnet_id                     = var.redis_subnet_id != "" ? var.redis_subnet_id : null
   minimum_tls_version           = "1.2"
   tags                          = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

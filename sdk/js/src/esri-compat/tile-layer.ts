@@ -2,6 +2,7 @@ import { HonuaClient } from "../core/client.js";
 import type { HonuaServiceMetadata } from "../core/types.js";
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
 import { parseMapServiceUrl } from "./url.js";
+import { normalizeOpacity, normalizeScale } from "./utils.js";
 
 export interface TileLayerCompatOptions {
   url: string;
@@ -196,16 +197,3 @@ export class TileLayerCompat {
   }
 }
 
-function normalizeScale(scale: number | undefined): number {
-  if (scale === undefined || !Number.isFinite(scale)) {
-    return 0;
-  }
-  return Math.max(0, Math.trunc(scale));
-}
-
-function normalizeOpacity(opacity: number): number {
-  if (!Number.isFinite(opacity)) {
-    return 1;
-  }
-  return Math.min(Math.max(opacity, 0), 1);
-}

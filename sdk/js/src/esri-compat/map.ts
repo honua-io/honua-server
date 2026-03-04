@@ -1,4 +1,5 @@
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import { normalizeInsertIndex } from "./utils.js";
 
 export interface MapCompatOptions {
   basemap?: unknown;
@@ -262,7 +263,3 @@ function isLayerWithChildren(value: unknown): value is LayerWithChildren {
   return typeof value === "object" && value !== null && "layers" in value && Array.isArray(value.layers);
 }
 
-function normalizeInsertIndex(index: number, length: number): number {
-  const sanitized = Number.isFinite(index) ? Math.trunc(index) : length;
-  return Math.min(Math.max(sanitized, 0), length);
-}

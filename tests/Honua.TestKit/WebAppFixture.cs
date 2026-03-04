@@ -626,6 +626,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             {
                 if (attempt == maxAttempts)
                 {
+                    Console.Error.WriteLine($"WARNING: Could not verify secure-connection table after {maxAttempts} attempts. Proceeding without it.");
                     return false;
                 }
 
@@ -633,6 +634,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             }
         }
 
+        Console.Error.WriteLine($"WARNING: Could not verify secure-connection table after {maxAttempts} attempts. Proceeding without it.");
         return false;
     }
 

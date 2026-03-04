@@ -1577,8 +1577,8 @@ function extractGraphicLayer(value: Record<string, unknown>): Record<string, unk
 function safeInvokeListener(invoke: () => void): void {
   try {
     invoke();
-  } catch {
-    // Listener errors should not break compatibility flow.
+  } catch (error) {
+    console.warn("Honua: listener error suppressed for compatibility:", error);
   }
 }
 

@@ -239,7 +239,7 @@ export class HonuaService {
   public async request<T = unknown>(request: HonuaServiceRequest): Promise<T> {
     return this.client.request<T>({
       ...request,
-      path: `/rest/services/${encodeURIComponent(this.serviceId)}/${normalizeServicePath(request.path)}`,
+      path: `/rest/services/${encodeURIComponent(this.serviceId)}/${normalizePath(request.path)}`,
     });
   }
 
@@ -575,7 +575,7 @@ export class HonuaFeatureLayer<T = Record<string, unknown>> {
       ...request,
       path:
         `/rest/services/${encodeURIComponent(this.serviceId)}` +
-        `/FeatureServer/${this.layerId}/${normalizeLayerPath(request.path)}`,
+        `/FeatureServer/${this.layerId}/${normalizePath(request.path)}`,
     });
   }
 }
@@ -799,7 +799,7 @@ export class HonuaMapService {
   public async request<T = unknown>(request: HonuaMapServiceRequest): Promise<T> {
     return this.client.request<T>({
       ...request,
-      path: `/rest/services/${encodeURIComponent(this.serviceId)}` + `/MapServer/${normalizeServicePath(request.path)}`,
+      path: `/rest/services/${encodeURIComponent(this.serviceId)}` + `/MapServer/${normalizePath(request.path)}`,
     });
   }
 }
@@ -975,7 +975,7 @@ export class HonuaMapLayer {
       ...request,
       path:
         `/rest/services/${encodeURIComponent(this.serviceId)}` +
-        `/MapServer/${this.layerId}/${normalizeLayerPath(request.path)}`,
+        `/MapServer/${this.layerId}/${normalizePath(request.path)}`,
     });
   }
 }
@@ -1283,11 +1283,7 @@ function toFormBody(values: Record<string, string | number | boolean>): string {
   return params.toString();
 }
 
-function normalizeLayerPath(path: string): string {
-  return path.startsWith("/") ? path.slice(1) : path;
-}
-
-function normalizeServicePath(path: string): string {
+function normalizePath(path: string): string {
   return path.startsWith("/") ? path.slice(1) : path;
 }
 

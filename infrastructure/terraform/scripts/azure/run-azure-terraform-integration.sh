@@ -792,6 +792,10 @@ json_escape() {
   printf '%s' "$value"
 }
 
+sql_escape() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
 normalize_base_url() {
   local base_url="${1%/}"
   if [[ "$base_url" =~ ^https?:// ]]; then
@@ -894,7 +898,7 @@ run_admin_api_crud_smoke() {
       " || true
     fi
 
-    run_db_sql "$cleanup_db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
+    run_db_sql "$cleanup_db_host" "DELETE FROM honua.services WHERE service_name = '$(sql_escape "$cleanup_service_name")';" || true
 
     if [[ -n "$cleanup_connection_id" ]]; then
       curl -sS --max-time 20 -X DELETE \
