@@ -250,11 +250,17 @@ variable "serve_admin_ui" {
 variable "key_vault_public_network_access_enabled" {
   description = "Whether Key Vault is accessible from public networks."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_backup_retention_days" {
   description = "Backup retention period in days for PostgreSQL."
   type        = number
   default     = 14
+}
+
+variable "secret_expiration_days" {
+  description = "Days until Key Vault secrets expire."
+  type        = number
+  default     = 365
 }

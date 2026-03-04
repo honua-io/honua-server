@@ -547,6 +547,10 @@ json_escape() {
   printf '%s' "$value"
 }
 
+sql_escape() {
+  printf '%s' "$1" | sed "s/'/''/g"
+}
+
 extract_json_string_field() {
   local payload="$1"
   local field="$2"
@@ -626,7 +630,7 @@ run_admin_api_crud_smoke() {
       " || true
     fi
 
-    run_db_sql_k8s "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
+    run_db_sql_k8s "DELETE FROM honua.services WHERE service_name = '$(sql_escape "$cleanup_service_name")';" || true
 
     if [[ -n "$cleanup_connection_id" ]]; then
       curl -sS --max-time 20 "${curl_args[@]}" -X DELETE \

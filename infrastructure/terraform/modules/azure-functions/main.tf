@@ -79,13 +79,16 @@ resource "random_password" "db" {
   override_special = "#%*()-_=+[]{}:?"
 }
 
+resource "time_static" "secret_baseline" {}
+
 locals {
-  db_password          = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
-  db_server_fqdn       = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
-  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
-  redis_enabled        = var.redis_enabled || var.redis_connection_string != ""
-  redis_create         = var.redis_enabled && var.redis_connection_string == ""
-  redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  db_password            = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  db_server_fqdn         = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
+  db_connection_string   = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
+  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
+  redis_create           = var.redis_enabled && var.redis_connection_string == ""
+  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  secret_expiration_date = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -104,6 +107,10 @@ resource "azurerm_postgresql_flexible_server" "this" {
   public_network_access_enabled = var.db_public_network_access
   geo_redundant_backup_enabled  = var.db_geo_redundant_backup_enabled
   backup_retention_days         = var.db_backup_retention_days
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   tags = local.tags
 }
@@ -184,6 +191,15 @@ resource "azurerm_key_vault" "this" {
   purge_protection_enabled      = true
   public_network_access_enabled = var.key_vault_public_network_access_enabled
 
+  network_acls {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = local.tags
 }
 
@@ -196,17 +212,21 @@ resource "azurerm_key_vault_access_policy" "terraform" {
 }
 
 resource "azurerm_key_vault_secret" "connection_string" {
-  name         = "connection-string"
-  value        = local.db_connection_string
-  key_vault_id = azurerm_key_vault.this.id
+  name            = "connection-string"
+  value           = local.db_connection_string
+  content_type    = "connection-string"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
 
   depends_on = [azurerm_key_vault_access_policy.terraform]
 }
 
 resource "azurerm_key_vault_secret" "admin_password" {
-  name         = "admin-password"
-  value        = var.admin_password
-  key_vault_id = azurerm_key_vault.this.id
+  name            = "admin-password"
+  value           = var.admin_password
+  content_type    = "password"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
 
   depends_on = [azurerm_key_vault_access_policy.terraform]
 }
@@ -350,9 +370,9 @@ resource "null_resource" "enable_postgis" {
       echo "Waiting for PostgreSQL readiness on ${local.db_server_fqdn}"
       for attempt in $(seq 1 30); do
         if PGCONNECT_TIMEOUT=5 psql \
-          --host=${local.db_server_fqdn} \
-          --username=${var.db_admin_username} \
-          --dbname=${var.db_name} \
+          --host="${local.db_server_fqdn}" \
+          --username="${var.db_admin_username}" \
+          --dbname="${var.db_name}" \
           --command="SELECT 1;" >/dev/null 2>&1; then
           break
         fi
@@ -365,9 +385,9 @@ resource "null_resource" "enable_postgis" {
 
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_server_fqdn}"
       PGCONNECT_TIMEOUT=5 psql \
-        --host=${local.db_server_fqdn} \
-        --username=${var.db_admin_username} \
-        --dbname=${var.db_name} \
+        --host="${local.db_server_fqdn}" \
+        --username="${var.db_admin_username}" \
+        --dbname="${var.db_name}" \
         --set=ON_ERROR_STOP=1 \
         --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT

@@ -678,6 +678,10 @@ resource "aws_secretsmanager_secret" "db_connection" {
   description = "Honua database connection string"
   kms_key_id  = local.kms_key_arn
   tags        = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "db_connection" {
@@ -692,6 +696,10 @@ resource "aws_secretsmanager_secret" "admin_password" {
   description = "Honua admin API password"
   kms_key_id  = local.kms_key_arn
   tags        = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "admin_password" {
@@ -707,6 +715,10 @@ resource "aws_secretsmanager_secret" "redis_connection" {
   description = "Honua Redis connection string"
   kms_key_id  = local.kms_key_arn
   tags        = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "redis_connection" {
@@ -865,9 +877,9 @@ resource "null_resource" "enable_postgis" {
       echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
       for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
         if PGCONNECT_TIMEOUT=5 psql \
-          --host=${local.db_endpoint} \
-          --username=${var.db_username} \
-          --dbname=${var.db_name} \
+          --host="${local.db_endpoint}" \
+          --username="${var.db_username}" \
+          --dbname="${var.db_name}" \
           --command="SELECT 1;" >/dev/null 2>&1; then
           echo "PostgreSQL readiness check succeeded after $attempt attempt(s)"
           break
@@ -875,9 +887,9 @@ resource "null_resource" "enable_postgis" {
         if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
           echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
           PGCONNECT_TIMEOUT=5 psql \
-            --host=${local.db_endpoint} \
-            --username=${var.db_username} \
-            --dbname=${var.db_name} \
+            --host="${local.db_endpoint}" \
+            --username="${var.db_username}" \
+            --dbname="${var.db_name}" \
             --command="SELECT 1;" >&2 || true
           exit 1
         fi
@@ -886,9 +898,9 @@ resource "null_resource" "enable_postgis" {
 
       echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"
       PGCONNECT_TIMEOUT=5 psql \
-        --host=${local.db_endpoint} \
-        --username=${var.db_username} \
-        --dbname=${var.db_name} \
+        --host="${local.db_endpoint}" \
+        --username="${var.db_username}" \
+        --dbname="${var.db_name}" \
         --set=ON_ERROR_STOP=1 \
         --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
     EOT
