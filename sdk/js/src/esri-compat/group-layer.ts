@@ -1,4 +1,5 @@
 import { CompatEventBus, resolveCompatEventBus, safeInvokeCompatListener } from "./event-bus.js";
+import { normalizeInsertIndex, normalizeOpacity } from "./utils.js";
 
 export interface GroupLayerCompatOptions {
   id?: string;
@@ -270,14 +271,3 @@ function isLayerWithChildren(value: unknown): value is LayerWithChildren {
   return typeof value === "object" && value !== null && "layers" in value && Array.isArray(value.layers);
 }
 
-function normalizeInsertIndex(index: number, length: number): number {
-  const sanitized = Number.isFinite(index) ? Math.trunc(index) : length;
-  return Math.min(Math.max(sanitized, 0), length);
-}
-
-function normalizeOpacity(opacity: number): number {
-  if (!Number.isFinite(opacity)) {
-    return 1;
-  }
-  return Math.min(Math.max(opacity, 0), 1);
-}

@@ -317,8 +317,9 @@ async function fetchJson(fetchFn: typeof fetch, url: string, init: RequestInit):
   if (text.length > 0) {
     try {
       body = JSON.parse(text);
-    } catch {
-      body = {};
+    } catch (parseError) {
+      console.warn(`Honua: failed to parse JSON response from ${url}:`, parseError);
+      body = { _parseError: true, _rawText: text.slice(0, 500) };
     }
   }
 
