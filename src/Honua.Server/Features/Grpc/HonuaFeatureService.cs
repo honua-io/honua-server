@@ -8,6 +8,8 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Services;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Proto = Honua.Server.Features.Grpc.Proto;
 
@@ -19,9 +21,15 @@ namespace Honua.Server.Features.Grpc;
 /// </summary>
 internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
 {
+    private static readonly PaginationValidationOptions _grpcPaginationValidation =
+        new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
+
     private readonly IResourceValidator _resourceValidator;
     private readonly IFeatureReader _featureReader;
+    private readonly IFeatureWriter _featureWriter;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
+    private readonly ICommonQueryValidator _queryValidator;
+    private readonly SpatialReferenceResolver _spatialReferenceResolver;
     private readonly ILogger<HonuaFeatureService> _logger;
     private readonly GeometryLimits _geometryLimits;
     private readonly int _streamBatchSize;
@@ -29,16 +37,22 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
         IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
         IStreamingFeatureStore streamingFeatureStore,
+        ICommonQueryValidator queryValidator,
+        SpatialReferenceResolver spatialReferenceResolver,
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
+        _featureWriter = featureWriter;
         _streamingFeatureStore = streamingFeatureStore;
+        _queryValidator = queryValidator;
+        _spatialReferenceResolver = spatialReferenceResolver;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _streamBatchSize = grpcOptions?.Value?.StreamBatchSize ?? 1000;
+        _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
     }
 
@@ -46,6 +60,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         Proto.QueryFeaturesRequest request,
         ServerCallContext context)
     {
+        EnrichActivity("query", request);
+
         var validation = await _resourceValidator.ValidateServiceLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
@@ -60,7 +76,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
-        var queryContext = CreateQueryContext(request, layer);
+        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
 
@@ -82,9 +98,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // IDs-only query
         if (request.ReturnIdsOnly)
         {
-            var idsResult = await _featureReader.QueryAsync(
+            var objectIds = await _featureReader.QueryObjectIdsAsync(
                 request.LayerId, query, context.CancellationToken).ConfigureAwait(false);
-            response.ObjectIds.AddRange(idsResult.Items.Select(f => f.Id));
+            response.ObjectIds.AddRange(objectIds);
             return response;
         }
 
@@ -126,6 +142,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IServerStreamWriter<Proto.FeaturePage> responseStream,
         ServerCallContext context)
     {
+        EnrichActivity("query_stream", request);
+        EnsureStreamingFlagsSupported(request);
+
         var validation = await _resourceValidator.ValidateServiceLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
@@ -140,7 +159,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
-        var queryContext = CreateQueryContext(request, layer);
+        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
 
@@ -151,7 +170,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             .StreamFeaturesAsync(request.LayerId, query, context.CancellationToken)
             .GetAsyncEnumerator(context.CancellationToken);
 
-        while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+        var hasCurrent = await enumerator.MoveNextAsync().ConfigureAwait(false);
+        while (hasCurrent)
         {
             batch.Add(GrpcConversionHelpers.ToProtoFeature(
                 enumerator.Current,
@@ -160,11 +180,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
             if (batch.Count < _streamBatchSize)
             {
+                hasCurrent = await enumerator.MoveNextAsync().ConfigureAwait(false);
                 continue;
             }
 
-            var hasMore = await enumerator.MoveNextAsync().ConfigureAwait(false);
-            if (!hasMore)
+            hasCurrent = await enumerator.MoveNextAsync().ConfigureAwait(false);
+            if (!hasCurrent)
             {
                 var lastFullPage = CreatePage(
                     batch,
@@ -187,11 +208,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             await responseStream.WriteAsync(page, context.CancellationToken).ConfigureAwait(false);
             isFirstPage = false;
             batch.Clear();
-
-            batch.Add(GrpcConversionHelpers.ToProtoFeature(
-                enumerator.Current,
-                queryContext.ReturnGeometry,
-                queryContext.GeometryLimits));
         }
 
         var lastPage = CreatePage(
@@ -202,6 +218,45 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             isFirstPage,
             isLastPage: true);
         await responseStream.WriteAsync(lastPage, context.CancellationToken).ConfigureAwait(false);
+    }
+
+    public override async Task<Proto.ApplyEditsResponse> ApplyEdits(
+        Proto.ApplyEditsRequest request,
+        ServerCallContext context)
+    {
+        EnrichActivity("apply_edits", request.ServiceId, request.LayerId);
+
+        var validation = await _resourceValidator.ValidateServiceLayerAsync(
+            request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
+
+        if (!validation.IsValid)
+        {
+            throw new RpcException(new Status(
+                validation.ErrorCode == ResourceValidationError.NotFound
+                    ? StatusCode.NotFound
+                    : StatusCode.InvalidArgument,
+                validation.ErrorMessage ?? "Resource validation failed"));
+        }
+
+        var (service, _) = validation.Resource!;
+        EnsureGrpcEnabled(service);
+
+        FeatureEditBatch editBatch;
+        try
+        {
+            editBatch = GrpcConversionHelpers.ToFeatureEditBatch(request);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        }
+
+        var result = await _featureWriter.ApplyEditsAsync(
+            request.LayerId,
+            editBatch,
+            context.CancellationToken).ConfigureAwait(false);
+
+        return GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
     }
 
     private static Proto.FeaturePage CreatePage(
@@ -233,18 +288,82 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         return page;
     }
 
-    private QueryContext CreateQueryContext(Proto.QueryFeaturesRequest request, LayerDefinition layer)
+    private async Task<QueryContext> CreateQueryContextAsync(
+        Proto.QueryFeaturesRequest request,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
     {
+        var whereValidation = _queryValidator.ValidateWhereClause(request.Where);
+        if (!whereValidation.IsValid)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                whereValidation.ErrorMessage ?? "Invalid where clause."));
+        }
+
+        var requestedOffset = request.ResultOffset != 0 ? request.ResultOffset : (int?)null;
+        var requestedLimit = request.ResultRecordCount != 0 ? request.ResultRecordCount : (int?)null;
+        if (!requestedLimit.HasValue && request.ObjectIds.Count > 0)
+        {
+            requestedLimit = request.ObjectIds.Count;
+        }
+
+        var paginationResult = _queryValidator.ValidateAndNormalizePagination(
+            requestedOffset,
+            requestedLimit,
+            _grpcPaginationValidation);
+        if (!paginationResult.IsValid)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                paginationResult.ErrorMessage ?? "Invalid pagination parameters."));
+        }
+
+        var pagination = paginationResult.Value!;
+
         var query = GrpcConversionHelpers.ToFeatureQuery(request) with
         {
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+            Offset = pagination.Offset,
+            Limit = pagination.Limit
         };
 
         var outputSrid = query.OutputSrid;
-        if (request.OutSr != null && !outputSrid.HasValue)
+        if (request.OutSr != null)
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid out_sr value."));
+            outputSrid = await ResolveSpatialReferenceSridAsync(request.OutSr, cancellationToken).ConfigureAwait(false);
+            if (!outputSrid.HasValue)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid out_sr value."));
+            }
         }
+
+        if (query.SpatialFilter.HasValue)
+        {
+            var spatialFilterSrid = query.SpatialFilter.Value.Srid;
+            if (request.SpatialFilter?.SpatialReference != null)
+            {
+                spatialFilterSrid = await ResolveSpatialReferenceSridAsync(
+                    request.SpatialFilter.SpatialReference,
+                    cancellationToken).ConfigureAwait(false);
+                if (!spatialFilterSrid.HasValue)
+                {
+                    throw new RpcException(new Status(
+                        StatusCode.InvalidArgument,
+                        "Invalid spatial_filter.spatial_reference value."));
+                }
+            }
+
+            query = query with
+            {
+                SpatialFilter = query.SpatialFilter.Value with
+                {
+                    Srid = spatialFilterSrid ?? layer.SpatialReference.ToSrid()
+                }
+            };
+        }
+
+        query = query with { OutputSrid = outputSrid };
 
         var responseSpatialReference = outputSrid.HasValue
             ? SpatialReference.Create(
@@ -260,6 +379,74 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             responseSpatialReference,
             GrpcConversionHelpers.CreateEffectiveGeometryLimits(_geometryLimits, request),
             request.ReturnGeometry);
+    }
+
+    private static void EnsureStreamingFlagsSupported(Proto.QueryFeaturesRequest request)
+    {
+        if (request.ReturnCountOnly || request.ReturnIdsOnly || request.ReturnExtentOnly)
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                "Streaming queries support feature payloads only. return_count_only, return_ids_only, and return_extent_only are not supported for QueryFeaturesStream."));
+        }
+    }
+
+    private async Task<int?> ResolveSpatialReferenceSridAsync(Proto.SpatialReference? spatialReference, CancellationToken cancellationToken)
+    {
+        if (spatialReference == null)
+        {
+            return null;
+        }
+
+        if (spatialReference.Wkid > 0)
+        {
+            return await _spatialReferenceResolver.ResolveSridAsync(
+                spatialReference.Wkid.ToString(),
+                geometrySpatialReference: null,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (spatialReference.LatestWkid > 0)
+        {
+            return await _spatialReferenceResolver.ResolveSridAsync(
+                spatialReference.LatestWkid.ToString(),
+                geometrySpatialReference: null,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(spatialReference.Wkt))
+        {
+            return await _spatialReferenceResolver.ResolveSridAsync(
+                spatialReference.Wkt,
+                geometrySpatialReference: null,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    private static void EnrichActivity(string operation, Proto.QueryFeaturesRequest request)
+    {
+        EnrichActivity(operation, request.ServiceId, request.LayerId);
+    }
+
+    private static void EnrichActivity(string operation, string? serviceId, int layerId)
+    {
+        var activity = System.Diagnostics.Activity.Current;
+        if (activity == null)
+        {
+            return;
+        }
+
+        activity.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Grpc);
+        activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
+
+        if (!string.IsNullOrWhiteSpace(serviceId))
+        {
+            activity.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        }
+
+        activity.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString());
     }
 
     private static void EnsureGrpcEnabled(ServiceDefinition service)

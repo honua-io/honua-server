@@ -14,6 +14,9 @@ service FeatureService {
 
   // QueryFeaturesStream executes a feature query and streams results as pages.
   rpc QueryFeaturesStream(QueryFeaturesRequest) returns (stream FeaturePage);
+
+  // ApplyEdits applies add/update/delete mutations and returns per-operation results.
+  rpc ApplyEdits(ApplyEditsRequest) returns (ApplyEditsResponse);
 }
 
 // QueryFeaturesRequest specifies the full set of query parameters.
@@ -66,6 +69,38 @@ message FeaturePage {
   repeated Feature features = 5;
   // True when this is the final page.
   bool is_last_page = 6;
+}
+
+// ApplyEditsRequest specifies feature edits for a single service/layer.
+message ApplyEditsRequest {
+  string service_id = 1;
+  int32 layer_id = 2;
+  repeated Feature adds = 3;
+  repeated Feature updates = 4;
+  repeated int64 deletes = 5;
+  bool rollback_on_failure = 6;
+  bool force_write = 7;
+}
+
+// ApplyEditsResponse contains add/update/delete results.
+message ApplyEditsResponse {
+  repeated EditResult add_results = 1;
+  repeated EditResult update_results = 2;
+  repeated EditResult delete_results = 3;
+  EditError error = 4;
+}
+
+// EditResult is the outcome of a single create/update/delete operation.
+message EditResult {
+  int64 object_id = 1;
+  bool success = 2;
+  EditError error = 3;
+}
+
+// EditError provides details for a failed edit operation.
+message EditError {
+  int32 code = 1;
+  string message = 2;
 }
 
 // Feature represents a single geographic feature.
