@@ -180,14 +180,15 @@ internal static partial class MapServerEndpoints
                 Id = layer.Id,
                 Name = layer.Name,
                 DefaultVisibility = layer.DefaultVisibility,
-                MinScale = layer.MinScale,
-                MaxScale = layer.MaxScale
+                MinScale = layer.MinScale ?? 0,
+                MaxScale = layer.MaxScale ?? 0
             })],
             Tables = [.. visibleTables.Select(layer => new MapServerTableInfo
             {
                 Id = layer.Id,
                 Name = layer.Name
             })],
+            CopyrightText = string.Empty,
             SupportedImageFormatTypes = "PNG,PNG8,PNG24,PNG32,JPG,GIF",
             SupportsDynamicLayers = true,
             SingleFusedMapCache = false,
@@ -203,12 +204,13 @@ internal static partial class MapServerEndpoints
             MaxImageHeight = mapConfig?.MaxImageHeight ?? 4096,
             MaxRecordCount = maxRecordCount,
             SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.SupportedFormats)),
-            MinScale = ResolveServiceMinScale(service),
-            MaxScale = ResolveServiceMaxScale(service),
+            MinScale = ResolveServiceMinScale(service) ?? 0,
+            MaxScale = ResolveServiceMaxScale(service) ?? 0,
             DocumentInfo = new MapServerDocumentInfo
             {
                 Title = service.Name ?? "",
-                Comments = service.Description ?? ""
+                Comments = service.Description ?? "",
+                Subject = service.Description ?? ""
             },
             TileInfo = BuildTileInfo(maxTileZoom)
         };
@@ -274,7 +276,7 @@ internal static partial class MapServerEndpoints
             Description = layer.Description,
             GeometryType = layer.HasGeometry ? MapGeometryTypeToEsri(layer.GeometryType) : null,
             SpatialReference = EsriSpatialReference.FromSpatialReference(layer.SpatialReference),
-            Extent = layer.Extent.HasValue ? EsriExtent.FromFeatureExtent(layer.Extent.Value) : null,
+            Extent = ResolveLayerExtent(service, layer),
             DisplayField = displayField,
             ObjectIdField = objectIdField,
             Fields = [.. layer.Fields.Select(field => new MapServerFieldInfo
@@ -290,8 +292,8 @@ internal static partial class MapServerEndpoints
             Capabilities = layerCapabilities,
             SupportsAdvancedQueries = service.SupportsAdvancedQueries,
             HasAttachments = layer.SupportsAttachments,
-            MinScale = layer.MinScale,
-            MaxScale = layer.MaxScale,
+            MinScale = layer.MinScale ?? 0,
+            MaxScale = layer.MaxScale ?? 0,
             DefaultVisibility = layer.DefaultVisibility,
             MaxRecordCount = maxRecordCount,
             DrawingInfo = drawingInfo.HasValue ? (object)drawingInfo.Value : null,
@@ -310,6 +312,21 @@ internal static partial class MapServerEndpoints
         }
 
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static EsriExtent? ResolveLayerExtent(ServiceDefinition service, LayerDefinition layer)
+    {
+        if (layer.Extent.HasValue)
+        {
+            return EsriExtent.FromFeatureExtent(layer.Extent.Value);
+        }
+
+        if (layer.HasGeometry && service.EffectiveExtent.HasValue)
+        {
+            return EsriExtent.FromFeatureExtent(service.EffectiveExtent.Value);
+        }
+
+        return null;
     }
 
     private static double? ResolveServiceMinScale(ServiceDefinition service)

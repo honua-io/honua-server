@@ -120,6 +120,33 @@ internal static partial class MapServerLog
     public static partial void FindFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
 
     /// <summary>
+    /// Logs when a generateKml request is received.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5433,
+        Level = LogLevel.Information,
+        Message = "MapServer generateKml requested: {ServiceId} format={Format}")]
+    public static partial void GenerateKmlRequested(ILogger logger, string serviceId, string format);
+
+    /// <summary>
+    /// Logs when generateKml completes.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5434,
+        Level = LogLevel.Information,
+        Message = "MapServer generateKml completed: {ServiceId} wrote {PlacemarkCount} placemarks in {ElapsedMs}ms")]
+    public static partial void GenerateKmlCompleted(ILogger logger, string serviceId, int placemarkCount, double elapsedMs);
+
+    /// <summary>
+    /// Logs when generateKml fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5435,
+        Level = LogLevel.Error,
+        Message = "MapServer generateKml failed: {ServiceId}: {ErrorMessage}")]
+    public static partial void GenerateKmlFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    /// <summary>
     /// Logs when a PostGIS extent transformation fails.
     /// </summary>
     [LoggerMessage(
