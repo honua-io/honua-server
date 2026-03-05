@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
 using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Core.Features.Forms.Domain;
 
@@ -214,7 +217,7 @@ public enum KeyboardType
     Email,
     Url,
     Phone,
-    Decimal
+    DecimalNumber
 }
 
 /// <summary>

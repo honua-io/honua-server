@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Forms.Domain;
-using Proto = Honua.Server.Features.Grpc.Proto;
 
 namespace Honua.Core.Features.Forms.Abstractions;
 
@@ -45,7 +44,7 @@ public interface IFormCollaborationManager
     /// <param name="cancellationToken">Cancellation token.</param>
     Task BroadcastUpdateAsync(
         string sessionId,
-        Proto.FormUpdate update,
+        object update,
         string senderId,
         CancellationToken cancellationToken = default);
 
@@ -67,10 +66,10 @@ public interface IFormCollaborationManager
     /// <param name="conflictingUpdates">List of conflicting updates.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Resolved update.</returns>
-    Task<Proto.FormUpdate> ResolveConflictAsync(
+    Task<object> ResolveConflictAsync(
         string sessionId,
         string fieldId,
-        List<Proto.FormUpdate> conflictingUpdates,
+        List<object> conflictingUpdates,
         CancellationToken cancellationToken = default);
 
     /// <summary>

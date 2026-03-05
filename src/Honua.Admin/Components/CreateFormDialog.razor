@@ -4,7 +4,7 @@
 @using Honua.Core.Features.Catalog.Domain
 @inject IXlsFormService XlsFormService
 @inject ILayerCatalog LayerCatalog
-@inject IServiceCatalog ServiceCatalog
+@* @inject IServiceCatalog ServiceCatalog *@
 @inject ISnackbar Snackbar
 
 <MudDialog>
@@ -30,7 +30,7 @@
                         </MudItem>
 
                         <MudItem xs="12">
-                            <MudSelect @bind-Value="selectedServiceId"
+                            <MudSelect T="string" @bind-Value="selectedServiceId"
                                       Label="Service"
                                       Variant="Variant.Outlined"
                                       OnSelectionChanged="OnServiceChanged">
@@ -44,7 +44,7 @@
                         @if (!string.IsNullOrEmpty(selectedServiceId) && layers.Any())
                         {
                             <MudItem xs="12">
-                                <MudSelect @bind-Value="selectedLayerId"
+                                <MudSelect T="string" @bind-Value="selectedLayerId"
                                           Label="Layer"
                                           Variant="Variant.Outlined">
                                     @foreach (var layer in layers)
@@ -100,7 +100,7 @@
                                                                         <td>@field.Type</td>
                                                                         <td>@(field.IsNullable ? "Yes" : "No")</td>
                                                                         <td>
-                                                                            <MudChip Size="Size.Small" Color="Color.Secondary">
+                                                                            <MudChip T="string" Size="Size.Small" Color="Color.Secondary">
                                                                                 @suggestion.SuggestedType
                                                                             </MudChip>
                                                                         </td>
@@ -184,7 +184,7 @@
                         </MudItem>
 
                         <MudItem xs="12">
-                            <MudSelect Label="Template Category" Variant="Variant.Outlined">
+                            <MudSelect T="string" Label="Template Category" Variant="Variant.Outlined">
                                 <MudSelectItem Value="infrastructure">Infrastructure Inspection</MudSelectItem>
                                 <MudSelectItem Value="environmental">Environmental Monitoring</MudSelectItem>
                                 <MudSelectItem Value="asset">Asset Management</MudSelectItem>

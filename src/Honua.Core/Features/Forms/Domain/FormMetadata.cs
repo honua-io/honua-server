@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
 using System.Collections.Immutable;
 
 namespace Honua.Core.Features.Forms.Domain;
@@ -131,6 +133,9 @@ public enum CompatibilityIssueType
     MissingField,
     TypeMismatch,
     ConstraintViolation,
+    /// <summary>
+    /// Field type is not supported in this form version.
+    /// </summary>
     UnsupportedField
 }
 
@@ -211,8 +216,20 @@ public record FormInstance(
 /// </summary>
 public enum FormInstanceStatus
 {
+    /// <summary>
+    /// Form instance is being worked on but not yet complete.
+    /// </summary>
     Draft,
+    /// <summary>
+    /// Form instance has been completed but not yet submitted.
+    /// </summary>
     Complete,
+    /// <summary>
+    /// Form instance has been submitted for processing.
+    /// </summary>
     Submitted,
+    /// <summary>
+    /// Form instance encountered an error during processing.
+    /// </summary>
     Error
 }

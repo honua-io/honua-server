@@ -19,7 +19,7 @@ namespace Honua.Admin.Services;
 internal sealed class XlsFormService : IXlsFormService
 {
     private readonly ILayerCatalog _layerCatalog;
-    private readonly IServiceCatalog _serviceCatalog;
+    // private readonly IServiceCatalog _serviceCatalog; // Temporarily commented out
     private readonly ILogger<XlsFormService> _logger;
 
     // In-memory storage for demo - would use proper persistence in production
@@ -27,11 +27,11 @@ internal sealed class XlsFormService : IXlsFormService
 
     public XlsFormService(
         ILayerCatalog layerCatalog,
-        IServiceCatalog serviceCatalog,
+        // IServiceCatalog serviceCatalog, // Temporarily commented out
         ILogger<XlsFormService> logger)
     {
         _layerCatalog = layerCatalog;
-        _serviceCatalog = serviceCatalog;
+        // _serviceCatalog = serviceCatalog; // Temporarily commented out
         _logger = logger;
     }
 

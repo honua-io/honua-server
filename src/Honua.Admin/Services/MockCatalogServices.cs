@@ -136,6 +136,7 @@ internal sealed class MockLayerCatalog : ILayerCatalog
 /// Mock implementation of service catalog for form designer development.
 /// In production, this would be replaced with the actual service catalog.
 /// </summary>
+/* Temporarily commented out until IServiceCatalog interface is implemented
 internal sealed class MockServiceCatalog : IServiceCatalog
 {
     public async Task<ServiceDefinition?> GetServiceDefinitionAsync(string serviceId, CancellationToken cancellationToken = default)
@@ -184,3 +185,4 @@ internal sealed class MockServiceCatalog : IServiceCatalog
     public Task InvalidateCacheAsync(string serviceId, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 }
+*/
