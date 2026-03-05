@@ -7,7 +7,7 @@ internal static class AuthTestHelpers
 {
     private static readonly TimeSpan _authUiRenderTimeout = TimeSpan.FromSeconds(45);
 
-    public static async Task<bool> IsUnauthorizedAsync(IPage page, bool strict = false)
+    public static async Task<bool> IsUnauthorizedAsync(IPage page, bool strict = true)
     {
         var signIn = page.GetByTestId("user-signin");
         var signOut = page.GetByTestId("user-signout");

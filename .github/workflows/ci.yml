@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [trunk]
 
+permissions: {}
+
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -17,6 +19,8 @@ jobs:
   changes:
     name: Detect Non-Test Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       non_test_changes: ${{ steps.filter.outputs.non_test_changes }}
     steps:
@@ -26,18 +30,25 @@ jobs:
 
       - name: Determine diff range
         id: diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin ${{ github.base_ref }} --depth=1
-            echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF" --depth=1
+            echo "range=origin/${BASE_REF}...${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           else
-            echo "range=${{ github.event.before }}...${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "range=${BEFORE_SHA}...${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check for non-test changes
         id: filter
+        env:
+          DIFF_RANGE: ${{ steps.diff.outputs.range }}
         run: |
-          CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" || true)
+          CHANGED_FILES=$(git diff --name-only "$DIFF_RANGE" || true)
           NON_TEST_FILES=$(echo "$CHANGED_FILES" | grep -Ev '^(tests/|test/)' | sed '/^$/d' || true)
 
           if [ -z "$NON_TEST_FILES" ]; then
@@ -56,6 +67,8 @@ jobs:
     name: Build & Format Check
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -75,11 +88,12 @@ jobs:
 
       - name: Format Check
         run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
-
   test-all:
     name: Test Suite (.NET + Python + JS)
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: build
     timeout-minutes: 90
     env:
@@ -392,6 +406,41 @@ jobs:
           cat ./tests/TestResults/server-tests-infra-security.log
           exit "$test_exit_code"
 
+      - name: Run .NET Tests (Server - Uncategorized)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set +e
+          dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "FullyQualifiedName~Honua.Server.Tests.Features.&FullyQualifiedName!~FeatureServer&FullyQualifiedName!~OData&FullyQualifiedName!~OgcFeatures&FullyQualifiedName!~API&FullyQualifiedName!~OgcMaps&FullyQualifiedName!~OgcTiles&FullyQualifiedName!~MapServer&FullyQualifiedName!~ImageServer&FullyQualifiedName!~GeometryService&FullyQualifiedName!~Infrastructure&FullyQualifiedName!~Caching&FullyQualifiedName!~Security&FullyQualifiedName!~GeoservicesCatalog&FullyQualifiedName!~FileStorage&FullyQualifiedName!~Styling" \
+            --logger "trx;LogFileName=server-tests-uncategorized.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults \
+            -- RunConfiguration.MaxCpuCount=1 \
+            > ./tests/TestResults/server-tests-uncategorized.log 2>&1 &
+          test_pid=$!
+
+          while kill -0 "$test_pid" 2>/dev/null; do
+            echo "[server-tests-uncategorized-heartbeat] $(date -u +'%Y-%m-%dT%H:%M:%SZ') running"
+            sleep 30
+          done
+
+          wait "$test_pid"
+          test_exit_code=$?
+          set -e
+
+          cat ./tests/TestResults/server-tests-uncategorized.log
+
+          # Exit code 8 from dotnet test means "no tests matched the filter" which is OK for the catch-all
+          if [ "$test_exit_code" -eq 8 ]; then
+            echo "No uncategorized tests found (this is expected when all namespaces are covered)."
+            exit 0
+          fi
+          exit "$test_exit_code"
+
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |
@@ -422,7 +471,7 @@ jobs:
         working-directory: tests/js
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -434,6 +483,8 @@ jobs:
     name: JavaScript Integration Tests
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: build
     timeout-minutes: 15
     services:
@@ -747,9 +798,12 @@ jobs:
 
       - name: Get Changed Files
         id: changed-files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           # Get ALL changed files for comprehensive review (acceptance criteria, issue linking)
-          ALL_CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }})
+          ALL_CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...${COMMIT_SHA}")
 
           # Get C# files separately for architecture-specific analysis
           CS_CHANGED_FILES=$(echo "$ALL_CHANGED_FILES" | grep -E '\.(cs|csproj)$' || echo "")
@@ -783,10 +837,12 @@ jobs:
 
       - name: Install Dependencies
         if: steps.changed-files.outputs.skip_review == 'false'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           python -m pip install --upgrade pip
           # Only install OpenAI if API key is available
-          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
+          if [ -n "$OPENAI_API_KEY" ]; then
             pip install openai
           fi
 
@@ -870,6 +926,8 @@ jobs:
     name: AOT Build Verification
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [build, changes]  # Run in parallel with tests
     timeout-minutes: 8
     steps:

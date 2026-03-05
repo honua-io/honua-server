@@ -59,7 +59,7 @@ jobs:
           ./scripts/generate-control-plane-sdks.sh artifacts/control-plane-sdks
 
       - name: Upload SDK artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: control-plane-sdks-${{ steps.sdk-version.outputs.value }}
           path: artifacts/control-plane-sdks/
@@ -74,7 +74,7 @@ jobs:
 
     steps:
       - name: Download generated SDK artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: control-plane-sdks-${{ github.ref_name }}
           path: artifacts/control-plane-sdks

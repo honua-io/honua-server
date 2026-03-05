@@ -7,6 +7,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
+# glibc compat required for Grpc.Tools protoc binary on Alpine/musl
+RUN apk add --no-cache gcompat
+
 # Security: Create non-root build user
 RUN addgroup -g 1001 -S builduser && \
     adduser -S builduser -G builduser -u 1001
