@@ -198,12 +198,16 @@ internal static partial class FeatureServerEndpoints
     internal static FrozenSet<string> FeatureServerQueryAllowedParameters => AllowedQueryParameters.Query;
     internal static FrozenSet<string> FeatureServerServiceQueryAllowedParameters => AllowedQueryParameters.ServiceQuery;
     internal static FrozenSet<string> FeatureServerQueryFormats => SupportedFormats.Query;
+    internal static FrozenSet<string> FeatureServerExportFormats => SupportedFormats.Export;
     internal static FrozenSet<string> JsonOnlyFormats => SupportedFormats.JsonOnly;
 
     private static class SupportedFormats
     {
         public static readonly FrozenSet<string> Query =
-            new[] { "json", "pjson", "geojson", "pbf", "fgb" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "json", "pjson", "geojson", "pbf", "fgb", "parquet", "arrow" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> Export =
+            new[] { "parquet", "fgb", "arrow" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -599,6 +603,20 @@ internal static partial class FeatureServerEndpoints
                     mediaType.Equals("application/flatgeobuf", StringComparison.OrdinalIgnoreCase))
                 {
                     format = "fgb";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/vnd.apache.parquet", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("application/parquet", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "parquet";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/vnd.apache.arrow.stream", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("application/vnd.apache.arrow.file", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "arrow";
                     return true;
                 }
 

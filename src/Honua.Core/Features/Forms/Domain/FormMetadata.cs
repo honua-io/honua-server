@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CS1591
+
 using System.Collections.Immutable;
 
 namespace Honua.Core.Features.Forms.Domain;
@@ -182,6 +184,32 @@ public record CollaborationSessionStats(
     ImmutableDictionary<string, int> FieldActivityMap);
 
 /// <summary>
+/// Collaboration update payload for form editing sessions.
+/// </summary>
+/// <param name="UpdateType">Type of update.</param>
+/// <param name="FieldId">Field identifier for field-scoped updates.</param>
+/// <param name="NewValue">Updated field value, when applicable.</param>
+/// <param name="UserId">User that authored the update.</param>
+/// <param name="Timestamp">Update timestamp.</param>
+public record FormUpdate(
+    FormUpdateType UpdateType,
+    string FieldId,
+    object? NewValue,
+    string UserId,
+    DateTimeOffset Timestamp);
+
+/// <summary>
+/// Collaboration update type.
+/// </summary>
+public enum FormUpdateType
+{
+    FieldChanged,
+    UserJoined,
+    UserLeft,
+    FormSubmitted
+}
+
+/// <summary>
 /// Form instance data for storage and tracking.
 /// </summary>
 /// <param name="InstanceId">Unique instance identifier.</param>
@@ -216,3 +244,5 @@ public enum FormInstanceStatus
     Submitted,
     Error
 }
+
+#pragma warning restore CS1591

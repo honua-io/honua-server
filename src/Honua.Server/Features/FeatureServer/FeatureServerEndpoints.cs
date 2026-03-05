@@ -57,6 +57,22 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        var exportGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/export", HandleExportLayerGet)
+            .WithDisplayName("Export FeatureServer Layer")
+            .WithName("ExportLayer")
+            .WithSummary("Export a full FeatureServer layer in cloud-native formats")
+            .WithDescription("Exports all matching records from a layer as parquet, flatgeobuf, or arrow for analytics workflows")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        var serviceExportGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/export", HandleServiceExportGet)
+            .WithDisplayName("Export FeatureServer Service Layer")
+            .WithName("ExportFeatureServiceLayer")
+            .WithSummary("Export a service layer in cloud-native formats")
+            .WithDescription("Service-level export endpoint that delegates to a target layer provided by layerId/layers")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         var serviceQueryGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Service (GET)")
             .WithName("QueryFeatureServiceGet")

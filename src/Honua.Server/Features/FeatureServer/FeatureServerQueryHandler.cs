@@ -485,9 +485,17 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
+            var isExportResultType = string.Equals(validatedParams.ResultType, "export", StringComparison.OrdinalIgnoreCase);
             var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
             var isFgb = string.Equals(format, "fgb", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb;
+            var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
+            var isArrow = string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
+            if (isExportResultType && !query.Limit.HasValue)
+            {
+                effectiveLimit = int.MaxValue;
+            }
+
+            var useStreaming = (effectiveLimit > StreamingThreshold || isExportResultType) && !isPbf && !isFgb && !isParquet && !isArrow;
 
             if (!useStreaming)
             {
@@ -551,11 +559,17 @@ internal sealed class FeatureServerQueryHandler(
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
 
-                if (isPbf)
+                if (isPbf || isParquet || isArrow)
                 {
+                    var defaultContentType = isParquet
+                        ? "application/vnd.apache.parquet"
+                        : isArrow
+                            ? "application/vnd.apache.arrow.stream"
+                            : "application/x-protobuf";
+
                     return await CreateCachedBytesResultAsync(
                         (byte[])formattedResponse!,
-                        contentType ?? "application/x-protobuf");
+                        contentType ?? defaultContentType);
                 }
 
                 return format.ToLowerInvariant() switch
@@ -664,6 +678,7 @@ internal sealed class FeatureServerQueryHandler(
         QueryLimits queryLimits)
     {
         var hasObjectIds = queryParams.ObjectIds is { Length: > 0 };
+        var isExportResultType = string.Equals(queryParams.ResultType, "export", StringComparison.OrdinalIgnoreCase);
 
         var query = new FeatureQuery
         {
@@ -671,10 +686,12 @@ internal sealed class FeatureServerQueryHandler(
             Where = queryParams.Where,
             SqlFilter = sqlFilter,
             ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
-            Offset = queryParams.ResultOffset,
-            Limit = hasObjectIds
-                ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
-                : queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
+            Offset = isExportResultType ? 0 : queryParams.ResultOffset,
+            Limit = isExportResultType
+                ? null
+                : hasObjectIds
+                    ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
+                    : queryParams.ResultRecordCount ?? queryLimits.DefaultRecordCount,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             OutputSrid = outputSrid,
             Distinct = queryParams.ReturnDistinctValues,
@@ -919,7 +936,8 @@ internal sealed class FeatureServerQueryHandler(
         }
 
         if (!string.IsNullOrWhiteSpace(queryParams.ResultType) &&
-            !string.Equals(queryParams.ResultType, "standard", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(queryParams.ResultType, "standard", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(queryParams.ResultType, "export", StringComparison.OrdinalIgnoreCase))
         {
             unsupported.Add("resultType");
         }

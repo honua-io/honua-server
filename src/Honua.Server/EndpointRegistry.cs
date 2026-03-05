@@ -132,6 +132,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/export"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/export"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits"),
@@ -162,6 +164,7 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBins"),
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/tile.json"),
+        new("POST", "/api/tiles/{layerId}/export"),
         new("GET", "/api/styles/{layerId}.json"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),

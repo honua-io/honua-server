@@ -18,13 +18,13 @@ internal static class TileOperationsEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tile Operations")
-            .WithDescription("Tile cache seed/warm/invalidate/purge job control")
+            .WithDescription("Tile cache seed/warm/invalidate/purge and PMTiles export job control")
             .RequireAdminAuthorization();
 
         _ = group.Map("/jobs", HandleStartJob)
             .WithName("StartTileOperationJob")
             .WithSummary("Start a tile operation job")
-            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge) for asynchronous execution")
+            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, export_pmtiles) for asynchronous execution")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
 
         _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
@@ -209,6 +209,14 @@ internal static class TileOperationsEndpoints
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
                     "Seed/warm operations require either 'layerId' or 'serviceId'."));
             }
+        }
+
+        if (operation == "export_pmtiles" && !request.LayerId.HasValue)
+        {
+            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "PMTiles export operation requires 'layerId'."));
         }
 
         return null;

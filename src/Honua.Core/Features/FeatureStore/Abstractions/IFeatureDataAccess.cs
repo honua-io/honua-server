@@ -22,6 +22,15 @@ internal interface IFeatureDataAccess
     Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes a select query and returns object IDs.
+    /// </summary>
+    Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Executes a select query and returns GML features
     /// </summary>
     Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);

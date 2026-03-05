@@ -27,7 +27,7 @@ internal interface IQueryFormatter
     /// </summary>
     /// <param name="result">Query result with features</param>
     /// <param name="layer">Layer definition for metadata</param>
-    /// <param name="format">Output format (json, geojson)</param>
+    /// <param name="format">Output format (json, geojson, pbf, parquet, arrow)</param>
     /// <param name="returnGeometry">Whether to include geometry</param>
     /// <param name="outputSrid">Output SRID for geometry</param>
     /// <param name="returnZ">Whether to include Z values</param>
@@ -56,13 +56,21 @@ internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
+    private readonly ParquetQueryFormatter _parquetFormatter;
+    private readonly ArrowQueryFormatter _arrowFormatter;
     [ThreadStatic]
     private static WKBReader? _wkbReader;
 
-    public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter)
+    public QueryFormatter(
+        IOptions<LimitsOptions> limitsOptions,
+        PbfQueryFormatter pbfFormatter,
+        ParquetQueryFormatter parquetFormatter,
+        ArrowQueryFormatter arrowFormatter)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _pbfFormatter = pbfFormatter;
+        _parquetFormatter = parquetFormatter;
+        _arrowFormatter = arrowFormatter;
     }
 
     /// <summary>
@@ -89,6 +97,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields),
+            "parquet" => _parquetFormatter.FormatAsParquet(result, layer, returnGeometry, outputSrid, outFields),
+            "arrow" => _arrowFormatter.FormatAsArrow(result, layer, returnGeometry, outputSrid, outFields),
             "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
             "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
         };

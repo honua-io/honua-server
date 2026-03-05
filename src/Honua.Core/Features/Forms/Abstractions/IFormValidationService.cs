@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Forms.Domain;
-using Proto = Honua.Server.Features.Grpc.Proto;
 
 namespace Honua.Core.Features.Forms.Abstractions;
 
@@ -20,7 +20,7 @@ public interface IFormValidationService
     /// <returns>Validation result with issues.</returns>
     Task<FormValidationResult> ValidateFormInstanceAsync(
         FormDefinition formDefinition,
-        Proto.FormInstance instance,
+        FormInstance instance,
         CancellationToken cancellationToken = default);
 
     /// <summary>

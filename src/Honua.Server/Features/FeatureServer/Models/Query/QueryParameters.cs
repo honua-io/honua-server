@@ -48,7 +48,7 @@ public sealed class QueryParameters
     public bool ReturnExtentOnly { get; init; }
 
     /// <summary>
-    /// Output format (json, pjson, geojson, pbf, fgb)
+    /// Output format (json, pjson, geojson, pbf, fgb, parquet, arrow)
     /// </summary>
     public string F { get; init; } = "json";
 

@@ -10,6 +10,7 @@ namespace Honua.Server.Features.Tiles;
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(TileExportStartResponse))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

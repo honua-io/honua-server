@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Configuration;
@@ -66,6 +67,120 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    public CoreParameterizedQuery BuildObjectIdsQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT {DatabaseSchema.ObjectIdColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+
+            if (isKnnQuery)
+            {
+                AppendKnnOrdering(sql, true, spatialFilter, query, geometryStorageType, ref paramIndex);
+            }
+            else if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {DatabaseSchema.ObjectIdColumn}");
+            }
+
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    public CoreParameterizedQuery BuildSelectFlatGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var geometryExpression = _geometryProcessor.GetGeometryOperand(
+                geometryStorageType,
+                null,
+                query.SpatialReferenceSrid);
+
+            sql.Append("SELECT ST_AsFlatGeobuf(q, true, 'geometry') FROM (");
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometryExpression} AS geometry");
+
+            if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+            {
+                AppendFlatGeobufAttributeProjection(sql, query.OutFields.Value, ref paramIndex, parameters);
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture, $", {DatabaseSchema.AttributesColumn}::text AS attributes");
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+
+            if (isKnnQuery)
+            {
+                AppendKnnOrdering(sql, true, spatialFilter, query, geometryStorageType, ref paramIndex);
+            }
+
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
+            sql.Append(") AS q");
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildSelectGmlQuery(
         int layerId,
         FeatureQuery query,
@@ -94,6 +209,49 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         finally
         {
             _stringBuilderPool.Return(sql);
+        }
+    }
+
+    private static void AppendFlatGeobufAttributeProjection(
+        StringBuilder sql,
+        ImmutableArray<string> outFields,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        var emittedFieldCount = 0;
+        foreach (var requestedField in outFields)
+        {
+            if (string.IsNullOrWhiteSpace(requestedField))
+            {
+                continue;
+            }
+
+            if (requestedField.Equals("*", StringComparison.Ordinal))
+            {
+                sql.Append(CultureInfo.InvariantCulture, $", {DatabaseSchema.AttributesColumn}::text AS attributes");
+                return;
+            }
+
+            var mappedField = DatabaseSchema.MapFieldName(requestedField.Trim());
+            if (!IsValidFieldName(mappedField))
+            {
+                throw new ArgumentException($"Invalid outField name: {requestedField}");
+            }
+
+            if (mappedField.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+                mappedField.Equals(DatabaseSchema.GeometryColumn, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var attributeValue = BuildAttributeValueExpression(mappedField, ref paramIndex, parameters);
+            sql.Append(CultureInfo.InvariantCulture, $", {attributeValue} AS \"{mappedField}\"");
+            emittedFieldCount++;
+        }
+
+        if (emittedFieldCount == 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $", {DatabaseSchema.AttributesColumn}::text AS attributes");
         }
     }
 

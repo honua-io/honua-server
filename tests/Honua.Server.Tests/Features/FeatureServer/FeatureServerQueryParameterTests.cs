@@ -3,11 +3,13 @@
 
 using System.Net;
 using System.Text.Json;
+using Apache.Arrow.Ipc;
 using FluentAssertions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Parquet;
 
 namespace Honua.Server.Tests.Features.FeatureServer;
 
@@ -74,6 +76,135 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithParquetFormat_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+
+        await using var stream = new MemoryStream(payload);
+        using var reader = await ParquetReader.CreateAsync(stream);
+        reader.RowGroupCount.Should().BeGreaterThan(0);
+        reader.Schema.Fields.Should().Contain(field => field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/export")]
+    public async Task Export_WithDefaultFormat_ReturnsParquet()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/export");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/export")]
+    public async Task ExportService_WithLayerId_ReturnsParquet()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/export?layerId={WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/export")]
+    public async Task Export_WithFlatGeobufFormat_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/export?f=fgb");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/export")]
+    public async Task Export_WithArrowFormat_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/export?f=arrow");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.arrow.stream");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/export")]
+    public async Task Export_WithUnsupportedFormat_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/export?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Supported export formats: parquet, fgb, arrow.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/export")]
+    public async Task Export_IgnoresResultRecordCountAndReturnsBulkPayload()
+    {
+        var queryLimitedResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&resultRecordCount=1");
+        queryLimitedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var queryLimitedPayload = await queryLimitedResponse.Content.ReadAsByteArrayAsync();
+        queryLimitedPayload.Should().NotBeEmpty();
+
+        var exportResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/export?resultRecordCount=1");
+        exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var exportPayload = await exportResponse.Content.ReadAsByteArrayAsync();
+        exportPayload.Should().NotBeEmpty();
+
+        exportPayload.Length.Should().BeGreaterThan(queryLimitedPayload.Length);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithArrowFormat_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=arrow");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.arrow.stream");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ArrowStreamReader(stream);
+        using var recordBatch = reader.ReadNextRecordBatch();
+        recordBatch.Should().NotBeNull();
+        recordBatch!.Length.Should().BeGreaterThan(0);
+        recordBatch.Schema.FieldsList.Should().Contain(field => field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithFlatGeobufFormatAndDistinct_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
@@ -98,6 +229,42 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithParquetAcceptHeader_ReturnsOk()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query");
+        request.Headers.Accept.ParseAdd("application/vnd.apache.parquet");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithArrowAcceptHeader_ReturnsOk()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query");
+        request.Headers.Accept.ParseAdd("application/vnd.apache.arrow.stream");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.arrow.stream");
         var payload = await response.Content.ReadAsByteArrayAsync();
         payload.Should().NotBeEmpty();
     }

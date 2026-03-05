@@ -1,7 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CS1591
+#pragma warning disable CA1720
+
 using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
 
 namespace Honua.Core.Features.Forms.Domain;
 
@@ -329,3 +333,6 @@ public record LengthValidationConfiguration(
 public record PatternValidationConfiguration(
     string RegexPattern,
     bool CaseSensitive) : ValidationRuleConfiguration;
+
+#pragma warning restore CA1720
+#pragma warning restore CS1591

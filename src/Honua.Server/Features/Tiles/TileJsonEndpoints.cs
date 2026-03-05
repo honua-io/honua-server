@@ -6,6 +6,8 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -14,6 +16,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 
 namespace Honua.Server.Features.Tiles;
 
@@ -33,6 +36,19 @@ internal static class TileJsonEndpoints
             .CacheOutput("TileJson")
             .WithETag()
             .Produces<TileJsonResponse>(StatusCodes.Status200OK, MediaTypes.Json)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden);
+
+        endpoints.MapPost("/api/tiles/{layerId:int}/export", HandleStartPmTilesExport)
+            .WithDisplayName("Start PMTiles Export")
+            .WithName("StartPmTilesExport")
+            .WithSummary("Queue PMTiles export for a layer")
+            .WithDescription("Queues an asynchronous PMTiles export job and returns a tile-operation status URL")
+            .WithTags("Tiles", "Admin")
+            .RequireAdminAuthorization()
+            .Produces<TileExportStartResponse>(StatusCodes.Status202Accepted, MediaTypes.Json)
+            .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden);
@@ -162,4 +178,126 @@ internal static class TileJsonEndpoints
             FieldType.Uuid => "string",
             _ => "string"
         };
+
+    private static async Task<IResult> HandleStartPmTilesExport(
+        int layerId,
+        HttpContext context,
+        [FromQuery] string? format,
+        [FromQuery] int? minZoom,
+        [FromQuery] int? maxZoom,
+        [FromQuery] int? maxTiles,
+        [FromQuery] string? tileMatrixSetId,
+        [FromQuery] string? bbox,
+        [FromServices] ITileOperationJobService tileOperationJobService,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(format, "pmtiles", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid export parameters",
+                ["Query parameter 'format' must be 'pmtiles'."]);
+        }
+
+        if (minZoom.HasValue && maxZoom.HasValue && minZoom > maxZoom)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid export parameters",
+                ["Query parameter 'minZoom' must be less than or equal to 'maxZoom'."]);
+        }
+
+        if (maxTiles is <= 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid export parameters",
+                ["Query parameter 'maxTiles' must be greater than zero when provided."]);
+        }
+
+        if (!TryParseBbox(bbox, out var parsedBbox, out var bboxError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid export parameters",
+                [bboxError ?? "Query parameter 'bbox' must contain four comma-separated numeric values."]);
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            layerId,
+            cancellationToken: cancellationToken);
+        if (!layerValidation.IsValid)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var request = new TileOperationStartRequest
+        {
+            Operation = "export_pmtiles",
+            ServiceId = layerValidation.Service?.Name,
+            LayerId = layerId,
+            MinZoom = minZoom,
+            MaxZoom = maxZoom,
+            TileMatrixSetId = tileMatrixSetId,
+            Bbox = parsedBbox,
+            MaxTiles = maxTiles
+        };
+
+        string jobId;
+        try
+        {
+            jobId = await tileOperationJobService.StartAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException ex)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+        }
+
+        var response = new TileExportStartResponse
+        {
+            JobId = jobId,
+            Format = "pmtiles",
+            Message = "PMTiles export job queued.",
+            StatusUrl = $"/api/v1/admin/tile-operations/jobs/{jobId}"
+        };
+
+        return Results.Json(
+            response,
+            TileJsonContext.Default.TileExportStartResponse,
+            statusCode: StatusCodes.Status202Accepted);
+    }
+
+    private static bool TryParseBbox(string? bbox, out double[]? values, out string? error)
+    {
+        values = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(bbox))
+        {
+            return true;
+        }
+
+        var segments = bbox.Split(',', StringSplitOptions.TrimEntries);
+        if (segments.Length != 4)
+        {
+            error = "Query parameter 'bbox' must contain exactly four values: minLon,minLat,maxLon,maxLat.";
+            return false;
+        }
+
+        values = new double[4];
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (!double.TryParse(segments[i], NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed))
+            {
+                error = "Query parameter 'bbox' must contain valid numeric values.";
+                values = null;
+                return false;
+            }
+
+            values[i] = parsed;
+        }
+
+        return true;
+    }
 }

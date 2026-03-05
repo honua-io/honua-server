@@ -58,3 +58,18 @@ internal sealed record TileJsonVectorLayer
     [JsonPropertyName("maxzoom")]
     public int? MaxZoom { get; init; }
 }
+
+internal sealed record TileExportStartResponse
+{
+    [JsonPropertyName("jobId")]
+    public required string JobId { get; init; }
+
+    [JsonPropertyName("format")]
+    public required string Format { get; init; }
+
+    [JsonPropertyName("message")]
+    public required string Message { get; init; }
+
+    [JsonPropertyName("statusUrl")]
+    public required string StatusUrl { get; init; }
+}

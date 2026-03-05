@@ -81,6 +81,48 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    public async Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var objectIds = ImmutableArray.CreateBuilder<long>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (!reader.IsDBNull(0))
+                {
+                    objectIds.Add(reader.GetInt64(0));
+                }
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_ids", stopwatch.ElapsedMilliseconds, objectIds.Count);
+            RecordPerformanceQuery("select_ids", layerId, stopwatch.ElapsedMilliseconds, objectIds.Count);
+            LogSlowQuery("select_ids", stopwatch.ElapsedMilliseconds, layerId, objectIds.Count);
+
+            return objectIds.ToImmutable();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_ids_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
     public async Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(CoreParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();

@@ -203,6 +203,7 @@ internal sealed partial class TileOperationJobService(
                 "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
                 "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
                 "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                "export_pmtiles" => await ExecutePmTilesExportAsync(started, request, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
                 _ => started with
                 {
                     Status = OperationStatus.Failed,
@@ -390,6 +391,48 @@ internal sealed partial class TileOperationJobService(
         };
     }
 
+    private async Task<TileOperationProgress> ExecutePmTilesExportAsync(
+        TileOperationProgress progress,
+        TileOperationStartRequest request,
+        ILayerCatalog layerCatalog,
+        ITileProvider tileProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!request.LayerId.HasValue)
+        {
+            throw new InvalidOperationException("PMTiles export currently requires a specific layerId.");
+        }
+
+        var seedLikeProgress = await ExecuteSeedOrWarmAsync(
+                progress with { CurrentPhase = "Collecting source tiles for PMTiles export" },
+                request with { Operation = "seed" },
+                warmMode: false,
+                layerCatalog,
+                tileProvider,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var warningSet = seedLikeProgress.Warnings.ToList();
+        warningSet.Add("PMTiles archive writing is scaffolded but not finalized in this slice.");
+
+        var finalStatus = seedLikeProgress.Status == OperationStatus.Failed
+            ? OperationStatus.Failed
+            : OperationStatus.Completed;
+
+        return seedLikeProgress with
+        {
+            Operation = request.Operation,
+            Status = finalStatus,
+            ErrorMessage = finalStatus == OperationStatus.Failed
+                ? seedLikeProgress.ErrorMessage
+                : null,
+            Warnings = warningSet,
+            CurrentPhase = finalStatus == OperationStatus.Failed
+                ? "PMTiles export completed with failures"
+                : "PMTiles export scaffold completed"
+        };
+    }
+
     private async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
         TileOperationStartRequest request,
         ILayerCatalog layerCatalog,
@@ -473,9 +516,9 @@ internal sealed partial class TileOperationJobService(
     private static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
     {
         var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is not ("seed" or "warm" or "invalidate" or "purge"))
+        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "export_pmtiles"))
         {
-            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge.", nameof(request));
+            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, export_pmtiles.", nameof(request));
         }
 
         return request with

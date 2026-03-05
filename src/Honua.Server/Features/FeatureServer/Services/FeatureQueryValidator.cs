@@ -24,6 +24,11 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
     /// <inheritdoc/>
     public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
     {
+        if (string.Equals(queryParams.ResultType, "export", StringComparison.OrdinalIgnoreCase))
+        {
+            return QueryValidationResult.Valid(BuildValidatedQueryParameters(queryParams, offset: 0, limit: null));
+        }
+
         var effectiveResultRecordCount = queryParams.ResultRecordCount;
         if (!effectiveResultRecordCount.HasValue && queryParams.ObjectIds is { Length: > 0 })
         {
@@ -42,49 +47,7 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
 
         var pagination = paginationResult.Value!;
 
-        // Create new validated parameters object
-        var validatedParams = new QueryParameters
-        {
-            Where = queryParams.Where,
-            OutFields = queryParams.OutFields,
-            OrderByFields = queryParams.OrderByFields,
-            ReturnGeometry = queryParams.ReturnGeometry,
-            ReturnIdsOnly = queryParams.ReturnIdsOnly,
-            ReturnCountOnly = queryParams.ReturnCountOnly,
-            ReturnExtentOnly = queryParams.ReturnExtentOnly,
-            ReturnCentroid = queryParams.ReturnCentroid,
-            ReturnDistinctValues = queryParams.ReturnDistinctValues,
-            ReturnZ = queryParams.ReturnZ,
-            ReturnM = queryParams.ReturnM,
-            ReturnTrueCurves = queryParams.ReturnTrueCurves,
-            ReturnExceededLimitFeatures = queryParams.ReturnExceededLimitFeatures,
-            F = queryParams.F,
-            FormatSpecified = queryParams.FormatSpecified,
-            ResultOffset = pagination.Offset,
-            ResultRecordCount = pagination.Limit,
-            Geometry = queryParams.Geometry,
-            InSr = queryParams.InSr,
-            OutSr = queryParams.OutSr,
-            GeometryType = queryParams.GeometryType,
-            SpatialRel = queryParams.SpatialRel,
-            Distance = queryParams.Distance,
-            Units = queryParams.Units,
-            NearestCount = queryParams.NearestCount,
-            ReturnDistance = queryParams.ReturnDistance,
-            GeometryPrecision = queryParams.GeometryPrecision,
-            MaxAllowableOffset = queryParams.MaxAllowableOffset,
-            ResultType = queryParams.ResultType,
-            OutStatistics = queryParams.OutStatistics,
-            GroupByFieldsForStatistics = queryParams.GroupByFieldsForStatistics,
-            Having = queryParams.Having,
-            SqlFormat = queryParams.SqlFormat,
-            GdbVersion = queryParams.GdbVersion,
-            QuantizationParameters = queryParams.QuantizationParameters,
-            DatumTransformation = queryParams.DatumTransformation,
-            Time = queryParams.Time,
-            TimeRelation = queryParams.TimeRelation,
-            ObjectIds = queryParams.ObjectIds
-        };
+        var validatedParams = BuildValidatedQueryParameters(queryParams, pagination.Offset, pagination.Limit);
 
         return QueryValidationResult.Valid(validatedParams);
     }
@@ -127,4 +90,48 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
 
         return RelatedRecordsValidationResult.Valid(validatedParams);
     }
+
+    private static QueryParameters BuildValidatedQueryParameters(QueryParameters queryParams, int? offset, int? limit)
+        => new()
+        {
+            Where = queryParams.Where,
+            OutFields = queryParams.OutFields,
+            OrderByFields = queryParams.OrderByFields,
+            ReturnGeometry = queryParams.ReturnGeometry,
+            ReturnIdsOnly = queryParams.ReturnIdsOnly,
+            ReturnCountOnly = queryParams.ReturnCountOnly,
+            ReturnExtentOnly = queryParams.ReturnExtentOnly,
+            ReturnCentroid = queryParams.ReturnCentroid,
+            ReturnDistinctValues = queryParams.ReturnDistinctValues,
+            ReturnZ = queryParams.ReturnZ,
+            ReturnM = queryParams.ReturnM,
+            ReturnTrueCurves = queryParams.ReturnTrueCurves,
+            ReturnExceededLimitFeatures = queryParams.ReturnExceededLimitFeatures,
+            F = queryParams.F,
+            FormatSpecified = queryParams.FormatSpecified,
+            ResultOffset = offset,
+            ResultRecordCount = limit,
+            Geometry = queryParams.Geometry,
+            InSr = queryParams.InSr,
+            OutSr = queryParams.OutSr,
+            GeometryType = queryParams.GeometryType,
+            SpatialRel = queryParams.SpatialRel,
+            Distance = queryParams.Distance,
+            Units = queryParams.Units,
+            NearestCount = queryParams.NearestCount,
+            ReturnDistance = queryParams.ReturnDistance,
+            GeometryPrecision = queryParams.GeometryPrecision,
+            MaxAllowableOffset = queryParams.MaxAllowableOffset,
+            ResultType = queryParams.ResultType,
+            OutStatistics = queryParams.OutStatistics,
+            GroupByFieldsForStatistics = queryParams.GroupByFieldsForStatistics,
+            Having = queryParams.Having,
+            SqlFormat = queryParams.SqlFormat,
+            GdbVersion = queryParams.GdbVersion,
+            QuantizationParameters = queryParams.QuantizationParameters,
+            DatumTransformation = queryParams.DatumTransformation,
+            Time = queryParams.Time,
+            TimeRelation = queryParams.TimeRelation,
+            ObjectIds = queryParams.ObjectIds
+        };
 }

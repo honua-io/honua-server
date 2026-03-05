@@ -195,6 +195,121 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
+    private static async Task<IResult> HandleExportLayerGet(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
+    {
+        if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        if (!TryParseQueryParameters(ToCaseInsensitiveDictionary(context.Request.Query), out var queryParams, out var parseError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parseError ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = ResolveRequestedQueryFormat(queryParams, context.Request.Headers.Accept);
+        if (!TryValidateOutputFormat(
+                requestedFormat,
+                FeatureServerQueryFormats,
+                out var exportFormat,
+                out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        if (!FeatureServerExportFormats.Contains(exportFormat))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [$"Output format '{exportFormat}' is not supported for export. Supported export formats: parquet, fgb, arrow."]);
+        }
+
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        return await queryHandler.HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            CreateExportQueryParameters(queryParams, exportFormat),
+            context,
+            queryValidator,
+            cancellationToken);
+    }
+
+    private static async Task<IResult> HandleServiceExportGet(
+        string serviceId,
+        HttpContext context,
+        FeatureServerQueryHandler queryHandler,
+        ICommonQueryValidator queryValidator)
+    {
+        if (!TryValidateAllowedParameters(
+                context.Request.Query,
+                queryValidator,
+                FeatureServerServiceQueryAllowedParameters,
+                out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [error ?? "Invalid query parameter."]);
+        }
+
+        var values = ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!TryResolveServiceQueryLayerId(values, out var layerId, out var layerError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [layerError ?? "layerId parameter is required."]);
+        }
+
+        if (!TryParseQueryParameters(values, out var queryParams, out var parseError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid query parameters",
+                [parseError ?? "Invalid query parameter."]);
+        }
+
+        var requestedFormat = ResolveRequestedQueryFormat(queryParams, context.Request.Headers.Accept);
+        if (!TryValidateOutputFormat(
+                requestedFormat,
+                FeatureServerQueryFormats,
+                out var exportFormat,
+                out var formatError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [formatError ?? "Output format is not supported."]);
+        }
+
+        if (!FeatureServerExportFormats.Contains(exportFormat))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid query parameters",
+                [$"Output format '{exportFormat}' is not supported for export. Supported export formats: parquet, fgb, arrow."]);
+        }
+
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        return await queryHandler.HandleQueryFeaturesAsync(
+            serviceId,
+            layerId,
+            CreateExportQueryParameters(queryParams, exportFormat),
+            context,
+            queryValidator,
+            cancellationToken);
+    }
+
     private static bool TryResolveServiceQueryLayerId(
         IReadOnlyDictionary<string, StringValues> values,
         out int layerId,
@@ -248,6 +363,50 @@ internal static partial class FeatureServerEndpoints
 
         return true;
     }
+
+    private static QueryParameters CreateExportQueryParameters(QueryParameters queryParams, string format)
+        => new()
+        {
+            Where = queryParams.Where,
+            OutFields = queryParams.OutFields,
+            OrderByFields = queryParams.OrderByFields,
+            ReturnGeometry = queryParams.ReturnGeometry,
+            ReturnIdsOnly = false,
+            ReturnCountOnly = false,
+            ReturnExtentOnly = false,
+            F = format,
+            FormatSpecified = true,
+            ResultOffset = null,
+            ResultRecordCount = null,
+            Geometry = queryParams.Geometry,
+            InSr = queryParams.InSr,
+            OutSr = queryParams.OutSr,
+            GeometryType = queryParams.GeometryType,
+            SpatialRel = queryParams.SpatialRel,
+            Distance = queryParams.Distance,
+            Units = queryParams.Units,
+            NearestCount = queryParams.NearestCount,
+            ReturnDistance = queryParams.ReturnDistance,
+            ReturnCentroid = false,
+            ReturnDistinctValues = queryParams.ReturnDistinctValues,
+            ReturnZ = queryParams.ReturnZ,
+            ReturnM = queryParams.ReturnM,
+            ReturnTrueCurves = false,
+            ReturnExceededLimitFeatures = false,
+            ObjectIds = queryParams.ObjectIds,
+            GeometryPrecision = queryParams.GeometryPrecision,
+            MaxAllowableOffset = queryParams.MaxAllowableOffset,
+            ResultType = "export",
+            OutStatistics = queryParams.OutStatistics,
+            GroupByFieldsForStatistics = queryParams.GroupByFieldsForStatistics,
+            Having = queryParams.Having,
+            SqlFormat = queryParams.SqlFormat,
+            GdbVersion = queryParams.GdbVersion,
+            QuantizationParameters = queryParams.QuantizationParameters,
+            DatumTransformation = queryParams.DatumTransformation,
+            Time = queryParams.Time,
+            TimeRelation = queryParams.TimeRelation
+        };
 
     internal static bool TryParseQueryParameters(
         IReadOnlyDictionary<string, StringValues> values,

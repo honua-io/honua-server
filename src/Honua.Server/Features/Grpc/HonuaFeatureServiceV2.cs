@@ -736,4 +736,6 @@ internal sealed class HonuaFeatureServiceV2 : Proto.FeatureService.FeatureServic
         bool ReturnGeometry,
         bool UsedSpatialIndex,
         int SimplificationLevel);
+
+    #endregion
 }
