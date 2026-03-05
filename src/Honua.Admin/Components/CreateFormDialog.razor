@@ -30,7 +30,7 @@
                         </MudItem>
 
                         <MudItem xs="12">
-                            <MudSelect @bind-Value="selectedServiceId"
+                            <MudSelect T="string" @bind-Value="selectedServiceId"
                                       Label="Service"
                                       Variant="Variant.Outlined"
                                       OnSelectionChanged="OnServiceChanged">
@@ -44,7 +44,7 @@
                         @if (!string.IsNullOrEmpty(selectedServiceId) && layers.Any())
                         {
                             <MudItem xs="12">
-                                <MudSelect @bind-Value="selectedLayerId"
+                                <MudSelect T="int" @bind-Value="selectedLayerId"
                                           Label="Layer"
                                           Variant="Variant.Outlined">
                                     @foreach (var layer in layers)
@@ -184,7 +184,7 @@
                         </MudItem>
 
                         <MudItem xs="12">
-                            <MudSelect Label="Template Category" Variant="Variant.Outlined">
+                            <MudSelect T="string" Label="Template Category" Variant="Variant.Outlined">
                                 <MudSelectItem Value="infrastructure">Infrastructure Inspection</MudSelectItem>
                                 <MudSelectItem Value="environmental">Environmental Monitoring</MudSelectItem>
                                 <MudSelectItem Value="asset">Asset Management</MudSelectItem>

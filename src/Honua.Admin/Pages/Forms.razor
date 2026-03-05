@@ -90,7 +90,7 @@
 
                     <PropertyColumn Property="x => x.Status" Title="Status" Sortable="true">
                         <CellTemplate>
-                            <MudChip Color="@GetStatusColor(context.Item.Status)"
+                            <MudChip T="string" Color="@GetStatusColor(context.Item.Status)"
                                     Size="Size.Small">
                                 @context.Item.Status.ToString()
                             </MudChip>
