@@ -86,8 +86,6 @@ jobs:
       TESTCONTAINERS_RYUK_DISABLED: false
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
-      HONUA_ADMIN_E2E_BASE_URL: http://localhost:8080/admin/
-      HONUA_ADMIN_E2E_DB_URL: Host=localhost;Username=honua;Password=honua;Database=honua_test
     services:
       postgres:
         image: postgis/postgis:16-3.4-alpine
@@ -197,56 +195,11 @@ jobs:
             --configuration Release \
             -m:1
 
-      - name: Install Playwright dependencies for .NET tests
-        timeout-minutes: 10
-        run: |
-          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install-deps chromium
-          pwsh tests/Honua.Admin.Playwright/bin/Release/net10.0/playwright.ps1 install chromium
 
-      - name: Start Admin UI Server
-        run: |
-          ASPNETCORE_ENVIRONMENT=Test \
-            HONUA_DEV_AUTH=true \
-            HONUA_SKIP_MIGRATIONS=true \
-            HONUA_TEST_SCHEMA_HEADERS=true \
-            Security__ConnectionEncryption__MasterKey="test-master-key-that-is-at-least-32-characters-long-for-security" \
-            Security__ConnectionEncryption__Salt="dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=" \
-            ASPNETCORE_URLS=http://localhost:8080 \
-            dotnet run --project src/Honua.Server/Honua.Server.csproj \
-              --configuration Release \
-              --no-launch-profile \
-              --no-build \
-              > ./tests/TestResults/admin-ui-server.log 2>&1 &
-          echo $! > /tmp/honua-admin-ui.pid
-          for i in {1..30}; do
-            if curl -fsS http://localhost:8080/healthz/live >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Admin UI server failed to start."
-          cat ./tests/TestResults/admin-ui-server.log
-          exit 1
 
-      - name: Run .NET Tests (Admin/Core/Postgres)
+      - name: Run .NET Tests (Core/Postgres)
         timeout-minutes: 20
         run: |
-          dotnet test tests/Honua.Admin.Tests/Honua.Admin.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=admin-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            -- RunConfiguration.MaxCpuCount=1
-
-          dotnet test tests/Honua.Admin.Playwright/Honua.Admin.Playwright.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=admin-playwright-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
 
           dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
@@ -713,7 +666,6 @@ jobs:
           ASPNETCORE_URLS: "http://localhost:5000"
           ASPNETCORE_ENVIRONMENT: "Development"
           HONUA_DEV_AUTH: "true"
-          HONUA_ADMIN_PASSWORD: "ci-js-integration-admin-password"
           Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"
           Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
 
