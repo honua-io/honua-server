@@ -37,9 +37,15 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Api.Sdk", "src\Honua.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Mobile.Sdk", "src\Honua.Mobile.Sdk\Honua.Mobile.Sdk.csproj", "{B8C9D0E1-F2A3-4567-89AB-CDEF01234567}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Mobile.Sdk.Tests", "tests\Honua.Mobile.Sdk.Tests\Honua.Mobile.Sdk.Tests.csproj", "{D0E1F2A3-B4C5-6789-ABCD-EF0123456789}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Admin.Sdk", "src\Honua.Admin.Sdk\Honua.Admin.Sdk.csproj", "{C9D0E1F2-A3B4-5678-9ABC-DEF012345678}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Shared", "src\Honua.Shared\Honua.Shared.csproj", "{269A9E4A-5293-479F-B1B5-6382A830973C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{F1234567-89AB-CDEF-0123-456789ABCDEF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HonuaFieldApp", "examples\HonuaFieldApp\HonuaFieldApp.csproj", "{E1F2A3B4-C5D6-7890-ABCD-EF0123456789}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

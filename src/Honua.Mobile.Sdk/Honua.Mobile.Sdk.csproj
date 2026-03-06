@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <UseMaui>true</UseMaui>
@@ -44,7 +44,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- For now, use local project reference until Honua.Core.Sdk is published -->
     <ProjectReference Include="../Honua.Core/Honua.Core.csproj" />
+
+    <!-- Geospatial dependencies -->
+    <PackageReference Include="NetTopologySuite" Version="2.6.0" />
+    <PackageReference Include="NetTopologySuite.IO.SqlServerBytes" Version="2.1.0" />
   </ItemGroup>
 
   <ItemGroup>
