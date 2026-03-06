@@ -1,0 +1,148 @@
+name: Publish NuGet Packages
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish'
+        required: true
+        type: string
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NUGET_SOURCE: 'https://api.nuget.org/v3/index.json'
+
+jobs:
+  build-and-publish:
+    name: Build and Publish NuGet Packages
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Determine Version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        fi
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Publishing version: ${VERSION}"
+
+    - name: Restore Dependencies
+      run: dotnet restore
+
+    - name: Build Solution
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run Tests
+      run: dotnet test --configuration Release --no-build --verbosity normal
+
+    - name: Pack Honua.Core
+      run: |
+        dotnet pack src/Honua.Core/Honua.Core.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./packages \
+          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+          -p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+    - name: Pack Honua.Api.Sdk
+      run: |
+        dotnet pack src/Honua.Api.Sdk/Honua.Api.Sdk.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./packages \
+          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+          -p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+    - name: Pack Honua.Admin.Sdk
+      run: |
+        dotnet pack src/Honua.Admin.Sdk/Honua.Admin.Sdk.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./packages \
+          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+          -p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+    - name: Pack Honua.Mobile.Sdk
+      run: |
+        dotnet pack src/Honua.Mobile.Sdk/Honua.Mobile.Sdk.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./packages \
+          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+          -p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+    - name: Pack Honua.Shared
+      run: |
+        dotnet pack src/Honua.Shared/Honua.Shared.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./packages \
+          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+          -p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+    - name: List Packages
+      run: ls -la ./packages/
+
+    - name: Publish to NuGet.org
+      run: |
+        for package in ./packages/*.nupkg; do
+          echo "Publishing $package"
+          dotnet nuget push "$package" \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source ${{ env.NUGET_SOURCE }} \
+            --skip-duplicate
+        done
+
+    - name: Upload Packages as Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages-${{ steps.version.outputs.VERSION }}
+        path: ./packages/*.nupkg
+        retention-days: 30
+
+    - name: Create Release
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ./packages/*.nupkg
+        generate_release_notes: true
+        make_latest: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: build-and-publish
+    if: success()
+
+    steps:
+    - name: Success Notification
+      run: |
+        echo "✅ Successfully published NuGet packages:"
+        echo "  - Honua.Core v${{ needs.build-and-publish.outputs.VERSION }}"
+        echo "  - Honua.Api.Sdk v${{ needs.build-and-publish.outputs.VERSION }}"
+        echo "  - Honua.Admin.Sdk v${{ needs.build-and-publish.outputs.VERSION }}"
+        echo "  - Honua.Mobile.Sdk v${{ needs.build-and-publish.outputs.VERSION }}"
+        echo "  - Honua.Shared v${{ needs.build-and-publish.outputs.VERSION }}"

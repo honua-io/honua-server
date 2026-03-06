@@ -1,0 +1,11 @@
+# Buf generate template for Go clients
+version: v1
+plugins:
+  - plugin: go
+    out: .
+    opt:
+      - module=github.com/mikemcdougall/geospatial-grpc/generated/go
+  - plugin: go-grpc
+    out: .
+    opt:
+      - module=github.com/mikemcdougall/geospatial-grpc/generated/go

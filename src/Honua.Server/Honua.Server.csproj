@@ -33,6 +33,7 @@
                       Condition="'$(RuntimeIdentifier)' == '' Or '$(HonuaIncludeAdminUi)' == 'true'" />
   </ItemGroup>
 
+
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" Version="8.1.1" />
     <PackageReference Include="AWSSDK.S3" Version="4.0.18.6" />

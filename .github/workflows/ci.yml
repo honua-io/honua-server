@@ -818,11 +818,57 @@ jobs:
               });
             }
 
+  sdk-compatibility:
+    name: SDK Compatibility Testing
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build SDK packages
+        run: |
+          dotnet pack src/Honua.Core/Honua.Core.csproj --configuration Release --output ./packages --no-restore
+          dotnet pack src/Honua.Api.Sdk/Honua.Api.Sdk.csproj --configuration Release --output ./packages --no-restore
+          dotnet pack src/Honua.Admin.Sdk/Honua.Admin.Sdk.csproj --configuration Release --output ./packages --no-restore
+          dotnet pack src/Honua.Mobile.Sdk/Honua.Mobile.Sdk.csproj --configuration Release --output ./packages --no-restore
+          dotnet pack src/Honua.Shared/Honua.Shared.csproj --configuration Release --output ./packages --no-restore
+
+      - name: Test SDK integration
+        run: |
+          mkdir -p sdk-test
+          cd sdk-test
+          dotnet new console
+
+          # Add local package source
+          dotnet nuget add source ../packages --name local-packages
+
+          # Add SDK packages
+          dotnet add package Honua.Core --source local-packages --version "1.0.0"
+          dotnet add package Honua.Api.Sdk --source local-packages --version "1.0.0" || true
+
+          # Test build
+          dotnet build --configuration Release
+
+      - name: Validate server compatibility
+        run: |
+          # Build server with SDK packages to ensure no conflicts
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release --no-restore
+
   aot-build:
     name: AOT Build Verification
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes]  # Run in parallel with tests
+    needs: [build, changes, sdk-compatibility]  # Run after SDK compatibility
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
@@ -857,6 +903,85 @@ jobs:
             echo "::warning::AOT binary ${SIZE_MB}MB exceeds 100MB target"
           fi
         working-directory: src/Honua.Server
+
+  docker-build:
+    name: Docker Build & Integration Test
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: false
+          tags: honua-server:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Docker container
+        run: |
+          docker run -d \
+            --name honua-test \
+            --network host \
+            -e ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            -e HONUA_DEV_AUTH=true \
+            -p 8080:8080 \
+            honua-server:test
+
+          # Wait for container to start
+          sleep 10
+
+          # Health check
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/healthz/live; then
+              echo "Container started successfully"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Test Docker container endpoints
+        run: |
+          # Test basic endpoints
+          curl -f http://localhost:8080/healthz/ready
+          curl -f http://localhost:8080/swagger/index.html
+
+          # Test API endpoints
+          curl -f "http://localhost:8080/api/admin/health" || true
+
+      - name: Container logs
+        if: always()
+        run: docker logs honua-test
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop honua-test || true
+          docker rm honua-test || true
 
 
   # Architecture gate job that blocks merge if LLM review finds blocking issues

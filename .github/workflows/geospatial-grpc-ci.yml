@@ -1,0 +1,516 @@
+name: Geospatial gRPC Protocol CI/CD
+
+# This workflow is designed to be copied to the geospatial-grpc repository
+# It provides comprehensive protocol validation, client generation, and publishing
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Force publish to buf.build registry'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  BUF_VERSION: '1.28.1'
+  PROTOC_VERSION: '25.1'
+  GO_VERSION: '1.21'
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  changes:
+    name: Detect Protocol Changes
+    runs-on: ubuntu-latest
+    outputs:
+      protos: ${{ steps.filter.outputs.protos }}
+      breaking: ${{ steps.filter.outputs.breaking }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            protos:
+              - 'proto/**/*.proto'
+              - 'buf.yaml'
+              - 'buf.gen.yaml'
+              - 'buf.work.yaml'
+            breaking:
+              - 'proto/**/v1/**/*.proto'
+
+  buf-validate:
+    name: Buf Validation & Linting
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.protos == 'true' || github.event_name == 'release'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Buf CLI
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Buf Format Check
+        run: buf format --diff --exit-code
+
+      - name: Buf Lint
+        run: buf lint
+
+      - name: Buf Breaking Change Detection
+        if: github.event_name == 'pull_request' && needs.changes.outputs.breaking == 'true'
+        run: |
+          buf breaking --against '.git#branch=main'
+
+  generate-clients:
+    name: Generate Multi-Language Clients
+    runs-on: ubuntu-latest
+    needs: [changes, buf-validate]
+    if: needs.changes.outputs.protos == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        target: [csharp, javascript, python, go]
+        include:
+          - target: csharp
+            output_dir: generated/csharp
+            setup_cmd: |
+              dotnet --version
+          - target: javascript
+            output_dir: generated/javascript
+            setup_cmd: |
+              npm --version
+          - target: python
+            output_dir: generated/python
+            setup_cmd: |
+              python --version
+              pip install grpcio-tools
+          - target: go
+            output_dir: generated/go
+            setup_cmd: |
+              go version
+              go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+              go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        if: matrix.target == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node.js
+        if: matrix.target == 'javascript'
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python
+        if: matrix.target == 'python'
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Go
+        if: matrix.target == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Buf CLI
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+
+      - name: Setup target environment
+        run: ${{ matrix.setup_cmd }}
+
+      - name: Generate ${{ matrix.target }} clients
+        run: |
+          mkdir -p ${{ matrix.output_dir }}
+
+          case "${{ matrix.target }}" in
+            csharp)
+              buf generate --template buf.gen.csharp.yaml --output ${{ matrix.output_dir }}
+              ;;
+            javascript)
+              buf generate --template buf.gen.js.yaml --output ${{ matrix.output_dir }}
+              ;;
+            python)
+              buf generate --template buf.gen.python.yaml --output ${{ matrix.output_dir }}
+              ;;
+            go)
+              buf generate --template buf.gen.go.yaml --output ${{ matrix.output_dir }}
+              ;;
+          esac
+
+      - name: Validate generated code
+        run: |
+          case "${{ matrix.target }}" in
+            csharp)
+              find ${{ matrix.output_dir }} -name "*.cs" | wc -l | xargs echo "Generated C# files:"
+              ;;
+            javascript)
+              find ${{ matrix.output_dir }} -name "*.js" | wc -l | xargs echo "Generated JS files:"
+              ;;
+            python)
+              find ${{ matrix.output_dir }} -name "*_pb2.py" | wc -l | xargs echo "Generated Python files:"
+              ;;
+            go)
+              find ${{ matrix.output_dir }} -name "*.go" | wc -l | xargs echo "Generated Go files:"
+              ;;
+          esac
+
+      - name: Upload generated ${{ matrix.target }} clients
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-${{ matrix.target }}-clients
+          path: ${{ matrix.output_dir }}/
+          retention-days: 30
+
+  test-generated-clients:
+    name: Test Generated Clients
+    runs-on: ubuntu-latest
+    needs: generate-clients
+    strategy:
+      matrix:
+        target: [csharp, javascript, python, go]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download generated ${{ matrix.target }} clients
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-${{ matrix.target }}-clients
+          path: generated/${{ matrix.target }}
+
+      - name: Setup .NET
+        if: matrix.target == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node.js
+        if: matrix.target == 'javascript'
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python
+        if: matrix.target == 'python'
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Go
+        if: matrix.target == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Test ${{ matrix.target }} compilation
+        run: |
+          case "${{ matrix.target }}" in
+            csharp)
+              if [ -d "tests/csharp" ]; then
+                cd tests/csharp
+                dotnet restore
+                dotnet build
+              else
+                echo "No C# tests found, checking generated files compile..."
+                # Create minimal test project if exists
+                if [ -n "$(find generated/csharp -name "*.cs" 2>/dev/null)" ]; then
+                  mkdir -p test-project
+                  cd test-project
+                  dotnet new console
+                  dotnet add package Google.Protobuf
+                  dotnet add package Grpc.Net.Client
+                  cp -r ../generated/csharp/* .
+                  dotnet build
+                fi
+              fi
+              ;;
+            javascript)
+              if [ -d "tests/javascript" ]; then
+                cd tests/javascript
+                npm ci
+                npm test
+              else
+                echo "No JavaScript tests found, checking generated files..."
+                find generated/javascript -name "*.js" -exec node -c {} \;
+              fi
+              ;;
+            python)
+              if [ -d "tests/python" ]; then
+                cd tests/python
+                pip install -r requirements.txt
+                python -m pytest
+              else
+                echo "No Python tests found, checking generated files..."
+                pip install grpcio grpcio-tools
+                python -c "
+          import sys
+          sys.path.append('generated/python')
+          try:
+              import importlib
+              import os
+              for root, dirs, files in os.walk('generated/python'):
+                  for file in files:
+                      if file.endswith('_pb2.py'):
+                          module_name = file[:-3]
+                          spec = importlib.util.spec_from_file_location(module_name, os.path.join(root, file))
+                          module = importlib.util.module_from_spec(spec)
+                          spec.loader.exec_module(module)
+                          print(f'Successfully imported {module_name}')
+          except Exception as e:
+              print(f'Import error: {e}')
+              sys.exit(1)
+          "
+              fi
+              ;;
+            go)
+              if [ -d "tests/go" ]; then
+                cd tests/go
+                go mod tidy
+                go build ./...
+                go test ./...
+              else
+                echo "No Go tests found, checking generated files..."
+                cd generated/go
+                go mod init github.com/mikemcdougall/geospatial-grpc/generated/go
+                go mod tidy
+                go build ./...
+              fi
+              ;;
+          esac
+
+  buf-publish:
+    name: Publish to Buf Schema Registry
+    runs-on: ubuntu-latest
+    needs: [buf-validate, test-generated-clients]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.force_publish)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Buf CLI
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+
+      - name: Buf Login
+        run: echo "${{ secrets.BUF_TOKEN }}" | buf registry login
+
+      - name: Buf Push
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # Push with tag for releases
+            TAG="${{ github.event.release.tag_name }}"
+            buf push --tag "${TAG#v}"
+          else
+            # Regular push to main
+            buf push
+          fi
+
+  package-clients:
+    name: Package Generated Clients
+    runs-on: ubuntu-latest
+    needs: [test-generated-clients]
+    if: github.event_name == 'release'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all generated clients
+        uses: actions/download-artifact@v4
+        with:
+          pattern: generated-*-clients
+          merge-multiple: true
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Create client packages
+        run: |
+          # Create versioned packages for each language
+          for lang in csharp javascript python go; do
+            if [ -d "generated/$lang" ]; then
+              tar -czf "geospatial-grpc-${lang}-v${{ steps.version.outputs.VERSION }}.tar.gz" -C generated/$lang .
+            fi
+          done
+
+      - name: Create comprehensive package
+        run: |
+          mkdir -p release-package
+          cp -r generated/* release-package/ 2>/dev/null || true
+          cp README.md release-package/ 2>/dev/null || true
+          cp LICENSE release-package/ 2>/dev/null || true
+
+          # Create package metadata
+          cat > release-package/PACKAGE_INFO.md << EOF
+          # Geospatial gRPC Protocol Clients v${{ steps.version.outputs.VERSION }}
+
+          Generated client libraries for geospatial gRPC protocols.
+
+          ## Contents
+
+          - **csharp/**: .NET/C# client libraries
+          - **javascript/**: Node.js/JavaScript client libraries
+          - **python/**: Python client libraries
+          - **go/**: Go client libraries
+
+          ## Usage
+
+          Each directory contains generated protocol buffer clients for the respective language.
+          Refer to the main repository documentation for integration examples.
+
+          ## Protocol Version
+
+          Generated from geospatial-grpc protocols v${{ steps.version.outputs.VERSION }}
+          Released: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          EOF
+
+          tar -czf "geospatial-grpc-clients-v${{ steps.version.outputs.VERSION }}.tar.gz" release-package/
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+          body: |
+            ## Geospatial gRPC Protocol Release v${{ steps.version.outputs.VERSION }}
+
+            This release includes:
+
+            🔧 **Protocol Definitions**
+            - Core geospatial service definitions
+            - Feature service protocols
+            - Map service protocols
+            - Administrative service protocols
+
+            📦 **Generated Client Libraries**
+            - **C#/.NET**: Ready-to-use NuGet package components
+            - **JavaScript/Node.js**: NPM-compatible modules
+            - **Python**: pip-installable packages
+            - **Go**: Go module-compatible packages
+
+            🌐 **Buf Schema Registry**
+            - Published to [buf.build/mikemcdougall/geospatial-grpc](https://buf.build/mikemcdougall/geospatial-grpc)
+            - Compatible with buf CLI and BSR ecosystem
+
+            ## Installation
+
+            **Buf CLI:**
+            ```bash
+            buf dep update
+            buf generate buf.build/mikemcdougall/geospatial-grpc:v${{ steps.version.outputs.VERSION }}
+            ```
+
+            **Download Clients:**
+            ```bash
+            curl -LO https://github.com/mikemcdougall/geospatial-grpc/releases/download/v${{ steps.version.outputs.VERSION }}/geospatial-grpc-clients-v${{ steps.version.outputs.VERSION }}.tar.gz
+            ```
+
+            ## Breaking Changes
+
+            ${{ github.event.release.body }}
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  documentation:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    needs: [buf-validate]
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Buf CLI
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+
+      - name: Generate documentation
+        run: |
+          mkdir -p docs/generated
+
+          # Generate markdown documentation
+          buf generate --template buf.gen.docs.yaml --output docs/generated
+
+          # Create API reference
+          cat > docs/generated/README.md << EOF
+          # Geospatial gRPC API Reference
+
+          Auto-generated documentation for geospatial gRPC protocols.
+
+          ## Services
+
+          $(find docs/generated -name "*.md" | grep -v README.md | sort)
+
+          ## Protocol Buffer Definitions
+
+          The complete protocol definitions are available in the \`proto/\` directory.
+
+          ## Integration
+
+          For integration examples and getting started guides, see the main repository documentation.
+
+          Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          EOF
+
+      - name: Deploy documentation
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/generated
+          destination_dir: api-reference
+
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [buf-publish, package-clients, documentation]
+    if: success() && github.event_name == 'release'
+    steps:
+      - name: Success notification
+        run: |
+          echo "🎉 Geospatial gRPC protocols successfully published!"
+          echo "Version: ${{ github.event.release.tag_name }}"
+          echo ""
+          echo "📦 Published to:"
+          echo "  - Buf Schema Registry: https://buf.build/mikemcdougall/geospatial-grpc"
+          echo "  - GitHub Releases: https://github.com/mikemcdougall/geospatial-grpc/releases"
+          echo "  - API Documentation: https://mikemcdougall.github.io/geospatial-grpc/api-reference"
+          echo ""
+          echo "🌐 Available client libraries:"
+          echo "  - C#/.NET"
+          echo "  - JavaScript/Node.js"
+          echo "  - Python"
+          echo "  - Go"

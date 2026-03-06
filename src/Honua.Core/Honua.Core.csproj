@@ -18,6 +18,20 @@
     <!-- NetTopologySuite geospatial file format support -->
     <PackageReference Include="NetTopologySuite" Version="2.6.0" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
+
+    <!-- gRPC and protocol buffer support -->
+    <PackageReference Include="Grpc.Net.Client" Version="2.70.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.70.0" PrivateAssets="All" />
+
+    <!-- Geospatial gRPC protocols from standard -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Generate C# clients from standard gRPC geospatial protocol files -->
+    <Protobuf Include="Transport/Proto/geospatial/v1/*.proto"
+              GrpcServices="Client"
+              ProtoRoot="Transport/Proto" />
   </ItemGroup>
 
   <ItemGroup>

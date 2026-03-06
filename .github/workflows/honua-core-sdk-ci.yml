@@ -1,0 +1,328 @@
+name: Honua Core SDK CI/CD
+
+# This workflow is designed to be copied to the honua-core-sdk repository
+# It provides comprehensive build, test, and publish pipeline for the core SDK
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as prerelease'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  NUGET_SOURCE: 'https://api.nuget.org/v3/index.json'
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact-name: linux
+          - os: windows-latest
+            artifact-name: windows
+          - os: macos-latest
+            artifact-name: macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: |
+          dotnet build \
+            --configuration Release \
+            --no-restore \
+            /p:TreatWarningsAsErrors=true \
+            /p:WarningsAsErrors="" \
+            /p:WarningsNotAsErrors=""
+
+      - name: Run unit tests
+        run: |
+          dotnet test \
+            --configuration Release \
+            --no-build \
+            --verbosity normal \
+            --logger trx \
+            --results-directory ./TestResults \
+            --collect:"XPlat Code Coverage" \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.artifact-name }}
+          path: |
+            ./TestResults/**/*.trx
+            ./TestResults/**/*.xml
+          retention-days: 7
+
+  multi-target-validation:
+    name: Multi-Target Framework Validation
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            ${{ env.DOTNET_VERSION }}
+
+      - name: Install workloads
+        run: |
+          dotnet workload install maui
+          dotnet workload install android
+          dotnet workload install ios
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build for .NET 10
+        run: |
+          dotnet build \
+            --configuration Release \
+            --framework net10.0 \
+            --no-restore
+
+      - name: Build for .NET Standard 2.1
+        run: |
+          dotnet build \
+            --configuration Release \
+            --framework netstandard2.1 \
+            --no-restore
+
+      - name: Build for Android (if applicable)
+        run: |
+          if ls src/**/*.csproj | xargs grep -l "net.*-android" > /dev/null 2>&1; then
+            dotnet build \
+              --configuration Release \
+              --framework net10.0-android \
+              --no-restore
+          fi
+        continue-on-error: true
+
+      - name: Build for iOS (if applicable)
+        run: |
+          if ls src/**/*.csproj | xargs grep -l "net.*-ios" > /dev/null 2>&1; then
+            dotnet build \
+              --configuration Release \
+              --framework net10.0-ios \
+              --no-restore
+          fi
+        continue-on-error: true
+
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Format check
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+      - name: Security scan
+        uses: security-code-scan/security-code-scan-action@v1
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./TestResults/**/coverage.cobertura.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  package:
+    name: Create NuGet Packages
+    runs-on: ubuntu-latest
+    needs: [build, multi-target-validation, code-quality]
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+            PRERELEASE="${{ github.event.release.prerelease }}"
+          fi
+
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "PRERELEASE=${PRERELEASE}" >> $GITHUB_OUTPUT
+          echo "Package version: ${VERSION}"
+          echo "Prerelease: ${PRERELEASE}"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: |
+          dotnet build \
+            --configuration Release \
+            --no-restore \
+            /p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+            /p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+            /p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+      - name: Create NuGet packages
+        run: |
+          find src -name "*.csproj" -exec dotnet pack {} \
+            --configuration Release \
+            --no-build \
+            --output ./packages \
+            -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+            -p:RepositoryUrl=${{ github.server_url }}/${{ github.repository }} \
+            -p:RepositoryCommit=${{ github.sha }} \;
+
+      - name: List packages
+        run: ls -la ./packages/
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./packages/*.nupkg
+          retention-days: 30
+
+      - name: Publish to NuGet.org
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && steps.version.outputs.PRERELEASE == 'false')
+        run: |
+          for package in ./packages/*.nupkg; do
+            echo "Publishing $package"
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source ${{ env.NUGET_SOURCE }} \
+              --skip-duplicate
+          done
+
+      - name: Publish to NuGet.org (Prerelease)
+        if: (github.event_name == 'workflow_dispatch' && steps.version.outputs.PRERELEASE == 'true') || github.event.release.prerelease
+        run: |
+          for package in ./packages/*.nupkg; do
+            echo "Publishing prerelease $package"
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source ${{ env.NUGET_SOURCE }} \
+              --skip-duplicate
+          done
+
+  integration-test:
+    name: Integration Testing
+    runs-on: ubuntu-latest
+    needs: package
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./packages
+
+      - name: Create test project
+        run: |
+          mkdir -p integration-test
+          cd integration-test
+          dotnet new console
+
+          # Add local package source
+          dotnet nuget add source ../packages --name local-packages
+
+          # Install the package we just built
+          PACKAGE_NAME=$(ls ../packages/*.nupkg | head -1 | xargs basename | sed 's/\.[0-9].*//')
+          VERSION=$(ls ../packages/*.nupkg | head -1 | xargs basename | sed 's/.*\.\([0-9].*\)\.nupkg/\1/')
+
+          dotnet add package "$PACKAGE_NAME" --version "$VERSION" --source local-packages
+
+      - name: Test package consumption
+        run: |
+          cd integration-test
+          dotnet build
+          dotnet run
+
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [package, integration-test]
+    if: success() && (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Success notification
+        run: |
+          echo "🎉 Honua Core SDK successfully published!"
+          echo "Version: ${{ needs.package.outputs.VERSION || github.event.release.tag_name }}"
+          echo "Packages available at: https://www.nuget.org/packages?q=Honua.Core"

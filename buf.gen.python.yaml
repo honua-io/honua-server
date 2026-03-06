@@ -1,0 +1,7 @@
+# Buf generate template for Python clients
+version: v1
+plugins:
+  - plugin: python
+    out: .
+  - plugin: grpc-python
+    out: .

@@ -1,0 +1,509 @@
+name: Honua Admin Tools Multi-Language CI/CD
+
+# This workflow is designed to be copied to the honua-admin-tools repository
+# It provides comprehensive build, test, and publish pipeline for multi-language admin tools
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish'
+        required: true
+        type: string
+      publish_dotnet:
+        description: 'Publish .NET packages'
+        required: false
+        type: boolean
+        default: true
+      publish_npm:
+        description: 'Publish NPM packages'
+        required: false
+        type: boolean
+        default: true
+      publish_pypi:
+        description: 'Publish PyPI packages'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      dotnet: ${{ steps.filter.outputs.dotnet }}
+      nodejs: ${{ steps.filter.outputs.nodejs }}
+      python: ${{ steps.filter.outputs.python }}
+      cli: ${{ steps.filter.outputs.cli }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            dotnet:
+              - 'src/dotnet/**'
+              - '**/*.csproj'
+              - '**/*.sln'
+            nodejs:
+              - 'src/nodejs/**'
+              - '**/package.json'
+              - '**/package-lock.json'
+            python:
+              - 'src/python/**'
+              - '**/requirements.txt'
+              - '**/setup.py'
+              - '**/pyproject.toml'
+            cli:
+              - 'cli/**'
+              - 'scripts/**'
+
+  dotnet-build:
+    name: .NET Build & Test
+    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact-name: linux-dotnet
+          - os: windows-latest
+            artifact-name: windows-dotnet
+          - os: macos-latest
+            artifact-name: macos-dotnet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('src/dotnet/**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore .NET dependencies
+        run: |
+          if [ -f "src/dotnet/HonuaAdminTools.sln" ]; then
+            dotnet restore src/dotnet/HonuaAdminTools.sln
+          else
+            find src/dotnet -name "*.csproj" | xargs -I {} dotnet restore {}
+          fi
+
+      - name: Build .NET projects
+        run: |
+          if [ -f "src/dotnet/HonuaAdminTools.sln" ]; then
+            dotnet build src/dotnet/HonuaAdminTools.sln \
+              --configuration Release \
+              --no-restore \
+              /p:TreatWarningsAsErrors=true
+          else
+            find src/dotnet -name "*.csproj" | xargs -I {} dotnet build {} \
+              --configuration Release \
+              --no-restore \
+              /p:TreatWarningsAsErrors=true
+          fi
+
+      - name: Test .NET projects
+        run: |
+          find src/dotnet -name "*Tests*.csproj" | xargs -I {} dotnet test {} \
+            --configuration Release \
+            --no-build \
+            --verbosity normal \
+            --logger trx \
+            --results-directory ./TestResults \
+            --collect:"XPlat Code Coverage"
+
+      - name: Upload .NET test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dotnet-test-results-${{ matrix.artifact-name }}
+          path: ./TestResults/**/*
+          retention-days: 7
+
+  nodejs-build:
+    name: Node.js Build & Test
+    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.nodejs == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: ['18', '20', '22']
+        exclude:
+          - os: windows-latest
+            node-version: '18'
+          - os: macos-latest
+            node-version: '18'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: 'src/nodejs/**/package-lock.json'
+
+      - name: Install Node.js dependencies
+        run: |
+          find src/nodejs -name "package.json" -execdir npm ci \;
+
+      - name: Build Node.js projects
+        run: |
+          find src/nodejs -name "package.json" -execdir npm run build --if-present \;
+
+      - name: Test Node.js projects
+        run: |
+          find src/nodejs -name "package.json" -execdir npm test --if-present \;
+
+      - name: Lint Node.js projects
+        run: |
+          find src/nodejs -name "package.json" -execdir npm run lint --if-present \;
+
+  python-build:
+    name: Python Build & Test
+    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        exclude:
+          - os: windows-latest
+            python-version: '3.9'
+          - os: macos-latest
+            python-version: '3.9'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'src/python/**/requirements*.txt'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          find src/python -name "requirements.txt" -exec pip install -r {} \;
+          find src/python -name "requirements-dev.txt" -exec pip install -r {} \; || true
+
+      - name: Lint Python code
+        run: |
+          pip install flake8 black isort
+          find src/python -name "*.py" | xargs flake8 --max-line-length=88 --extend-ignore=E203,W503
+          find src/python -name "*.py" | xargs black --check --diff
+          find src/python -name "*.py" -exec dirname {} \; | sort -u | xargs -I {} isort --check-only --diff {}
+
+      - name: Test Python projects
+        run: |
+          pip install pytest pytest-cov
+          find src/python -name "test_*.py" -o -name "*_test.py" | head -1 | xargs dirname | xargs -I {} pytest {} --cov --cov-report=xml
+
+  cli-build:
+    name: CLI Tools Build & Test
+    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.cli == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET (for CLI)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node.js (for CLI)
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python (for CLI)
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build CLI tools
+        run: |
+          # Build .NET CLI tools
+          find cli -name "*.csproj" | xargs -I {} dotnet build {} --configuration Release
+
+          # Install Node.js CLI tools
+          find cli -name "package.json" -execdir npm install \;
+
+          # Install Python CLI tools
+          find cli -name "setup.py" -execdir pip install -e . \;
+
+      - name: Test CLI tools functionality
+        run: |
+          # Test .NET CLI tools
+          if [ -f "cli/dotnet/honua-admin/honua-admin.csproj" ]; then
+            dotnet run --project cli/dotnet/honua-admin --configuration Release -- --help
+          fi
+
+          # Test Node.js CLI tools
+          if [ -f "cli/nodejs/package.json" ]; then
+            cd cli/nodejs && npm test
+          fi
+
+          # Test Python CLI tools
+          if [ -f "cli/python/setup.py" ]; then
+            cd cli/python && python -m pytest tests/ -v
+          fi
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: .NET Security Scan
+        if: needs.changes.outputs.dotnet == 'true'
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee dotnet-vulnerabilities.txt
+          if grep -q "has the following vulnerable packages" dotnet-vulnerabilities.txt; then
+            echo "::warning::.NET packages have known vulnerabilities"
+            cat dotnet-vulnerabilities.txt
+          fi
+
+      - name: Node.js Security Scan
+        if: needs.changes.outputs.nodejs == 'true'
+        run: |
+          find src/nodejs -name "package.json" -execdir npm audit --audit-level=moderate \;
+
+      - name: Python Security Scan
+        if: needs.changes.outputs.python == 'true'
+        run: |
+          pip install safety
+          find src/python -name "requirements.txt" -exec safety check -r {} \;
+
+  publish-dotnet:
+    name: Publish .NET Packages
+    runs-on: ubuntu-latest
+    needs: [dotnet-build, security-scan]
+    if: |
+      (github.event_name == 'release' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_dotnet)) &&
+      success()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build and pack .NET packages
+        run: |
+          find src/dotnet -name "*.csproj" -not -path "*/test*/*" | xargs -I {} dotnet pack {} \
+            --configuration Release \
+            --output ./packages \
+            -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
+            -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
+            -p:FileVersion=${{ steps.version.outputs.VERSION }}
+
+      - name: Publish to NuGet.org
+        run: |
+          for package in ./packages/*.nupkg; do
+            echo "Publishing $package"
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+  publish-npm:
+    name: Publish NPM Packages
+    runs-on: ubuntu-latest
+    needs: [nodejs-build, security-scan]
+    if: |
+      (github.event_name == 'release' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_npm)) &&
+      success()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Update package versions
+        run: |
+          find src/nodejs -name "package.json" -exec npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version --prefix $(dirname {}) \;
+
+      - name: Install dependencies and build
+        run: |
+          find src/nodejs -name "package.json" -execdir npm ci \;
+          find src/nodejs -name "package.json" -execdir npm run build --if-present \;
+
+      - name: Publish to NPM
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          find src/nodejs -name "package.json" -execdir npm publish --access public \;
+
+  publish-pypi:
+    name: Publish PyPI Packages
+    runs-on: ubuntu-latest
+    needs: [python-build, security-scan]
+    if: |
+      (github.event_name == 'release' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_pypi)) &&
+      success()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build Python packages
+        run: |
+          find src/python -name "setup.py" -execdir python -m build \;
+          find src/python -name "pyproject.toml" -execdir python -m build \;
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          find src/python -name "dist" -exec twine upload {}/* \;
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [publish-dotnet, publish-npm, publish-pypi]
+    if: github.event_name == 'workflow_dispatch' && success()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Release v${{ github.event.inputs.version }}
+          body: |
+            ## Honua Admin Tools v${{ github.event.inputs.version }}
+
+            Multi-language administrative tools for Honua geospatial infrastructure.
+
+            ### Components Released
+            - 🟦 .NET Admin SDK (`Honua.Admin.Sdk`)
+            - 🟨 Node.js Admin Tools (`@honua/admin-tools`)
+            - 🐍 Python Admin CLI (`honua-admin`)
+
+            ### Installation
+
+            **.NET:**
+            ```bash
+            dotnet add package Honua.Admin.Sdk --version ${{ github.event.inputs.version }}
+            ```
+
+            **Node.js:**
+            ```bash
+            npm install @honua/admin-tools@${{ github.event.inputs.version }}
+            ```
+
+            **Python:**
+            ```bash
+            pip install honua-admin==${{ github.event.inputs.version }}
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [publish-dotnet, publish-npm, publish-pypi]
+    if: success()
+    steps:
+      - name: Success notification
+        run: |
+          echo "🎉 Honua Admin Tools successfully published!"
+          echo "Version: ${{ github.event.inputs.version || github.event.release.tag_name }}"
+          echo ""
+          echo "📦 Published packages:"
+          echo "  - NuGet: https://www.nuget.org/packages?q=Honua.Admin"
+          echo "  - NPM: https://www.npmjs.com/search?q=%40honua%2Fadmin-tools"
+          echo "  - PyPI: https://pypi.org/search/?q=honua-admin"

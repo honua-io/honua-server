@@ -1,13 +1,28 @@
-// Copyright (c) Honua. All rights reserved.
-// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+// Copyright 2026 gRPC Geospatial Standard Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 syntax = "proto3";
 
-package honua.v1;
+package geospatial.v1;
 
-option csharp_namespace = "Honua.Server.Features.Grpc.Proto";
+option csharp_namespace = "Geospatial.V1";
+option go_package = "github.com/grpc-geospatial/protobuf/geospatial/v1";
+option java_package = "io.geospatial.v1";
+option java_multiple_files = true;
+option java_outer_classname = "FormServiceProto";
 
-import "honua/v1/feature_service.proto";
+import "geospatial/v1/feature_service.proto";
 
 // FormService provides gRPC-native form definition and submission capabilities.
 // Designed as an alternative to OpenRosa XML with type-safe mobile optimization.
