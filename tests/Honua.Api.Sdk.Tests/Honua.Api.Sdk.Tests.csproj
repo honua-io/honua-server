@@ -7,7 +7,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NoWarn>$(NoWarn);CS1591;IDE0005;IDE0073;CA1816;CA1861</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;IDE0005;IDE0073</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,26 +24,10 @@
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.3" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.3" />
-    <PackageReference Include="Moq" Version="4.20.72" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Honua.Mobile.Sdk/Honua.Mobile.Sdk.csproj" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(EnableServerE2E)' != 'true'">
-    <Compile Remove="E2EServerIntegrationTests.cs" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(EnableServerE2E)' == 'true'">
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.3" />
-    <ProjectReference Include="../../src/Honua.Server/Honua.Server.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="appsettings.Test.json" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../../src/Honua.Api.Sdk/Honua.Api.Sdk.csproj" />
   </ItemGroup>
 
 </Project>

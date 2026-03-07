@@ -8,7 +8,8 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <UseMaui>true</UseMaui>
+    <UseMaui Condition="'$(EnableMobileTargets)' == 'true'">true</UseMaui>
+    <UseMaui Condition="'$(EnableMobileTargets)' != 'true'">false</UseMaui>
     <SkipValidateMauiImplicitPackageReferences>true</SkipValidateMauiImplicitPackageReferences>
 
     <!-- Multi-targeting for mobile platforms (iOS/Android require workloads) -->

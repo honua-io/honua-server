@@ -13,14 +13,19 @@
 
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Honua.Core.Models;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Transport.Clients;
+using Honua.Core.Transport.Converters;
 using Honua.Mobile.Sdk.Clients;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using DomainFeature = Honua.Core.Features.FeatureStore.Domain.Feature;
+using CoreEnvelope = Honua.Core.Models.Envelope;
 
 namespace Honua.Mobile.Sdk.Storage;
 
@@ -30,9 +35,15 @@ namespace Honua.Mobile.Sdk.Storage;
 /// </summary>
 public class SqliteOfflineStorageService : IOfflineStorageService
 {
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private readonly ILogger<SqliteOfflineStorageService> _logger;
     private readonly HonuaMobileClientOptions _options;
     private readonly OfflineDbContext _dbContext;
+    private readonly IFeatureServiceClient<MobileContext> _networkClient;
     private bool _disposed;
 
     /// <summary>
@@ -43,10 +54,12 @@ public class SqliteOfflineStorageService : IOfflineStorageService
     /// <param name="logger">Logger instance</param>
     public SqliteOfflineStorageService(
         OfflineDbContext dbContext,
+        IFeatureServiceClient<MobileContext> networkClient,
         IOptions<HonuaMobileClientOptions> options,
         ILogger<SqliteOfflineStorageService> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _networkClient = networkClient ?? throw new ArgumentNullException(nameof(networkClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -60,10 +73,11 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
+            FeatureQueryOfflineSupport.EnsureSupported(query);
             _logger.LogDebug("Querying offline features for service {ServiceId}, layer {LayerId}",
                 serviceId, layerId);
 
@@ -72,7 +86,9 @@ public class SqliteOfflineStorageService : IOfflineStorageService
                 .ApplyFeatureQuery(query)
                 .ToListAsync(cancellationToken);
 
-            var features = cachedFeatures.Select(cf => cf.ToDomainFeature()).ToImmutableArray();
+            var features = cachedFeatures
+                .Select(cf => FeatureQueryOfflineSupport.ProjectFeature(cf.ToDomainFeature(), query))
+                .ToImmutableArray();
 
             _logger.LogDebug("Found {FeatureCount} features in offline storage", features.Length);
 
@@ -99,74 +115,71 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         FeatureQuery query,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        FeatureQueryOfflineSupport.EnsureSupported(query);
 
-        try
+        _logger.LogDebug("Starting offline streaming query for service {ServiceId}, layer {LayerId}",
+            serviceId, layerId);
+
+        var pageSize = query.ResultRecordCount ?? _options.MobilePageSize;
+        var currentOffset = query.ResultOffset ?? 0;
+        var pageNumber = 0;
+
+        while (true)
         {
-            _logger.LogDebug("Starting offline streaming query for service {ServiceId}, layer {LayerId}",
-                serviceId, layerId);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var pageSize = query.ResultRecordCount ?? _options.MobilePageSize;
-            var currentOffset = query.ResultOffset ?? 0;
-            var pageNumber = 0;
-
-            while (true)
+            var pageQuery = query with
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                ResultOffset = currentOffset,
+                ResultRecordCount = pageSize
+            };
 
-                var pageQuery = query with
+            var cachedFeatures = await _dbContext.CachedFeatures
+                .Where(cf => cf.ServiceId == serviceId && cf.LayerId == layerId)
+                .ApplyFeatureQuery(pageQuery)
+                .ToListAsync(cancellationToken);
+
+            if (!cachedFeatures.Any())
+            {
+                if (pageNumber == 0)
                 {
-                    ResultOffset = currentOffset,
-                    ResultRecordCount = pageSize
-                };
-
-                var cachedFeatures = await _dbContext.CachedFeatures
-                    .Where(cf => cf.ServiceId == serviceId && cf.LayerId == layerId)
-                    .ApplyFeatureQuery(pageQuery)
-                    .ToListAsync(cancellationToken);
-
-                if (!cachedFeatures.Any())
-                {
-                    if (pageNumber == 0)
+                    yield return new FeaturePage
                     {
-                        // Return empty page for first page
-                        yield return new FeaturePage
-                        {
-                            Features = ImmutableArray<DomainFeature>.Empty,
-                            IsLastPage = true,
-                            PageNumber = 0
-                        };
-                    }
-                    break;
+                        Features = ImmutableArray<DomainFeature>.Empty,
+                        IsLastPage = true,
+                        PageNumber = 0
+                    };
                 }
 
-                var features = cachedFeatures.Select(cf => cf.ToDomainFeature()).ToImmutableArray();
-                var isLastPage = cachedFeatures.Count < pageSize;
-
-                _logger.LogDebug("Streaming offline page {PageNumber} with {FeatureCount} features",
-                    pageNumber, features.Length);
-
-                yield return new FeaturePage
-                {
-                    Features = features,
-                    IsLastPage = isLastPage,
-                    PageNumber = pageNumber
-                };
-
-                if (isLastPage) break;
-
-                currentOffset += pageSize;
-                pageNumber++;
+                break;
             }
 
-            _logger.LogDebug("Offline streaming completed after {PageCount} pages", pageNumber + 1);
+            var features = cachedFeatures
+                .Select(cf => FeatureQueryOfflineSupport.ProjectFeature(cf.ToDomainFeature(), query))
+                .ToImmutableArray();
+            var isLastPage = cachedFeatures.Count < pageSize;
+
+            _logger.LogDebug("Streaming offline page {PageNumber} with {FeatureCount} features",
+                pageNumber, features.Length);
+
+            yield return new FeaturePage
+            {
+                Features = features,
+                IsLastPage = isLastPage,
+                PageNumber = pageNumber
+            };
+
+            if (isLastPage)
+            {
+                break;
+            }
+
+            currentOffset += pageSize;
+            pageNumber++;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error streaming offline features for service {ServiceId}, layer {LayerId}",
-                serviceId, layerId);
-            throw;
-        }
+
+        _logger.LogDebug("Offline streaming completed after {PageCount} pages", pageNumber + 1);
     }
 
     /// <summary>
@@ -178,7 +191,7 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         ImmutableArray<DomainFeature> features,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
@@ -233,7 +246,7 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         FeatureEdits edits,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
@@ -243,9 +256,9 @@ public class SqliteOfflineStorageService : IOfflineStorageService
 
             using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            var addResults = new List<EditResultRecord>();
-            var updateResults = new List<EditResultRecord>();
-            var deleteResults = new List<EditResultRecord>();
+            var addEdits = new List<PendingEditEntity>();
+            var updateEdits = new List<PendingEditEntity>();
+            var deleteEdits = new List<PendingEditEntity>();
 
             // Process adds
             foreach (var feature in edits.Adds)
@@ -261,13 +274,7 @@ public class SqliteOfflineStorageService : IOfflineStorageService
                 };
 
                 _dbContext.PendingEdits.Add(pendingEdit);
-                await _dbContext.SaveChangesAsync(cancellationToken);
-
-                addResults.Add(new EditResultRecord
-                {
-                    ObjectId = pendingEdit.Id, // Use local ID
-                    IsSuccess = true
-                });
+                addEdits.Add(pendingEdit);
             }
 
             // Process updates
@@ -278,19 +285,14 @@ public class SqliteOfflineStorageService : IOfflineStorageService
                     ServiceId = serviceId,
                     LayerId = layerId,
                     OperationType = "Update",
-                    OriginalObjectId = feature.ObjectId,
+                    OriginalObjectId = feature.Id,
                     FeatureData = SerializeFeature(feature),
                     CreatedAt = DateTime.UtcNow,
                     IsSynced = false
                 };
 
                 _dbContext.PendingEdits.Add(pendingEdit);
-
-                updateResults.Add(new EditResultRecord
-                {
-                    ObjectId = feature.ObjectId ?? 0,
-                    IsSuccess = true
-                });
+                updateEdits.Add(pendingEdit);
             }
 
             // Process deletes
@@ -307,16 +309,15 @@ public class SqliteOfflineStorageService : IOfflineStorageService
                 };
 
                 _dbContext.PendingEdits.Add(pendingEdit);
-
-                deleteResults.Add(new EditResultRecord
-                {
-                    ObjectId = objectId,
-                    IsSuccess = true
-                });
+                deleteEdits.Add(pendingEdit);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            var addResults = addEdits.Select(CreatePendingEditOperationResult).ToImmutableArray();
+            var updateResults = updateEdits.Select(CreatePendingEditOperationResult).ToImmutableArray();
+            var deleteResults = deleteEdits.Select(CreatePendingEditOperationResult).ToImmutableArray();
 
             _logger.LogDebug("Successfully queued {TotalOperations} edit operations", totalOperations);
 
@@ -342,21 +343,22 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         IEnumerable<long> objectIds,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
-            var objectIdList = objectIds.ToList();
-            _logger.LogDebug("Marking {EditCount} edits as synced", objectIdList.Count);
+            var pendingEditIdList = objectIds.Distinct().ToList();
+            _logger.LogDebug("Marking {EditCount} edits as synced", pendingEditIdList.Count);
 
             var pendingEdits = await _dbContext.PendingEdits
-                .Where(pe => objectIdList.Contains(pe.Id))
+                .Where(pe => pendingEditIdList.Contains(pe.Id))
                 .ToListAsync(cancellationToken);
 
             foreach (var edit in pendingEdits)
             {
                 edit.IsSynced = true;
                 edit.SyncedAt = DateTime.UtcNow;
+                edit.LastSyncError = null;
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -377,20 +379,88 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         MobileContext context,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken, cancellationToken);
+        var token = combinedCts.Token;
 
-        // This is a placeholder implementation
-        // Real implementation would need a network client to sync with server
-        _logger.LogInformation("Sync pending edits not yet implemented - requires network client integration");
+        var pendingEdits = await _dbContext.PendingEdits
+            .Where(pe => !pe.IsSynced)
+            .OrderBy(pe => pe.CreatedAt)
+            .ThenBy(pe => pe.Id)
+            .ToListAsync(token);
 
-        await Task.CompletedTask;
-
-        return new SyncResult
+        if (pendingEdits.Count == 0)
         {
-            SyncedOperations = 0,
-            FailedOperations = 0,
-            Errors = new List<SyncError>()
-        };
+            return new SyncResult();
+        }
+
+        var result = new SyncResult();
+        var processedOperations = 0;
+        context.ProgressReporter?.Report(SyncProgress.Step(
+            "Sync",
+            0,
+            pendingEdits.Count,
+            $"Syncing {pendingEdits.Count} pending edits..."));
+
+        foreach (var group in pendingEdits.GroupBy(pe => new { pe.ServiceId, pe.LayerId }))
+        {
+            token.ThrowIfCancellationRequested();
+
+            var groupedEdits = group.ToList();
+            var featureEdits = BuildFeatureEdits(groupedEdits);
+
+            try
+            {
+                var networkResult = await _networkClient.ApplyEditsAsync(
+                    group.Key.ServiceId,
+                    group.Key.LayerId,
+                    featureEdits,
+                    context,
+                    token);
+
+                ApplySyncOutcome(groupedEdits, networkResult, result);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                foreach (var pendingEdit in groupedEdits)
+                {
+                    pendingEdit.SyncAttempts++;
+                    pendingEdit.LastSyncError = ex.Message;
+                    result.FailedOperations++;
+                    result.Errors.Add(new SyncError
+                    {
+                        ObjectId = pendingEdit.OriginalObjectId ?? pendingEdit.Id,
+                        OperationType = pendingEdit.OperationType,
+                        Message = ex.Message,
+                        Exception = ex
+                    });
+                }
+            }
+
+            processedOperations += groupedEdits.Count;
+            context.ProgressReporter?.Report(SyncProgress.Step(
+                "Sync",
+                processedOperations,
+                pendingEdits.Count,
+                $"Synced {processedOperations} of {pendingEdits.Count} pending edits"));
+        }
+
+        await _dbContext.SaveChangesAsync(token);
+
+        if (result.FailedOperations == 0)
+        {
+            context.ProgressReporter?.Report(SyncProgress.Completed(
+                $"Synced {result.SyncedOperations} pending edits"));
+        }
+        else
+        {
+            context.ProgressReporter?.Report(SyncProgress.Failed(
+                new InvalidOperationException("One or more pending edits failed to sync."),
+                $"Synced {result.SyncedOperations} edits, {result.FailedOperations} failed"));
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -399,26 +469,63 @@ public class SqliteOfflineStorageService : IOfflineStorageService
     public async Task<DownloadResult> DownloadAreaAsync(
         string serviceId,
         int layerId,
-        Envelope boundingBox,
+        CoreEnvelope boundingBox,
         MobileContext context,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            context.CancellationToken, cancellationToken);
+        var token = combinedCts.Token;
+        var startedAt = DateTime.UtcNow;
+        var featuresDownloaded = 0;
+        long dataSizeBytes = 0;
 
-        // This is a placeholder implementation
-        // Real implementation would need a network client to download from server
-        _logger.LogInformation("Download area not yet implemented - requires network client integration");
-
-        await Task.CompletedTask;
-
-        return new DownloadResult
+        var spatialFilter = CreateBoundingBoxFilter(boundingBox);
+        var query = new FeatureQuery
         {
-            FeaturesDownloaded = 0,
-            DataSizeBytes = 0,
-            Duration = TimeSpan.Zero,
-            IsSuccess = false,
-            ErrorMessage = "Download not yet implemented"
+            SpatialFilter = spatialFilter,
+            ResultRecordCount = _options.MobilePageSize
         };
+
+        try
+        {
+            await foreach (var page in _networkClient.QueryFeaturesStreamAsync(
+                serviceId,
+                layerId,
+                query,
+                context,
+                token))
+            {
+                if (page.Features.Any())
+                {
+                    await CacheFeaturesAsync(serviceId, layerId, page.Features, token);
+                    featuresDownloaded += page.Features.Length;
+                    dataSizeBytes += EstimateFeatureSize(page.Features);
+                }
+            }
+
+            return new DownloadResult
+            {
+                FeaturesDownloaded = featuresDownloaded,
+                DataSizeBytes = dataSizeBytes,
+                Duration = DateTime.UtcNow - startedAt,
+                IsSuccess = true
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Failed to download offline area for service {ServiceId}, layer {LayerId}",
+                serviceId, layerId);
+            return new DownloadResult
+            {
+                FeaturesDownloaded = featuresDownloaded,
+                DataSizeBytes = dataSizeBytes,
+                Duration = DateTime.UtcNow - startedAt,
+                IsSuccess = false,
+                ErrorMessage = ex.Message
+            };
+        }
     }
 
     /// <summary>
@@ -429,7 +536,7 @@ public class SqliteOfflineStorageService : IOfflineStorageService
         int layerId,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
@@ -449,7 +556,7 @@ public class SqliteOfflineStorageService : IOfflineStorageService
     /// </summary>
     public async Task<StorageStatistics> GetStorageStatisticsAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
@@ -484,7 +591,7 @@ public class SqliteOfflineStorageService : IOfflineStorageService
     /// </summary>
     public async Task<CleanupResult> CleanupOldDataAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         try
         {
@@ -531,13 +638,194 @@ public class SqliteOfflineStorageService : IOfflineStorageService
     {
         // Simplified serialization - in production use proper JSON serialization
         // with geometry handling
-        return System.Text.Json.JsonSerializer.Serialize(new
+        return JsonSerializer.Serialize(new
         {
-            feature.ObjectId,
+            feature.Id,
             feature.Attributes,
-            GeometryWkt = feature.Geometry?.ToString() // Convert to WKT
-        });
+            GeometryWkt = feature.Geometry is { Length: > 0 }
+                ? GeometryConverter.FromWkb(feature.Geometry).AsText()
+                : null
+        }, SerializerOptions);
     }
+
+    private static DomainFeature DeserializeFeature(string featureData)
+    {
+        var storedFeature = JsonSerializer.Deserialize<StoredFeature>(featureData, SerializerOptions)
+            ?? throw new InvalidOperationException("Pending edit payload is invalid.");
+
+        var attributes = storedFeature.Attributes is { Count: > 0 }
+            ? storedFeature.Attributes.ToImmutableDictionary(
+                kvp => kvp.Key,
+                kvp => ConvertJsonValue(kvp.Value))
+            : ImmutableDictionary<string, object?>.Empty;
+
+        Geometry? geometry = null;
+        if (!string.IsNullOrWhiteSpace(storedFeature.GeometryWkt))
+        {
+            var geometryFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory();
+            var wktReader = new WKTReader(geometryFactory);
+            geometry = wktReader.Read(storedFeature.GeometryWkt);
+        }
+
+        return new DomainFeature
+        {
+            Id = storedFeature.Id,
+            Attributes = attributes,
+            Geometry = geometry is null ? null : GeometryConverter.ToWkb(geometry)
+        };
+    }
+
+    private static object? ConvertJsonValue(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number when value.TryGetInt64(out var intValue) => intValue,
+            JsonValueKind.Number => value.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Array => value.EnumerateArray().Select(ConvertJsonValue).ToArray(),
+            JsonValueKind.Object => value.EnumerateObject()
+                .ToDictionary(property => property.Name, property => ConvertJsonValue(property.Value)),
+            _ => value.ToString()
+        };
+    }
+
+    private static OperationResult CreatePendingEditOperationResult(PendingEditEntity pendingEdit)
+        => new()
+        {
+            ObjectId = pendingEdit.Id,
+            Success = true
+        };
+
+    private static FeatureEdits BuildFeatureEdits(IReadOnlyCollection<PendingEditEntity> pendingEdits)
+    {
+        return new FeatureEdits
+        {
+            Adds = pendingEdits
+                .Where(pe => string.Equals(pe.OperationType, "Add", StringComparison.OrdinalIgnoreCase))
+                .Select(pe => DeserializeFeature(pe.FeatureData ?? throw new InvalidOperationException(
+                    $"Pending add {pe.Id} is missing feature data.")))
+                .ToImmutableArray(),
+            Updates = pendingEdits
+                .Where(pe => string.Equals(pe.OperationType, "Update", StringComparison.OrdinalIgnoreCase))
+                .Select(pe => DeserializeFeature(pe.FeatureData ?? throw new InvalidOperationException(
+                    $"Pending update {pe.Id} is missing feature data.")))
+                .ToImmutableArray(),
+            Deletes = pendingEdits
+                .Where(pe => string.Equals(pe.OperationType, "Delete", StringComparison.OrdinalIgnoreCase))
+                .Select(pe => pe.OriginalObjectId ?? throw new InvalidOperationException(
+                    $"Pending delete {pe.Id} is missing the original object ID."))
+                .ToImmutableArray()
+        };
+    }
+
+    private void ApplySyncOutcome(
+        IReadOnlyList<PendingEditEntity> pendingEdits,
+        EditResult networkResult,
+        SyncResult syncResult)
+    {
+        if (networkResult.Error != null)
+        {
+            foreach (var pendingEdit in pendingEdits)
+            {
+                pendingEdit.SyncAttempts++;
+                pendingEdit.LastSyncError = networkResult.Error.Message;
+                syncResult.FailedOperations++;
+                syncResult.Errors.Add(new SyncError
+                {
+                    ObjectId = pendingEdit.OriginalObjectId ?? pendingEdit.Id,
+                    OperationType = pendingEdit.OperationType,
+                    Message = networkResult.Error.Message
+                });
+            }
+
+            return;
+        }
+
+        ApplyOperationResults(
+            pendingEdits.Where(pe => string.Equals(pe.OperationType, "Add", StringComparison.OrdinalIgnoreCase)).ToList(),
+            networkResult.AddResults,
+            syncResult);
+        ApplyOperationResults(
+            pendingEdits.Where(pe => string.Equals(pe.OperationType, "Update", StringComparison.OrdinalIgnoreCase)).ToList(),
+            networkResult.UpdateResults,
+            syncResult);
+        ApplyOperationResults(
+            pendingEdits.Where(pe => string.Equals(pe.OperationType, "Delete", StringComparison.OrdinalIgnoreCase)).ToList(),
+            networkResult.DeleteResults,
+            syncResult);
+    }
+
+    private static void ApplyOperationResults(
+        IReadOnlyList<PendingEditEntity> pendingEdits,
+        ImmutableArray<OperationResult> operationResults,
+        SyncResult syncResult)
+    {
+        for (var index = 0; index < pendingEdits.Count; index++)
+        {
+            var pendingEdit = pendingEdits[index];
+            var operationResult = index < operationResults.Length
+                ? operationResults[index]
+                : new OperationResult
+                {
+                    Success = false,
+                    Error = new EditError
+                    {
+                        Code = -1,
+                        Message = "Sync result was missing an operation response."
+                    }
+                };
+
+            if (operationResult.Success)
+            {
+                pendingEdit.IsSynced = true;
+                pendingEdit.SyncedAt = DateTime.UtcNow;
+                pendingEdit.LastSyncError = null;
+                syncResult.SyncedOperations++;
+            }
+            else
+            {
+                pendingEdit.SyncAttempts++;
+                pendingEdit.LastSyncError = operationResult.Error?.Message ?? "Unknown sync failure";
+                syncResult.FailedOperations++;
+                syncResult.Errors.Add(new SyncError
+                {
+                    ObjectId = pendingEdit.OriginalObjectId ?? pendingEdit.Id,
+                    OperationType = pendingEdit.OperationType,
+                    Message = pendingEdit.LastSyncError
+                });
+            }
+        }
+    }
+
+    private static SpatialFilter CreateBoundingBoxFilter(CoreEnvelope boundingBox)
+    {
+        var srid = boundingBox.SpatialReference?.LatestWKID
+            ?? boundingBox.SpatialReference?.WKID
+            ?? 4326;
+
+        var geometryFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: srid);
+        var polygon = geometryFactory.CreatePolygon(
+        [
+            new Coordinate(boundingBox.XMin, boundingBox.YMin),
+            new Coordinate(boundingBox.XMax, boundingBox.YMin),
+            new Coordinate(boundingBox.XMax, boundingBox.YMax),
+            new Coordinate(boundingBox.XMin, boundingBox.YMax),
+            new Coordinate(boundingBox.XMin, boundingBox.YMin)
+        ]);
+
+        return SpatialFilter.Create(
+            GeometryConverter.ToWkb(polygon),
+            SpatialRelationship.Intersects,
+            srid);
+    }
+
+    private static long EstimateFeatureSize(ImmutableArray<DomainFeature> features)
+        => features.Sum(feature =>
+            (feature.Geometry?.LongLength ?? 0L) +
+            JsonSerializer.Serialize(feature.Attributes, SerializerOptions).Length);
 
     /// <summary>
     /// Disposes the service and releases resources.
@@ -552,6 +840,119 @@ public class SqliteOfflineStorageService : IOfflineStorageService
     }
 }
 
+internal static class FeatureQueryOfflineSupport
+{
+    public static bool TryGetUnsupportedReason(FeatureQuery featureQuery, out string? reason)
+    {
+        if (!string.IsNullOrWhiteSpace(featureQuery.Where) && !IsTrivialWhere(featureQuery.Where))
+        {
+            reason = "WHERE clauses other than '1=1' are not supported by offline storage.";
+            return true;
+        }
+
+        if (featureQuery.SqlFilter is not null)
+        {
+            reason = "Parameterized SQL filters are not supported by offline storage.";
+            return true;
+        }
+
+        if (featureQuery.SpatialFilter is not null)
+        {
+            reason = "Spatial filters are not supported by offline storage.";
+            return true;
+        }
+
+        if (featureQuery.TemporalFilter is not null)
+        {
+            reason = "Temporal filters are not supported by offline storage.";
+            return true;
+        }
+
+        if (featureQuery.Distinct)
+        {
+            reason = "Distinct queries are not supported by offline storage.";
+            return true;
+        }
+
+        if (HasValues(featureQuery.OutStatistics))
+        {
+            reason = "Statistical queries are not supported by offline storage.";
+            return true;
+        }
+
+        if (HasValues(featureQuery.GroupByFields))
+        {
+            reason = "Grouped statistics are not supported by offline storage.";
+            return true;
+        }
+
+        if (featureQuery.TopFilter is not null)
+        {
+            reason = "Top feature queries are not supported by offline storage.";
+            return true;
+        }
+
+        if (HasValues(featureQuery.OrderBy) && !IsObjectIdOrdering(featureQuery.OrderBy!.Value))
+        {
+            reason = "Only ObjectId ordering is supported by offline storage.";
+            return true;
+        }
+
+        reason = null;
+        return false;
+    }
+
+    public static void EnsureSupported(FeatureQuery featureQuery)
+    {
+        if (TryGetUnsupportedReason(featureQuery, out var reason))
+        {
+            throw new NotSupportedException(reason);
+        }
+    }
+
+    public static DomainFeature ProjectFeature(DomainFeature feature, FeatureQuery query)
+    {
+        if (query.OutFields is not { } outFields || outFields.IsDefaultOrEmpty)
+        {
+            return feature;
+        }
+
+        if (outFields.Any(field => string.Equals(field, "*", StringComparison.Ordinal)))
+        {
+            return feature;
+        }
+
+        var projectedAttributes = feature.Attributes
+            .Where(kvp => outFields.Contains(kvp.Key))
+            .ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        return feature with { Attributes = projectedAttributes };
+    }
+
+    private static bool IsTrivialWhere(string where)
+    {
+        var normalized = where.Replace(" ", string.Empty, StringComparison.Ordinal).Trim();
+        return normalized.Length == 0 ||
+               string.Equals(normalized, "1=1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalized, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsObjectIdOrdering(ImmutableArray<OrderByClause> orderBy)
+    {
+        if (orderBy.IsDefaultOrEmpty)
+        {
+            return true;
+        }
+
+        return orderBy.All(clause =>
+            string.Equals(clause.Field, "objectid", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(clause.Field, "id", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasValues<T>(ImmutableArray<T>? values)
+        => values is { } array && !array.IsDefaultOrEmpty;
+}
+
 /// <summary>
 /// Entity Framework query extensions for FeatureQuery.
 /// </summary>
@@ -563,22 +964,22 @@ public static class FeatureQueryExtensions
     public static IQueryable<CachedFeatureEntity> ApplyFeatureQuery(
         this IQueryable<CachedFeatureEntity> query, FeatureQuery featureQuery)
     {
-        // Apply where clause
-        if (!string.IsNullOrEmpty(featureQuery.Where))
+        if (featureQuery.ObjectIds is { } objectIds && !objectIds.IsDefaultOrEmpty)
         {
-            // Simplified where clause handling - in production would need proper SQL generation
-            // from the where clause expression
+            query = query.Where(cachedFeature => objectIds.Contains(cachedFeature.ObjectId));
         }
 
-        // Apply spatial filter
-        if (featureQuery.SpatialFilter != null)
+        if (featureQuery.OrderBy is { } orderBy && !orderBy.IsDefaultOrEmpty)
         {
-            // Simplified spatial filtering - in production would use spatial database functions
-            // This is a placeholder for proper spatial query implementation
+            var primaryOrder = orderBy[0];
+            query = primaryOrder.Ascending
+                ? query.OrderBy(cf => cf.ObjectId)
+                : query.OrderByDescending(cf => cf.ObjectId);
         }
-
-        // Apply ordering
-        query = query.OrderBy(cf => cf.ObjectId);
+        else
+        {
+            query = query.OrderBy(cf => cf.ObjectId);
+        }
 
         // Apply offset and limit
         if (featureQuery.ResultOffset.HasValue)
@@ -593,4 +994,13 @@ public static class FeatureQueryExtensions
 
         return query;
     }
+}
+
+internal sealed class StoredFeature
+{
+    public long Id { get; set; }
+
+    public Dictionary<string, JsonElement>? Attributes { get; set; }
+
+    public string? GeometryWkt { get; set; }
 }

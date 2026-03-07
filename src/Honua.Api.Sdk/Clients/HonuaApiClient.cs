@@ -1,17 +1,8 @@
-// Copyright (c) 2026 Honua Project Contributors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -68,8 +59,7 @@ public class HonuaApiClient : IFeatureServiceClient<ServerContext>, IDisposable
         ServerContext context,
         CancellationToken cancellationToken = default)
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(HonuaApiClient));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -130,8 +120,7 @@ public class HonuaApiClient : IFeatureServiceClient<ServerContext>, IDisposable
         ServerContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(HonuaApiClient));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -185,8 +174,7 @@ public class HonuaApiClient : IFeatureServiceClient<ServerContext>, IDisposable
         ServerContext context,
         CancellationToken cancellationToken = default)
     {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(HonuaApiClient));
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -278,7 +266,7 @@ public class HonuaApiClient : IFeatureServiceClient<ServerContext>, IDisposable
     {
         var activity = ActivitySource.StartActivity($"HonuaApi.{operationName}");
         activity?.SetTag("service.id", serviceId);
-        activity?.SetTag("layer.id", layerId.ToString());
+        activity?.SetTag("layer.id", layerId.ToString(CultureInfo.InvariantCulture));
         return activity;
     }
 
@@ -294,6 +282,7 @@ public class HonuaApiClient : IFeatureServiceClient<ServerContext>, IDisposable
                 disposableClient.Dispose();
             }
             _disposed = true;
+            GC.SuppressFinalize(this);
         }
     }
 }

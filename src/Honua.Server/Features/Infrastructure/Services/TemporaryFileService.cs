@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 
 using Microsoft.Extensions.Options;
 
@@ -90,6 +91,7 @@ internal sealed class TemporaryStorageLimitExceededException : InvalidOperationE
 /// </summary>
 internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileService, IDisposable
 {
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> SharedWriteGates = new(StringComparer.Ordinal);
     private static readonly HashSet<string> _allowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/png",
@@ -103,7 +105,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
-    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly SemaphoreSlim _writeGate;
 
     public FileSystemTemporaryFileService(
         IOptions<TemporaryFileOptions> options,
@@ -111,6 +113,9 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _writeGate = SharedWriteGates.GetOrAdd(
+            Path.GetFullPath(_options.StorageDirectory),
+            static _ => new SemaphoreSlim(1, 1));
 
         // Ensure storage directory exists
         Directory.CreateDirectory(_options.StorageDirectory);
@@ -409,7 +414,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     public void Dispose()
     {
-        _writeGate.Dispose();
+        // Shared write gates are process-wide and intentionally live for the process lifetime.
     }
 
     [LoggerMessage(EventId = 4500, Level = LogLevel.Information,

@@ -95,6 +95,11 @@ public class FeaturePage
     /// True when this is the final page in the stream.
     /// </summary>
     public bool IsLastPage { get; set; }
+
+    /// <summary>
+    /// Backward-compatible page number metadata.
+    /// </summary>
+    public int PageNumber { get; set; }
 }
 
 /// <summary>
@@ -196,9 +201,25 @@ public class OperationResult
     public bool Success { get; set; }
 
     /// <summary>
+    /// Backward-compatible success alias.
+    /// </summary>
+    public bool IsSuccess
+    {
+        get => Success;
+        set => Success = value;
+    }
+
+    /// <summary>
     /// Error details if the operation failed.
     /// </summary>
     public EditError? Error { get; set; }
+}
+
+/// <summary>
+/// Backward-compatible alias for older edit result models.
+/// </summary>
+public class EditResultRecord : OperationResult
+{
 }
 
 /// <summary>

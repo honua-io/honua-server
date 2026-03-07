@@ -86,7 +86,7 @@ public interface IOfflineStorageService : IDisposable
     /// <summary>
     /// Marks edit operations as synced with the server.
     /// </summary>
-    /// <param name="objectIds">Object IDs that were successfully synced</param>
+    /// <param name="objectIds">Local pending edit IDs that were successfully synced</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Task representing the operation</returns>
     Task MarkEditsSyncedAsync(

@@ -1,17 +1,8 @@
-// Copyright (c) 2026 Honua Project Contributors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Honua.Core.Models;
@@ -36,7 +27,6 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
     private readonly IBulkOperationsClient _bulkClient;
     private readonly IMonitoringClient _monitoringClient;
     private readonly ILogger<HonuaAdminClient> _logger;
-    private readonly HonuaAdminClientOptions _options;
     private bool _disposed;
 
     /// <summary>
@@ -63,7 +53,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
         _userClient = userClient ?? throw new ArgumentNullException(nameof(userClient));
         _bulkClient = bulkClient ?? throw new ArgumentNullException(nameof(bulkClient));
         _monitoringClient = monitoringClient ?? throw new ArgumentNullException(nameof(monitoringClient));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _ = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -85,7 +75,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
         AdminContext context,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -100,7 +90,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
                 serviceId, layerId, query, effectiveContext, combinedCts.Token);
 
             LogAuditEvent("QueryFeaturesCompleted", serviceId, layerId, context.UserIdentity,
-                context.AuditLevel, new { FeatureCount = result.Features.Count });
+                context.AuditLevel, new { FeatureCount = result.Features.Length });
 
             return result;
         }
@@ -120,9 +110,9 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
         int layerId,
         FeatureQuery query,
         AdminContext context,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -153,7 +143,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
         AdminContext context,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -257,7 +247,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
         context ??= AdminContext.System(cancellationToken);
 
         LogAuditEvent("DeployServiceStarted", configuration.Name, null, context.UserIdentity, AuditLevel.Detailed,
-            new { Configuration = configuration });
+            new { Configuration = CreateAuditSafeConfiguration(configuration) });
 
         var result = await _serviceClient.DeployServiceAsync(configuration, context, cancellationToken);
 
@@ -336,7 +326,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
         Stream dataStream,
         BulkImportOptions options,
         AdminContext? context = null,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         context ??= AdminContext.System(cancellationToken);
 
@@ -460,7 +450,64 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
             return;
 
         _logger.LogInformation("Admin operation: {EventType} by {UserId} on service {ServiceId}/layer {LayerId} - {Data}",
-            eventType, userIdentity?.UserId ?? "system", serviceId, layerId, additionalData);
+            eventType, userIdentity?.UserId ?? "system", serviceId, layerId, SanitizeAuditData(additionalData));
+    }
+
+    private static object? SanitizeAuditData(object? additionalData)
+    {
+        return additionalData switch
+        {
+            null => null,
+            ServiceConfiguration configuration => CreateAuditSafeConfiguration(configuration),
+            _ => additionalData
+        };
+    }
+
+    private static object CreateAuditSafeConfiguration(ServiceConfiguration configuration)
+    {
+        return new
+        {
+            configuration.Name,
+            DataSource = "[REDACTED]",
+            Layers = configuration.Layers
+                .Select(layer => new
+                {
+                    layer.Name,
+                    layer.TableName,
+                    layer.GeometryColumn,
+                    layer.SpatialReference,
+                    Settings = SanitizeSettings(layer.Settings)
+                })
+                .ToArray(),
+            Settings = SanitizeSettings(configuration.Settings)
+        };
+    }
+
+    private static Dictionary<string, object?> SanitizeSettings(IReadOnlyDictionary<string, object> settings)
+    {
+        return settings.ToDictionary(
+            kvp => kvp.Key,
+            kvp => IsSensitiveKey(kvp.Key) ? "[REDACTED]" : SanitizeSettingValue(kvp.Value));
+    }
+
+    private static object? SanitizeSettingValue(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            IDictionary<string, object> dictionary => SanitizeSettings(dictionary.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)),
+            IEnumerable<object> values when value is not string => values.Select(SanitizeSettingValue).ToArray(),
+            _ => value
+        };
+    }
+
+    private static bool IsSensitiveKey(string key)
+    {
+        return key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("datasource", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -479,6 +526,7 @@ public class HonuaAdminClient : IFeatureServiceClient<AdminContext>, IDisposable
             _bulkClient?.Dispose();
             _monitoringClient?.Dispose();
             _disposed = true;
+            GC.SuppressFinalize(this);
         }
     }
 

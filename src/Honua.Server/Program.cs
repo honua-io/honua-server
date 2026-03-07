@@ -227,7 +227,7 @@ builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 // Configure temporary file service for image exports
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions.SectionName));
-builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
     Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
 builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.TemporaryFileCleanupService>();
 

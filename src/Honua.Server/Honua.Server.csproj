@@ -29,8 +29,6 @@
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\Honua.Admin\Honua.Admin.csproj"
-                      Condition="'$(RuntimeIdentifier)' == '' Or '$(HonuaIncludeAdminUi)' == 'true'" />
   </ItemGroup>
 
 
@@ -84,8 +82,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="..\..\proto\honua\v1\feature_service.proto"
-              GrpcServices="Both" ProtoRoot="..\..\proto" />
+    <Protobuf Include="..\Honua.Core\Transport\Proto\geospatial\v1\feature_service.proto"
+              GrpcServices="Both"
+              ProtoRoot="..\Honua.Core\Transport\Proto" />
   </ItemGroup>
 
 </Project>

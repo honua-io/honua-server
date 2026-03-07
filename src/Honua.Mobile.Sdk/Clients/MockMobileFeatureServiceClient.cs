@@ -16,6 +16,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Models;
 using Honua.Core.Transport.Clients;
+using Honua.Core.Transport.Converters;
 using Honua.Core.Features.FeatureStore.Domain;
 using NetTopologySuite.Geometries;
 using DomainFeature = Honua.Core.Features.FeatureStore.Domain.Feature;
@@ -35,7 +36,7 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<Features.FeatureStore.Domain.QueryResult<DomainFeature>> QueryFeaturesAsync(
+    public async Task<QueryResult<DomainFeature>> QueryFeaturesAsync(
         string serviceId,
         int layerId,
         FeatureQuery query,
@@ -49,28 +50,29 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
         // Create mock features
         var geometryFactory = new GeometryFactory();
         var point = geometryFactory.CreatePoint(new Coordinate(-122.4194, 37.7749));
+        var pointWkb = GeometryConverter.ToWkb(point);
 
         var features = new[]
         {
             new DomainFeature
             {
-                ObjectId = 1,
-                Attributes = new Dictionary<string, object>
+                Id = 1,
+                Attributes = new Dictionary<string, object?>
                 {
                     ["Name"] = "Mock Feature 1",
                     ["Type"] = "Test"
-                },
-                Geometry = point
+                }.ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                Geometry = pointWkb
             },
             new DomainFeature
             {
-                ObjectId = 2,
-                Attributes = new Dictionary<string, object>
+                Id = 2,
+                Attributes = new Dictionary<string, object?>
                 {
                     ["Name"] = "Mock Feature 2",
                     ["Type"] = "Test"
-                },
-                Geometry = point
+                }.ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                Geometry = pointWkb
             }
         };
 
@@ -82,11 +84,7 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
             .Take(recordCount)
             .ToImmutableArray();
 
-        return new Features.FeatureStore.Domain.QueryResult<DomainFeature>
-        {
-            Features = resultFeatures,
-            ExceededTransferLimit = false
-        };
+        return QueryResult<DomainFeature>.Create(features.Length, resultFeatures);
     }
 
     public async IAsyncEnumerable<FeaturePage> QueryFeaturesStreamAsync(
@@ -101,6 +99,7 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
         // Simulate streaming pages
         var geometryFactory = new GeometryFactory();
         var point = geometryFactory.CreatePoint(new Coordinate(-122.4194, 37.7749));
+        var pointWkb = GeometryConverter.ToWkb(point);
 
         var pageSize = query.ResultRecordCount ?? 10;
         var totalFeatures = 25; // Mock total
@@ -115,13 +114,13 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
             var features = Enumerable.Range(start, count)
                 .Select(i => new DomainFeature
                 {
-                    ObjectId = i + 1,
-                    Attributes = new Dictionary<string, object>
+                    Id = i + 1,
+                    Attributes = new Dictionary<string, object?>
                     {
                         ["Name"] = $"Mock Stream Feature {i + 1}",
                         ["Type"] = "Stream"
-                    },
-                    Geometry = point
+                    }.ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                    Geometry = pointWkb
                 })
                 .ToImmutableArray();
 
@@ -145,22 +144,22 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
 
         await Task.Delay(200, cancellationToken); // Simulate network delay
 
-        var addResults = edits.Adds.Select((_, i) => new EditResultRecord
+        var addResults = edits.Adds.Select((_, i) => new OperationResult
         {
             ObjectId = 1000 + i,
-            IsSuccess = true
+            Success = true
         }).ToImmutableArray();
 
-        var updateResults = edits.Updates.Select(f => new EditResultRecord
+        var updateResults = edits.Updates.Select(f => new OperationResult
         {
-            ObjectId = f.ObjectId ?? 0,
-            IsSuccess = true
+            ObjectId = f.Id,
+            Success = true
         }).ToImmutableArray();
 
-        var deleteResults = edits.Deletes.Select(id => new EditResultRecord
+        var deleteResults = edits.Deletes.Select(id => new OperationResult
         {
             ObjectId = id,
-            IsSuccess = true
+            Success = true
         }).ToImmutableArray();
 
         return new EditResult
@@ -171,7 +170,7 @@ public class MockMobileFeatureServiceClient : IFeatureServiceClient<MobileContex
         };
     }
 
-    public Task<Features.FeatureStore.Domain.QueryResult<DomainFeature>> QueryFeaturesAsync(
+    public Task<QueryResult<DomainFeature>> QueryFeaturesAsync(
         string serviceId,
         int layerId,
         FeatureQuery query,

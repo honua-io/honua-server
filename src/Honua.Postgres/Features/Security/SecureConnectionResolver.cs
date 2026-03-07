@@ -220,9 +220,10 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
                 // Verify SSL requirements are met
-                if (connection.SslRequired && builder.SslMode == Npgsql.SslMode.Disable)
+                if (!DataConnection.IsSslModeCompatibleWithRequirement(connection.SslRequired, MapSslMode(builder.SslMode)))
                 {
-                    throw new InvalidOperationException($"Connection '{connection.Name}' requires SSL but resolved connection string disables SSL");
+                    throw new InvalidOperationException(
+                        $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
                 }
 
                 // Additional validation: ensure host/port match expected values
@@ -262,6 +263,18 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 ex);
         }
     }
+
+    private static Honua.Core.Features.Security.Domain.SslMode MapSslMode(Npgsql.SslMode sslMode)
+        => sslMode switch
+        {
+            Npgsql.SslMode.Disable => Honua.Core.Features.Security.Domain.SslMode.Disable,
+            Npgsql.SslMode.Allow => Honua.Core.Features.Security.Domain.SslMode.Allow,
+            Npgsql.SslMode.Prefer => Honua.Core.Features.Security.Domain.SslMode.Prefer,
+            Npgsql.SslMode.Require => Honua.Core.Features.Security.Domain.SslMode.Require,
+            Npgsql.SslMode.VerifyCA => Honua.Core.Features.Security.Domain.SslMode.VerifyCA,
+            Npgsql.SslMode.VerifyFull => Honua.Core.Features.Security.Domain.SslMode.VerifyFull,
+            _ => throw new InvalidOperationException($"Unsupported Npgsql SSL mode '{sslMode}'.")
+        };
 
     /// <summary>
     /// Tests an actual database connection to verify connectivity.

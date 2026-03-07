@@ -13,10 +13,12 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Collections.Immutable;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Transport.Converters;
 using DomainFeature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Mobile.Sdk.Storage;
@@ -158,11 +160,11 @@ public class CachedFeatureEntity
         {
             ServiceId = serviceId,
             LayerId = layerId,
-            ObjectId = feature.ObjectId ?? 0,
-            AttributesJson = feature.Attributes != null
-                ? System.Text.Json.JsonSerializer.Serialize(feature.Attributes)
+            ObjectId = feature.Id,
+            AttributesJson = System.Text.Json.JsonSerializer.Serialize(feature.Attributes),
+            GeometryWkt = feature.Geometry is { Length: > 0 }
+                ? GeometryConverter.FromWkb(feature.Geometry).AsText()
                 : null,
-            GeometryWkt = feature.Geometry?.ToText(), // Convert to WKT
             CachedAt = DateTime.UtcNow,
             LastAccessedAt = DateTime.UtcNow
         };
@@ -175,8 +177,10 @@ public class CachedFeatureEntity
     public DomainFeature ToDomainFeature()
     {
         var attributes = !string.IsNullOrEmpty(AttributesJson)
-            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(AttributesJson)
-            : null;
+            ? (System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(AttributesJson)
+                ?? new Dictionary<string, object?>())
+                .ToImmutableDictionary(kvp => kvp.Key, kvp => kvp.Value)
+            : ImmutableDictionary<string, object?>.Empty;
 
         Geometry? geometry = null;
         if (!string.IsNullOrEmpty(GeometryWkt))
@@ -193,11 +197,13 @@ public class CachedFeatureEntity
             }
         }
 
+        var geometryWkb = geometry is not null ? GeometryConverter.ToWkb(geometry) : null;
+
         return new DomainFeature
         {
-            ObjectId = ObjectId,
+            Id = ObjectId,
             Attributes = attributes,
-            Geometry = geometry
+            Geometry = geometryWkb
         };
     }
 

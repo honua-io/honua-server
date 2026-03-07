@@ -30,6 +30,14 @@ internal interface IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>
+    /// Builds a provider-native FlatGeobuf query.
+    /// </summary>
+    ParameterizedQuery BuildSelectFlatGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
     /// Builds a SELECT query for GML features
     /// </summary>
     ParameterizedQuery BuildSelectGmlQuery(

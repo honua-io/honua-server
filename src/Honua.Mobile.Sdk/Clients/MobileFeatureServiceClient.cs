@@ -57,7 +57,7 @@ public class MobileFeatureServiceClient : IFeatureServiceClient<MobileContext>
     /// <param name="context">Mobile context</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Query results with features</returns>
-    public async Task<Features.FeatureStore.Domain.QueryResult<DomainFeature>> QueryFeaturesAsync(
+    public async Task<QueryResult<DomainFeature>> QueryFeaturesAsync(
         string serviceId,
         int layerId,
         FeatureQuery query,
@@ -85,7 +85,7 @@ public class MobileFeatureServiceClient : IFeatureServiceClient<MobileContext>
                 serviceId, layerId, mobileOptimizedQuery, coreContext, token);
 
             _logger.LogDebug("Mobile query completed with {FeatureCount} features",
-                result.Features.Count);
+                result.Features.Length);
 
             return result;
         }
@@ -118,56 +118,44 @@ public class MobileFeatureServiceClient : IFeatureServiceClient<MobileContext>
 
         var token = combinedCts.Token;
 
-        try
+        _logger.LogDebug("Starting mobile streaming query for service {ServiceId}, layer {LayerId}",
+            serviceId, layerId);
+
+        // Apply mobile-specific query optimizations
+        var mobileOptimizedQuery = OptimizeQueryForMobile(query);
+
+        // Convert mobile context to core context
+        var coreContext = ConvertToCoreContext(context);
+
+        var pageCount = 0;
+        var totalFeatures = 0;
+
+        await foreach (var page in _coreClient.QueryFeaturesStreamAsync(
+            serviceId, layerId, mobileOptimizedQuery, coreContext, token))
         {
-            _logger.LogDebug("Starting mobile streaming query for service {ServiceId}, layer {LayerId}",
-                serviceId, layerId);
+            pageCount++;
+            totalFeatures += page.Features.Length;
 
-            // Apply mobile-specific query optimizations
-            var mobileOptimizedQuery = OptimizeQueryForMobile(query);
+            _logger.LogDebug("Received page {PageCount} with {FeatureCount} features",
+                pageCount, page.Features.Length);
 
-            // Convert mobile context to core context
-            var coreContext = ConvertToCoreContext(context);
+            context.ProgressReporter?.Report(SyncProgress.Step("Stream",
+                totalFeatures, totalFeatures + 100,
+                $"Streaming page {pageCount} ({page.Features.Length} features)"));
 
-            var pageCount = 0;
-            var totalFeatures = 0;
+            yield return page;
 
-            // Stream from core client with mobile-specific buffering
-            await foreach (var page in _coreClient.QueryFeaturesStreamAsync(
-                serviceId, layerId, mobileOptimizedQuery, coreContext, token))
+            if (pageCount % 3 == 0)
             {
-                pageCount++;
-                totalFeatures += page.Features.Length;
-
-                _logger.LogDebug("Received page {PageCount} with {FeatureCount} features",
-                    pageCount, page.Features.Length);
-
-                // Report progress if context supports it
-                context.ProgressReporter?.Report(SyncProgress.Step("Stream",
-                    totalFeatures, totalFeatures + 100, // Estimate total
-                    $"Streaming page {pageCount} ({page.Features.Length} features)"));
-
-                yield return page;
-
-                // Mobile-specific: Add small delays to prevent overwhelming the device
-                if (pageCount % 3 == 0) // Every 3 pages for mobile (more frequent than desktop)
-                {
-                    await Task.Delay(30, token); // Brief pause
-                }
-
-                if (page.IsLastPage)
-                {
-                    _logger.LogDebug("Mobile streaming completed - {TotalFeatures} features in {PageCount} pages",
-                        totalFeatures, pageCount);
-                    break;
-                }
+                await Task.Delay(30, token);
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Mobile streaming query failed for service {ServiceId}, layer {LayerId}",
-                serviceId, layerId);
-            throw;
+
+            if (page.IsLastPage)
+            {
+                _logger.LogDebug("Mobile streaming completed - {TotalFeatures} features in {PageCount} pages",
+                    totalFeatures, pageCount);
+                break;
+            }
         }
     }
 
@@ -271,7 +259,7 @@ public class MobileFeatureServiceClient : IFeatureServiceClient<MobileContext>
     /// <summary>
     /// Convenience method for querying features without context.
     /// </summary>
-    public Task<Features.FeatureStore.Domain.QueryResult<DomainFeature>> QueryFeaturesAsync(
+    public Task<QueryResult<DomainFeature>> QueryFeaturesAsync(
         string serviceId,
         int layerId,
         FeatureQuery query,

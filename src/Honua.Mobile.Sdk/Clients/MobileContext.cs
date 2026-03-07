@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-using Microsoft.Maui.Essentials;
-
 namespace Honua.Mobile.Sdk.Clients;
 
 /// <summary>
@@ -24,7 +22,7 @@ public class MobileContext
     /// <summary>
     /// Cancellation token for the operation.
     /// </summary>
-    public CancellationToken CancellationToken { get; init; } = default;
+    public CancellationToken CancellationToken { get; init; }
 
     /// <summary>
     /// Progress reporter for long-running operations.
@@ -144,6 +142,11 @@ public enum NetworkPolicy
     /// Use WiFi or cellular networks.
     /// </summary>
     WifiOrCellular = 2,
+
+    /// <summary>
+    /// Backward-compatible alias for prefer-WiFi behavior.
+    /// </summary>
+    WifiPreferred = PreferWifi,
 
     /// <summary>
     /// Use any available network connection.
@@ -284,7 +287,7 @@ public class SyncProgress
     /// <param name="error">Error that occurred</param>
     /// <param name="message">Error message</param>
     /// <returns>Progress object</returns>
-    public static SyncProgress Error(Exception error, string message)
+    public static SyncProgress Failed(Exception error, string message)
     {
         return new SyncProgress
         {
@@ -294,4 +297,3 @@ public class SyncProgress
         };
     }
 }
-

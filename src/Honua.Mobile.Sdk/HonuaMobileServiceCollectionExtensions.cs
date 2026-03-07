@@ -11,11 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+using Grpc.Net.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Net.Http.Headers;
 // Note: Honua.Core.Sdk services would be added here when package is available
 using Honua.Core.Transport.Clients;
 using Honua.Mobile.Sdk.Clients;
@@ -56,40 +58,7 @@ public static class HonuaMobileServiceCollectionExtensions
     {
         // Configure options
         services.Configure(configureOptions);
-
-        // Note: Add Honua Core SDK services when package is available
-        // services.AddHonuaCore(...);
-
-        // Add Entity Framework context for offline storage
-        services.AddDbContext<OfflineDbContext>((provider, options) =>
-        {
-            var clientOptions = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>().Value;
-            var databasePath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                clientOptions.OfflineDatabase);
-
-            options.UseSqlite($"Data Source={databasePath}");
-
-            // Enable sensitive data logging in debug builds
-#if DEBUG
-            options.EnableSensitiveDataLogging();
-#endif
-        });
-
-        // Register mobile-specific services
-        services.TryAddSingleton<IConnectivityService, MauiConnectivityService>();
-        services.TryAddScoped<IOfflineStorageService, SqliteOfflineStorageService>();
-
-        // Note: Register mobile gRPC client adapter when core client is available
-        // services.TryAddScoped<IFeatureServiceClient<MobileContext>>(...);
-
-        // For now, register a mock implementation
-        services.TryAddScoped<IFeatureServiceClient<MobileContext>, MockMobileFeatureServiceClient>();
-
-        // Register the main mobile client
-        services.TryAddScoped<HonuaMobileClient>();
-
-        return services;
+        return services.AddHonuaMobileServices(configureDbContext: null);
     }
 
     /// <summary>
@@ -106,53 +75,7 @@ public static class HonuaMobileServiceCollectionExtensions
     {
         // Configure options
         services.Configure(configureOptions);
-
-        // Add Honua Core SDK services
-        services.AddHonuaCore(provider =>
-        {
-            var options = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>().Value;
-            return new HonuaCoreOptions
-            {
-                ServerAddress = options.ServerAddress,
-                ApiKey = options.ApiKey,
-                RequestTimeout = options.RequestTimeout
-            };
-        });
-
-        // Add Entity Framework context with custom configuration
-        if (configureDbContext != null)
-        {
-            services.AddDbContext<OfflineDbContext>(configureDbContext);
-        }
-        else
-        {
-            services.AddDbContext<OfflineDbContext>((provider, options) =>
-            {
-                var clientOptions = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>().Value;
-                var databasePath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    clientOptions.OfflineDatabase);
-
-                options.UseSqlite($"Data Source={databasePath}");
-            });
-        }
-
-        // Register services
-        services.TryAddSingleton<IConnectivityService, MauiConnectivityService>();
-        services.TryAddScoped<IOfflineStorageService, SqliteOfflineStorageService>();
-
-        services.TryAddScoped<IFeatureServiceClient<MobileContext>>(provider =>
-        {
-            var coreClient = provider.GetRequiredService<IFeatureServiceClient>();
-            var options = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>();
-            var logger = provider.GetRequiredService<ILogger<MobileFeatureServiceClient>>();
-
-            return new MobileFeatureServiceClient(coreClient, options, logger);
-        });
-
-        services.TryAddScoped<HonuaMobileClient>();
-
-        return services;
+        return services.AddHonuaMobileServices(configureDbContext);
     }
 
     /// <summary>
@@ -218,6 +141,129 @@ public static class HonuaMobileServiceCollectionExtensions
         var storageService = scope.ServiceProvider.GetRequiredService<IOfflineStorageService>();
 
         return await storageService.GetStorageStatisticsAsync(cancellationToken);
+    }
+
+    private static IServiceCollection AddHonuaMobileServices(
+        this IServiceCollection services,
+        Action<DbContextOptionsBuilder>? configureDbContext)
+    {
+        if (configureDbContext != null)
+        {
+            services.AddDbContext<OfflineDbContext>(configureDbContext);
+        }
+        else
+        {
+            services.AddDbContext<OfflineDbContext>((provider, options) =>
+            {
+                var clientOptions = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>().Value;
+                var databasePath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    clientOptions.OfflineDatabase);
+
+                options.UseSqlite($"Data Source={databasePath}");
+
+#if DEBUG
+                options.EnableSensitiveDataLogging();
+#endif
+            });
+        }
+
+        services.TryAddSingleton<IConnectivityService, MauiConnectivityService>();
+        services.TryAddScoped<IOfflineStorageService, SqliteOfflineStorageService>();
+        services.TryAddScoped<IFeatureServiceClient<object>>(CreateCoreGrpcClient);
+        services.TryAddScoped<IFeatureServiceClient<MobileContext>>(provider =>
+        {
+            var coreClient = provider.GetRequiredService<IFeatureServiceClient<object>>();
+            var options = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>();
+            var logger = provider.GetRequiredService<ILogger<MobileFeatureServiceClient>>();
+            return new MobileFeatureServiceClient(coreClient, options, logger);
+        });
+        services.TryAddScoped<HonuaMobileClient>();
+
+        return services;
+    }
+
+    private static IFeatureServiceClient<object> CreateCoreGrpcClient(IServiceProvider provider)
+    {
+        var options = provider.GetRequiredService<IOptions<HonuaMobileClientOptions>>().Value;
+        var logger = provider.GetService<ILogger<GrpcFeatureServiceClient<object>>>();
+        var grpcOptions = new GrpcClientOptions
+        {
+            RequestTimeout = options.RequestTimeout,
+            StreamTimeout = options.StreamingTimeout
+        };
+
+        return new GrpcFeatureServiceClient<object>(
+            context => CreateGrpcFeatureServiceClient(options, context),
+            grpcOptions,
+            logger);
+    }
+
+    private static Geospatial.V1.FeatureService.FeatureServiceClient CreateGrpcFeatureServiceClient(
+        HonuaMobileClientOptions options,
+        object context)
+    {
+        if (!Uri.TryCreate(options.ServerAddress, UriKind.Absolute, out var serverAddress))
+        {
+            throw new InvalidOperationException("Honua mobile client requires an absolute ServerAddress.");
+        }
+
+        var httpClient = CreateHttpClient(serverAddress, options, context as IReadOnlyDictionary<string, object>);
+        var channel = GrpcChannel.ForAddress(serverAddress, new GrpcChannelOptions { HttpClient = httpClient });
+        return new Geospatial.V1.FeatureService.FeatureServiceClient(channel);
+    }
+
+    private static HttpClient CreateHttpClient(
+        Uri serverAddress,
+        HonuaMobileClientOptions options,
+        IReadOnlyDictionary<string, object>? context)
+    {
+        var httpClient = new HttpClient(new HttpClientHandler())
+        {
+            BaseAddress = serverAddress,
+            Timeout = ResolveTimeout(options, context)
+        };
+
+        if (!string.IsNullOrWhiteSpace(options.ApiKey))
+        {
+            httpClient.DefaultRequestHeaders.Add("X-API-Key", options.ApiKey);
+        }
+        else if (!string.IsNullOrWhiteSpace(options.BearerToken))
+        {
+            httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", options.BearerToken);
+        }
+
+        foreach (var header in options.CustomHeaders)
+        {
+            httpClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        if (context != null &&
+            context.TryGetValue("headers", out var headersValue) &&
+            headersValue is IReadOnlyDictionary<string, string> headers)
+        {
+            foreach (var header in headers)
+            {
+                httpClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        return httpClient;
+    }
+
+    private static TimeSpan ResolveTimeout(
+        HonuaMobileClientOptions options,
+        IReadOnlyDictionary<string, object>? context)
+    {
+        if (context != null &&
+            context.TryGetValue("timeout", out var timeoutValue) &&
+            timeoutValue is TimeSpan timeout)
+        {
+            return timeout;
+        }
+
+        return options.RequestTimeout;
     }
 }
 

@@ -160,6 +160,45 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    public async Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var objectIds = new List<long>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                objectIds.Add(reader.GetInt64(0));
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_objectids", stopwatch.ElapsedMilliseconds, objectIds.Count);
+            RecordPerformanceQuery("select_objectids", layerId, stopwatch.ElapsedMilliseconds, objectIds.Count);
+            LogSlowQuery("select_objectids", stopwatch.ElapsedMilliseconds, layerId, objectIds.Count);
+
+            return objectIds.ToImmutableArray();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_objectids_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
     public async Task<Feature?> GetFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
     {
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

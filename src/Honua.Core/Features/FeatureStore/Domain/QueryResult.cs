@@ -13,19 +13,45 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 public readonly record struct QueryResult<T>
 {
     /// <summary>
+    /// Initializes a query result with empty items to keep default struct instances safe.
+    /// </summary>
+    public QueryResult()
+    {
+        Items = ImmutableArray<T>.Empty;
+    }
+
+    /// <summary>
     /// Total number of records available (before pagination)
     /// </summary>
-    public required long TotalCount { get; init; }
+    public long TotalCount { get; init; }
 
     /// <summary>
     /// Features in the current page
     /// </summary>
-    public required ImmutableArray<T> Items { get; init; }
+    public ImmutableArray<T> Items { get; init; } = ImmutableArray<T>.Empty;
 
     /// <summary>
     /// Whether there are more results beyond the current page
     /// </summary>
     public bool HasMoreResults { get; init; }
+
+    /// <summary>
+    /// Backward-compatible alias for feature-oriented callers.
+    /// </summary>
+    public ImmutableArray<T> Features
+    {
+        readonly get => Items;
+        init => Items = value;
+    }
+
+    /// <summary>
+    /// Backward-compatible alias for older pagination semantics.
+    /// </summary>
+    public bool ExceededTransferLimit
+    {
+        readonly get => HasMoreResults;
+        init => HasMoreResults = value;
+    }
 
     /// <summary>
     /// Creates a query result

@@ -12,7 +12,6 @@ COPY Honua.sln Directory.Build.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
-COPY src/Honua.Admin/*.csproj src/Honua.Admin/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
 
 ARG TARGETARCH

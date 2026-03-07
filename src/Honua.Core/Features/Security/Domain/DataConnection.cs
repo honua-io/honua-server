@@ -155,10 +155,23 @@ public sealed class DataConnection
         }
 
         // Validate SSL mode is compatible with SSL requirement
-        if (SslRequired && SslMode == SslMode.Disable)
+        if (!IsSslModeCompatibleWithRequirement(SslRequired, SslMode))
         {
-            throw new InvalidOperationException("SSL cannot be disabled when SslRequired is true");
+            throw new InvalidOperationException("SSL mode must require encrypted transport when SslRequired is true");
         }
+    }
+
+    /// <summary>
+    /// Determines whether the configured SSL mode enforces encrypted transport when required.
+    /// </summary>
+    public static bool IsSslModeCompatibleWithRequirement(bool sslRequired, SslMode sslMode)
+    {
+        if (!sslRequired)
+        {
+            return true;
+        }
+
+        return sslMode is SslMode.Require or SslMode.VerifyCA or SslMode.VerifyFull;
     }
 
     /// <summary>

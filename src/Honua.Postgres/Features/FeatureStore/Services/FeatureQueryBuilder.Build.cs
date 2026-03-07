@@ -147,6 +147,58 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    public CoreParameterizedQuery BuildSelectFlatGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query);
+
+            sql.Append("SELECT ST_AsFlatGeobuf(q, true, 'geometry') FROM (SELECT ");
+            sql.Append(DatabaseSchema.ObjectIdColumn);
+            sql.Append(", ");
+            sql.Append(geometrySelect);
+            sql.Append(" AS geometry, ");
+
+            if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+            {
+                for (var i = 0; i < query.OutFields.Value.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        sql.Append(", ");
+                    }
+
+                    sql.Append(CultureInfo.InvariantCulture, $"attributes->> ${paramIndex++} AS \"{query.OutFields.Value[i]}\"");
+                    parameters.Add(query.OutFields.Value[i]);
+                }
+            }
+            else
+            {
+                sql.Append("attributes::text AS attributes");
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendPagination(sql, false, query, null, ref paramIndex);
+            sql.Append(") q");
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildOptimizedSelectQuery(
         int layerId,
         FeatureQuery query,

@@ -15,7 +15,6 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Maui.Essentials;
 using Honua.Core.Models;
 using Honua.Core.Transport.Clients;
 using Honua.Core.Transport.Converters;
@@ -77,7 +76,7 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
         MobileContext context,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -87,9 +86,10 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
         try
         {
             context.ProgressReporter?.Report(SyncProgress.Step("Query", 0, 1, "Starting query..."));
+            var offlineQuerySupported = !FeatureQueryOfflineSupport.TryGetUnsupportedReason(query, out var unsupportedOfflineReason);
 
             // Try offline first if allowed
-            if (context.AllowOffline)
+            if (context.AllowOffline && offlineQuerySupported)
             {
                 _logger.LogDebug("Attempting offline query for service {ServiceId}, layer {LayerId}",
                     serviceId, layerId);
@@ -100,16 +100,29 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
                 if (offlineResult.Features.Any())
                 {
                     context.ProgressReporter?.Report(SyncProgress.Completed("Query completed from offline cache"));
-                    _logger.LogDebug("Offline query returned {FeatureCount} features", offlineResult.Features.Count);
+                    _logger.LogDebug("Offline query returned {FeatureCount} features", offlineResult.Features.Length);
                     return offlineResult;
                 }
 
                 _logger.LogDebug("No offline data available, attempting network query");
             }
+            else if (context.AllowOffline && unsupportedOfflineReason is not null)
+            {
+                _logger.LogInformation(
+                    "Skipping offline query for service {ServiceId}, layer {LayerId}: {Reason}",
+                    serviceId,
+                    layerId,
+                    unsupportedOfflineReason);
+            }
 
             // Check network policy and connectivity
             if (context.NetworkPolicy == NetworkPolicy.Offline)
             {
+                if (!offlineQuerySupported)
+                {
+                    throw new NotSupportedException(unsupportedOfflineReason);
+                }
+
                 context.ProgressReporter?.Report(SyncProgress.Completed("Query completed (offline only)"));
                 return new QueryResult<DomainFeature>
                 {
@@ -119,12 +132,17 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
 
             if (!await _connectivity.IsConnectionAvailableAsync(context.NetworkPolicy))
             {
-                context.ProgressReporter?.Report(SyncProgress.Error(
+                context.ProgressReporter?.Report(SyncProgress.Failed(
                     new InvalidOperationException("No network connection available"),
                     "Query failed - no network connection"));
 
                 if (context.AllowOffline)
                 {
+                    if (!offlineQuerySupported)
+                    {
+                        throw new NotSupportedException(unsupportedOfflineReason);
+                    }
+
                     _logger.LogWarning("Network unavailable, returning empty offline result");
                     return new QueryResult<DomainFeature>
                     {
@@ -141,7 +159,7 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
                 _logger.LogWarning("Battery level too low for network operation with policy {Policy}",
                     context.BatteryPolicy);
 
-                context.ProgressReporter?.Report(SyncProgress.Error(
+                context.ProgressReporter?.Report(SyncProgress.Failed(
                     new InvalidOperationException("Battery level too low"),
                     "Query deferred due to low battery"));
 
@@ -161,16 +179,16 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
                     serviceId, layerId, networkResult.Features, token);
             }
 
-            context.ProgressReporter?.Report(SyncProgress.Completed($"Query completed with {networkResult.Features.Count} features"));
+            context.ProgressReporter?.Report(SyncProgress.Completed($"Query completed with {networkResult.Features.Length} features"));
 
             _logger.LogDebug("Network query completed with {FeatureCount} features",
-                networkResult.Features.Count);
+                networkResult.Features.Length);
 
             return networkResult;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            context.ProgressReporter?.Report(SyncProgress.Error(
+            context.ProgressReporter?.Report(SyncProgress.Failed(
                 new OperationCanceledException("Query was cancelled"),
                 "Query cancelled"));
             _logger.LogDebug("Query was cancelled");
@@ -178,7 +196,7 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
         }
         catch (Exception ex)
         {
-            context.ProgressReporter?.Report(SyncProgress.Error(ex, $"Query failed: {ex.Message}"));
+            context.ProgressReporter?.Report(SyncProgress.Failed(ex, $"Query failed: {ex.Message}"));
             _logger.LogError(ex, "Query failed for service {ServiceId}, layer {LayerId}",
                 serviceId, layerId);
             throw;
@@ -201,7 +219,7 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
         MobileContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -214,96 +232,93 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
             ResultRecordCount = Math.Min(query.ResultRecordCount ?? 500, _options.MobilePageSize)
         };
 
-        try
+        context.ProgressReporter?.Report(SyncProgress.Step("Stream", 0, 1, "Starting streaming query..."));
+
+        var pageCount = 0;
+        var totalFeatures = 0;
+        var offlineQuerySupported = !FeatureQueryOfflineSupport.TryGetUnsupportedReason(adjustedQuery, out var unsupportedOfflineReason);
+
+        if (context.AllowOffline && offlineQuerySupported)
         {
-            context.ProgressReporter?.Report(SyncProgress.Step("Stream", 0, 1, "Starting streaming query..."));
-
-            var pageCount = 0;
-            var totalFeatures = 0;
-
-            // Try offline stream first if available
-            if (context.AllowOffline)
+            var hasOfflineData = await _offlineStorage.HasCachedDataAsync(serviceId, layerId, token);
+            if (hasOfflineData)
             {
-                var hasOfflineData = await _offlineStorage.HasCachedDataAsync(serviceId, layerId, token);
-                if (hasOfflineData)
-                {
-                    await foreach (var offlinePage in _offlineStorage.QueryFeaturesStreamAsync(
-                        serviceId, layerId, adjustedQuery, token))
-                    {
-                        pageCount++;
-                        totalFeatures += offlinePage.Features.Length;
-
-                        context.ProgressReporter?.Report(SyncProgress.Step("Stream",
-                            totalFeatures, totalFeatures + 100, // Estimate total
-                            $"Page {pageCount} from offline cache ({offlinePage.Features.Length} features)"));
-
-                        yield return offlinePage;
-
-                        if (offlinePage.IsLastPage)
-                        {
-                            context.ProgressReporter?.Report(SyncProgress.Completed(
-                                $"Streaming completed from offline cache - {totalFeatures} features"));
-                            yield break;
-                        }
-                    }
-                }
-            }
-
-            // Network streaming if no offline data or if specifically requested
-            if (context.NetworkPolicy != NetworkPolicy.Offline &&
-                await _connectivity.IsConnectionAvailableAsync(context.NetworkPolicy) &&
-                await _connectivity.IsBatteryLevelSufficientAsync(context.BatteryPolicy))
-            {
-                pageCount = 0;
-                totalFeatures = 0;
-
-                await foreach (var networkPage in _networkClient.QueryFeaturesStreamAsync(
-                    serviceId, layerId, adjustedQuery, context, token))
+                await foreach (var offlinePage in _offlineStorage.QueryFeaturesStreamAsync(
+                    serviceId, layerId, adjustedQuery, token))
                 {
                     pageCount++;
-                    totalFeatures += networkPage.Features.Length;
-
-                    // Cache each page for offline use
-                    if (context.AllowOffline && networkPage.Features.Any())
-                    {
-                        await _offlineStorage.CacheFeaturesAsync(
-                            serviceId, layerId, networkPage.Features, token);
-                    }
+                    totalFeatures += offlinePage.Features.Length;
 
                     context.ProgressReporter?.Report(SyncProgress.Step("Stream",
-                        totalFeatures, totalFeatures + 100, // Estimate total
-                        $"Page {pageCount} from server ({networkPage.Features.Length} features)"));
+                        totalFeatures, totalFeatures + 100,
+                        $"Page {pageCount} from offline cache ({offlinePage.Features.Length} features)"));
 
-                    yield return networkPage;
+                    yield return offlinePage;
 
-                    if (networkPage.IsLastPage)
+                    if (offlinePage.IsLastPage)
                     {
                         context.ProgressReporter?.Report(SyncProgress.Completed(
-                            $"Streaming completed from server - {totalFeatures} features"));
-                        break;
-                    }
-
-                    // Mobile-specific: Add small delays to prevent overwhelming the device
-                    if (pageCount % 5 == 0)
-                    {
-                        await Task.Delay(50, token); // Brief pause every 5 pages
+                            $"Streaming completed from offline cache - {totalFeatures} features"));
+                        yield break;
                     }
                 }
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        else if (context.AllowOffline && unsupportedOfflineReason is not null)
         {
-            context.ProgressReporter?.Report(SyncProgress.Error(
-                new OperationCanceledException("Streaming was cancelled"),
-                "Stream cancelled"));
-            throw;
+            _logger.LogInformation(
+                "Skipping offline streaming query for service {ServiceId}, layer {LayerId}: {Reason}",
+                serviceId,
+                layerId,
+                unsupportedOfflineReason);
         }
-        catch (Exception ex)
+
+        if (context.NetworkPolicy == NetworkPolicy.Offline && !offlineQuerySupported)
         {
-            context.ProgressReporter?.Report(SyncProgress.Error(ex, $"Streaming failed: {ex.Message}"));
-            _logger.LogError(ex, "Streaming query failed for service {ServiceId}, layer {LayerId}",
-                serviceId, layerId);
-            throw;
+            throw new NotSupportedException(unsupportedOfflineReason);
+        }
+
+        if (context.NetworkPolicy != NetworkPolicy.Offline &&
+            await _connectivity.IsConnectionAvailableAsync(context.NetworkPolicy) &&
+            await _connectivity.IsBatteryLevelSufficientAsync(context.BatteryPolicy))
+        {
+            pageCount = 0;
+            totalFeatures = 0;
+
+            await foreach (var networkPage in _networkClient.QueryFeaturesStreamAsync(
+                serviceId, layerId, adjustedQuery, context, token))
+            {
+                pageCount++;
+                totalFeatures += networkPage.Features.Length;
+
+                if (context.AllowOffline && networkPage.Features.Any())
+                {
+                    await _offlineStorage.CacheFeaturesAsync(
+                        serviceId, layerId, networkPage.Features, token);
+                }
+
+                context.ProgressReporter?.Report(SyncProgress.Step("Stream",
+                    totalFeatures, totalFeatures + 100,
+                    $"Page {pageCount} from server ({networkPage.Features.Length} features)"));
+
+                yield return networkPage;
+
+                if (networkPage.IsLastPage)
+                {
+                    context.ProgressReporter?.Report(SyncProgress.Completed(
+                        $"Streaming completed from server - {totalFeatures} features"));
+                    break;
+                }
+
+                if (pageCount % 5 == 0)
+                {
+                    await Task.Delay(50, token);
+                }
+            }
+        }
+        else if (!offlineQuerySupported)
+        {
+            throw new NotSupportedException(unsupportedOfflineReason);
         }
     }
 
@@ -323,7 +338,7 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
         MobileContext context,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIfDisposed(_disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.CancellationToken, cancellationToken);
@@ -354,7 +369,7 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
                         serviceId, layerId, edits, context, token);
 
                     // Mark as synced if successful
-                    await _offlineStorage.MarkEditsSyncedAsync(offlineResult.AddResults.Select(r => r.ObjectId), token);
+                    await _offlineStorage.MarkEditsSyncedAsync(GetPendingEditIds(offlineResult), token);
 
                     context.ProgressReporter?.Report(SyncProgress.Completed(
                         $"Edits applied and synced - {totalOperations} operations"));
@@ -382,14 +397,14 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            context.ProgressReporter?.Report(SyncProgress.Error(
+            context.ProgressReporter?.Report(SyncProgress.Failed(
                 new OperationCanceledException("Edit operation was cancelled"),
                 "Edits cancelled"));
             throw;
         }
         catch (Exception ex)
         {
-            context.ProgressReporter?.Report(SyncProgress.Error(ex, $"Edit operation failed: {ex.Message}"));
+            context.ProgressReporter?.Report(SyncProgress.Failed(ex, $"Edit operation failed: {ex.Message}"));
             _logger.LogError(ex, "Edit operation failed for service {ServiceId}, layer {LayerId}",
                 serviceId, layerId);
             throw;
@@ -460,5 +475,13 @@ public class HonuaMobileClient : IFeatureServiceClient<MobileContext>, IDisposab
             }
             _disposed = true;
         }
+    }
+
+    private static IEnumerable<long> GetPendingEditIds(EditResult editResult)
+    {
+        return editResult.AddResults
+            .Concat(editResult.UpdateResults)
+            .Concat(editResult.DeleteResults)
+            .Select(result => result.ObjectId);
     }
 }

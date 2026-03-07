@@ -39,6 +39,11 @@ public class HonuaMobileClientOptions
     public string OfflineDatabase { get; set; } = "honua_offline.gpkg";
 
     /// <summary>
+    /// Backward-compatible switch for consumers that explicitly enable offline mode.
+    /// </summary>
+    public bool EnableOfflineMode { get; set; } = true;
+
+    /// <summary>
     /// Maximum number of features to store offline.
     /// </summary>
     public int OfflineMaxFeatures { get; set; } = 50000;
