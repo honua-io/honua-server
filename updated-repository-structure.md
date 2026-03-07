@@ -14,7 +14,7 @@
 
 ### **Protocol & Standards**
 **Repository**: `geospatial-grpc`
-**URL**: https://github.com/mikemcdougall/geospatial-grpc
+**URL**: https://github.com/honua-io/honua-server
 **License**: Apache 2.0
 **Purpose**: gRPC protocol definitions for geospatial services
 
@@ -33,7 +33,7 @@ geospatial-grpc/
 
 ### **Foundation Library**
 **Repository**: `honua-core`
-**URL**: https://github.com/mikemcdougall/honua-core
+**URL**: https://github.com/honua-io/honua-server
 **License**: Apache 2.0
 **NuGet**: `Honua.Core`
 **Purpose**: .NET foundation library for Honua applications
@@ -74,7 +74,7 @@ honua-core/
 ```yaml
 # Protocol definition registry (stays descriptive)
 name: buf.build/geospatial/standard
-repository: https://github.com/mikemcdougall/geospatial-grpc
+repository: https://github.com/honua-io/honua-server
 ```
 
 ### **Consumer Dependencies**
@@ -124,7 +124,7 @@ using Honua.Core.Converters;
 ### **Referencing geospatial-grpc Protocol**
 ```bash
 # Clone protocol definitions
-git clone https://github.com/mikemcdougall/geospatial-grpc.git
+git clone https://github.com/honua-io/honua-server.git
 
 # Generate code for any language
 buf generate

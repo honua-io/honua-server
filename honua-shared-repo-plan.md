@@ -3,7 +3,7 @@
 ## Repository Structure
 
 ```
-https://github.com/mikemcdougall/honua-core/
+https://github.com/honua-io/honua-server/
 ├── .github/workflows/
 │   ├── ci.yml                          # Build, test, lint
 │   ├── release.yml                     # Publish to NuGet
@@ -55,7 +55,7 @@ https://github.com/mikemcdougall/honua-core/
 Package ID: `Honua.Shared`
 Targets: `net10.0`, `net10.0-android`, `net10.0-ios`, `net10.0-maccatalyst`
 License: ELv2
-Repository: https://github.com/mikemcdougall/honua-shared
+Repository: https://github.com/honua-io/honua-server
 
 ## Dependencies
 

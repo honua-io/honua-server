@@ -6,7 +6,7 @@ Phase 2 successfully created a comprehensive transport layer that connects the p
 ## Completed Deliverables
 
 ### 1. Protocol Buffer Integration ✅
-- **Clone geospatial-grpc repository**: Successfully cloned https://github.com/mikemcdougall/geospatial-grpc
+- **Clone geospatial-grpc repository**: Successfully cloned https://github.com/honua-io/honua-server
 - **Generate C# client libraries**: Configured MSBuild to generate C# code from .proto files using Grpc.Tools
 - **Protocol compilation**: Generated type-safe C# classes for all geospatial.v1 services:
   - `FeatureService` - Feature querying and editing operations

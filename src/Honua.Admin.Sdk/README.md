@@ -6,10 +6,10 @@
 **Administrative tooling for Honua geospatial platform in .NET applications.**
 
 Part of the Honua functionality-first architecture:
-- **[Runtime SDK](https://github.com/mikemcdougall/honua-core-sdk)**: Feature queries, spatial operations, mobile apps
+- **[Runtime SDK](https://github.com/honua-io/honua-server)**: Feature queries, spatial operations, mobile apps
 - **Admin Tools** (this package): Service management, bulk operations, user administration
 
-For multi-language admin tooling (JavaScript, Python, CLI), see [honua-admin-tools](https://github.com/mikemcdougall/honua-admin-tools).
+For multi-language admin tooling (JavaScript, Python, CLI), see [honua-admin-tools](https://github.com/honua-io/honua-server-admin).
 
 ## Features
 
@@ -114,7 +114,7 @@ using var exportStream = await client.ExportServiceDataAsync(serviceId, exportOp
 
 ## Architecture
 
-This .NET admin package is part of the larger [honua-admin-tools](https://github.com/mikemcdougall/honua-admin-tools) ecosystem:
+This .NET admin package is part of the larger [honua-admin-tools](https://github.com/honua-io/honua-server-admin) ecosystem:
 
 | Technology | Package | Purpose |
 |------------|---------|---------|
@@ -140,7 +140,7 @@ npm install -g @honua/cli
 
 ## Documentation
 
-See the [honua-admin-tools repository](https://github.com/mikemcdougall/honua-admin-tools) for complete multi-language documentation and examples.
+See the [honua-admin-tools repository](https://github.com/honua-io/honua-server-admin) for complete multi-language documentation and examples.
 
 ## License
 

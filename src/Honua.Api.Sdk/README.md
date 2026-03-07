@@ -7,7 +7,7 @@
 
 Part of the Honua functionality-first architecture:
 - **Runtime SDK** (this package): Feature queries, spatial operations, mobile apps
-- **[Admin Tools](https://github.com/mikemcdougall/honua-admin-tools)**: Service management, bulk operations, user administration
+- **[Admin Tools](https://github.com/honua-io/honua-server-admin)**: Service management, bulk operations, user administration
 
 ## Features
 
@@ -96,12 +96,12 @@ This SDK follows the **functionality-first architecture**:
 |----------|---------|
 | **Feature Queries** | Honua.Core.Sdk |
 | **Mobile Apps** | Honua.Core.Sdk |
-| **Service Management** | [honua-admin-tools](https://github.com/mikemcdougall/honua-admin-tools) |
-| **Bulk Operations** | [honua-admin-tools](https://github.com/mikemcdougall/honua-admin-tools) |
+| **Service Management** | [honua-admin-tools](https://github.com/honua-io/honua-server-admin) |
+| **Bulk Operations** | [honua-admin-tools](https://github.com/honua-io/honua-server-admin) |
 
 ## Documentation
 
-See the main [Honua Core SDK repository](https://github.com/mikemcdougall/honua-core-sdk) for complete documentation, examples, and API reference.
+See the main [Honua Core SDK repository](https://github.com/honua-io/honua-server) for complete documentation, examples, and API reference.
 
 ## License
 

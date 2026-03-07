@@ -8,18 +8,18 @@ This document outlines the comprehensive CI/CD pipeline setup across all Honua r
 
 | Repository | Build Status | Coverage | Security |
 |------------|-------------|----------|----------|
-| **honua-server** | ![CI](https://github.com/mikemcdougall/honua-server/workflows/CI/badge.svg) | [![codecov](https://codecov.io/gh/mikemcdougall/honua-server/branch/trunk/graph/badge.svg)](https://codecov.io/gh/mikemcdougall/honua-server) | ![Security](https://github.com/mikemcdougall/honua-server/workflows/Security%20Scan/badge.svg) |
-| **honua-core-sdk** | ![CI](https://github.com/mikemcdougall/honua-core-sdk/workflows/Honua%20Core%20SDK%20CI%2FCD/badge.svg) | [![codecov](https://codecov.io/gh/mikemcdougall/honua-core-sdk/branch/main/graph/badge.svg)](https://codecov.io/gh/mikemcdougall/honua-core-sdk) | ![Security](https://github.com/mikemcdougall/honua-core-sdk/workflows/Security%20Scan/badge.svg) |
-| **honua-admin-tools** | ![CI](https://github.com/mikemcdougall/honua-admin-tools/workflows/Honua%20Admin%20Tools%20Multi-Language%20CI%2FCD/badge.svg) | [![codecov](https://codecov.io/gh/mikemcdougall/honua-admin-tools/branch/main/graph/badge.svg)](https://codecov.io/gh/mikemcdougall/honua-admin-tools) | ![Security](https://github.com/mikemcdougall/honua-admin-tools/workflows/Security%20Scan/badge.svg) |
-| **geospatial-grpc** | ![CI](https://github.com/mikemcdougall/geospatial-grpc/workflows/Geospatial%20gRPC%20Protocol%20CI%2FCD/badge.svg) | ![Buf Validate](https://github.com/mikemcdougall/geospatial-grpc/workflows/Buf%20Validation%20%26%20Linting/badge.svg) | ![Security](https://github.com/mikemcdougall/geospatial-grpc/workflows/Security%20Scan/badge.svg) |
+| **honua-server** | ![CI](https://github.com/honua-io/honua-server/workflows/CI/badge.svg) | [![codecov](https://codecov.io/gh/honua-io/honua-server/branch/trunk/graph/badge.svg)](https://codecov.io/gh/honua-io/honua-server) | ![Security](https://github.com/honua-io/honua-server/workflows/Security%20Scan/badge.svg) |
+| **honua-core-sdk** *(in honua-server)* | ![CI](https://github.com/honua-io/honua-server/workflows/CI/badge.svg) | [![codecov](https://codecov.io/gh/honua-io/honua-server/branch/trunk/graph/badge.svg)](https://codecov.io/gh/honua-io/honua-server) | ![Security](https://github.com/honua-io/honua-server/workflows/Security%20Scan/badge.svg) |
+| **honua-admin-tools** | ![CI](https://github.com/honua-io/honua-server-admin/workflows/CI/badge.svg) | [![codecov](https://codecov.io/gh/honua-io/honua-server-admin/branch/main/graph/badge.svg)](https://codecov.io/gh/honua-io/honua-server-admin) | ![Security](https://github.com/honua-io/honua-server-admin/workflows/Security%20Scan/badge.svg) |
+| **geospatial-grpc** *(in honua-server)* | ![CI](https://github.com/honua-io/honua-server/workflows/CI/badge.svg) | ![CI](https://github.com/honua-io/honua-server/workflows/CI/badge.svg) | ![Security](https://github.com/honua-io/honua-server/workflows/Security%20Scan/badge.svg) |
 
 ### Infrastructure
 
 | Component | Status | Last Deployment |
 |-----------|--------|----------------|
-| **Terraform (AWS)** | ![Terraform](https://github.com/mikemcdougall/honua-server/workflows/Terraform%20CI%2FCD/badge.svg) | ![Last Deploy](https://img.shields.io/badge/Last%20Deploy-Production-green) |
-| **Terraform (Azure)** | ![Terraform](https://github.com/mikemcdougall/honua-server/workflows/Terraform%20CI%2FCD/badge.svg) | ![Last Deploy](https://img.shields.io/badge/Last%20Deploy-Production-green) |
-| **Docker Images** | ![Docker](https://github.com/mikemcdougall/honua-server/workflows/Docker%20Build/badge.svg) | ![Version](https://img.shields.io/badge/Version-latest-blue) |
+| **Terraform (AWS)** | ![Terraform](https://github.com/honua-io/honua-server/workflows/Terraform%20CI%2FCD/badge.svg) | ![Last Deploy](https://img.shields.io/badge/Last%20Deploy-Production-green) |
+| **Terraform (Azure)** | ![Terraform](https://github.com/honua-io/honua-server/workflows/Terraform%20CI%2FCD/badge.svg) | ![Last Deploy](https://img.shields.io/badge/Last%20Deploy-Production-green) |
+| **Docker Images** | ![Docker](https://github.com/honua-io/honua-server/workflows/Docker%20Build/badge.svg) | ![Version](https://img.shields.io/badge/Version-latest-blue) |
 
 ## Pipeline Architecture
 

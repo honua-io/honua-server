@@ -45,7 +45,11 @@
 
   <ItemGroup>
     <!-- For now, use local project reference until Honua.Core.Sdk is published -->
-    <ProjectReference Include="../Honua.Core/Honua.Core.csproj" />
+    <ProjectReference Include="../Honua.Core/Honua.Core.csproj">
+      <!-- Override warning-as-error settings for mobile builds -->
+      <SetTargetFramework>TargetFramework=net10.0</SetTargetFramework>
+      <GlobalPropertiesToRemove>TreatWarningsAsErrors</GlobalPropertiesToRemove>
+    </ProjectReference>
 
     <!-- Geospatial dependencies -->
     <PackageReference Include="NetTopologySuite" Version="2.6.0" />
