@@ -60,19 +60,31 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets basic health metrics.
     /// </summary>
-    private static IResult GetHealthMetrics(HttpContext context)
+    private static IResult GetHealthMetrics(HttpContext context, [FromServices] MigrationState migrationState)
     {
         try
         {
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
+            var migration = new MigrationHealthMetrics
+            {
+                Status = GetMigrationStatusLabel(migrationState.Status),
+                IsReady = migrationState.IsReady,
+                IsFailed = migrationState.IsFailed,
+                Message = GetMigrationStatusMessage(migrationState)
+            };
 
             var healthMetrics = new HealthMetrics
             {
-                Status = "healthy",
+                Status = migrationState.IsFailed
+                    ? "unhealthy"
+                    : migrationState.IsReady
+                        ? "healthy"
+                        : "initializing",
                 Timestamp = DateTimeOffset.UtcNow,
                 MemoryUsageMB = memoryUsage.AllocatedBytes / (1024.0 * 1024.0),
                 MemoryPressurePercent = memoryUsage.MemoryPressurePercentage,
-                GCCollections = memoryUsage.TotalGCCollections
+                GCCollections = memoryUsage.TotalGCCollections,
+                Migration = migration
             };
 
             return Results.Ok(healthMetrics);
@@ -84,6 +96,32 @@ public static class MetricsEndpoints
                 context,
                 "Failed to retrieve health metrics. See server logs for details.");
         }
+    }
+
+    private static string GetMigrationStatusLabel(MigrationLifecycleStatus status) =>
+        status switch
+        {
+            MigrationLifecycleStatus.Running => "running",
+            MigrationLifecycleStatus.Succeeded => "succeeded",
+            MigrationLifecycleStatus.Skipped => "skipped",
+            MigrationLifecycleStatus.Failed => "failed",
+            _ => "unknown"
+        };
+
+    private static string? GetMigrationStatusMessage(MigrationState migrationState)
+    {
+        if (!string.IsNullOrWhiteSpace(migrationState.StatusMessage))
+        {
+            return migrationState.StatusMessage;
+        }
+
+        return migrationState.Status switch
+        {
+            MigrationLifecycleStatus.Running => "Database migrations in progress.",
+            MigrationLifecycleStatus.Failed => "Database migrations failed.",
+            MigrationLifecycleStatus.Unknown => "Database migrations not completed.",
+            _ => null
+        };
     }
 
     /// <summary>

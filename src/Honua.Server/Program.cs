@@ -210,7 +210,9 @@ builder.Services.Configure<FileUploadSecurityOptions>(
 RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
-builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.MigrationState>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
+builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDeployPreflightProbe,
+    Honua.Server.Features.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 
@@ -582,6 +584,7 @@ app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();
+app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
@@ -755,12 +758,12 @@ static void ConfigureLimits(IServiceCollection services, IConfiguration configur
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
 {
-    var migrationState = app.Services.GetRequiredService<Honua.Server.Features.HealthCheck.MigrationState>();
+    var migrationState = app.Services.GetRequiredService<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
 
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
-        migrationState.MarkSkipped();
+        migrationState.MarkSkipped("Migrations skipped by configuration.");
         return;
     }
 
@@ -775,11 +778,12 @@ async Task RunDatabaseMigrationsAsync()
             Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringMissingInProduction(app.Logger);
         }
 
-        migrationState.MarkSkipped();
+        migrationState.MarkSkipped("No database connection string configured.");
         return;
     }
 
     Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
+    migrationState.MarkRunning("Applying database migrations.");
 
     try
     {
@@ -815,13 +819,14 @@ async Task RunDatabaseMigrationsAsync()
             {
                 Honua.Server.Features.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script);
             }
+
+            migrationState.MarkSucceeded($"Applied {scriptCount} migration script(s).");
         }
         else
         {
             Honua.Server.Features.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
+            migrationState.MarkSucceeded("No pending migration scripts.");
         }
-
-        migrationState.MarkSucceeded();
     }
     catch (Exception ex)
     {

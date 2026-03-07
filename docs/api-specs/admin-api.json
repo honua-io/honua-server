@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints (connections, layers, styles, and observability). For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints (connections, layers, styles, observability, and deploy control). For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -50,6 +50,10 @@
     {
       "name": "Observability",
       "description": "System monitoring and telemetry"
+    },
+    {
+      "name": "Deploy",
+      "description": "Deploy preflight and rollout-readiness surfaces"
     },
     {
       "name": "Services",
@@ -608,6 +612,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TelemetryStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/deploy/preflight": {
+      "get": {
+        "tags": [
+          "Deploy"
+        ],
+        "summary": "Get Deploy Preflight",
+        "description": "Returns instance-local deploy preflight state used by the Honua control plane for coordinated rollouts.",
+        "operationId": "getDeployPreflight",
+        "responses": {
+          "200": {
+            "description": "Deploy preflight status for this Honua instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployPreflightResponse"
                 }
               }
             }
@@ -1961,6 +1993,131 @@
           "otlpEndpoint": {
             "type": "string",
             "description": "Configured OTLP endpoint URL"
+          }
+        }
+      },
+      "DeployPreflightResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "readyForCoordinatedDeploy",
+          "message",
+          "serverVersion",
+          "environment",
+          "deploymentMode",
+          "instanceName",
+          "generatedAt",
+          "readiness",
+          "migration"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Top-level coordinated deployment status for this instance"
+          },
+          "readyForCoordinatedDeploy": {
+            "type": "boolean",
+            "description": "Whether the instance is ready to participate in a coordinated rollout"
+          },
+          "message": {
+            "type": "string",
+            "description": "Operator-facing summary for the current preflight result"
+          },
+          "serverVersion": {
+            "type": "string",
+            "description": "Current Honua server version"
+          },
+          "environment": {
+            "type": "string",
+            "description": "Current ASP.NET host environment"
+          },
+          "deploymentMode": {
+            "type": "string",
+            "description": "Configured Honua deployment mode"
+          },
+          "instanceName": {
+            "type": "string",
+            "description": "Machine or instance name serving the request"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the payload was generated"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/DeployPreflightReadiness"
+          },
+          "migration": {
+            "$ref": "#/components/schemas/DeployPreflightMigration"
+          }
+        }
+      },
+      "DeployPreflightReadiness": {
+        "type": "object",
+        "required": [
+          "isReady",
+          "statusCode",
+          "message"
+        ],
+        "properties": {
+          "isReady": {
+            "type": "boolean",
+            "description": "Whether the instance is currently ready to accept traffic"
+          },
+          "statusCode": {
+            "type": "integer",
+            "format": "int32",
+            "description": "HTTP status code that would be returned by the readiness endpoint"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable readiness message"
+          }
+        }
+      },
+      "DeployPreflightMigration": {
+        "type": "object",
+        "required": [
+          "lifecycleStatus",
+          "planAvailable",
+          "upgradeRequired",
+          "pendingScripts",
+          "executedButNotDiscoveredScripts"
+        ],
+        "properties": {
+          "lifecycleStatus": {
+            "type": "string",
+            "description": "Current migration lifecycle status observed by this instance"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional operator-facing migration lifecycle detail"
+          },
+          "planAvailable": {
+            "type": "boolean",
+            "description": "Whether migration planning completed successfully"
+          },
+          "upgradeRequired": {
+            "type": "boolean",
+            "description": "Whether pending migration scripts were detected"
+          },
+          "pendingScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Migration scripts that would execute if upgrades were applied now"
+          },
+          "executedButNotDiscoveredScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scripts previously executed against the database but no longer discovered by the current binary"
+          },
+          "planError": {
+            "type": "string",
+            "description": "Error detail when migration planning could not be completed"
           }
         }
       },

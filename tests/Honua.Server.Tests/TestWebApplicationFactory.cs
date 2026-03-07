@@ -3,16 +3,21 @@
 
 using System.Reflection;
 using System.Text;
+using System.Collections.Concurrent;
+using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Server.Features.FeatureServer;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Infrastructure;
@@ -20,6 +25,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests;
 
@@ -40,6 +46,10 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
             services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
             services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+            services.RemoveAll<IChangeTracker>();
+            services.RemoveAll<IReplicaStore>();
+            services.AddSingleton<IChangeTracker, InMemoryChangeTracker>();
+            services.AddSingleton<IReplicaStore, InMemoryReplicaStore>();
             services.AddScoped<ILayerCatalog>(_ => new TestLayerCatalog());
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();
             services.AddScoped<IConnectionEncryptionService, NullConnectionEncryptionService>();
@@ -48,6 +58,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton<IDatabaseMigrationRunner, NullDatabaseMigrationRunner>();
             services.AddSingleton<IMetadataResourceStore, InMemoryMetadataResourceStore>();
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
+            services.AddSingleton<ILeaderElectionStrategy, NoOpLeaderElectionStrategy>();
+            services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
             services.AddScoped<ISqlFilterTranslator, AllowAllSqlFilterTranslator>();
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -55,6 +67,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             var attachmentsPath = Path.Combine(Path.GetTempPath(), "honua-test-storage");
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Alerts:Enabled"] = "false",
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
                 ["HONUA_SKIP_MIGRATIONS"] = "true",
                 ["FileStorage:Provider"] = "Local",
@@ -136,6 +149,81 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         }
     }
 
+    private sealed class NoOpLeaderElectionStrategy : ILeaderElectionStrategy
+    {
+        public bool IsLeader => false;
+
+        public string InstanceId => "test";
+
+        public Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task ReleaseAsync(CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class NullAlertAdminStore : IAlertAdminStore
+    {
+        public Task<IReadOnlyList<AlertZoneDefinition>> ListZonesAsync(string? serviceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AlertZoneDefinition>>(Array.Empty<AlertZoneDefinition>());
+
+        public Task<AlertZoneDefinition?> GetZoneAsync(long zoneId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertZoneDefinition?>(null);
+
+        public Task<AlertZoneDefinition> CreateZoneAsync(AlertZoneDefinition zone, CancellationToken cancellationToken = default)
+            => Task.FromException<AlertZoneDefinition>(new NotSupportedException("Alerts are not available in this test fixture."));
+
+        public Task<AlertZoneDefinition?> UpdateZoneAsync(AlertZoneDefinition zone, CancellationToken cancellationToken = default)
+            => Task.FromException<AlertZoneDefinition?>(new NotSupportedException("Alerts are not available in this test fixture."));
+
+        public Task<bool> DeleteZoneAsync(long zoneId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<AlertRuleDefinition>> ListRulesAsync(string? serviceId, int? layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AlertRuleDefinition>>(Array.Empty<AlertRuleDefinition>());
+
+        public Task<AlertRuleDefinition> CreateRuleAsync(AlertRuleDefinition rule, CancellationToken cancellationToken = default)
+            => Task.FromException<AlertRuleDefinition>(new NotSupportedException("Alerts are not available in this test fixture."));
+
+        public Task<AlertRuleDefinition?> UpdateRuleAsync(AlertRuleDefinition rule, CancellationToken cancellationToken = default)
+            => Task.FromException<AlertRuleDefinition?>(new NotSupportedException("Alerts are not available in this test fixture."));
+
+        public Task<bool> DeleteRuleAsync(long ruleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+    }
+
+    private sealed class InMemoryChangeTracker : IChangeTracker
+    {
+        public Task<long> GetCurrentGenerationAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(1L);
+
+        public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+            long sinceGeneration,
+            int[] layerIds,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FeatureChange>>(Array.Empty<FeatureChange>());
+    }
+
+    private sealed class InMemoryReplicaStore : IReplicaStore
+    {
+        private readonly ConcurrentDictionary<string, ReplicaState> _replicas = new(StringComparer.OrdinalIgnoreCase);
+
+        public Task SetAsync(ReplicaState replica, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _replicas[replica.ReplicaId] = replica;
+            return Task.CompletedTask;
+        }
+
+        public Task<ReplicaState?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
+        {
+            _replicas.TryGetValue(replicaId, out var replica);
+            return Task.FromResult(replica);
+        }
+
+        public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_replicas.TryRemove(replicaId, out _));
+    }
+
     private sealed class AllowAllSqlFilterTranslator : ISqlFilterTranslator
     {
         public SqlFragment Translate(FilterExpression filter, Core.Features.Catalog.Domain.LayerDefinition layer)
@@ -182,6 +270,14 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     private sealed class NullDatabaseMigrationRunner : IDatabaseMigrationRunner
     {
+        public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
+            string connectionString,
+            Assembly migrationsAssembly,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(DatabaseMigrationPlan.Succeeded());
+        }
+
         public Task<DatabaseMigrationResult> RunMigrationsAsync(
             string connectionString,
             Assembly migrationsAssembly,

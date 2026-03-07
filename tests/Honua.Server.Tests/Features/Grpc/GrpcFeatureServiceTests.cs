@@ -12,8 +12,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Grpc;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,7 +21,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Grpc;
 

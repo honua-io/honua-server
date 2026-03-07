@@ -35,15 +35,6 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `trivy-nightly.yml` | Nightly Trivy scan |
 | `nightly-container-build.yml` | Nightly container build checks |
 
-## Split Repositories
-
-SDK and site automation now lives in split repositories:
-
-- `honua-sdk-js`
-- `honua-sdk-python`
-- `honua-sdk-dotnet`
-- `honua-site`
-
 ## Useful Commands
 
 ```bash

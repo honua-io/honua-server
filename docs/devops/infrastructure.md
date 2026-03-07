@@ -12,6 +12,15 @@ All deployment options require a PostGIS-enabled PostgreSQL database. Redis is o
 
 If you just want to try Honua locally, the root `docker-compose.yml` in the repo root is the fastest option — see the Quick Start in the main README.
 
+## Control plane and GitOps direction
+
+Honua is building its own control plane for deploy coordination and change management.
+
+- Honua is not integrating with Flux or Argo CD as its primary rollout controller.
+- Helm charts and Terraform modules remain deployment and infrastructure packaging surfaces.
+- Instance-local deploy readiness, migration state, and upgrade APIs live in `honua-server`.
+- Fleet rollout coordination is expected to live in the Honua control plane rather than in external GitOps products.
+
 ## Required configuration (all deployments)
 
 ```bash
@@ -98,6 +107,8 @@ AOT images start faster and use less memory. Keep JIT serverless tags as debug f
 
 Terraform modules, examples, and validation workflows have been moved out of `honua-server`.
 Use the dedicated `honua-terraform` repository for AWS/Azure infrastructure provisioning and Terraform CI.
+
+This separation is intentional: infrastructure provisioning can live outside `honua-server`, while Honua's own deploy orchestration and GitOps workflow remain part of the Honua control-plane direction.
 
 ## Related Docs
 

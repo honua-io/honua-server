@@ -9,21 +9,18 @@ namespace Honua.Server.Features.Alerts;
 
 internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 {
-    private readonly IAlertDispatchStore _dispatchStore;
-    private readonly IAlertEventStore _eventStore;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly Dictionary<AlertChannelType, IAlertDeliverySink> _sinks;
     private readonly AlertOptions _options;
     private readonly ILogger<AlertDispatchBackgroundService> _logger;
 
     public AlertDispatchBackgroundService(
-        IAlertDispatchStore dispatchStore,
-        IAlertEventStore eventStore,
+        IServiceScopeFactory scopeFactory,
         IEnumerable<IAlertDeliverySink> sinks,
         IOptions<AlertOptions> options,
         ILogger<AlertDispatchBackgroundService> logger)
     {
-        _dispatchStore = dispatchStore ?? throw new ArgumentNullException(nameof(dispatchStore));
-        _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _sinks = (sinks ?? throw new ArgumentNullException(nameof(sinks))).ToDictionary(static sink => sink.ChannelType);
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -42,7 +39,11 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             try
             {
                 var now = DateTimeOffset.UtcNow;
-                var batch = await _dispatchStore
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var dispatchStore = scope.ServiceProvider.GetRequiredService<IAlertDispatchStore>();
+                var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
+
+                var batch = await dispatchStore
                     .ClaimPendingAsync(_options.Dispatch.ClaimBatchSize, now, stoppingToken)
                     .ConfigureAwait(false);
 
@@ -54,7 +55,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
                 foreach (var item in batch)
                 {
-                    await ProcessItemAsync(item, stoppingToken).ConfigureAwait(false);
+                    await ProcessItemAsync(dispatchStore, eventStore, item, stoppingToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -69,22 +70,26 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         }
     }
 
-    private async Task ProcessItemAsync(AlertDispatchItem item, CancellationToken cancellationToken)
+    private async Task ProcessItemAsync(
+        IAlertDispatchStore dispatchStore,
+        IAlertEventStore eventStore,
+        AlertDispatchItem item,
+        CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
 
         if (!_sinks.TryGetValue(item.ChannelType, out var sink))
         {
-            await _dispatchStore
+            await dispatchStore
                 .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "No delivery sink registered.", cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
 
-        var alertEvent = await _eventStore.GetAsync(item.EventId, cancellationToken).ConfigureAwait(false);
+        var alertEvent = await eventStore.GetAsync(item.EventId, cancellationToken).ConfigureAwait(false);
         if (alertEvent is null)
         {
-            await _dispatchStore
+            await dispatchStore
                 .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "Alert event not found.", cancellationToken)
                 .ConfigureAwait(false);
             return;
@@ -93,7 +98,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         var result = await sink.DeliverAsync(item, alertEvent, cancellationToken).ConfigureAwait(false);
         if (result.Succeeded)
         {
-            await _dispatchStore.MarkDeliveredAsync(item.DispatchId, now, cancellationToken).ConfigureAwait(false);
+            await dispatchStore.MarkDeliveredAsync(item.DispatchId, now, cancellationToken).ConfigureAwait(false);
             LogDelivered(_logger, item.DispatchId, item.ChannelType);
             return;
         }
@@ -101,7 +106,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         var nextAttempt = ComputeNextAttempt(item.Attempts + 1, now);
         var exhausted = item.Attempts + 1 >= item.MaxAttempts || !result.Retryable;
 
-        await _dispatchStore
+        await dispatchStore
             .MarkFailedAsync(item.DispatchId, now, nextAttempt, exhausted, result.Error, cancellationToken)
             .ConfigureAwait(false);
 

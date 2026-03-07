@@ -22,6 +22,25 @@ Honua uses DbUp for migrations (`src/Honua.Postgres/Migrations/`).
 2. **Deploy the new application** after the schema is in place.
 3. **Remove old columns** in a later release, once no running instance depends on them.
 
+### Compatibility Review Marker
+
+Potentially breaking migrations must declare an explicit compatibility review in the SQL file so the rollout risk is visible in code review and CI.
+
+Add a comment near the top of the migration:
+
+```sql
+-- honua:compatibility-review reason=removes v1-only column after two release windows
+```
+
+Use the marker when a migration performs top-level changes such as:
+- `ALTER TABLE ... DROP COLUMN`
+- `ALTER TABLE ... RENAME COLUMN`
+- `ALTER TABLE ... ALTER COLUMN ... TYPE`
+- `ALTER TABLE ... ALTER COLUMN ... SET NOT NULL`
+- `DROP TABLE`, `DROP SCHEMA`, or `DROP SEQUENCE`
+
+The compatibility marker does not make a migration safe by itself. It signals that the change needs an explicit rollout plan, backward-compatibility review, and recovery path.
+
 ### Rollout Checklist
 
 1. Apply migrations in a rolling fashion.

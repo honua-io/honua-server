@@ -175,6 +175,9 @@ public static class HonuaTelemetry
     /// </summary>
     public static class Protocols
     {
+        /// <summary>gRPC API.</summary>
+        public const string Grpc = "Grpc";
+
         /// <summary>GeoServices FeatureServer REST API.</summary>
         public const string FeatureServer = "FeatureServer";
 

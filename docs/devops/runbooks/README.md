@@ -4,6 +4,12 @@ Stabilize first, diagnose second, document after. Prefer safe, reversible change
 
 ---
 
+## Release Runbooks
+
+- [Upgrade and Rollback](UPGRADE_AND_ROLLBACK.md) — production upgrade flow, recovery policy, and rollout checks
+
+---
+
 ## Honua Diagnostic Endpoints
 
 Use these during any incident:

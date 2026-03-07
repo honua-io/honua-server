@@ -55,6 +55,7 @@ public sealed class QueryParameters
     /// <summary>
     /// Indicates whether the request explicitly provided the <c>f</c> query parameter.
     /// </summary>
+    [JsonIgnore]
     public bool FormatSpecified { get; init; }
 
     /// <summary>

@@ -126,6 +126,10 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -137,7 +141,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendPagination(sql, false, query, null, ref paramIndex);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -157,7 +162,15 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             var paramIndex = 2;
             var parameters = new List<object>();
-            var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, query);
+            var geometrySelect = _geometryProcessor.GetGeometryOperand(
+                geometryStorageType,
+                layerSrid: query.SpatialReferenceSrid);
+
+            if (query.OutputSrid.HasValue &&
+                (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+            {
+                geometrySelect = $"ST_Transform({geometrySelect}, {query.OutputSrid.Value})";
+            }
 
             sql.Append("SELECT ST_AsFlatGeobuf(q, true, 'geometry') FROM (SELECT ");
             sql.Append(DatabaseSchema.ObjectIdColumn);

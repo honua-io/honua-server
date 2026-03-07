@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Logging;
 
 namespace Honua.Server.Features.HealthCheck;
@@ -41,6 +42,11 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             if (_migrationState.IsFailed)
             {
                 return ReadinessResult.NotReady("Database migrations failed");
+            }
+
+            if (_migrationState.IsRunning)
+            {
+                return ReadinessResult.NotReady("Database migrations in progress");
             }
 
             if (!_migrationState.IsReady)

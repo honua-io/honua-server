@@ -19,8 +19,10 @@ public sealed class VerticalSliceIsolationTests
     private static readonly string[] _featureNames =
     {
         "Admin",
+        "Alerts",
         "FeatureServer",
         "GeoservicesCatalog",
+        "Geocoding",
         "GeometryService",
         "ImageServer",
         "MapServer",
@@ -98,6 +100,13 @@ public sealed class VerticalSliceIsolationTests
                 featureDir.Equals("Grpc", StringComparison.OrdinalIgnoreCase))
             {
                 hasEndpointsOrHandler = Directory.GetFiles(featurePath, "*Service.cs").Length > 0;
+            }
+
+            if (!hasEndpointsOrHandler)
+            {
+                hasEndpointsOrHandler =
+                    Directory.GetFiles(featurePath, "*ServiceCollectionExtensions.cs").Length > 0 ||
+                    Directory.GetFiles(featurePath, "*BackgroundService.cs").Length > 0;
             }
 
             hasEndpointsOrHandler.Should().BeTrue(

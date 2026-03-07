@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -18,6 +19,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
+using Honua.Postgres.Features.Alerts;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
@@ -71,6 +73,15 @@ internal static class ServiceCollectionExtensions
 
         // Register raster store implementation
         services.AddPostgresRasterStore(configuration["Database:Schema"]);
+
+        // Register alert persistence services
+        services.AddScoped<IAlertChangeReader, PostgresAlertChangeReader>();
+        services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
+        services.AddScoped<IAlertStateStore, PostgresAlertStateStore>();
+        services.AddScoped<IAlertEventStore, PostgresAlertEventStore>();
+        services.AddScoped<IAlertDispatchStore, PostgresAlertDispatchStore>();
+        services.AddScoped<IAlertCheckpointStore, PostgresAlertCheckpointStore>();
+        services.AddScoped<IAlertAdminStore, PostgresAlertAdminStore>();
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();

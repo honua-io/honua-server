@@ -4,7 +4,7 @@
 -- Migration: 012_AddReplicationDurability.sql
 -- Description: Adds persistent replica state, trigger-based change tracking, and monotonic
 --              generation counters to support incremental sync for offline workflows.
--- Dependencies: Requires honua schema and public.features table from 001_CreateHonuaSchema.sql
+-- Dependencies: Requires honua schema and the current-schema features table from 001_CreateHonuaSchema.sql
 
 -- Monotonic generation counter shared across all change-tracking operations
 CREATE SEQUENCE IF NOT EXISTS honua.sync_generation AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;
@@ -82,10 +82,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Attach the trigger to the features table (fires after each row change)
-DROP TRIGGER IF EXISTS trigger_track_feature_changes ON public.features;
+-- Attach the trigger to the features table in the active schema (fires after each row change)
+DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;
 CREATE TRIGGER trigger_track_feature_changes
-    AFTER INSERT OR UPDATE OR DELETE ON public.features
+    AFTER INSERT OR UPDATE OR DELETE ON features
     FOR EACH ROW
     EXECUTE FUNCTION honua.track_feature_changes();
 

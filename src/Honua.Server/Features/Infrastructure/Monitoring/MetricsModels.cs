@@ -34,6 +34,37 @@ public sealed class HealthMetrics
     /// Total garbage collection count across all generations.
     /// </summary>
     public required int GCCollections { get; init; }
+
+    /// <summary>
+    /// Current database migration lifecycle state for rollout visibility.
+    /// </summary>
+    public required MigrationHealthMetrics Migration { get; init; }
+}
+
+/// <summary>
+/// Migration lifecycle information included in health metrics.
+/// </summary>
+public sealed class MigrationHealthMetrics
+{
+    /// <summary>
+    /// Current migration state name.
+    /// </summary>
+    public required string Status { get; init; }
+
+    /// <summary>
+    /// Whether the current migration state is ready for traffic.
+    /// </summary>
+    public required bool IsReady { get; init; }
+
+    /// <summary>
+    /// Whether the current migration state is failed.
+    /// </summary>
+    public required bool IsFailed { get; init; }
+
+    /// <summary>
+    /// Optional operator-facing detail about the current migration state.
+    /// </summary>
+    public string? Message { get; init; }
 }
 
 /// <summary>

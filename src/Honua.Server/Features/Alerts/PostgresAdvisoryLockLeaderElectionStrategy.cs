@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Alerts.Abstractions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -12,17 +11,17 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
 {
     private const long LockKey = 8_044_282_257_919_950_152;
 
-    private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresAdvisoryLockLeaderElectionStrategy> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private NpgsqlConnection? _lockConnection;
 
     public PostgresAdvisoryLockLeaderElectionStrategy(
-        IDatabaseConnectionProvider connectionProvider,
+        NpgsqlDataSource dataSource,
         ILogger<PostgresAdvisoryLockLeaderElectionStrategy> logger)
     {
-        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         InstanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
     }
@@ -41,7 +40,7 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
                 return true;
             }
 
-            var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@lock_key);", connection);
             command.Parameters.AddWithValue("lock_key", NpgsqlDbType.Bigint, LockKey);
 

@@ -9,21 +9,18 @@ namespace Honua.Server.Features.Alerts;
 
 internal sealed partial class AlertEvaluationBackgroundService : BackgroundService
 {
-    private readonly IAlertPipeline _pipeline;
-    private readonly IAlertCheckpointStore _checkpointStore;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILeaderElectionStrategy _leaderElection;
     private readonly AlertOptions _options;
     private readonly ILogger<AlertEvaluationBackgroundService> _logger;
 
     public AlertEvaluationBackgroundService(
-        IAlertPipeline pipeline,
-        IAlertCheckpointStore checkpointStore,
+        IServiceScopeFactory scopeFactory,
         ILeaderElectionStrategy leaderElection,
         IOptions<AlertOptions> options,
         ILogger<AlertEvaluationBackgroundService> logger)
     {
-        _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
-        _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _leaderElection = leaderElection ?? throw new ArgumentNullException(nameof(leaderElection));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -38,7 +35,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         }
 
         var workerName = _options.Evaluation.WorkerName;
-        var checkpoint = await _checkpointStore.GetAsync(workerName, stoppingToken).ConfigureAwait(false);
+        var checkpoint = await GetCheckpointAsync(workerName, stoppingToken).ConfigureAwait(false);
 
         LogStarting(_logger, workerName, checkpoint.LastGeneration);
 
@@ -53,7 +50,11 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     continue;
                 }
 
-                var nextGeneration = await _pipeline
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var pipeline = scope.ServiceProvider.GetRequiredService<IAlertPipeline>();
+                var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
+
+                var nextGeneration = await pipeline
                     .ProcessChangesAsync(checkpoint.LastGeneration, _options.Evaluation.ChangeBatchSize, stoppingToken)
                     .ConfigureAwait(false);
 
@@ -63,7 +64,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
                 if (shouldSweep)
                 {
-                    var evaluated = await _pipeline
+                    var evaluated = await pipeline
                         .SweepDwellAsync(now, _options.Evaluation.ChangeBatchSize, stoppingToken)
                         .ConfigureAwait(false);
                     LogDwellSweep(_logger, evaluated);
@@ -73,7 +74,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 if (nextGeneration != checkpoint.LastGeneration || shouldSweep)
                 {
                     checkpoint = checkpoint with { LastGeneration = nextGeneration };
-                    await _checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
+                    await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
                 }
 
                 if (nextGeneration == checkpoint.LastGeneration && !shouldSweep)
@@ -94,6 +95,13 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
         await _leaderElection.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
         LogStopped(_logger);
+    }
+
+    private async Task<AlertWorkerCheckpoint> GetCheckpointAsync(string workerName, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var checkpointStore = scope.ServiceProvider.GetRequiredService<IAlertCheckpointStore>();
+        return await checkpointStore.GetAsync(workerName, cancellationToken).ConfigureAwait(false);
     }
 
     [LoggerMessage(EventId = 9410, Level = LogLevel.Information, Message = "Alert evaluator is disabled.")]

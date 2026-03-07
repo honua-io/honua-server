@@ -11,7 +11,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.FeatureServer;
 
 [Collection("Database")]
-[Protocol(Protocols.FeatureServer)]
+[Protocol(Protocols.TestQuality)]
 public sealed class PostgresChangeTrackerTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();

@@ -44,7 +44,6 @@ This section is for people **building or extending** Honua (core contributors, a
 - [CI Monitoring](CI_MONITORING.md) — CI health and alert monitoring
 - [CI Workflows](ci-workflows.md) — GitHub Actions pipeline overview
 - [CI Quality Gates](CI_QUALITY_GATES.md) — automated quality enforcement
-- [Repo Split Documentation Strategy](REPO_SPLIT_DOCUMENTATION_STRATEGY.md) — canonical docs model and migration checklist
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [CodeCov Setup](CODECOV_SETUP.md) — code coverage monitoring
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review

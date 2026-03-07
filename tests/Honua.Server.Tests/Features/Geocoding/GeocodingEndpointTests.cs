@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using Honua.Server.Features.Geocoding;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,9 +13,14 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
+[Protocol(Protocols.Geocoding)]
 public sealed class GeocodingEndpointTests
 {
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    [Endpoint("GET /rest/services/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_ReturnsGeoServicesPayload()
     {
         using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
@@ -41,7 +48,10 @@ public sealed class GeocodingEndpointTests
         Assert.True(firstCandidate.TryGetProperty("attributes", out _));
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    [Endpoint("GET /rest/services/GeocodeServer")]
     public async Task GeocodeServerMetadata_ExposesProviderCapabilities()
     {
         using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
@@ -60,7 +70,11 @@ public sealed class GeocodingEndpointTests
         Assert.Equal("Geocode,ReverseGeocode,Suggest", capabilities);
     }
 
-    [Fact]
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
+    [Endpoint("GET /rest/services/GeocodeServer/suggest")]
     public async Task Suggest_ReturnsBadRequest_WhenProviderDoesNotSupportSuggest()
     {
         using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
@@ -73,6 +87,50 @@ public sealed class GeocodingEndpointTests
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&f=json");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_ReturnsBadRequest_WhenProviderDoesNotSupportBatch()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: false,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    [Endpoint("GET /rest/services/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_ReturnsGeoServicesPayload()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: false,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.Equal("1600 Pennsylvania Ave NW", root.GetProperty("address").GetProperty("Match_addr").GetString());
+        Assert.Equal(-77.03655, root.GetProperty("location").GetProperty("x").GetDouble(), precision: 5);
+        Assert.Equal(38.89768, root.GetProperty("location").GetProperty("y").GetDouble(), precision: 5);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(FakeGeocodeProvider fakeProvider)

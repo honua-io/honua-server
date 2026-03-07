@@ -71,7 +71,7 @@ jobs:
         run: dotnet restore Honua.sln
 
       - name: Build (warnings as errors)
-        run: dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=false -p:EnableMobileTargets=false
+        run: dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=false
 
       - name: Format Check
         run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
@@ -193,8 +193,7 @@ jobs:
           dotnet build Honua.sln \
             --no-restore \
             --configuration Release \
-            -m:1 \
-            -p:EnableMobileTargets=false
+            -m:1
 
 
 
@@ -819,8 +818,8 @@ jobs:
               });
             }
 
-  sdk-compatibility:
-    name: SDK Compatibility Testing
+  core-package-compatibility:
+    name: Honua.Core Package Compatibility
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     needs: build
@@ -836,26 +835,22 @@ jobs:
       - name: Restore
         run: dotnet restore Honua.sln
 
-      - name: Build SDK packages
+      - name: Build Honua.Core package
         run: |
           dotnet pack src/Honua.Core/Honua.Core.csproj --configuration Release --output ./packages --no-restore
-          dotnet pack src/Honua.Api.Sdk/Honua.Api.Sdk.csproj --configuration Release --output ./packages --no-restore
-          dotnet pack src/Honua.Admin.Sdk/Honua.Admin.Sdk.csproj --configuration Release --output ./packages --no-restore
-          dotnet pack src/Honua.Mobile.Sdk/Honua.Mobile.Sdk.csproj --configuration Release --output ./packages --no-restore -p:EnableMobileTargets=false
-          dotnet pack src/Honua.Shared/Honua.Shared.csproj --configuration Release --output ./packages --no-restore
 
-      - name: Test SDK integration
+      - name: Test package integration
         run: |
-          mkdir -p sdk-test
-          cd sdk-test
+          mkdir -p package-test
+          cd package-test
           dotnet new console
 
           # Add local package source
           dotnet nuget add source ../packages --name local-packages
 
-          # Add SDK packages
-          dotnet add package Honua.Core --source local-packages --version "1.0.0"
-          dotnet add package Honua.Api.Sdk --source local-packages --version "1.0.0" || true
+          # Add package under test
+          VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
+          dotnet add package Honua.Core --source local-packages --version "$VERSION"
 
           # Test build
           dotnet build --configuration Release
@@ -869,7 +864,7 @@ jobs:
     name: AOT Build Verification
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, sdk-compatibility]  # Run after SDK compatibility
+    needs: [build, changes, core-package-compatibility]
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4

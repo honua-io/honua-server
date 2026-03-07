@@ -115,6 +115,11 @@ public sealed class DocumentationCoverageTests
 
         foreach (var type in publicTypes)
         {
+            if (IsGeneratedContractType(type))
+            {
+                continue;
+            }
+
             if (!HasXmlDocumentation(type))
             {
                 violations.Add($"Public type '{type.FullName}' lacks XML documentation");
@@ -249,6 +254,20 @@ public sealed class DocumentationCoverageTests
             // If we can't parse the XML doc, assume it's not documented
             return false;
         }
+    }
+
+    private static bool IsGeneratedContractType(Type type)
+    {
+        if (type.Namespace?.StartsWith("Geospatial.V1", StringComparison.Ordinal) == true)
+        {
+            return true;
+        }
+
+        return type.GetCustomAttributes(inherit: false)
+            .Any(attribute => string.Equals(
+                attribute.GetType().FullName,
+                "System.CodeDom.Compiler.GeneratedCodeAttribute",
+                StringComparison.Ordinal));
     }
 
     private static string FindProjectRoot(string startPath)

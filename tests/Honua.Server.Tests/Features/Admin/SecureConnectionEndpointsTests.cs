@@ -207,9 +207,9 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/connections")]
     [Theory]
+    [Trait("Category", "Integration")]
+    [Endpoint("POST /api/v1/admin/connections")]
     [InlineData("Allow")]
     [InlineData("Prefer")]
     public async Task CreateConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
@@ -401,9 +401,9 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/connections/test")]
     [Theory]
+    [Trait("Category", "Integration")]
+    [Endpoint("POST /api/v1/admin/connections/test")]
     [InlineData("Allow")]
     [InlineData("Prefer")]
     public async Task TestDraftConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
@@ -619,9 +619,9 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.False(apiResponse.Data.IsActive);
     }
 
-    [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/connections/{id}")]
     [Theory]
+    [Trait("Category", "Integration")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}")]
     [InlineData("Allow")]
     [InlineData("Prefer")]
     public async Task UpdateConnection_SslRequiredRejectsFallbackSslModes(string sslMode)

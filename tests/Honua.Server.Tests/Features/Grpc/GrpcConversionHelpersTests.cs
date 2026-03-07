@@ -13,7 +13,7 @@ using Honua.TestKit.Constants;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using DomainGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Grpc;
 

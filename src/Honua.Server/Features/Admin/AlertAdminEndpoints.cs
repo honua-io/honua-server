@@ -423,18 +423,18 @@ internal static class AlertAdminEndpoints
     }
 
     private static bool TryParseChannels(
-        IReadOnlyList<string> values,
+        string[] values,
         out ImmutableArray<AlertChannelType> channels,
         out string error)
     {
-        if (values.Count == 0)
+        if (values.Length == 0)
         {
             channels = ImmutableArray<AlertChannelType>.Empty;
             error = string.Empty;
             return true;
         }
 
-        var builder = ImmutableArray.CreateBuilder<AlertChannelType>(values.Count);
+        var builder = ImmutableArray.CreateBuilder<AlertChannelType>(values.Length);
         foreach (var value in values)
         {
             if (string.IsNullOrWhiteSpace(value))

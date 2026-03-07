@@ -54,6 +54,9 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         Assert.True(healthMetrics.MemoryPressurePercent >= 0, "Memory pressure should be non-negative");
         Assert.True(healthMetrics.GCCollections >= 0, "GC collections should be non-negative");
         Assert.True(healthMetrics.Timestamp != default, "Timestamp should be set");
+        Assert.NotNull(healthMetrics.Migration);
+        Assert.True(healthMetrics.Migration.IsReady, "Migration state should be ready in the test environment");
+        Assert.False(healthMetrics.Migration.IsFailed, "Migration state should not be failed in the test environment");
     }
 
     [IntegrationTest]
@@ -170,7 +173,13 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
             Timestamp = DateTimeOffset.UtcNow,
             MemoryUsageMB = 50.5,
             MemoryPressurePercent = 25.0,
-            GCCollections = 42
+            GCCollections = 42,
+            Migration = new MigrationHealthMetrics
+            {
+                Status = "succeeded",
+                IsReady = true,
+                IsFailed = false
+            }
         };
 
         // Assert
@@ -178,6 +187,7 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         Assert.True(healthMetrics.MemoryUsageMB > 0);
         Assert.True(healthMetrics.MemoryPressurePercent >= 0);
         Assert.True(healthMetrics.GCCollections >= 0);
+        Assert.True(healthMetrics.Migration.IsReady);
     }
 
     [Fact]

@@ -32,6 +32,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/capabilities"),
         new("GET", "/api/v1/admin/manifest"),
         new("POST", "/api/v1/admin/manifest/apply"),
+        new("GET", "/api/v1/admin/deploy/preflight"),
         new("GET", "/api/v1/admin/services"),
         new("GET", "/api/v1/admin/services/{serviceName}/settings"),
         new("PUT", "/api/v1/admin/services/{serviceName}/protocols"),
@@ -101,6 +102,7 @@ public static class EndpointRegistry
 
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),
+        new("GET", "/api/v1/admin/observability/migrations"),
 
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
 
@@ -178,6 +180,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/MapServer/export"),
         new("POST", "/rest/services/{serviceId}/MapServer/export"),
+        new("GET", "/rest/services/{serviceId}/MapServer/generateKml"),
+        new("POST", "/rest/services/{serviceId}/MapServer/generateKml"),
         new("GET", "/rest/services/{serviceId}/MapServer/identify"),
         new("POST", "/rest/services/{serviceId}/MapServer/identify"),
         new("GET", "/rest/services/{serviceId}/MapServer/legend"),

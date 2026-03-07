@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(HealthMetrics))]
+[JsonSerializable(typeof(MigrationHealthMetrics))]
 [JsonSerializable(typeof(PerformanceMetricsResponse))]
 [JsonSerializable(typeof(SystemInfo))]
 [JsonSerializable(typeof(HttpRequestMetrics))]
@@ -29,6 +30,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 [JsonSerializable(typeof(IReadOnlyList<RecentErrorEntry>))]
 [JsonSerializable(typeof(RecentErrorsResponse))]
 [JsonSerializable(typeof(ObservabilityStatusResponse))]
+[JsonSerializable(typeof(MigrationObservabilityResponse))]
 internal sealed partial class MetricsJsonContext : JsonSerializerContext
 {
 }

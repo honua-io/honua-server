@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -31,6 +32,11 @@ internal static class ObservabilityEndpoints
             .WithDisplayName("Get Telemetry Status")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ObservabilityStatusResponse>();
+
+        group.MapGet("/migrations", HandleGetMigrationStatus)
+            .WithDisplayName("Get Migration Status")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<MigrationObservabilityResponse>();
     }
 
     private static IResult HandleGetRecentErrors([FromServices] RecentErrorBuffer buffer)
@@ -61,6 +67,50 @@ internal static class ObservabilityEndpoints
         return Results.Json(response, MetricsJsonContext.Default.ObservabilityStatusResponse);
     }
 
+    private static async Task<IResult> HandleGetMigrationStatus(
+        [FromServices] IConfiguration configuration,
+        [FromServices] IDatabaseMigrationRunner migrationRunner,
+        [FromServices] MigrationState migrationState,
+        HttpContext context)
+    {
+        var response = new MigrationObservabilityResponse
+        {
+            Status = GetMigrationStatusLabel(migrationState.Status),
+            IsReady = migrationState.IsReady,
+            IsFailed = migrationState.IsFailed,
+            Message = GetMigrationStatusMessage(migrationState),
+            GeneratedAt = DateTimeOffset.UtcNow
+        };
+
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return Results.Json(
+                response with
+                {
+                    PlanAvailable = false,
+                    PlanError = "No database connection string configured."
+                },
+                MetricsJsonContext.Default.MigrationObservabilityResponse);
+        }
+
+        var plan = await migrationRunner.PlanMigrationsAsync(
+            connectionString,
+            typeof(Program).Assembly,
+            context.RequestAborted).ConfigureAwait(false);
+
+        return Results.Json(
+            response with
+            {
+                PlanAvailable = plan.Successful,
+                UpgradeRequired = plan.UpgradeRequired,
+                PendingScripts = plan.PendingScripts,
+                ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
+                PlanError = plan.Successful ? null : plan.ErrorMessage
+            },
+            MetricsJsonContext.Default.MigrationObservabilityResponse);
+    }
+
     private static string? ResolveOtlpEndpoint(TracingOptions tracingOptions, IConfiguration configuration)
     {
         if (!string.IsNullOrWhiteSpace(tracingOptions.OtlpEndpoint))
@@ -69,5 +119,31 @@ internal static class ObservabilityEndpoints
         }
 
         return configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+    }
+
+    private static string GetMigrationStatusLabel(MigrationLifecycleStatus status) =>
+        status switch
+        {
+            MigrationLifecycleStatus.Running => "running",
+            MigrationLifecycleStatus.Succeeded => "succeeded",
+            MigrationLifecycleStatus.Skipped => "skipped",
+            MigrationLifecycleStatus.Failed => "failed",
+            _ => "unknown"
+        };
+
+    private static string? GetMigrationStatusMessage(MigrationState migrationState)
+    {
+        if (!string.IsNullOrWhiteSpace(migrationState.StatusMessage))
+        {
+            return migrationState.StatusMessage;
+        }
+
+        return migrationState.Status switch
+        {
+            MigrationLifecycleStatus.Running => "Database migrations in progress.",
+            MigrationLifecycleStatus.Failed => "Database migrations failed.",
+            MigrationLifecycleStatus.Unknown => "Database migrations not completed.",
+            _ => null
+        };
     }
 }

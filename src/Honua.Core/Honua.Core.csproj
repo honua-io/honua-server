@@ -4,9 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- Temporarily disable warnings as errors to enable mobile SDK compilation -->
+    <!-- Documentation and analyzer cleanup is still in progress for this package. -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- Suppress specific warnings that are causing build failures -->
     <WarningsNotAsErrors>CS1591;CA1873;CA1848;CA2009;IDE0073</WarningsNotAsErrors>
   </PropertyGroup>
 
@@ -32,7 +31,7 @@
   <ItemGroup>
     <!-- Generate C# clients from standard gRPC geospatial protocol files -->
     <Protobuf Include="Transport/Proto/geospatial/v1/*.proto"
-              GrpcServices="Client"
+              GrpcServices="Both"
               ProtoRoot="Transport/Proto" />
   </ItemGroup>
 

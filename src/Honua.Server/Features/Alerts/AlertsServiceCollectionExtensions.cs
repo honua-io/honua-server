@@ -25,7 +25,13 @@ internal static class AlertsServiceCollectionExtensions
         services.AddScoped<IAlertPipeline, AlertPipeline>();
         services.AddScoped<IAlertEvaluator, DefaultAlertEvaluator>();
         services.AddScoped<IAlertEditionPolicy, AlertEditionPolicy>();
-        services.AddSingleton<ILeaderElectionStrategy, PostgresAdvisoryLockLeaderElectionStrategy>();
+        services.AddSingleton<ILeaderElectionStrategy>(serviceProvider =>
+        {
+            var dataSource = serviceProvider.GetService<Npgsql.NpgsqlDataSource>();
+            return dataSource is null
+                ? new SingleInstanceLeaderElectionStrategy()
+                : ActivatorUtilities.CreateInstance<PostgresAdvisoryLockLeaderElectionStrategy>(serviceProvider, dataSource);
+        });
         services.AddHttpClient("alerts-webhook");
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();

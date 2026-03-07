@@ -22,6 +22,7 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
         var result = queryBuilder.BuildSelectFlatGeobufQuery(layerId: 1, query: new FeatureQuery());
 
         result.Sql.Should().Contain("SELECT ST_AsFlatGeobuf(q, true, 'geometry') FROM (");
+        result.Sql.Should().NotContain("ST_AsBinary(");
         result.Sql.Should().Contain("AS geometry");
         result.Sql.Should().Contain("attributes::text AS attributes");
     }

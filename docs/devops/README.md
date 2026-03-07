@@ -8,6 +8,11 @@ Installing, configuring, operating, and upgrading Honua in production.
 - [Docker Compose Sample](docker-compose.md) — pre-built image with PostGIS, Redis, MinIO
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md) — patterns by team size
 
+Control-plane direction:
+- Honua is building its own GitOps controller and deploy-coordination model.
+- Flux and Argo CD are not the planned primary Honua control plane.
+- Helm and Terraform remain deployment surfaces, not the source of truth for Honua change management.
+
 ## Security
 
 - [Security](security.md) — authentication, authorization, rate limiting, CSP, credential rotation

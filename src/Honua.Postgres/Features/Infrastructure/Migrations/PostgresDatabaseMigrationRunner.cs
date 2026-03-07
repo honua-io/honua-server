@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using DbUp;
+using DbUp.Engine;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Npgsql;
@@ -15,23 +16,37 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
 
+    public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
+        string connectionString,
+        Assembly migrationsAssembly,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ValidateArguments(connectionString, migrationsAssembly);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var upgrader = BuildUpgrader(BuildMigrationConnectionString(connectionString), migrationsAssembly);
+            var pendingScripts = upgrader.GetScriptsToExecute().Select(script => script.Name).ToArray();
+            var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
+
+            return Task.FromResult(DatabaseMigrationPlan.Succeeded(pendingScripts, executedButNotDiscoveredScripts));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(DatabaseMigrationPlan.Failed(ex, ex.Message));
+        }
+    }
+
     public async Task<DatabaseMigrationResult> RunMigrationsAsync(
         string connectionString,
         Assembly migrationsAssembly,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new ArgumentException("Connection string is required.", nameof(connectionString));
-        }
-
-        ArgumentNullException.ThrowIfNull(migrationsAssembly);
+        ValidateArguments(connectionString, migrationsAssembly);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var migrationConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
-        {
-            SearchPath = "public",
-        }.ConnectionString;
+        var migrationConnectionString = BuildMigrationConnectionString(connectionString);
 
         await using var lockConnection = new NpgsqlConnection(migrationConnectionString);
         await lockConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -44,13 +59,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return DatabaseMigrationResult.Failed(error, error.Message);
         }
 
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(migrationConnectionString)
-            .JournalToPostgresqlTable("public", "schema_versions")
-            .WithScriptsEmbeddedInAssembly(migrationsAssembly)
-            .WithTransaction()
-            .LogToConsole()
-            .Build();
+        var upgrader = BuildUpgrader(migrationConnectionString, migrationsAssembly);
 
         try
         {
@@ -70,6 +79,31 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             await ReleaseMigrationLockAsync(lockConnection).ConfigureAwait(false);
         }
     }
+
+    private static void ValidateArguments(string connectionString, Assembly migrationsAssembly)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new ArgumentException("Connection string is required.", nameof(connectionString));
+        }
+
+        ArgumentNullException.ThrowIfNull(migrationsAssembly);
+    }
+
+    private static string BuildMigrationConnectionString(string connectionString) =>
+        new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = "public",
+        }.ConnectionString;
+
+    private static UpgradeEngine BuildUpgrader(string connectionString, Assembly migrationsAssembly) =>
+        DeployChanges.To
+            .PostgresqlDatabase(connectionString)
+            .JournalToPostgresqlTable("public", "schema_versions")
+            .WithScriptsEmbeddedInAssembly(migrationsAssembly)
+            .WithTransaction()
+            .LogToConsole()
+            .Build();
 
     private static async Task<bool> TryAcquireMigrationLockAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {

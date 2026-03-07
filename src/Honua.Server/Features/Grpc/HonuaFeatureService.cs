@@ -11,7 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Grpc;
 

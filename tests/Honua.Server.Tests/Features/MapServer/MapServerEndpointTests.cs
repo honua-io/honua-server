@@ -151,6 +151,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
     public async Task MapServer_GenerateKml_ReturnsValidKml_ForPointLineAndPolygonLayers()
     {
         var serviceName = await SeedGenerateKmlGeometryServiceAsync();

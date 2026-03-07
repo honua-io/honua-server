@@ -1,4 +1,4 @@
-name: Publish NuGet Packages
+name: Publish Honua.Core Package
 
 on:
   push:
@@ -17,8 +17,10 @@ env:
 
 jobs:
   build-and-publish:
-    name: Build and Publish NuGet Packages
+    name: Build and Publish Honua.Core
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
     - name: Checkout Code
@@ -39,54 +41,26 @@ jobs:
         else
           VERSION="${GITHUB_REF#refs/tags/v}"
         fi
-        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
         echo "Publishing version: ${VERSION}"
 
     - name: Restore Dependencies
       run: dotnet restore
 
-    - name: Build Working Projects Only
+    - name: Build Honua.Core
       run: |
-        echo "Building projects that are known to compile successfully..."
-
-        # Build core infrastructure projects only (exclude SDK projects with compilation issues)
         dotnet build src/Honua.Core/Honua.Core.csproj --configuration Release --no-restore
-        dotnet build src/Honua.Shared/Honua.Shared.csproj --configuration Release --no-restore
-        dotnet build src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj --configuration Release --no-restore
-        dotnet build src/Honua.Postgres/Honua.Postgres.csproj --configuration Release --no-restore
-        dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release --no-restore
-
-        echo "✅ Core projects built successfully!"
-        echo "⚠️ SDK projects (API, Admin, Mobile) excluded due to compilation issues"
-
-    - name: Run Tests
-      run: dotnet test --configuration Release --no-build --verbosity normal
-
-    - name: Pack Working Projects
+    
+    - name: Pack Honua.Core
       run: |
-        echo "📦 Packaging working projects..."
-
-        # Pack Honua.Core (working)
         dotnet pack src/Honua.Core/Honua.Core.csproj \
           --configuration Release \
           --no-build \
           --output ./packages \
-          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
-          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
-          -p:FileVersion=${{ steps.version.outputs.VERSION }}
-
-        # Pack Honua.Shared (working)
-        dotnet pack src/Honua.Shared/Honua.Shared.csproj \
-          --configuration Release \
-          --no-build \
-          --output ./packages \
-          -p:PackageVersion=${{ steps.version.outputs.VERSION }} \
-          -p:AssemblyVersion=${{ steps.version.outputs.VERSION }} \
-          -p:FileVersion=${{ steps.version.outputs.VERSION }}
-
-        echo "✅ Core packages created successfully!"
-        echo "⚠️ SDK packages (API, Admin, Mobile) skipped due to compilation issues"
-        echo "   These will be enabled once the compilation errors are fixed"
+          -p:Version=${{ steps.version.outputs.version }} \
+          -p:PackageVersion=${{ steps.version.outputs.version }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.version }} \
+          -p:FileVersion=${{ steps.version.outputs.version }}
 
     - name: List Packages
       run: ls -la ./packages/
@@ -104,7 +78,7 @@ jobs:
     - name: Upload Packages as Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: nuget-packages-${{ steps.version.outputs.VERSION }}
+        name: nuget-packages-${{ steps.version.outputs.version }}
         path: ./packages/*.nupkg
         retention-days: 30
 
@@ -117,23 +91,3 @@ jobs:
         make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  notify:
-    name: Notify Success
-    runs-on: ubuntu-latest
-    needs: build-and-publish
-    if: success()
-
-    steps:
-    - name: Success Notification
-      run: |
-        echo "✅ Successfully published NuGet packages:"
-        echo "  - Honua.Core v${{ needs.build-and-publish.outputs.VERSION }}"
-        echo "  - Honua.Shared v${{ needs.build-and-publish.outputs.VERSION }}"
-        echo ""
-        echo "⚠️ SDK packages temporarily excluded due to compilation issues:"
-        echo "  - Honua.Api.Sdk (pending fix)"
-        echo "  - Honua.Admin.Sdk (pending fix)"
-        echo "  - Honua.Mobile.Sdk (pending fix)"
-        echo ""
-        echo "🔧 Next steps: Fix compilation errors in SDK projects to enable full publishing"

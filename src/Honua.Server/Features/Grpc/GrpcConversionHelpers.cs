@@ -14,7 +14,7 @@ using DomainDistanceUnit = Honua.Core.Features.FeatureStore.Domain.DistanceUnit;
 using DomainGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 using DomainSpatialFilter = Honua.Core.Features.FeatureStore.Domain.SpatialFilter;
 using DomainSpatialRelationship = Honua.Core.Features.FeatureStore.Domain.SpatialRelationship;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Grpc;
 

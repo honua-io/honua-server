@@ -32,6 +32,15 @@ public interface IFeatureReader
     Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries features as a FlatGeobuf payload when the underlying provider supports it.
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters and pagination</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>FlatGeobuf payload, or null when no features match</returns>
+    Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Queries only object IDs with optional filtering, sorting, and pagination.
     /// </summary>
     /// <param name="layerId">Layer identifier to query</param>

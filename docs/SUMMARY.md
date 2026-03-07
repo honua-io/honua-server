@@ -89,7 +89,6 @@
 * [CI Monitoring](contributor/CI_MONITORING.md)
 * [CI Workflows](contributor/ci-workflows.md)
 * [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
-* [Repo Split Documentation Strategy](contributor/REPO_SPLIT_DOCUMENTATION_STRATEGY.md)
 * [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 * [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)
 * [CodeCov Setup](contributor/CODECOV_SETUP.md)

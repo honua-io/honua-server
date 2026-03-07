@@ -165,12 +165,18 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             return false;
         }
 
-        if (!zone?.IsActive ?? true)
+        if (zone is null || !zone.IsActive)
         {
             return previousInside;
         }
 
-        if (zone.Geometry is null || !feature.HasValue || feature.Value.Geometry is null)
+        if (!feature.HasValue)
+        {
+            return false;
+        }
+
+        var featureValue = feature.Value;
+        if (zone.Geometry is null || featureValue.Geometry is null)
         {
             return false;
         }
@@ -178,7 +184,7 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         try
         {
             var zoneGeometry = _wkbReader.Read(zone.Geometry);
-            var featureGeometry = _wkbReader.Read(feature.Value.Geometry);
+            var featureGeometry = _wkbReader.Read(featureValue.Geometry);
             return zoneGeometry.Covers(featureGeometry) || zoneGeometry.Intersects(featureGeometry);
         }
         catch (ArgumentException)

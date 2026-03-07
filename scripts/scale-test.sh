@@ -8,7 +8,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.scale-test.yml"
-BASE_URL="http://localhost:8080"
+BASE_URL="${BASE_URL:-http://localhost:${HONUA_SCALE_TEST_HTTP_PORT:-8080}}"
+ADMIN_API_KEY="${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -31,24 +32,8 @@ log_error() {
 
 # Function to wait for services to be healthy
 wait_for_services() {
-    local max_attempts=30
-    local attempt=0
-
     log_info "Waiting for services to be healthy..."
-
-    while [ $attempt -lt $max_attempts ]; do
-        if curl -s "${BASE_URL}/healthz/live" > /dev/null 2>&1; then
-            log_info "Services are healthy!"
-            return 0
-        fi
-
-        attempt=$((attempt + 1))
-        log_info "Attempt $attempt/$max_attempts - waiting for services..."
-        sleep 10
-    done
-
-    log_error "Services failed to become healthy within timeout"
-    return 1
+    wait_for_http_status "${BASE_URL}/healthz/live" "200" 30 10 "services"
 }
 
 # Function to test basic connectivity
@@ -62,6 +47,67 @@ test_basic_connectivity() {
         log_error "✗ Health check failed with status: $response"
         return 1
     fi
+}
+
+wait_for_http_status() {
+    local url=$1
+    local expected_status=$2
+    local max_attempts=${3:-30}
+    local sleep_seconds=${4:-10}
+    local description=${5:-endpoint}
+
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        local status
+        status=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo "000")
+        if [ "$status" = "$expected_status" ]; then
+            log_info "Expected status $expected_status observed for $description"
+            return 0
+        fi
+
+        attempt=$((attempt + 1))
+        log_info "Attempt $attempt/$max_attempts waiting for $description (got $status, want $expected_status)"
+        sleep "$sleep_seconds"
+    done
+
+    log_error "Timed out waiting for $description to return $expected_status"
+    return 1
+}
+
+get_preflight_flag() {
+    local response
+    response=$(curl -s -H "X-API-Key: ${ADMIN_API_KEY}" "${BASE_URL}/api/v1/admin/deploy/preflight" || true)
+
+    if [ -z "$response" ]; then
+        echo "unavailable"
+        return 0
+    fi
+
+    echo "$response" | grep -o '"readyForCoordinatedDeploy":[^,}]*' | cut -d':' -f2 | tr -d '[:space:]'
+}
+
+wait_for_preflight_state() {
+    local expected_state=$1
+    local max_attempts=${2:-30}
+    local sleep_seconds=${3:-10}
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        local state
+        state=$(get_preflight_flag)
+        if [ "$state" = "$expected_state" ]; then
+            log_info "Deploy preflight reports readyForCoordinatedDeploy=$expected_state"
+            return 0
+        fi
+
+        attempt=$((attempt + 1))
+        log_info "Attempt $attempt/$max_attempts waiting for deploy preflight state $expected_state (got ${state:-unknown})"
+        sleep "$sleep_seconds"
+    done
+
+    log_error "Timed out waiting for deploy preflight state $expected_state"
+    return 1
 }
 
 # Function to test load balancing
@@ -165,6 +211,44 @@ test_redis_failover() {
     fi
 }
 
+test_deploy_rollback() {
+    log_info "Testing rollback behavior against the scale-test environment..."
+
+    local override_file
+    override_file=$(mktemp)
+
+    cat > "$override_file" <<EOF
+services:
+  honua:
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_scale_test_broken;Username=honua_user;Password=honua_password"
+EOF
+
+    cleanup_override() {
+        rm -f "$override_file"
+    }
+
+    trap cleanup_override RETURN
+
+    log_info "Verifying baseline readiness before rollout..."
+    wait_for_http_status "${BASE_URL}/healthz/ready" "200" 30 10 "baseline readiness"
+    wait_for_preflight_state "true" 18 10
+
+    log_info "Applying an intentionally broken rollout configuration..."
+    docker compose -f "$COMPOSE_FILE" -f "$override_file" up -d --force-recreate --scale honua=3 honua nginx
+
+    wait_for_http_status "${BASE_URL}/healthz/ready" "503" 24 10 "failed rollout readiness gate"
+    wait_for_preflight_state "false" 18 10
+
+    log_info "Rolling back to the baseline configuration..."
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate --scale honua=3 honua nginx
+
+    wait_for_http_status "${BASE_URL}/healthz/ready" "200" 30 10 "post-rollback readiness"
+    wait_for_preflight_state "true" 18 10
+
+    log_info "Rollback rehearsal succeeded"
+}
+
 # Function to show monitoring URLs
 show_monitoring_urls() {
     log_info "Monitoring URLs (if --monitoring flag was used):"
@@ -198,7 +282,7 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  --monitoring    Start monitoring stack (Redis Insight, Prometheus, Grafana)"
-                echo "  --test <type>   Run specific test type: basic|load|cache|stampede|failover|all"
+                echo "  --test <type>   Run specific test type: basic|load|cache|stampede|failover|rollback|all"
                 echo "  --help          Show this help message"
                 echo ""
                 echo "Examples:"
@@ -242,6 +326,9 @@ main() {
             ;;
         failover)
             test_redis_failover
+            ;;
+        rollback)
+            test_deploy_rollback
             ;;
         all)
             test_basic_connectivity
