@@ -183,6 +183,24 @@ public sealed class LayerChanges
     /// </summary>
     [JsonPropertyName("deletes")]
     public int Deletes { get; set; }
+
+    /// <summary>
+    /// Actual feature data for inserts since last sync.
+    /// </summary>
+    [JsonPropertyName("addFeatures")]
+    public GeoServicesFeature[]? AddFeatures { get; set; }
+
+    /// <summary>
+    /// Actual feature data for updates since last sync.
+    /// </summary>
+    [JsonPropertyName("updateFeatures")]
+    public GeoServicesFeature[]? UpdateFeatures { get; set; }
+
+    /// <summary>
+    /// Object IDs of features deleted since last sync.
+    /// </summary>
+    [JsonPropertyName("deleteIds")]
+    public long[]? DeleteIds { get; set; }
 }
 
 /// <summary>

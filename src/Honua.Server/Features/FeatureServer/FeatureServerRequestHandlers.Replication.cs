@@ -1,11 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -181,19 +183,36 @@ internal static partial class FeatureServerEndpoints
 
         foreach (var layer in replicaLayers)
         {
-            var adds = 0L;
             if (isFirstSync)
             {
-                adds = await featureReader.CountAsync(layer.Id, new FeatureQuery(), cancellationToken);
-            }
+                // First sync: return all features as adds with full geometry/attributes.
+                var result = await featureReader.QueryAsync(layer.Id, new FeatureQuery(), cancellationToken);
+                var addFeatures = result.Items
+                    .Select(f => ConvertFeatureToGeoServices(f))
+                    .ToArray();
 
-            layerChanges.Add(new LayerChanges
+                layerChanges.Add(new LayerChanges
+                {
+                    Id = layer.Id,
+                    Adds = addFeatures.Length,
+                    Updates = 0,
+                    Deletes = 0,
+                    AddFeatures = addFeatures,
+                    UpdateFeatures = null,
+                    DeleteIds = null
+                });
+            }
+            else
             {
-                Id = layer.Id,
-                Adds = (int)Math.Min(adds, int.MaxValue),
-                Updates = 0,
-                Deletes = 0
-            });
+                // Incremental sync: report zero changes until CDC-to-replica mapping is wired.
+                layerChanges.Add(new LayerChanges
+                {
+                    Id = layer.Id,
+                    Adds = 0,
+                    Updates = 0,
+                    Deletes = 0
+                });
+            }
         }
 
         var response = new ExtractChangesResponse
@@ -532,5 +551,18 @@ internal static partial class FeatureServerEndpoints
 
         layers = resolved.ToArray();
         return true;
+    }
+
+    /// <summary>
+    /// Converts a domain Feature to a GeoServicesFeature for replication responses.
+    /// </summary>
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature)
+    {
+        return new GeoServicesFeature
+        {
+            Attributes = new Dictionary<string, object?>(feature.Attributes),
+            Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                feature.Geometry, null, null, false, false)
+        };
     }
 }
