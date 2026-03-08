@@ -96,6 +96,7 @@ namespace Honua.Server.Features.FeatureServer.Models;
 [JsonSerializable(typeof(ExtractChangesResponse))]
 [JsonSerializable(typeof(LayerChanges))]
 [JsonSerializable(typeof(LayerChanges[]))]
+[JsonSerializable(typeof(long[]), TypeInfoPropertyName = "Int64Array")]
 [JsonSerializable(typeof(ReplicaState))]
 [JsonSerializable(typeof(SynchronizeReplicaRequest))]
 [JsonSerializable(typeof(SynchronizeReplicaResponse))]
