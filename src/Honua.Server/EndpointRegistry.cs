@@ -36,6 +36,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/deploy/plan"),
         new("POST", "/api/v1/admin/deploy/operations"),
         new("GET", "/api/v1/admin/deploy/operations/{operationId}"),
+        new("POST", "/api/v1/admin/deploy/operations/{operationId}/submit"),
         new("POST", "/api/v1/admin/deploy/operations/{operationId}/rollback"),
         new("GET", "/api/v1/admin/services"),
         new("GET", "/api/v1/admin/services/{serviceName}/settings"),

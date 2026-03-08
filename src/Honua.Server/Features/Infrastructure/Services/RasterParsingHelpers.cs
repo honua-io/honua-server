@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.Infrastructure.Services;
 
@@ -26,6 +27,19 @@ internal static class RasterParsingHelpers
     /// Supports both geographic and projected coordinate systems.
     /// </summary>
     public static bool TryParseBoundingBox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
+        => TryParseBoundingBox(bbox, AxisOrder.EastNorth, isGeographic: false, out minX, out minY, out maxX, out maxY);
+
+    /// <summary>
+    /// Safely parses a bounding box string with explicit axis-order and geographic-range handling.
+    /// </summary>
+    public static bool TryParseBoundingBox(
+        string bbox,
+        AxisOrder axisOrder,
+        bool isGeographic,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
     {
         minX = minY = maxX = maxY = 0;
 
@@ -45,17 +59,39 @@ internal static class RasterParsingHelpers
             return false;
         }
 
-        if (!double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out minX) ||
-            !double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out minY) ||
-            !double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out maxX) ||
-            !double.TryParse(parts[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out maxY))
+        if (!double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
+            !double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var second) ||
+            !double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var third) ||
+            !double.TryParse(parts[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var fourth))
         {
             return false;
+        }
+
+        if (axisOrder == AxisOrder.NorthEast)
+        {
+            minX = second;
+            minY = first;
+            maxX = fourth;
+            maxY = third;
+        }
+        else
+        {
+            minX = first;
+            minY = second;
+            maxX = third;
+            maxY = fourth;
         }
 
         if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minX >= maxX || minY >= maxY)
+        {
+            return false;
+        }
+
+        if (isGeographic &&
+            (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
+             !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
         {
             return false;
         }
@@ -73,6 +109,10 @@ internal static class RasterParsingHelpers
                !double.IsInfinity(coordinate) &&
                coordinate >= -MaxProjectedBound && coordinate <= MaxProjectedBound;
     }
+
+    private static bool IsValidLongitude(double coordinate) => coordinate >= -180.0 && coordinate <= 180.0;
+
+    private static bool IsValidLatitude(double coordinate) => coordinate >= -90.0 && coordinate <= 90.0;
 
     /// <summary>
     /// Parses a format string to the corresponding <see cref="RasterFormat"/> enum value.

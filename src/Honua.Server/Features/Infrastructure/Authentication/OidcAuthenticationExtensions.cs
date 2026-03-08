@@ -360,8 +360,7 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = async context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
-                    var userId = context.Principal?.FindFirst(oidcOptions.ClaimsMapping.UserIdClaimType)?.Value ?? "unknown";
-                    OidcAuthenticationLog.JwtTokenValidated(logger, userId);
+                    OidcAuthenticationLog.JwtTokenValidated(logger);
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection)
                     {
@@ -378,7 +377,7 @@ public static class OidcAuthenticationExtensions
                                 var existing = await distributedCache.GetStringAsync(tokenKey);
                                 if (existing != null)
                                 {
-                                    OidcAuthenticationLog.TokenReplayDetected(logger, userId);
+                                    OidcAuthenticationLog.TokenReplayDetected(logger);
                                     context.Fail("Token replay detected");
                                     return;
                                 }
@@ -394,7 +393,7 @@ public static class OidcAuthenticationExtensions
                                 // Fall back to in-memory cache for single-instance deployments
                                 if (memoryCache.TryGetValue(tokenKey, out _))
                                 {
-                                    OidcAuthenticationLog.TokenReplayDetected(logger, userId);
+                                    OidcAuthenticationLog.TokenReplayDetected(logger);
                                     context.Fail("Token replay detected");
                                     return;
                                 }
@@ -529,8 +528,7 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
-                    var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "unknown";
-                    OidcAuthenticationLog.OidcTokenValidated(logger, AzureAdScheme, userId);
+                    OidcAuthenticationLog.OidcTokenValidated(logger, AzureAdScheme);
                     return Task.CompletedTask;
                 }
             };
@@ -576,8 +574,7 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
-                    var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "unknown";
-                    OidcAuthenticationLog.OidcTokenValidated(logger, GoogleScheme, userId);
+                    OidcAuthenticationLog.OidcTokenValidated(logger, GoogleScheme);
                     return Task.CompletedTask;
                 }
             };
@@ -624,8 +621,7 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
-                    var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "unknown";
-                    OidcAuthenticationLog.OidcTokenValidated(logger, OidcScheme, userId);
+                    OidcAuthenticationLog.OidcTokenValidated(logger, OidcScheme);
                     return Task.CompletedTask;
                 }
             };

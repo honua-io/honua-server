@@ -195,13 +195,9 @@ jobs:
             --configuration Release \
             -m:1
 
-
-
       - name: Run .NET Tests (Core/Postgres)
         timeout-minutes: 20
         run: |
-            -- RunConfiguration.MaxCpuCount=1
-
           dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
             --no-build \
             --no-restore \

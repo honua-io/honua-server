@@ -285,6 +285,16 @@ public readonly record struct AlertChange
 }
 
 /// <summary>
+/// Lookup key for batched active-rule loading.
+/// </summary>
+public readonly record struct AlertRuleLookupKey(string? ServiceId, int LayerId);
+
+/// <summary>
+/// Lookup key for batched state loading.
+/// </summary>
+public readonly record struct AlertStateLookupKey(long RuleId, int LayerId, long ObjectId);
+
+/// <summary>
 /// Persisted evaluator state for a rule-feature pair.
 /// </summary>
 public sealed record AlertStateSnapshot

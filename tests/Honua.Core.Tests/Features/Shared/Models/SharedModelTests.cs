@@ -228,16 +228,43 @@ public class SharedModelTests
     }
 
     [Fact]
-    public void ExtentExtensions_ExtractSridFromCrs_WithInvalidCrs_ReturnsDefault()
+    public void ExtentExtensions_ExtractSridFromCrs_WithCrs84Alias_ReturnsWgs84Srid()
+    {
+        // Arrange
+        var crsString = "CRS84";
+
+        // Act
+        var srid = ExtentExtensions.ExtractSridFromCrs(crsString);
+
+        // Assert
+        srid.Should().Be(4326);
+    }
+
+    [Fact]
+    public void ExtentExtensions_TryExtractSridFromCrs_WithInvalidCrs_ReturnsFalse()
     {
         // Arrange
         var invalidCrs = "invalid-crs";
 
         // Act
-        var srid = ExtentExtensions.ExtractSridFromCrs(invalidCrs);
+        var success = ExtentExtensions.TryExtractSridFromCrs(invalidCrs, out var srid);
 
         // Assert
-        srid.Should().Be(4326); // Default WGS84
+        success.Should().BeFalse();
+        srid.Should().Be(0);
+    }
+
+    [Fact]
+    public void ExtentExtensions_ExtractSridFromCrs_WithInvalidCrs_ThrowsFormatException()
+    {
+        // Arrange
+        var invalidCrs = "invalid-crs";
+
+        // Act
+        var act = () => ExtentExtensions.ExtractSridFromCrs(invalidCrs);
+
+        // Assert
+        act.Should().Throw<FormatException>();
     }
 
     [Fact]

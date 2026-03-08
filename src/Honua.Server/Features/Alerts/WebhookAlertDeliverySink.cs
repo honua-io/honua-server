@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -45,7 +46,21 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, destination)
+            var destinationValidation = await OutboundHttpUrlValidator
+                .ValidateAsync(destination, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!destinationValidation.IsValid || destinationValidation.Uri is null)
+            {
+                return new AlertDeliveryResult
+                {
+                    Succeeded = false,
+                    Retryable = false,
+                    Error = $"Webhook destination {destinationValidation.ErrorMessage ?? "must be a valid HTTPS URL."}"
+                };
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, destinationValidation.Uri)
             {
                 Content = new StringContent(alertEvent.PayloadJson, Encoding.UTF8, "application/json")
             };
@@ -72,6 +87,10 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
                 Retryable = retryable,
                 Error = $"Webhook responded with {(int)response.StatusCode}."
             };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

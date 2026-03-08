@@ -24,6 +24,8 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class DeployControlEndpointsTests : IAsyncLifetime
 {
     private readonly StubDatabaseMigrationRunner _migrationRunner = new();
+    private readonly InMemoryWorkflowOperationStore _workflowStore = new();
+    private readonly StubOperationReconciler _reconciler = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -36,8 +38,10 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
                 services.RemoveAll<IDeployTargetRegistry>();
                 services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IOperationReconciler>();
                 services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
-                services.AddSingleton<IWorkflowOperationStore, InMemoryWorkflowOperationStore>();
+                services.AddSingleton<IWorkflowOperationStore>(_workflowStore);
+                services.AddSingleton<IOperationReconciler>(_reconciler);
             });
     }
 
@@ -181,6 +185,44 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
+    public async Task GetDeployOperation_ReconcilesActiveOperationBeforeReturning()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:poll123"
+        });
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
+        operationId.Should().NotBeNullOrWhiteSpace();
+
+        _reconciler.OnReconcileAsync = async (id, cancellationToken) =>
+        {
+            var operation = await _workflowStore.GetAsync(id, cancellationToken);
+            operation.Should().NotBeNull();
+            await _workflowStore.SetAsync(operation! with
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Reconciled during status poll.",
+                ObservedState = operation.Deploy?.DesiredRevision
+            }, cancellationToken: cancellationToken);
+        };
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/deploy/operations/{operationId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        getDocument.RootElement.GetProperty("status").GetString().Should().Be("Succeeded");
+        getDocument.RootElement.GetProperty("currentPhase").GetString().Should().Be("Reconciled during status poll.");
+    }
+
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner
     {
         public DatabaseMigrationPlan Plan { get; set; } = DatabaseMigrationPlan.Succeeded();
@@ -267,5 +309,16 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
             return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
         }
+    }
+
+    private sealed class StubOperationReconciler : IOperationReconciler
+    {
+        public Func<string, CancellationToken, Task>? OnReconcileAsync { get; set; }
+
+        public Task ReconcileWorkflowOperationAsync(string operationId, CancellationToken cancellationToken = default)
+            => OnReconcileAsync?.Invoke(operationId, cancellationToken) ?? Task.CompletedTask;
+
+        public Task ReconcileExecutionJobAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

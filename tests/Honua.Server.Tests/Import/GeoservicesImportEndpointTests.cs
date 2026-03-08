@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -265,6 +266,32 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable()
+    {
+        await using var degradedFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton<IDistributedImportJobManager, DegradedImportJobManager>();
+            });
+
+        await degradedFixture.InitializeAsync();
+
+        var response = await degradedFixture.Client.PostAsJsonAsync(
+            "/api/v1/admin/import/geoservices/start",
+            new
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                LayerId = 0,
+                TableName = "test_degraded_import"
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("coordination is unavailable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Start_WithUnresolvableHost_ReturnsBadRequest()
     {
         var request = new
@@ -439,4 +466,40 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
     }
 
     #endregion
+}
+
+internal sealed class DegradedImportJobManager : IDistributedImportJobManager, IImportCoordinationHealth
+{
+    public IDistributedJobQueueService JobQueue { get; } = new NoopDistributedJobQueue();
+    public IDistributedLeaderElection LeaderElection { get; } = new NoopDistributedLeaderElection();
+    public IDistributedProgressStore<GeoservicesImportProgress> ProgressStore { get; } = new NoopProgressStore<GeoservicesImportProgress>();
+    public IDistributedProgressStore<GeoservicesImportRequest> RequestStore { get; } = new NoopProgressStore<GeoservicesImportRequest>();
+    public bool CanAcceptNewJobs => false;
+}
+
+internal sealed class NoopDistributedJobQueue : IDistributedJobQueueService
+{
+    public Task EnqueueAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task<string?> DequeueAsync(TimeSpan timeout, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    public Task CompleteAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task RecoverInFlightAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task<long> GetQueueLengthAsync(CancellationToken cancellationToken = default) => Task.FromResult(0L);
+}
+
+internal sealed class NoopDistributedLeaderElection : IDistributedLeaderElection
+{
+    public bool IsLeader => false;
+    public string InstanceId => "noop";
+    public Task<bool> TryAcquireLeadershipAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+    public Task<bool> HeartbeatAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+    public Task ReleaseLeadershipAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+}
+
+internal sealed class NoopProgressStore<T> : IDistributedProgressStore<T> where T : class
+{
+    public Task SetProgressAsync(string jobId, T progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task<T?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default) => Task.FromResult<T?>(null);
+    public Task DeleteProgressAsync(string jobId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task<IReadOnlyList<string>> GetActiveJobIdsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 }

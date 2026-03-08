@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geocoding;
@@ -39,53 +40,45 @@ internal sealed class NominatimGeocodingOptions
     public string? CountryCodes { get; set; }
 }
 
-internal sealed class GeocodingOptionsValidator : IValidateOptions<GeocodingOptions>
+internal sealed class GeocodingOptionsValidator : OptionsValidator<GeocodingOptions>
 {
-    public ValidateOptionsResult Validate(string? name, GeocodingOptions options)
+    protected override void ValidateOptions(GeocodingOptions options, List<string> failures)
     {
-        ArgumentNullException.ThrowIfNull(options);
-
         if (string.IsNullOrWhiteSpace(options.LocatorName))
         {
-            return ValidateOptionsResult.Fail("Geocoding:LocatorName is required.");
+            failures.Add("Geocoding:LocatorName is required.");
         }
 
         if (string.IsNullOrWhiteSpace(options.DefaultProvider))
         {
-            return ValidateOptionsResult.Fail("Geocoding:DefaultProvider is required.");
+            failures.Add("Geocoding:DefaultProvider is required.");
         }
 
         if (options.DefaultSpatialReferenceWkid <= 0)
         {
-            return ValidateOptionsResult.Fail("Geocoding:DefaultSpatialReferenceWkid must be greater than 0.");
+            failures.Add("Geocoding:DefaultSpatialReferenceWkid must be greater than 0.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.Nominatim.BaseUrl) ||
-            !Uri.TryCreate(options.Nominatim.BaseUrl, UriKind.Absolute, out _))
-        {
-            return ValidateOptionsResult.Fail("Geocoding:Nominatim:BaseUrl must be a valid absolute URL.");
-        }
+        ValidateOutboundHttpUrl(options.Nominatim.BaseUrl, "Geocoding:Nominatim:BaseUrl", failures);
 
         if (string.IsNullOrWhiteSpace(options.Nominatim.UserAgent))
         {
-            return ValidateOptionsResult.Fail("Geocoding:Nominatim:UserAgent is required.");
+            failures.Add("Geocoding:Nominatim:UserAgent is required.");
         }
 
         if (options.Nominatim.TimeoutSeconds <= 0)
         {
-            return ValidateOptionsResult.Fail("Geocoding:Nominatim:TimeoutSeconds must be greater than 0.");
+            failures.Add("Geocoding:Nominatim:TimeoutSeconds must be greater than 0.");
         }
 
         if (options.Nominatim.DefaultMaxResults <= 0)
         {
-            return ValidateOptionsResult.Fail("Geocoding:Nominatim:DefaultMaxResults must be greater than 0.");
+            failures.Add("Geocoding:Nominatim:DefaultMaxResults must be greater than 0.");
         }
 
         if (options.Nominatim.DefaultMaxSuggestions <= 0)
         {
-            return ValidateOptionsResult.Fail("Geocoding:Nominatim:DefaultMaxSuggestions must be greater than 0.");
+            failures.Add("Geocoding:Nominatim:DefaultMaxSuggestions must be greater than 0.");
         }
-
-        return ValidateOptionsResult.Success;
     }
 }

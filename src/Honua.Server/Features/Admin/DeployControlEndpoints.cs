@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -44,6 +46,11 @@ internal static class DeployControlEndpoints
         group.MapGet("/operations/{operationId}", HandleGetDeployOperation)
             .WithDisplayName("Get Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .Produces<DeployOperationResponse>();
+
+        group.MapPost("/operations/{operationId}/submit", HandleSubmitDeployOperation)
+            .WithDisplayName("Submit Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
@@ -172,6 +179,14 @@ internal static class DeployControlEndpoints
         }
         catch (InvalidOperationException ex)
         {
+            if (ex is ResourceConflictException)
+            {
+                return Results.Conflict(ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status409Conflict,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                    ex.Message));
+            }
+
             return Results.Problem(
                 title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
                 detail: ex.Message,
@@ -182,6 +197,7 @@ internal static class DeployControlEndpoints
     private static async Task<IResult> HandleGetDeployOperation(
         string operationId,
         [FromServices] DeployWorkflowService deployWorkflowService,
+        [FromServices] IEnumerable<IOperationReconciler> reconcilers,
         HttpContext context)
     {
         try
@@ -195,7 +211,58 @@ internal static class DeployControlEndpoints
                     $"Deploy operation '{operationId}' was not found."));
             }
 
+            if (operation.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested)
+            {
+                var reconciler = reconcilers.FirstOrDefault();
+                if (reconciler != null)
+                {
+                    await reconciler.ReconcileWorkflowOperationAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+                    operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false) ?? operation;
+                }
+            }
+
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Problem(
+                title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                detail: ex.Message,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandleSubmitDeployOperation(
+        string operationId,
+        [FromBody] SubmitDeployOperationRequest? request,
+        [FromServices] DeployWorkflowService deployWorkflowService,
+        HttpContext context)
+    {
+        try
+        {
+            var operation = await deployWorkflowService.SubmitAsync(
+                    operationId,
+                    ResolveRequestedBy(context),
+                    request?.Reason,
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+
+            if (operation == null)
+            {
+                return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status404NotFound,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
+                    $"Deploy operation '{operationId}' was not found."));
+            }
+
+            return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+        }
+        catch (ResourceConflictException ex)
+        {
+            return Results.Conflict(ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                ex.Message));
         }
         catch (InvalidOperationException ex)
         {

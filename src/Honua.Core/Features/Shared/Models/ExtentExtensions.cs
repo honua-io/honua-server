@@ -59,38 +59,64 @@ public static class ExtentExtensions
         /// <summary>
         /// Extracts SRID from CRS URI (e.g., "http://www.opengis.net/def/crs/EPSG/0/4326" returns 4326)
         /// </summary>
-        /// <returns>SRID if found, otherwise 4326 as default</returns>
+        /// <returns>SRID if found</returns>
         public int ExtractSridFromCrs()
         {
-            if (string.IsNullOrEmpty(crsUri))
-                return 4326; // Default to WGS84
-
-            ReadOnlySpan<char> span = crsUri;
-            const string epsgMarker = "/EPSG/";
-
-            var epsgIndex = span.IndexOf(epsgMarker.AsSpan(), StringComparison.OrdinalIgnoreCase);
-            if (epsgIndex >= 0)
+            if (TryExtractSridFromCrs(crsUri, out var srid))
             {
-                var sridSpan = span[(epsgIndex + epsgMarker.Length)..];
-                var slashIndex = sridSpan.LastIndexOf('/');
-                if (slashIndex >= 0)
-                {
-                    sridSpan = sridSpan[(slashIndex + 1)..];
-                }
-
-                if (int.TryParse(sridSpan, out var srid))
-                    return srid;
+                return srid;
             }
 
-            if (span.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
-            {
-                var sridSpan = span["EPSG:".Length..];
-                if (int.TryParse(sridSpan, out var srid))
-                    return srid;
-            }
-
-            return 4326;
+            throw new FormatException("CRS must be a supported EPSG or CRS84 identifier.");
         }
+    }
+
+    /// <summary>
+    /// Attempts to extract an SRID from a CRS identifier.
+    /// </summary>
+    public static bool TryExtractSridFromCrs(string? crsUri, out int srid)
+    {
+        srid = default;
+        if (string.IsNullOrWhiteSpace(crsUri))
+        {
+            return false;
+        }
+
+        var trimmed = crsUri.Trim();
+        if (trimmed.Equals(GetDefaultCrsUri(), StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            srid = 4326;
+            return true;
+        }
+
+        ReadOnlySpan<char> span = trimmed;
+        const string epsgMarker = "/EPSG/";
+
+        var epsgIndex = span.IndexOf(epsgMarker.AsSpan(), StringComparison.OrdinalIgnoreCase);
+        if (epsgIndex >= 0)
+        {
+            var sridSpan = span[(epsgIndex + epsgMarker.Length)..];
+            var slashIndex = sridSpan.LastIndexOf('/');
+            if (slashIndex >= 0)
+            {
+                sridSpan = sridSpan[(slashIndex + 1)..];
+            }
+
+            if (int.TryParse(sridSpan, out srid))
+            {
+                return true;
+            }
+        }
+
+        if (span.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
+        {
+            var sridSpan = span["EPSG:".Length..];
+            return int.TryParse(sridSpan, out srid);
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -148,6 +148,11 @@ public enum DeployTargetKind
     AwsEcs,
 
     /// <summary>
+    /// Azure Container Apps target using revision-based rollout semantics.
+    /// </summary>
+    AzureContainerApps,
+
+    /// <summary>
     /// AWS Lambda target using revisions, aliases, or traffic shifting.
     /// </summary>
     AwsLambda,
@@ -224,6 +229,11 @@ public sealed record OperationAuditInfo
     /// Correlation ID propagated from upstream systems.
     /// </summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>
+    /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
+    /// </summary>
+    public string? RequestFingerprint { get; init; }
 }
 
 /// <summary>
@@ -701,6 +711,11 @@ public sealed record DeploySubmissionResult
     public string? ProviderOperationId { get; init; }
 
     /// <summary>
+    /// Previously observed provider revision before submission when the backend can determine it.
+    /// </summary>
+    public string? ObservedRevision { get; init; }
+
+    /// <summary>
     /// Operator-facing message from submission.
     /// </summary>
     public string? Message { get; init; }
@@ -730,6 +745,11 @@ public sealed record DeployObservation
     /// Operator-facing message from observation.
     /// </summary>
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Whether the backend has reached a staged state that is ready for final promotion.
+    /// </summary>
+    public bool PromotionRecommended { get; init; }
 
     /// <summary>
     /// Whether the backend recommends rollback based on observed state.

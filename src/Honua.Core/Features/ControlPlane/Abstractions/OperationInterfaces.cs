@@ -199,6 +199,18 @@ public interface IDeployBackend
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Advances a staged rollout after external gates such as telemetry have passed.
+    /// Backends without staged traffic shifting can return their normal observation.
+    /// </summary>
+    /// <param name="operation">Workflow operation record.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Latest observation from the provider.</returns>
+    Task<DeployObservation> PromoteAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+        => ObserveAsync(operation, cancellationToken);
+
+    /// <summary>
     /// Requests rollback for a workflow operation when supported by the backend.
     /// </summary>
     /// <param name="operation">Workflow operation record.</param>

@@ -33,7 +33,7 @@ public sealed class NominatimGeocodeProviderTests
 
         using var httpClient = new HttpClient(handler)
         {
-            BaseAddress = new Uri("https://nominatim.test/", UriKind.Absolute)
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
         };
 
         var provider = new NominatimGeocodeProvider(
@@ -42,7 +42,7 @@ public sealed class NominatimGeocodeProviderTests
             {
                 Nominatim = new NominatimGeocodingOptions
                 {
-                    BaseUrl = "https://nominatim.test",
+                    BaseUrl = "https://example.com",
                     UserAgent = "Honua.Tests/1.0",
                     TimeoutSeconds = 10,
                     DefaultMaxResults = 10,
@@ -75,7 +75,7 @@ public sealed class NominatimGeocodeProviderTests
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler())
         {
-            BaseAddress = new Uri("https://nominatim.test/", UriKind.Absolute)
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
         };
 
         var provider = new NominatimGeocodeProvider(
@@ -84,7 +84,7 @@ public sealed class NominatimGeocodeProviderTests
             {
                 Nominatim = new NominatimGeocodingOptions
                 {
-                    BaseUrl = "https://nominatim.test",
+                    BaseUrl = "https://example.com",
                     UserAgent = "Honua.Tests/1.0",
                     TimeoutSeconds = 10,
                     EnableSuggestFromSearch = false
@@ -95,14 +95,46 @@ public sealed class NominatimGeocodeProviderTests
         Assert.False(provider.Capabilities.SupportsSuggest);
     }
 
+    [Fact]
+    public async Task ForwardGeocodeAsync_WithUnsafeBaseUrl_ThrowsBeforeSending()
+    {
+        var handler = new StubHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://localhost/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            httpClient,
+            Options.Create(new GeocodingOptions
+            {
+                Nominatim = new NominatimGeocodingOptions
+                {
+                    BaseUrl = "https://localhost",
+                    UserAgent = "Honua.Tests/1.0",
+                    TimeoutSeconds = 10,
+                    DefaultMaxResults = 10,
+                    DefaultMaxSuggestions = 5
+                }
+            }),
+            NullLogger<NominatimGeocodeProvider>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.ForwardGeocodeAsync(
+            new ForwardGeocodeRequest("10 Downing St", 5, 4326, null),
+            CancellationToken.None));
+        Assert.Equal(0, handler.SendCount);
+    }
+
     private static Uri? LastRequestUri { get; set; }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         public Func<HttpRequestMessage, HttpResponseMessage>? ResponseFactory { get; init; }
+        public int SendCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            SendCount++;
             var response = ResponseFactory?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")

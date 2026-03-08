@@ -466,31 +466,37 @@ internal static class CollectionsEndpoints
         if (layer.Extent != null)
         {
             var extentSrid = layer.Extent.Value.SpatialReference;
-            var (minX, minY, maxX, maxY) = (
-                layer.Extent.Value.MinX,
-                layer.Extent.Value.MinY,
-                layer.Extent.Value.MaxX,
-                layer.Extent.Value.MaxY);
-
-            // OGC API Part 1 /req/core/fc-md-extent: first bbox MUST be in CRS84 (lon/lat).
+            (double Lon, double Lat) min = default;
+            (double Lon, double Lat) max = default;
+            var transformedToCrs84 = false;
+            (double Lon, double Lat) minTransformed = default;
+            (double Lon, double Lat) maxTransformed = default;
             if (extentSrid != 4326)
             {
-                try
-                {
-                    (minX, minY) = OgcExtentTransformer.TransformToCrs84(minX, minY, extentSrid);
-                    (maxX, maxY) = OgcExtentTransformer.TransformToCrs84(maxX, maxY, extentSrid);
-                }
-                catch (NotSupportedException)
-                {
-                    // If transformation not supported, leave coordinates as-is (best effort)
-                }
+                transformedToCrs84 =
+                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, out minTransformed) &&
+                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, out maxTransformed);
             }
 
-            spatialExtent = new SpatialExtent
+            if (extentSrid == 4326 || transformedToCrs84)
             {
-                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(minX, minY, maxX, maxY)),
-                Crs = OgcFeaturesUtilities.Crs84Uri
-            };
+                if (extentSrid == 4326)
+                {
+                    min = (layer.Extent.Value.MinX, layer.Extent.Value.MinY);
+                    max = (layer.Extent.Value.MaxX, layer.Extent.Value.MaxY);
+                }
+                else
+                {
+                    min = minTransformed;
+                    max = maxTransformed;
+                }
+
+                spatialExtent = new SpatialExtent
+                {
+                    BoundingBox = ImmutableArray.Create(ImmutableArray.Create(min.Lon, min.Lat, max.Lon, max.Lat)),
+                    Crs = OgcFeaturesUtilities.Crs84Uri
+                };
+            }
         }
 
         var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);

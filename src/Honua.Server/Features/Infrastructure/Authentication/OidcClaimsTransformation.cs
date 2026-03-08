@@ -121,7 +121,7 @@ internal sealed class OidcClaimsTransformation(
         if (transformedClaims.Count > 0)
         {
             identity.AddClaims(transformedClaims);
-            OidcAuthenticationLog.ClaimsTransformed(logger, transformedClaims.Count, userId ?? "unknown");
+            OidcAuthenticationLog.ClaimsTransformed(logger, transformedClaims.Count);
         }
 
         return Task.FromResult(principal);

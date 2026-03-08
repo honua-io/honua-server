@@ -3,9 +3,233 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
+using System.Net.Sockets;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Configuration;
+
+/// <summary>
+/// Result returned by outbound HTTP URL validation helpers.
+/// </summary>
+/// <param name="IsValid">Whether the URL passed validation.</param>
+/// <param name="Uri">The validated URI when available.</param>
+/// <param name="ErrorMessage">The validation error message when invalid.</param>
+public readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
+{
+    /// <summary>
+    /// Creates a successful validation result.
+    /// </summary>
+    public static OutboundHttpUrlValidationResult Success(Uri uri)
+        => new(true, uri, null);
+
+    /// <summary>
+    /// Creates a failed validation result.
+    /// </summary>
+    public static OutboundHttpUrlValidationResult Failure(string message)
+        => new(false, null, message);
+}
+
+/// <summary>
+/// Validates outbound HTTP destinations to reduce SSRF exposure.
+/// </summary>
+public static class OutboundHttpUrlValidator
+{
+    private const string InvalidHttpsUrlMessage = "must be a valid HTTPS URL.";
+    private const string InvalidHttpUrlMessage = "must be a valid HTTP or HTTPS URL.";
+    private const string EmbeddedCredentialsMessage = "must not include embedded credentials.";
+    private const string DisallowedAddressMessage =
+        "must not target localhost, loopback, private, reserved, or unresolvable network addresses.";
+
+    /// <summary>
+    /// Validates URL syntax and blocks obvious local/private destinations without performing DNS resolution.
+    /// </summary>
+    public static OutboundHttpUrlValidationResult ValidateConfiguration(string? url, bool requireHttps = true)
+    {
+        if (!TryValidateBaseUri(url, requireHttps, out var failure, out var uri))
+        {
+            return failure;
+        }
+
+        if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
+        {
+            return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+        }
+
+        return OutboundHttpUrlValidationResult.Success(uri);
+    }
+
+    /// <summary>
+    /// Validates a URL and resolves hostnames to reject private or unresolvable destinations.
+    /// </summary>
+    public static Task<OutboundHttpUrlValidationResult> ValidateAsync(
+        string? url,
+        bool requireHttps = true,
+        CancellationToken cancellationToken = default)
+        => ValidateAsync(url, ResolveHostAddressesAsync, requireHttps, cancellationToken);
+
+    internal static async Task<OutboundHttpUrlValidationResult> ValidateAsync(
+        string? url,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        bool requireHttps = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryValidateBaseUri(url, requireHttps, out var failure, out var uri))
+        {
+            return failure;
+        }
+
+        if (await IsPrivateOrUnresolvableAddressAsync(uri, hostAddressResolver, cancellationToken).ConfigureAwait(false))
+        {
+            return OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+        }
+
+        return OutboundHttpUrlValidationResult.Success(uri);
+    }
+
+    /// <summary>
+    /// Returns true when the host refers to localhost or a localhost subdomain.
+    /// </summary>
+    public static bool IsLocalhostHostName(string host)
+        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns true when the address is loopback, private, reserved, or otherwise unsuitable for outbound calls.
+    /// </summary>
+    public static bool IsPrivateOrReservedAddress(IPAddress address)
+    {
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+
+            if (bytes[0] == 0 ||
+                bytes[0] == 10 ||
+                (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
+                bytes[0] == 127 ||
+                (bytes[0] == 169 && bytes[1] == 254) ||
+                (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
+                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
+                (bytes[0] == 192 && bytes[1] == 168) ||
+                (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
+                (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
+                (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
+                bytes[0] >= 224)
+            {
+                return true;
+            }
+        }
+        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var bytes = address.GetAddressBytes();
+
+            if (address.Equals(IPAddress.IPv6None) ||
+                address.Equals(IPAddress.IPv6Loopback) ||
+                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
+                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
+                (bytes[0] & 0xfe) == 0xfc ||
+                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryValidateBaseUri(
+        string? url,
+        bool requireHttps,
+        out OutboundHttpUrlValidationResult failure,
+        out Uri uri)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out uri!) ||
+            !IsAllowedScheme(uri.Scheme, requireHttps))
+        {
+            failure = OutboundHttpUrlValidationResult.Failure(requireHttps ? InvalidHttpsUrlMessage : InvalidHttpUrlMessage);
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            failure = OutboundHttpUrlValidationResult.Failure(EmbeddedCredentialsMessage);
+            return false;
+        }
+
+        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        {
+            failure = OutboundHttpUrlValidationResult.Failure(DisallowedAddressMessage);
+            return false;
+        }
+
+        failure = default;
+        return true;
+    }
+
+    private static bool IsAllowedScheme(string scheme, bool requireHttps)
+        => requireHttps
+            ? string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+              || string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+
+    private static Task<IPAddress[]> ResolveHostAddressesAsync(string host, CancellationToken cancellationToken)
+        => Dns.GetHostAddressesAsync(host, cancellationToken);
+
+    private static async Task<bool> IsPrivateOrUnresolvableAddressAsync(
+        Uri uri,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(uri.Host, out var literalAddress))
+        {
+            return IsPrivateOrReservedAddress(literalAddress);
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await hostAddressResolver(uri.DnsSafeHost, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (SocketException)
+        {
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return true;
+        }
+
+        if (addresses.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (var address in addresses)
+        {
+            if (IsPrivateOrReservedAddress(address))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
 
 /// <summary>
 /// Base class for configuration validators that provides common validation helper methods.
@@ -233,6 +457,79 @@ public abstract class OptionsValidator<T> : IValidateOptions<T> where T : class
     }
 
     /// <summary>
+    /// Validates an outbound HTTP destination used for calling external services.
+    /// </summary>
+    /// <param name="url">The URL to validate.</param>
+    /// <param name="propertyName">Name of the property being validated.</param>
+    /// <param name="failures">List to add validation errors to.</param>
+    /// <param name="requireHttps">Whether to require HTTPS (default: true).</param>
+    protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> failures, bool requireHttps = true)
+    {
+        var validation = OutboundHttpUrlValidator.ValidateConfiguration(url, requireHttps);
+        if (!validation.IsValid)
+        {
+            failures.Add($"{propertyName} {validation.ErrorMessage ?? (requireHttps ? "must be a valid HTTPS URL." : "must be a valid HTTP or HTTPS URL.")}");
+        }
+    }
+
+    /// <summary>
+    /// Validates that an HTTP header name is syntactically safe and not on a deny list.
+    /// </summary>
+    protected static void ValidateHttpHeaderName(
+        string? headerName,
+        string propertyName,
+        List<string> failures,
+        bool required = false,
+        ISet<string>? disallowedNames = null)
+    {
+        if (string.IsNullOrWhiteSpace(headerName))
+        {
+            if (required)
+            {
+                failures.Add($"{propertyName} cannot be empty");
+            }
+
+            return;
+        }
+
+        if (!IsValidHttpHeaderName(headerName))
+        {
+            failures.Add($"{propertyName} must be a valid HTTP header name");
+            return;
+        }
+
+        if (disallowedNames != null && disallowedNames.Contains(headerName))
+        {
+            failures.Add($"{propertyName} header '{headerName}' is not allowed");
+        }
+    }
+
+    /// <summary>
+    /// Validates that an HTTP header value does not contain control characters that can break request framing.
+    /// </summary>
+    protected static void ValidateHttpHeaderValue(
+        string? headerValue,
+        string propertyName,
+        List<string> failures,
+        bool required = false)
+    {
+        if (string.IsNullOrWhiteSpace(headerValue))
+        {
+            if (required)
+            {
+                failures.Add($"{propertyName} cannot be empty");
+            }
+
+            return;
+        }
+
+        if (ContainsInvalidHeaderValueCharacter(headerValue))
+        {
+            failures.Add($"{propertyName} contains invalid control characters");
+        }
+    }
+
+    /// <summary>
     /// Validates a file or directory path for security and format.
     /// </summary>
     /// <param name="path">The path to validate</param>
@@ -370,6 +667,33 @@ public abstract class OptionsValidator<T> : IValidateOptions<T> where T : class
                timeSpan.TotalHours >= 1 ? $"{timeSpan.TotalHours:F0} hours" :
                timeSpan.TotalMinutes >= 1 ? $"{timeSpan.TotalMinutes:F0} minutes" :
                $"{timeSpan.TotalSeconds:F0} seconds";
+    }
+
+    private static bool IsValidHttpHeaderName(string value)
+    {
+        foreach (var character in value)
+        {
+            if (!(char.IsAsciiLetterOrDigit(character) ||
+                  character is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-' or '.' or '^' or '_' or '`' or '|' or '~'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ContainsInvalidHeaderValueCharacter(string value)
+    {
+        foreach (var character in value)
+        {
+            if ((character < 0x20 && character != '\t') || character == 0x7f)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     #endregion

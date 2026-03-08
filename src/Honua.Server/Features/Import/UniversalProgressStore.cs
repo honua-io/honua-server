@@ -47,6 +47,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         _isUsingFallback = cache == null;
     }
 
+    internal bool IsUsingFallback => _isUsingFallback;
+
     public async Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
         var key = $"{KeyPrefix}{operationId}";

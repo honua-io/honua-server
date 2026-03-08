@@ -74,6 +74,11 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                     ? (_cacheHealthChecker.IsUsingFallback ? "Healthy (fallback)" : "Healthy")
                     : "Unhealthy";
                 Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, 0.0);
+
+                if (!isCacheHealthy)
+                {
+                    return ReadinessResult.NotReady("Cache unavailable");
+                }
             }
 
             return ReadinessResult.Ready();

@@ -204,6 +204,15 @@ public sealed class RollbackDeployOperationRequest
 }
 
 /// <summary>
+/// Request payload for submitting or approving a planned deploy operation.
+/// </summary>
+public sealed class SubmitDeployOperationRequest
+{
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+}
+
+/// <summary>
 /// Response payload for deploy planning.
 /// </summary>
 public sealed class DeployPlanResponse

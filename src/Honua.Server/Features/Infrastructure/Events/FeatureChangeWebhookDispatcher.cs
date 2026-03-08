@@ -5,48 +5,98 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Events;
 
 /// <summary>
-/// Background dispatcher that delivers feature-change events to configured webhook subscribers.
+/// Background dispatcher that delivers persisted feature-change events to configured webhook subscribers.
 /// </summary>
 internal sealed partial class FeatureChangeWebhookDispatcher(
-    IFeatureChangeEventQueue queue,
+    IFeatureChangeEventStore store,
+    IDistributedCache? distributedCache,
     IHttpClientFactory httpClientFactory,
     IOptions<FeatureChangeWebhookOptions> options,
     ILogger<FeatureChangeWebhookDispatcher> logger) : BackgroundService
 {
-    private readonly IFeatureChangeEventQueue _queue = queue ?? throw new ArgumentNullException(nameof(queue));
+    private const string DeliveredCursorKey = "featurechange:webhook:delivered-cursor";
+    private static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(1);
+    private readonly IFeatureChangeEventStore _store = store ?? throw new ArgumentNullException(nameof(store));
+    private readonly IDistributedCache? _distributedCache = distributedCache;
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
     private readonly FeatureChangeWebhookOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<FeatureChangeWebhookDispatcher> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private int _invalidConfigurationLogged;
+    private int _unsafeWebhookUrlLogged;
+    private long _deliveredCursor;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var featureEvent in _queue.ReadAllAsync(stoppingToken))
+        _deliveredCursor = await LoadDeliveredCursorAsync(stoppingToken).ConfigureAwait(false);
+
+        while (!stoppingToken.IsCancellationRequested)
         {
-            await DeliverWithRetryAsync(featureEvent, stoppingToken).ConfigureAwait(false);
+            if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+            {
+                await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(_options.Secret))
+            {
+                LogWebhookConfigurationInvalidOnce();
+                await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                continue;
+            }
+
+            var validation = await FeatureChangeWebhookUrlValidation
+                .ValidateAsync(_options.Url, stoppingToken)
+                .ConfigureAwait(false);
+            if (!validation.IsValid || validation.Uri == null)
+            {
+                LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+                await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                continue;
+            }
+
+            var pending = await _store.QueryAsync(_deliveredCursor, null, null, limit: 100, stoppingToken).ConfigureAwait(false);
+            if (pending.Count == 0)
+            {
+                await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                continue;
+            }
+
+            foreach (var featureEvent in pending)
+            {
+                stoppingToken.ThrowIfCancellationRequested();
+                var delivered = await DeliverWithRetryAsync(featureEvent, validation.Uri, stoppingToken).ConfigureAwait(false);
+                if (!delivered)
+                {
+                    break;
+                }
+
+                _deliveredCursor = featureEvent.Cursor;
+                await PersistDeliveredCursorAsync(_deliveredCursor, stoppingToken).ConfigureAwait(false);
+            }
         }
     }
 
-    private async Task DeliverWithRetryAsync(FeatureChangeEvent featureEvent, CancellationToken cancellationToken)
+    private async Task<bool> DeliverWithRetryAsync(FeatureChangeEvent featureEvent, Uri webhookUri, CancellationToken cancellationToken)
     {
-        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+        var destinationValidation = await FeatureChangeWebhookUrlValidation
+            .ValidateAsync(webhookUri.AbsoluteUri, cancellationToken)
+            .ConfigureAwait(false);
+        if (!destinationValidation.IsValid || destinationValidation.Uri == null)
         {
-            return;
+            LogWebhookUrlRejectedOnce(destinationValidation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+            return false;
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Secret))
-        {
-            LogWebhookConfigurationInvalid(_logger);
-            return;
-        }
-
+        webhookUri = destinationValidation.Uri;
         var payload = JsonSerializer.Serialize(featureEvent, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
         var timestamp = featureEvent.Timestamp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-        var signature = ComputeSignature(_options.Secret, timestamp, payload);
+        var signature = ComputeSignature(_options.Secret!, timestamp, payload);
         var maxAttempts = Math.Max(1, _options.MaxAttempts);
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
@@ -57,7 +107,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.RequestTimeoutSeconds)));
 
-                using var request = new HttpRequestMessage(HttpMethod.Post, _options.Url)
+                using var request = new HttpRequestMessage(HttpMethod.Post, webhookUri)
                 {
                     Content = new StringContent(payload, Encoding.UTF8, "application/json")
                 };
@@ -72,14 +122,14 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 if (response.IsSuccessStatusCode)
                 {
                     LogDeliverySucceeded(_logger, featureEvent.EventId, response.StatusCode);
-                    return;
+                    return true;
                 }
 
                 var isRetryable = (int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
                 LogDeliveryFailed(_logger, featureEvent.EventId, attempt, (int)response.StatusCode, isRetryable);
                 if (!isRetryable || attempt == maxAttempts)
                 {
-                    return;
+                    return false;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -91,7 +141,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 LogDeliveryException(_logger, featureEvent.EventId, attempt, ex);
                 if (attempt == maxAttempts)
                 {
-                    return;
+                    return false;
                 }
             }
 
@@ -100,6 +150,35 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 Math.Max(1, _options.MaxBackoffMs));
             await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken).ConfigureAwait(false);
         }
+
+        return false;
+    }
+
+    private async Task<long> LoadDeliveredCursorAsync(CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null)
+        {
+            return Volatile.Read(ref _deliveredCursor);
+        }
+
+        var value = await _distributedCache.GetStringAsync(DeliveredCursorKey, cancellationToken).ConfigureAwait(false);
+        return long.TryParse(value, out var cursor) ? cursor : 0L;
+    }
+
+    private async Task PersistDeliveredCursorAsync(long cursor, CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null)
+        {
+            Volatile.Write(ref _deliveredCursor, cursor);
+            return;
+        }
+
+        await _distributedCache.SetStringAsync(
+                DeliveredCursorKey,
+                cursor.ToString(CultureInfo.InvariantCulture),
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7) },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static string ComputeSignature(string secret, string timestamp, string payload)
@@ -112,8 +191,27 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    private void LogWebhookConfigurationInvalidOnce()
+    {
+        if (Interlocked.Exchange(ref _invalidConfigurationLogged, 1) == 0)
+        {
+            LogWebhookConfigurationInvalid(_logger);
+        }
+    }
+
+    private void LogWebhookUrlRejectedOnce(string reason)
+    {
+        if (Interlocked.Exchange(ref _unsafeWebhookUrlLogged, 1) == 0)
+        {
+            LogWebhookUrlRejected(_logger, reason);
+        }
+    }
+
     [LoggerMessage(EventId = 9101, Level = LogLevel.Warning, Message = "Feature change webhook is enabled but secret is missing; delivery is disabled.")]
     private static partial void LogWebhookConfigurationInvalid(ILogger logger);
+
+    [LoggerMessage(EventId = 9105, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
+    private static partial void LogWebhookUrlRejected(ILogger logger, string reason);
 
     [LoggerMessage(EventId = 9102, Level = LogLevel.Debug, Message = "Feature-change webhook delivery succeeded for event {EventId} with status {StatusCode}.")]
     private static partial void LogDeliverySucceeded(ILogger logger, string eventId, System.Net.HttpStatusCode statusCode);
@@ -124,4 +222,3 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     [LoggerMessage(EventId = 9104, Level = LogLevel.Warning, Message = "Feature-change webhook delivery threw for event {EventId} on attempt {Attempt}.")]
     private static partial void LogDeliveryException(ILogger logger, string eventId, int attempt, Exception exception);
 }
-

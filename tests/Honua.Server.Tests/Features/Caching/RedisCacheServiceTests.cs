@@ -10,9 +10,11 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Caching;
 
@@ -63,6 +65,64 @@ public sealed class RedisCacheServiceTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task GetAsync_DoesNotAttachRawCacheKeyToTelemetryTags()
+    {
+        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
+        var operationScope = Substitute.For<IOperationScope>();
+        performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
+
+        using var cache = new RedisCacheService(
+            null,
+            Options.Create(_options),
+            new MockLogger<RedisCacheService>(),
+            performanceMonitor);
+
+        _ = await cache.GetAsync<FieldDefinition>("layer:42:token=secret");
+
+        operationScope.Received().WithTag("cache_type", "layer-catalog");
+        operationScope.Received().WithTag("key_family", "layer");
+        operationScope.DidNotReceive().WithTag("key", Arg.Any<string>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetAsync_WhenRedisFails_DoesNotLogRawCacheKeyInErrorContext()
+    {
+        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
+        var operationScope = Substitute.For<IOperationScope>();
+        performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
+
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache
+            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<byte[]?>>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "boom"));
+
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            EnableFallback = false,
+            KeyPrefix = "test:"
+        };
+
+        using var cache = new RedisCacheService(
+            distributedCache,
+            Options.Create(options),
+            new MockLogger<RedisCacheService>(),
+            performanceMonitor);
+
+        _ = await cache.GetAsync<FieldDefinition>("layer:42:token=secret");
+
+        performanceMonitor.Received().RecordErrorWithContext(
+            "cache_error",
+            "redis_get",
+            Arg.Is<IDictionary<string, object>>(context => HasExpectedSanitizedRedisErrorContext(context)),
+            Arg.Any<RedisConnectionException>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task SetAsync_ThenGetAsync_ReturnsCachedValue()
     {
         // Arrange
@@ -97,6 +157,15 @@ public sealed class RedisCacheServiceTests : IDisposable
         // Assert
         result.Should().BeNull();
     }
+
+    private static bool HasExpectedSanitizedRedisErrorContext(IDictionary<string, object> context)
+        => context.TryGetValue("cache_type", out var cacheType) &&
+           Equals(cacheType, "layer-catalog") &&
+           context.TryGetValue("key_family", out var keyFamily) &&
+           Equals(keyFamily, "layer") &&
+           context.TryGetValue("source", out var source) &&
+           Equals(source, "redis") &&
+           !context.ContainsKey("cache_key");
 
     [UnitTest]
     [Operation(Operations.Cache)]

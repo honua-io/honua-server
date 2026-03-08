@@ -65,6 +65,12 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new ServiceUnavailableException("Database connection failed", 30);
                                 if (path.Contains("throw-auth-invalid"))
                                     throw new InvalidOperationException("IDX20803: Unable to obtain configuration from issuer metadata endpoint.");
+                                if (path.Contains("throw-started"))
+                                {
+                                    await context.Response.StartAsync();
+                                    await context.Response.WriteAsync("partial");
+                                    throw new InvalidOperationException("The response has already started, the error handler will not be executed.");
+                                }
                                 if (path.Contains("throw-general"))
                                     throw new InvalidOperationException("Something went wrong");
                                 if (path.Contains("throw-unhandled"))
@@ -390,6 +396,14 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         content.Should().NotContain("This is not implemented");
         // Should contain a safe generic message instead
         content.Should().Contain("An unexpected error occurred");
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_ResponseStartedException_IsNotSilentlySwallowed()
+    {
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => _client.GetAsync("/throw-started"));
+        exception.InnerException.Should().NotBeNull();
+        exception.InnerException!.ToString().Should().Contain("The response has already started");
     }
 
     public void Dispose()

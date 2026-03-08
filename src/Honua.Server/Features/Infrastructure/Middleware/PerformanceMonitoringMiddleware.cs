@@ -18,6 +18,8 @@ namespace Honua.Server.Features.Infrastructure.Middleware;
 /// </remarks>
 internal sealed partial class PerformanceMonitoringMiddleware
 {
+    private const string UnmatchedEndpointMetricTag = "/{unmatched}";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<PerformanceMonitoringMiddleware> _logger;
     private readonly IPerformanceMonitor _performanceMonitor;
@@ -204,7 +206,17 @@ internal sealed partial class PerformanceMonitoringMiddleware
             return routeEndpoint.RoutePattern.RawText!;
         }
 
-        return NormalizePath(context.Request.Path);
+        return IsKnownFrameworkEndpoint(context.Request.Path)
+            ? NormalizePath(context.Request.Path)
+            : UnmatchedEndpointMetricTag;
+    }
+
+    private static bool IsKnownFrameworkEndpoint(PathString path)
+    {
+        var value = path.Value ?? string.Empty;
+
+        return value.StartsWith("/healthz", StringComparison.OrdinalIgnoreCase) ||
+               value.StartsWith("/metrics", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizePath(PathString path)

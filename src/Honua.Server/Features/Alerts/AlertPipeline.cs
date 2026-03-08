@@ -6,6 +6,7 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Server.Features.Alerts;
 
@@ -61,6 +62,13 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         }
 
         var serviceLookup = await BuildLayerServiceLookupAsync(cancellationToken).ConfigureAwait(false);
+        var rulesByLookup = await LoadRulesForChangesAsync(changes, serviceLookup, cancellationToken).ConfigureAwait(false);
+        var zones = await LoadZonesAsync(
+                rulesByLookup.Values.SelectMany(static rules => rules).ToArray(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        var stateByKey = await LoadStatesForChangesAsync(changes, serviceLookup, rulesByLookup, cancellationToken).ConfigureAwait(false);
+        var featureCache = new Dictionary<(int LayerId, long ObjectId), Feature?>();
         var maxGeneration = lastProcessedGeneration;
 
         foreach (var change in changes)
@@ -76,9 +84,9 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 ? mappedService
                 : null;
 
-            var rules = await _ruleRepository
-                .GetActiveRulesAsync(serviceId, change.LayerId, cancellationToken)
-                .ConfigureAwait(false);
+            var lookupKey = new AlertRuleLookupKey(serviceId, change.LayerId);
+            rulesByLookup.TryGetValue(lookupKey, out var rules);
+            rules ??= Array.Empty<AlertRuleDefinition>();
             if (rules.Count == 0)
             {
                 continue;
@@ -86,9 +94,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
             var feature = change.Operation == AlertChangeOperation.Delete
                 ? null
-                : await _featureReader.GetAsync(change.LayerId, change.ObjectId, cancellationToken).ConfigureAwait(false);
-
-            var zones = await LoadZonesAsync(rules, cancellationToken).ConfigureAwait(false);
+                : await GetFeatureAsync(change.LayerId, change.ObjectId, featureCache, cancellationToken).ConfigureAwait(false);
             var evaluatedAt = DateTimeOffset.UtcNow;
 
             foreach (var rule in rules)
@@ -98,9 +104,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                     continue;
                 }
 
-                var currentState = await _stateStore
-                    .GetAsync(rule.RuleId, change.LayerId, change.ObjectId, cancellationToken)
-                    .ConfigureAwait(false);
+                stateByKey.TryGetValue(new AlertStateLookupKey(rule.RuleId, change.LayerId, change.ObjectId), out var currentState);
 
                 var zone = ResolveZone(rule.ZoneId, zones);
 
@@ -111,6 +115,10 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 if (evaluation.UpdatedState is not null)
                 {
                     await _stateStore.UpsertAsync(evaluation.UpdatedState, cancellationToken).ConfigureAwait(false);
+                    stateByKey[new AlertStateLookupKey(
+                        evaluation.UpdatedState.RuleId,
+                        evaluation.UpdatedState.LayerId,
+                        evaluation.UpdatedState.ObjectId)] = evaluation.UpdatedState;
                 }
 
                 if (evaluation.Events.IsDefaultOrEmpty)
@@ -154,12 +162,22 @@ internal sealed partial class AlertPipeline : IAlertPipeline
             return 0;
         }
 
+        var ruleById = (await _ruleRepository
+                .GetRulesAsync(states.Select(static state => state.RuleId).Distinct().ToArray(), cancellationToken)
+                .ConfigureAwait(false))
+            .ToDictionary();
+        var zones = await LoadZonesAsync(ruleById.Values.ToArray(), cancellationToken).ConfigureAwait(false);
+        var featureCache = new Dictionary<(int LayerId, long ObjectId), Feature?>();
         var evaluated = 0;
         foreach (var state in states)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var rule = await _ruleRepository.GetRuleAsync(state.RuleId, cancellationToken).ConfigureAwait(false);
+            if (!ruleById.TryGetValue(state.RuleId, out var rule))
+            {
+                continue;
+            }
+
             if (rule is null || !rule.IsActive || rule.TriggerType != AlertTriggerType.Dwell)
             {
                 continue;
@@ -170,8 +188,8 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 continue;
             }
 
-            var zone = await LoadZoneForRuleAsync(rule, cancellationToken).ConfigureAwait(false);
-            var feature = await _featureReader.GetAsync(state.LayerId, state.ObjectId, cancellationToken).ConfigureAwait(false);
+            var zone = ResolveZone(rule.ZoneId, zones);
+            var feature = await GetFeatureAsync(state.LayerId, state.ObjectId, featureCache, cancellationToken).ConfigureAwait(false);
 
             var syntheticChange = new AlertChange
             {
@@ -213,6 +231,64 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         return evaluated;
     }
 
+    private async Task<Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>> LoadRulesForChangesAsync(
+        IReadOnlyList<AlertChange> changes,
+        Dictionary<int, string> serviceLookup,
+        CancellationToken cancellationToken)
+    {
+        var lookupKeys = changes
+            .Select(change => new AlertRuleLookupKey(
+                serviceLookup.TryGetValue(change.LayerId, out var serviceId) ? serviceId : null,
+                change.LayerId))
+            .Distinct()
+            .ToArray();
+
+        var rules = await _ruleRepository
+            .GetActiveRulesAsync(lookupKeys, cancellationToken)
+            .ConfigureAwait(false);
+
+        return lookupKeys.ToDictionary(
+            static key => key,
+            key => rules.TryGetValue(key, out var value) ? value : Array.Empty<AlertRuleDefinition>());
+    }
+
+    private async Task<Dictionary<AlertStateLookupKey, AlertStateSnapshot>> LoadStatesForChangesAsync(
+        IReadOnlyList<AlertChange> changes,
+        Dictionary<int, string> serviceLookup,
+        Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>> rulesByLookup,
+        CancellationToken cancellationToken)
+    {
+        var lookupKeys = new HashSet<AlertStateLookupKey>();
+
+        foreach (var change in changes)
+        {
+            var ruleLookupKey = new AlertRuleLookupKey(
+                serviceLookup.TryGetValue(change.LayerId, out var serviceId) ? serviceId : null,
+                change.LayerId);
+
+            if (!rulesByLookup.TryGetValue(ruleLookupKey, out var rules))
+            {
+                continue;
+            }
+
+            foreach (var rule in rules)
+            {
+                if (!rule.IsActive || !_editionPolicy.IsRuleAllowed(rule))
+                {
+                    continue;
+                }
+
+                lookupKeys.Add(new AlertStateLookupKey(rule.RuleId, change.LayerId, change.ObjectId));
+            }
+        }
+
+        var states = await _stateStore
+            .GetManyAsync(lookupKeys.ToArray(), cancellationToken)
+            .ConfigureAwait(false);
+
+        return states.ToDictionary();
+    }
+
     private async Task<Dictionary<int, string>> BuildLayerServiceLookupAsync(CancellationToken cancellationToken)
     {
         var services = await _layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
@@ -242,18 +318,21 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         return await _ruleRepository.GetZonesAsync(zoneIds, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<AlertZoneDefinition?> LoadZoneForRuleAsync(AlertRuleDefinition rule, CancellationToken cancellationToken)
+    private async Task<Feature?> GetFeatureAsync(
+        int layerId,
+        long objectId,
+        Dictionary<(int LayerId, long ObjectId), Feature?> featureCache,
+        CancellationToken cancellationToken)
     {
-        if (!rule.ZoneId.HasValue)
+        var key = (layerId, objectId);
+        if (featureCache.TryGetValue(key, out var cachedFeature))
         {
-            return null;
+            return cachedFeature;
         }
 
-        var zones = await _ruleRepository
-            .GetZonesAsync(new[] { rule.ZoneId.Value }, cancellationToken)
-            .ConfigureAwait(false);
-
-        return ResolveZone(rule.ZoneId, zones);
+        var feature = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+        featureCache[key] = feature;
+        return feature;
     }
 
     private static AlertZoneDefinition? ResolveZone(

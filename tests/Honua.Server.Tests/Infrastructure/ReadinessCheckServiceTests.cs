@@ -107,6 +107,25 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithUnhealthyCache_ReturnsNotReady()
+    {
+        // Arrange
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var mockCacheChecker = new MockCacheHealthChecker(healthy: false, usingFallback: false);
+        var service = CreateService(mockDatabaseChecker, mockCacheChecker);
+
+        // Act
+        var result = await service.CheckReadinessAsync();
+
+        // Assert
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Be("Not Ready - Cache unavailable");
+        result.Exception.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithDatabaseException_ReturnsNotReadyWithException()
     {
         // Arrange

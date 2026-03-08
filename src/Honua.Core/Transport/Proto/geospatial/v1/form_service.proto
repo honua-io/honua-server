@@ -72,6 +72,8 @@ message FormDefinition {
   repeated FormBinding bindings = 8;
   FormLayout layout_hints = 9;
   repeated FormGroup groups = 10;
+  repeated WorkflowAction workflow_actions = 11;
+  FormAccessControl access_control = 12;
 }
 
 // FormControl represents individual form elements (gRPC equivalent of OpenRosa controls).
@@ -96,6 +98,15 @@ message FormControl {
     GroupControl group_control = 17;
     SeparatorControl separator_control = 18;
   }
+
+  // Conditional visibility expression. When non-empty the control is only
+  // shown when the expression evaluates to true against current field values.
+  // Uses the same expression language as CalculatedValue.
+  string visibility_expression = 21;
+
+  // Conditional read-only expression. When non-empty the control becomes
+  // read-only when the expression evaluates to true.
+  string read_only_expression = 22;
 
   // Mobile-specific optimizations
   MobileControlHints mobile_hints = 20;
@@ -607,6 +618,59 @@ message FormCompatibility {
   repeated string supported_platforms = 2;
   bool requires_online = 3;
   repeated string required_permissions = 4;
+}
+
+// WorkflowAction defines an automated action triggered by a form lifecycle event.
+message WorkflowAction {
+  string action_id = 1;
+  WorkflowTrigger trigger = 2;
+  string condition_expression = 3; // Optional guard expression
+  WorkflowActionType action_type = 4;
+  map<string, string> parameters = 5; // Action-specific key/value parameters
+  int32 execution_order = 6; // Order when multiple actions share a trigger
+}
+
+enum WorkflowTrigger {
+  WORKFLOW_TRIGGER_UNSPECIFIED = 0;
+  WORKFLOW_TRIGGER_ON_LOAD = 1;       // Form opened / loaded
+  WORKFLOW_TRIGGER_ON_SAVE = 2;       // Draft saved
+  WORKFLOW_TRIGGER_ON_SUBMIT = 3;     // Form submitted
+  WORKFLOW_TRIGGER_ON_APPROVE = 4;    // Supervisor approval
+  WORKFLOW_TRIGGER_ON_REJECT = 5;     // Supervisor rejection
+  WORKFLOW_TRIGGER_ON_FIELD_CHANGE = 6; // Specific field value changed
+}
+
+enum WorkflowActionType {
+  WORKFLOW_ACTION_TYPE_UNSPECIFIED = 0;
+  WORKFLOW_ACTION_TYPE_WEBHOOK = 1;         // HTTP callback
+  WORKFLOW_ACTION_TYPE_SET_FIELD = 2;       // Set a field value
+  WORKFLOW_ACTION_TYPE_SET_STATUS = 3;      // Transition instance status
+  WORKFLOW_ACTION_TYPE_SEND_NOTIFICATION = 4; // Push / email notification
+  WORKFLOW_ACTION_TYPE_CREATE_FEATURE = 5;  // Create a related feature
+  WORKFLOW_ACTION_TYPE_VALIDATE = 6;        // Run additional validation
+}
+
+// FormAccessControl defines role- and location-based access to a form.
+message FormAccessControl {
+  // Roles allowed to open this form. Empty means unrestricted.
+  repeated string allowed_roles = 1;
+
+  // Roles allowed to approve/reject submissions.
+  repeated string approver_roles = 2;
+
+  // Optional geographic boundary — form is only available within this extent.
+  Extent location_boundary = 3;
+
+  // Per-field role overrides (field_id → FieldAccessRule).
+  repeated FieldAccessRule field_access_rules = 4;
+}
+
+// FieldAccessRule restricts visibility or editability of a single field by role.
+message FieldAccessRule {
+  string field_id = 1;
+  repeated string visible_to_roles = 2;  // Empty = visible to all allowed roles
+  repeated string editable_by_roles = 3; // Empty = editable by all allowed roles
+  bool read_only = 4;                    // Hard read-only regardless of role
 }
 
 // Validation request/response.

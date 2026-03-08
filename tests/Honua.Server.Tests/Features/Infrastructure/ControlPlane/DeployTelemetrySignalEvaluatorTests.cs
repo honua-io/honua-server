@@ -20,15 +20,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(
             capturedQueries,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"150"]}]}}
-            """);
+            responses: CreateSuccessfulResponses("25", "0.01", "150"));
 
         var decision = await evaluator.EvaluateAsync(CreateOperation(
             DeployTargetKind.Kubernetes,
@@ -55,15 +47,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(
             capturedQueries,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"12"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"120"]}]}}
-            """);
+            responses: CreateSuccessfulResponses("12", "0.01", "120"));
 
         var decision = await evaluator.EvaluateAsync(CreateOperation(
             DeployTargetKind.Kubernetes,
@@ -92,15 +76,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(
             capturedQueries,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"12"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"120"]}]}}
-            """);
+            responses: CreateSuccessfulResponses("12", "0.01", "120"));
 
         var decision = await evaluator.EvaluateAsync(CreateOperation(
             DeployTargetKind.AwsEcs,
@@ -123,20 +99,38 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_UsesDefaultHonuaHttpPreset_ForAzureContainerAppsTargets()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("25", "0.02", "130"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.AzureContainerApps,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-aca"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+
+        var queries = capturedQueries.ToArray();
+        queries.Should().HaveCount(3);
+        queries[0].Should().Contain("honua_http_request_total{job=\"honua-aca\"}[5m]");
+        queries[1].Should().Contain("honua_http_request_total{job=\"honua-aca\",status_code=~\"5..\"}[5m]");
+        queries[2].Should().Contain("honua_http_request_duration_ms_bucket{job=\"honua-aca\"}[5m]");
+    }
+
+    [Fact]
     public async Task EvaluateAsync_UsesExplicitQueryOverrides_WhenProvidedAlongsidePreset()
     {
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(
             capturedQueries,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"42"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
-            """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"100"]}]}}
-            """);
+            responses: CreateSuccessfulResponses("42", "0.01", "100"));
 
         var decision = await evaluator.EvaluateAsync(CreateOperation(
             DeployTargetKind.Kubernetes,
@@ -158,8 +152,65 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         queries[2].Should().Contain("honua_http_request_duration_ms_bucket{job=\"honua-prod\"}[5m]");
     }
 
+    [Fact]
+    public async Task EvaluateAsync_WithPrivateTelemetryBaseUrl_DoesNotSendRequests()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            connection: new DeployTelemetryConnectionOptions
+            {
+                ConnectionId = "prod-prom",
+                Provider = "prometheus",
+                BaseUrl = "https://localhost",
+                TimeoutSeconds = 2
+            });
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            }));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_WithDisallowedAuthHeader_DoesNotSendRequests()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            connection: new DeployTelemetryConnectionOptions
+            {
+                ConnectionId = "prod-prom",
+                Provider = "prometheus",
+                BaseUrl = "https://example.com",
+                AuthHeaderName = "Host",
+                AuthHeaderValue = "internal.example",
+                TimeoutSeconds = 2
+            });
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            }));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        capturedQueries.Should().BeEmpty();
+    }
+
     private static PrometheusDeployTelemetrySignalEvaluator CreateEvaluator(
         ConcurrentQueue<string> capturedQueries,
+        DeployTelemetryConnectionOptions? connection = null,
         params string[] responses)
     {
         var responseQueue = new ConcurrentQueue<string>(responses);
@@ -185,11 +236,11 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             {
                 TelemetryConnections =
                 [
-                    new DeployTelemetryConnectionOptions
+                    connection ?? new DeployTelemetryConnectionOptions
                     {
                         ConnectionId = "prod-prom",
                         Provider = "prometheus",
-                        BaseUrl = "https://prometheus.example",
+                        BaseUrl = "https://example.com",
                         TimeoutSeconds = 2
                     }
                 ]
@@ -197,6 +248,17 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             new StubHttpClientFactory(new HttpClient(handler)),
             NullLogger<PrometheusDeployTelemetrySignalEvaluator>.Instance);
     }
+
+    private static string[] CreateSuccessfulResponses(string sampleCount, string errorRate, string latencyP95)
+        =>
+        [
+            CreateSuccessResponse(sampleCount),
+            CreateSuccessResponse(errorRate),
+            CreateSuccessResponse(latencyP95)
+        ];
+
+    private static string CreateSuccessResponse(string value)
+        => $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[1710000000,""{value}""]}}]}}}}";
 
     private static WorkflowOperationRecord CreateOperation(
         DeployTargetKind targetKind,

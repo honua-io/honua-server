@@ -43,6 +43,7 @@ Honua uses standard OpenTelemetry APIs.
 - Prometheus can scrape native text metrics at `GET /metrics`.
 - Optional path override: `Observability__Prometheus__Path=/custom-metrics`.
 - Use `/api/v1/admin/observability/telemetry` to confirm tracing status.
+- In multi-node environments, deploy rollback detection should query a Prometheus-compatible metrics backend. OTLP is the export path, not the rollback-decision API.
 
 ---
 
@@ -56,6 +57,58 @@ The recommended alerting path uses managed cloud services rather than self-hoste
 2. OpenTelemetry Collector receives OTLP and batches data.
 3. Collector exports metrics to managed Prometheus via `remote_write`.
 4. Alert policies use a shared PromQL rules file: `docs/alerting/rules/honua-core.yaml`
+5. The Honua control plane can query that Prometheus-compatible backend for canary settle/rollback decisions.
+
+For self-hosted multi-node environments, Prometheus can also scrape `GET /metrics` directly and act as both the collector and the query backend for deploy rollback gates.
+
+### Deploy Telemetry Presets
+
+Deploy targets can point at a Prometheus-compatible query backend by setting `telemetry.connection` in the control-plane target parameters.
+
+- Default Kubernetes preset: when a Kubernetes deploy target sets `telemetry.connection`, Honua uses the built-in `kubernetes-honua-http` policy unless you override it.
+- AWS ALB canary preset: set `telemetry.policy=aws-alb-canary` and expose a distinct Prometheus scrape lane for the canary tasks, typically via a separate scrape job such as `honua-canary`.
+- Generic Honua HTTP preset: serverless and Azure Container Apps targets can use `telemetry.policy=honua-http` when they expose the standard Honua HTTP metrics without a distinct canary scrape lane.
+
+Useful target parameters:
+
+- `telemetry.connection`: named telemetry connection from `ControlPlane:TelemetryConnections`
+- `telemetry.policy`: optional preset, currently `kubernetes-honua-http`, `aws-alb-canary`, or `honua-http`
+- `telemetry.prometheus.job`: Prometheus `job` label for the stable or aggregated Honua scrape target
+- `telemetry.prometheus.selector`: raw PromQL label selector fragment when `job=...` is not enough
+- `telemetry.prometheus.canary_job`: Prometheus `job` label for the canary scrape target
+- `telemetry.prometheus.canary_selector`: raw PromQL label selector fragment for canary-only metrics
+- `telemetry.prometheus.extra_selector`: additional label matchers appended to the generated selector
+- `lambda.canary_weight_percentage`: optional AWS Lambda alias canary percentage for deploy targets; requires `telemetry.connection` because Honua only promotes or rolls back the alias after telemetry settles
+
+Explicit query overrides still win:
+
+- `telemetry.error_rate.query`
+- `telemetry.latency_p95.query`
+- `telemetry.sample_count.query`
+
+To render a starter `ControlPlane` config fragment from Terraform outputs, use:
+
+```bash
+terraform output -json > terraform-output.json
+./scripts/render-control-plane-config-from-terraform.sh \
+  --terraform-output-json terraform-output.json
+```
+
+The renderer also consumes provider-specific identity hints when Terraform exposes them, including:
+
+- `control_plane_target_id`
+- `control_plane_target_name`
+- `control_plane_target_resource_id`
+- `control_plane_current_revision`
+- `control_plane_namespace`
+- `aws_region`
+- `lambda_alias_name`
+- `lambda_alias_arn`
+- `lambda_alias_invoke_arn`
+- `lambda_current_version`
+- `lambda_function_name`
+- `function_app_name`
+- `container_app_name`
 
 ### AWS (Amazon Managed Prometheus)
 

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
@@ -18,6 +19,7 @@ internal sealed class NominatimGeocodeProvider(
     private readonly HttpClient _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     private readonly GeocodingOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<NominatimGeocodeProvider> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private int _validatedBaseUrl;
 
     public string Name => ProviderName;
 
@@ -30,6 +32,7 @@ internal sealed class NominatimGeocodeProvider(
     public async Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(ForwardGeocodeRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
 
         var query = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -82,6 +85,7 @@ internal sealed class NominatimGeocodeProvider(
     public async Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(ReverseGeocodeRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
 
         var query = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -126,6 +130,7 @@ internal sealed class NominatimGeocodeProvider(
     public async Task<IReadOnlyList<GeocodeSuggestion>> SuggestAsync(SuggestGeocodeRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        await EnsureSafeBaseUrlAsync(cancellationToken).ConfigureAwait(false);
 
         if (!Capabilities.SupportsSuggest)
         {
@@ -190,6 +195,26 @@ internal sealed class NominatimGeocodeProvider(
         {
             query["email"] = _options.Nominatim.Email;
         }
+    }
+
+    private async Task EnsureSafeBaseUrlAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _validatedBaseUrl) == 1)
+        {
+            return;
+        }
+
+        var validation = await OutboundHttpUrlValidator
+            .ValidateAsync(_options.Nominatim.BaseUrl, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(
+                $"Geocoding:Nominatim:BaseUrl {validation.ErrorMessage ?? "must be a valid HTTPS URL."}");
+        }
+
+        Volatile.Write(ref _validatedBaseUrl, 1);
     }
 
     private static Dictionary<string, string?> BuildAddressAttributes(NominatimSearchResult result)

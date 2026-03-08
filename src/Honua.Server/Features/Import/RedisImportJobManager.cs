@@ -8,6 +8,7 @@ using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
@@ -17,23 +18,32 @@ namespace Honua.Server.Features.Import;
 /// Redis-based distributed import job manager with in-memory fallback.
 /// Uses StackExchange.Redis primitives when available, falling back to IDistributedCache.
 /// </summary>
-internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IDisposable
+internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IImportCoordinationHealth, IDisposable
 {
     private readonly RedisJobQueue _jobQueue;
     private readonly RedisLeaderElection _leaderElection;
+    private readonly IUniversalProgressStore _universalProgressStore;
     private readonly IDistributedProgressStore<GeoservicesImportProgress> _progressStore;
     private readonly RedisProgressStore<GeoservicesImportRequest> _requestStore;
+    private readonly bool _requiresStrictDistributedMode;
 
     public RedisImportJobManager(
         IUniversalProgressStore universalProgressStore,
         IDistributedCache? distributedCache,
         ILogger<RedisImportJobManager> logger,
+        IHostEnvironment hostEnvironment,
         IConnectionMultiplexer? redis = null)
     {
+        ArgumentNullException.ThrowIfNull(universalProgressStore);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(hostEnvironment);
+
         var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
 
-        _jobQueue = new RedisJobQueue(redis, logger, "geoservices:import:queue");
+        _requiresStrictDistributedMode = RequiresStrictDistributedMode(hostEnvironment);
+        _jobQueue = new RedisJobQueue(redis, logger, "geoservices:import:queue", allowFallback: !_requiresStrictDistributedMode);
         _leaderElection = new RedisLeaderElection(redis, logger, "geoservices:import:leader", instanceId);
+        _universalProgressStore = universalProgressStore;
 
         // Use the universal progress store for progress tracking
         _progressStore = new DistributedProgressStoreAdapter<GeoservicesImportProgress>(universalProgressStore);
@@ -47,11 +57,24 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
     public IDistributedLeaderElection LeaderElection => _leaderElection;
     public IDistributedProgressStore<GeoservicesImportProgress> ProgressStore => _progressStore;
     public IDistributedProgressStore<GeoservicesImportRequest> RequestStore => _requestStore;
+    internal bool IsClusterDurable =>
+        !_jobQueue.IsUsingFallback &&
+        !_leaderElection.IsUsingFallback &&
+        !_requestStore.IsUsingFallback &&
+        _universalProgressStore is not UniversalProgressStore { IsUsingFallback: true };
+    public bool CanAcceptNewJobs => IsClusterDurable || !_requiresStrictDistributedMode;
+    internal static bool RequiresStrictDistributedMode(IHostEnvironment hostEnvironment)
+        => !hostEnvironment.IsDevelopment() && !hostEnvironment.IsEnvironment("Test");
 
     public void Dispose()
     {
         _leaderElection.Dispose();
     }
+}
+
+public interface IImportCoordinationHealth
+{
+    bool CanAcceptNewJobs { get; }
 }
 
 /// <summary>
@@ -60,29 +83,40 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 /// </summary>
 internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 {
+    private const string StrictModeUnavailableMessage = "Distributed import queue is unavailable while durable coordination is required.";
     private readonly IDatabase? _redisDb;
     private readonly ILogger _logger;
     private readonly string _queueKey;
+    private readonly string _processingQueueKey;
+    private readonly bool _allowFallback;
     private readonly ConcurrentQueue<string> _fallbackQueue = new();
+    private readonly ConcurrentDictionary<string, byte> _fallbackInFlight = new(StringComparer.Ordinal);
     private static readonly TimeSpan _redisRetryInterval = TimeSpan.FromSeconds(30);
     private DateTime _lastRedisFailure = DateTime.MinValue;
     private long _fallbackQueueLength;
     private volatile bool _useRedis;
     private volatile bool _hasLoggedUnavailable;
 
-    public RedisJobQueue(IConnectionMultiplexer? redis, ILogger logger, string queueKey)
+    public RedisJobQueue(IConnectionMultiplexer? redis, ILogger logger, string queueKey, bool allowFallback = true)
     {
         _redisDb = redis?.GetDatabase();
         _logger = logger;
         _queueKey = queueKey;
+        _processingQueueKey = $"{queueKey}:processing";
+        _allowFallback = allowFallback;
         _useRedis = _redisDb != null;
 
         if (!_useRedis)
         {
-            _hasLoggedUnavailable = true;
-            Log.QueueUsingFallback(_logger, _queueKey);
+            if (_allowFallback)
+            {
+                _hasLoggedUnavailable = true;
+                Log.QueueUsingFallback(_logger, _queueKey);
+            }
         }
     }
+
+    internal bool IsUsingFallback => !_useRedis;
 
     public async Task EnqueueAsync(string jobId, CancellationToken cancellationToken = default)
     {
@@ -95,7 +129,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
         {
             try
             {
-                await _redisDb.ListRightPushAsync(_queueKey, jobId).ConfigureAwait(false);
+                await _redisDb.ListLeftPushAsync(_queueKey, jobId).ConfigureAwait(false);
                 Log.JobEnqueued(_logger, jobId);
                 return;
             }
@@ -123,7 +157,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             {
                 try
                 {
-                    var jobValue = await _redisDb.ListLeftPopAsync(_queueKey).ConfigureAwait(false);
+                    var jobValue = await _redisDb.ListRightPopLeftPushAsync(_queueKey, _processingQueueKey).ConfigureAwait(false);
                     if (jobValue.HasValue)
                     {
                         var jobId = jobValue.ToString();
@@ -137,7 +171,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
                 }
             }
 
-            if (TryDequeueFallbackJob(out var fallbackJob))
+            if (_allowFallback && TryDequeueFallbackJob(out var fallbackJob))
             {
                 Log.JobDequeuedFallback(_logger, fallbackJob);
                 return fallbackJob;
@@ -170,7 +204,83 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             }
         }
 
-        return fallbackLength;
+        return _allowFallback ? fallbackLength : 0L;
+    }
+
+    public async Task CompleteAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_useRedis && _redisDb != null)
+        {
+            try
+            {
+                await _redisDb.ListRemoveAsync(_processingQueueKey, jobId, 1).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                MarkRedisUnavailable("complete", ex);
+            }
+        }
+
+        if (_allowFallback)
+        {
+            _fallbackInFlight.TryRemove(jobId, out _);
+        }
+    }
+
+    public async Task RecoverInFlightAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_useRedis && _redisDb != null)
+        {
+            try
+            {
+                RedisValue[] inFlight;
+                do
+                {
+                    inFlight = await _redisDb.ListRangeAsync(_processingQueueKey, 0, 99).ConfigureAwait(false);
+                    foreach (var jobValue in inFlight)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        var jobId = jobValue.ToString();
+                        if (string.IsNullOrWhiteSpace(jobId))
+                        {
+                            continue;
+                        }
+
+                        await _redisDb.ListRemoveAsync(_processingQueueKey, jobId, 1).ConfigureAwait(false);
+                        await _redisDb.ListLeftPushAsync(_queueKey, jobId).ConfigureAwait(false);
+                        Log.JobRequeued(_logger, jobId);
+                    }
+                }
+                while (inFlight.Length > 0);
+
+                return;
+            }
+            catch (Exception ex)
+            {
+                MarkRedisUnavailable("recover", ex);
+            }
+        }
+
+        if (!_allowFallback)
+        {
+            return;
+        }
+
+        foreach (var jobId in _fallbackInFlight.Keys)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_fallbackInFlight.TryRemove(jobId, out _))
+            {
+                _fallbackQueue.Enqueue(jobId);
+                Interlocked.Increment(ref _fallbackQueueLength);
+                Log.JobRequeuedFallback(_logger, jobId);
+            }
+        }
     }
 
     private bool ShouldRetryRedis(DateTime now)
@@ -214,6 +324,11 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 
     private void CacheFallbackJob(string jobId)
     {
+        if (!_allowFallback)
+        {
+            throw new InvalidOperationException(StrictModeUnavailableMessage);
+        }
+
         _fallbackQueue.Enqueue(jobId);
         Interlocked.Increment(ref _fallbackQueueLength);
         if (!_hasLoggedUnavailable)
@@ -230,6 +345,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
         if (_fallbackQueue.TryDequeue(out var queued))
         {
             Interlocked.Decrement(ref _fallbackQueueLength);
+            _fallbackInFlight[queued] = 0;
             jobId = queued;
             return true;
         }
@@ -260,6 +376,12 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 
         [LoggerMessage(7606, LogLevel.Debug, "Job {JobId} dequeued from in-memory fallback queue")]
         public static partial void JobDequeuedFallback(ILogger logger, string jobId);
+
+        [LoggerMessage(7607, LogLevel.Warning, "Job {JobId} requeued after incomplete processing was recovered")]
+        public static partial void JobRequeued(ILogger logger, string jobId);
+
+        [LoggerMessage(7608, LogLevel.Warning, "Job {JobId} requeued from in-memory fallback in-flight state")]
+        public static partial void JobRequeuedFallback(ILogger logger, string jobId);
     }
 }
 
@@ -304,6 +426,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
     public bool IsLeader => _isLeader;
     public string InstanceId => _instanceId;
+    internal bool IsUsingFallback => !_useRedis || _usingLocalFallbackLeadership;
 
     public async Task<bool> TryAcquireLeadershipAsync(CancellationToken cancellationToken = default)
     {
@@ -592,6 +715,8 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         _healthCheckKey = $"{_keyPrefix}__health_check__";
         _isUsingFallback = cache == null;
     }
+
+    internal bool IsUsingFallback => _isUsingFallback;
 
     public async Task SetProgressAsync(string jobId, T progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {

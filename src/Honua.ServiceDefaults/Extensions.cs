@@ -59,7 +59,10 @@ public static partial class Extensions
         var tracingOptions = new TracingOptions();
         builder.Configuration.GetSection(TracingOptions.SectionName).Bind(tracingOptions);
         builder.Services.Configure<TracingOptions>(builder.Configuration.GetSection(TracingOptions.SectionName));
-        HonuaTelemetry.ConfigureExceptionRecording(tracingOptions.RecordExceptionStackTraces);
+        HonuaTelemetry.ConfigureExceptionRecording(
+            tracingOptions.ExportExceptionDetails,
+            tracingOptions.ExportExceptionDetails && tracingOptions.RecordExceptionStackTraces,
+            tracingOptions.MaxExceptionDetailLength);
 
         // Bind Prometheus scraping options
         builder.Services.Configure<PrometheusOptions>(builder.Configuration.GetSection(PrometheusOptions.SectionName));
@@ -150,8 +153,9 @@ public static partial class Extensions
                                    !path.StartsWith("/alive", StringComparison.OrdinalIgnoreCase);
                         };
 
-                        // Record exception details based on options
-                        options.RecordException = tracingOptions.RecordExceptionStackTraces;
+                        // Record exceptions explicitly through HonuaTelemetry so exported details
+                        // consistently follow Honua tracing sanitization settings.
+                        options.RecordException = false;
                     })
                     .AddHttpClientInstrumentation()
                     .AddNpgsql()
@@ -219,9 +223,7 @@ public static partial class Extensions
 
     private static bool ShouldAddSpanSanitizer(TracingOptions tracingOptions)
     {
-        return !tracingOptions.IncludeDbStatementText ||
-               tracingOptions.MaxAttributesPerSpan > 0 ||
-               tracingOptions.MaxEventsPerSpan > 0;
+        return true;
     }
 
     private static string NormalizePrometheusPath(string? path)
@@ -250,14 +252,22 @@ public static partial class Extensions
         ];
 
         private readonly bool _includeDbStatementText;
+        private readonly bool _exportExceptionDetails;
+        private readonly bool _includeExceptionStackTraces;
         private readonly int _maxAttributes;
         private readonly int _maxEvents;
+        private readonly int _maxExceptionDetailLength;
 
         public SpanSanitizingProcessor(TracingOptions tracingOptions)
         {
             _includeDbStatementText = tracingOptions.IncludeDbStatementText;
+            _exportExceptionDetails = tracingOptions.ExportExceptionDetails;
+            _includeExceptionStackTraces = tracingOptions.ExportExceptionDetails && tracingOptions.RecordExceptionStackTraces;
             _maxAttributes = tracingOptions.MaxAttributesPerSpan;
             _maxEvents = tracingOptions.MaxEventsPerSpan;
+            _maxExceptionDetailLength = tracingOptions.MaxExceptionDetailLength > 0
+                ? tracingOptions.MaxExceptionDetailLength
+                : 256;
         }
 
         public override void OnEnd(Activity activity)
@@ -269,6 +279,8 @@ public static partial class Extensions
                     activity.SetTag(tag, null);
                 }
             }
+
+            SanitizeExceptionTags(activity);
 
             if (_maxAttributes > 0)
             {
@@ -282,6 +294,52 @@ public static partial class Extensions
                 {
                     activity.SetTag("otel.events.truncated", eventCount - _maxEvents);
                 }
+            }
+        }
+
+        private void SanitizeExceptionTags(Activity activity)
+        {
+            if (!_exportExceptionDetails)
+            {
+                activity.SetTag(HonuaTelemetry.Tags.ErrorMessage, null);
+                activity.SetTag("exception.message", null);
+                activity.SetTag("exception.stacktrace", null);
+
+                if (activity.Status == ActivityStatusCode.Error)
+                {
+                    activity.SetStatus(ActivityStatusCode.Error);
+                }
+
+                return;
+            }
+
+            SanitizeExceptionTag(activity, HonuaTelemetry.Tags.ErrorMessage, _maxExceptionDetailLength);
+            SanitizeExceptionTag(activity, "exception.message", _maxExceptionDetailLength);
+
+            if (_includeExceptionStackTraces)
+            {
+                SanitizeExceptionTag(activity, "exception.stacktrace", Math.Max(_maxExceptionDetailLength, 2048));
+            }
+            else
+            {
+                activity.SetTag("exception.stacktrace", null);
+            }
+        }
+
+        private static void SanitizeExceptionTag(Activity activity, string tagName, int maxLength)
+        {
+            var value = activity.GetTagItem(tagName) as string;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var sanitized = HonuaTelemetry.SanitizeTelemetryText(value, maxLength);
+            activity.SetTag(tagName, sanitized);
+
+            if (tagName == HonuaTelemetry.Tags.ErrorMessage && activity.Status == ActivityStatusCode.Error)
+            {
+                activity.SetStatus(ActivityStatusCode.Error, sanitized);
             }
         }
 

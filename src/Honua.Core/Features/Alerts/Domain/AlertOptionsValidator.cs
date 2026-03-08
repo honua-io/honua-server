@@ -70,11 +70,10 @@ public sealed class AlertOptionsValidator : OptionsValidator<AlertOptions>
 
         if (!string.IsNullOrWhiteSpace(options.Dispatch.DefaultWebhookUrl))
         {
-            ValidateUrl(
+            ValidateOutboundHttpUrl(
                 options.Dispatch.DefaultWebhookUrl,
                 $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookUrl)}",
-                failures,
-                requireHttps: false);
+                failures);
         }
     }
 }

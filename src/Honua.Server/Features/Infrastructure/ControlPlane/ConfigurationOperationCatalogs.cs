@@ -39,7 +39,7 @@ internal sealed class ConfigurationDeployTargetRegistry(IOptionsMonitor<ControlP
                 RuntimeProfile = target.RuntimeProfile,
                 RequiresApproval = target.RequiresApproval,
                 RequiresOutOfBandMigrations = target.RequiresOutOfBandMigrations,
-                Parameters = new Dictionary<string, string>(target.Parameters, StringComparer.Ordinal)
+                Parameters = ConfigurationOperationCatalogHelpers.BuildParameters(target.Parameters, target.ParameterEntries)
             })
             .ToArray();
 }
@@ -75,7 +75,28 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
                 WorkloadName = definition.WorkloadName,
                 ArtifactReference = definition.ArtifactReference,
                 RuntimeProfile = definition.RuntimeProfile,
-                Parameters = new Dictionary<string, string>(definition.Parameters, StringComparer.Ordinal)
+                Parameters = ConfigurationOperationCatalogHelpers.BuildParameters(definition.Parameters, definition.ParameterEntries)
             })
             .ToArray();
+}
+
+internal static class ConfigurationOperationCatalogHelpers
+{
+    public static Dictionary<string, string> BuildParameters(
+        IReadOnlyDictionary<string, string> parameters,
+        IReadOnlyList<ConfigurationParameterEntryOptions> entries)
+    {
+        var merged = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Key))
+            {
+                continue;
+            }
+
+            merged[entry.Key.Trim()] = entry.Value?.Trim() ?? string.Empty;
+        }
+
+        return merged;
+    }
 }

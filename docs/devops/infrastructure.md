@@ -110,6 +110,50 @@ Use the dedicated `honua-terraform` repository for AWS/Azure infrastructure prov
 
 This separation is intentional: infrastructure provisioning can live outside `honua-server`, while Honua's own deploy orchestration and GitOps workflow remain part of the Honua control-plane direction.
 
+## Post-Apply Cloud Validation
+
+Real cloud validation should run immediately after `terraform apply`, but the checks themselves should remain close to the application code.
+
+- Use `scripts/run-cloud-post-apply-validation.sh` from this repository to run:
+  - `scripts/post-deployment-verification.sh`
+  - `Category=Cloud` deployed-environment integration tests
+  - optional `Category=Scale` tests when the target environment exposes the extra scale-test signals and inputs
+- Use the reusable GitHub Actions workflow `.github/workflows/cloud-post-apply-validation.yml` when `honua-terraform` needs a remote post-apply hook back into `honua-server`
+- Keep scale tests explicit. Do not assume every real cloud deployment exposes the nginx-specific `X-Instance-ID` headers used by the local scale harness
+
+### Expected Environment Variables
+
+Core deployed-environment checks:
+
+- `HONUA_CLOUD_TEST_BASE_URL`
+- `HONUA_CLOUD_TEST_ADMIN_API_KEY` for admin/control-plane checks
+- `HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT` optional
+- `HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE` optional
+- `HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY` optional
+- `HONUA_CLOUD_TEST_PLATFORM` optional (`kubernetes`, `aws-ecs`, `aws-lambda`, `azure-functions`, `azure-container-apps`)
+- `HONUA_CLOUD_TEST_DEPLOY_TARGET_ID` optional; when set, enables a live `POST /api/v1/admin/deploy/plan` check against a real configured target
+- `HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION` optional
+- `HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION` optional
+- `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` optional; when set, enables a live cloud-staged import mutation test plus publish/query round-trip
+- `HONUA_CLOUD_TEST_IMPORT_TIMEOUT_SECONDS` optional
+- `HONUA_CLOUD_TEST_PUBLISH_DB_HOST` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_PORT` optional
+- `HONUA_CLOUD_TEST_PUBLISH_DB_NAME` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_USERNAME` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_PASSWORD` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE` optional
+- `HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED` optional
+
+Optional scale checks:
+
+- `INCLUDE_SCALE_TESTS=true`
+- `HONUA_SCALE_TEST_BASE_URL`
+- `HONUA_SCALE_TEST_ADMIN_API_KEY`
+- `HONUA_SCALE_TEST_SERVICE_ID`
+- `HONUA_SCALE_TEST_REDIS`
+
+The post-apply runner can also hydrate these values from a Terraform output JSON file via `--terraform-output-json <path>`.
+
 ## Related Docs
 
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md)

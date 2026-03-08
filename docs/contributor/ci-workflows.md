@@ -11,6 +11,7 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `codeql.yml` | CodeQL static analysis | PR + push + schedule |
 | `container-security.yml` | Container image security scanning | PR + push + schedule |
 | `deploy.yml` | Build/publish container images | push to `trunk` and tags |
+| `cloud-post-apply-validation.yml` | Reusable post-`terraform apply` validation against a real deployed environment | `workflow_call` + manual |
 
 ## Conformance and Performance
 
@@ -52,3 +53,6 @@ gh workflow run load-soak-nightly.yml
 
 - If docs and workflows disagree, trust `.github/workflows/*.yml`.
 - When adding a workflow, update this file in the same PR.
+- `cloud-post-apply-validation.yml` is designed to be called from `honua-terraform` after provisioning succeeds, not to bring Terraform ownership back into `honua-server`.
+- The workflow supports both non-mutating deployed-environment checks and an explicit opt-in live import publish/query round-trip via the `import_table_prefix` input plus DB connection envs.
+- A real deploy-plan check is also supported when the caller supplies a configured deploy target id and revision inputs through environment handoff.

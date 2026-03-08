@@ -127,6 +127,28 @@ public sealed class DistributedReplicaStoreTests
         }));
     }
 
+    [UnitTest]
+    [Operation(Operations.ExtractChanges)]
+    public async Task GetAsync_DoesNotExtendFallbackPastOriginalDistributedExpiry()
+    {
+        var distributedCache = new ExpiringDistributedCache();
+        var store = new DistributedReplicaStore(
+            distributedCache,
+            NullLogger<DistributedReplicaStore>.Instance);
+
+        var replica = CreateReplicaState("replica-expiry", "svc-expiry", DateTimeOffset.UtcNow);
+        await store.SetAsync(replica, TimeSpan.FromMilliseconds(80));
+
+        var distributedRead = await store.GetAsync(replica.ReplicaId);
+        distributedRead.Should().NotBeNull();
+
+        await Task.Delay(120);
+        distributedCache.ThrowOnGet = true;
+
+        var expiredFallback = await store.GetAsync(replica.ReplicaId);
+        expiredFallback.Should().BeNull();
+    }
+
     private static ReplicaState CreateReplicaState(string replicaId, string serviceId, DateTimeOffset createdAt)
     {
         return new ReplicaState(
@@ -200,6 +222,60 @@ public sealed class DistributedReplicaStoreTests
                 throw new InvalidOperationException("Simulated remove failure");
             }
 
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ExpiringDistributedCache : IDistributedCache
+    {
+        private byte[]? _value;
+        private DateTimeOffset _expiresAt;
+
+        public bool ThrowOnGet { get; set; }
+
+        public byte[]? Get(string key) => _value;
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        {
+            if (ThrowOnGet)
+            {
+                throw new InvalidOperationException("Simulated get failure");
+            }
+
+            if (_value == null || _expiresAt <= DateTimeOffset.UtcNow)
+            {
+                return Task.FromResult<byte[]?>(null);
+            }
+
+            return Task.FromResult<byte[]?>(_value);
+        }
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+        {
+            _value = value;
+            _expiresAt = DateTimeOffset.UtcNow.Add(options.AbsoluteExpirationRelativeToNow ?? TimeSpan.FromMinutes(5));
+        }
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+        {
+            Set(key, value, options);
+            return Task.CompletedTask;
+        }
+
+        public void Refresh(string key)
+        {
+        }
+
+        public Task RefreshAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+
+        public void Remove(string key)
+        {
+            _value = null;
+        }
+
+        public Task RemoveAsync(string key, CancellationToken token = default)
+        {
+            Remove(key);
             return Task.CompletedTask;
         }
     }

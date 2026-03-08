@@ -24,56 +24,120 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
         int layerId,
         CancellationToken cancellationToken = default)
     {
+        var rulesByLookup = await GetActiveRulesAsync(
+            [new AlertRuleLookupKey(serviceId, layerId)],
+            cancellationToken).ConfigureAwait(false);
+
+        return rulesByLookup.TryGetValue(new AlertRuleLookupKey(serviceId, layerId), out var rules)
+            ? rules
+            : Array.Empty<AlertRuleDefinition>();
+    }
+
+    public async Task<IReadOnlyDictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>> GetActiveRulesAsync(
+        IReadOnlyCollection<AlertRuleLookupKey> lookupKeys,
+        CancellationToken cancellationToken = default)
+    {
+        if (lookupKeys.Count == 0)
+        {
+            return new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>();
+        }
+
         const string sql = """
             SELECT rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
                    conditions, cooldown_seconds, severity, edition_required, channels, is_active
             FROM honua.alert_rules
             WHERE is_active = TRUE
-              AND layer_id = @layer_id
-              AND (@service_id IS NULL OR service_id = @service_id)
-            ORDER BY rule_id
+              AND layer_id = ANY(@layer_ids)
+            ORDER BY layer_id, rule_id
             """;
+
+        var normalizedKeys = lookupKeys
+            .Distinct()
+            .ToArray();
+        var layerIds = normalizedKeys
+            .Select(static key => key.LayerId)
+            .Distinct()
+            .ToArray();
 
         await using var connection = (NpgsqlConnection)await _connectionProvider
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
-        command.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, layerId);
-        command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, (object?)serviceId ?? DBNull.Value);
+        command.Parameters.AddWithValue("layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, layerIds);
 
-        var rules = new List<AlertRuleDefinition>();
+        var rulesByLayer = new Dictionary<int, List<AlertRuleDefinition>>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            rules.Add(MapRule(reader));
+            var rule = MapRule(reader);
+            if (!rulesByLayer.TryGetValue(rule.LayerId, out var layerRules))
+            {
+                layerRules = new List<AlertRuleDefinition>();
+                rulesByLayer[rule.LayerId] = layerRules;
+            }
+
+            layerRules.Add(rule);
         }
 
-        return rules;
+        var results = new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>(normalizedKeys.Length);
+        foreach (var lookupKey in normalizedKeys)
+        {
+            if (!rulesByLayer.TryGetValue(lookupKey.LayerId, out var layerRules))
+            {
+                results[lookupKey] = Array.Empty<AlertRuleDefinition>();
+                continue;
+            }
+
+            results[lookupKey] = lookupKey.ServiceId == null
+                ? layerRules
+                : layerRules
+                    .Where(rule => string.Equals(rule.ServiceId, lookupKey.ServiceId, StringComparison.Ordinal))
+                    .ToArray();
+        }
+
+        return results;
     }
 
     public async Task<AlertRuleDefinition?> GetRuleAsync(long ruleId, CancellationToken cancellationToken = default)
     {
+        var rules = await GetRulesAsync([ruleId], cancellationToken).ConfigureAwait(false);
+        return rules.TryGetValue(ruleId, out var rule) ? rule : null;
+    }
+
+    public async Task<IReadOnlyDictionary<long, AlertRuleDefinition>> GetRulesAsync(
+        IReadOnlyCollection<long> ruleIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (ruleIds.Count == 0)
+        {
+            return new Dictionary<long, AlertRuleDefinition>();
+        }
+
         const string sql = """
             SELECT rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
                    conditions, cooldown_seconds, severity, edition_required, channels, is_active
             FROM honua.alert_rules
-            WHERE rule_id = @rule_id
+            WHERE rule_id = ANY(@rule_ids)
             """;
+
+        var normalizedRuleIds = ruleIds.Distinct().ToArray();
 
         await using var connection = (NpgsqlConnection)await _connectionProvider
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleId);
+        command.Parameters.AddWithValue("rule_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, normalizedRuleIds);
 
+        var results = new Dictionary<long, AlertRuleDefinition>(normalizedRuleIds.Length);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return null;
+            var rule = MapRule(reader);
+            results[rule.RuleId] = rule;
         }
 
-        return MapRule(reader);
+        return results;
     }
 
     public async Task<IReadOnlyDictionary<long, AlertZoneDefinition>> GetZonesAsync(

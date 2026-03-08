@@ -364,40 +364,35 @@ internal static class OgcExtentTransformer
 
     /// <summary>
     /// Transforms a coordinate pair to CRS84 (lon/lat in degrees).
-    /// Supports common CRS families; throws <see cref="NotSupportedException"/> for unsupported SRIDs.
+    /// Returns <c>false</c> when a reliable in-memory transform is not available.
     /// </summary>
-    public static (double Lon, double Lat) TransformToCrs84(double x, double y, int fromSrid)
+    public static bool TryTransformToCrs84(double x, double y, int fromSrid, out (double Lon, double Lat) coordinate)
     {
         if (fromSrid == 4326)
         {
-            return (x, y);
+            coordinate = (x, y);
+            return true;
         }
 
         if (IsWebMercatorSrid(fromSrid))
         {
-            return WebMercatorToLonLat(x, y);
+            coordinate = WebMercatorToLonLat(x, y);
+            return true;
         }
 
-        if (IsGeographicSrid(fromSrid))
-        {
-            // Other geographic CRS (NAD83, etc.) - coordinates are already lon/lat degrees
-            return (x, y);
-        }
-
-        throw new NotSupportedException(
-            $"In-memory extent transformation from SRID {fromSrid} to CRS84 is not supported.");
+        coordinate = default;
+        return false;
     }
 
     private static bool IsWebMercatorSrid(int srid)
         => srid is 3857 or 900913 or 102100 or 102113 or 3785;
 
-    private static bool IsGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
-
     private static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
     {
+        y = Math.Clamp(y, -EarthRadius * Math.PI, EarthRadius * Math.PI);
         var lon = x / EarthRadius * 180.0 / Math.PI;
         var lat = Math.Atan(Math.Exp(y / EarthRadius)) * 360.0 / Math.PI - 90.0;
+        lat = Math.Clamp(lat, -MaxLatitude, MaxLatitude);
         return (lon, lat);
     }
 }

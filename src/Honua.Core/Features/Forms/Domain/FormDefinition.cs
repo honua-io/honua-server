@@ -33,6 +33,8 @@ public record FormDefinition(
     ImmutableList<FormBinding> Bindings,
     FormLayout? Layout,
     ImmutableList<FormGroup> Groups,
+    ImmutableList<WorkflowAction> WorkflowActions,
+    FormAccessControl? AccessControl,
     FormMetadata Metadata);
 
 /// <summary>
@@ -58,7 +60,9 @@ public record FormControl(
     int DisplayOrder,
     FormControlType ControlType,
     ImmutableDictionary<string, object> Properties,
-    MobileControlHints? MobileHints);
+    MobileControlHints? MobileHints,
+    string VisibilityExpression = "",
+    string ReadOnlyExpression = "");
 
 /// <summary>
 /// Form control types.
@@ -332,3 +336,85 @@ public record LengthValidationConfiguration(
 public record PatternValidationConfiguration(
     string RegexPattern,
     bool CaseSensitive) : ValidationRuleConfiguration;
+
+/// <summary>
+/// Workflow action triggered by a form lifecycle event.
+/// </summary>
+/// <param name="ActionId">Unique action identifier.</param>
+/// <param name="Trigger">Lifecycle event that fires this action.</param>
+/// <param name="ConditionExpression">Optional guard expression.</param>
+/// <param name="ActionType">Type of action to perform.</param>
+/// <param name="Parameters">Action-specific key/value parameters.</param>
+/// <param name="ExecutionOrder">Order when multiple actions share a trigger.</param>
+public record WorkflowAction(
+    string ActionId,
+    WorkflowTrigger Trigger,
+    string ConditionExpression,
+    WorkflowActionType ActionType,
+    ImmutableDictionary<string, string> Parameters,
+    int ExecutionOrder);
+
+/// <summary>
+/// Workflow trigger events.
+/// </summary>
+public enum WorkflowTrigger
+{
+    OnLoad,
+    OnSave,
+    OnSubmit,
+    OnApprove,
+    OnReject,
+    OnFieldChange
+}
+
+/// <summary>
+/// Workflow action types.
+/// </summary>
+public enum WorkflowActionType
+{
+    Webhook,
+    SetField,
+    SetStatus,
+    SendNotification,
+    CreateFeature,
+    Validate
+}
+
+/// <summary>
+/// Role- and location-based access control for a form.
+/// </summary>
+/// <param name="AllowedRoles">Roles allowed to open this form. Empty means unrestricted.</param>
+/// <param name="ApproverRoles">Roles allowed to approve/reject submissions.</param>
+/// <param name="LocationBoundary">Optional geographic boundary for form availability.</param>
+/// <param name="FieldAccessRules">Per-field role overrides.</param>
+public record FormAccessControl(
+    ImmutableList<string> AllowedRoles,
+    ImmutableList<string> ApproverRoles,
+    Extent? LocationBoundary,
+    ImmutableList<FieldAccessRule> FieldAccessRules);
+
+/// <summary>
+/// Per-field access restriction by role.
+/// </summary>
+/// <param name="FieldId">Field identifier.</param>
+/// <param name="VisibleToRoles">Roles that can see this field. Empty = all allowed roles.</param>
+/// <param name="EditableByRoles">Roles that can edit this field. Empty = all allowed roles.</param>
+/// <param name="ReadOnly">Hard read-only regardless of role.</param>
+public record FieldAccessRule(
+    string FieldId,
+    ImmutableList<string> VisibleToRoles,
+    ImmutableList<string> EditableByRoles,
+    bool ReadOnly);
+
+/// <summary>
+/// Geographic bounding box.
+/// </summary>
+/// <param name="Xmin">Minimum X (longitude).</param>
+/// <param name="Ymin">Minimum Y (latitude).</param>
+/// <param name="Xmax">Maximum X (longitude).</param>
+/// <param name="Ymax">Maximum Y (latitude).</param>
+public record Extent(
+    double Xmin,
+    double Ymin,
+    double Xmax,
+    double Ymax);

@@ -54,7 +54,9 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         try
         {
             var key = BuildKey(replica.ReplicaId);
-            var payload = JsonSerializer.SerializeToUtf8Bytes(replica, FeatureServerJsonContext.Default.ReplicaState);
+            var payload = JsonSerializer.SerializeToUtf8Bytes(
+                new ReplicaStateEnvelope(replica, now.Add(effectiveTtl)),
+                FeatureServerJsonContext.Default.ReplicaStateEnvelope);
             await _cache.SetAsync(key, payload, new DistributedCacheEntryOptions
             {
                 AbsoluteExpirationRelativeToNow = effectiveTtl
@@ -80,10 +82,21 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                 var payload = await _cache.GetAsync(BuildKey(replicaId), cancellationToken).ConfigureAwait(false);
                 if (payload != null)
                 {
+                    if (TryDeserializeEnvelope(payload, out var envelope))
+                    {
+                        if (envelope!.ExpiresAt <= now)
+                        {
+                            _fallback.TryRemove(replicaId, out _);
+                            return null;
+                        }
+
+                        _fallback[replicaId] = new FallbackReplicaEntry(envelope.Replica, envelope.ExpiresAt);
+                        return envelope.Replica;
+                    }
+
                     var replica = JsonSerializer.Deserialize(payload, FeatureServerJsonContext.Default.ReplicaState);
                     if (replica != null)
                     {
-                        _fallback[replicaId] = new FallbackReplicaEntry(replica, now.Add(_defaultTtl));
                         return replica;
                     }
                 }
@@ -171,6 +184,21 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
     }
 
     private sealed record FallbackReplicaEntry(ReplicaState Replica, DateTimeOffset ExpiresAt);
+    internal sealed record ReplicaStateEnvelope(ReplicaState Replica, DateTimeOffset ExpiresAt);
+
+    private static bool TryDeserializeEnvelope(byte[] payload, out ReplicaStateEnvelope? envelope)
+    {
+        try
+        {
+            envelope = JsonSerializer.Deserialize(payload, FeatureServerJsonContext.Default.ReplicaStateEnvelope);
+            return envelope != null;
+        }
+        catch (JsonException)
+        {
+            envelope = null;
+            return false;
+        }
+    }
 
     private static partial class Log
     {

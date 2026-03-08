@@ -42,6 +42,16 @@ public interface IAlertRuleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets active rules for multiple service/layer combinations in one batch.
+    /// </summary>
+    /// <param name="lookupKeys">Distinct service/layer combinations to resolve.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Matching active rules indexed by lookup key.</returns>
+    Task<IReadOnlyDictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>> GetActiveRulesAsync(
+        IReadOnlyCollection<AlertRuleLookupKey> lookupKeys,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets a rule by identifier.
     /// </summary>
     /// <param name="ruleId">Rule identifier</param>
@@ -49,6 +59,16 @@ public interface IAlertRuleRepository
     /// <returns>Rule when found; otherwise null</returns>
     Task<AlertRuleDefinition?> GetRuleAsync(
         long ruleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets rules for multiple identifiers in one batch.
+    /// </summary>
+    /// <param name="ruleIds">Rule identifiers.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Rules indexed by identifier.</returns>
+    Task<IReadOnlyDictionary<long, AlertRuleDefinition>> GetRulesAsync(
+        IReadOnlyCollection<long> ruleIds,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -79,6 +99,16 @@ public interface IAlertStateStore
         long ruleId,
         int layerId,
         long objectId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets state for multiple rule-feature pairs in one batch.
+    /// </summary>
+    /// <param name="lookupKeys">Rule-feature lookup keys.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>States indexed by lookup key.</returns>
+    Task<IReadOnlyDictionary<AlertStateLookupKey, AlertStateSnapshot>> GetManyAsync(
+        IReadOnlyCollection<AlertStateLookupKey> lookupKeys,
         CancellationToken cancellationToken = default);
 
     /// <summary>

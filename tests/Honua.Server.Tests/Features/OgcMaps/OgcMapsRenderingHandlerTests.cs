@@ -70,6 +70,24 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_ProjectedBboxWithoutBboxCrs_ReturnsBadRequest()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "-20037508,-20037508,20037508,20037508",
+            F = "png"
+        };
+
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<BadRequest<string>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_UnsupportedFormat_ReturnsBadRequest()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -142,6 +160,73 @@ public class OgcMapsRenderingHandlerTests
         var result = await _handler.RenderCollectionMapAsync(1, request);
 
         result.Should().BeOfType<FileContentHttpResult>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_ExplicitEpsg4326Bbox_SwapsNorthEastAxisOrder()
+    {
+        MapRenderRequest? capturedRequest = null;
+
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _mapRenderer.RenderCollectionMapAsync(1, Arg.Do<MapRenderRequest>(request => capturedRequest = request), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "37.7749,-122.4194,37.7949,-122.3894",
+            BboxCrs = "EPSG:4326",
+            F = "png"
+        };
+
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest.Value.BoundingBox.Should().Equal(-122.4194, 37.7749, -122.3894, 37.7949);
+        capturedRequest.Value.BoundingBoxCrs.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_OutputEpsg4326WithoutBboxCrs_KeepsDefaultCrs84AxisOrder()
+    {
+        MapRenderRequest? capturedRequest = null;
+
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayer());
+        _mapRenderer.RenderCollectionMapAsync(1, Arg.Do<MapRenderRequest>(request => capturedRequest = request), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var request = new OgcMapRequest
+        {
+            Bbox = "-122.4194,37.7749,-122.3894,37.7949",
+            Crs = "EPSG:4326",
+            F = "png"
+        };
+
+        var result = await _handler.RenderCollectionMapAsync(1, request);
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest.Value.BoundingBox.Should().Equal(-122.4194, 37.7749, -122.3894, 37.7949);
+        capturedRequest.Value.BoundingBoxCrs.Should().Be(4326);
+        capturedRequest.Value.Crs.Should().Be(4326);
     }
 
     [UnitTest]

@@ -92,7 +92,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         string prefixedKey = GetPrefixedKey(key);
         using var operationScope = _performanceMonitor.StartOperation("cache_get")
             .WithTag("cache_type", CacheType)
-            .WithTag("key", key);
+            .WithTag("key_family", GetCacheKeyFamily(key));
 
         // Try Redis first if available
         if (_distributedCache != null)
@@ -133,7 +133,13 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     HandleRedisFailure(ex);
                     operationScope.WithTag("result", "error").WithTag("source", "redis");
                     _performanceMonitor.RecordErrorWithContext("cache_error", "redis_get",
-                        new Dictionary<string, object> { ["cache_key"] = prefixedKey }, ex);
+                        new Dictionary<string, object>
+                        {
+                            ["cache_type"] = CacheType,
+                            ["key_family"] = GetCacheKeyFamily(key),
+                            ["source"] = "redis"
+                        },
+                        ex);
                 }
             }
         }
@@ -671,6 +677,29 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
 
         return key.Equals(pattern, StringComparison.Ordinal);
+    }
+
+    private static string GetCacheKeyFamily(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "empty";
+        }
+
+        var lowerKey = key.ToLowerInvariant();
+
+        return lowerKey switch
+        {
+            _ when lowerKey.Contains("layer", StringComparison.Ordinal) => "layer",
+            _ when lowerKey.Contains("service", StringComparison.Ordinal) => "service",
+            _ when lowerKey.Contains("query", StringComparison.Ordinal) => "query",
+            _ when lowerKey.Contains("tile", StringComparison.Ordinal) || lowerKey.Contains("mvt", StringComparison.Ordinal) => "tile",
+            _ when lowerKey.Contains("catalog", StringComparison.Ordinal) => "catalog",
+            _ when lowerKey.Contains("replica", StringComparison.Ordinal) => "replica",
+            _ when lowerKey.Contains("schema", StringComparison.Ordinal) => "schema",
+            _ when lowerKey.Contains("auth", StringComparison.Ordinal) => "auth",
+            _ => "general"
+        };
     }
 
     private void CleanupExpiredEntries(object? state)

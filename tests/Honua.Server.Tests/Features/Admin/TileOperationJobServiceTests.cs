@@ -13,6 +13,8 @@ using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Caching;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -78,6 +80,7 @@ public sealed class TileOperationJobServiceTests
 
         return new TileOperationJobService(
             progressStore,
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
             cacheInvalidationService,
             serviceScopeFactory,
             Options.Create(new TileOptions()),

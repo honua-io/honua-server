@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Text.RegularExpressions;
 
 namespace Honua.ServiceDefaults;
 
@@ -34,14 +35,32 @@ public static class HonuaTelemetry
     /// </summary>
     public static readonly Meter Meter = new(ServiceName, ServiceVersion);
 
-    private static volatile bool _includeExceptionStackTraces = true;
+    private const int DefaultMaxExceptionDetailLength = 256;
+    private static readonly Regex EmailPattern = new(
+        "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex KeyValuePattern = new(
+        "(?i)\\b(password|pwd|secret|token|api[-_]?key|access[-_]?key|client[-_]?secret)\\b\\s*([:=])\\s*([^;\\s]+)",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex AuthorizationPattern = new(
+        "(?i)\\bauthorization\\b\\s*([:=])\\s*([^;\\s]+)",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex BearerPattern = new(
+        "(?i)\\bbearer\\s+[A-Za-z0-9-._~+/]+=*",
+        RegexOptions.CultureInvariant);
+
+    private static volatile bool _exportExceptionDetails;
+    private static volatile bool _includeExceptionStackTraces;
+    private static volatile int _maxExceptionDetailLength = DefaultMaxExceptionDetailLength;
 
     /// <summary>
-    /// Configures whether exception stack traces are recorded on spans.
+    /// Configures whether sanitized exception details are recorded on spans.
     /// </summary>
-    public static void ConfigureExceptionRecording(bool includeStackTraces)
+    public static void ConfigureExceptionRecording(bool exportDetails, bool includeStackTraces, int maxDetailLength = DefaultMaxExceptionDetailLength)
     {
+        _exportExceptionDetails = exportDetails;
         _includeExceptionStackTraces = includeStackTraces;
+        _maxExceptionDetailLength = maxDetailLength > 0 ? maxDetailLength : DefaultMaxExceptionDetailLength;
     }
 
     /// <summary>
@@ -336,21 +355,59 @@ public static class HonuaTelemetry
             return;
         }
 
-        activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+        var sanitizedMessage = SanitizeTelemetryText(exception.Message, _maxExceptionDetailLength);
+
+        if (_exportExceptionDetails && !string.IsNullOrWhiteSpace(sanitizedMessage))
+        {
+            activity.SetStatus(ActivityStatusCode.Error, sanitizedMessage);
+            activity.SetTag(Tags.ErrorMessage, sanitizedMessage);
+        }
+        else
+        {
+            activity.SetStatus(ActivityStatusCode.Error);
+            activity.SetTag(Tags.ErrorMessage, null);
+        }
+
         activity.SetTag(Tags.Error, true);
-        activity.SetTag(Tags.ErrorMessage, exception.Message);
         var tags = new ActivityTagsCollection
         {
-            { "exception.type", exception.GetType().FullName },
-            { "exception.message", exception.Message }
+            { "exception.type", exception.GetType().FullName }
         };
 
-        if (_includeExceptionStackTraces && exception.StackTrace != null)
+        if (_exportExceptionDetails && !string.IsNullOrWhiteSpace(sanitizedMessage))
         {
-            tags.Add("exception.stacktrace", exception.StackTrace);
+            tags.Add("exception.message", sanitizedMessage);
+        }
+
+        if (_exportExceptionDetails &&
+            _includeExceptionStackTraces &&
+            !string.IsNullOrWhiteSpace(exception.StackTrace))
+        {
+            tags.Add("exception.stacktrace", SanitizeTelemetryText(exception.StackTrace, Math.Max(_maxExceptionDetailLength, 2048)));
         }
 
         activity.AddEvent(new ActivityEvent("exception", tags: tags));
+    }
+
+    internal static string SanitizeTelemetryText(string? value, int maxLength = DefaultMaxExceptionDetailLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = value.Trim();
+        sanitized = EmailPattern.Replace(sanitized, "***");
+        sanitized = KeyValuePattern.Replace(sanitized, "$1$2***");
+        sanitized = AuthorizationPattern.Replace(sanitized, "Authorization$1***");
+        sanitized = BearerPattern.Replace(sanitized, "Bearer ***");
+
+        if (maxLength > 0 && sanitized.Length > maxLength)
+        {
+            sanitized = sanitized[..maxLength] + "...";
+        }
+
+        return sanitized;
     }
 
     /// <summary>

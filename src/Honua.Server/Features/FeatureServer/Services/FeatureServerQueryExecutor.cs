@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -98,9 +99,7 @@ internal sealed class FeatureServerQueryExecutor
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var totalCount = await _featureReader.CountAsync(layerId, query, cancellationToken);
-        var offset = query.Offset ?? 0;
-        var hasMoreResults = query.Limit.HasValue && totalCount > offset + query.Limit.Value;
+        var preparedStream = await PrepareFeatureStreamAsync(layerId, query, cancellationToken);
 
         string[]? outFields = string.IsNullOrEmpty(queryParams.OutFields)
             ? null
@@ -117,12 +116,10 @@ internal sealed class FeatureServerQueryExecutor
         context.Response.StatusCode = StatusCodes.Status200OK;
         EnableChunkedEncodingIfHttp1(context);
 
-        var features = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
-
         if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase))
         {
             await _streamingFormatter.StreamAsGeoJsonAsync(
-                features,
+                preparedStream.Features,
                 layer,
                 queryParams.ReturnGeometry,
                 queryParams.ReturnZ,
@@ -130,14 +127,14 @@ internal sealed class FeatureServerQueryExecutor
                 queryParams.GeometryPrecision,
                 queryParams.MaxAllowableOffset,
                 outFields,
-                hasMoreResults,
+                preparedStream.HasMoreResults,
                 context.Response.BodyWriter,
                 cancellationToken);
         }
         else
         {
             await _streamingFormatter.StreamAsGeoServicesJsonAsync(
-                features,
+                preparedStream.Features,
                 layer,
                 queryParams.ReturnGeometry,
                 outputSrid,
@@ -146,13 +143,62 @@ internal sealed class FeatureServerQueryExecutor
                 queryParams.GeometryPrecision,
                 queryParams.MaxAllowableOffset,
                 outFields,
-                hasMoreResults,
+                preparedStream.HasMoreResults,
                 context.Response.BodyWriter,
                 cancellationToken);
         }
 
         await context.Response.CompleteAsync();
     }
+
+    private async Task<PreparedFeatureStream> PrepareFeatureStreamAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
+        {
+            return new PreparedFeatureStream(
+                _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken),
+                HasMoreResults: false);
+        }
+
+        var requestedLimit = Math.Max(0, query.Limit.Value);
+        var probeLimit = checked(requestedLimit + 1);
+        var probeQuery = query with { Limit = probeLimit };
+        var bufferedFeatures = new List<Feature>(probeLimit);
+
+        await foreach (var feature in _streamingFeatureStore.StreamFeaturesAsync(layerId, probeQuery, cancellationToken)
+                           .WithCancellation(cancellationToken))
+        {
+            bufferedFeatures.Add(feature);
+        }
+
+        var hasMoreResults = bufferedFeatures.Count > requestedLimit;
+        if (hasMoreResults)
+        {
+            bufferedFeatures.RemoveAt(bufferedFeatures.Count - 1);
+        }
+
+        return new PreparedFeatureStream(
+            StreamBufferedFeaturesAsync(bufferedFeatures, cancellationToken),
+            hasMoreResults);
+    }
+
+    private static async IAsyncEnumerable<Feature> StreamBufferedFeaturesAsync(
+        IReadOnlyList<Feature> features,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var feature in features)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return feature;
+        }
+    }
+
+    private readonly record struct PreparedFeatureStream(
+        IAsyncEnumerable<Feature> Features,
+        bool HasMoreResults);
 
     public async Task StreamIdsAsync(
         int layerId,

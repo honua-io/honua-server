@@ -4,6 +4,7 @@
 using FluentAssertions;
 
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -75,6 +76,26 @@ public class RasterParsingHelpersTests
         result.Should().BeTrue();
         minX.Should().Be(-180);
         maxY.Should().Be(90);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseBoundingBox_NorthEastGeographicAxisOrder_SwapsCoordinates()
+    {
+        var result = RasterParsingHelpers.TryParseBoundingBox(
+            "37.7749,-122.4194,37.7949,-122.3894",
+            AxisOrder.NorthEast,
+            isGeographic: true,
+            out var minX,
+            out var minY,
+            out var maxX,
+            out var maxY);
+
+        result.Should().BeTrue();
+        minX.Should().BeApproximately(-122.4194, 0.0001);
+        minY.Should().BeApproximately(37.7749, 0.0001);
+        maxX.Should().BeApproximately(-122.3894, 0.0001);
+        maxY.Should().BeApproximately(37.7949, 0.0001);
     }
 
     [UnitTest]
@@ -232,6 +253,22 @@ public class RasterParsingHelpersTests
         // NaN
         var result = RasterParsingHelpers.TryParseBoundingBox(
             "NaN,-90,180,90", out _, out _, out _, out _);
+
+        result.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseBoundingBox_GeographicCoordinatesOutOfRange_ReturnsFalse()
+    {
+        var result = RasterParsingHelpers.TryParseBoundingBox(
+            "-200,-95,180,90",
+            AxisOrder.EastNorth,
+            isGeographic: true,
+            out _,
+            out _,
+            out _,
+            out _);
 
         result.Should().BeFalse();
     }
@@ -499,6 +536,30 @@ public class RasterParsingHelpersTests
     public void TryParseSrid_EpsgPrefixNoNumber_ReturnsNull()
     {
         var result = SpatialReferenceHelpers.TryParseSrid("EPSG:");
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_PrefixedJunkBeforeOgcUri_ReturnsNull()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("prefixhttp://www.opengis.net/def/crs/EPSG/0/4326");
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_SuffixedCrs84Text_ReturnsNull()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("prefix-CRS84");
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_OgcUriWithTrailingPath_ReturnsNull()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("http://www.opengis.net/def/crs/EPSG/0/4326/extra");
         result.Should().BeNull();
     }
 

@@ -81,7 +81,9 @@ internal sealed partial class DeployWorkflowReconciler(
                         : null,
                     Deploy = operation.Deploy with
                     {
-                        CurrentRevision = observation.ObservedRevision ?? operation.Deploy.CurrentRevision
+                        CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
+                            ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
+                            : operation.Deploy.CurrentRevision
                     }
                 };
 
@@ -89,6 +91,7 @@ internal sealed partial class DeployWorkflowReconciler(
                         operation,
                         updated,
                         backend,
+                        observation.PromotionRecommended,
                         observation.RollbackRecommended,
                         observation.Message,
                         telemetrySignalEvaluator,
@@ -101,6 +104,31 @@ internal sealed partial class DeployWorkflowReconciler(
                 await workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
                 Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
+        }
+        catch (Exception ex)
+        {
+            var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (operation is
+                {
+                    Kind: WorkflowOperationKind.Deploy,
+                    Deploy: not null
+                } &&
+                !IsTerminal(operation.Status))
+            {
+                var failedAt = DateTimeOffset.UtcNow;
+                var failedOperation = operation with
+                {
+                    Status = WorkflowOperationStatus.ManualInterventionRequired,
+                    UpdatedAt = failedAt,
+                    CompletedAt = failedAt,
+                    CurrentPhase = "Deploy reconciliation failed and requires manual intervention.",
+                    ErrorMessage = $"Deploy reconciliation failed due to {ex.GetType().Name}."
+                };
+
+                await workflowStore.SetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            throw;
         }
         finally
         {
@@ -123,6 +151,7 @@ internal sealed partial class DeployWorkflowReconciler(
         WorkflowOperationRecord previous,
         WorkflowOperationRecord current,
         IDeployBackend backend,
+        bool promotionRecommended,
         bool backendRollbackRecommended,
         string? backendMessage,
         IDeployTelemetrySignalEvaluator telemetrySignalEvaluator,
@@ -160,6 +189,26 @@ internal sealed partial class DeployWorkflowReconciler(
                         ErrorMessage = current.Status == WorkflowOperationStatus.Failed ? telemetryDecision.Message : current.ErrorMessage
                     };
                 }
+
+                if (!telemetryDecision.RollbackRecommended &&
+                    !telemetryDecision.WaitForMoreTelemetry &&
+                    promotionRecommended &&
+                    current.Status == WorkflowOperationStatus.Reconciling)
+                {
+                    var promotionObservation = await backend.PromoteAsync(current, cancellationToken).ConfigureAwait(false);
+                    current = current with
+                    {
+                        Status = promotionObservation.Status,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        CompletedAt = IsTerminal(promotionObservation.Status) ? DateTimeOffset.UtcNow : null,
+                        ProviderOperationId = promotionObservation.ProviderOperationId ?? current.ProviderOperationId,
+                        CurrentPhase = promotionObservation.Message ?? current.CurrentPhase,
+                        ObservedState = promotionObservation.ObservedRevision ?? current.ObservedState,
+                        ErrorMessage = promotionObservation.Status == WorkflowOperationStatus.Failed
+                            ? promotionObservation.Message ?? current.ErrorMessage
+                            : current.ErrorMessage
+                    };
+                }
             }
         }
 
@@ -188,7 +237,9 @@ internal sealed partial class DeployWorkflowReconciler(
             ErrorMessage = rollbackReason,
             Deploy = deploySpec with
             {
-                CurrentRevision = rollbackObservation.ObservedRevision ?? deploySpec.CurrentRevision
+                CurrentRevision = string.IsNullOrWhiteSpace(deploySpec.CurrentRevision)
+                    ? rollbackObservation.ObservedRevision ?? deploySpec.CurrentRevision
+                    : deploySpec.CurrentRevision
             }
         };
     }

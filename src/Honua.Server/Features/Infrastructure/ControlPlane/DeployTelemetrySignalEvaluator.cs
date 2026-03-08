@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
@@ -92,9 +93,10 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
 
         try
         {
+            var validatedConnection = await ValidateConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
             var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
                 ? null
-                : await ExecutePrometheusQueryAsync(connection, policy.MinimumSampleQuery, cancellationToken).ConfigureAwait(false);
+                : await ExecutePrometheusQueryAsync(validatedConnection, policy.MinimumSampleQuery, cancellationToken).ConfigureAwait(false);
 
             if (policy.MinimumSampleCount.HasValue && (!sampleCount.HasValue || sampleCount.Value < policy.MinimumSampleCount.Value))
             {
@@ -112,7 +114,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
 
             if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
             {
-                var errorRate = await ExecutePrometheusQueryAsync(connection, policy.ErrorRateQuery, cancellationToken).ConfigureAwait(false);
+                var errorRate = await ExecutePrometheusQueryAsync(validatedConnection, policy.ErrorRateQuery, cancellationToken).ConfigureAwait(false);
                 if (errorRate.HasValue && errorRate.Value > policy.ErrorRateThreshold.Value)
                 {
                     breachMessages.Add(
@@ -126,7 +128,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
 
             if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
             {
-                var latencyP95 = await ExecutePrometheusQueryAsync(connection, policy.LatencyP95Query, cancellationToken).ConfigureAwait(false);
+                var latencyP95 = await ExecutePrometheusQueryAsync(validatedConnection, policy.LatencyP95Query, cancellationToken).ConfigureAwait(false);
                 if (latencyP95.HasValue && latencyP95.Value > policy.LatencyP95ThresholdMs.Value)
                 {
                     breachMessages.Add(
@@ -165,34 +167,64 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
         }
     }
 
-    private async Task<double?> ExecutePrometheusQueryAsync(
+    private static async Task<ValidatedTelemetryConnection> ValidateConnectionAsync(
         DeployTelemetryConnectionOptions connection,
+        CancellationToken cancellationToken)
+    {
+        var baseUrlValidation = await OutboundHttpUrlValidator
+            .ValidateAsync(connection.BaseUrl, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!baseUrlValidation.IsValid || baseUrlValidation.Uri is null)
+        {
+            throw new InvalidOperationException(
+                $"Telemetry connection '{connection.ConnectionId}' base URL {baseUrlValidation.ErrorMessage ?? "must be a valid HTTPS URL."}");
+        }
+
+        if (!ControlPlaneTelemetryConnectionValidation.TryNormalizeQueryPath(
+                connection.QueryPath,
+                out var queryPath,
+                out var queryPathError))
+        {
+            throw new InvalidOperationException(
+                $"Telemetry connection '{connection.ConnectionId}' query path {queryPathError}");
+        }
+
+        if (!ControlPlaneTelemetryConnectionValidation.TryNormalizeAuthHeader(
+                connection.AuthHeaderName,
+                connection.AuthHeaderValue,
+                out var authHeaderName,
+                out var authHeaderValue,
+                out var authHeaderError))
+        {
+            throw new InvalidOperationException(
+                $"Telemetry connection '{connection.ConnectionId}' {authHeaderError}");
+        }
+
+        return new ValidatedTelemetryConnection(
+            baseUrlValidation.Uri,
+            queryPath,
+            authHeaderName,
+            authHeaderValue,
+            Math.Max(1, connection.TimeoutSeconds));
+    }
+
+    private async Task<double?> ExecutePrometheusQueryAsync(
+        ValidatedTelemetryConnection connection,
         string query,
         CancellationToken cancellationToken)
     {
-        var baseUrl = connection.BaseUrl?.Trim();
-        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
-        {
-            throw new InvalidOperationException($"Telemetry connection '{connection.ConnectionId}' does not have a valid base URL.");
-        }
-
-        var queryPath = string.IsNullOrWhiteSpace(connection.QueryPath) ? "/api/v1/query" : connection.QueryPath.Trim();
-        if (!queryPath.StartsWith('/'))
-        {
-            queryPath = "/" + queryPath;
-        }
-
-        var requestUri = new Uri(baseUri, $"{queryPath}?query={Uri.EscapeDataString(query)}");
+        var requestUri = new Uri(connection.BaseUri, $"{connection.QueryPath}?query={Uri.EscapeDataString(query)}");
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
         if (!string.IsNullOrWhiteSpace(connection.AuthHeaderName) &&
             !string.IsNullOrWhiteSpace(connection.AuthHeaderValue))
         {
-            request.Headers.TryAddWithoutValidation(connection.AuthHeaderName, connection.AuthHeaderValue);
+            request.Headers.Add(connection.AuthHeaderName, connection.AuthHeaderValue);
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, connection.TimeoutSeconds)));
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(connection.TimeoutSeconds));
 
         var client = httpClientFactory.CreateClient("control-plane-telemetry");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
@@ -355,6 +387,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             {
                 DeployTargetKind.Kubernetes => "kubernetes-honua-http",
                 DeployTargetKind.AwsEcs => HasCanarySignalConfiguration(spec.Parameters) ? "aws-alb-canary" : "honua-http",
+                DeployTargetKind.AzureContainerApps => "honua-http",
                 _ => null
             };
 
@@ -480,4 +513,11 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
                 : null;
         }
     }
+
+    private sealed record ValidatedTelemetryConnection(
+        Uri BaseUri,
+        string QueryPath,
+        string? AuthHeaderName,
+        string? AuthHeaderValue,
+        int TimeoutSeconds);
 }

@@ -3,7 +3,9 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -106,6 +108,13 @@ internal sealed class DeployWorkflowService
 
         var now = DateTimeOffset.UtcNow;
         var operationId = CreateOperationId(idempotencyKey);
+        var requestFingerprint = CreateRequestFingerprint(
+            targetId,
+            desiredRevision,
+            currentRevision,
+            priority,
+            submitImmediately,
+            parameterOverrides);
 
         var operation = new WorkflowOperationRecord
         {
@@ -126,7 +135,8 @@ internal sealed class DeployWorkflowService
                 RequestedBy = requestedBy,
                 Reason = reason,
                 IdempotencyKey = idempotencyKey,
-                CorrelationId = correlationId
+                CorrelationId = correlationId,
+                RequestFingerprint = requestFingerprint
             },
             Concurrency = new OperationConcurrencyPolicy
             {
@@ -142,6 +152,7 @@ internal sealed class DeployWorkflowService
             var existing = await _workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
             if (existing != null)
             {
+                EnsureMatchingIdempotentRequest(existing, requestFingerprint);
                 return existing;
             }
 
@@ -162,7 +173,11 @@ internal sealed class DeployWorkflowService
                         UpdatedAt = DateTimeOffset.UtcNow,
                         ProviderOperationId = submission.ProviderOperationId,
                         CurrentPhase = submission.Message ?? "Submitted to deploy backend",
-                        ErrorMessage = null
+                        ErrorMessage = null,
+                        Deploy = operation.Deploy with
+                        {
+                            CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision
+                        }
                     };
                 }
                 catch (OperationCanceledException)
@@ -186,6 +201,91 @@ internal sealed class DeployWorkflowService
         }
 
         return operation;
+    }
+
+    public async Task<WorkflowOperationRecord?> SubmitAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+
+        var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (operation == null)
+        {
+            return null;
+        }
+
+        if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
+        {
+            throw new InvalidOperationException("Only deploy workflow operations can be submitted.");
+        }
+
+        if (operation.Status is WorkflowOperationStatus.Submitted
+            or WorkflowOperationStatus.Reconciling
+            or WorkflowOperationStatus.RollbackRequested
+            or WorkflowOperationStatus.Succeeded
+            or WorkflowOperationStatus.RolledBack
+            or WorkflowOperationStatus.ManualInterventionRequired
+            or WorkflowOperationStatus.Failed)
+        {
+            return operation;
+        }
+
+        if (operation.BlockingReasons.Count > 0)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", operation.BlockingReasons)}");
+        }
+
+        var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
+        var backend = target == null ? null : ResolveBackend(target);
+        if (backend == null)
+        {
+            throw new InvalidOperationException(
+                $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
+        }
+
+        try
+        {
+            var submission = await backend.StartAsync(operation, cancellationToken).ConfigureAwait(false);
+            var updated = operation with
+            {
+                Status = submission.Status,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                ProviderOperationId = submission.ProviderOperationId,
+                CurrentPhase = submission.Message ?? "Submitted to deploy backend",
+                ErrorMessage = null,
+                Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason),
+                Deploy = operation.Deploy with
+                {
+                    CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision
+                }
+            };
+
+            await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return updated;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var failed = operation with
+            {
+                Status = WorkflowOperationStatus.Failed,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Backend submission failed.",
+                ErrorMessage = ex.Message,
+                Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
+            };
+
+            await _workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return failed;
+        }
     }
 
     public async Task<WorkflowOperationRecord?> RequestRollbackAsync(
@@ -333,6 +433,58 @@ internal sealed class DeployWorkflowService
         return $"deploy-{slug}-{hash}";
     }
 
+    private static string CreateRequestFingerprint(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides)
+    {
+        var normalizedParameters = parameterOverrides == null
+            ? Array.Empty<KeyValuePair<string, string>>()
+            : parameterOverrides
+                .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+                .Select(static pair => new KeyValuePair<string, string>(pair.Key, pair.Value))
+                .ToArray();
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            targetId = targetId.Trim(),
+            desiredRevision = desiredRevision.Trim(),
+            currentRevision = currentRevision?.Trim(),
+            priority = priority.ToString(),
+            submitImmediately,
+            parameters = normalizedParameters
+        });
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+    }
+
+    private static void EnsureMatchingIdempotentRequest(WorkflowOperationRecord existing, string requestFingerprint)
+    {
+        var existingFingerprint = existing.Audit.RequestFingerprint;
+        if (!string.IsNullOrWhiteSpace(existingFingerprint) &&
+            string.Equals(existingFingerprint, requestFingerprint, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new ResourceConflictException(
+            $"Idempotency key '{existing.Audit.IdempotencyKey}' is already associated with a different deploy request.");
+    }
+
+    private static OperationAuditInfo MergeSubmissionAudit(OperationAuditInfo audit, string? requestedBy, string? reason)
+        => audit with
+        {
+            RequestedBy = audit.RequestedBy ?? requestedBy,
+            Reason = string.IsNullOrWhiteSpace(reason)
+                ? audit.Reason
+                : string.IsNullOrWhiteSpace(audit.Reason)
+                    ? reason
+                    : $"{audit.Reason} | submit: {reason}"
+        };
+
     private static DeployOperationSpec BuildSpec(
         DeployTargetDefinition target,
         string desiredRevision,
@@ -348,6 +500,26 @@ internal sealed class DeployWorkflowService
             }
         }
 
+        var resolvedCurrentRevision = currentRevision;
+        if (string.IsNullOrWhiteSpace(resolvedCurrentRevision))
+        {
+            if (mergedParameters.TryGetValue("deployment.current_revision", out var deploymentCurrentRevision) &&
+                !string.IsNullOrWhiteSpace(deploymentCurrentRevision))
+            {
+                resolvedCurrentRevision = deploymentCurrentRevision;
+            }
+            else if (mergedParameters.TryGetValue("lambda.current_version", out var lambdaCurrentVersion) &&
+                     !string.IsNullOrWhiteSpace(lambdaCurrentVersion))
+            {
+                resolvedCurrentRevision = lambdaCurrentVersion;
+            }
+            else if (mergedParameters.TryGetValue("aws.lambda.alias_current_version", out var awsLambdaCurrentVersion) &&
+                     !string.IsNullOrWhiteSpace(awsLambdaCurrentVersion))
+            {
+                resolvedCurrentRevision = awsLambdaCurrentVersion;
+            }
+        }
+
         return new DeployOperationSpec
         {
             TargetId = target.TargetId,
@@ -357,7 +529,7 @@ internal sealed class DeployWorkflowService
             TargetName = target.TargetName,
             ArtifactReference = target.ArtifactReference,
             RuntimeProfile = target.RuntimeProfile,
-            CurrentRevision = currentRevision,
+            CurrentRevision = resolvedCurrentRevision,
             DesiredRevision = desiredRevision,
             RequiresOutOfBandMigrations = target.RequiresOutOfBandMigrations,
             RequiresApproval = target.RequiresApproval,

@@ -24,30 +24,62 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
         long objectId,
         CancellationToken cancellationToken = default)
     {
+        var results = await GetManyAsync(
+            [new AlertStateLookupKey(ruleId, layerId, objectId)],
+            cancellationToken).ConfigureAwait(false);
+
+        return results.TryGetValue(new AlertStateLookupKey(ruleId, layerId, objectId), out var state)
+            ? state
+            : null;
+    }
+
+    public async Task<IReadOnlyDictionary<AlertStateLookupKey, AlertStateSnapshot>> GetManyAsync(
+        IReadOnlyCollection<AlertStateLookupKey> lookupKeys,
+        CancellationToken cancellationToken = default)
+    {
+        if (lookupKeys.Count == 0)
+        {
+            return new Dictionary<AlertStateLookupKey, AlertStateSnapshot>();
+        }
+
         const string sql = """
-            SELECT rule_id, layer_id, objectid, inside, entered_at, last_alert_at, last_generation, threshold_state
-            FROM honua.alert_state
-            WHERE rule_id = @rule_id
-              AND layer_id = @layer_id
-              AND objectid = @objectid
+            WITH requested(rule_id, layer_id, objectid) AS (
+                SELECT *
+                FROM unnest(@rule_ids, @layer_ids, @object_ids)
+            )
+            SELECT s.rule_id, s.layer_id, s.objectid, s.inside, s.entered_at, s.last_alert_at, s.last_generation, s.threshold_state
+            FROM requested r
+            INNER JOIN honua.alert_state s
+                ON s.rule_id = r.rule_id
+               AND s.layer_id = r.layer_id
+               AND s.objectid = r.objectid
             """;
+
+        var normalizedKeys = lookupKeys
+            .Distinct()
+            .ToArray();
+        var ruleIds = normalizedKeys.Select(static key => key.RuleId).ToArray();
+        var layerIds = normalizedKeys.Select(static key => key.LayerId).ToArray();
+        var objectIds = normalizedKeys.Select(static key => key.ObjectId).ToArray();
 
         await using var connection = (NpgsqlConnection)await _connectionProvider
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
-        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleId);
-        command.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, layerId);
-        command.Parameters.AddWithValue("objectid", NpgsqlDbType.Bigint, objectId);
+        command.Parameters.AddWithValue("rule_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, ruleIds);
+        command.Parameters.AddWithValue("layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, layerIds);
+        command.Parameters.AddWithValue("object_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, objectIds);
 
+        var results = new Dictionary<AlertStateLookupKey, AlertStateSnapshot>(normalizedKeys.Length);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return null;
+            var state = MapState(reader);
+            results[new AlertStateLookupKey(state.RuleId, state.LayerId, state.ObjectId)] = state;
         }
 
-        return MapState(reader);
+        return results;
     }
 
     public async Task UpsertAsync(AlertStateSnapshot state, CancellationToken cancellationToken = default)

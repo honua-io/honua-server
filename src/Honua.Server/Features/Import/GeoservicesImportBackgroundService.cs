@@ -32,6 +32,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Log.ServiceStarting(_logger, _jobManager.LeaderElection.InstanceId);
+        var recoveredInFlightJobs = false;
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -42,6 +43,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
                 if (!isLeader)
                 {
+                    recoveredInFlightJobs = false;
                     Log.NotLeader(_logger, _jobManager.LeaderElection.InstanceId);
                     await Task.Delay(_leaderCheckInterval, stoppingToken);
                     continue;
@@ -51,9 +53,16 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 var heartbeatMaintained = await _jobManager.LeaderElection.HeartbeatAsync(stoppingToken);
                 if (!heartbeatMaintained)
                 {
+                    recoveredInFlightJobs = false;
                     Log.NotLeader(_logger, _jobManager.LeaderElection.InstanceId);
                     await Task.Delay(_leaderCheckInterval, stoppingToken);
                     continue;
+                }
+
+                if (!recoveredInFlightJobs)
+                {
+                    await _jobManager.JobQueue.RecoverInFlightAsync(stoppingToken).ConfigureAwait(false);
+                    recoveredInFlightJobs = true;
                 }
 
                 // Try to dequeue and process a job
@@ -346,6 +355,15 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         }
         finally
         {
+            try
+            {
+                await _jobManager.JobQueue.CompleteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.JobCompletionAcknowledgeFailed(_logger, jobId, ex);
+            }
+
             if (monitorCancellation != null)
             {
                 monitorCancellation.Cancel();
@@ -405,5 +423,8 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
         [LoggerMessage(7712, LogLevel.Warning, "Import job {JobId} blocked by service URL validation: {ServiceUrl}")]
         public static partial void JobRejectedUnsafeServiceUrl(ILogger logger, string jobId, string serviceUrl);
+
+        [LoggerMessage(7713, LogLevel.Warning, "Failed to acknowledge completion for import job {JobId}")]
+        public static partial void JobCompletionAcknowledgeFailed(ILogger logger, string jobId, Exception exception);
     }
 }

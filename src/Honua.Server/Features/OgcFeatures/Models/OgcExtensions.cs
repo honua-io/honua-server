@@ -38,7 +38,10 @@ public static class OgcExtensions
             throw new ArgumentException("SpatialExtent must have a valid bounding box");
 
         var bbox = spatialExtent.BoundingBox[0];
-        var srid = ExtentExtensions.ExtractSridFromCrs(spatialExtent.Crs);
+        if (!ExtentExtensions.TryExtractSridFromCrs(spatialExtent.Crs, out var srid))
+        {
+            throw new ArgumentException("SpatialExtent CRS must be a supported EPSG or CRS84 identifier.", nameof(spatialExtent));
+        }
 
         return FeatureExtent.Create(bbox[0], bbox[1], bbox[2], bbox[3], srid);
     }

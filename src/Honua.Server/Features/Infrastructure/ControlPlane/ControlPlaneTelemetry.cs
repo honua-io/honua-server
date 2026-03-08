@@ -29,8 +29,6 @@ internal static class ControlPlaneTelemetry
         public const string WorkflowStatus = "honua.controlplane.workflow.status";
         public const string WorkflowPreviousStatus = "honua.controlplane.workflow.previous_status";
         public const string WorkflowResult = "honua.controlplane.workflow.result";
-        public const string OperationId = "honua.controlplane.operation_id";
-        public const string TargetId = "honua.controlplane.target_id";
         public const string TargetKind = "honua.controlplane.target_kind";
         public const string Backend = "honua.controlplane.backend";
         public const string Environment = "honua.controlplane.environment";
@@ -69,14 +67,8 @@ internal static class ControlPlaneTelemetry
         activity?.SetTag(HonuaTelemetry.Tags.Operation, operation);
         activity?.SetTag(Tags.WorkflowKind, kind.ToString());
 
-        if (!string.IsNullOrWhiteSpace(operationId))
-        {
-            activity?.SetTag(Tags.OperationId, operationId);
-        }
-
         if (spec != null)
         {
-            activity?.SetTag(Tags.TargetId, spec.TargetId);
             activity?.SetTag(Tags.TargetKind, spec.TargetKind.ToString());
             activity?.SetTag(Tags.Backend, spec.Backend);
             activity?.SetTag(Tags.Environment, spec.Environment);
@@ -153,7 +145,6 @@ internal static class ControlPlaneTelemetry
             return;
         }
 
-        tags.Add(Tags.TargetId, spec.TargetId);
         tags.Add(Tags.TargetKind, spec.TargetKind.ToString());
         tags.Add(Tags.Backend, spec.Backend);
         tags.Add(Tags.Environment, spec.Environment);
