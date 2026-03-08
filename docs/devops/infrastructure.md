@@ -88,8 +88,9 @@ Workflow: `.github/workflows/deploy-platform-images.yml`
   - Repository variable: `AWS_ECR_REGION` (required for ECR lane), `AWS_ECR_REPOSITORY` (optional; defaults to `honua-server`)
   - Secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` (optional)
 - ACR config:
-  - Secret: `ACR_LOGIN_SERVER`, `ACR_USERNAME`, `ACR_PASSWORD`
-  - Repository variable: `ACR_REPOSITORY` (optional; defaults to `honua-server`)
+  - Repository variables: `ACR_LOGIN_SERVER` (required for ACR lane), `ACR_REPOSITORY` (optional; defaults to `honua-server`)
+  - Secrets: `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
+  - ACR login is derived at runtime via `az login` + `az acr login`; do not store long-lived `ACR_USERNAME` / `ACR_PASSWORD` secrets for this workflow
 
 AOT images start faster and use less memory. Keep JIT serverless tags as debug fallback only.
 
