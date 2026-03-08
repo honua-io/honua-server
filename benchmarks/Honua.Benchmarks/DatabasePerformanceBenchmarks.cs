@@ -4,6 +4,7 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using Honua.Core.Features.FeatureStore.Domain;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Benchmarks;
 
@@ -33,6 +34,7 @@ public sealed class DatabasePerformanceBenchmarks
         => _baseQuery with { Offset = 500 };
 
     [Benchmark(Description = "Build spatial filter")]
+    [SuppressMessage("Performance", "CA1822", Justification = "BenchmarkDotNet benchmark methods are kept as instance methods for consistent discovery.")]
     public SpatialFilter BuildSpatialFilter()
     {
         var wkb = new byte[] { 1, 2, 3, 4 };

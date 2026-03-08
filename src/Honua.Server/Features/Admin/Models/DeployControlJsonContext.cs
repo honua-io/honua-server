@@ -15,6 +15,13 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(DeployPreflightResponse))]
 [JsonSerializable(typeof(DeployPreflightReadiness))]
 [JsonSerializable(typeof(DeployPreflightMigration))]
+[JsonSerializable(typeof(DeployPlanRequest))]
+[JsonSerializable(typeof(CreateDeployOperationRequest))]
+[JsonSerializable(typeof(RollbackDeployOperationRequest))]
+[JsonSerializable(typeof(DeployPlanResponse))]
+[JsonSerializable(typeof(DeployPlanTargetResponse))]
+[JsonSerializable(typeof(DeployBackendCapabilitiesResponse))]
+[JsonSerializable(typeof(DeployOperationResponse))]
 internal sealed partial class DeployControlJsonContext : JsonSerializerContext
 {
 }

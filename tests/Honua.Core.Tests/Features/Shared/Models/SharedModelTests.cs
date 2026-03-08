@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Core.Tests.Features.Shared.Models;
+namespace Honua.Core.Tests.Features.SharedModels;
 
 /// <summary>
 /// Tests for shared model components and their conversions

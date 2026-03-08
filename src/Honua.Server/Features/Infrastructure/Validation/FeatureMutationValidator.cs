@@ -17,6 +17,7 @@ internal sealed class FeatureMutationValidator
         _geometryValidator = geometryValidator ?? throw new ArgumentNullException(nameof(geometryValidator));
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the existing validator service API.")]
     public ValidationResult<ImmutableDictionary<string, object?>> ValidateAttributes(
         LayerDefinition layer,
         IReadOnlyDictionary<string, object?>? attributes,

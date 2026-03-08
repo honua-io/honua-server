@@ -197,7 +197,7 @@ internal sealed partial class ArcGisRestClient
         };
     }
 
-    private string BuildQueryUrl(
+    private static string BuildQueryUrl(
         string serviceUrl,
         int layerId,
         int offset,

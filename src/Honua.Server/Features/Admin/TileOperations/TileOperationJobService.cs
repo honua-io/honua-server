@@ -390,7 +390,7 @@ internal sealed partial class TileOperationJobService(
         };
     }
 
-    private async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
+    private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
         TileOperationStartRequest request,
         ILayerCatalog layerCatalog,
         CancellationToken cancellationToken)

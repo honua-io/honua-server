@@ -221,7 +221,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    private void RenderWithStyles(
+    private static void RenderWithStyles(
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer[] styleLayers,
@@ -252,7 +252,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    private void RenderWithDefaults(
+    private static void RenderWithDefaults(
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         Func<double, double, SKPoint> transform,

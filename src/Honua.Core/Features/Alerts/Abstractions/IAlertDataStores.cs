@@ -175,14 +175,14 @@ public interface IAlertDispatchStore
     /// <param name="attemptedAt">Attempt timestamp</param>
     /// <param name="nextAttemptAt">Next retry timestamp</param>
     /// <param name="deadLetter">True when retries are exhausted</param>
-    /// <param name="error">Optional failure message</param>
+    /// <param name="errorMessage">Optional failure message</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task MarkFailedAsync(
         long dispatchId,
         DateTimeOffset attemptedAt,
         DateTimeOffset nextAttemptAt,
         bool deadLetter,
-        string? error,
+        string? errorMessage,
         CancellationToken cancellationToken = default);
 }
 

@@ -6,6 +6,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Documentation and analyzer cleanup is still in progress for this package. -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
     <WarningsNotAsErrors>CS1591;CA1873;CA1848;CA2009;IDE0073</WarningsNotAsErrors>
   </PropertyGroup>
 

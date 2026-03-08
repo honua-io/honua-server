@@ -250,7 +250,7 @@ internal sealed class ODataAggregationHandler
         return result;
     }
 
-    private object[] ApplyAggregation(IEnumerable<Feature> features, ParsedAggregation aggregation)
+    private static object[] ApplyAggregation(IEnumerable<Feature> features, ParsedAggregation aggregation)
     {
         var featureList = features.ToList();
 

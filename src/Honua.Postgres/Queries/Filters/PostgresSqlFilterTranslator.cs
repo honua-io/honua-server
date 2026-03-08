@@ -729,7 +729,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private void EnsureTemporalCompatibility(TemporalOperator op, TemporalBounds left, TemporalBounds right)
+    private static void EnsureTemporalCompatibility(TemporalOperator op, TemporalBounds left, TemporalBounds right)
     {
         if (op is TemporalOperator.Contains or TemporalOperator.During or TemporalOperator.FinishedBy or
             TemporalOperator.Finishes or TemporalOperator.Meets or TemporalOperator.MetBy or
@@ -743,7 +743,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string NormalizeTemporalStart(TemporalBounds bounds)
+    private static string NormalizeTemporalStart(TemporalBounds bounds)
     {
         if (!bounds.IsInterval)
         {
@@ -758,7 +758,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return bounds.Kind == TemporalKind.Date ? "'-infinity'::date" : "'-infinity'::timestamptz";
     }
 
-    private string NormalizeTemporalEnd(TemporalBounds bounds)
+    private static string NormalizeTemporalEnd(TemporalBounds bounds)
     {
         if (!bounds.IsInterval)
         {

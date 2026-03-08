@@ -10,6 +10,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -20,6 +21,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
@@ -76,6 +78,7 @@ AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
+ConnectionMultiplexer? connectedRedis = null;
 
 if (useAspire)
 {
@@ -120,10 +123,10 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
 
-        var redisConnection = ConnectionMultiplexer.Connect(redisOptions);
-        builder.Services.TryAddSingleton<IConnectionMultiplexer>(redisConnection);
+        connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
+        builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
 
-        if (!redisConnection.IsConnected)
+        if (!connectedRedis.IsConnected)
         {
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             startupLogger.LogWarning(
@@ -192,6 +195,21 @@ ConfigureLimits(builder.Services, builder.Configuration);
 // Configure deployment mode options
 builder.Services.Configure<DeploymentOptions>(
     builder.Configuration.GetSection(DeploymentOptions.SectionName));
+builder.Services.Configure<ControlPlaneOptions>(
+    builder.Configuration.GetSection(ControlPlaneOptions.SectionName));
+builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
+builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
+builder.Services.AddSingleton<DeployWorkflowService>();
+builder.Services.AddSingleton<KubernetesGitOpsDeployBackend>();
+builder.Services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
+builder.Services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
+if (connectedRedis != null)
+{
+    builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
+}
 
 // Configure tile options
 ConfigureTileOptions(builder.Services, builder.Configuration);
@@ -349,6 +367,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,

@@ -336,7 +336,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         return now - entry.CreatedAt > _layerSridCacheRetention;
     }
 
-    private void CleanupCacheIfNeeded()
+    private static void CleanupCacheIfNeeded()
     {
         var now = DateTimeOffset.UtcNow;
 

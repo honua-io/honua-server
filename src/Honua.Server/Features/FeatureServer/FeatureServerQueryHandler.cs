@@ -654,7 +654,7 @@ internal sealed class FeatureServerQueryHandler(
     /// <summary>
     /// Builds a FeatureQuery from query parameters
     /// </summary>
-    private FeatureQuery BuildFeatureQuery(
+    private static FeatureQuery BuildFeatureQuery(
         QueryParameters queryParams,
         LayerDefinition layer,
         GeoServicesGeometry? parsedGeometry,

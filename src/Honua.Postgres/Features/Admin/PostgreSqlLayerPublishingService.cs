@@ -851,8 +851,6 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         FieldType Type,
         int? MaxLength,
         bool Nullable,
-        string? Description)
-    {
-        public object? DefaultValue => null;
-    }
+        string? Description,
+        object? DefaultValue = null);
 }

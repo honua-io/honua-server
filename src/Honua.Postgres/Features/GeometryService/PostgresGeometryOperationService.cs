@@ -256,7 +256,7 @@ internal sealed class PostgresGeometryOperationService(
             : 1.0;
     }
 
-    private async Task<CrsMetrics> GetCrsMetricsAsync(DbConnection connection, int srid, CancellationToken ct)
+    private static async Task<CrsMetrics> GetCrsMetricsAsync(DbConnection connection, int srid, CancellationToken ct)
     {
         if (_crsMetricsCache.TryGetValue(srid, out var cached))
         {

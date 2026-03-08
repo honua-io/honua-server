@@ -391,7 +391,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         return _prepareSupported.Value;
     }
 
-    private async Task<NpgsqlCommand> CreatePreparedStatementAsync(
+    private static async Task<NpgsqlCommand> CreatePreparedStatementAsync(
         NpgsqlConnection connection,
         string sql,
         string statementName,

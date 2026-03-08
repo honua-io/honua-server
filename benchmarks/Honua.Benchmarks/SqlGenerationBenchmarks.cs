@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.ObjectPool;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Benchmarks;
 
@@ -107,6 +108,7 @@ public class SqlGenerationBenchmarks
     /// Complex spatial query with joins using StringBuilder
     /// </summary>
     [Benchmark(Description = "Complex spatial - StringBuilder")]
+    [SuppressMessage("Performance", "CA1822", Justification = "BenchmarkDotNet benchmark methods are kept as instance methods for consistent discovery.")]
     public string ComplexSpatialQueryWithStringBuilder()
     {
         var sql = new StringBuilder(1024);
@@ -197,6 +199,7 @@ public class SqlGenerationBenchmarks
     /// Measure StringBuilder capacity optimization impact
     /// </summary>
     [Benchmark(Description = "Optimized capacity - StringBuilder")]
+    [SuppressMessage("Performance", "CA1822", Justification = "BenchmarkDotNet benchmark methods are kept as instance methods for consistent discovery.")]
     public string OptimizedCapacityStringBuilder()
     {
         // Pre-calculated optimal capacity to reduce allocations
@@ -235,6 +238,7 @@ public class SqlGenerationBenchmarks
     /// Benchmark ArrayPool of char for large query building
     /// </summary>
     [Benchmark(Description = "ArrayPool char buffer")]
+    [SuppressMessage("Performance", "CA1822", Justification = "BenchmarkDotNet benchmark methods are kept as instance methods for consistent discovery.")]
     public string ArrayPoolCharBuffer()
     {
         var pool = ArrayPool<char>.Shared;

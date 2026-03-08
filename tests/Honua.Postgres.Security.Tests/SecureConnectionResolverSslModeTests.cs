@@ -11,7 +11,7 @@ public sealed class SecureConnectionResolverSslModeTests
     [Theory]
     [InlineData("Allow")]
     [InlineData("Prefer")]
-    public async Task ResolveConnectionStringAsync_SslRequiredRejectsFallbackSslModes(string sslMode)
+    public async Task ResolveConnectionStringAsyncSslRequiredRejectsFallbackSslModes(string sslMode)
     {
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: "production-analytics",

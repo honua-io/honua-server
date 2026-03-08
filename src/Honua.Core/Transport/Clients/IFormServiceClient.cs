@@ -188,17 +188,64 @@ public class FormField
 /// </summary>
 public enum FormFieldType
 {
+    /// <summary>
+    /// Free-form text input.
+    /// </summary>
     Text,
+
+    /// <summary>
+    /// Numeric input.
+    /// </summary>
     Number,
+
+    /// <summary>
+    /// Calendar date input.
+    /// </summary>
     Date,
+
+    /// <summary>
+    /// Combined date and time input.
+    /// </summary>
     DateTime,
+
+    /// <summary>
+    /// True or false input.
+    /// </summary>
     Boolean,
+
+    /// <summary>
+    /// Single-option selection.
+    /// </summary>
     SingleChoice,
+
+    /// <summary>
+    /// Multi-option selection.
+    /// </summary>
     MultipleChoice,
+
+    /// <summary>
+    /// Photo capture or upload input.
+    /// </summary>
     Photo,
+
+    /// <summary>
+    /// Geographic location input.
+    /// </summary>
     Location,
+
+    /// <summary>
+    /// Signature capture input.
+    /// </summary>
     Signature,
+
+    /// <summary>
+    /// Barcode scanning input.
+    /// </summary>
     Barcode,
+
+    /// <summary>
+    /// Generic file upload input.
+    /// </summary>
     File
 }
 
@@ -244,11 +291,34 @@ public class ValidationRule
 /// </summary>
 public enum ValidationType
 {
+    /// <summary>
+    /// Enforces a minimum string length.
+    /// </summary>
     MinLength,
+
+    /// <summary>
+    /// Enforces a maximum string length.
+    /// </summary>
     MaxLength,
+
+    /// <summary>
+    /// Enforces a minimum numeric value.
+    /// </summary>
     MinValue,
+
+    /// <summary>
+    /// Enforces a maximum numeric value.
+    /// </summary>
     MaxValue,
+
+    /// <summary>
+    /// Enforces a pattern match.
+    /// </summary>
     Pattern,
+
+    /// <summary>
+    /// Uses custom validation logic.
+    /// </summary>
     Custom
 }
 
@@ -449,9 +519,28 @@ public class FormUpdate
 /// </summary>
 public enum FormUpdateType
 {
+    /// <summary>
+    /// A field value changed.
+    /// </summary>
     FieldChanged,
+
+    /// <summary>
+    /// A field received focus.
+    /// </summary>
     FieldFocused,
+
+    /// <summary>
+    /// A field lost focus.
+    /// </summary>
     FieldBlurred,
+
+    /// <summary>
+    /// A collaborator joined the session.
+    /// </summary>
     UserJoined,
+
+    /// <summary>
+    /// A collaborator left the session.
+    /// </summary>
     UserLeft
 }

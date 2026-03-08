@@ -461,7 +461,7 @@ internal sealed class StreamingGeoJsonReader
         return _geometryFactory.CreateMultiPolygon(polygons.ToArray());
     }
 
-    private Coordinate ParseCoordinate(JsonElement coords)
+    private static Coordinate ParseCoordinate(JsonElement coords)
     {
         var enumerator = coords.EnumerateArray();
         if (!enumerator.MoveNext())
@@ -485,7 +485,7 @@ internal sealed class StreamingGeoJsonReader
         return new Coordinate(x, y);
     }
 
-    private Coordinate[] ParseCoordinateArray(JsonElement coords)
+    private static Coordinate[] ParseCoordinateArray(JsonElement coords)
     {
         // Pre-allocate array to avoid List growth and ToArray() allocation
         var coordCount = coords.GetArrayLength();
@@ -518,7 +518,7 @@ internal sealed class StreamingGeoJsonReader
     /// Detect CRS from GeoJSON stream header without reading the entire file.
     /// Reads only the beginning of the file to find the CRS property.
     /// </summary>
-    public async Task<int?> DetectCrsAsync(Stream stream, CancellationToken cancellationToken = default)
+    public static async Task<int?> DetectCrsAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         // Read only the first few KB to find CRS
         const int headerSize = 8192;

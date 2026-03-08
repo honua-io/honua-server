@@ -11,9 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-using Geospatial.V1;
-using Honua.Core.Models;
-
 namespace Honua.Core.Transport.Converters;
 
 /// <summary>

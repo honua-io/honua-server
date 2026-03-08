@@ -638,7 +638,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         Log.SpatialIndexCreated(_logger, tableName);
     }
 
-    private async Task AnalyzeTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
+    private static async Task AnalyzeTableAsync(NpgsqlConnection connection, string tableName, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"ANALYZE {QuoteIdentifier(tableName)}";

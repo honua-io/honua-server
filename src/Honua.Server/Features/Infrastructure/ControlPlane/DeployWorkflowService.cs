@@ -1,0 +1,321 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+
+namespace Honua.Server.Features.Infrastructure.ControlPlane;
+
+/// <summary>
+/// Server-side control-plane service for durable deploy workflow operations.
+/// </summary>
+internal sealed class DeployWorkflowService
+{
+    private readonly IDeployTargetRegistry _targetRegistry;
+    private readonly IWorkflowOperationStore? _workflowStore;
+    private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends;
+
+    public DeployWorkflowService(
+        IDeployTargetRegistry targetRegistry,
+        IEnumerable<IWorkflowOperationStore> workflowStores,
+        IEnumerable<IDeployBackend> backends)
+    {
+        _targetRegistry = targetRegistry;
+        _workflowStore = workflowStores.FirstOrDefault();
+        _backends = backends.ToDictionary(
+            backend => (backend.BackendName, backend.TargetKind),
+            backend => backend,
+            EqualityComparer<(string Backend, DeployTargetKind TargetKind)>.Default);
+    }
+
+    public bool HasDurableStore => _workflowStore != null;
+
+    public async Task<DeployWorkflowPlanResult?> PlanAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        CancellationToken cancellationToken = default)
+    {
+        var target = await _targetRegistry.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+        if (target == null)
+        {
+            return null;
+        }
+
+        var spec = BuildSpec(target, desiredRevision, currentRevision, parameterOverrides);
+        var backend = ResolveBackend(target);
+        var capabilities = backend == null
+            ? null
+            : await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+
+        var plan = backend == null
+            ? new DeployPlan
+            {
+                IsReadyToSubmit = false,
+                RequiresApproval = spec.RequiresApproval,
+                RequiresOutOfBandMigrations = spec.RequiresOutOfBandMigrations,
+                BlockingReasons =
+                [
+                    $"No deploy backend is registered for target '{target.TargetId}' ({target.Backend})."
+                ],
+                Warnings = Array.Empty<string>()
+            }
+            : await backend.PlanAsync(spec, cancellationToken).ConfigureAwait(false);
+
+        return new DeployWorkflowPlanResult(target, spec, plan, capabilities);
+    }
+
+    public async Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+        return await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<WorkflowOperationRecord?> CreateAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        string? requestedBy,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+
+        var planningResult = await PlanAsync(
+                targetId,
+                desiredRevision,
+                currentRevision,
+                parameterOverrides,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (planningResult == null)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var operationId = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? $"deploy-{Guid.NewGuid():N}"
+            : $"deploy-{idempotencyKey}";
+
+        var operation = new WorkflowOperationRecord
+        {
+            OperationId = operationId,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = DetermineInitialStatus(planningResult.Plan, submitImmediately),
+            Priority = priority,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = DetermineInitialPhase(planningResult.Plan, submitImmediately),
+            ErrorMessage = planningResult.Plan.BlockingReasons.Count > 0
+                ? string.Join(" ", planningResult.Plan.BlockingReasons)
+                : null,
+            Warnings = planningResult.Plan.Warnings,
+            BlockingReasons = planningResult.Plan.BlockingReasons,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = requestedBy,
+                Reason = reason,
+                IdempotencyKey = idempotencyKey,
+                CorrelationId = correlationId
+            },
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = $"{planningResult.Target.Environment}:{planningResult.Target.TargetId}",
+                RequiresExclusiveLease = true
+            },
+            Deploy = planningResult.Spec
+        };
+
+        if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
+        {
+            var backend = ResolveBackend(planningResult.Target);
+            if (backend != null)
+            {
+                var submission = await backend.StartAsync(operation, cancellationToken).ConfigureAwait(false);
+                operation = operation with
+                {
+                    Status = submission.Status,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    ProviderOperationId = submission.ProviderOperationId,
+                    CurrentPhase = submission.Message ?? "Submitted to deploy backend",
+                    ErrorMessage = null
+                };
+            }
+        }
+
+        var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!created)
+        {
+            return await _workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return operation;
+    }
+
+    public async Task<WorkflowOperationRecord?> RequestRollbackAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureDurableStoreConfigured();
+
+        var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        if (operation == null)
+        {
+            return null;
+        }
+
+        if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
+        {
+            throw new InvalidOperationException("Rollback is only supported for deploy workflow operations.");
+        }
+
+        if (operation.Status is WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed)
+        {
+            return operation;
+        }
+
+        WorkflowOperationRecord updated;
+        if (operation.Status is WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval)
+        {
+            updated = operation with
+            {
+                Status = WorkflowOperationStatus.RolledBack,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Rolled back before provider submission.",
+                Audit = operation.Audit with
+                {
+                    RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
+                    Reason = reason ?? operation.Audit.Reason
+                }
+            };
+        }
+        else
+        {
+            var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
+            var backend = target == null ? null : ResolveBackend(target);
+            if (backend == null)
+            {
+                updated = operation with
+                {
+                    Status = WorkflowOperationStatus.ManualInterventionRequired,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Rollback requested but no backend is registered for this target.",
+                    ErrorMessage = "Manual rollback is required because no deploy backend is registered for this target."
+                };
+            }
+            else
+            {
+                var observation = await backend.RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
+                updated = operation with
+                {
+                    Status = observation.Status,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
+                    CurrentPhase = observation.Message ?? "Rollback requested",
+                    ErrorMessage = null
+                };
+            }
+        }
+
+        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    private static WorkflowOperationStatus DetermineInitialStatus(DeployPlan plan, bool submitImmediately)
+    {
+        if (plan.RequiresApproval)
+        {
+            return WorkflowOperationStatus.AwaitingApproval;
+        }
+
+        if (submitImmediately && plan.IsReadyToSubmit)
+        {
+            return WorkflowOperationStatus.Submitted;
+        }
+
+        return WorkflowOperationStatus.Planned;
+    }
+
+    private static string DetermineInitialPhase(DeployPlan plan, bool submitImmediately)
+    {
+        if (plan.RequiresApproval)
+        {
+            return "Awaiting approval before backend submission.";
+        }
+
+        if (submitImmediately && plan.IsReadyToSubmit)
+        {
+            return "Submitting to deploy backend.";
+        }
+
+        if (plan.BlockingReasons.Count > 0)
+        {
+            return "Blocked pending operator action.";
+        }
+
+        return "Planned and ready for submission.";
+    }
+
+    private static DeployOperationSpec BuildSpec(
+        DeployTargetDefinition target,
+        string desiredRevision,
+        string? currentRevision,
+        IReadOnlyDictionary<string, string>? parameterOverrides)
+    {
+        var mergedParameters = new Dictionary<string, string>(target.Parameters, StringComparer.Ordinal);
+        if (parameterOverrides != null)
+        {
+            foreach (var (key, value) in parameterOverrides)
+            {
+                mergedParameters[key] = value;
+            }
+        }
+
+        return new DeployOperationSpec
+        {
+            TargetId = target.TargetId,
+            TargetKind = target.TargetKind,
+            Backend = target.Backend,
+            Environment = target.Environment,
+            TargetName = target.TargetName,
+            ArtifactReference = target.ArtifactReference,
+            RuntimeProfile = target.RuntimeProfile,
+            CurrentRevision = currentRevision,
+            DesiredRevision = desiredRevision,
+            RequiresOutOfBandMigrations = target.RequiresOutOfBandMigrations,
+            RequiresApproval = target.RequiresApproval,
+            Parameters = mergedParameters
+        };
+    }
+
+    private IDeployBackend? ResolveBackend(DeployTargetDefinition target)
+        => _backends.GetValueOrDefault((target.Backend, target.TargetKind));
+
+    private void EnsureDurableStoreConfigured()
+    {
+        if (_workflowStore == null)
+        {
+            throw new InvalidOperationException("Deploy workflow operations require Redis-backed durable storage.");
+        }
+    }
+}
+
+/// <summary>
+/// Result of resolving a deploy target and planning a workflow operation.
+/// </summary>
+internal sealed record DeployWorkflowPlanResult(
+    DeployTargetDefinition Target,
+    DeployOperationSpec Spec,
+    DeployPlan Plan,
+    DeployBackendCapabilities? Capabilities);

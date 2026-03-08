@@ -66,7 +66,7 @@ public class MemorySoakBenchmarks : IDisposable
     /// Target: less than 50MB growth after full GC.
     /// </summary>
     [Benchmark(Description = "Query soak (10k requests) - measures memory delta")]
-    public async Task<MemorySoakResult> Query_Soak_10k()
+    public async Task<MemorySoakResult> QuerySoak10k()
     {
         ForceGarbageCollection();
         var beforeMemory = GC.GetTotalMemory(forceFullCollection: true);
@@ -99,7 +99,7 @@ public class MemorySoakBenchmarks : IDisposable
     /// Target: less than 20MB growth after 5,000 mixed operations.
     /// </summary>
     [Benchmark(Description = "Mixed operations soak (5k requests) - varies query params")]
-    public async Task<MemorySoakResult> Mixed_Soak_5k()
+    public async Task<MemorySoakResult> MixedSoak5k()
     {
         ForceGarbageCollection();
         var beforeMemory = GC.GetTotalMemory(forceFullCollection: true);
@@ -140,7 +140,7 @@ public class MemorySoakBenchmarks : IDisposable
     /// Target: less than 5MB memory delta, no connection exhaustion.
     /// </summary>
     [Benchmark(Description = "Connection pool soak (2k requests) - tests pool recycling")]
-    public async Task<MemorySoakResult> ConnectionPool_Soak_2k()
+    public async Task<MemorySoakResult> ConnectionPoolSoak2k()
     {
         ForceGarbageCollection();
         var beforeMemory = GC.GetTotalMemory(forceFullCollection: true);
@@ -178,7 +178,7 @@ public class MemorySoakBenchmarks : IDisposable
     /// Uses NpgsqlDataSource directly if available.
     /// </summary>
     [Benchmark(Description = "Direct connection leak test - opens/closes 1k connections")]
-    public async Task<ConnectionLeakResult> ConnectionLeak_Direct_1k()
+    public async Task<ConnectionLeakResult> ConnectionLeakDirect1k()
     {
         var dataSource = _factory?.Services.GetService<NpgsqlDataSource>();
         if (dataSource is null)

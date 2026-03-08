@@ -8,7 +8,7 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureDataAccess
 {
-    private void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId, List<object> whereParameters)
+    private static void AddQueryParameters(NpgsqlCommand command, FeatureQuery query, int layerId, List<object> whereParameters)
     {
         var parameterIndex = 0;
         AddParameterValue(command, ref parameterIndex, layerId);

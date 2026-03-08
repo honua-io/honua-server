@@ -165,7 +165,7 @@ public static class FeatureConverter
             var feature = Features.FeatureStore.Domain.Feature.Create(
                 id: grpcFeature.Id,
                 geometry: geometryWkb,
-                attributes: AttributeConverter.FromGrpc(grpcFeature.Attributes).ToImmutableDictionary()
+                attributes: AttributeConverter.FromGrpc(grpcFeature.Attributes)
             );
 
             features.Add(feature);
@@ -208,4 +208,3 @@ public static class FeatureConverter
         }
     }
 }
-

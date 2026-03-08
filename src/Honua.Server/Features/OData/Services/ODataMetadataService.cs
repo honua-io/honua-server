@@ -37,6 +37,7 @@ internal sealed partial class ODataMetadataService
     /// <summary>
     /// Generates the OData service document for the given base URL.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the current service API shape.")]
     public ServiceDocument GenerateServiceDocument(string baseUrl)
     {
         return new ServiceDocument

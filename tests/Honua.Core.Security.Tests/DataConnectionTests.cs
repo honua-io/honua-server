@@ -8,7 +8,7 @@ public sealed class DataConnectionTests
     [Theory]
     [InlineData(SslMode.Allow)]
     [InlineData(SslMode.Prefer)]
-    public void CreateWithEncryptedCredentials_SslRequiredRejectsFallbackModes(SslMode sslMode)
+    public void CreateWithEncryptedCredentialsSslRequiredRejectsFallbackModes(SslMode sslMode)
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
             DataConnection.CreateWithEncryptedCredentials(
@@ -30,7 +30,7 @@ public sealed class DataConnectionTests
     [InlineData(SslMode.Require)]
     [InlineData(SslMode.VerifyCA)]
     [InlineData(SslMode.VerifyFull)]
-    public void CreateWithEncryptedCredentials_SslRequiredAllowsStrictModes(SslMode sslMode)
+    public void CreateWithEncryptedCredentialsSslRequiredAllowsStrictModes(SslMode sslMode)
     {
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: "analytics",

@@ -58,7 +58,10 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
     {
         try
         {
-            _logger?.LogDebug("Executing feature query for service {ServiceId}, layer {LayerId}", serviceId, layerId);
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogExecutingFeatureQuery(_logger, serviceId, layerId);
+            }
 
             var client = _clientFactory(context);
             var request = FeatureConverter.ToGrpcRequest(query, serviceId, layerId);
@@ -69,17 +72,29 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
 
             var result = FeatureConverter.FromGrpcResponse(response);
 
-            _logger?.LogDebug("Feature query returned {FeatureCount} features", result.Items.Length);
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogFeatureQueryReturned(_logger, result.Items.Length);
+            }
+
             return result;
         }
         catch (RpcException ex)
         {
-            _logger?.LogError(ex, "gRPC error during feature query: {StatusCode} - {Message}", ex.StatusCode, ex.Message);
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogFeatureQueryRpcError(_logger, ex.StatusCode, ex.Message, ex);
+            }
+
             throw new FeatureServiceException($"Feature query failed: {ex.Message}", ex);
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Unexpected error during feature query");
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogUnexpectedFeatureQueryError(_logger, ex);
+            }
+
             throw new FeatureServiceException($"Feature query failed: {ex.Message}", ex);
         }
     }
@@ -95,7 +110,10 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
         var client = _clientFactory(context);
         var request = FeatureConverter.ToGrpcRequest(query, serviceId, layerId);
 
-        _logger?.LogDebug("Starting streaming feature query for service {ServiceId}, layer {LayerId}", serviceId, layerId);
+        if (_logger is not null)
+        {
+            GrpcFeatureServiceClientLog.LogStartingStreamingFeatureQuery(_logger, serviceId, layerId);
+        }
 
         using var call = client.QueryFeaturesStream(request, deadline: DateTime.UtcNow.Add(_options.StreamTimeout), cancellationToken: cancellationToken);
 
@@ -126,17 +144,27 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
                     isFirstPage = false;
                 }
 
-                _logger?.LogTrace("Received page with {FeatureCount} features, IsLastPage: {IsLastPage}",
-                    page.Features.Length, page.IsLastPage);
+                if (_logger is not null)
+                {
+                    GrpcFeatureServiceClientLog.LogReceivedStreamingPage(_logger, page.Features.Length, page.IsLastPage);
+                }
             }
             catch (RpcException ex)
             {
-                _logger?.LogError(ex, "gRPC error during streaming feature query: {StatusCode} - {Message}", ex.StatusCode, ex.Message);
+                if (_logger is not null)
+                {
+                    GrpcFeatureServiceClientLog.LogStreamingFeatureQueryRpcError(_logger, ex.StatusCode, ex.Message, ex);
+                }
+
                 throw new FeatureServiceException($"Streaming feature query failed: {ex.Message}", ex);
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Unexpected error during streaming feature query");
+                if (_logger is not null)
+                {
+                    GrpcFeatureServiceClientLog.LogUnexpectedStreamingFeatureQueryError(_logger, ex);
+                }
+
                 throw new FeatureServiceException($"Streaming feature query failed: {ex.Message}", ex);
             }
 
@@ -146,7 +174,10 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
                 break;
         }
 
-        _logger?.LogDebug("Streaming feature query completed");
+        if (_logger is not null)
+        {
+            GrpcFeatureServiceClientLog.LogStreamingFeatureQueryCompleted(_logger);
+        }
     }
 
     /// <inheritdoc />
@@ -159,8 +190,16 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
     {
         try
         {
-            _logger?.LogDebug("Applying edits for service {ServiceId}, layer {LayerId}: {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes",
-                serviceId, layerId, edits.Adds.Length, edits.Updates.Length, edits.Deletes.Length);
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogApplyingEdits(
+                    _logger,
+                    serviceId,
+                    layerId,
+                    edits.Adds.Length,
+                    edits.Updates.Length,
+                    edits.Deletes.Length);
+            }
 
             var client = _clientFactory(context);
             var request = new Geospatial.V1.ApplyEditsRequest
@@ -182,23 +221,40 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
 
             var result = ConvertEditResponse(response);
 
-            _logger?.LogDebug("Edit operation completed with {SuccessfulAdds}/{TotalAdds} successful adds, " +
-                              "{SuccessfulUpdates}/{TotalUpdates} successful updates, " +
-                              "{SuccessfulDeletes}/{TotalDeletes} successful deletes",
-                result.AddResults.Count(r => r.Success), result.AddResults.Length,
-                result.UpdateResults.Count(r => r.Success), result.UpdateResults.Length,
-                result.DeleteResults.Count(r => r.Success), result.DeleteResults.Length);
+            if (_logger?.IsEnabled(LogLevel.Debug) == true)
+            {
+                var successfulAdds = CountSuccessful(result.AddResults);
+                var successfulUpdates = CountSuccessful(result.UpdateResults);
+                var successfulDeletes = CountSuccessful(result.DeleteResults);
+
+                GrpcFeatureServiceClientLog.LogApplyEditsCompleted(
+                    _logger,
+                    successfulAdds,
+                    result.AddResults.Length,
+                    successfulUpdates,
+                    result.UpdateResults.Length,
+                    successfulDeletes,
+                    result.DeleteResults.Length);
+            }
 
             return result;
         }
         catch (RpcException ex)
         {
-            _logger?.LogError(ex, "gRPC error during apply edits: {StatusCode} - {Message}", ex.StatusCode, ex.Message);
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogApplyEditsRpcError(_logger, ex.StatusCode, ex.Message, ex);
+            }
+
             throw new FeatureServiceException($"Apply edits failed: {ex.Message}", ex);
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Unexpected error during apply edits");
+            if (_logger is not null)
+            {
+                GrpcFeatureServiceClientLog.LogUnexpectedApplyEditsError(_logger, ex);
+            }
+
             throw new FeatureServiceException($"Apply edits failed: {ex.Message}", ex);
         }
     }
@@ -220,8 +276,15 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
                 retryCount++;
                 var delay = TimeSpan.FromMilliseconds(_options.BaseRetryDelayMs * Math.Pow(2, retryCount - 1));
 
-                _logger?.LogWarning("Retrying operation after {StatusCode} error (attempt {Attempt}/{MaxAttempts}), waiting {Delay}ms",
-                    ex.StatusCode, retryCount + 1, _options.MaxRetries, delay.TotalMilliseconds);
+                if (_logger is not null)
+                {
+                    GrpcFeatureServiceClientLog.LogRetryingOperation(
+                        _logger,
+                        ex.StatusCode,
+                        retryCount + 1,
+                        _options.MaxRetries,
+                        delay.TotalMilliseconds);
+                }
 
                 await Task.Delay(delay, cancellationToken);
             }
@@ -241,6 +304,21 @@ public class GrpcFeatureServiceClient<TContext> : IFeatureServiceClient<TContext
             StatusCode.Aborted => true,
             _ => false
         };
+    }
+
+    private static int CountSuccessful(ImmutableArray<OperationResult> results)
+    {
+        var successCount = 0;
+
+        foreach (var result in results)
+        {
+            if (result.Success)
+            {
+                successCount++;
+            }
+        }
+
+        return successCount;
     }
 
     private static ImmutableArray<DomainFeature> ConvertFeatures(IEnumerable<Geospatial.V1.Feature> grpcFeatures)
@@ -370,6 +448,68 @@ public class GrpcClientOptions
 /// </summary>
 public class FeatureServiceException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FeatureServiceException"/> class.
+    /// </summary>
+    /// <param name="message">The exception message.</param>
     public FeatureServiceException(string message) : base(message) { }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FeatureServiceException"/> class.
+    /// </summary>
+    /// <param name="message">The exception message.</param>
+    /// <param name="innerException">The inner exception that caused the failure.</param>
     public FeatureServiceException(string message, Exception innerException) : base(message, innerException) { }
+}
+
+internal static partial class GrpcFeatureServiceClientLog
+{
+    [LoggerMessage(EventId = 7600, Level = LogLevel.Debug, Message = "Executing feature query for service {ServiceId}, layer {LayerId}")]
+    public static partial void LogExecutingFeatureQuery(ILogger logger, string serviceId, int layerId);
+
+    [LoggerMessage(EventId = 7601, Level = LogLevel.Debug, Message = "Feature query returned {FeatureCount} features")]
+    public static partial void LogFeatureQueryReturned(ILogger logger, int featureCount);
+
+    [LoggerMessage(EventId = 7602, Level = LogLevel.Error, Message = "gRPC error during feature query: {StatusCode} - {Message}")]
+    public static partial void LogFeatureQueryRpcError(ILogger logger, StatusCode statusCode, string message, Exception exception);
+
+    [LoggerMessage(EventId = 7603, Level = LogLevel.Error, Message = "Unexpected error during feature query")]
+    public static partial void LogUnexpectedFeatureQueryError(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 7604, Level = LogLevel.Debug, Message = "Starting streaming feature query for service {ServiceId}, layer {LayerId}")]
+    public static partial void LogStartingStreamingFeatureQuery(ILogger logger, string serviceId, int layerId);
+
+    [LoggerMessage(EventId = 7605, Level = LogLevel.Trace, Message = "Received page with {FeatureCount} features, IsLastPage: {IsLastPage}")]
+    public static partial void LogReceivedStreamingPage(ILogger logger, int featureCount, bool isLastPage);
+
+    [LoggerMessage(EventId = 7606, Level = LogLevel.Error, Message = "gRPC error during streaming feature query: {StatusCode} - {Message}")]
+    public static partial void LogStreamingFeatureQueryRpcError(ILogger logger, StatusCode statusCode, string message, Exception exception);
+
+    [LoggerMessage(EventId = 7607, Level = LogLevel.Error, Message = "Unexpected error during streaming feature query")]
+    public static partial void LogUnexpectedStreamingFeatureQueryError(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 7608, Level = LogLevel.Debug, Message = "Streaming feature query completed")]
+    public static partial void LogStreamingFeatureQueryCompleted(ILogger logger);
+
+    [LoggerMessage(EventId = 7609, Level = LogLevel.Debug, Message = "Applying edits for service {ServiceId}, layer {LayerId}: {AddCount} adds, {UpdateCount} updates, {DeleteCount} deletes")]
+    public static partial void LogApplyingEdits(ILogger logger, string serviceId, int layerId, int addCount, int updateCount, int deleteCount);
+
+    [LoggerMessage(EventId = 7610, Level = LogLevel.Debug, Message = "Edit operation completed with {SuccessfulAdds}/{TotalAdds} successful adds, {SuccessfulUpdates}/{TotalUpdates} successful updates, {SuccessfulDeletes}/{TotalDeletes} successful deletes")]
+    public static partial void LogApplyEditsCompleted(
+        ILogger logger,
+        int successfulAdds,
+        int totalAdds,
+        int successfulUpdates,
+        int totalUpdates,
+        int successfulDeletes,
+        int totalDeletes);
+
+    [LoggerMessage(EventId = 7611, Level = LogLevel.Error, Message = "gRPC error during apply edits: {StatusCode} - {Message}")]
+    public static partial void LogApplyEditsRpcError(ILogger logger, StatusCode statusCode, string message, Exception exception);
+
+    [LoggerMessage(EventId = 7612, Level = LogLevel.Error, Message = "Unexpected error during apply edits")]
+    public static partial void LogUnexpectedApplyEditsError(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 7613, Level = LogLevel.Warning, Message = "Retrying operation after {StatusCode} error (attempt {Attempt}/{MaxAttempts}), waiting {Delay}ms")]
+    public static partial void LogRetryingOperation(ILogger logger, StatusCode statusCode, int attempt, int maxAttempts, double delay);
 }

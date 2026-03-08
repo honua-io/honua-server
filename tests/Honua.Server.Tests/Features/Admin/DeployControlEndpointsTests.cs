@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
@@ -31,6 +34,10 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
+                services.RemoveAll<IDeployTargetRegistry>();
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.AddSingleton<IDeployTargetRegistry>(new StubDeployTargetRegistry());
+                services.AddSingleton<IWorkflowOperationStore, InMemoryWorkflowOperationStore>();
             });
     }
 
@@ -85,6 +92,68 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         root.GetProperty("migration").GetProperty("pendingScripts").GetArrayLength().Should().Be(1);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/plan")]
+    public async Task PlanDeployOperation_WhenTargetExists_ReturnsResolvedPlan()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/deploy/plan", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:abc123"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("target").GetProperty("targetId").GetString().Should().Be("prod-api");
+        root.GetProperty("target").GetProperty("backend").GetString().Should().Be("honua-gitops-kubernetes");
+        root.GetProperty("readyToSubmit").GetBoolean().Should().BeTrue();
+        root.GetProperty("backendRegistered").GetBoolean().Should().BeTrue();
+        root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations")]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task DeployOperation_LifecycleEndpoints_RoundTrip()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:def456",
+            reason = "Promote tested revision"
+        });
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var createRoot = createDocument.RootElement;
+        var operationId = createRoot.GetProperty("operationId").GetString();
+        operationId.Should().NotBeNullOrWhiteSpace();
+        createRoot.GetProperty("status").GetString().Should().Be("Submitted");
+        createRoot.GetProperty("target").GetProperty("desiredRevision").GetString().Should().Be("sha256:def456");
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/deploy/operations/{operationId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        getDocument.RootElement.GetProperty("operationId").GetString().Should().Be(operationId);
+        getDocument.RootElement.GetProperty("providerOperationId").GetString().Should().Contain("honua-gitops-kubernetes");
+
+        var rollbackResponse = await _client.PostAsJsonAsync($"/api/v1/admin/deploy/operations/{operationId}/rollback", new
+        {
+            reason = "Post-deploy verification failed"
+        });
+
+        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var rollbackDocument = JsonDocument.Parse(await rollbackResponse.Content.ReadAsStringAsync());
+        rollbackDocument.RootElement.GetProperty("status").GetString().Should().Be("RollbackRequested");
+        rollbackDocument.RootElement.GetProperty("currentPhase").GetString().Should().Be("Rollback requested through Honua GitOps reconciliation.");
+    }
+
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner
     {
         public DatabaseMigrationPlan Plan { get; set; } = DatabaseMigrationPlan.Succeeded();
@@ -100,5 +169,76 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             Assembly migrationsAssembly,
             CancellationToken cancellationToken = default)
             => Task.FromResult(DatabaseMigrationResult.Succeeded());
+    }
+
+    private sealed class StubDeployTargetRegistry : IDeployTargetRegistry
+    {
+        private static readonly DeployTargetDefinition[] Targets =
+        [
+            new()
+            {
+                TargetId = "prod-api",
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-gitops-kubernetes",
+                Environment = "production",
+                TargetName = "honua-server",
+                ArtifactReference = "ghcr.io/honua/server",
+                RuntimeProfile = "dotnet-api",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["namespace"] = "honua",
+                    ["release"] = "honua-server"
+                }
+            }
+        ];
+
+        public Task<IReadOnlyList<DeployTargetDefinition>> ListAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DeployTargetDefinition>>(Targets);
+
+        public Task<DeployTargetDefinition?> GetAsync(string targetId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Targets.SingleOrDefault(target => target.TargetId == targetId));
+    }
+
+    private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
+    {
+        private readonly Dictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> TryCreateAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            if (_operations.ContainsKey(operation.OperationId))
+            {
+                return Task.FromResult(false);
+            }
+
+            _operations[operation.OperationId] = operation;
+            return Task.FromResult(true);
+        }
+
+        public Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_operations.TryGetValue(operationId, out var operation) ? operation : null);
+
+        public Task SetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _operations[operation.OperationId] = operation;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)
+        {
+            var operations = _operations.Values
+                .Where(operation => !kind.HasValue || operation.Kind == kind.Value)
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
+        }
     }
 }
