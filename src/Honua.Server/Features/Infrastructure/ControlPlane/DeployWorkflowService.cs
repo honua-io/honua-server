@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -11,6 +14,7 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 /// </summary>
 internal sealed class DeployWorkflowService
 {
+    private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends;
@@ -101,19 +105,17 @@ internal sealed class DeployWorkflowService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var operationId = string.IsNullOrWhiteSpace(idempotencyKey)
-            ? $"deploy-{Guid.NewGuid():N}"
-            : $"deploy-{idempotencyKey}";
+        var operationId = CreateOperationId(idempotencyKey);
 
         var operation = new WorkflowOperationRecord
         {
             OperationId = operationId,
             Kind = WorkflowOperationKind.Deploy,
-            Status = DetermineInitialStatus(planningResult.Plan, submitImmediately),
+            Status = DeterminePersistedStatus(planningResult.Plan),
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
-            CurrentPhase = DetermineInitialPhase(planningResult.Plan, submitImmediately),
+            CurrentPhase = DeterminePersistedPhase(planningResult.Plan, submitImmediately),
             ErrorMessage = planningResult.Plan.BlockingReasons.Count > 0
                 ? string.Join(" ", planningResult.Plan.BlockingReasons)
                 : null,
@@ -134,27 +136,53 @@ internal sealed class DeployWorkflowService
             Deploy = planningResult.Spec
         };
 
+        var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!created)
+        {
+            var existing = await _workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            throw new InvalidOperationException("Failed to durably record the deploy operation before backend submission.");
+        }
+
         if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
         {
             var backend = ResolveBackend(planningResult.Target);
             if (backend != null)
             {
-                var submission = await backend.StartAsync(operation, cancellationToken).ConfigureAwait(false);
-                operation = operation with
+                try
                 {
-                    Status = submission.Status,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    ProviderOperationId = submission.ProviderOperationId,
-                    CurrentPhase = submission.Message ?? "Submitted to deploy backend",
-                    ErrorMessage = null
-                };
-            }
-        }
+                    var submission = await backend.StartAsync(operation, cancellationToken).ConfigureAwait(false);
+                    operation = operation with
+                    {
+                        Status = submission.Status,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        ProviderOperationId = submission.ProviderOperationId,
+                        CurrentPhase = submission.Message ?? "Submitted to deploy backend",
+                        ErrorMessage = null
+                    };
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    operation = operation with
+                    {
+                        Status = WorkflowOperationStatus.Failed,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        CurrentPhase = "Backend submission failed.",
+                        ErrorMessage = ex.Message
+                    };
+                }
 
-        var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!created)
-        {
-            return await _workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+                await _workflowStore.SetAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
         }
 
         return operation;
@@ -210,8 +238,14 @@ internal sealed class DeployWorkflowService
                 {
                     Status = WorkflowOperationStatus.ManualInterventionRequired,
                     UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Rollback requested but no backend is registered for this target.",
-                    ErrorMessage = "Manual rollback is required because no deploy backend is registered for this target."
+                    ErrorMessage = "Manual rollback is required because no deploy backend is registered for this target.",
+                    Audit = operation.Audit with
+                    {
+                        RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
+                        Reason = reason ?? operation.Audit.Reason
+                    }
                 };
             }
             else
@@ -221,9 +255,19 @@ internal sealed class DeployWorkflowService
                 {
                     Status = observation.Status,
                     UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = observation.Status is WorkflowOperationStatus.RolledBack
+                        or WorkflowOperationStatus.Failed
+                        or WorkflowOperationStatus.ManualInterventionRequired
+                        ? DateTimeOffset.UtcNow
+                        : null,
                     ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
                     CurrentPhase = observation.Message ?? "Rollback requested",
-                    ErrorMessage = null
+                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null,
+                    Audit = operation.Audit with
+                    {
+                        RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
+                        Reason = reason ?? operation.Audit.Reason
+                    }
                 };
             }
         }
@@ -232,22 +276,17 @@ internal sealed class DeployWorkflowService
         return updated;
     }
 
-    private static WorkflowOperationStatus DetermineInitialStatus(DeployPlan plan, bool submitImmediately)
+    private static WorkflowOperationStatus DeterminePersistedStatus(DeployPlan plan)
     {
         if (plan.RequiresApproval)
         {
             return WorkflowOperationStatus.AwaitingApproval;
         }
 
-        if (submitImmediately && plan.IsReadyToSubmit)
-        {
-            return WorkflowOperationStatus.Submitted;
-        }
-
         return WorkflowOperationStatus.Planned;
     }
 
-    private static string DetermineInitialPhase(DeployPlan plan, bool submitImmediately)
+    private static string DeterminePersistedPhase(DeployPlan plan, bool submitImmediately)
     {
         if (plan.RequiresApproval)
         {
@@ -265,6 +304,33 @@ internal sealed class DeployWorkflowService
         }
 
         return "Planned and ready for submission.";
+    }
+
+    private static string CreateOperationId(string? idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return $"deploy-{Guid.NewGuid():N}";
+        }
+
+        var normalizedKey = idempotencyKey.Trim();
+        var slug = UnsafeOperationIdCharacters
+            .Replace(normalizedKey.ToLowerInvariant(), "-")
+            .Trim('-');
+
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            slug = "key";
+        }
+
+        if (slug.Length > 48)
+        {
+            slug = slug[..48].Trim('-');
+        }
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedKey));
+        var hash = Convert.ToHexString(hashBytes.AsSpan(0, 6)).ToLowerInvariant();
+        return $"deploy-{slug}-{hash}";
     }
 
     private static DeployOperationSpec BuildSpec(

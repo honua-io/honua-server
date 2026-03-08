@@ -143,6 +143,11 @@ public enum DeployTargetKind
     Kubernetes,
 
     /// <summary>
+    /// AWS ECS target using ALB traffic shifting and service-level rollout semantics.
+    /// </summary>
+    AwsEcs,
+
+    /// <summary>
     /// AWS Lambda target using revisions, aliases, or traffic shifting.
     /// </summary>
     AwsLambda,

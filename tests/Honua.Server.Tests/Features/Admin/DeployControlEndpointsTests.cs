@@ -154,6 +154,33 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         rollbackDocument.RootElement.GetProperty("currentPhase").GetString().Should().Be("Rollback requested through Honua GitOps reconciliation.");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations")]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
+    public async Task CreateDeployOperation_WithUnsafeIdempotencyKey_ReturnsSafeRoundTrippableOperationId()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+        {
+            targetId = "prod-api",
+            desiredRevision = "sha256:safe123",
+            idempotencyKey = " release / 2026#03 ? candidate "
+        });
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
+        operationId.Should().NotBeNullOrWhiteSpace();
+        operationId.Should().MatchRegex("^deploy-[a-z0-9-]+$");
+        operationId.Should().NotContain("/");
+        operationId.Should().NotContain("?");
+        operationId.Should().NotContain("#");
+        operationId.Should().NotContain(" ");
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/deploy/operations/{operationId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private sealed class StubDatabaseMigrationRunner : IDatabaseMigrationRunner
     {
         public DatabaseMigrationPlan Plan { get; set; } = DatabaseMigrationPlan.Succeeded();

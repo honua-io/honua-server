@@ -18,6 +18,17 @@ internal sealed class KubernetesGitOpsDeployBackend(ILogger<KubernetesGitOpsDepl
 }
 
 /// <summary>
+/// Built-in GitOps deploy backend for AWS ECS targets managed by Honua.
+/// </summary>
+internal sealed class AwsEcsGitOpsDeployBackend(ILogger<AwsEcsGitOpsDeployBackend> logger)
+    : GitOpsDeployBackendBase(logger)
+{
+    public override string BackendName => "honua-gitops-aws-ecs";
+
+    public override DeployTargetKind TargetKind => DeployTargetKind.AwsEcs;
+}
+
+/// <summary>
 /// Built-in GitOps deploy backend for AWS Lambda targets managed by Honua.
 /// </summary>
 internal sealed class AwsLambdaGitOpsDeployBackend(ILogger<AwsLambdaGitOpsDeployBackend> logger)
@@ -50,8 +61,8 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         {
             SupportsRollback = true,
             SupportsCancellation = false,
-            SupportsTrafficShifting = TargetKind is DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
-            RequiresOutOfBandMigrations = TargetKind is not DeployTargetKind.Kubernetes,
+            SupportsTrafficShifting = TargetKind is DeployTargetKind.AwsEcs or DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
+            RequiresOutOfBandMigrations = TargetKind is DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
             SupportsProgressPolling = true,
             SupportsRevisionPinning = true
         });
@@ -118,12 +129,34 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var (status, observedRevision, message) = operation.Status switch
+        {
+            WorkflowOperationStatus.Submitted => (
+                WorkflowOperationStatus.Reconciling,
+                operation.Deploy?.CurrentRevision,
+                "Deploy is reconciling through Honua GitOps controller."),
+            WorkflowOperationStatus.Reconciling => (
+                WorkflowOperationStatus.Succeeded,
+                operation.Deploy?.DesiredRevision,
+                "Deploy reconciled through Honua GitOps controller."),
+            WorkflowOperationStatus.RollbackRequested => (
+                WorkflowOperationStatus.RolledBack,
+                operation.Deploy?.CurrentRevision,
+                "Rollback completed through Honua GitOps reconciliation."),
+            _ => (
+                operation.Status,
+                operation.Status == WorkflowOperationStatus.Succeeded
+                    ? operation.Deploy?.DesiredRevision
+                    : operation.Deploy?.CurrentRevision,
+                operation.CurrentPhase)
+        };
+
         return Task.FromResult(new DeployObservation
         {
-            Status = operation.Status,
+            Status = status,
             ProviderOperationId = operation.ProviderOperationId,
-            ObservedRevision = operation.Deploy?.CurrentRevision,
-            Message = operation.CurrentPhase
+            ObservedRevision = observedRevision,
+            Message = message
         });
     }
 

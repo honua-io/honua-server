@@ -24,6 +24,11 @@ internal sealed class ControlPlaneOptions
     /// Stable execution workload catalog entries.
     /// </summary>
     public List<ExecutionWorkloadOptions> ExecutionWorkloads { get; set; } = [];
+
+    /// <summary>
+    /// Named telemetry query connections used for deploy health gating.
+    /// </summary>
+    public List<DeployTelemetryConnectionOptions> TelemetryConnections { get; set; } = [];
 }
 
 /// <summary>
@@ -50,6 +55,26 @@ internal sealed class DeployTargetOptions
     public bool RequiresOutOfBandMigrations { get; set; }
 
     public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// Configuration model for a telemetry query connection used by deploy rollback gates.
+/// </summary>
+internal sealed class DeployTelemetryConnectionOptions
+{
+    public string ConnectionId { get; set; } = string.Empty;
+
+    public string Provider { get; set; } = "prometheus";
+
+    public string BaseUrl { get; set; } = string.Empty;
+
+    public string QueryPath { get; set; } = "/api/v1/query";
+
+    public string? AuthHeaderName { get; set; }
+
+    public string? AuthHeaderValue { get; set; }
+
+    public int TimeoutSeconds { get; set; } = 10;
 }
 
 /// <summary>

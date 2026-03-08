@@ -202,10 +202,12 @@ public class MemorySoakBenchmarks : IDisposable
 
         for (int i = 0; i < iterations; i++)
         {
+            var connectionOpened = false;
             try
             {
                 await using var connection = await dataSource.OpenConnectionAsync();
                 opened++;
+                connectionOpened = true;
 
                 // Execute a simple query
                 await using var cmd = connection.CreateCommand();
@@ -218,7 +220,10 @@ public class MemorySoakBenchmarks : IDisposable
             }
             finally
             {
-                closed++;
+                if (connectionOpened)
+                {
+                    closed++;
+                }
             }
         }
 

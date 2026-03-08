@@ -207,13 +207,12 @@ public class LoadTestBenchmarks : IDisposable
         var latencies = new ConcurrentBag<double>();
         var errors = new ConcurrentBag<string>();
         var stopwatch = Stopwatch.StartNew();
-        var random = new Random();
 
         var tasks = Enumerable.Range(0, concurrency).Select(async clientId =>
         {
             for (int i = 0; i < requestsPerClient; i++)
             {
-                var url = endpoints[random.Next(endpoints.Length)];
+                var url = endpoints[Random.Shared.Next(endpoints.Length)];
                 var requestWatch = Stopwatch.StartNew();
                 try
                 {

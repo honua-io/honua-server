@@ -197,18 +197,27 @@ builder.Services.Configure<DeploymentOptions>(
     builder.Configuration.GetSection(DeploymentOptions.SectionName));
 builder.Services.Configure<ControlPlaneOptions>(
     builder.Configuration.GetSection(ControlPlaneOptions.SectionName));
+builder.Services.AddHttpClient("control-plane-telemetry");
 builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
 builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
 builder.Services.AddSingleton<DeployWorkflowService>();
+builder.Services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployTelemetrySignalEvaluator>();
 builder.Services.AddSingleton<KubernetesGitOpsDeployBackend>();
+builder.Services.AddSingleton<AwsEcsGitOpsDeployBackend>();
 builder.Services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
 builder.Services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
 if (connectedRedis != null)
 {
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
+    builder.Services.AddSingleton<IOperationReconciler, DeployWorkflowReconciler>();
+    if (!isTestEnvironment)
+    {
+        builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
+    }
 }
 
 // Configure tile options
