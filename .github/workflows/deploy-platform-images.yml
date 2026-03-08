@@ -13,6 +13,7 @@ env:
   ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
+  IMAGE_PLATFORMS: linux/amd64
 
 jobs:
   build-and-push-lambda:
@@ -157,7 +158,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.lambda
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.IMAGE_PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -181,7 +182,7 @@ jobs:
           category: 'trivy-lambda'
 
   build-and-push-lambda-aot:
-    name: Build & Push Lambda AOT Image (Multi-Arch)
+    name: Build & Push Lambda AOT Image
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     permissions:
@@ -322,7 +323,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.lambda.aot
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.IMAGE_PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -487,7 +488,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.functions
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.IMAGE_PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -511,7 +512,7 @@ jobs:
           category: 'trivy-functions'
 
   build-and-push-functions-aot:
-    name: Build & Push Functions AOT Image (Multi-Arch)
+    name: Build & Push Functions AOT Image
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     permissions:
@@ -652,7 +653,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.functions.aot
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.IMAGE_PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

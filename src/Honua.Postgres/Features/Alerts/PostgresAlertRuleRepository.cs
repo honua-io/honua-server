@@ -172,7 +172,7 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
                 ZoneName = reader.GetString(2),
                 Geometry = reader.IsDBNull(3) ? null : (byte[])reader[3],
                 GeometrySrid = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                Metadata = ParseMetadata(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
+                Metadata = AlertMetadataSerializer.Parse(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
                 IsActive = reader.GetBoolean(6)
             };
 
@@ -203,32 +203,6 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
             Channels = channels,
             IsActive = reader.GetBoolean(11)
         };
-    }
-
-    private static ImmutableDictionary<string, string?> ParseMetadata(string json)
-    {
-        try
-        {
-            using var document = System.Text.Json.JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
-            {
-                return ImmutableDictionary<string, string?>.Empty;
-            }
-
-            var builder = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var property in document.RootElement.EnumerateObject())
-            {
-                builder[property.Name] = property.Value.ValueKind == System.Text.Json.JsonValueKind.Null
-                    ? null
-                    : property.Value.ToString();
-            }
-
-            return builder.ToImmutable();
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return ImmutableDictionary<string, string?>.Empty;
-        }
     }
 
     private static ImmutableArray<AlertChannelType> ParseChannels(string[] values)

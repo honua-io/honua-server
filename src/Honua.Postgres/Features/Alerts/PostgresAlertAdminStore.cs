@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text.Json;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -306,7 +305,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             ZoneName = reader.GetString(2),
             Geometry = reader.IsDBNull(3) ? null : (byte[])reader[3],
             GeometrySrid = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-            Metadata = ParseMetadata(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
+            Metadata = AlertMetadataSerializer.Parse(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
             IsActive = reader.GetBoolean(6)
         };
     }
@@ -330,32 +329,9 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
         };
     }
 
-    private static ImmutableDictionary<string, string?> ParseMetadata(string json)
-    {
-        try
-        {
-            var dictionary = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
-            if (dictionary is null)
-            {
-                return ImmutableDictionary<string, string?>.Empty;
-            }
-
-            return dictionary.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
-        }
-        catch (JsonException)
-        {
-            return ImmutableDictionary<string, string?>.Empty;
-        }
-    }
-
     private static string SerializeMetadata(ImmutableDictionary<string, string?> metadata)
     {
-        if (metadata.IsEmpty)
-        {
-            return "{}";
-        }
-
-        return JsonSerializer.Serialize(metadata);
+        return AlertMetadataSerializer.Serialize(metadata);
     }
 
     private static ImmutableArray<AlertChannelType> ParseChannels(string[] channels)
