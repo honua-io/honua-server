@@ -47,6 +47,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         _isUsingFallback = cache == null;
     }
 
+    internal bool IsUsingFallback => _isUsingFallback;
+
     public async Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
         var key = $"{KeyPrefix}{operationId}";
@@ -186,7 +188,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         return operations;
     }
 
-    private string SerializeProgress(IOperationProgress progress)
+    private static string SerializeProgress(IOperationProgress progress)
     {
         // Create a type-aware wrapper for serialization
         var wrapper = new ProgressWrapper
@@ -199,7 +201,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         return JsonSerializer.Serialize(wrapper, UniversalProgressJsonContext.Default.ProgressWrapper);
     }
 
-    private IOperationProgress? DeserializeProgress(string json)
+    private static IOperationProgress? DeserializeProgress(string json)
     {
         var wrapper = JsonSerializer.Deserialize(json, UniversalProgressJsonContext.Default.ProgressWrapper);
         if (wrapper?.Data == null)
@@ -426,7 +428,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         return filtered;
     }
 
-    private async Task<bool> MatchesOperationTypeAsync(IDatabase db, string operationId, OperationType expectedType)
+    private static async Task<bool> MatchesOperationTypeAsync(IDatabase db, string operationId, OperationType expectedType)
     {
         try
         {

@@ -40,7 +40,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 
 ## DevOps Documentation
 
-- [Infrastructure & Deployment](devops/infrastructure.md) — Docker Compose, Helm, Terraform AWS/Azure
+- [Infrastructure & Deployment](devops/infrastructure.md) — Docker Compose, Helm, and cloud deployment guidance
 - [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — patterns by team size
 - [Security](devops/security.md) — authentication, authorization, rate limiting, CSP
 - [Monitoring & Alerting](devops/monitoring.md) — endpoints, metrics, tracing, cloud alerting

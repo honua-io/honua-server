@@ -51,4 +51,19 @@ public sealed class FeatureServerSpatialLimitsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithProjectedFeetInputSridWithoutUnitMetadata_ReturnsExplicitBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            "?geometry=0,0,10000,10000&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=2230&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("projected SRID 2230");
+        content.Should().Contain("linear units are unknown");
+    }
 }

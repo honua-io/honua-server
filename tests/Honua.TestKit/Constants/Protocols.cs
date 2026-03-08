@@ -85,6 +85,11 @@ public static class Protocols
     public const string GeoservicesCatalog = "GeoservicesCatalog";
 
     /// <summary>
+    /// GeoServices GeocodeServer endpoints.
+    /// </summary>
+    public const string Geocoding = "Geocoding";
+
+    /// <summary>
     /// gRPC/gRPC-Web protocol.
     /// </summary>
     public const string Grpc = "Grpc";

@@ -47,6 +47,22 @@ internal static partial class MapServerEndpoints
             .WithDescription("Generates a raster map image from layer features with MapLibre styling")
             .WithTags("MapServer");
 
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateKml",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGenerateKml(context))
+            .WithDisplayName("Generate KML")
+            .WithName("MapServerGenerateKml")
+            .WithSummary("Generate KML or KMZ from map layers")
+            .WithDescription("Exports layer features as KML or KMZ")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/generateKml",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGenerateKml(context))
+            .WithDisplayName("Generate KML (POST)")
+            .WithName("MapServerGenerateKmlPost")
+            .WithSummary("Generate KML or KMZ from map layers using POST")
+            .WithDescription("Exports layer features as KML or KMZ")
+            .WithTags("MapServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/identify",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleIdentify(context))
             .WithDisplayName("Identify Features")

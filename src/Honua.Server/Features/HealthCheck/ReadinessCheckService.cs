@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Logging;
 
 namespace Honua.Server.Features.HealthCheck;
@@ -43,6 +44,11 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                 return ReadinessResult.NotReady("Database migrations failed");
             }
 
+            if (_migrationState.IsRunning)
+            {
+                return ReadinessResult.NotReady("Database migrations in progress");
+            }
+
             if (!_migrationState.IsReady)
             {
                 return ReadinessResult.NotReady("Database migrations not completed");
@@ -68,6 +74,11 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                     ? (_cacheHealthChecker.IsUsingFallback ? "Healthy (fallback)" : "Healthy")
                     : "Unhealthy";
                 Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, 0.0);
+
+                if (!isCacheHealthy)
+                {
+                    return ReadinessResult.NotReady("Cache unavailable");
+                }
             }
 
             return ReadinessResult.Ready();

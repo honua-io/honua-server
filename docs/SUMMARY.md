@@ -4,6 +4,7 @@
 
 * [Documentation Overview](README.md)
 * [User Journeys](user/USER_JOURNEYS.md)
+* [MVP Sales Playbook + Launch GTM](user/MVP_LAUNCH_GTM_PLAYBOOK.md)
 * [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
 * [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
 
@@ -38,7 +39,6 @@
 
 * [DevOps Overview](devops/README.md)
 * [Infrastructure & Deployment](devops/infrastructure.md)
-* [Terraform Validation Runbook](devops/terraform-validation.md)
 * [Docker Compose Sample](devops/docker-compose.md)
 * [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md)
 * [Security](devops/security.md)

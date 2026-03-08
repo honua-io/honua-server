@@ -941,14 +941,14 @@ public sealed class Cql2Parser
         return false;
     }
 
-    private bool IsComparisonOperator(Cql2TokenType type)
+    private static bool IsComparisonOperator(Cql2TokenType type)
     {
         return type is Cql2TokenType.Equal or Cql2TokenType.NotEqual or
                Cql2TokenType.LessThan or Cql2TokenType.LessThanOrEqual or
                Cql2TokenType.GreaterThan or Cql2TokenType.GreaterThanOrEqual;
     }
 
-    private bool IsSpatialPredicate(Cql2TokenType type)
+    private static bool IsSpatialPredicate(Cql2TokenType type)
     {
         return type is Cql2TokenType.S_Intersects or Cql2TokenType.S_Contains or
                Cql2TokenType.S_Within or Cql2TokenType.S_Crosses or
@@ -957,7 +957,7 @@ public sealed class Cql2Parser
                Cql2TokenType.S_DWithin or Cql2TokenType.S_Beyond;
     }
 
-    private bool IsTemporalPredicate(Cql2TokenType type)
+    private static bool IsTemporalPredicate(Cql2TokenType type)
     {
         return type is Cql2TokenType.T_After or Cql2TokenType.T_Before or
                Cql2TokenType.T_Contains or Cql2TokenType.T_Disjoint or
@@ -969,7 +969,7 @@ public sealed class Cql2Parser
                Cql2TokenType.T_Starts;
     }
 
-    private bool IsArrayPredicate(Cql2TokenType type)
+    private static bool IsArrayPredicate(Cql2TokenType type)
     {
         return type is Cql2TokenType.A_Equals or Cql2TokenType.A_Contains or
                Cql2TokenType.A_ContainedBy or Cql2TokenType.A_Overlaps;
@@ -992,12 +992,12 @@ public sealed class Cql2Parser
             Cql2TokenType.Casei or Cql2TokenType.Accenti;
     }
 
-    private bool IsTemporalLiteral(Cql2TokenType type)
+    private static bool IsTemporalLiteral(Cql2TokenType type)
     {
         return type is Cql2TokenType.Date or Cql2TokenType.Timestamp or Cql2TokenType.Interval;
     }
 
-    private bool IsGeometryType(Cql2TokenType type)
+    private static bool IsGeometryType(Cql2TokenType type)
     {
         return type is Cql2TokenType.Point or Cql2TokenType.LineString or
                Cql2TokenType.Polygon or Cql2TokenType.MultiPoint or
@@ -1005,7 +1005,7 @@ public sealed class Cql2Parser
                Cql2TokenType.GeometryCollection or Cql2TokenType.Bbox;
     }
 
-    private BinaryOperator GetBinaryOperator(Cql2TokenType type)
+    private static BinaryOperator GetBinaryOperator(Cql2TokenType type)
     {
         return type switch
         {
@@ -1019,7 +1019,7 @@ public sealed class Cql2Parser
         };
     }
 
-    private SpatialOperator GetSpatialOperator(Cql2TokenType type)
+    private static SpatialOperator GetSpatialOperator(Cql2TokenType type)
     {
         return type switch
         {
@@ -1037,7 +1037,7 @@ public sealed class Cql2Parser
         };
     }
 
-    private TemporalOperator GetTemporalOperator(Cql2TokenType type)
+    private static TemporalOperator GetTemporalOperator(Cql2TokenType type)
     {
         return type switch
         {
@@ -1060,7 +1060,7 @@ public sealed class Cql2Parser
         };
     }
 
-    private ArrayOperator GetArrayOperator(Cql2TokenType type)
+    private static ArrayOperator GetArrayOperator(Cql2TokenType type)
     {
         return type switch
         {

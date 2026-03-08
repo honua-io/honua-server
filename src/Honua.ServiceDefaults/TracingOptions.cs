@@ -38,9 +38,19 @@ public sealed class TracingOptions
     public bool TraceHealthEndpoints { get; set; }
 
     /// <summary>
-    /// Gets or sets whether to record exception stack traces in spans.
+    /// Gets or sets whether sanitized exception details should be exported on spans.
     /// </summary>
-    public bool RecordExceptionStackTraces { get; set; } = true;
+    public bool ExportExceptionDetails { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether sanitized exception stack traces should be included when exception details are exported.
+    /// </summary>
+    public bool RecordExceptionStackTraces { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum length for sanitized exception text that is exported on spans.
+    /// </summary>
+    public int MaxExceptionDetailLength { get; set; } = 256;
 
     /// <summary>
     /// Gets or sets the maximum number of attributes per span.

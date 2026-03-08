@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.HealthCheck;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
@@ -55,6 +56,25 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithMigrationsRunning_ReturnsNotReady()
+    {
+        // Arrange
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var migrationState = new MigrationState();
+        migrationState.MarkRunning();
+        var service = CreateService(mockDatabaseChecker, migrationState: migrationState);
+
+        // Act
+        var result = await service.CheckReadinessAsync();
+
+        // Assert
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Be("Not Ready - Database migrations in progress");
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithCacheHealthChecker_IncludesCacheStatus()
     {
         // Arrange
@@ -83,6 +103,25 @@ public sealed class ReadinessCheckServiceTests
 
         // Assert
         result.IsReady.Should().BeTrue(); // Cache in fallback doesn't affect readiness
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithUnhealthyCache_ReturnsNotReady()
+    {
+        // Arrange
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var mockCacheChecker = new MockCacheHealthChecker(healthy: false, usingFallback: false);
+        var service = CreateService(mockDatabaseChecker, mockCacheChecker);
+
+        // Act
+        var result = await service.CheckReadinessAsync();
+
+        // Assert
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Be("Not Ready - Cache unavailable");
+        result.Exception.Should().BeNull();
     }
 
     [UnitTest]
@@ -172,7 +211,10 @@ public sealed class ReadinessCheckServiceTests
         MigrationState? migrationState = null)
     {
         var state = migrationState ?? new MigrationState();
-        state.MarkSucceeded();
+        if (migrationState is null)
+        {
+            state.MarkSucceeded();
+        }
 
         return new ReadinessCheckService(
             databaseChecker,

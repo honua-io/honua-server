@@ -8,9 +8,12 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Grpc;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,7 +21,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Grpc;
 
@@ -28,7 +31,10 @@ public sealed class GrpcFeatureServiceTests
 {
     private readonly IResourceValidator _resourceValidator = Substitute.For<IResourceValidator>();
     private readonly IFeatureReader _featureReader = Substitute.For<IFeatureReader>();
+    private readonly IFeatureWriter _featureWriter = Substitute.For<IFeatureWriter>();
     private readonly IStreamingFeatureStore _streamingStore = Substitute.For<IStreamingFeatureStore>();
+    private readonly ICrsDetectionService _crsDetectionService = Substitute.For<ICrsDetectionService>();
+    private readonly ICrsRegistry _crsRegistry = Substitute.For<ICrsRegistry>();
     private readonly HonuaFeatureService _sut;
 
     private static readonly LayerDefinition _testLayer = new(
@@ -48,8 +54,16 @@ public sealed class GrpcFeatureServiceTests
 
     public GrpcFeatureServiceTests()
     {
+#pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
+        _crsRegistry
+            .IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<bool>(true));
+#pragma warning restore CA2012
+
         _sut = new HonuaFeatureService(
-            _resourceValidator, _featureReader, _streamingStore,
+            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance);
@@ -58,6 +72,120 @@ public sealed class GrpcFeatureServiceTests
         _resourceValidator
             .ValidateServiceLayerAsync("test", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success((_testService, _testLayer)));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WithValidRequest_AppliesEditsAndReturnsResponse()
+    {
+        var applyResult = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 1,
+            deletedCount: 1,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)),
+            updateResults: ImmutableArray.Create(EditOperationResult.Success(11)),
+            deleteResults: ImmutableArray.Create(EditOperationResult.Success(12)));
+
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(applyResult));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            RollbackOnFailure = true
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "new feature" } }
+        });
+        request.Updates.Add(new Proto.Feature
+        {
+            Id = 11,
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "updated feature" } }
+        });
+        request.Deletes.Add(12);
+
+        var response = await _sut.ApplyEdits(request, CreateCallContext());
+
+        response.AddResults.Should().ContainSingle();
+        response.UpdateResults.Should().ContainSingle();
+        response.DeleteResults.Should().ContainSingle();
+        response.AddResults[0].ObjectId.Should().Be(101);
+        response.UpdateResults[0].ObjectId.Should().Be(11);
+        response.DeleteResults[0].ObjectId.Should().Be(12);
+
+        var applyEditsCalls = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .ToArray();
+        applyEditsCalls.Should().HaveCount(1);
+
+        var arguments = applyEditsCalls[0].GetArguments();
+        arguments[0].Should().Be(0);
+        arguments[1].Should().NotBeNull();
+
+        var batch = (FeatureEditBatch)arguments[1]!;
+        batch.RollbackOnFailure.Should().BeTrue();
+        batch.Creates.Length.Should().Be(1);
+        batch.Updates.Length.Should().Be(1);
+        batch.Deletes.SequenceEqual(new long[] { 12 }).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WithMissingUpdateObjectId_ThrowsInvalidArgument()
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "missing id" } }
+        });
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("positive id");
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_GrpcDisabled_ThrowsNotFoundRpcException()
+    {
+        var grpcDisabledService = _testService with
+        {
+            Metadata = new CatalogMetadata
+            {
+                EnabledProtocols = [ServiceProtocols.FeatureServer]
+            }
+        };
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("grpc-disabled", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((grpcDisabledService, _testLayer)));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "grpc-disabled",
+            LayerId = 0
+        };
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
+        ex.Which.Status.Detail.Should().Be("Grpc is not enabled for this service.");
     }
 
     [UnitTest]
@@ -110,10 +238,8 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_IdsOnly_ReturnsObjectIds()
     {
-        var features = ImmutableArray.Create(
-            Feature.Create(1, null), Feature.Create(2, null), Feature.Create(3, null));
-        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(QueryResult<Feature>.Create(3, features));
+        _featureReader.QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create<long>(1, 2, 3));
 
         var request = new Proto.QueryFeaturesRequest
         {
@@ -126,6 +252,8 @@ public sealed class GrpcFeatureServiceTests
 
         response.ObjectIds.Should().BeEquivalentTo(new long[] { 1, 2, 3 });
         response.Features.Should().BeEmpty();
+        await _featureReader.Received(1).QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        _ = _featureReader.DidNotReceive().QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -272,6 +400,33 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithWktOutSr_ResolvesSridViaCrsDetection()
+    {
+        _crsDetectionService.DetectFromWktAsync(Arg.Any<string>())
+            .Returns(Task.FromResult<int?>(3857));
+
+        var features = ImmutableArray.Create(Feature.Create(1, null));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { Wkt = "PROJCRS[\"WGS 84 / Pseudo-Mercator\"]" }
+        };
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.SpatialReference.Wkid.Should().Be(3857);
+        await _featureReader.Received(1).QueryAsync(
+            0,
+            Arg.Is<FeatureQuery>(q => q.OutputSrid == 3857),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithInvalidOutSr_ThrowsInvalidArgument()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -286,6 +441,70 @@ public sealed class GrpcFeatureServiceTests
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
         ex.Which.Status.Detail.Should().Be("Invalid out_sr value.");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithUnsupportedWkidOutSr_ThrowsInvalidArgument()
+    {
+#pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
+        _crsRegistry
+            .IsSridSupportedAsync(910001, Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<bool>(false));
+#pragma warning restore CA2012
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { Wkid = 910001 }
+        };
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Be("Invalid out_sr value.");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithoutResultRecordCount_AppliesConfiguredDefaultLimit()
+    {
+        var features = ImmutableArray.Create(Feature.Create(1, null));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+
+        await _sut.QueryFeatures(request, CreateCallContext());
+
+        await _featureReader.Received(1).QueryAsync(
+            0,
+            Arg.Is<FeatureQuery>(q => q.Limit == new LimitsOptions().Query.DefaultRecordCount),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_LimitAboveConfiguredMaximum_ThrowsInvalidArgument()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ResultRecordCount = new LimitsOptions().Query.MaxRecordCount + 1
+        };
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("resultRecordCount");
     }
 
     [UnitTest]
@@ -323,6 +542,38 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithUnsupportedSpatialFilterWkid_ThrowsInvalidArgument()
+    {
+#pragma warning disable CA2012 // NSubstitute setup for ValueTask-returning members.
+        _crsRegistry
+            .IsSridSupportedAsync(910001, Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<bool>(false));
+#pragma warning restore CA2012
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            SpatialFilter = new Proto.SpatialFilter
+            {
+                SpatialRelationship = Proto.SpatialRelationship.Intersects,
+                SpatialReference = new Proto.SpatialReference { Wkid = 910001 },
+                Geometry = new Proto.Geometry
+                {
+                    Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 }
+                }
+            }
+        };
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Be("Invalid spatial_filter.spatial_reference value.");
+    }
+
+    [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_ExactBatchSize_DoesNotEmitEmptyTerminalPage()
     {
@@ -346,6 +597,62 @@ public sealed class GrpcFeatureServiceTests
         writer.Pages.Should().HaveCount(1);
         writer.Pages[0].IsLastPage.Should().BeTrue();
         writer.Pages[0].Features.Should().HaveCount(1000);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_WithBatchSizeOne_WritesOneFeaturePerPage()
+    {
+        var streamBatchSizeOneSut = new HonuaFeatureService(
+            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
+            NullLogger<HonuaFeatureService>.Instance);
+
+        var features = Enumerable.Range(1, 3)
+            .Select(i => Feature.Create(i, null))
+            .ToAsyncEnumerable();
+
+        _streamingStore.StreamFeaturesAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(features);
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        await streamBatchSizeOneSut.QueryFeaturesStream(request, writer, CreateCallContext());
+
+        writer.Pages.Should().HaveCount(3);
+        writer.Pages[0].Features.Should().HaveCount(1);
+        writer.Pages[1].Features.Should().HaveCount(1);
+        writer.Pages[2].Features.Should().HaveCount(1);
+        writer.Pages[0].IsLastPage.Should().BeFalse();
+        writer.Pages[1].IsLastPage.Should().BeFalse();
+        writer.Pages[2].IsLastPage.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_WithCountOnlyFlag_ThrowsInvalidArgument()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ReturnCountOnly = true
+        };
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        var act = async () => await _sut.QueryFeaturesStream(request, writer, CreateCallContext());
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        ex.Which.Status.Detail.Should().Contain("QueryFeaturesStream");
     }
 
     private static TestServerCallContext CreateCallContext()

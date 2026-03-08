@@ -20,7 +20,7 @@ public interface IMetadataResourceStore
     /// </summary>
     Task<IReadOnlyList<MetadataResource>> ListAsync(
         string? kind = null,
-        string? @namespace = null,
+        string? resourceNamespace = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

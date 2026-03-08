@@ -14,7 +14,9 @@ public static class OgcCrsExtensions
     /// Creates SRID from OGC CRS string.
     /// </summary>
     public static int ToSrid(this string crs)
-        => ExtentExtensions.ExtractSridFromCrs(crs);
+        => ExtentExtensions.TryExtractSridFromCrs(crs, out var srid)
+            ? srid
+            : throw new FormatException($"Unsupported CRS '{crs}'.");
 
     /// <summary>
     /// Converts SRID to OGC CRS URI.
@@ -32,5 +34,5 @@ public static class OgcCrsExtensions
     /// Creates a shared SpatialReference from OGC CRS string.
     /// </summary>
     public static SpatialReference ToSpatialReference(this string crs)
-        => SpatialReference.Create(ExtentExtensions.ExtractSridFromCrs(crs));
+        => SpatialReference.Create(crs.ToSrid());
 }

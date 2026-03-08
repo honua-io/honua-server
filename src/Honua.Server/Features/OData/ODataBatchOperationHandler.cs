@@ -317,7 +317,7 @@ internal sealed partial class ODataBatchOperationHandler(
         }
     }
 
-    private async Task<(ODataBatchRequestItem? Request, string? Error)> ParseApplicationHttpSectionAsync(
+    private static async Task<(ODataBatchRequestItem? Request, string? Error)> ParseApplicationHttpSectionAsync(
         MultipartSection section,
         string? atomicityGroup,
         string fallbackRequestId,

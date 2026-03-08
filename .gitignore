@@ -127,8 +127,6 @@ node_modules/
 # Terraform
 **/.terraform/
 **/.terraform.lock.hcl
-infrastructure/terraform/.external_modules/
-infrastructure/terraform/modules/.external_modules/
 
 # Helm
 infrastructure/helm/*/charts/
@@ -259,8 +257,6 @@ scripts/setup-playwright-wsl.sh
 .env.docker
 !.env.example
 
-# Local Terraform credentials helper (do not commit secrets)
-scripts/tf-secrets.local.sh
 !.env.*.example
 
 # Private keys
@@ -290,3 +286,4 @@ src/Honua.Server/attachments/
 
 # Local audit artifacts
 .audit/runs/
+.claude/worktrees/

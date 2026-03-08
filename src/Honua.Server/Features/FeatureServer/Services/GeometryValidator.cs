@@ -304,7 +304,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
 
     #region Private Validation Helpers
 
-    private void ValidatePointCoordinates(GeoServicesGeometry geometry, List<ValidationIssue> errors)
+    private static void ValidatePointCoordinates(GeoServicesGeometry geometry, List<ValidationIssue> errors)
     {
         if (!geometry.X.HasValue || !geometry.Y.HasValue)
         {
@@ -321,7 +321,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         }
     }
 
-    private void ValidateEnvelopeCoordinates(GeoServicesGeometry geometry, List<ValidationIssue> errors)
+    private static void ValidateEnvelopeCoordinates(GeoServicesGeometry geometry, List<ValidationIssue> errors)
     {
         if (!geometry.Xmin.HasValue || !geometry.Ymin.HasValue ||
             !geometry.Xmax.HasValue || !geometry.Ymax.HasValue)

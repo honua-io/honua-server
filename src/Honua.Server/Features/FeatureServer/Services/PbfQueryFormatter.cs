@@ -123,7 +123,7 @@ internal sealed class PbfQueryFormatter
     /// <summary>
     /// Writes a FeatureResult message containing fields, features, and metadata.
     /// </summary>
-    private void WriteFeatureResult(
+    private static void WriteFeatureResult(
         ref ProtobufWriter writer,
         QueryResult<Feature> result,
         LayerDefinition layer,

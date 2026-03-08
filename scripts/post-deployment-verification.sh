@@ -8,16 +8,35 @@ BASE_URL="${BASE_URL:-https://api.honua.example.com}"
 TIMEOUT="${TIMEOUT:-30}"
 VERIFICATION_TIMEOUT="${VERIFICATION_TIMEOUT:-300}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
+ADMIN_API_KEY="${ADMIN_API_KEY:-}"
+ADMIN_AUTH_HEADER="${ADMIN_AUTH_HEADER:-}"
+EXTRA_CURL_HEADER="${EXTRA_CURL_HEADER:-}"
+
+declare -a ADMIN_AUTH_ARGS=()
+if [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    ADMIN_AUTH_ARGS=(-H "$ADMIN_AUTH_HEADER")
+elif [[ -n "$ADMIN_API_KEY" ]]; then
+    ADMIN_AUTH_ARGS=(-H "X-API-Key: $ADMIN_API_KEY")
+fi
+
+declare -a ROUTING_ARGS=()
+if [[ -n "$EXTRA_CURL_HEADER" ]]; then
+    ROUTING_ARGS=(-H "$EXTRA_CURL_HEADER")
+fi
 
 echo "🔍 Starting post-deployment verification for Honua Server"
 echo "🔗 Base URL: $BASE_URL"
 echo "🏷️  Environment: $ENVIRONMENT"
+if [[ ${#ROUTING_ARGS[@]} -gt 0 ]]; then
+    echo "🧭 Route header: $EXTRA_CURL_HEADER"
+fi
 
 # Function to make HTTP requests with error handling
 http_check() {
     local url=$1
     local expected_status=${2:-200}
     local description=$3
+    shift 3
 
     echo "🔍 Checking $description..."
 
@@ -26,6 +45,8 @@ http_check() {
         --connect-timeout 10 \
         --retry 3 \
         --retry-delay 2 \
+        "${ROUTING_ARGS[@]}" \
+        "$@" \
         "$url" || echo "000")
 
     if [[ "$status_code" == "$expected_status" ]]; then
@@ -43,10 +64,11 @@ json_check() {
     local json_path=$2
     local expected_value=$3
     local description=$4
+    shift 4
 
     echo "🔍 Checking $description..."
 
-    local response=$(curl -s --max-time $TIMEOUT "$url")
+    local response=$(curl -s --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$@" "$url")
     local actual_value=$(echo "$response" | jq -r "$json_path" 2>/dev/null || echo "null")
 
     if [[ "$actual_value" == "$expected_value" ]]; then
@@ -64,11 +86,14 @@ response_time_check() {
     local url=$1
     local max_time_ms=$2
     local description=$3
+    shift 3
 
     echo "⏱️  Checking $description response time (max: ${max_time_ms}ms)..."
 
     local response_time_ms=$(curl -s -o /dev/null -w "%{time_total}" \
         --max-time $TIMEOUT \
+        "${ROUTING_ARGS[@]}" \
+        "$@" \
         "$url" | awk '{print int($1*1000)}')
 
     if [[ $response_time_ms -le $max_time_ms ]]; then
@@ -116,19 +141,25 @@ api_contract_checks() {
 
     local failed_checks=0
 
-    # OpenAPI specification
-    if ! http_check "$BASE_URL/swagger.json" 200 "OpenAPI specification"; then
+    # OGC API OpenAPI specification
+    if ! http_check "$BASE_URL/openapi.json" 200 "OGC API OpenAPI specification"; then
         ((failed_checks++))
     fi
 
     # Check if OpenAPI contains expected info
     if command -v jq >/dev/null 2>&1; then
-        if ! json_check "$BASE_URL/swagger.json" ".info.title" "Honua Server API" "API title"; then
+        if ! json_check "$BASE_URL/openapi.json" '(.openapi | startswith("3.0."))' "true" "OGC OpenAPI major/minor version"; then
             ((failed_checks++))
         fi
 
-        if ! json_check "$BASE_URL/swagger.json" ".openapi" "3.0.1" "OpenAPI version"; then
-            ((failed_checks++))
+        if [[ ${#ADMIN_AUTH_ARGS[@]} -gt 0 ]]; then
+            if ! http_check "$BASE_URL/api/v1/admin/openapi.json" 200 "Admin OpenAPI specification" "${ADMIN_AUTH_ARGS[@]}"; then
+                ((failed_checks++))
+            fi
+
+            if ! json_check "$BASE_URL/api/v1/admin/openapi.json" '.paths | has("/deploy/preflight")' "true" "Admin deploy preflight path" "${ADMIN_AUTH_ARGS[@]}"; then
+                ((failed_checks++))
+            fi
         fi
     fi
 
@@ -155,7 +186,7 @@ security_checks() {
 
     # Check security headers
     echo "🔍 Checking security headers..."
-    local headers=$(curl -s -I --max-time $TIMEOUT "$BASE_URL/healthz/live")
+    local headers=$(curl -s -I --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live")
 
     # Security headers validation
     local required_headers=("x-frame-options" "x-content-type-options")
@@ -172,7 +203,7 @@ security_checks() {
     # HTTPS verification (if applicable)
     if [[ "$BASE_URL" == https* ]]; then
         echo "🔍 Checking HTTPS configuration..."
-        local ssl_info=$(curl -s -I --max-time $TIMEOUT "$BASE_URL/healthz/live" | head -n1)
+        local ssl_info=$(curl -s -I --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live" | head -n1)
         if echo "$ssl_info" | grep -q "200"; then
             echo "✅ HTTPS working correctly"
         else
@@ -196,19 +227,26 @@ performance_checks() {
 
     local concurrent_requests=5
     local total_requests=25
-    local success_count=0
+    local request_successes
+    request_successes=$(mktemp)
 
     for i in $(seq 1 $concurrent_requests); do
         {
             for j in $(seq 1 $((total_requests / concurrent_requests))); do
-                if curl -f -s --max-time 10 "$BASE_URL/healthz/live" >/dev/null 2>&1; then
-                    ((success_count++))
+                if curl -f -s --max-time 10 "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live" >/dev/null 2>&1; then
+                    echo "1" >> "$request_successes"
                 fi
             done
         } &
     done
 
     wait
+
+    local success_count=0
+    if [[ -f "$request_successes" ]]; then
+        success_count=$(wc -l < "$request_successes" | tr -d '[:space:]')
+    fi
+    rm -f "$request_successes"
 
     local success_rate=$((success_count * 100 / total_requests))
     if [[ $success_rate -ge 95 ]]; then
@@ -251,19 +289,57 @@ monitoring_checks() {
     echo "🔵 Monitoring Integration Verification"
     echo "======================================"
 
+    if [[ ${#ADMIN_AUTH_ARGS[@]} -eq 0 ]]; then
+        echo "ℹ️  No admin auth configured - skipping monitoring checks"
+        return 0
+    fi
+
     local failed_checks=0
 
-    # Check if metrics endpoint is available
-    if http_check "$BASE_URL/api/metrics/health" 200 "Metrics health endpoint"; then
-        echo "✅ Metrics health endpoint available"
-    else
-        echo "⚠️  Metrics endpoint not available"
+    if ! http_check "$BASE_URL/api/v1/metrics/health" 200 "Metrics health endpoint" "${ADMIN_AUTH_ARGS[@]}"; then
         ((failed_checks++))
     fi
 
-    # Basic metrics validation
-    if ! json_check "$BASE_URL/api/metrics/health" ".status" "healthy" "Metrics health status"; then
+    if command -v jq >/dev/null 2>&1; then
+        if ! json_check "$BASE_URL/api/v1/metrics/health" ".status" "healthy" "Metrics health status" "${ADMIN_AUTH_ARGS[@]}"; then
+            ((failed_checks++))
+        fi
+    fi
+
+    return $failed_checks
+}
+
+deploy_control_checks() {
+    echo "🔵 Deploy Control Verification"
+    echo "=============================="
+
+    if [[ ${#ADMIN_AUTH_ARGS[@]} -eq 0 ]]; then
+        echo "ℹ️  No admin auth configured - skipping deploy-control checks"
+        return 0
+    fi
+
+    local failed_checks=0
+
+    if ! http_check "$BASE_URL/api/v1/admin/deploy/preflight" 200 "Deploy preflight endpoint" "${ADMIN_AUTH_ARGS[@]}"; then
         ((failed_checks++))
+    fi
+
+    if ! http_check "$BASE_URL/api/v1/admin/observability/migrations" 200 "Migration observability endpoint" "${ADMIN_AUTH_ARGS[@]}"; then
+        ((failed_checks++))
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        if ! json_check "$BASE_URL/api/v1/admin/deploy/preflight" ".readyForCoordinatedDeploy" "true" "Deploy preflight readiness" "${ADMIN_AUTH_ARGS[@]}"; then
+            ((failed_checks++))
+        fi
+
+        if ! json_check "$BASE_URL/api/v1/admin/observability/migrations" ".planAvailable" "true" "Migration plan availability" "${ADMIN_AUTH_ARGS[@]}"; then
+            ((failed_checks++))
+        fi
+
+        if ! json_check "$BASE_URL/api/v1/admin/observability/migrations" ".upgradeRequired" "false" "No pending migration drift" "${ADMIN_AUTH_ARGS[@]}"; then
+            ((failed_checks++))
+        fi
     fi
 
     return $failed_checks
@@ -276,16 +352,26 @@ version_checks() {
 
     local failed_checks=0
 
-    # Check if version information is available
-    echo "🔍 Checking application version..."
+    if [[ ${#ADMIN_AUTH_ARGS[@]} -gt 0 ]]; then
+        if ! http_check "$BASE_URL/api/v1/admin/version" 200 "Admin version endpoint" "${ADMIN_AUTH_ARGS[@]}"; then
+            ((failed_checks++))
+        fi
 
-    # Try to get version from headers or API
-    local version_header=$(curl -s -I --max-time $TIMEOUT "$BASE_URL/healthz/live" | grep -i "x-version" || echo "")
-
-    if [[ -n "$version_header" ]]; then
-        echo "✅ Version information: $version_header"
+        if command -v jq >/dev/null 2>&1; then
+            if ! json_check "$BASE_URL/api/v1/admin/version" ".success" "true" "Admin version payload status" "${ADMIN_AUTH_ARGS[@]}"; then
+                ((failed_checks++))
+            fi
+        fi
     else
-        echo "ℹ️  Version header not found (may not be implemented)"
+        echo "🔍 Checking application version..."
+
+        local version_header=$(curl -s -I --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live" | grep -i "x-version" || echo "")
+
+        if [[ -n "$version_header" ]]; then
+            echo "✅ Version information: $version_header"
+        else
+            echo "ℹ️  Version header not found (may not be implemented)"
+        fi
     fi
 
     return $failed_checks
@@ -302,7 +388,7 @@ run_smoke_tests() {
     echo "🔍 Testing critical user journeys..."
 
     # API Discovery
-    if http_check "$BASE_URL/swagger.json" 200 "API documentation access"; then
+    if http_check "$BASE_URL/openapi.json" 200 "API documentation access"; then
         echo "✅ API documentation accessible"
     else
         ((failed_checks++))
@@ -315,6 +401,7 @@ run_smoke_tests() {
 
     # CORS preflight (if applicable)
     local cors_response=$(curl -s -o /dev/null -w "%{http_code}" \
+        "${ROUTING_ARGS[@]}" \
         -H "Origin: https://example.com" \
         -H "Access-Control-Request-Method: GET" \
         -H "Access-Control-Request-Headers: Content-Type" \
@@ -342,13 +429,18 @@ main() {
     echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo "Target: $BASE_URL"
     echo "Environment: $ENVIRONMENT"
+    if [[ ${#ADMIN_AUTH_ARGS[@]} -gt 0 ]]; then
+        echo "Admin auth: configured"
+    else
+        echo "Admin auth: not configured"
+    fi
     echo ""
 
     # Wait for service to be fully ready
     echo "⏳ Waiting for service to be ready..."
     local wait_time=0
     while [[ $wait_time -lt $VERIFICATION_TIMEOUT ]]; do
-        if curl -f -s --max-time 5 "$BASE_URL/healthz/ready" >/dev/null 2>&1; then
+        if curl -f -s --max-time 5 "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/ready" >/dev/null 2>&1; then
             echo "✅ Service is ready after ${wait_time}s"
             break
         fi
@@ -380,6 +472,9 @@ main() {
     echo ""
 
     monitoring_checks || total_failures=$((total_failures + $?))
+    echo ""
+
+    deploy_control_checks || total_failures=$((total_failures + $?))
     echo ""
 
     version_checks || total_failures=$((total_failures + $?))

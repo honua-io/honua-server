@@ -144,9 +144,9 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid SSL mode"));
             }
 
-            if (request.SslRequired && parsedSslMode == SslMode.Disable)
+            if (!DataConnection.IsSslModeCompatibleWithRequirement(request.SslRequired, parsedSslMode))
             {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode 'Disable' is invalid when SSL is required"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
             string connectionString;
@@ -330,9 +330,9 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Invalid SSL mode"));
             }
 
-            if (request.SslRequired && parsedSslMode == SslMode.Disable)
+            if (!DataConnection.IsSslModeCompatibleWithRequirement(request.SslRequired, parsedSslMode))
             {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode 'Disable' is invalid when SSL is required"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
             DataConnection connection;
@@ -444,7 +444,7 @@ internal static partial class SecureConnectionEndpoints
                exception.Message.Contains("cannot have both encrypted connection string and secret reference", StringComparison.OrdinalIgnoreCase) ||
                exception.Message.Contains("must have either encrypted connection string or secret reference", StringComparison.OrdinalIgnoreCase) ||
                exception.Message.Contains("SecretType must be specified when using SecretRef", StringComparison.OrdinalIgnoreCase) ||
-               exception.Message.Contains("SSL cannot be disabled when SslRequired is true", StringComparison.OrdinalIgnoreCase);
+               exception.Message.Contains("SSL mode must require encrypted transport when SslRequired is true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -573,9 +573,9 @@ internal static partial class SecureConnectionEndpoints
                 sslMode = parsedSslMode;
             }
 
-            if (sslRequired && sslMode == SslMode.Disable)
+            if (!DataConnection.IsSslModeCompatibleWithRequirement(sslRequired, sslMode))
             {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode 'Disable' is invalid when SSL is required"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
             byte[]? encryptedConnection = existing.ConnectionStringEncrypted;

@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
@@ -37,6 +38,9 @@ internal sealed class FeatureServerQueryHandler(
     ILogger<FeatureServerQueryHandler> logger) : IFeatureQueryDispatcher
 {
     private static readonly IResult _streamingResult = new StreamingResult();
+    private static readonly Regex _projectedUnitFactorPattern = new(
+        @"(?:LENGTHUNIT|UNIT)\s*\[\s*""[^""]+""\s*,\s*(?<factor>[-+]?(?:\d+\.?\d*|\.\d+)(?:[Ee][-+]?\d+)?)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureServerQueryServices _queryServices = dependencies.QueryServices;
@@ -154,8 +158,12 @@ internal sealed class FeatureServerQueryHandler(
                     [unsupportedError!]);
             }
 
+            var requestedFormat = FeatureServerEndpoints.ResolveRequestedQueryFormat(
+                validatedParams,
+                context.Request.Headers.Accept);
+
             if (!FeatureServerEndpoints.TryValidateOutputFormat(
-                validatedParams.F,
+                requestedFormat,
                 FeatureServerEndpoints.FeatureServerQueryFormats,
                 out var format,
                 out var formatError))
@@ -240,7 +248,8 @@ internal sealed class FeatureServerQueryHandler(
 
             if (parsedGeometry != null && inputSrid.HasValue && queryLimits.MaxBboxAreaSqKm.HasValue)
             {
-                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, inputSrid.Value, queryLimits.MaxBboxAreaSqKm.Value);
+                var areaLimitSpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
+                var areaLimitResult = ValidateBboxAreaLimit(parsedGeometry, areaLimitSpatialReference, queryLimits.MaxBboxAreaSqKm.Value);
                 if (!areaLimitResult.IsValid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -482,7 +491,8 @@ internal sealed class FeatureServerQueryHandler(
 
             var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
             var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf;
+            var isFgb = string.Equals(format, "fgb", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb;
 
             if (!useStreaming)
             {
@@ -490,6 +500,28 @@ internal sealed class FeatureServerQueryHandler(
                 if (cached != null)
                 {
                     return cached;
+                }
+
+                if (isFgb)
+                {
+                    if (validatedParams.ReturnDistinctValues)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Unsupported query parameters",
+                            ["returnDistinctValues is not supported when f=fgb."]);
+                    }
+
+                    var fgbStopwatch = Stopwatch.StartNew();
+                    var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(layerId, query, cancellationToken);
+                    fgbStopwatch.Stop();
+                    FeatureServerLog.QueryExecuted(_logger, "query_fgb", serviceId, layerId, fgbStopwatch.Elapsed.TotalMilliseconds);
+
+                    var payload = flatGeobufPayload ?? [];
+                    FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, payload.Length > 0 ? 1 : 0, payload.Length > 0 ? 1 : 0);
+                    HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
+
+                    return await CreateCachedBytesResultAsync(payload, "application/vnd.flatgeobuf");
                 }
 
                 var queryStopwatch = Stopwatch.StartNew();
@@ -627,7 +659,7 @@ internal sealed class FeatureServerQueryHandler(
     /// <summary>
     /// Builds a FeatureQuery from query parameters
     /// </summary>
-    private FeatureQuery BuildFeatureQuery(
+    private static FeatureQuery BuildFeatureQuery(
         QueryParameters queryParams,
         LayerDefinition layer,
         GeoServicesGeometry? parsedGeometry,
@@ -706,7 +738,7 @@ internal sealed class FeatureServerQueryHandler(
 
     private static ValidationResult ValidateBboxAreaLimit(
         GeoServicesGeometry geometry,
-        int srid,
+        SpatialReference spatialReference,
         double maxBboxAreaSqKm)
     {
         if (maxBboxAreaSqKm <= 0)
@@ -719,7 +751,11 @@ internal sealed class FeatureServerQueryHandler(
             return ValidationResult.Success();
         }
 
-        var bboxAreaSqKm = CalculateBoundingBoxAreaSqKm(minX, minY, maxX, maxY, srid);
+        if (!TryCalculateBoundingBoxAreaSqKm(minX, minY, maxX, maxY, spatialReference, out var bboxAreaSqKm, out var areaError))
+        {
+            return ValidationResult.Failure(areaError!);
+        }
+
         if (bboxAreaSqKm <= maxBboxAreaSqKm)
         {
             return ValidationResult.Success();
@@ -841,16 +877,64 @@ internal sealed class FeatureServerQueryHandler(
         return true;
     }
 
-    private static double CalculateBoundingBoxAreaSqKm(double minX, double minY, double maxX, double maxY, int srid)
+    private static SpatialReference ResolveAreaLimitSpatialReference(
+        LayerDefinition layer,
+        GeoServicesGeometry geometry,
+        int srid)
     {
-        if (IsGeographicSrid(srid))
+        var geometrySpatialReference = geometry.SpatialReference;
+        if (!string.IsNullOrWhiteSpace(geometrySpatialReference?.Wkt))
         {
-            return CalculateGeographicAreaSqKm(minX, minY, maxX, maxY);
+            return SpatialReference.Create(
+                srid,
+                geometrySpatialReference.LatestWkid,
+                geometrySpatialReference.VcsWkid,
+                geometrySpatialReference.LatestVcsWkid,
+                geometrySpatialReference.Wkt);
+        }
+
+        if (layer.SpatialReference.ToSrid() == srid)
+        {
+            return layer.SpatialReference;
+        }
+
+        return srid switch
+        {
+            4326 => SpatialReference.WGS84,
+            3857 => SpatialReference.WebMercator,
+            _ => SpatialReference.Create(srid)
+        };
+    }
+
+    private static bool TryCalculateBoundingBoxAreaSqKm(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        SpatialReference spatialReference,
+        out double areaSqKm,
+        out string? errorMessage)
+    {
+        areaSqKm = 0;
+        errorMessage = null;
+
+        if (spatialReference.IsGeographic)
+        {
+            areaSqKm = CalculateGeographicAreaSqKm(minX, minY, maxX, maxY);
+            return true;
+        }
+
+        if (!TryResolveProjectedMetersPerUnit(spatialReference, out var metersPerUnit))
+        {
+            errorMessage =
+                $"Geometry bounding box area limit cannot be evaluated for projected SRID {spatialReference.Wkid} because its linear units are unknown. Specify geometry in a geographic CRS or provide WKT for the projected CRS.";
+            return false;
         }
 
         var width = Math.Abs(maxX - minX);
         var height = Math.Abs(maxY - minY);
-        return width * height / 1_000_000.0;
+        areaSqKm = width * height * metersPerUnit * metersPerUnit / 1_000_000.0;
+        return true;
     }
 
     private static double CalculateGeographicAreaSqKm(double minLon, double minLat, double maxLon, double maxLat)
@@ -874,8 +958,41 @@ internal sealed class FeatureServerQueryHandler(
 
     private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
 
-    private static bool IsGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+    private static bool TryResolveProjectedMetersPerUnit(SpatialReference spatialReference, out double metersPerUnit)
+    {
+        metersPerUnit = 0;
+
+        if (spatialReference.IsGeographic)
+        {
+            return false;
+        }
+
+        if (spatialReference.Wkid == SpatialReference.WebMercator.Wkid)
+        {
+            metersPerUnit = 1.0;
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(spatialReference.Wkt))
+        {
+            return false;
+        }
+
+        var matches = _projectedUnitFactorPattern.Matches(spatialReference.Wkt);
+        if (matches.Count == 0)
+        {
+            return false;
+        }
+
+        var factorValue = matches[^1].Groups["factor"].Value;
+        if (!double.TryParse(factorValue, NumberStyles.Float, CultureInfo.InvariantCulture, out metersPerUnit))
+        {
+            metersPerUnit = 0;
+            return false;
+        }
+
+        return double.IsFinite(metersPerUnit) && metersPerUnit > 0;
+    }
 
     private static bool TryValidateUnsupportedParameters(QueryParameters queryParams, out string? errorMessage)
     {

@@ -759,28 +759,29 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.CreateResults.Length && i < layerCreates.Count; i++)
                     {
                         var createResult = result.CreateResults[i];
-                        var (requestId, _) = layerCreates[i];
+                        var (requestId, requestedFeature) = layerCreates[i];
 
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
-                            var createdFeature = await _featureReader.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken);
-                            Dictionary<string, object?>? payload = null;
-                            string? etag = null;
-                            if (createdFeature.HasValue)
+                            var createdFeature = await _featureReader.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
+                            if (!createdFeature.HasValue)
                             {
-                                payload = FeatureToBody(createdFeature.Value, layer, axisOrder, baseUrl, out var computedEtag);
-                                etag = computedEtag;
+                                responses.Add(CreateErrorResponse(
+                                    requestId,
+                                    500,
+                                    "CreateReadbackFailed",
+                                    $"Created feature {createResult.ObjectId.Value} could not be reloaded."));
+                                continue;
                             }
+
+                            var payload = FeatureToBody(createdFeature.Value, layer, axisOrder, baseUrl, out var etag);
 
                             var headers = new Dictionary<string, string>
                             {
                                 ["Location"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
-                                ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})"
+                                ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
+                                ["ETag"] = etag
                             };
-                            if (!string.IsNullOrWhiteSpace(etag))
-                            {
-                                headers["ETag"] = etag;
-                            }
 
                             responses.Add(CreateSuccessResponse(
                                 requestId,
@@ -800,24 +801,24 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.UpdateResults.Length && i < layerUpdates.Count; i++)
                     {
                         var updateResult = result.UpdateResults[i];
-                        var (requestId, objectId, _) = layerUpdates[i];
+                        var (requestId, _, updatedFeature) = layerUpdates[i];
 
                         if (updateResult.IsSuccess)
                         {
-                            var updatedFeature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
-                            Dictionary<string, object?>? payload = null;
-                            string? etag = null;
-                            if (updatedFeature.HasValue)
+                            var persistedObjectId = updateResult.ObjectId ?? updatedFeature.Id;
+                            var persistedFeature = await _featureReader.GetAsync(layerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
+                            if (!persistedFeature.HasValue)
                             {
-                                payload = FeatureToBody(updatedFeature.Value, layer, axisOrder, baseUrl, out var computedEtag);
-                                etag = computedEtag;
+                                responses.Add(CreateErrorResponse(
+                                    requestId,
+                                    500,
+                                    "UpdateReadbackFailed",
+                                    $"Updated feature {persistedObjectId} could not be reloaded."));
+                                continue;
                             }
 
-                            Dictionary<string, string>? headers = null;
-                            if (!string.IsNullOrWhiteSpace(etag))
-                            {
-                                headers = new Dictionary<string, string> { ["ETag"] = etag };
-                            }
+                            var payload = FeatureToBody(persistedFeature.Value, layer, axisOrder, baseUrl, out var etag);
+                            var headers = new Dictionary<string, string> { ["ETag"] = etag };
 
                             responses.Add(CreateSuccessResponse(
                                 requestId,

@@ -4,22 +4,22 @@
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+# Use the Debian SDK image so Grpc.Tools/protoc can run during container builds.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # glibc compat required for Grpc.Tools protoc binary on Alpine/musl
 RUN apk add --no-cache gcompat
 
 # Security: Create non-root build user
-RUN addgroup -g 1001 -S builduser && \
-    adduser -S builduser -G builduser -u 1001
+RUN groupadd --gid 1001 --system builduser && \
+    useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
 # Copy solution and project files first for better layer caching
 COPY Honua.sln Directory.Build.props .editorconfig ./
 COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
-COPY src/Honua.Admin/*.csproj src/Honua.Admin/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
 
 # Build arguments consumed in restore/publish

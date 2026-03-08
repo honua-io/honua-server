@@ -153,6 +153,10 @@ secret:
 | `autoscaling.targetCPUUtilizationPercentage` | `70` | CPU utilization threshold for scale decisions. |
 | `autoscaling.targetMemoryUtilizationPercentage` | `80` | Memory utilization threshold for scale decisions. |
 | `autoscaling.behavior` | scale up/down policies | autoscaling/v2 behavior policies and stabilization windows. |
+| `minReadySeconds` | `10` | Minimum time a pod must stay Ready before rollout proceeds. |
+| `deploymentStrategy` | RollingUpdate (`maxUnavailable: 0`, `maxSurge: 1`) | Default rollout strategy tuned for no-downtime upgrades. |
+| `podDisruptionBudget.enabled` | false | Create a PodDisruptionBudget for voluntary disruptions. |
+| `podDisruptionBudget.minAvailable` | `1` | Minimum ready pods to keep available when PDB is enabled. |
 | `ingress.enabled` | false | Enable ingress. |
 | `config.env.*` | — | Non-secret environment variables (stored in ConfigMap). |
 | `secret.env.*` | — | Secret environment variables (stored in Secret). |
@@ -169,6 +173,15 @@ The chart configures probes on:
 - **Liveness**: `/healthz/live` (is the process alive?)
 - **Readiness**: `/healthz/ready` (is the database connected?)
 - **Startup**: `/healthz/live` with 30 retries (initial boot tolerance)
+
+## Upgrade safety defaults
+
+The chart ships with conservative rollout defaults for production-style upgrades:
+- `RollingUpdate` with `maxUnavailable: 0` and `maxSurge: 1`
+- `minReadySeconds: 10` so a pod must stay healthy briefly before rollout continues
+- optional `podDisruptionBudget` support for voluntary disruption protection
+
+For single-replica installs, these settings still protect startup/readiness behavior but cannot guarantee zero client-visible downtime. For production zero-downtime upgrades, run at least two replicas and keep database migrations backward-compatible across one rollout window.
 
 ## Geospatial HPA tuning guidance
 

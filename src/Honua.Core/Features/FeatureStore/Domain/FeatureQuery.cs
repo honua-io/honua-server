@@ -64,9 +64,27 @@ public readonly record struct FeatureQuery
     public int? Offset { get; init; }
 
     /// <summary>
+    /// Backward-compatible alias for REST-style paging.
+    /// </summary>
+    public int? ResultOffset
+    {
+        readonly get => Offset;
+        init => Offset = value;
+    }
+
+    /// <summary>
     /// Maximum number of records to return
     /// </summary>
     public int? Limit { get; init; }
+
+    /// <summary>
+    /// Backward-compatible alias for REST-style paging.
+    /// </summary>
+    public int? ResultRecordCount
+    {
+        readonly get => Limit;
+        init => Limit = value;
+    }
 
     /// <summary>
     /// Order by clauses for sorting results (e.g., "name asc", "population desc")
@@ -87,6 +105,11 @@ public readonly record struct FeatureQuery
     /// Fields to group by for statistics queries (groupByFieldsForStatistics)
     /// </summary>
     public ImmutableArray<string>? GroupByFields { get; init; }
+
+    /// <summary>
+    /// Top features filter for queryTopFeatures operations (window-function partitioning)
+    /// </summary>
+    public TopFilter? TopFilter { get; init; }
 
     /// <summary>
     /// Creates a simple WHERE clause query

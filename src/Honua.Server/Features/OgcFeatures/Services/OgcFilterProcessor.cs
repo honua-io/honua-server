@@ -295,7 +295,7 @@ internal sealed partial class OgcFilterProcessor
         return CqlFilterResult.Success(filterExpression, combinedFilter);
     }
 
-    private FilterLanguageResult TryResolveFilterLanguage(string? filterLang)
+    private static FilterLanguageResult TryResolveFilterLanguage(string? filterLang)
     {
         var resolved = FilterLangCql2Text;
 
@@ -314,7 +314,7 @@ internal sealed partial class OgcFilterProcessor
         return FilterLanguageResult.Failure($"Unsupported filter language '{filterLang}'.");
     }
 
-    private CombinedFilterResult TryBuildCombinedFilter(
+    private static CombinedFilterResult TryBuildCombinedFilter(
         string? filter,
         HttpRequest request,
         LayerDefinition layer)
@@ -379,7 +379,7 @@ internal sealed partial class OgcFilterProcessor
         return BboxFilterResult.Success(spatialFilter);
     }
 
-    private TemporalFilterResult ProcessTemporalFilter(string? datetime, LayerDefinition layer)
+    private static TemporalFilterResult ProcessTemporalFilter(string? datetime, LayerDefinition layer)
     {
         var result = TryParseTemporalFilter(datetime, layer);
         if (!result.IsSuccess)
@@ -590,7 +590,7 @@ internal sealed partial class OgcFilterProcessor
         }
     }
 
-    private QueryableValueResult TryFormatQueryableValue(FieldDefinition field, string value)
+    private static QueryableValueResult TryFormatQueryableValue(FieldDefinition field, string value)
     {
         switch (field.Type)
         {
@@ -742,7 +742,7 @@ internal sealed partial class OgcFilterProcessor
         };
     }
 
-    private TemporalParseResult TryParseTemporalFilter(string? datetime, LayerDefinition layer)
+    private static TemporalParseResult TryParseTemporalFilter(string? datetime, LayerDefinition layer)
     {
         if (OgcTemporalFilterParser.TryParse(datetime, layer, out var temporalFilter, out var errorMessage))
         {

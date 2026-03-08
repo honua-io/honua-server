@@ -613,7 +613,7 @@ internal sealed class ConfigurationDocumentationService
         return "Default";
     }
 
-    private List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
+    private static List<EnvironmentVariableInfo> BuildEnvironmentVariableQuickReference()
     {
         return new List<EnvironmentVariableInfo>
         {

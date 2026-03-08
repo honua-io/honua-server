@@ -99,6 +99,7 @@ internal sealed partial class OgcFeaturesGeometryServices
     /// <summary>
     /// Creates WKB from GeoJSON geometry with validation.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the current geometry service API.")]
     public WkbCreationResult TryCreateWkbFromGeoJson(
         SimpleGeoJsonGeometry geometry,
         int srid,

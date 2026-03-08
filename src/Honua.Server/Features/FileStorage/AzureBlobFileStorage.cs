@@ -464,7 +464,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         return cleanedCount;
     }
 
-    private async Task<long> ResolveSizeAsync(
+    private static async Task<long> ResolveSizeAsync(
         BlobClient blobClient,
         FileUploadRequest request,
         CancellationToken cancellationToken)

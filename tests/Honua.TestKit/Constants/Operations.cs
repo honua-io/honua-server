@@ -114,6 +114,10 @@ public static class Operations
     public const string QueryDomains = "QueryDomains";
     public const string QueryRelationships = "QueryRelationships";
     public const string ValidateSql = "ValidateSql";
+    public const string GetEstimates = "GetEstimates";
+    public const string QueryTopFeatures = "QueryTopFeatures";
+    public const string QueryDateBins = "QueryDateBins";
+    public const string QueryBins = "QueryBins";
 
     // Test Quality Operations
     public const string TestQuality = "TestQuality";

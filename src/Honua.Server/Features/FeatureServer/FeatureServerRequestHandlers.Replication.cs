@@ -1,17 +1,20 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
+using System.Collections.Immutable;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
+
+// Behavior reference: Replication durability (#383)
+// Uses IChangeTracker for monotonic generation counters and incremental delta extraction
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -83,13 +86,19 @@ internal static partial class FeatureServerEndpoints
         var replicaId = Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
 
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+
         var record = new ReplicaState(
             replicaId,
             replicaName,
             serviceId,
             syncModel,
             layerIds,
-            now);
+            now)
+        {
+            LastSyncGeneration = currentGen
+        };
         await replicaStore.SetAsync(record, cancellationToken: cancellationToken);
 
         var response = new CreateReplicaResponse
@@ -100,7 +109,7 @@ internal static partial class FeatureServerEndpoints
             Layers = layerIds.Select(id => new ReplicaLayerInfo
             {
                 Id = id,
-                ServerGen = now.ToUnixTimeMilliseconds()
+                ServerGen = currentGen
             }).ToArray(),
             CreationDate = now.ToUnixTimeMilliseconds()
         };
@@ -174,18 +183,18 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        // Query real feature counts from the database for each layer in the replica.
-        // For the first sync (LastSyncTime == CreatedAt), all features are reported as adds.
-        // For subsequent syncs, without dedicated change tracking tables, report zero changes.
-        var isFirstSync = replica.LastSyncTime == replica.CreatedAt;
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
         var layerChanges = new List<LayerChanges>();
 
-        foreach (var layer in replicaLayers)
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+
+        // Special case: LastSyncGeneration == 0 means pre-migration data or first sync;
+        // fall back to "all features as adds" for backward compatibility.
+        if (replica.LastSyncGeneration == 0)
         {
-            if (isFirstSync)
+            foreach (var layer in replicaLayers)
             {
-                // First sync: return all features as adds with full geometry/attributes.
                 var result = await featureReader.QueryAsync(layer.Id, new FeatureQuery(), cancellationToken);
                 var addFeatures = result.Items
                     .Select(f => ConvertFeatureToGeoServices(f))
@@ -202,24 +211,96 @@ internal static partial class FeatureServerEndpoints
                     DeleteIds = null
                 });
             }
-            else
+        }
+        else
+        {
+            // Query real incremental deltas from the change log
+            var changes = await changeTracker.GetChangesSinceAsync(
+                replica.LastSyncGeneration,
+                replica.LayerIds,
+                cancellationToken);
+
+            // Group collapsed changes by layer
+            var changesByLayer = changes
+                .GroupBy(c => c.LayerId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var layer in replicaLayers)
             {
-                // Incremental sync: report zero changes until CDC-to-replica mapping is wired.
-                layerChanges.Add(new LayerChanges
+                if (changesByLayer.TryGetValue(layer.Id, out var layerChangeList))
                 {
-                    Id = layer.Id,
-                    Adds = 0,
-                    Updates = 0,
-                    Deletes = 0
-                });
+                    // Collect objectIds by operation type
+                    var insertIds = layerChangeList
+                        .Where(c => c.Operation == FeatureChangeOperation.Insert)
+                        .Select(c => c.ObjectId)
+                        .ToArray();
+
+                    var updateIds = layerChangeList
+                        .Where(c => c.Operation == FeatureChangeOperation.Update)
+                        .Select(c => c.ObjectId)
+                        .ToArray();
+
+                    var deleteIds = layerChangeList
+                        .Where(c => c.Operation == FeatureChangeOperation.Delete)
+                        .Select(c => c.ObjectId)
+                        .ToArray();
+
+                    // Query actual features for inserts and updates
+                    GeoServicesFeature[]? addFeatures = null;
+                    if (insertIds.Length > 0)
+                    {
+                        var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
+                        var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                        addFeatures = result.Items
+                            .Select(f => ConvertFeatureToGeoServices(f))
+                            .ToArray();
+                    }
+
+                    GeoServicesFeature[]? updateFeatures = null;
+                    if (updateIds.Length > 0)
+                    {
+                        var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
+                        var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                        updateFeatures = result.Items
+                            .Select(f => ConvertFeatureToGeoServices(f))
+                            .ToArray();
+                    }
+
+                    layerChanges.Add(new LayerChanges
+                    {
+                        Id = layer.Id,
+                        Adds = insertIds.Length,
+                        Updates = updateIds.Length,
+                        Deletes = deleteIds.Length,
+                        AddFeatures = addFeatures,
+                        UpdateFeatures = updateFeatures,
+                        DeleteIds = deleteIds.Length > 0 ? deleteIds : null
+                    });
+                }
+                else
+                {
+                    layerChanges.Add(new LayerChanges
+                    {
+                        Id = layer.Id,
+                        Adds = 0,
+                        Updates = 0,
+                        Deletes = 0
+                    });
+                }
             }
         }
+
+        var minGen = replica.LastSyncGeneration;
+        var maxGen = currentGen;
 
         var response = new ExtractChangesResponse
         {
             Success = true,
             ReplicaId = replicaId,
-            LayerChanges = layerChanges.ToArray()
+            LayerChanges = layerChanges.ToArray(),
+            ServerGen = currentGen,
+            MinServerGen = minGen,
+            MaxServerGen = maxGen
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
@@ -340,15 +421,22 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // Update the last sync time in distributed store.
-        var updated = replica with { LastSyncTime = DateTimeOffset.UtcNow };
+        // Update the last sync time and generation in distributed store.
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+        var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
+        var updated = replica with
+        {
+            LastSyncTime = DateTimeOffset.UtcNow,
+            LastSyncGeneration = currentGen
+        };
         await replicaStore.SetAsync(updated, cancellationToken: cancellationToken);
 
         var response = new SynchronizeReplicaResponse
         {
             Success = true,
             ReplicaId = replicaId,
-            SyncDirection = syncDirection
+            SyncDirection = syncDirection,
+            ServerGen = currentGen
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");

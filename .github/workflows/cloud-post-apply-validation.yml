@@ -1,0 +1,201 @@
+name: Cloud Post-Apply Validation
+
+on:
+  workflow_call:
+    inputs:
+      base_url:
+        description: Public base URL for the deployed Honua environment.
+        required: true
+        type: string
+      expected_environment:
+        description: Optional expected environment label returned by deploy preflight.
+        required: false
+        type: string
+      expected_deployment_mode:
+        description: Optional expected deployment mode returned by deploy preflight.
+        required: false
+        type: string
+      expected_ready_for_coordinated_deploy:
+        description: Optional expected ready-for-coordinated-deploy flag.
+        required: false
+        type: string
+      platform:
+        description: Optional platform hint (kubernetes, aws-lambda, azure-functions).
+        required: false
+        type: string
+      deploy_target_id:
+        description: Optional deploy target id for live deploy-plan or deploy-operation checks.
+        required: false
+        type: string
+      deploy_current_revision:
+        description: Optional current revision for live deploy-plan or deploy-operation checks.
+        required: false
+        type: string
+      deploy_desired_revision:
+        description: Optional desired revision for live deploy-plan or deploy-operation checks.
+        required: false
+        type: string
+      execute_deploy_operation:
+        description: Execute a real deploy operation through the admin API.
+        required: false
+        type: boolean
+        default: false
+      verify_deploy_rollback:
+        description: Request rollback after the live deploy operation and restore the desired revision.
+        required: false
+        type: boolean
+        default: false
+      deploy_timeout_seconds:
+        description: Optional timeout in seconds for live deploy-operation polling.
+        required: false
+        type: string
+      import_table_prefix:
+        description: Optional table prefix to enable the live cloud-staged import mutation test.
+        required: false
+        type: string
+      import_timeout_seconds:
+        description: Optional timeout in seconds for the live import mutation test.
+        required: false
+        type: string
+      include_scale_tests:
+        description: Run existing multi-node scale tests when scale-specific inputs are provided.
+        required: false
+        type: boolean
+        default: false
+      scale_test_base_url:
+        description: Optional scale-test ingress URL for multi-node validation.
+        required: false
+        type: string
+      scale_test_service_id:
+        description: Optional FeatureServer service ID for replica scale tests.
+        required: false
+        type: string
+      scale_test_redis:
+        description: Optional Redis connection string for scale validation.
+        required: false
+        type: string
+    secrets:
+      admin_api_key:
+        description: Admin API key used for control-plane validation.
+        required: false
+      cloud_validation_admin_api_key:
+        description: Optional compatibility alias for the primary admin API key.
+        required: false
+      scale_test_admin_api_key:
+        description: Optional admin API key for multi-node replica scale tests.
+        required: false
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Public base URL for the deployed Honua environment.
+        required: true
+        type: string
+      expected_environment:
+        description: Optional expected environment label returned by deploy preflight.
+        required: false
+        type: string
+      expected_deployment_mode:
+        description: Optional expected deployment mode returned by deploy preflight.
+        required: false
+        type: string
+      expected_ready_for_coordinated_deploy:
+        description: Optional expected ready-for-coordinated-deploy flag.
+        required: false
+        type: string
+      platform:
+        description: Optional platform hint (kubernetes, aws-lambda, azure-functions).
+        required: false
+        type: string
+      deploy_target_id:
+        description: Optional deploy target id for live deploy-plan or deploy-operation checks.
+        required: false
+        type: string
+      deploy_current_revision:
+        description: Optional current revision for live deploy-plan or deploy-operation checks.
+        required: false
+        type: string
+      deploy_desired_revision:
+        description: Optional desired revision for live deploy-plan or deploy-operation checks.
+        required: false
+        type: string
+      execute_deploy_operation:
+        description: Execute a real deploy operation through the admin API.
+        required: false
+        type: boolean
+        default: false
+      verify_deploy_rollback:
+        description: Request rollback after the live deploy operation and restore the desired revision.
+        required: false
+        type: boolean
+        default: false
+      deploy_timeout_seconds:
+        description: Optional timeout in seconds for live deploy-operation polling.
+        required: false
+        type: string
+      import_table_prefix:
+        description: Optional table prefix to enable the live cloud-staged import mutation test.
+        required: false
+        type: string
+      import_timeout_seconds:
+        description: Optional timeout in seconds for the live import mutation test.
+        required: false
+        type: string
+      include_scale_tests:
+        description: Run existing multi-node scale tests when scale-specific inputs are provided.
+        required: false
+        type: boolean
+        default: false
+      scale_test_base_url:
+        description: Optional scale-test ingress URL for multi-node validation.
+        required: false
+        type: string
+      scale_test_service_id:
+        description: Optional FeatureServer service ID for replica scale tests.
+        required: false
+        type: string
+      scale_test_redis:
+        description: Optional Redis connection string for scale validation.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-deployed-environment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run cloud post-apply validation
+        env:
+          HONUA_CLOUD_TEST_BASE_URL: ${{ inputs.base_url }}
+          HONUA_CLOUD_TEST_ADMIN_API_KEY: ${{ secrets.admin_api_key || secrets.cloud_validation_admin_api_key || '' }}
+          HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT: ${{ inputs.expected_environment }}
+          HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE: ${{ inputs.expected_deployment_mode }}
+          HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY: ${{ inputs.expected_ready_for_coordinated_deploy }}
+          HONUA_CLOUD_TEST_PLATFORM: ${{ inputs.platform }}
+          HONUA_CLOUD_TEST_DEPLOY_TARGET_ID: ${{ inputs.deploy_target_id }}
+          HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION: ${{ inputs.deploy_current_revision }}
+          HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION: ${{ inputs.deploy_desired_revision }}
+          HONUA_CLOUD_TEST_EXECUTE_DEPLOY_OPERATION: ${{ inputs.execute_deploy_operation }}
+          HONUA_CLOUD_TEST_VERIFY_DEPLOY_ROLLBACK: ${{ inputs.verify_deploy_rollback }}
+          HONUA_CLOUD_TEST_DEPLOY_TIMEOUT_SECONDS: ${{ inputs.deploy_timeout_seconds }}
+          HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX: ${{ inputs.import_table_prefix }}
+          HONUA_CLOUD_TEST_IMPORT_TIMEOUT_SECONDS: ${{ inputs.import_timeout_seconds }}
+          INCLUDE_SCALE_TESTS: ${{ inputs.include_scale_tests }}
+          HONUA_SCALE_TEST_BASE_URL: ${{ inputs.scale_test_base_url }}
+          HONUA_SCALE_TEST_ADMIN_API_KEY: ${{ secrets.scale_test_admin_api_key || secrets.admin_api_key || secrets.cloud_validation_admin_api_key || '' }}
+          HONUA_SCALE_TEST_SERVICE_ID: ${{ inputs.scale_test_service_id }}
+          HONUA_SCALE_TEST_REDIS: ${{ inputs.scale_test_redis }}
+        run: |
+          chmod +x scripts/run-cloud-post-apply-validation.sh
+          ./scripts/run-cloud-post-apply-validation.sh

@@ -66,7 +66,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Target: greater than 1000 RPS total, p95 less than 150ms.
     /// </summary>
     [Benchmark(Description = "Simple query throughput (10 concurrent clients)")]
-    public async Task<LoadTestResult> SimpleQuery_LowConcurrency()
+    public async Task<LoadTestResult> SimpleQueryLowConcurrency()
     {
         return await RunLoadTestAsync(
             "/rest/services/test/FeatureServer/0/query?where=1=1&resultRecordCount=10&f=json",
@@ -79,7 +79,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Tests connection pool behavior under moderate load.
     /// </summary>
     [Benchmark(Description = "Simple query throughput (50 concurrent clients)")]
-    public async Task<LoadTestResult> SimpleQuery_MediumConcurrency()
+    public async Task<LoadTestResult> SimpleQueryMediumConcurrency()
     {
         return await RunLoadTestAsync(
             "/rest/services/test/FeatureServer/0/query?where=1=1&resultRecordCount=10&f=json",
@@ -92,7 +92,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Tests system behavior under heavy load.
     /// </summary>
     [Benchmark(Description = "Simple query throughput (100 concurrent clients)")]
-    public async Task<LoadTestResult> SimpleQuery_HighConcurrency()
+    public async Task<LoadTestResult> SimpleQueryHighConcurrency()
     {
         return await RunLoadTestAsync(
             "/rest/services/test/FeatureServer/0/query?where=1=1&resultRecordCount=10&f=json",
@@ -105,7 +105,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Target: greater than 500 RPS at p95 less than 300ms.
     /// </summary>
     [Benchmark(Description = "Spatial query throughput (50 concurrent clients)")]
-    public async Task<LoadTestResult> SpatialQuery_MediumConcurrency()
+    public async Task<LoadTestResult> SpatialQueryMediumConcurrency()
     {
         return await RunLoadTestAsync(
             "/rest/services/test/FeatureServer/0/query?geometry=-122.5,37.7,-122.3,37.8&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&f=json",
@@ -119,7 +119,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Target: greater than 800 RPS at p95 less than 200ms.
     /// </summary>
     [Benchmark(Description = "Mixed workload throughput (50 concurrent clients)")]
-    public async Task<LoadTestResult> MixedWorkload_MediumConcurrency()
+    public async Task<LoadTestResult> MixedWorkloadMediumConcurrency()
     {
         var endpoints = new[]
         {
@@ -138,7 +138,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Tests stability and consistency over time.
     /// </summary>
     [Benchmark(Description = "Sustained load (30 seconds, 50 clients)")]
-    public async Task<LoadTestResult> SustainedLoad_30Seconds()
+    public async Task<LoadTestResult> SustainedLoad30Seconds()
     {
         return await RunSustainedLoadTestAsync(
             "/rest/services/test/FeatureServer/0/query?where=1=1&resultRecordCount=10&f=json",
@@ -151,7 +151,7 @@ public class LoadTestBenchmarks : IDisposable
     /// Tests offset/limit query patterns.
     /// </summary>
     [Benchmark(Description = "Paginated queries (50 concurrent clients)")]
-    public async Task<LoadTestResult> PaginatedQueries_MediumConcurrency()
+    public async Task<LoadTestResult> PaginatedQueriesMediumConcurrency()
     {
         var offsets = Enumerable.Range(0, 20).Select(i => i * 50).ToArray();
         return await RunParameterizedLoadTestAsync(
@@ -207,13 +207,12 @@ public class LoadTestBenchmarks : IDisposable
         var latencies = new ConcurrentBag<double>();
         var errors = new ConcurrentBag<string>();
         var stopwatch = Stopwatch.StartNew();
-        var random = new Random();
 
         var tasks = Enumerable.Range(0, concurrency).Select(async clientId =>
         {
             for (int i = 0; i < requestsPerClient; i++)
             {
-                var url = endpoints[random.Next(endpoints.Length)];
+                var url = endpoints[Random.Shared.Next(endpoints.Length)];
                 var requestWatch = Stopwatch.StartNew();
                 try
                 {

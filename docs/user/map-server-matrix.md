@@ -19,18 +19,13 @@ Legend: **Implemented** | **Partial** | **Not implemented**
 | Export map | `.../MapServer/export` | GET/POST | `GET/POST .../MapServer/export` | `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`. Default `transparent=false` per spec. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
 | Identify | `.../MapServer/identify` | GET/POST | `GET/POST .../MapServer/identify` | All geometry types, `dynamicLayers`, `time`/`timeRelation`, `layerDefs`. Returns `displayFieldName`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
 | Find | `.../MapServer/find` | GET/POST | `GET/POST .../MapServer/find` | Cross-layer text search: `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
+| Generate KML | `.../MapServer/generateKml` | GET/POST | `GET/POST .../MapServer/generateKml` | Exports queried layer features as KML (`f=kml`) or KMZ (`f=kmz`). Supports `layers`, `layerDefs`, `dynamicLayers`, `time`, and `layerTimeOptions`. |
 | Legend | `.../MapServer/legend` | GET | `GET .../MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
 | Layer query | `.../MapServer/{layerId}/query` | GET/POST | `GET/POST .../MapServer/{layerId}/query` | Delegates to FeatureServer query handler. See [FeatureServer matrix](feature-server-matrix.md). |
 | Service-level query | `.../MapServer/query` | GET/POST | `GET/POST .../MapServer/query` | Delegates to FeatureServer query handler using `layerId` or `layers`. |
 | Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | `GET .../MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
 | WMTS | `.../MapServer/WMTS` | GET | `GET .../MapServer/WMTS` and `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo` (KVP), plus advertised RESTful `ResourceURL` templates for tile/feature info and optional metadata (`LegendURL`, `Themes`, `TileMatrixSetLimits`). |
 | WMS | `.../MapServer/WMS` | GET | `GET .../MapServer/WMS` and `GET /ogc/services/{serviceId}/wms` | Supports `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
-
-### Not implemented
-
-| Operation | Esri path | Methods | Notes |
-| --- | --- | --- | --- |
-| Generate KML | `.../MapServer/generateKml` | GET | |
 
 ---
 

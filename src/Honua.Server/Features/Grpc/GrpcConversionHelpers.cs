@@ -14,7 +14,7 @@ using DomainDistanceUnit = Honua.Core.Features.FeatureStore.Domain.DistanceUnit;
 using DomainGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 using DomainSpatialFilter = Honua.Core.Features.FeatureStore.Domain.SpatialFilter;
 using DomainSpatialRelationship = Honua.Core.Features.FeatureStore.Domain.SpatialRelationship;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Grpc;
 
@@ -80,6 +80,65 @@ internal static class GrpcConversionHelpers
     }
 
     /// <summary>
+    /// Converts a proto ApplyEditsRequest into a domain FeatureEditBatch.
+    /// </summary>
+    public static FeatureEditBatch ToFeatureEditBatch(Proto.ApplyEditsRequest request)
+    {
+        var creates = request.Adds.Count == 0
+            ? ImmutableArray<Feature>.Empty
+            : request.Adds.Select(feature => ToDomainFeature(feature, requireId: false)).ToImmutableArray();
+
+        var updates = request.Updates.Count == 0
+            ? ImmutableArray<Feature>.Empty
+            : request.Updates.Select(feature => ToDomainFeature(feature, requireId: true)).ToImmutableArray();
+
+        var deletes = request.Deletes.Count == 0
+            ? ImmutableArray<long>.Empty
+            : request.Deletes.ToImmutableArray();
+
+        return FeatureEditBatch.Create(
+            creates: creates,
+            updates: updates,
+            deletes: deletes,
+            rollbackOnFailure: request.RollbackOnFailure,
+            useGlobalIds: false);
+    }
+
+    /// <summary>
+    /// Converts a domain FeatureEditResult to a proto ApplyEditsResponse.
+    /// </summary>
+    public static Proto.ApplyEditsResponse ToProtoApplyEditsResponse(FeatureEditResult result)
+    {
+        var response = new Proto.ApplyEditsResponse();
+
+        if (!result.CreateResults.IsDefaultOrEmpty)
+        {
+            response.AddResults.AddRange(result.CreateResults.Select(ToProtoEditResult));
+        }
+
+        if (!result.UpdateResults.IsDefaultOrEmpty)
+        {
+            response.UpdateResults.AddRange(result.UpdateResults.Select(ToProtoEditResult));
+        }
+
+        if (!result.DeleteResults.IsDefaultOrEmpty)
+        {
+            response.DeleteResults.AddRange(result.DeleteResults.Select(ToProtoEditResult));
+        }
+
+        if (result.WasRolledBack && (response.AddResults.Count > 0 || response.UpdateResults.Count > 0 || response.DeleteResults.Count > 0))
+        {
+            response.Error = new Proto.EditError
+            {
+                Code = 1000,
+                Message = "Operation rolled back."
+            };
+        }
+
+        return response;
+    }
+
+    /// <summary>
     /// Resolves an output SRID from proto spatial reference parameters.
     /// </summary>
     public static int? TryResolveOutputSrid(Proto.SpatialReference? spatialReference)
@@ -134,7 +193,11 @@ internal static class GrpcConversionHelpers
 
         if (includeGeometry && feature.Geometry is { Length: > 0 })
         {
-            proto.Geometry = ToProtoGeometry(feature.Geometry, geometryLimits);
+            var geometry = ToProtoGeometry(feature.Geometry, geometryLimits);
+            if (geometry.ShapeCase != Proto.Geometry.ShapeOneofCase.None)
+            {
+                proto.Geometry = geometry;
+            }
         }
 
         return proto;
@@ -255,6 +318,131 @@ internal static class GrpcConversionHelpers
         return av;
     }
 
+    private static Feature ToDomainFeature(Proto.Feature feature, bool requireId)
+    {
+        var attributes = feature.Attributes.Count == 0
+            ? ImmutableDictionary<string, object?>.Empty.WithComparers(StringComparer.OrdinalIgnoreCase)
+            : feature.Attributes.ToImmutableDictionary(
+                pair => pair.Key,
+                pair => ToDomainAttributeValue(pair.Value),
+                StringComparer.OrdinalIgnoreCase);
+
+        var featureId = feature.Id;
+        if (featureId <= 0 && requireId)
+        {
+            if (TryResolveFeatureIdFromAttributes(attributes, out var attributeObjectId))
+            {
+                featureId = attributeObjectId;
+            }
+        }
+
+        if (requireId && featureId <= 0)
+        {
+            throw new ArgumentException("Update features must include a positive id (or objectId attribute).");
+        }
+
+        var geometry = feature.Geometry == null || feature.Geometry.ShapeCase == Proto.Geometry.ShapeOneofCase.None
+            ? null
+            : ProtoGeometryToWkb(feature.Geometry);
+
+        return Feature.Create(featureId, geometry, attributes);
+    }
+
+    private static object? ToDomainAttributeValue(Proto.AttributeValue value)
+    {
+        return value.ValueCase switch
+        {
+            Proto.AttributeValue.ValueOneofCase.StringValue => value.StringValue,
+            Proto.AttributeValue.ValueOneofCase.Int32Value => value.Int32Value,
+            Proto.AttributeValue.ValueOneofCase.Int64Value => value.Int64Value,
+            Proto.AttributeValue.ValueOneofCase.DoubleValue => value.DoubleValue,
+            Proto.AttributeValue.ValueOneofCase.FloatValue => value.FloatValue,
+            Proto.AttributeValue.ValueOneofCase.BoolValue => value.BoolValue,
+            Proto.AttributeValue.ValueOneofCase.DatetimeValue => DateTimeOffset.FromUnixTimeMilliseconds(value.DatetimeValue).UtcDateTime,
+            Proto.AttributeValue.ValueOneofCase.BytesValue => value.BytesValue.ToByteArray(),
+            _ => null
+        };
+    }
+
+    private static bool TryResolveFeatureIdFromAttributes(
+        ImmutableDictionary<string, object?> attributes,
+        out long objectId)
+    {
+        objectId = 0;
+
+        if (!TryGetAttributeValue(attributes, "objectid", out var raw) &&
+            !TryGetAttributeValue(attributes, "id", out raw))
+        {
+            return false;
+        }
+
+        switch (raw)
+        {
+            case long l when l > 0:
+                objectId = l;
+                return true;
+            case int i when i > 0:
+                objectId = i;
+                return true;
+            case short s when s > 0:
+                objectId = s;
+                return true;
+            case uint ui when ui > 0:
+                objectId = ui;
+                return true;
+            case ulong ul when ul > 0 && ul <= long.MaxValue:
+                objectId = (long)ul;
+                return true;
+            case string text when long.TryParse(text, out var parsed) && parsed > 0:
+                objectId = parsed;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryGetAttributeValue(
+        ImmutableDictionary<string, object?> attributes,
+        string key,
+        out object? value)
+    {
+        if (attributes.TryGetValue(key, out value))
+        {
+            return true;
+        }
+
+        var alternateKey = attributes.Keys.FirstOrDefault(existing =>
+            existing.Equals(key, StringComparison.OrdinalIgnoreCase));
+
+        if (alternateKey != null && attributes.TryGetValue(alternateKey, out value))
+        {
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static Proto.EditResult ToProtoEditResult(EditOperationResult result)
+    {
+        var proto = new Proto.EditResult
+        {
+            Success = result.IsSuccess,
+            ObjectId = result.ObjectId ?? 0
+        };
+
+        if (!result.IsSuccess)
+        {
+            proto.Error = new Proto.EditError
+            {
+                Code = result.ErrorCode,
+                Message = result.ErrorMessage ?? "Edit operation failed."
+            };
+        }
+
+        return proto;
+    }
+
     private static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
     {
         var geometry = WkbReader.Read(wkb);
@@ -329,10 +517,9 @@ internal static class GrpcConversionHelpers
                 proto.MultiPolygon = mpoly;
                 break;
 
-            case GeometryCollection:
-                throw new InvalidOperationException(
-                    "GeometryCollection is not representable in the gRPC proto schema. " +
-                    "Convert to a specific geometry type before serialization.");
+            case GeometryCollection collection:
+                TryProjectGeometryCollection(collection, proto);
+                break;
         }
 
         return proto;
@@ -399,7 +586,7 @@ internal static class GrpcConversionHelpers
         return new DomainSpatialFilter
         {
             Geometry = geometryWkb,
-            Srid = filter.SpatialReference?.Wkid > 0 ? filter.SpatialReference.Wkid : null,
+            Srid = ResolveSpatialFilterSrid(filter.SpatialReference),
             SpatialRelationship = ToDomainSpatialRelationship(filter.SpatialRelationship),
             Distance = filter.Distance > 0 ? filter.Distance : null,
             DistanceUnit = ToDomainDistanceUnit(filter.DistanceUnit),
@@ -412,7 +599,7 @@ internal static class GrpcConversionHelpers
     {
         Geometry? ntsGeometry = geometry.ShapeCase switch
         {
-            Proto.Geometry.ShapeOneofCase.Point => new Point(geometry.Point.X, geometry.Point.Y),
+            Proto.Geometry.ShapeOneofCase.Point => _geoFactory.CreatePoint(ToCoordinate(geometry.Point)),
             Proto.Geometry.ShapeOneofCase.Polygon => BuildPolygon(geometry.Polygon),
             Proto.Geometry.ShapeOneofCase.Polyline => BuildPolyline(geometry.Polyline),
             Proto.Geometry.ShapeOneofCase.MultiPoint => BuildMultiPoint(geometry.MultiPoint),
@@ -432,10 +619,10 @@ internal static class GrpcConversionHelpers
             return Polygon.Empty;
 
         var shell = _geoFactory.CreateLinearRing(
-            poly.Rings[0].Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray());
+            poly.Rings[0].Coords.Select(ToCoordinate).ToArray());
         var holes = poly.Rings.Skip(1)
             .Select(r => _geoFactory.CreateLinearRing(
-                r.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
+                r.Coords.Select(ToCoordinate).ToArray()))
             .ToArray();
 
         return _geoFactory.CreatePolygon(shell, holes);
@@ -444,14 +631,14 @@ internal static class GrpcConversionHelpers
     private static MultiLineString BuildPolyline(Proto.PolylineGeometry polyline)
     {
         var lines = polyline.Paths.Select(p =>
-            _geoFactory.CreateLineString(p.Coords.Select(c => new Coordinate(c.X, c.Y)).ToArray()))
+            _geoFactory.CreateLineString(p.Coords.Select(ToCoordinate).ToArray()))
             .ToArray();
         return _geoFactory.CreateMultiLineString(lines);
     }
 
     private static MultiPoint BuildMultiPoint(Proto.MultiPointGeometry mp)
     {
-        var points = mp.Points.Select(p => _geoFactory.CreatePoint(new Coordinate(p.X, p.Y))).ToArray();
+        var points = mp.Points.Select(p => _geoFactory.CreatePoint(ToCoordinate(p))).ToArray();
         return _geoFactory.CreateMultiPoint(points);
     }
 
@@ -459,6 +646,163 @@ internal static class GrpcConversionHelpers
     {
         var polygons = multiPoly.Polygons.Select(BuildPolygon).ToArray();
         return _geoFactory.CreateMultiPolygon(polygons);
+    }
+
+    private static Coordinate ToCoordinate(Proto.PointGeometry point)
+    {
+        return CreateCoordinate(point.X, point.Y, point.HasZ, point.Z, point.HasM, point.M);
+    }
+
+    private static Coordinate ToCoordinate(Proto.Coordinate coordinateValue)
+    {
+        return CreateCoordinate(
+            coordinateValue.X,
+            coordinateValue.Y,
+            coordinateValue.HasZ,
+            coordinateValue.Z,
+            coordinateValue.HasM,
+            coordinateValue.M);
+    }
+
+    private static Coordinate CreateCoordinate(
+        double x,
+        double y,
+        bool hasZ,
+        double z,
+        bool hasM,
+        double m)
+    {
+        if (hasZ && hasM)
+        {
+            return new CoordinateZM(x, y, z, m);
+        }
+
+        if (hasZ)
+        {
+            return new CoordinateZ(x, y, z);
+        }
+
+        if (hasM)
+        {
+            return new CoordinateM(x, y, m);
+        }
+
+        return new Coordinate(x, y);
+    }
+
+    private static int? ResolveSpatialFilterSrid(Proto.SpatialReference? spatialReference)
+    {
+        if (spatialReference == null)
+        {
+            return null;
+        }
+
+        if (spatialReference.Wkid > 0)
+        {
+            return spatialReference.Wkid;
+        }
+
+        return spatialReference.LatestWkid > 0 ? spatialReference.LatestWkid : null;
+    }
+
+    private static void TryProjectGeometryCollection(GeometryCollection collection, Proto.Geometry proto)
+    {
+        var flattened = FlattenGeometryCollection(collection).ToArray();
+        if (flattened.Length == 0)
+        {
+            return;
+        }
+
+        if (flattened.All(static g => g is Point))
+        {
+            var multiPoint = new Proto.MultiPointGeometry();
+            foreach (var point in flattened.Cast<Point>())
+            {
+                var protoPoint = new Proto.PointGeometry { X = point.X, Y = point.Y };
+                if (!double.IsNaN(point.Z))
+                {
+                    protoPoint.Z = point.Z;
+                }
+
+                if (!double.IsNaN(point.M))
+                {
+                    protoPoint.M = point.M;
+                }
+
+                multiPoint.Points.Add(protoPoint);
+            }
+
+            proto.MultiPoint = multiPoint;
+            return;
+        }
+
+        if (flattened.All(static g => g is LineString))
+        {
+            var polyline = new Proto.PolylineGeometry();
+            foreach (var lineString in flattened.Cast<LineString>())
+            {
+                polyline.Paths.Add(ToCoordinateSequence(lineString.CoordinateSequence));
+            }
+
+            proto.Polyline = polyline;
+            return;
+        }
+
+        if (flattened.All(static g => g is Polygon))
+        {
+            var multiPolygon = new Proto.MultiPolygonGeometry();
+            foreach (var polygon in flattened.Cast<Polygon>())
+            {
+                var polygonPart = new Proto.PolygonGeometry();
+                polygonPart.Rings.Add(ToCoordinateSequence(polygon.ExteriorRing.CoordinateSequence));
+                foreach (var hole in polygon.InteriorRings)
+                {
+                    polygonPart.Rings.Add(ToCoordinateSequence(hole.CoordinateSequence));
+                }
+
+                multiPolygon.Polygons.Add(polygonPart);
+            }
+
+            proto.MultiPolygon = multiPolygon;
+        }
+    }
+
+    private static IEnumerable<Geometry> FlattenGeometryCollection(Geometry geometry)
+    {
+        switch (geometry)
+        {
+            case Point or LineString or Polygon:
+                yield return geometry;
+                yield break;
+            case MultiPoint multiPoint:
+                foreach (var point in multiPoint.Geometries)
+                {
+                    yield return point;
+                }
+
+                yield break;
+            case MultiLineString multiLineString:
+                foreach (var lineString in multiLineString.Geometries)
+                {
+                    yield return lineString;
+                }
+
+                yield break;
+            case MultiPolygon multiPolygon:
+                foreach (var polygon in multiPolygon.Geometries)
+                {
+                    yield return polygon;
+                }
+
+                yield break;
+            case GeometryCollection nestedCollection:
+                foreach (var child in nestedCollection.Geometries.SelectMany(FlattenGeometryCollection))
+                {
+                    yield return child;
+                }
+
+                yield break;
+        }
     }
 
     private static DomainSpatialRelationship ToDomainSpatialRelationship(

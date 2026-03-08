@@ -32,6 +32,24 @@ public interface IFeatureReader
     Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries features as a FlatGeobuf payload when the underlying provider supports it.
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters and pagination</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>FlatGeobuf payload, or null when no features match</returns>
+    Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries only object IDs with optional filtering, sorting, and pagination.
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters and pagination</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Matching object identifiers</returns>
+    Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Counts features matching the specified criteria
     /// </summary>
     /// <param name="layerId">Layer identifier to query</param>
@@ -73,5 +91,55 @@ public interface IFeatureReader
         int layerId,
         string fieldName,
         FieldType fieldType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets approximate count and extent estimates using catalog statistics
+    /// </summary>
+    /// <param name="layerId">Layer identifier to estimate</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Estimated count and extent</returns>
+    Task<EstimateResult> GetEstimatesAsync(
+        int layerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries top features per group using window functions
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Paginated query result with top features per group</returns>
+    Task<QueryResult<Feature>> QueryTopFeaturesAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries features binned by date intervals
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters</param>
+    /// <param name="dateBin">Date bin definition specifying calendar or fixed intervals</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Rows containing bin boundaries and aggregate values</returns>
+    Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryDateBinsAsync(
+        int layerId,
+        FeatureQuery query,
+        DateBinDefinition dateBin,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries features binned by numeric or classification intervals
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters</param>
+    /// <param name="binDefinition">Bin definition specifying the binning algorithm</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Rows containing bin boundaries and aggregate values</returns>
+    Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryBinsAsync(
+        int layerId,
+        FeatureQuery query,
+        BinDefinition binDefinition,
         CancellationToken cancellationToken = default);
 }

@@ -98,6 +98,7 @@ namespace Honua.Server.Features.FeatureServer.Models;
 [JsonSerializable(typeof(LayerChanges[]))]
 [JsonSerializable(typeof(long[]), TypeInfoPropertyName = "Int64Array")]
 [JsonSerializable(typeof(ReplicaState))]
+[JsonSerializable(typeof(DistributedReplicaStore.ReplicaStateEnvelope))]
 [JsonSerializable(typeof(SynchronizeReplicaRequest))]
 [JsonSerializable(typeof(SynchronizeReplicaResponse))]
 [JsonSerializable(typeof(UnRegisterReplicaRequest))]
@@ -117,4 +118,6 @@ namespace Honua.Server.Features.FeatureServer.Models;
 [JsonSerializable(typeof(DomainCodedValueInfo[]))]
 [JsonSerializable(typeof(ValidateSqlRequest))]
 [JsonSerializable(typeof(ValidateSqlResponse))]
+// Advanced query models
+[JsonSerializable(typeof(GetEstimatesResponse))]
 internal sealed partial class FeatureServerJsonContext : JsonSerializerContext;

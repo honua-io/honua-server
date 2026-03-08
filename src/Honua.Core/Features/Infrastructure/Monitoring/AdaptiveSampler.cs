@@ -20,7 +20,7 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     private readonly ISystemMetricsCollector _metricsCollector;
     private readonly ILogger<AdaptiveSampler> _logger;
     private readonly ISmartSamplingRules? _smartSamplingRules;
-    private readonly Timer _evaluationTimer;
+    private readonly Timer? _evaluationTimer;
 
     private double _currentSamplingRate;
     private volatile bool _disposed;

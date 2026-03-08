@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -15,6 +16,22 @@ namespace Honua.Core.Queries.Filters.Cql2;
 public sealed class Cql2JsonParser
 {
     private const int DefaultSrid = 4326;
+    private const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
+    private static readonly Regex EpsgCodePattern = new(
+        @"^EPSG:(?<code>[1-9]\d*)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex EpsgUrnPattern = new(
+        @"^urn:ogc:def:crs:EPSG::(?<code>[1-9]\d*)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex EpsgUriPattern = new(
+        @"^https?://www\.opengis\.net/def/crs/EPSG/0/(?<code>[1-9]\d*)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex Crs84UriPattern = new(
+        @"^https?://www\.opengis\.net/def/crs/OGC/1\.3/CRS84$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex Crs84UrnPattern = new(
+        @"^urn:ogc:def:crs:OGC:(?:1\.3:|:)?CRS84$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Parses a CQL2-JSON filter expression into a <see cref="FilterExpression"/> AST.
@@ -601,7 +618,7 @@ public sealed class Cql2JsonParser
         var minY = bboxElement[1].GetDouble();
         var maxX = bboxElement[2].GetDouble();
         var maxY = bboxElement[3].GetDouble();
-        var srid = TryExtractSridFromGeometryCrs(element, out var explicitSrid) ? explicitSrid : DefaultSrid;
+        var srid = ResolveGeometrySrid(element) ?? DefaultSrid;
 
         var coordinates = new[]
         {
@@ -622,9 +639,10 @@ public sealed class Cql2JsonParser
 
     private static int ResolveGeometrySrid(JsonElement geometryElement, Geometry geometry)
     {
-        if (TryExtractSridFromGeometryCrs(geometryElement, out var explicitSrid))
+        var explicitSrid = ResolveGeometrySrid(geometryElement);
+        if (explicitSrid.HasValue)
         {
-            return explicitSrid;
+            return explicitSrid.Value;
         }
 
         if (geometry.SRID > 0)
@@ -635,16 +653,19 @@ public sealed class Cql2JsonParser
         return DefaultSrid;
     }
 
-    private static bool TryExtractSridFromGeometryCrs(JsonElement geometryElement, out int srid)
+    private static int? ResolveGeometrySrid(JsonElement geometryElement)
     {
-        srid = 0;
-
         if (!geometryElement.TryGetProperty("crs", out var crsElement))
         {
-            return false;
+            return null;
         }
 
-        return TryExtractSridFromCrsElement(crsElement, out srid);
+        if (!TryExtractSridFromCrsElement(crsElement, out var srid))
+        {
+            throw new ArgumentException($"Invalid geometry CRS identifier: {crsElement.GetRawText()}");
+        }
+
+        return srid;
     }
 
     private static bool TryExtractSridFromCrsElement(JsonElement crsElement, out int srid)
@@ -684,30 +705,51 @@ public sealed class Cql2JsonParser
             return false;
         }
 
-        var trimmed = crsIdentifier.Trim();
-        if (trimmed.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase))
+        var trimmed = TrimWrappers(crsIdentifier);
+
+        if (IsCrs84Identifier(trimmed))
         {
-            return int.TryParse(
-                trimmed.AsSpan("EPSG:".Length),
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture,
-                out srid) && srid > 0;
+            srid = DefaultSrid;
+            return true;
         }
 
-        ReadOnlySpan<char> span = trimmed.AsSpan();
-        var trailingDigitsStart = span.Length;
-        while (trailingDigitsStart > 0 && char.IsDigit(span[trailingDigitsStart - 1]))
+        return TryParsePositiveInt(trimmed, out srid) ||
+               TryParseRegexSrid(trimmed, EpsgCodePattern, out srid) ||
+               TryParseRegexSrid(trimmed, EpsgUrnPattern, out srid) ||
+               TryParseRegexSrid(trimmed, EpsgUriPattern, out srid);
+    }
+
+    private static string TrimWrappers(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length > 1 &&
+            ((trimmed[0] == '[' && trimmed[^1] == ']') ||
+             (trimmed[0] == '<' && trimmed[^1] == '>')))
         {
-            trailingDigitsStart--;
+            trimmed = trimmed[1..^1].Trim();
         }
 
-        if (trailingDigitsStart == span.Length)
-        {
-            return false;
-        }
+        return trimmed;
+    }
 
-        var digits = span[trailingDigitsStart..];
-        return int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid) &&
-               srid > 0;
+    private static bool IsCrs84Identifier(string value)
+    {
+        return value.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals(Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
+               Crs84UriPattern.IsMatch(value) ||
+               Crs84UrnPattern.IsMatch(value);
+    }
+
+    private static bool TryParseRegexSrid(string value, Regex regex, out int srid)
+    {
+        srid = 0;
+        var match = regex.Match(value);
+        return match.Success && TryParsePositiveInt(match.Groups["code"].Value, out srid);
+    }
+
+    private static bool TryParsePositiveInt(string value, out int srid)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid) && srid > 0;
     }
 }

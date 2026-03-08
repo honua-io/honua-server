@@ -23,6 +23,27 @@ public sealed class RedisJobQueueFallbackTests
 
         var job = await queue.DequeueAsync(TimeSpan.FromMilliseconds(200));
         job.Should().Be("job-1");
+
+        await queue.RecoverInFlightAsync();
+        var recovered = await queue.DequeueAsync(TimeSpan.FromMilliseconds(200));
+        recovered.Should().Be("job-1");
+
+        await queue.CompleteAsync(recovered!);
+        var lengthAfterComplete = await queue.GetQueueLengthAsync();
+        lengthAfterComplete.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task EnqueueAsync_WhenFallbackDisabled_ThrowsInsteadOfAcceptingNodeLocalWork()
+    {
+        var queueKey = $"test:queue:{Guid.NewGuid():N}";
+        var queue = new RedisJobQueue(null, NullLogger.Instance, queueKey, allowFallback: false);
+
+        var act = () => queue.EnqueueAsync("job-1");
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Distributed import queue is unavailable*");
     }
 
 }

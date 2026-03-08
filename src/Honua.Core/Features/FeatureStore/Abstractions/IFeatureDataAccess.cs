@@ -27,6 +27,24 @@ internal interface IFeatureDataAccess
     Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes a provider-native FlatGeobuf query and returns raw bytes.
+    /// </summary>
+    Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executes an object ID query and returns matching IDs.
+    /// </summary>
+    Task<ImmutableArray<long>> ExecuteSelectObjectIdsQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Executes a related records query and returns matching features
     /// </summary>
     Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken);

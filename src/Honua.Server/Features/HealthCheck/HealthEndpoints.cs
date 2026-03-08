@@ -74,10 +74,15 @@ internal static class HealthEndpoints
     /// PERFORMANCE OPTIMIZATION: Endpoint to expose performance metrics
     /// Provides insights into query performance and system health
     /// </summary>
-    private static IResult HandlePerformanceMetrics(IDatabasePerformanceMetricsProvider databaseMetricsProvider, ILoggerFactory loggerFactory)
+    private static async Task<IResult> HandlePerformanceMetrics(
+        IDatabasePerformanceMetricsProvider databaseMetricsProvider,
+        IReadinessCheckService readinessCheckService,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         try
         {
+            var readiness = await readinessCheckService.CheckReadinessAsync(cancellationToken);
             var performanceMetrics = databaseMetricsProvider.GetMetrics();
 
             // Basic memory and GC info
@@ -87,7 +92,7 @@ internal static class HealthEndpoints
             var response = new HealthPerformanceMetricsResponse
             {
                 Timestamp = DateTimeOffset.UtcNow,
-                Status = "healthy",
+                Status = readiness.IsReady ? "healthy" : "not_ready",
                 PerformanceScore = CalculateBasicPerformanceScore(totalMemory),
                 Metrics = new HealthPerformanceMetrics
                 {
@@ -108,7 +113,10 @@ internal static class HealthEndpoints
                 }
             };
 
-            return Results.Json(response, HealthJsonContext.Default.HealthPerformanceMetricsResponse);
+            return Results.Json(
+                response,
+                HealthJsonContext.Default.HealthPerformanceMetricsResponse,
+                statusCode: readiness.StatusCode);
         }
         catch (Exception ex)
         {

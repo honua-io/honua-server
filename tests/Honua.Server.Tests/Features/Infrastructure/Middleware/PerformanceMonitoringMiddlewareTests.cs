@@ -119,6 +119,46 @@ public class PerformanceMonitoringMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
+    [Endpoint("GET /unmatched")]
+    public async Task PerformanceMiddleware_ShouldCollapseUnmatchedRoutesIntoSingleMetricEndpoint()
+    {
+        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
+        var operationScope = Substitute.For<IOperationScope>();
+        performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
+
+        IDictionary<string, string>? detailedTags = null;
+        performanceMonitor
+            .When(m => m.RecordHistogram(
+                "honua_request_duration_detailed_ms",
+                Arg.Any<double>(),
+                Arg.Any<IDictionary<string, string>>()))
+            .Do(callInfo => detailedTags = callInfo.ArgAt<IDictionary<string, string>>(2));
+
+        var app = CreateTestApp(services =>
+        {
+            services.AddSingleton(performanceMonitor);
+            services.Configure<PerformanceMonitoringOptions>(opt =>
+            {
+                opt.EnableMemoryTracking = false;
+                opt.SlowRequestThreshold = TimeSpan.FromSeconds(1);
+            });
+        });
+
+        var response = await app.GetAsync("/tenant/acme/widgets/not-a-real-route");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        performanceMonitor.Received().RecordHttpRequest(
+            "GET",
+            "/{unmatched}",
+            StatusCodes.Status404NotFound,
+            Arg.Any<TimeSpan>());
+        Assert.NotNull(detailedTags);
+        Assert.Equal("/{unmatched}", detailedTags!["endpoint"]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /test-memory-tracking")]
     public async Task PerformanceMiddleware_WithMemoryTracking_ShouldSampleMemory()
     {

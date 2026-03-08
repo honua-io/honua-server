@@ -305,6 +305,69 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
   - "CREATE INDEX IF NOT EXISTS idx_features_geography ON features USING GIST ((ST_Transform(geometry, 4326)::geography));"
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
+  - "CREATE SEQUENCE IF NOT EXISTS honua.sync_generation AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.replicas (
+          replica_id TEXT PRIMARY KEY,
+          replica_name TEXT NOT NULL,
+          service_id TEXT NOT NULL,
+          sync_model TEXT NOT NULL DEFAULT 'perReplica',
+          layer_ids INT[] NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          last_sync_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+          last_sync_generation BIGINT NOT NULL DEFAULT 0,
+          CONSTRAINT replicas_valid_name CHECK(LENGTH(replica_name) > 0 AND LENGTH(replica_name) <= 256),
+          CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
+          CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.feature_changes (
+          change_id BIGSERIAL PRIMARY KEY,
+          generation BIGINT NOT NULL,
+          layer_id INT NOT NULL,
+          objectid BIGINT NOT NULL,
+          operation SMALLINT NOT NULL,
+          changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_feature_changes_generation_layer ON honua.feature_changes(generation, layer_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_feature_changes_changed_at ON honua.feature_changes(changed_at);"
+  - "CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_objectid ON honua.feature_changes(layer_id, objectid, generation);"
+  - |
+      CREATE OR REPLACE FUNCTION honua.track_feature_changes()
+      RETURNS TRIGGER AS $$
+      DECLARE
+          gen BIGINT;
+          lid INT;
+          oid BIGINT;
+          op SMALLINT;
+      BEGIN
+          gen := nextval('honua.sync_generation');
+          IF TG_OP = 'INSERT' THEN
+              lid := NEW.layer_id;
+              oid := NEW.objectid;
+              op := 1;
+          ELSIF TG_OP = 'UPDATE' THEN
+              lid := NEW.layer_id;
+              oid := NEW.objectid;
+              op := 2;
+          ELSIF TG_OP = 'DELETE' THEN
+              lid := OLD.layer_id;
+              oid := OLD.objectid;
+              op := 3;
+          END IF;
+          INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+          VALUES (gen, lid, oid, op);
+          IF TG_OP = 'DELETE' THEN
+              RETURN OLD;
+          END IF;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+  - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
+  - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
+  - "DELETE FROM honua.feature_changes;"
+  - "DELETE FROM honua.replicas;"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
   - "DELETE FROM honua.metadata_compiled;"

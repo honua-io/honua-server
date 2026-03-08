@@ -8,12 +8,18 @@ All deployment options require a PostGIS-enabled PostgreSQL database. Redis is o
 |----------|--------|-------|
 | **Local dev / single-server** | Docker Compose | [Docker Compose Sample](docker-compose.md) |
 | **Kubernetes** | Helm chart | `infrastructure/helm/honua/README.md` |
-| **AWS (containers)** | Terraform — ECS/Fargate | `infrastructure/terraform/modules/aws-ecs/` |
-| **Azure (containers)** | Terraform — Container Apps | `infrastructure/terraform/modules/azure-aca/` |
-| **AWS (serverless)** | Terraform — Lambda | `infrastructure/terraform/modules/aws-serverless/` |
-| **Azure (serverless)** | Terraform — Functions | `infrastructure/terraform/modules/azure-functions/` |
+| **AWS / Azure (managed cloud)** | Terraform (separate repo) | Use the dedicated `honua-terraform` repository |
 
 If you just want to try Honua locally, the root `docker-compose.yml` in the repo root is the fastest option — see the Quick Start in the main README.
+
+## Control plane and GitOps direction
+
+Honua is building its own control plane for deploy coordination and change management.
+
+- Honua is not integrating with Flux or Argo CD as its primary rollout controller.
+- Helm charts and Terraform modules remain deployment and infrastructure packaging surfaces.
+- Instance-local deploy readiness, migration state, and upgrade APIs live in `honua-server`.
+- Fleet rollout coordination is expected to live in the Honua control plane rather than in external GitOps products.
 
 ## Required configuration (all deployments)
 
@@ -97,19 +103,59 @@ AOT images start faster and use less memory. Keep JIT serverless tags as debug f
 - [ ] Set `HONUA_SKIP_MIGRATIONS=true` for serverless (run migrations out-of-band)
 - [ ] Set up health check probes: `/healthz/live` (liveness), `/healthz/ready` (readiness)
 
-## Terraform bootstrap
+## Cloud IaC Handoff
 
-Before deploying with Terraform, create least-privilege service accounts. Bootstrap templates are in the `infrastructure/terraform/bootstrap/` directory for each cloud provider.
+Terraform modules, examples, and validation workflows have been moved out of `honua-server`.
+Use the dedicated `honua-terraform` repository for AWS/Azure infrastructure provisioning and Terraform CI.
 
-## Terraform validation
+This separation is intentional: infrastructure provisioning can live outside `honua-server`, while Honua's own deploy orchestration and GitOps workflow remain part of the Honua control-plane direction.
 
-For AWS/Azure/Kubernetes integration testing (including Redis, PostGIS raster checks, scale checks, and auto-destroy defaults), use the on-demand runbook:
+## Post-Apply Cloud Validation
 
-- [Terraform Validation Runbook](terraform-validation.md)
+Real cloud validation should run immediately after `terraform apply`, but the checks themselves should remain close to the application code.
+
+- Use `scripts/run-cloud-post-apply-validation.sh` from this repository to run:
+  - `scripts/post-deployment-verification.sh`
+  - `Category=Cloud` deployed-environment integration tests
+  - optional `Category=Scale` tests when the target environment exposes the extra scale-test signals and inputs
+- Use the reusable GitHub Actions workflow `.github/workflows/cloud-post-apply-validation.yml` when `honua-terraform` needs a remote post-apply hook back into `honua-server`
+- Keep scale tests explicit. Do not assume every real cloud deployment exposes the nginx-specific `X-Instance-ID` headers used by the local scale harness
+
+### Expected Environment Variables
+
+Core deployed-environment checks:
+
+- `HONUA_CLOUD_TEST_BASE_URL`
+- `HONUA_CLOUD_TEST_ADMIN_API_KEY` for admin/control-plane checks
+- `HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT` optional
+- `HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE` optional
+- `HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY` optional
+- `HONUA_CLOUD_TEST_PLATFORM` optional (`kubernetes`, `aws-ecs`, `aws-lambda`, `azure-functions`, `azure-container-apps`)
+- `HONUA_CLOUD_TEST_DEPLOY_TARGET_ID` optional; when set, enables a live `POST /api/v1/admin/deploy/plan` check against a real configured target
+- `HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION` optional
+- `HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION` optional
+- `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` optional; when set, enables a live cloud-staged import mutation test plus publish/query round-trip
+- `HONUA_CLOUD_TEST_IMPORT_TIMEOUT_SECONDS` optional
+- `HONUA_CLOUD_TEST_PUBLISH_DB_HOST` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_PORT` optional
+- `HONUA_CLOUD_TEST_PUBLISH_DB_NAME` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_USERNAME` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_PASSWORD` required when `HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX` is set
+- `HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE` optional
+- `HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED` optional
+
+Optional scale checks:
+
+- `INCLUDE_SCALE_TESTS=true`
+- `HONUA_SCALE_TEST_BASE_URL`
+- `HONUA_SCALE_TEST_ADMIN_API_KEY`
+- `HONUA_SCALE_TEST_SERVICE_ID`
+- `HONUA_SCALE_TEST_REDIS`
+
+The post-apply runner can also hydrate these values from a Terraform output JSON file via `--terraform-output-json <path>`.
 
 ## Related Docs
 
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md)
 - [Security](security.md)
 - [Monitoring](monitoring.md)
-- [Terraform Validation Runbook](terraform-validation.md)

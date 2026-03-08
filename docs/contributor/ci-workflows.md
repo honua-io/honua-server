@@ -11,10 +11,7 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `codeql.yml` | CodeQL static analysis | PR + push + schedule |
 | `container-security.yml` | Container image security scanning | PR + push + schedule |
 | `deploy.yml` | Build/publish container images | push to `trunk` and tags |
-| `terraform-manual-validation.yml` | On-demand Terraform static/policy/live/drift validation for AWS, Azure, Kubernetes, AKS, EKS | manual |
-| `sdk-ci.yml` | Focused SDK CI for JS/Python/.NET SDK trees | PR + push (sdk/proto paths) |
-| `dotnet-sdk-publish.yml` | Build/test/pack and publish .NET SDK packages | tag push + manual |
-| `python-sdk-publish.yml` | Build/test/package and publish Python SDK | tag push + manual |
+| `cloud-post-apply-validation.yml` | Reusable post-`terraform apply` validation against a real deployed environment | `workflow_call` + manual |
 
 ## Conformance and Performance
 
@@ -39,12 +36,6 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `trivy-nightly.yml` | Nightly Trivy scan |
 | `nightly-container-build.yml` | Nightly container build checks |
 
-## Documentation
-
-| Workflow File | Purpose |
-|---|---|
-| `pages.yml` | GitHub Pages publishing |
-
 ## Useful Commands
 
 ```bash
@@ -62,3 +53,6 @@ gh workflow run load-soak-nightly.yml
 
 - If docs and workflows disagree, trust `.github/workflows/*.yml`.
 - When adding a workflow, update this file in the same PR.
+- `cloud-post-apply-validation.yml` is designed to be called from `honua-terraform` after provisioning succeeds, not to bring Terraform ownership back into `honua-server`.
+- The workflow supports both non-mutating deployed-environment checks and an explicit opt-in live import publish/query round-trip via the `import_table_prefix` input plus DB connection envs.
+- A real deploy-plan check is also supported when the caller supplies a configured deploy target id and revision inputs through environment handoff.

@@ -104,6 +104,7 @@ internal sealed partial class ODataQueryService
     /// <summary>
     /// Applies field selection to result objects using an AOT-compatible approach.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the current service API shape.")]
     public object[] ApplyFieldSelection(Dictionary<string, object?>[] data, string select)
     {
         var fields = select.Split(',', StringSplitOptions.RemoveEmptyEntries)

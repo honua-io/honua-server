@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.TestKit.Attributes;
@@ -222,6 +223,56 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("#");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /healthz/metrics")]
+    public async Task PerformanceMetricsEndpoint_WithHealthyReadiness_ReturnsHealthyPayload()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
+            });
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Admin-Test", "true");
+
+        var response = await client.GetAsync("/healthz/metrics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("status").GetString().Should().Be("healthy");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /healthz/metrics")]
+    public async Task PerformanceMetricsEndpoint_WithUnhealthyReadiness_ReturnsServiceUnavailable()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped<IDatabaseHealthChecker>(_ => new MockUnhealthyDatabaseChecker());
+            });
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Admin-Test", "true");
+
+        var response = await client.GetAsync("/healthz/metrics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("status").GetString().Should().Be("not_ready");
     }
 
 }

@@ -140,8 +140,15 @@ src/
 infrastructure/
   docker-compose/     Compose reference configs
   helm/               Helm chart with PostGIS subchart
-  terraform/          Modules for AWS ECS, AWS Lambda, Azure Container Apps, Azure Functions
 ```
+
+## Control Plane Direction
+
+Honua's admin UI and admin API are intended to become the foundation of a Honua-managed GitOps control plane.
+
+- Honua is not standardizing on Flux or Argo CD as its primary rollout controller.
+- Helm and Terraform remain packaging and infrastructure surfaces.
+- Change management, deploy coordination, and instance lifecycle workflows are expected to live in the Honua control plane.
 
 ## Documentation
 

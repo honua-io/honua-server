@@ -459,7 +459,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     private static string GenerateFileId() =>
         Guid.NewGuid().ToString("N");
 
-    private string BuildStoragePath(string fileId, string fileName, string? folder)
+    private static string BuildStoragePath(string fileId, string fileName, string? folder)
     {
         var extension = Path.GetExtension(fileName);
         var storageName = $"{fileId}{extension}";

@@ -121,6 +121,97 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    public CoreParameterizedQuery BuildObjectIdsQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"SELECT {DatabaseSchema.ObjectIdColumn} FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            var paramIndex = 2;
+            var parameters = new List<object>();
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    public CoreParameterizedQuery BuildSelectFlatGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var geometrySelect = _geometryProcessor.GetGeometryOperand(
+                geometryStorageType,
+                layerSrid: query.SpatialReferenceSrid);
+
+            if (query.OutputSrid.HasValue &&
+                (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+            {
+                geometrySelect = $"ST_Transform({geometrySelect}, {query.OutputSrid.Value})";
+            }
+
+            sql.Append("SELECT ST_AsFlatGeobuf(q, true, 'geometry') FROM (SELECT ");
+            sql.Append(DatabaseSchema.ObjectIdColumn);
+            sql.Append(", ");
+            sql.Append(geometrySelect);
+            sql.Append(" AS geometry, ");
+
+            if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+            {
+                for (var i = 0; i < query.OutFields.Value.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        sql.Append(", ");
+                    }
+
+                    sql.Append(CultureInfo.InvariantCulture, $"attributes->> ${paramIndex++} AS \"{query.OutFields.Value[i]}\"");
+                    parameters.Add(query.OutFields.Value[i]);
+                }
+            }
+            else
+            {
+                sql.Append("attributes::text AS attributes");
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendPagination(sql, false, query, null, ref paramIndex);
+            sql.Append(") q");
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildOptimizedSelectQuery(
         int layerId,
         FeatureQuery query,

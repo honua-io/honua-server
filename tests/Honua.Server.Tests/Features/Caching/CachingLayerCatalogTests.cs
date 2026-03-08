@@ -38,6 +38,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
             LayerTtlSeconds = 60,
             ServiceTtlSeconds = 60,
             NegativeTtlSeconds = 30,
+            JitterPercentage = 0,
             EnableFallback = true,
             FallbackMaxEntries = 100,
             KeyPrefix = "test:"
@@ -187,6 +188,22 @@ public sealed class CachingLayerCatalogTests : IDisposable
         first.Should().BeFalse();
         second.Should().BeFalse();
         _innerCatalog.ServiceExistsCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task LayerExistsAsync_MissingLayer_UsesConfiguredNegativeTtl()
+    {
+        _innerCatalog.MissingLayerIds.Add(77);
+
+        var first = await _cachingCatalog.LayerExistsAsync(77);
+        first.Should().BeFalse();
+
+        await Task.Delay(TimeSpan.FromSeconds(_options.NegativeTtlSeconds + 1));
+
+        var second = await _cachingCatalog.LayerExistsAsync(77);
+        second.Should().BeFalse();
+        _innerCatalog.LayerExistsCallCount.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [UnitTest]

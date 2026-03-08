@@ -190,7 +190,8 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
         string cacheKey = $"{LayerKeyPrefix}{layerId}";
 
         // Optimized: Use GetOrSetAsync to avoid double Redis calls while checking both existence and layer cache
-        var existsTtl = _options.GetLayerTtlWithJitter();
+        var positiveTtl = _options.GetLayerTtlWithJitter();
+        var negativeTtl = _options.GetNegativeTtlWithJitter();
         CachedExistenceResult? result = await _cacheService.GetOrSetAsync(
             existsKey,
             async ct =>
@@ -206,8 +207,13 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
                 bool exists = await _innerCatalog.LayerExistsAsync(layerId, ct).ConfigureAwait(false);
                 return new CachedExistenceResult(exists);
             },
-            existsTtl,
+            positiveTtl,
             cancellationToken).ConfigureAwait(false);
+
+        if (result is { Exists: false })
+        {
+            await _cacheService.SetAsync(existsKey, result, negativeTtl, cancellationToken).ConfigureAwait(false);
+        }
 
         return result?.Exists ?? false;
     }
@@ -220,7 +226,8 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
         string cacheKey = $"{ServiceKeyPrefix}{normalizedName}";
 
         // Optimized: Use GetOrSetAsync to avoid double Redis calls while checking both existence and service cache
-        var existsTtl = _options.GetServiceTtlWithJitter();
+        var positiveTtl = _options.GetServiceTtlWithJitter();
+        var negativeTtl = _options.GetNegativeTtlWithJitter();
         CachedExistenceResult? result = await _cacheService.GetOrSetAsync(
             existsKey,
             async ct =>
@@ -236,8 +243,13 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
                 bool exists = await _innerCatalog.ServiceExistsAsync(serviceName, ct).ConfigureAwait(false);
                 return new CachedExistenceResult(exists);
             },
-            existsTtl,
+            positiveTtl,
             cancellationToken).ConfigureAwait(false);
+
+        if (result is { Exists: false })
+        {
+            await _cacheService.SetAsync(existsKey, result, negativeTtl, cancellationToken).ConfigureAwait(false);
+        }
 
         return result?.Exists ?? false;
     }

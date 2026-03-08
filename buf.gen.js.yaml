@@ -1,0 +1,13 @@
+# Buf generate template for JavaScript/Node.js clients
+version: v1
+plugins:
+  - plugin: js
+    out: .
+    opt:
+      - import_style=commonjs
+      - binary
+  - plugin: grpc-web
+    out: .
+    opt:
+      - import_style=commonjs
+      - mode=grpcwebtext

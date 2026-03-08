@@ -1,0 +1,93 @@
+name: Publish Honua.Core Package
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish'
+        required: true
+        type: string
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NUGET_SOURCE: 'https://api.nuget.org/v3/index.json'
+
+jobs:
+  build-and-publish:
+    name: Build and Publish Honua.Core
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Determine Version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Publishing version: ${VERSION}"
+
+    - name: Restore Dependencies
+      run: dotnet restore
+
+    - name: Build Honua.Core
+      run: |
+        dotnet build src/Honua.Core/Honua.Core.csproj --configuration Release --no-restore
+    
+    - name: Pack Honua.Core
+      run: |
+        dotnet pack src/Honua.Core/Honua.Core.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./packages \
+          -p:Version=${{ steps.version.outputs.version }} \
+          -p:PackageVersion=${{ steps.version.outputs.version }} \
+          -p:AssemblyVersion=${{ steps.version.outputs.version }} \
+          -p:FileVersion=${{ steps.version.outputs.version }}
+
+    - name: List Packages
+      run: ls -la ./packages/
+
+    - name: Publish to NuGet.org
+      run: |
+        for package in ./packages/*.nupkg; do
+          echo "Publishing $package"
+          dotnet nuget push "$package" \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source ${{ env.NUGET_SOURCE }} \
+            --skip-duplicate
+        done
+
+    - name: Upload Packages as Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages-${{ steps.version.outputs.version }}
+        path: ./packages/*.nupkg
+        retention-days: 30
+
+    - name: Create Release
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ./packages/*.nupkg
+        generate_release_notes: true
+        make_latest: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

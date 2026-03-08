@@ -32,8 +32,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4202,
         Level = LogLevel.Debug,
-        Message = "JWT token validated for user: {UserId}")]
-    public static partial void JwtTokenValidated(ILogger logger, string userId);
+        Message = "JWT token validated")]
+    public static partial void JwtTokenValidated(ILogger logger);
 
     /// <summary>
     /// Logs when OIDC authentication fails.
@@ -50,8 +50,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4204,
         Level = LogLevel.Debug,
-        Message = "OIDC token validated for scheme {Scheme}, user: {UserId}")]
-    public static partial void OidcTokenValidated(ILogger logger, string scheme, string userId);
+        Message = "OIDC token validated for scheme {Scheme}")]
+    public static partial void OidcTokenValidated(ILogger logger, string scheme);
 
     /// <summary>
     /// Logs when claims are transformed.
@@ -59,8 +59,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4205,
         Level = LogLevel.Debug,
-        Message = "Claims transformed: {ClaimCount} claims added for user {UserId}")]
-    public static partial void ClaimsTransformed(ILogger logger, int claimCount, string userId);
+        Message = "Claims transformed: {ClaimCount} claims added")]
+    public static partial void ClaimsTransformed(ILogger logger, int claimCount);
 
     /// <summary>
     /// Logs when token refresh is attempted.
@@ -68,8 +68,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4206,
         Level = LogLevel.Debug,
-        Message = "Token refresh initiated for user: {UserId}")]
-    public static partial void TokenRefreshInitiated(ILogger logger, string userId);
+        Message = "Token refresh initiated")]
+    public static partial void TokenRefreshInitiated(ILogger logger);
 
     /// <summary>
     /// Logs when token refresh succeeds.
@@ -77,8 +77,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4207,
         Level = LogLevel.Debug,
-        Message = "Token refresh succeeded for user: {UserId}")]
-    public static partial void TokenRefreshSucceeded(ILogger logger, string userId);
+        Message = "Token refresh succeeded")]
+    public static partial void TokenRefreshSucceeded(ILogger logger);
 
     /// <summary>
     /// Logs when token refresh fails.
@@ -86,8 +86,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4208,
         Level = LogLevel.Warning,
-        Message = "Token refresh failed for user {UserId}: {ErrorMessage}")]
-    public static partial void TokenRefreshFailed(ILogger logger, string userId, string errorMessage);
+        Message = "Token refresh failed: {ErrorMessage}")]
+    public static partial void TokenRefreshFailed(ILogger logger, string errorMessage);
 
     /// <summary>
     /// Logs when OIDC configuration is loaded.
@@ -104,8 +104,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4210,
         Level = LogLevel.Information,
-        Message = "Admin access granted to OIDC user {UserId} via role {Role}")]
-    public static partial void AdminAccessGranted(ILogger logger, string userId, string role);
+        Message = "Admin access granted via role {Role}")]
+    public static partial void AdminAccessGranted(ILogger logger, string role);
 
     /// <summary>
     /// Logs when a token replay is detected.
@@ -113,6 +113,6 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4211,
         Level = LogLevel.Warning,
-        Message = "OIDC token replay detected for user {UserId}")]
-    public static partial void TokenReplayDetected(ILogger logger, string userId);
+        Message = "OIDC token replay detected")]
+    public static partial void TokenReplayDetected(ILogger logger);
 }

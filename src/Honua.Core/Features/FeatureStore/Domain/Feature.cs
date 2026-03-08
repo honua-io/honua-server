@@ -16,6 +16,15 @@ public readonly record struct Feature
     public required long Id { get; init; }
 
     /// <summary>
+    /// Backward-compatible alias for older feature identifier naming.
+    /// </summary>
+    public long? ObjectId
+    {
+        readonly get => Id;
+        init => Id = value ?? 0;
+    }
+
+    /// <summary>
     /// Feature geometry in Well-Known Binary (WKB) format
     /// </summary>
     public required byte[]? Geometry { get; init; }

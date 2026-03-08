@@ -10,6 +10,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -20,6 +21,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
@@ -76,6 +78,7 @@ AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
+ConnectionMultiplexer? connectedRedis = null;
 
 if (useAspire)
 {
@@ -120,10 +123,10 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
 
-        var redisConnection = ConnectionMultiplexer.Connect(redisOptions);
-        builder.Services.TryAddSingleton<IConnectionMultiplexer>(redisConnection);
+        connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
+        builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
 
-        if (!redisConnection.IsConnected)
+        if (!connectedRedis.IsConnected)
         {
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             startupLogger.LogWarning(
@@ -192,6 +195,37 @@ ConfigureLimits(builder.Services, builder.Configuration);
 // Configure deployment mode options
 builder.Services.Configure<DeploymentOptions>(
     builder.Configuration.GetSection(DeploymentOptions.SectionName));
+builder.Services.AddSingleton<IValidateOptions<ControlPlaneOptions>, ControlPlaneOptionsValidator>();
+builder.Services.AddOptions<ControlPlaneOptions>()
+    .Bind(builder.Configuration.GetSection(ControlPlaneOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddHttpClient("control-plane-telemetry");
+builder.Services.AddHttpClient("control-plane-azure");
+builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
+builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
+builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
+builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
+builder.Services.AddSingleton<DeployWorkflowService>();
+builder.Services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployTelemetrySignalEvaluator>();
+builder.Services.AddSingleton<KubernetesGitOpsDeployBackend>();
+builder.Services.AddSingleton<AwsEcsGitOpsDeployBackend>();
+builder.Services.AddSingleton<AzureContainerAppsGitOpsDeployBackend>();
+builder.Services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
+builder.Services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
+if (connectedRedis != null)
+{
+    builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
+    builder.Services.AddSingleton<IOperationReconciler, DeployWorkflowReconciler>();
+    if (!isTestEnvironment)
+    {
+        builder.Services.AddHostedService<DeployWorkflowReconcilerBackgroundService>();
+    }
+}
 
 // Configure tile options
 ConfigureTileOptions(builder.Services, builder.Configuration);
@@ -210,7 +244,9 @@ builder.Services.Configure<FileUploadSecurityOptions>(
 RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
-builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.MigrationState>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
+builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDeployPreflightProbe,
+    Honua.Server.Features.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 
@@ -227,7 +263,7 @@ builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 // Configure temporary file service for image exports
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions.SectionName));
-builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
     Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
 builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.TemporaryFileCleanupService>();
 
@@ -236,10 +272,20 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
-builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
+builder.Services.AddSingleton<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(sp =>
     new Honua.Server.Features.FeatureServer.DistributedReplicaStore(
         sp.GetService<IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.FeatureServer.DistributedReplicaStore>>()));
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
+    new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
+    new Honua.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider>()));
+builder.Services.AddScoped<Honua.Server.Features.FeatureServer.IReplicaStore>(sp =>
+    new Honua.Server.Features.FeatureServer.Services.CachingReplicaStore(
+        sp.GetRequiredService<Honua.Server.Features.FeatureServer.DistributedReplicaStore>(),
+        sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 
 // Register Geoservices import job manager and background service
 builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(sp =>
@@ -252,20 +298,43 @@ builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistribut
         sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
         sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>(),
+        sp.GetRequiredService<IHostEnvironment>(),
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoservicesImportBackgroundService>();
 
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions.SectionName));
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions.SectionName));
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore, Honua.Server.Features.Infrastructure.Events.InMemoryFeatureChangeEventStore>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventQueue, Honua.Server.Features.Infrastructure.Events.FeatureChangeEventQueue>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventPublisher, Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher>();
+builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>, Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptionsValidator>();
+builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>()
+    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(sp =>
+    new Honua.Server.Features.Infrastructure.Events.InMemoryFeatureChangeEventStore(
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>>(),
+        sp.GetService<IDistributedCache>(),
+        sp.GetService<IConnectionMultiplexer>()));
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventPublisher>(sp =>
+    new Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher(
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher>>()));
 builder.Services.AddHttpClient("feature-change-webhook");
-builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>();
+builder.Services.AddHostedService(sp =>
+    new Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
+        sp.GetService<IDistributedCache>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>>()));
 
-builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOperationJobService, Honua.Server.Features.Admin.TileOperations.TileOperationJobService>();
+builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOperationJobService>(sp =>
+    new Honua.Server.Features.Admin.TileOperations.TileOperationJobService(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
+        sp.GetService<IDistributedCache>(),
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.OutputCacheInvalidationService>(),
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IOptions<Honua.Core.Features.Tiles.TileOptions>>(),
+        sp.GetRequiredService<IOptions<LimitsOptions>>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.TileOperations.TileOperationJobService>>()));
 builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileOperationBackgroundService>();
 
 // Register OData services and handlers
@@ -337,6 +406,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
@@ -345,6 +415,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
@@ -535,7 +606,10 @@ app.UseSerilogRequestLogging(options =>
         diagnosticContext.Set("Protocol", httpContext.Request.Protocol);
 
         if (httpContext.User.Identity?.IsAuthenticated == true)
-            diagnosticContext.Set("UserId", httpContext.User.FindFirst("sub")?.Value);
+        {
+            diagnosticContext.Set("AuthenticatedUser", true);
+            diagnosticContext.Set("AuthenticationType", httpContext.User.Identity.AuthenticationType ?? "unknown");
+        }
     };
 
     // Exclude health check endpoints from request logging (configured in appsettings.json)
@@ -571,9 +645,13 @@ app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();
+app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
+
+// Configure admin alerting zone/rule endpoints
+app.MapAlertAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
@@ -741,12 +819,12 @@ static void ConfigureLimits(IServiceCollection services, IConfiguration configur
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
 {
-    var migrationState = app.Services.GetRequiredService<Honua.Server.Features.HealthCheck.MigrationState>();
+    var migrationState = app.Services.GetRequiredService<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
 
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
-        migrationState.MarkSkipped();
+        migrationState.MarkSkipped("Migrations skipped by configuration.");
         return;
     }
 
@@ -761,11 +839,12 @@ async Task RunDatabaseMigrationsAsync()
             Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringMissingInProduction(app.Logger);
         }
 
-        migrationState.MarkSkipped();
+        migrationState.MarkSkipped("No database connection string configured.");
         return;
     }
 
     Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
+    migrationState.MarkRunning("Applying database migrations.");
 
     try
     {
@@ -801,13 +880,14 @@ async Task RunDatabaseMigrationsAsync()
             {
                 Honua.Server.Features.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script);
             }
+
+            migrationState.MarkSucceeded($"Applied {scriptCount} migration script(s).");
         }
         else
         {
             Honua.Server.Features.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
+            migrationState.MarkSucceeded("No pending migration scripts.");
         }
-
-        migrationState.MarkSucceeded();
     }
     catch (Exception ex)
     {
@@ -907,11 +987,8 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
 
     services.AddSingleton<IResponseCache>(sp =>
     {
-        var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
-        var innerCache = new MemoryResponseCache(
-            sp.GetRequiredService<IMemoryCache>(),
-            sp.GetRequiredService<ILogger<MemoryResponseCache>>(),
-            cacheOptions.ResponseCacheMaxEntries);
+        var innerCache = new CacheServiceResponseCache(
+            sp.GetRequiredService<ICacheService>());
         return new MonitoredResponseCacheDecorator(
             innerCache,
             sp.GetRequiredService<IPerformanceMonitor>(),

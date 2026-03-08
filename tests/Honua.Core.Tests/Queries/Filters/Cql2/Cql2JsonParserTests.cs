@@ -81,6 +81,36 @@ public class Cql2JsonParserTests
     }
 
     [Fact]
+    public void Parse_SpatialPredicate_WithMalformedExplicitGeometryCrs_ThrowsArgumentException()
+    {
+        // Arrange
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"type":"Point","coordinates":[1,2],"crs":{"type":"name","properties":{"name":"prefixhttp://www.opengis.net/def/crs/EPSG/0/4326"}}}]}""";
+
+        // Act
+        var act = () => _parser.Parse(json);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Invalid geometry CRS identifier*");
+    }
+
+    [Fact]
+    public void Parse_BboxLiteral_WithMalformedExplicitGeometryCrs_ThrowsArgumentException()
+    {
+        // Arrange
+        const string json =
+            """{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[-10,-10,10,10],"crs":"bad-CRS84"}]}""";
+
+        // Act
+        var act = () => _parser.Parse(json);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Invalid geometry CRS identifier*");
+    }
+
+    [Fact]
     public void Parse_SpatialDWithin_ReturnsSpatialDistancePredicate()
     {
         // Arrange

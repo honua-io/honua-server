@@ -138,6 +138,59 @@ internal static partial class FeatureServerEndpoints
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+        public static readonly FrozenSet<string> GetEstimates =
+            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryTopFeatures = new[]
+            {
+                "topFilter",
+                "where",
+                "outFields",
+                "orderByFields",
+                "geometry",
+                "inSR",
+                "outSR",
+                "geometryType",
+                "spatialRel",
+                "returnGeometry",
+                "returnZ",
+                "returnM",
+                "resultOffset",
+                "resultRecordCount",
+                "time",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryDateBins = new[]
+            {
+                "binField",
+                "bin",
+                "where",
+                "outStatistics",
+                "geometry",
+                "inSR",
+                "geometryType",
+                "spatialRel",
+                "time",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryBins = new[]
+            {
+                "bin",
+                "where",
+                "outStatistics",
+                "geometry",
+                "inSR",
+                "geometryType",
+                "spatialRel",
+                "time",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
         public static readonly FrozenSet<string> Tiles =
             new[] { "where" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
@@ -150,7 +203,7 @@ internal static partial class FeatureServerEndpoints
     private static class SupportedFormats
     {
         public static readonly FrozenSet<string> Query =
-            new[] { "json", "pjson", "geojson", "pbf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "json", "pjson", "geojson", "pbf", "fgb" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -508,6 +561,71 @@ internal static partial class FeatureServerEndpoints
                 Description = relationship.Description
             })
         ];
+    }
+
+    internal static string ResolveRequestedQueryFormat(QueryParameters queryParams, StringValues acceptHeader)
+    {
+        if (queryParams.FormatSpecified)
+        {
+            return queryParams.F;
+        }
+
+        return TryResolveQueryFormatFromAcceptHeader(acceptHeader, out var format)
+            ? format
+            : queryParams.F;
+    }
+
+    private static bool TryResolveQueryFormatFromAcceptHeader(StringValues acceptHeader, out string format)
+    {
+        format = "json";
+        if (StringValues.IsNullOrEmpty(acceptHeader))
+        {
+            return false;
+        }
+
+        foreach (var rawHeader in acceptHeader)
+        {
+            if (string.IsNullOrWhiteSpace(rawHeader))
+            {
+                continue;
+            }
+
+            foreach (var mediaTypeEntry in rawHeader.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var mediaType = mediaTypeEntry.Split(';', 2, StringSplitOptions.TrimEntries)[0];
+
+                if (mediaType.Equals("application/vnd.flatgeobuf", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("application/x-flatgeobuf", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("application/flatgeobuf", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "fgb";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/x-protobuf", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("application/vnd.google.protobuf", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "pbf";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/geo+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "geojson";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("text/json", StringComparison.OrdinalIgnoreCase) ||
+                    mediaType.Equals("*/*", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "json";
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     internal static bool TryValidateOutputFormat(

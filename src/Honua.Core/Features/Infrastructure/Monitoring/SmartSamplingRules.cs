@@ -162,7 +162,7 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
         }
     }
 
-    private bool IsCriticalOperation(SamplingContext context)
+    private static bool IsCriticalOperation(SamplingContext context)
     {
         var operationName = context.OperationName?.ToLowerInvariant() ?? string.Empty;
 

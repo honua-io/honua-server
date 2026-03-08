@@ -22,6 +22,22 @@ internal interface IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>
+    /// Builds a SELECT query for object IDs only.
+    /// </summary>
+    ParameterizedQuery BuildObjectIdsQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a provider-native FlatGeobuf query.
+    /// </summary>
+    ParameterizedQuery BuildSelectFlatGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
     /// Builds a SELECT query for GML features
     /// </summary>
     ParameterizedQuery BuildSelectGmlQuery(
@@ -75,6 +91,32 @@ internal interface IFeatureQueryBuilder
     ParameterizedQuery BuildStatisticsQuery(
         int layerId,
         FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a top features query using window functions for partitioning and ranking
+    /// </summary>
+    ParameterizedQuery BuildTopFeaturesQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a date binning query that groups features into temporal intervals
+    /// </summary>
+    ParameterizedQuery BuildDateBinsQuery(
+        int layerId,
+        FeatureQuery query,
+        DateBinDefinition dateBin,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a numeric/classification binning query
+    /// </summary>
+    ParameterizedQuery BuildBinsQuery(
+        int layerId,
+        FeatureQuery query,
+        BinDefinition binDefinition,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>

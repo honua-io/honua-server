@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -15,6 +16,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
@@ -32,6 +34,7 @@ internal interface ITileOperationJobService
 
 internal sealed partial class TileOperationJobService(
     IUniversalProgressStore progressStore,
+    IDistributedCache? requestCache,
     OutputCacheInvalidationService cacheInvalidationService,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<TileOptions> tileOptions,
@@ -39,6 +42,7 @@ internal sealed partial class TileOperationJobService(
     ILogger<TileOperationJobService> logger) : ITileOperationJobService
 {
     private readonly IUniversalProgressStore _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
+    private readonly IDistributedCache? _requestCache = requestCache;
     private readonly OutputCacheInvalidationService _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
     private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory ?? throw new ArgumentNullException(nameof(serviceScopeFactory));
     private readonly TileOptions _tileOptions = tileOptions?.Value ?? throw new ArgumentNullException(nameof(tileOptions));
@@ -47,6 +51,7 @@ internal sealed partial class TileOperationJobService(
 
     private const int JobRequestRetentionHours = 24;
     private static readonly TimeSpan _jobRequestRetention = TimeSpan.FromHours(JobRequestRetentionHours);
+    private const string RequestCacheKeyPrefix = "tile:request:";
 
     private readonly ConcurrentDictionary<string, CachedTileOperationRequest> _jobRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _runningTokens = new(StringComparer.Ordinal);
@@ -65,6 +70,7 @@ internal sealed partial class TileOperationJobService(
         var normalized = NormalizeRequest(request);
         var jobId = Guid.NewGuid().ToString("N");
         _jobRequests[jobId] = CreateCachedRequest(normalized);
+        await PersistJobRequestAsync(jobId, normalized, cancellationToken).ConfigureAwait(false);
 
         var progress = TileOperationProgress.CreateInitial(
             jobId,
@@ -136,7 +142,8 @@ internal sealed partial class TileOperationJobService(
 
     public async Task<string?> RetryAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        if (!TryGetActiveJobRequest(jobId, out var originalRequest))
+        var originalRequest = await TryGetActiveJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (originalRequest == null)
         {
             return null;
         }
@@ -152,14 +159,24 @@ internal sealed partial class TileOperationJobService(
         return await StartAsync(originalRequest, cancellationToken).ConfigureAwait(false);
     }
 
-    public IAsyncEnumerable<string> ReadQueuedJobIdsAsync(CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<string> ReadQueuedJobIdsAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        return _jobQueue.Reader.ReadAllAsync(cancellationToken);
+        var recoveredJobIds = await RecoverQueuedJobIdsAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var jobId in recoveredJobIds)
+        {
+            yield return jobId;
+        }
+
+        await foreach (var jobId in _jobQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return jobId;
+        }
     }
 
     public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        if (!TryGetActiveJobRequest(jobId, out var request))
+        var request = await TryGetActiveJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (request == null)
         {
             return;
         }
@@ -248,10 +265,12 @@ internal sealed partial class TileOperationJobService(
         if (finalProgress.Status == OperationStatus.Completed)
         {
             _jobRequests.TryRemove(jobId, out _);
+            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             RefreshJobRequestRetention(jobId);
+            await PersistJobRequestAsync(jobId, request, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -390,7 +409,7 @@ internal sealed partial class TileOperationJobService(
         };
     }
 
-    private async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
+    private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
         TileOperationStartRequest request,
         ILayerCatalog layerCatalog,
         CancellationToken cancellationToken)
@@ -492,33 +511,49 @@ internal sealed partial class TileOperationJobService(
         return new CachedTileOperationRequest(request, DateTimeOffset.UtcNow.Add(_jobRequestRetention));
     }
 
-    private bool TryGetActiveJobRequest(string jobId, out TileOperationStartRequest request)
+    private async Task<TileOperationStartRequest?> TryGetActiveJobRequestAsync(string jobId, CancellationToken cancellationToken)
     {
-        if (!_jobRequests.TryGetValue(jobId, out var cachedRequest))
+        if (_jobRequests.TryGetValue(jobId, out var cachedRequest))
         {
-            request = null!;
-            return false;
-        }
+            if (cachedRequest.ExpiresAtUtc > DateTimeOffset.UtcNow)
+            {
+                return cachedRequest.Request;
+            }
 
-        if (cachedRequest.ExpiresAtUtc <= DateTimeOffset.UtcNow)
-        {
             _jobRequests.TryRemove(jobId, out _);
-            request = null!;
-            return false;
         }
 
-        request = cachedRequest.Request;
-        return true;
+        if (_requestCache == null)
+        {
+            return null;
+        }
+
+        var json = await _requestCache.GetStringAsync(GetRequestCacheKey(jobId), cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        var request = JsonSerializer.Deserialize<TileOperationStartRequest>(json);
+        if (request == null)
+        {
+            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        _jobRequests[jobId] = CreateCachedRequest(request);
+        return request;
     }
 
     private void RefreshJobRequestRetention(string jobId)
     {
-        if (!TryGetActiveJobRequest(jobId, out var request))
+        if (!_jobRequests.TryGetValue(jobId, out var cachedRequest) ||
+            cachedRequest.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
             return;
         }
 
-        _jobRequests[jobId] = CreateCachedRequest(request);
+        _jobRequests[jobId] = CreateCachedRequest(cachedRequest.Request);
     }
 
     private void PruneExpiredJobRequests()
@@ -532,6 +567,72 @@ internal sealed partial class TileOperationJobService(
             }
         }
     }
+
+    private async Task PersistJobRequestAsync(string jobId, TileOperationStartRequest request, CancellationToken cancellationToken)
+    {
+        if (_requestCache == null)
+        {
+            return;
+        }
+
+        var json = JsonSerializer.Serialize(request);
+        await _requestCache.SetStringAsync(
+                GetRequestCacheKey(jobId),
+                json,
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = _jobRequestRetention },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task RemovePersistedJobRequestAsync(string jobId, CancellationToken cancellationToken)
+    {
+        if (_requestCache == null)
+        {
+            return;
+        }
+
+        await _requestCache.RemoveAsync(GetRequestCacheKey(jobId), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<string>> RecoverQueuedJobIdsAsync(CancellationToken cancellationToken)
+    {
+        var activeOperationIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
+        var recovered = new List<string>(activeOperationIds.Count);
+
+        foreach (var jobId in activeOperationIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var progress = await _progressStore.GetProgressAsync<TileOperationProgress>(jobId, cancellationToken).ConfigureAwait(false);
+            if (progress == null ||
+                progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))
+            {
+                continue;
+            }
+
+            var request = await TryGetActiveJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (request == null)
+            {
+                continue;
+            }
+
+            if (progress.Status == OperationStatus.Processing)
+            {
+                progress = progress with
+                {
+                    Status = OperationStatus.Queued,
+                    CurrentPhase = "Recovered after worker restart"
+                };
+                await _progressStore.SetProgressAsync(jobId, progress, _jobRequestRetention, cancellationToken).ConfigureAwait(false);
+            }
+
+            recovered.Add(jobId);
+        }
+
+        return recovered;
+    }
+
+    private static string GetRequestCacheKey(string jobId) => $"{RequestCacheKeyPrefix}{jobId}";
 
     private readonly record struct TileCoordinate(int Z, int X, int Y);
     private readonly record struct CachedTileOperationRequest(TileOperationStartRequest Request, DateTimeOffset ExpiresAtUtc);

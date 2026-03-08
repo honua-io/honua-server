@@ -27,6 +27,21 @@ indent_size = 2
 ###############################
 file_header_template = Copyright (c) Honua. All rights reserved.\nLicensed under the Elastic License 2.0. See LICENSE in the project root.
 
+[src/Honua.Core/Models/*.cs]
+file_header_template = Copyright (c) 2026 Honua Project Contributors\nLicensed under the Apache License, Version 2.0 (the "License");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an "AS IS" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.
+
+[src/Honua.Core/Transport/**/*.cs]
+file_header_template = Copyright (c) 2026 Honua Project Contributors\nLicensed under the Apache License, Version 2.0 (the "License");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an "AS IS" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.
+
+[tests/Honua.Core.Tests/*.cs]
+file_header_template = Copyright (c) 2026 Honua Project Contributors\nLicensed under the Apache License, Version 2.0 (the "License");\nyou may not use this file except in compliance with the License.\nYou may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software\ndistributed under the License is distributed on an "AS IS" BASIS,\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\nSee the License for the specific language governing permissions and\nlimitations under the License.
+
+[tests/Honua.Core.Tests/AssemblyInfo.cs]
+file_header_template = unset
+
+[tests/Honua.Core.Tests/GlobalUsings.cs]
+file_header_template = unset
+
 ###############################
 # .NET Coding Conventions     #
 ###############################

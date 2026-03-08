@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.IO.Compression;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.MapServer.Models;
@@ -41,6 +43,14 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         service.Tables.Should().NotBeNull();
         service.Units.Should().NotBeNullOrWhiteSpace();
         service.Capabilities.Should().Contain("Map");
+        service.Capabilities.Should().Contain("Query");
+        service.Capabilities.Should().Contain("Data");
+        service.CopyrightText.Should().NotBeNull();
+        service.SupportedImageFormatTypes.Should().NotBeNullOrWhiteSpace();
+        service.DocumentInfo.Should().NotBeNull();
+        service.DocumentInfo!.Title.Should().NotBeNull();
+        service.MinScale.Should().NotBeNull();
+        service.MaxScale.Should().NotBeNull();
         service.MaxImageWidth.Should().BeGreaterThan(0);
         service.MaxImageHeight.Should().BeGreaterThan(0);
         service.TileInfo.Should().NotBeNull();
@@ -82,6 +92,12 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         layer.ObjectIdField.Should().NotBeNullOrWhiteSpace();
         layer.Fields.Should().NotBeNullOrEmpty();
         layer.Capabilities.Should().NotBeNullOrWhiteSpace();
+        layer.Capabilities.Should().Contain("Map");
+        layer.Capabilities.Should().Contain("Query");
+        layer.Capabilities.Should().Contain("Data");
+        layer.MinScale.Should().NotBeNull();
+        layer.MaxScale.Should().NotBeNull();
+        layer.Extent.Should().NotBeNull();
     }
 
     [IntegrationTest]
@@ -130,6 +146,57 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         export.Extent.Should().NotBeNull();
         export.Href.Should().NotBeNullOrWhiteSpace();
         export.Scale.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
+    public async Task MapServer_GenerateKml_ReturnsValidKml_ForPointLineAndPolygonLayers()
+    {
+        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
+
+        var response = await _fixture.Client.GetAsync($"/rest/services/{serviceName}/MapServer/generateKml?f=kml");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.google-earth.kml+xml");
+
+        var document = XDocument.Parse(content);
+        XNamespace kml = "http://www.opengis.net/kml/2.2";
+
+        document.Root.Should().NotBeNull();
+        document.Descendants(kml + "Point").Should().NotBeEmpty();
+        document.Descendants(kml + "LineString").Should().NotBeEmpty();
+        document.Descendants(kml + "Polygon").Should().NotBeEmpty();
+        document.Descendants(kml + "Placemark").Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
+    public async Task MapServer_GenerateKml_WithKmzFormat_ReturnsCompressedArchive()
+    {
+        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
+
+        var response = await _fixture.Client.GetAsync($"/rest/services/{serviceName}/MapServer/generateKml?f=kmz&layers=110");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.google-earth.kmz");
+        bytes.Length.Should().BeGreaterThan(0);
+
+        using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        var kmlEntry = archive.GetEntry("doc.kml");
+        kmlEntry.Should().NotBeNull();
+
+        using var kmlStream = kmlEntry!.Open();
+        using var reader = new StreamReader(kmlStream);
+        var kmlContent = await reader.ReadToEndAsync();
+
+        var document = XDocument.Parse(kmlContent);
+        XNamespace kml = "http://www.opengis.net/kml/2.2";
+        document.Descendants(kml + "Point").Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -764,5 +831,81 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId},foo&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private async Task<string> SeedGenerateKmlGeometryServiceAsync()
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Test schema not initialized.");
+        var serviceName = $"kml_{Guid.NewGuid().ToString("N")[..8]}";
+
+        var sql = $$"""
+            INSERT INTO honua.services (
+                service_name,
+                description,
+                srid,
+                supported_formats,
+                capabilities,
+                service_extent
+            )
+            VALUES (
+                '{{serviceName}}',
+                'MapServer generateKml geometry test service',
+                4326,
+                ARRAY['JSON', 'GeoJSON'],
+                ARRAY['Query', 'Extract'],
+                ST_MakeEnvelope(-180, -90, 180, 90, 4326)
+            );
+
+            INSERT INTO honua.layers (
+                layer_id,
+                layer_name,
+                description,
+                table_schema,
+                table_name,
+                geometry_type,
+                srid,
+                extent,
+                default_visibility
+            )
+            VALUES
+                (110, 'KML Point Layer', 'Point geometry test layer', current_schema(), 'features', 'Point', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
+                (111, 'KML Line Layer', 'Line geometry test layer', current_schema(), 'features', 'LineString', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
+                (112, 'KML Polygon Layer', 'Polygon geometry test layer', current_schema(), 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true);
+
+            INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+            VALUES
+                ('{{serviceName}}', 110, 0),
+                ('{{serviceName}}', 111, 1),
+                ('{{serviceName}}', 112, 2);
+
+            INSERT INTO honua.layer_fields (
+                layer_id,
+                field_name,
+                field_type,
+                field_order,
+                max_length,
+                nullable,
+                description
+            )
+            VALUES
+                (110, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+                (110, 'name', 'String', 1, 255, true, 'Name'),
+                (110, 'shape', 'Geometry', 2, null, true, 'Geometry'),
+                (111, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+                (111, 'name', 'String', 1, 255, true, 'Name'),
+                (111, 'shape', 'Geometry', 2, null, true, 'Geometry'),
+                (112, 'objectid', 'Integer', 0, null, false, 'Object ID'),
+                (112, 'name', 'String', 1, 255, true, 'Name'),
+                (112, 'shape', 'Geometry', 2, null, true, 'Geometry');
+
+            INSERT INTO features (objectid, layer_id, geometry, attributes)
+            VALUES
+                (90110, 110, ST_SetSRID(ST_MakePoint(-157.80, 21.30), 4326), jsonb_build_object('objectid', 90110, 'name', 'KML Point Feature')),
+                (90111, 111, ST_GeomFromText('LINESTRING(-157.9 21.2,-157.7 21.4,-157.5 21.3)', 4326), jsonb_build_object('objectid', 90111, 'name', 'KML Line Feature')),
+                (90112, 112, ST_GeomFromText('POLYGON((-157.9 21.2,-157.7 21.2,-157.7 21.4,-157.9 21.4,-157.9 21.2))', 4326), jsonb_build_object('objectid', 90112, 'name', 'KML Polygon Feature'));
+            """;
+
+        await _fixture.Postgres.ExecuteAsync(sql, schema);
+        return serviceName;
     }
 }

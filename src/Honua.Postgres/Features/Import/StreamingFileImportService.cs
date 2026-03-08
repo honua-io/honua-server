@@ -1050,9 +1050,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
     }
 
-    private async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
+    private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var detected = await _geoJsonReader.DetectCrsAsync(stream, cancellationToken);
+        var detected = await StreamingGeoJsonReader.DetectCrsAsync(stream, cancellationToken);
         return detected ?? 4326;
     }
 
@@ -1074,7 +1074,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return buffer;
     }
 
-    private async Task<int?> DetectCrsFromHeaderAsync(
+    private static async Task<int?> DetectCrsFromHeaderAsync(
         byte[] header,
         SupportedFileFormat format,
         CancellationToken cancellationToken)
@@ -1092,7 +1092,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         };
     }
 
-    private async Task<int?> DetectWktSridAsync(Stream stream, CancellationToken cancellationToken)
+    private static async Task<int?> DetectWktSridAsync(Stream stream, CancellationToken cancellationToken)
     {
         var buffer = new byte[CrsDetectionHeaderSize];
         var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
@@ -1766,7 +1766,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Stream Shapefile features from extracted components on disk.
     /// </summary>
-    private async IAsyncEnumerable<IFeature> ReadShapefileStreamingAsync(
+    private static async IAsyncEnumerable<IFeature> ReadShapefileStreamingAsync(
         string shapefilePath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -1830,7 +1830,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
     }
 
-    private async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
+    private static async IAsyncEnumerable<IFeature> ReadGeoPackageStreamingAsync(
         string filePath,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -1847,7 +1847,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
     }
 
-    private async IAsyncEnumerable<IFeature> ReadGeoPackageLayerAsync(
+    private static async IAsyncEnumerable<IFeature> ReadGeoPackageLayerAsync(
         string filePath,
         GeoPackageLayerInfo layer,
         [EnumeratorCancellation] CancellationToken cancellationToken)

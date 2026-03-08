@@ -13,7 +13,7 @@ using Honua.TestKit.Constants;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using DomainGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
-using Proto = Honua.Server.Features.Grpc.Proto;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Grpc;
 
@@ -171,6 +171,106 @@ public sealed class GrpcConversionHelpersTests
         query.OutStatistics.Value[0].OutStatisticFieldName.Should().Be("total_pop");
         query.GroupByFields.Should().NotBeNull();
         query.GroupByFields!.Value.Should().ContainSingle().Which.Should().Be("state");
+    }
+
+    // ── ApplyEdits conversion ───────────────────────────────────
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public void ToFeatureEditBatch_WithAddsUpdatesAndDeletes_MapsDomainBatch()
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            RollbackOnFailure = true
+        };
+
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes =
+            {
+                ["name"] = new Proto.AttributeValue { StringValue = "created" }
+            },
+            Geometry = new Proto.Geometry
+            {
+                Point = new Proto.PointGeometry { X = -157.86, Y = 21.31 }
+            }
+        });
+
+        request.Updates.Add(new Proto.Feature
+        {
+            Attributes =
+            {
+                ["objectId"] = new Proto.AttributeValue { Int64Value = 42 },
+                ["name"] = new Proto.AttributeValue { StringValue = "updated" }
+            }
+        });
+
+        request.Deletes.Add(99);
+
+        var batch = GrpcConversionHelpers.ToFeatureEditBatch(request);
+
+        batch.RollbackOnFailure.Should().BeTrue();
+        batch.Creates.Should().ContainSingle();
+        batch.Updates.Should().ContainSingle();
+        batch.Deletes.Should().BeEquivalentTo(new long[] { 99 });
+        batch.Creates[0].Attributes["name"].Should().Be("created");
+        batch.Creates[0].Geometry.Should().NotBeNullOrEmpty();
+        batch.Updates[0].Id.Should().Be(42);
+        batch.Updates[0].Attributes["name"].Should().Be("updated");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public void ToFeatureEditBatch_UpdateWithoutIdOrObjectId_ThrowsArgumentException()
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Updates.Add(new Proto.Feature
+        {
+            Attributes =
+            {
+                ["name"] = new Proto.AttributeValue { StringValue = "missing id" }
+            }
+        });
+
+        var act = () => GrpcConversionHelpers.ToFeatureEditBatch(request);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*positive id*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public void ToProtoApplyEditsResponse_MapsOperationResultsAndRollbackError()
+    {
+        var result = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 0,
+            deletedCount: 1,
+            createResults: ImmutableArray.Create(EditOperationResult.Success(101)),
+            updateResults: ImmutableArray.Create(EditOperationResult.Failure("update failed", 1005, 55)),
+            deleteResults: ImmutableArray.Create(EditOperationResult.Success(77)),
+            wasRolledBack: true);
+
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+
+        response.AddResults.Should().ContainSingle();
+        response.UpdateResults.Should().ContainSingle();
+        response.DeleteResults.Should().ContainSingle();
+        response.AddResults[0].Success.Should().BeTrue();
+        response.AddResults[0].ObjectId.Should().Be(101);
+        response.UpdateResults[0].Success.Should().BeFalse();
+        response.UpdateResults[0].Error.Code.Should().Be(1005);
+        response.UpdateResults[0].Error.Message.Should().Be("update failed");
+        response.Error.Should().NotBeNull();
+        response.Error.Code.Should().Be(1000);
+        response.Error.Message.Should().Be("Operation rolled back.");
     }
 
     // ── ToProtoFeature ──────────────────────────────────────────
@@ -377,7 +477,7 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
-    public void ToProtoFeature_WithGeometryCollection_Throws()
+    public void ToProtoFeature_WithMixedGeometryCollection_OmitsGeometryInsteadOfThrowing()
     {
         var factory = new GeometryFactory();
         var point = factory.CreatePoint(new Coordinate(1, 2));
@@ -386,10 +486,25 @@ public sealed class GrpcConversionHelpersTests
         var wkb = _wkbWriter.Write(collection);
         var feature = Feature.Create(1, wkb);
 
-        var act = () => GrpcConversionHelpers.ToProtoFeature(feature);
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature);
+        proto.Geometry.Should().BeNull();
+    }
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*GeometryCollection*not representable*");
+    [UnitTest]
+    public void ToProtoFeature_WithPointGeometryCollection_ProjectsToMultiPoint()
+    {
+        var factory = new GeometryFactory();
+        var p1 = factory.CreatePoint(new Coordinate(1, 2));
+        var p2 = factory.CreatePoint(new Coordinate(3, 4));
+        var collection = factory.CreateGeometryCollection(new Geometry[] { p1, p2 });
+        var wkb = _wkbWriter.Write(collection);
+        var feature = Feature.Create(1, wkb);
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature);
+
+        proto.Geometry.Should().NotBeNull();
+        proto.Geometry.MultiPoint.Should().NotBeNull();
+        proto.Geometry.MultiPoint.Points.Should().HaveCount(2);
     }
 
     [UnitTest]
@@ -527,6 +642,30 @@ public sealed class GrpcConversionHelpersTests
         query.SpatialFilter!.Value.SpatialRelationship.Should().Be(SpatialRelationship.Within);
         query.SpatialFilter.Value.Srid.Should().Be(4326);
         query.SpatialFilter.Value.Geometry.Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithSpatialFilterLatestWkid_UsesLatestWkidAsFallbackSrid()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            SpatialFilter = new Proto.SpatialFilter
+            {
+                Geometry = new Proto.Geometry
+                {
+                    Point = new Proto.PointGeometry { X = 10, Y = 20 }
+                },
+                SpatialRelationship = Proto.SpatialRelationship.Within,
+                SpatialReference = new Proto.SpatialReference { LatestWkid = 4326 }
+            }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.SpatialFilter.Should().NotBeNull();
+        query.SpatialFilter!.Value.Srid.Should().Be(4326);
     }
 
     [UnitTest]

@@ -45,6 +45,8 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
 > Use the [Server Management API guide](../user/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
+>
+> **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
 
 **What you can do**:
 - Manage database connections (create, test, list)
@@ -53,6 +55,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Manage map styles and layer styling
 - Monitor system health and observability
 - Access recent errors and telemetry status
+- Inspect deploy preflight and upgrade-readiness state per Honua instance
 
 {% swagger src="admin-api.json" %}
 {% endswagger %}

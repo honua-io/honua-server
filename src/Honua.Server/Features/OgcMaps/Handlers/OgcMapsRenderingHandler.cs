@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
@@ -581,8 +582,8 @@ internal sealed class OgcMapsRenderingHandler
                 return (null, $"Unsupported CRS: '{request.Crs}'. Use EPSG codes or OGC URI format.");
             }
 
-            var requestedBboxCrs = SpatialReferenceHelpers.TryParseSrid(request.BboxCrs);
-            if (!string.IsNullOrEmpty(request.BboxCrs) && requestedBboxCrs == null)
+            var hasRequestedBboxCrs = SpatialReferenceHelpers.TryParseCrsDefinition(request.BboxCrs, out var requestedBboxCrsDefinition);
+            if (!string.IsNullOrEmpty(request.BboxCrs) && !hasRequestedBboxCrs)
             {
                 OgcMapsLog.UnsupportedCrs(_logger, request.BboxCrs);
                 return (null, $"Unsupported bbox-crs: '{request.BboxCrs}'. Use EPSG codes or OGC URI format.");
@@ -593,12 +594,29 @@ internal sealed class OgcMapsRenderingHandler
             int? bboxCrs;
             if (!string.IsNullOrEmpty(request.Bbox))
             {
-                if (!RasterParsingHelpers.TryParseBoundingBox(request.Bbox, out var minX, out var minY, out var maxX, out var maxY))
+                var bboxAxisOrder = hasRequestedBboxCrs
+                    ? requestedBboxCrsDefinition.AxisOrder
+                    : AxisOrder.EastNorth;
+                var bboxIsGeographic = hasRequestedBboxCrs
+                    ? requestedBboxCrsDefinition.IsGeographic
+                    : true;
+
+                if (!RasterParsingHelpers.TryParseBoundingBox(
+                        request.Bbox,
+                        bboxAxisOrder,
+                        bboxIsGeographic,
+                        out var minX,
+                        out var minY,
+                        out var maxX,
+                        out var maxY))
                 {
-                    return (null, "Invalid bbox format. Expected: minX,minY,maxX,maxY with decimal values.");
+                    return (null, "Invalid bbox format or coordinate values. Expected minX,minY,maxX,maxY values consistent with bbox-crs.");
                 }
+
                 bbox = [minX, minY, maxX, maxY];
-                bboxCrs = requestedBboxCrs ?? DefaultBboxCrsSrid;
+                bboxCrs = hasRequestedBboxCrs
+                    ? requestedBboxCrsDefinition.Srid
+                    : DefaultBboxCrsSrid;
             }
             else
             {

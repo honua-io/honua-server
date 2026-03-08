@@ -4,6 +4,15 @@ The Server Management API powers the Honua Admin UI and supports headless automa
 
 **Scope**: High-level usage and minimal examples. For endpoint discovery and config metadata, use `/api/v1/admin/config`.
 
+## **GitOps Direction**
+
+The Honua Admin UI is intended to operate as a UI on top of this control-plane API.
+
+- This API is the foundation for a Honua-managed GitOps controller.
+- Honua is not positioning Flux or Argo CD as its primary control plane.
+- Helm and Terraform remain infrastructure and packaging surfaces around the platform.
+- Deploy coordination, upgrade readiness, and change-management workflows are expected to be expressed through the Honua control plane.
+
 ## **When to Use the Management API**
 
 | Scenario | Example Use Case | Benefits |
@@ -38,6 +47,7 @@ The Server Management API powers the Honua Admin UI and supports headless automa
 |-- services/                 # Service-level protocol and MapServer settings
 |-- metadata/resources/       # Metadata resources
 |-- metadata/layers/{id}/style
+|-- deploy/                   # Instance-local deploy preflight and rollout primitives
 |-- import/                   # Import workflows
 |-- operations/               # Long-running operations
 |-- performance/database/     # Query cache statistics
@@ -232,6 +242,7 @@ Content-Type: application/json
 | `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
+| `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
 | `/api/v1/admin/metadata/resources` | GET | List metadata resources |
 | `/api/v1/admin/metadata/resources` | POST | Create metadata resource |
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | GET | Get metadata resource |

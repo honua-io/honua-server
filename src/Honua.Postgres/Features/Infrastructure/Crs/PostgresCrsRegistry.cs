@@ -135,7 +135,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         return now - entry.CreatedAt > _cacheRetention;
     }
 
-    private void CleanupCacheIfNeeded(DateTimeOffset now)
+    private static void CleanupCacheIfNeeded(DateTimeOffset now)
     {
         RemoveExpiredEntries(_sridCache, now);
         RemoveExpiredEntries(_identifierCache, now);

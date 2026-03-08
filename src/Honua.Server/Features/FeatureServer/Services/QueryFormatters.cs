@@ -97,7 +97,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as GeoServices JSON
     /// </summary>
-    private (object response, string contentType) FormatAsGeoServicesJson(
+    private static (object response, string contentType) FormatAsGeoServicesJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
@@ -145,7 +145,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats result as GeoJSON
     /// </summary>
-    private (object response, string contentType) FormatAsGeoJson(
+    private static (object response, string contentType) FormatAsGeoJson(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
@@ -178,7 +178,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Converts a Feature to GeoServices feature format
     /// </summary>
-    private GeoServicesFeature ConvertToGeoServicesFeature(
+    private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
         bool returnGeometry,
         string[]? outFields,
@@ -207,7 +207,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Converts a Feature to GeoJSON feature format
     /// </summary>
-    private GeoJsonFeature ConvertToGeoJsonFeature(
+    private static GeoJsonFeature ConvertToGeoJsonFeature(
         Feature feature,
         bool returnGeometry,
         string[]? outFields,
@@ -784,7 +784,7 @@ internal sealed class StreamingQueryFormatter
     /// <summary>
     /// Writes a single feature in GeoServices format
     /// </summary>
-    private async Task WriteGeoServicesFeatureAsync(
+    private static async Task WriteGeoServicesFeatureAsync(
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
@@ -856,7 +856,7 @@ internal sealed class StreamingQueryFormatter
     /// <summary>
     /// Writes a single feature in GeoJSON format
     /// </summary>
-    private async Task WriteGeoJsonFeatureAsync(
+    private static async Task WriteGeoJsonFeatureAsync(
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,

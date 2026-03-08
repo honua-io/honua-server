@@ -108,6 +108,18 @@ tolerations: []
 
 affinity: {}
 
+minReadySeconds: 10
+
+deploymentStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
 config:
   create: true
   name: ""

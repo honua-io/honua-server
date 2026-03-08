@@ -207,6 +207,36 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Theory]
+    [Trait("Category", "Integration")]
+    [Endpoint("POST /api/v1/admin/connections")]
+    [InlineData("Allow")]
+    [InlineData("Prefer")]
+    public async Task CreateConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
+    {
+        var request = new CreateSecureConnectionRequest
+        {
+            Name = $"test-invalid-ssl-{Guid.NewGuid():N}",
+            Host = "localhost",
+            Port = 5432,
+            DatabaseName = "testdb",
+            Username = "testuser",
+            Password = "testpassword123",
+            SslRequired = true,
+            SslMode = sslMode
+        };
+
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/api/v1/admin/connections", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var responseJson = await response.Content.ReadAsStringAsync();
+        Assert.Contains("SSL mode must require encrypted transport when SSL is required", responseJson, StringComparison.Ordinal);
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/connections/{id}")]
     public async Task GetConnection_ExistingConnection_ReturnsDetail()
@@ -369,6 +399,36 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         {
             await localFixture.DisposeAsync();
         }
+    }
+
+    [Theory]
+    [Trait("Category", "Integration")]
+    [Endpoint("POST /api/v1/admin/connections/test")]
+    [InlineData("Allow")]
+    [InlineData("Prefer")]
+    public async Task TestDraftConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
+    {
+        var request = new CreateSecureConnectionRequest
+        {
+            Name = $"draft-invalid-ssl-{Guid.NewGuid():N}",
+            Host = "localhost",
+            Port = 5432,
+            DatabaseName = "testdb",
+            Username = "testuser",
+            Password = "testpassword123",
+            SslRequired = true,
+            SslMode = sslMode
+        };
+
+        var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _client.PostAsync("/api/v1/admin/connections/test", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var responseJson = await response.Content.ReadAsStringAsync();
+        Assert.Contains("SSL mode must require encrypted transport when SSL is required", responseJson, StringComparison.Ordinal);
     }
 
     [IntegrationTest]
@@ -557,6 +617,42 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         Assert.NotNull(apiResponse.Data);
         Assert.Equal("Updated description", apiResponse.Data.Description);
         Assert.False(apiResponse.Data.IsActive);
+    }
+
+    [Theory]
+    [Trait("Category", "Integration")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}")]
+    [InlineData("Allow")]
+    [InlineData("Prefer")]
+    public async Task UpdateConnection_SslRequiredRejectsFallbackSslModes(string sslMode)
+    {
+        var connection = DataConnection.CreateWithEncryptedCredentials(
+            name: $"test-update-invalid-ssl-{Guid.NewGuid():N}",
+            host: "localhost",
+            port: 5432,
+            databaseName: "testdb",
+            username: "testuser",
+            encryptedConnectionString: [1, 2, 3, 4, 5],
+            encryptionKeyVersion: 1,
+            createdBy: "test-user");
+
+        var created = await _registry.CreateConnectionAsync(connection);
+
+        var updateRequest = new UpdateSecureConnectionRequest
+        {
+            SslMode = sslMode,
+            SslRequired = true
+        };
+
+        var jsonContent = JsonSerializer.Serialize(updateRequest, _jsonOptions);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _client.PutAsync($"/api/v1/admin/connections/{created.ConnectionId}", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var responseJson = await response.Content.ReadAsStringAsync();
+        Assert.Contains("SSL mode must require encrypted transport when SSL is required", responseJson, StringComparison.Ordinal);
     }
 
     [IntegrationTest]

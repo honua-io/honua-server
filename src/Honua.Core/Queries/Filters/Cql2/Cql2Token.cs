@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CA1707 // CQL2 token names intentionally preserve spec predicate families.
 namespace Honua.Core.Queries.Filters.Cql2;
 
 /// <summary>
@@ -249,3 +250,4 @@ public enum Cql2TokenType
     /// <inheritdoc/>
     Unknown
 }
+#pragma warning restore CA1707

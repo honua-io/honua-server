@@ -147,12 +147,23 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_ProjectedBbox_ReturnsSuccessOrNotFound()
+    public async Task GetCollectionMap_ProjectedBboxWithoutBboxCrs_ReturnsBadRequest()
     {
-        // Web Mercator coordinates (should be accepted after the coordinate validation fix)
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
             "?bbox=-20037508,-20037508,20037508,20037508&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_ProjectedBboxWithExplicitBboxCrs_ReturnsSuccessOrNotFound()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map" +
+            "?bbox=-20037508,-20037508,20037508,20037508&bbox-crs=EPSG:3857&f=png");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
     }
@@ -164,7 +175,7 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
-            "?bbox=-180,-90,180,90&bbox-crs=%5BEPSG:4326%5D&f=png");
+            "?bbox=-90,-180,90,180&bbox-crs=%5BEPSG:4326%5D&f=png");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
     }

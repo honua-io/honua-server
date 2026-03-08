@@ -12,6 +12,18 @@ namespace Honua.Core.Features.Infrastructure.Abstractions;
 public interface IDatabaseMigrationRunner
 {
     /// <summary>
+    /// Builds a point-in-time migration plan without applying scripts.
+    /// </summary>
+    /// <param name="connectionString">Connection string for the target database.</param>
+    /// <param name="migrationsAssembly">Assembly containing embedded migration scripts.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Migration plan for the current database state.</returns>
+    Task<DatabaseMigrationPlan> PlanMigrationsAsync(
+        string connectionString,
+        Assembly migrationsAssembly,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Runs database migrations using the provided connection string and migrations assembly.
     /// </summary>
     /// <param name="connectionString">Connection string for the target database.</param>

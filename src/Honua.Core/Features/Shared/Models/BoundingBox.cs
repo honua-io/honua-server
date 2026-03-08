@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CA1716 // Preserve the stable Shared namespace used across existing contracts.
 namespace Honua.Core.Features.Shared.Models;
 
 /// <summary>
@@ -450,3 +451,4 @@ public readonly record struct BoundingBox
         return value;
     }
 }
+#pragma warning restore CA1716

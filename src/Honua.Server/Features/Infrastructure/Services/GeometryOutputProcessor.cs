@@ -9,9 +9,13 @@ namespace Honua.Server.Features.Infrastructure.Services;
 
 /// <summary>
 /// Applies geometry output limits such as precision and simplification.
+/// Simplification tolerance is interpreted in meters for supported output SRIDs
+/// (WGS84 and Web Mercator families) and skipped for unsupported CRS units.
 /// </summary>
 internal static class GeometryOutputProcessor
 {
+    private const double EarthRadiusMeters = 6_378_137d;
+
     public static Geometry? ApplyLimits(Geometry? geometry, GeometryLimits limits)
     {
         if (geometry == null || geometry.IsEmpty)
@@ -21,13 +25,14 @@ internal static class GeometryOutputProcessor
 
         var processed = geometry;
 
-        if (limits.SimplifyTolerance.HasValue && limits.SimplifyTolerance.Value > 0)
+        var simplifyTolerance = ResolveSimplifyTolerance(processed, limits.SimplifyTolerance);
+        if (simplifyTolerance.HasValue)
         {
             var shouldSimplify = limits.MaxVerticesPerGeometry <= 0 ||
                 processed.NumPoints > limits.MaxVerticesPerGeometry;
             if (shouldSimplify)
             {
-                processed = TopologyPreservingSimplifier.Simplify(processed, limits.SimplifyTolerance.Value)
+                processed = TopologyPreservingSimplifier.Simplify(processed, simplifyTolerance.Value)
                     ?? processed;
             }
         }
@@ -86,6 +91,33 @@ internal static class GeometryOutputProcessor
         processed.Apply(new CoordinateDimensionFilter(includeZ, includeM));
         processed.GeometryChanged();
         return processed;
+    }
+
+    private static double? ResolveSimplifyTolerance(Geometry geometry, double? simplifyToleranceMeters)
+    {
+        if (!simplifyToleranceMeters.HasValue || simplifyToleranceMeters.Value <= 0)
+        {
+            return null;
+        }
+
+        return geometry.SRID switch
+        {
+            4326 => ConvertMetersToDegrees(simplifyToleranceMeters.Value, geometry.EnvelopeInternal),
+            3857 or 900913 or 102100 or 102113 or 3785 => simplifyToleranceMeters.Value,
+            _ => null
+        };
+    }
+
+    private static double ConvertMetersToDegrees(double meters, Envelope envelope)
+    {
+        var centerLatitude = Math.Clamp(envelope.Centre.Y, -89.9999d, 89.9999d);
+        var latitudeRadians = centerLatitude * Math.PI / 180d;
+        var metersPerDegreeLatitude = Math.PI * EarthRadiusMeters / 180d;
+        var metersPerDegreeLongitude = Math.Max(
+            Math.Cos(latitudeRadians) * metersPerDegreeLatitude,
+            1d);
+        var largestMetersPerDegree = Math.Max(metersPerDegreeLatitude, metersPerDegreeLongitude);
+        return meters / largestMetersPerDegree;
     }
 
     private sealed class CoordinatePrecisionFilter(int decimalPlaces) : ICoordinateSequenceFilter
