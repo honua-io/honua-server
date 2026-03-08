@@ -5,7 +5,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
+    apt-get install -y --no-install-recommends clang lld protobuf-compiler zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY Honua.sln Directory.Build.props .editorconfig ./
@@ -21,6 +21,7 @@ RUN case "${TARGETARCH:-amd64}" in \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
@@ -34,6 +35,7 @@ RUN case "${TARGETARCH:-amd64}" in \
       arm64) RUNTIME_ID="linux-arm64" ; ILC_SINGLE_THREADED="true" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
