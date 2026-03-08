@@ -236,8 +236,23 @@ jobs:
             type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
             type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
             type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
-          flavor: |
-            suffix=-${{ matrix.arch }}
+
+      - name: Add explicit arch suffixes to image tags
+        id: arch_tags
+        shell: bash
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          {
+            echo "tags<<EOF"
+            while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
+              printf '%s-%s\n' "$tag" "$ARCH"
+            done <<< "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         id: build
@@ -247,7 +262,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.arch_tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
