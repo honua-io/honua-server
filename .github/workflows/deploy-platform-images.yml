@@ -3,7 +3,7 @@ name: Build & Publish Platform Images
 on:
   push:
     branches: [trunk]
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions: {}
@@ -13,13 +13,97 @@ env:
   ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
-  IMAGE_PLATFORMS: linux/amd64
+  TRIVY_IMAGE: aquasec/trivy:0.68.1
 
 jobs:
-  build-and-push-lambda:
-    name: Build & Push Lambda JIT Image (Debug Fallback)
+  build-and-push:
+    name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image_key: lambda-jit
+            image_name: Lambda JIT Image
+            dockerfile: docker/Dockerfile.lambda
+            tag_suffix: -lambda
+            cache_scope: release-lambda-jit
+            sarif_output: trivy-results-lambda
+            sarif_category: trivy-lambda
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: lambda-jit
+            image_name: Lambda JIT Image
+            dockerfile: docker/Dockerfile.lambda
+            tag_suffix: -lambda
+            cache_scope: release-lambda-jit
+            sarif_output: trivy-results-lambda
+            sarif_category: trivy-lambda
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: lambda-aot
+            image_name: Lambda AOT Image
+            dockerfile: docker/Dockerfile.lambda.aot
+            tag_suffix: -lambda-aot
+            cache_scope: release-lambda-aot
+            sarif_output: trivy-results-lambda-aot
+            sarif_category: trivy-lambda-aot
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: lambda-aot
+            image_name: Lambda AOT Image
+            dockerfile: docker/Dockerfile.lambda.aot
+            tag_suffix: -lambda-aot
+            cache_scope: release-lambda-aot
+            sarif_output: trivy-results-lambda-aot
+            sarif_category: trivy-lambda-aot
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: functions-jit
+            image_name: Functions JIT Image
+            dockerfile: docker/Dockerfile.functions
+            tag_suffix: -functions
+            cache_scope: release-functions-jit
+            sarif_output: trivy-results-functions
+            sarif_category: trivy-functions
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: functions-jit
+            image_name: Functions JIT Image
+            dockerfile: docker/Dockerfile.functions
+            tag_suffix: -functions
+            cache_scope: release-functions-jit
+            sarif_output: trivy-results-functions
+            sarif_category: trivy-functions
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: functions-aot
+            image_name: Functions AOT Image
+            dockerfile: docker/Dockerfile.functions.aot
+            tag_suffix: -functions-aot
+            cache_scope: release-functions-aot
+            sarif_output: trivy-results-functions-aot
+            sarif_category: trivy-functions-aot
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: functions-aot
+            image_name: Functions AOT Image
+            dockerfile: docker/Dockerfile.functions.aot
+            tag_suffix: -functions-aot
+            cache_scope: release-functions-aot
+            sarif_output: trivy-results-functions-aot
+            sarif_category: trivy-functions-aot
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       security-events: write
@@ -60,7 +144,8 @@ jobs:
             aws ecr create-repository \
               --repository-name "$repo" \
               --image-scanning-configuration scanOnPush=true \
-              --region "$ECR_REGION" >/dev/null
+              --region "$ECR_REGION" >/dev/null 2>&1 || \
+              aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null
           fi
 
       - name: Log in to Amazon ECR
@@ -144,56 +229,90 @@ jobs:
         with:
           images: ${{ steps.targets.outputs.images }}
           tags: |
-            type=ref,event=branch,suffix=-lambda
-            type=ref,event=tag,suffix=-lambda
-            type=semver,pattern={{version}},suffix=-lambda
-            type=semver,pattern={{major}}.{{minor}},suffix=-lambda
-            type=semver,pattern={{major}},suffix=-lambda
-            type=sha,prefix={{branch}}-,suffix=-lambda
-            type=raw,value=latest-lambda,enable={{is_default_branch}}
+            type=ref,event=branch,suffix=${{ matrix.tag_suffix }}
+            type=ref,event=tag,suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{version}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
+            type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
+          flavor: |
+            suffix=-${{ matrix.arch }}
 
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.lambda
-          platforms: ${{ env.IMAGE_PLATFORMS }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-lambda-jit
-          cache-to: type=gha,mode=max,scope=release-lambda-jit
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
           provenance: true
           sbom: true
 
+      - name: Pull image for Trivy scan
+        id: scan_prep
+        shell: bash
+        env:
+          SCAN_SOURCE: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
+          SCAN_LOCAL: honua-platform-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker pull "$SCAN_SOURCE"
+          docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
+          echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
+
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
-        with:
-          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results-lambda.sarif'
+        shell: bash
+        env:
+          SARIF_OUTPUT: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
+          SCAN_LOCAL: ${{ steps.scan_prep.outputs.scan_local }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          set -euo pipefail
+          mkdir -p "$TRIVY_CACHE_DIR"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/work" \
+            -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --skip-version-check \
+            --format sarif \
+            --output "/work/$SARIF_OUTPUT" \
+            "$SCAN_LOCAL"
 
       - name: Upload Trivy scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results-lambda.sarif') != ''
+        if: always() && hashFiles(format('{0}-{1}.sarif', matrix.sarif_output, matrix.arch)) != ''
         with:
-          sarif_file: 'trivy-results-lambda.sarif'
-          category: 'trivy-lambda'
+          sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
+          category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
 
-  build-and-push-lambda-aot:
-    name: Build & Push Lambda AOT Image
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
-    runs-on: ubuntu-latest
+  publish-manifests:
+    name: Publish ${{ matrix.image_name }} Manifest
+    if: ${{ (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk') && needs.build-and-push.result == 'success' }}
+    needs: build-and-push
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image_name: Lambda JIT Image
+            tag_suffix: -lambda
+          - image_name: Lambda AOT Image
+            tag_suffix: -lambda-aot
+          - image_name: Functions JIT Image
+            tag_suffix: -functions
+          - image_name: Functions AOT Image
+            tag_suffix: -functions-aot
     permissions:
       contents: read
-      security-events: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -225,7 +344,8 @@ jobs:
             aws ecr create-repository \
               --repository-name "$repo" \
               --image-scanning-configuration scanOnPush=true \
-              --region "$ECR_REGION" >/dev/null
+              --region "$ECR_REGION" >/dev/null 2>&1 || \
+              aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null
           fi
 
       - name: Log in to Amazon ECR
@@ -300,7 +420,6 @@ jobs:
             echo "images<<EOF"
             printf '%s\n' "${images[@]}"
             echo "EOF"
-            echo "scan_image=${images[0]}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
@@ -309,369 +428,22 @@ jobs:
         with:
           images: ${{ steps.targets.outputs.images }}
           tags: |
-            type=ref,event=branch,suffix=-lambda-aot
-            type=ref,event=tag,suffix=-lambda-aot
-            type=semver,pattern={{version}},suffix=-lambda-aot
-            type=semver,pattern={{major}}.{{minor}},suffix=-lambda-aot
-            type=semver,pattern={{major}},suffix=-lambda-aot
-            type=sha,prefix={{branch}}-,suffix=-lambda-aot
-            type=raw,value=latest-lambda-aot,enable={{is_default_branch}}
+            type=ref,event=branch,suffix=${{ matrix.tag_suffix }}
+            type=ref,event=tag,suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{version}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
+            type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
 
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.lambda.aot
-          platforms: ${{ env.IMAGE_PLATFORMS }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-lambda-aot
-          cache-to: type=gha,mode=max,scope=release-lambda-aot
-          provenance: true
-          sbom: true
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
-        with:
-          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results-lambda-aot.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results-lambda-aot.sarif') != ''
-        with:
-          sarif_file: 'trivy-results-lambda-aot.sarif'
-          category: 'trivy-lambda-aot'
-
-  build-and-push-functions:
-    name: Build & Push Functions JIT Image (Debug Fallback)
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.ECR_REGION }}
-
-      - name: Resolve ECR registry
-        id: ecr
-        if: ${{ env.ECR_REGION != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          account_id="$(aws sts get-caller-identity --query Account --output text)"
-          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure ECR repository exists
-        if: ${{ steps.ecr.outputs.registry != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          repo="${ECR_REPOSITORY:-honua-server}"
-          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
-            aws ecr create-repository \
-              --repository-name "$repo" \
-              --image-scanning-configuration scanOnPush=true \
-              --region "$ECR_REGION" >/dev/null
-          fi
-
-      - name: Log in to Amazon ECR
-        if: ${{ steps.ecr.outputs.registry != '' }}
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Validate Azure credentials for ACR
-        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+      - name: Create and push multi-arch manifests
         shell: bash
         env:
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          required=(
-            ARM_CLIENT_ID
-            ARM_CLIENT_SECRET
-            ARM_TENANT_ID
-            ARM_SUBSCRIPTION_ID
-          )
-
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required Azure credential for ACR publish: $name" >&2
-              exit 1
-            fi
+          for tag in $TAGS; do
+            docker buildx imagetools create -t "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
           done
-
-      - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' }}
-        shell: bash
-        env:
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-        run: |
-          set -euo pipefail
-          acr_name="${ACR_LOGIN_SERVER%%.*}"
-          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null
-          az account set --subscription "$ARM_SUBSCRIPTION_ID"
-          az acr login --name "$acr_name"
-
-      - name: Resolve target image names
-        id: targets
-        shell: bash
-        env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
-        run: |
-          set -euo pipefail
-          ecr_repo="${ECR_REPOSITORY:-honua-server}"
-          acr_repo="${ACR_REPOSITORY:-honua-server}"
-          images=()
-
-          if [ -n "$ECR_REGISTRY" ]; then
-            images+=("${ECR_REGISTRY}/${ecr_repo}")
-          fi
-          if [ -n "$ACR_LOGIN_SERVER" ]; then
-            images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
-          fi
-
-          if [ "${#images[@]}" -eq 0 ]; then
-            echo "No registry target configured for platform image publish." >&2
-            echo "Set AWS_ECR_REGION + AWS credential secrets and/or ACR_LOGIN_SERVER + Azure ARM credential secrets." >&2
-            exit 1
-          fi
-
-          {
-            echo "images<<EOF"
-            printf '%s\n' "${images[@]}"
-            echo "EOF"
-            echo "scan_image=${images[0]}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.targets.outputs.images }}
-          tags: |
-            type=ref,event=branch,suffix=-functions
-            type=ref,event=tag,suffix=-functions
-            type=semver,pattern={{version}},suffix=-functions
-            type=semver,pattern={{major}}.{{minor}},suffix=-functions
-            type=semver,pattern={{major}},suffix=-functions
-            type=sha,prefix={{branch}}-,suffix=-functions
-            type=raw,value=latest-functions,enable={{is_default_branch}}
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.functions
-          platforms: ${{ env.IMAGE_PLATFORMS }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-functions-jit
-          cache-to: type=gha,mode=max,scope=release-functions-jit
-          provenance: true
-          sbom: true
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
-        with:
-          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results-functions.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results-functions.sarif') != ''
-        with:
-          sarif_file: 'trivy-results-functions.sarif'
-          category: 'trivy-functions'
-
-  build-and-push-functions-aot:
-    name: Build & Push Functions AOT Image
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.ECR_REGION }}
-
-      - name: Resolve ECR registry
-        id: ecr
-        if: ${{ env.ECR_REGION != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          account_id="$(aws sts get-caller-identity --query Account --output text)"
-          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
-
-      - name: Ensure ECR repository exists
-        if: ${{ steps.ecr.outputs.registry != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          repo="${ECR_REPOSITORY:-honua-server}"
-          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
-            aws ecr create-repository \
-              --repository-name "$repo" \
-              --image-scanning-configuration scanOnPush=true \
-              --region "$ECR_REGION" >/dev/null
-          fi
-
-      - name: Log in to Amazon ECR
-        if: ${{ steps.ecr.outputs.registry != '' }}
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Validate Azure credentials for ACR
-        if: ${{ env.ACR_LOGIN_SERVER != '' }}
-        shell: bash
-        env:
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-        run: |
-          set -euo pipefail
-          required=(
-            ARM_CLIENT_ID
-            ARM_CLIENT_SECRET
-            ARM_TENANT_ID
-            ARM_SUBSCRIPTION_ID
-          )
-
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required Azure credential for ACR publish: $name" >&2
-              exit 1
-            fi
-          done
-
-      - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' }}
-        shell: bash
-        env:
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-        run: |
-          set -euo pipefail
-          acr_name="${ACR_LOGIN_SERVER%%.*}"
-          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null
-          az account set --subscription "$ARM_SUBSCRIPTION_ID"
-          az acr login --name "$acr_name"
-
-      - name: Resolve target image names
-        id: targets
-        shell: bash
-        env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
-        run: |
-          set -euo pipefail
-          ecr_repo="${ECR_REPOSITORY:-honua-server}"
-          acr_repo="${ACR_REPOSITORY:-honua-server}"
-          images=()
-
-          if [ -n "$ECR_REGISTRY" ]; then
-            images+=("${ECR_REGISTRY}/${ecr_repo}")
-          fi
-          if [ -n "$ACR_LOGIN_SERVER" ]; then
-            images+=("${ACR_LOGIN_SERVER}/${acr_repo}")
-          fi
-
-          if [ "${#images[@]}" -eq 0 ]; then
-            echo "No registry target configured for platform image publish." >&2
-            echo "Set AWS_ECR_REGION + AWS credential secrets and/or ACR_LOGIN_SERVER + Azure ARM credential secrets." >&2
-            exit 1
-          fi
-
-          {
-            echo "images<<EOF"
-            printf '%s\n' "${images[@]}"
-            echo "EOF"
-            echo "scan_image=${images[0]}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.targets.outputs.images }}
-          tags: |
-            type=ref,event=branch,suffix=-functions-aot
-            type=ref,event=tag,suffix=-functions-aot
-            type=semver,pattern={{version}},suffix=-functions-aot
-            type=semver,pattern={{major}}.{{minor}},suffix=-functions-aot
-            type=semver,pattern={{major}},suffix=-functions-aot
-            type=sha,prefix={{branch}}-,suffix=-functions-aot
-            type=raw,value=latest-functions-aot,enable={{is_default_branch}}
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.functions.aot
-          platforms: ${{ env.IMAGE_PLATFORMS }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-functions-aot
-          cache-to: type=gha,mode=max,scope=release-functions-aot
-          provenance: true
-          sbom: true
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
-        with:
-          image-ref: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results-functions-aot.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results-functions-aot.sarif') != ''
-        with:
-          sarif_file: 'trivy-results-functions-aot.sarif'
-          category: 'trivy-functions-aot'
