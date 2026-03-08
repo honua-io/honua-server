@@ -5,7 +5,9 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Validation.Abstractions;
+using System.Collections.Immutable;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -185,20 +187,28 @@ internal static partial class FeatureServerEndpoints
         var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
         var layerChanges = new List<LayerChanges>();
 
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+
         // Special case: LastSyncGeneration == 0 means pre-migration data or first sync;
         // fall back to "all features as adds" for backward compatibility.
         if (replica.LastSyncGeneration == 0)
         {
-            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             foreach (var layer in replicaLayers)
             {
-                var count = await featureReader.CountAsync(layer.Id, new FeatureQuery(), cancellationToken);
+                var result = await featureReader.QueryAsync(layer.Id, new FeatureQuery(), cancellationToken);
+                var addFeatures = result.Items
+                    .Select(f => ConvertFeatureToGeoServices(f))
+                    .ToArray();
+
                 layerChanges.Add(new LayerChanges
                 {
                     Id = layer.Id,
-                    Adds = (int)Math.Min(count, int.MaxValue),
+                    Adds = addFeatures.Length,
                     Updates = 0,
-                    Deletes = 0
+                    Deletes = 0,
+                    AddFeatures = addFeatures,
+                    UpdateFeatures = null,
+                    DeleteIds = null
                 });
             }
         }
@@ -219,12 +229,52 @@ internal static partial class FeatureServerEndpoints
             {
                 if (changesByLayer.TryGetValue(layer.Id, out var layerChangeList))
                 {
+                    // Collect objectIds by operation type
+                    var insertIds = layerChangeList
+                        .Where(c => c.Operation == FeatureChangeOperation.Insert)
+                        .Select(c => c.ObjectId)
+                        .ToArray();
+
+                    var updateIds = layerChangeList
+                        .Where(c => c.Operation == FeatureChangeOperation.Update)
+                        .Select(c => c.ObjectId)
+                        .ToArray();
+
+                    var deleteIds = layerChangeList
+                        .Where(c => c.Operation == FeatureChangeOperation.Delete)
+                        .Select(c => c.ObjectId)
+                        .ToArray();
+
+                    // Query actual features for inserts and updates
+                    GeoServicesFeature[]? addFeatures = null;
+                    if (insertIds.Length > 0)
+                    {
+                        var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
+                        var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                        addFeatures = result.Items
+                            .Select(f => ConvertFeatureToGeoServices(f))
+                            .ToArray();
+                    }
+
+                    GeoServicesFeature[]? updateFeatures = null;
+                    if (updateIds.Length > 0)
+                    {
+                        var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
+                        var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                        updateFeatures = result.Items
+                            .Select(f => ConvertFeatureToGeoServices(f))
+                            .ToArray();
+                    }
+
                     layerChanges.Add(new LayerChanges
                     {
                         Id = layer.Id,
-                        Adds = layerChangeList.Count(c => c.Operation == FeatureChangeOperation.Insert),
-                        Updates = layerChangeList.Count(c => c.Operation == FeatureChangeOperation.Update),
-                        Deletes = layerChangeList.Count(c => c.Operation == FeatureChangeOperation.Delete)
+                        Adds = insertIds.Length,
+                        Updates = updateIds.Length,
+                        Deletes = deleteIds.Length,
+                        AddFeatures = addFeatures,
+                        UpdateFeatures = updateFeatures,
+                        DeleteIds = deleteIds.Length > 0 ? deleteIds : null
                     });
                 }
                 else
@@ -589,5 +639,18 @@ internal static partial class FeatureServerEndpoints
 
         layers = resolved.ToArray();
         return true;
+    }
+
+    /// <summary>
+    /// Converts a domain Feature to a GeoServicesFeature for replication responses.
+    /// </summary>
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature)
+    {
+        return new GeoServicesFeature
+        {
+            Attributes = new Dictionary<string, object?>(feature.Attributes),
+            Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                feature.Geometry, null, null, false, false)
+        };
     }
 }
