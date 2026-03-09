@@ -26,11 +26,19 @@ Key design constraints:
 5. **Align paid tiers to the EnterpriseReady framework** (enterpriseready.io):
    SSO, RBAC, Audit Logging, Change Management, Product Assurance, Deployment
    Options, Integrations, Support, and Reporting.
+6. **Operator-grade AI DevOps tooling can be proprietary.** The open-core promise
+   applies to the runtime, protocols, SDKs, deployment targets, and base MCP
+   data-access surface. Higher-level operator/copilot tooling may remain private
+   without undermining platform adoption.
 
 ## Decision
 
 Three editions: **Community**, **Pro**, and **Enterprise**. The gate is runtime
 capabilities, not infrastructure or protocols.
+
+One additional boundary matters: Honua's operator-grade AI DevOps/copilot
+tooling is not part of the open-core runtime. It may live in private enterprise
+tooling on top of the public admin/control-plane APIs.
 
 ### Edition Boundaries
 
@@ -57,6 +65,9 @@ A complete, production-capable feature server for a single-process deployment.
 Community on serverless works — each invocation is independent with its own
 in-memory cache. It is functional at low-to-moderate concurrency. The natural
 ceiling is cache coherence and connection pooling at scale, not an artificial gate.
+
+Community explicitly includes the base MCP data-access surface. It does **not**
+include private operator/copilot tooling for rollout automation or delegated ops.
 
 #### Pro (Per-Node License)
 
@@ -97,6 +108,7 @@ Everything in Pro, plus:
 | **RBAC** | Per-service, per-layer, per-operation role-based access; row-level security | Role-Based Access Control |
 | **Audit Logging** | Immutable audit trail (who queried/edited what, when, from where); SIEM export (Splunk, Datadog, Elastic) | Audit Logging |
 | **Change Management** | GitOps manifest API (apply, dryRun, prune); drift detection; approval workflows; rollback | Change Management |
+| **Private Operator Copilot** | AI DevOps/operator tooling, rollout planning, delegated operations, and implementation workflows delivered through private enterprise tooling on top of the public control-plane API | Change Management / Support |
 | **Compliance** | SOC 2 / FedRAMP evidence collection; data residency controls; encryption-at-rest key rotation | Product Assurance |
 | **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (Esri REST, OGC WFS) | Integrations |
 | **Multi-Tenancy** | Schema-per-tenant isolation; tenant-scoped API keys; per-tenant usage metering | Deployment Options |
@@ -143,7 +155,7 @@ License checks must be:
 
 - **Community** = complete feature server, single process, deploy anywhere
 - **Pro** = distributed coordination, streaming, analytics
-- **Enterprise** = governance, compliance, multi-tenancy, extensibility
+- **Enterprise** = governance, compliance, multi-tenancy, extensibility, and private operator tooling
 
 ### EnterpriseReady Pillar Mapping
 
@@ -152,7 +164,7 @@ License checks must be:
 | Single Sign-On | API keys | API keys | OIDC, SAML, SCIM |
 | Audit Logging | Structured logs | Structured logs | Immutable trail + SIEM |
 | RBAC | Admin key (all-or-nothing) | Admin key | Per-resource roles + RLS |
-| Change Management | Manual config | Manual config | GitOps + drift detection |
+| Change Management | Manual config | Manual config | GitOps + drift detection + private operator copilot |
 | Product Assurance | AOT, TLS, SQL playground | + Streaming, analytics, sync, AI spatial agent | + Compliance, secure connections |
 | Deployment Options | All targets, single-process | + Distributed cache | + Multi-tenant, HA/DR |
 | Integrations | SDKs, MCP (REST) | + CDC, real-time, MCP (gRPC) | + Federation, plugins, Kafka/NATS |
