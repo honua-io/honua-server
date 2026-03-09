@@ -90,6 +90,17 @@ require_tool() {
     fi
 }
 
+normalize_base_url() {
+    local base_url="${1%/}"
+
+    if [[ "$base_url" =~ ^https?:// ]]; then
+        printf '%s\n' "$base_url"
+        return 0
+    fi
+
+    printf 'https://%s\n' "$base_url"
+}
+
 resolve_tf_output() {
     local key=$1
     jq -r --arg key "$key" '
@@ -149,6 +160,9 @@ if [[ -z "${HONUA_CLOUD_TEST_BASE_URL:-}" ]]; then
     usage
     exit 1
 fi
+
+HONUA_CLOUD_TEST_BASE_URL="$(normalize_base_url "$HONUA_CLOUD_TEST_BASE_URL")"
+export HONUA_CLOUD_TEST_BASE_URL
 
 require_tool dotnet
 require_tool curl
