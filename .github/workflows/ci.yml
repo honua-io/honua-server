@@ -842,11 +842,12 @@ jobs:
           dotnet new console
 
           # Add local package source
-          dotnet nuget add source ../packages --name local-packages
+          PACKAGE_SOURCE="$(realpath ../packages)"
+          dotnet nuget add source "$PACKAGE_SOURCE" --name local-packages
 
           # Add package under test
           VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
-          dotnet add package Honua.Core --source local-packages --version "$VERSION"
+          dotnet add package Honua.Core --source "$PACKAGE_SOURCE" --version "$VERSION"
 
           # Test build
           dotnet build --configuration Release
@@ -929,6 +930,7 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: false
+          load: true
           tags: honua-server:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -941,6 +943,7 @@ jobs:
             -e ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_DEV_AUTH=true \
+            -e Security__ConnectionEncryption__MasterKey="0123456789abcdef0123456789abcdef" \
             -p 8080:8080 \
             honua-server:test
 
@@ -948,19 +951,26 @@ jobs:
           sleep 10
 
           # Health check
+          live_success=false
           for i in {1..30}; do
             if curl -f http://localhost:8080/healthz/live; then
               echo "Container started successfully"
+              live_success=true
               break
             fi
             sleep 2
           done
 
+          if [ "$live_success" != "true" ]; then
+            echo "Container failed liveness probe"
+            exit 1
+          fi
+
       - name: Test Docker container endpoints
         run: |
           # Test basic endpoints
-          curl -f http://localhost:8080/healthz/ready
-          curl -f http://localhost:8080/swagger/index.html
+          curl --retry 15 --retry-delay 2 --retry-connrefused -f http://localhost:8080/healthz/ready
+          curl --retry 5 --retry-delay 2 --retry-connrefused -f http://localhost:8080/openapi.json
 
           # Test API endpoints
           curl -f "http://localhost:8080/api/admin/health" || true

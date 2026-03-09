@@ -2448,16 +2448,16 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             switch (value.ValueKind)
             {
                 case JsonValueKind.String:
-                {
-                    var text = value.GetString();
-                    if (string.IsNullOrWhiteSpace(text))
                     {
-                        continue;
-                    }
+                        var text = value.GetString();
+                        if (string.IsNullOrWhiteSpace(text))
+                        {
+                            continue;
+                        }
 
-                    whereClause = $"{fieldName} = '{EscapeSqlLiteral(text)}'";
-                    return true;
-                }
+                        whereClause = $"{fieldName} = '{EscapeSqlLiteral(text)}'";
+                        return true;
+                    }
                 case JsonValueKind.Number:
                 case JsonValueKind.True:
                 case JsonValueKind.False:

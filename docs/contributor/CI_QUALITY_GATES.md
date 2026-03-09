@@ -12,6 +12,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing.
 - `openapi-contract-governance.yml`: Admin/control-plane OpenAPI contract validation and breaking-change checks.
 - `control-plane-sdk-governance.yml`: reproducible control-plane SDK generation and release artifact publishing.
+- `proto-wire-governance.yml`: protobuf wire compatibility enforcement via `buf breaking`.
 - `nightly-container-build.yml`: nightly image builds.
 
 ## Quality Gates
@@ -65,6 +66,37 @@ Detailed setup and troubleshooting:
 - `docs/contributor/ogc-maps-conformance-testing.md`
 - `docs/contributor/cite-wms-conformance-testing.md`
 - `docs/contributor/cite-wmts-conformance-testing.md`
+
+## Contract Governance vs Standards Compatibility
+
+The CI quality gates enforce two distinct categories of API stability. They are separate concerns and are validated by different workflows.
+
+### Admin/Control-Plane Contract Governance
+
+These workflows enforce the control-plane versioning policy defined in `docs/user/CONTROL_PLANE_VERSIONING_POLICY.md`:
+
+| Workflow | What it checks |
+|---|---|
+| `openapi-contract-governance.yml` | OpenAPI spec shape and breaking-change detection for admin endpoints |
+| `control-plane-sdk-governance.yml` | Reproducible SDK generation from the admin OpenAPI spec |
+| `proto-wire-governance.yml` | Protobuf wire compatibility via `buf breaking` |
+
+Breaking changes in these workflows require explicit opt-in (`OPENAPI_ALLOW_BREAKING_CHANGES=true` or `BUF_ALLOW_BREAKING_CHANGES=true`) and corresponding documentation updates.
+
+### Standards Compatibility
+
+These workflows enforce conformance to external geospatial standards. They are not governed by Honua's versioning policy; instead, correctness is defined by the upstream specification:
+
+| Workflow | What it checks |
+|---|---|
+| `cite-conformance.yml` | OGC API Features CITE conformance |
+| `cite-tiles-conformance.yml` | OGC API Tiles CITE conformance |
+| `ogc-maps-conformance.yml` | OGC API Maps conformance |
+| `cite-wms-conformance.yml` | WMS 1.3 CITE conformance |
+| `cite-wmts-conformance.yml` | WMTS 1.0 CITE conformance |
+| `geoservices-parity-nightly.yml` | GeoServices REST parity checks (nightly) |
+
+Standards compatibility policy is documented in `docs/user/STANDARDS_APIS.md`.
 
 ## Notes
 

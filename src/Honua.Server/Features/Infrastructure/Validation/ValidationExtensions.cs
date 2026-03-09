@@ -348,111 +348,111 @@ public static class ValidationExtensions
         switch (field.Type)
         {
             case FieldType.String:
-            {
-                if (value is not string stringValue)
                 {
-                    return $"Field '{field.Name}' must be a string.";
-                }
+                    if (value is not string stringValue)
+                    {
+                        return $"Field '{field.Name}' must be a string.";
+                    }
 
-                if (field.Length.HasValue && stringValue.Length > field.Length.Value)
-                {
-                    return $"Field '{field.Name}' exceeds maximum length of {field.Length.Value}.";
-                }
+                    if (field.Length.HasValue && stringValue.Length > field.Length.Value)
+                    {
+                        return $"Field '{field.Name}' exceeds maximum length of {field.Length.Value}.";
+                    }
 
-                return null;
-            }
+                    return null;
+                }
             case FieldType.Integer:
-            {
-                if (!TryGetInt64(value, out var longValue))
                 {
-                    return $"Field '{field.Name}' must be an integer.";
-                }
+                    if (!TryGetInt64(value, out var longValue))
+                    {
+                        return $"Field '{field.Name}' must be an integer.";
+                    }
 
-                if (longValue < int.MinValue || longValue > int.MaxValue)
-                {
-                    return $"Field '{field.Name}' must be within 32-bit integer range.";
-                }
+                    if (longValue < int.MinValue || longValue > int.MaxValue)
+                    {
+                        return $"Field '{field.Name}' must be within 32-bit integer range.";
+                    }
 
-                return null;
-            }
+                    return null;
+                }
             case FieldType.BigInteger:
-            {
-                return TryGetInt64(value, out _)
-                    ? null
-                    : $"Field '{field.Name}' must be a 64-bit integer.";
-            }
-            case FieldType.Double:
-            {
-                return TryGetDouble(value, out _)
-                    ? null
-                    : $"Field '{field.Name}' must be a number.";
-            }
-            case FieldType.Float:
-            {
-                return TryGetDouble(value, out _)
-                    ? null
-                    : $"Field '{field.Name}' must be a number.";
-            }
-            case FieldType.Boolean:
-            {
-                if (value is bool)
                 {
-                    return null;
-                }
-
-                if (mode == AttributeValidationMode.GeoServices && TryGetBooleanFromNumeric(value, out _))
-                {
-                    return null;
-                }
-
-                return $"Field '{field.Name}' must be a boolean.";
-            }
-            case FieldType.DateTime:
-            {
-                return ValidateDateTimeValue(field.Name, value, allowNumeric: mode == AttributeValidationMode.GeoServices);
-            }
-            case FieldType.Date:
-            {
-                return ValidateDateValue(field.Name, value, allowNumeric: mode == AttributeValidationMode.GeoServices);
-            }
-            case FieldType.Time:
-            {
-                return ValidateTimeValue(field.Name, value);
-            }
-            case FieldType.Json:
-            {
-                return null;
-            }
-            case FieldType.Binary:
-            {
-                if (value is byte[])
-                {
-                    return null;
-                }
-
-                if (value is string stringValue)
-                {
-                    return TryValidateBase64(stringValue)
+                    return TryGetInt64(value, out _)
                         ? null
-                        : $"Field '{field.Name}' must be a valid Base64 string.";
+                        : $"Field '{field.Name}' must be a 64-bit integer.";
                 }
+            case FieldType.Double:
+                {
+                    return TryGetDouble(value, out _)
+                        ? null
+                        : $"Field '{field.Name}' must be a number.";
+                }
+            case FieldType.Float:
+                {
+                    return TryGetDouble(value, out _)
+                        ? null
+                        : $"Field '{field.Name}' must be a number.";
+                }
+            case FieldType.Boolean:
+                {
+                    if (value is bool)
+                    {
+                        return null;
+                    }
 
-                return $"Field '{field.Name}' must be binary data.";
-            }
+                    if (mode == AttributeValidationMode.GeoServices && TryGetBooleanFromNumeric(value, out _))
+                    {
+                        return null;
+                    }
+
+                    return $"Field '{field.Name}' must be a boolean.";
+                }
+            case FieldType.DateTime:
+                {
+                    return ValidateDateTimeValue(field.Name, value, allowNumeric: mode == AttributeValidationMode.GeoServices);
+                }
+            case FieldType.Date:
+                {
+                    return ValidateDateValue(field.Name, value, allowNumeric: mode == AttributeValidationMode.GeoServices);
+                }
+            case FieldType.Time:
+                {
+                    return ValidateTimeValue(field.Name, value);
+                }
+            case FieldType.Json:
+                {
+                    return null;
+                }
+            case FieldType.Binary:
+                {
+                    if (value is byte[])
+                    {
+                        return null;
+                    }
+
+                    if (value is string stringValue)
+                    {
+                        return TryValidateBase64(stringValue)
+                            ? null
+                            : $"Field '{field.Name}' must be a valid Base64 string.";
+                    }
+
+                    return $"Field '{field.Name}' must be binary data.";
+                }
             case FieldType.Uuid:
-            {
-                if (value is Guid)
                 {
-                    return null;
-                }
+                    if (value is Guid)
+                    {
+                        return null;
+                    }
 
-                if (value is string stringValue && Guid.TryParse(stringValue, out _))
-                {
-                    return null;
-                }
+                    if (value is string stringValue && Guid.TryParse(stringValue, out _))
+                    {
+                        return null;
+                    }
 
-                return $"Field '{field.Name}' must be a UUID.";
-            }
+                    return $"Field '{field.Name}' must be a UUID.";
+                }
             default:
                 return null;
         }

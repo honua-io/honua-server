@@ -263,40 +263,40 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         switch (expression)
         {
             case GeometryLiteral geometry:
-            {
-                var wkbParam = $"@p{_paramIndex++}";
-                var sridParam = $"@p{_paramIndex++}";
-                _parameters.Add(geometry.Wkb);
-                _parameters.Add(geometry.Srid);
-
-                var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
-                if (geometry.Srid != layer.SpatialReference.Wkid)
                 {
-                    geometryExpression = $"ST_Transform({geometryExpression}, {layer.SpatialReference.Wkid})";
-                }
+                    var wkbParam = $"@p{_paramIndex++}";
+                    var sridParam = $"@p{_paramIndex++}";
+                    _parameters.Add(geometry.Wkb);
+                    _parameters.Add(geometry.Srid);
 
-                return geometryExpression;
-            }
-            case PropertyReference property:
-            {
-                var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-                if (field == null)
-                {
-                    if (IsGeometryAlias(property.PropertyName))
+                    var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
+                    if (geometry.Srid != layer.SpatialReference.Wkid)
                     {
-                        return GetGeometryColumnExpression(layer);
+                        geometryExpression = $"ST_Transform({geometryExpression}, {layer.SpatialReference.Wkid})";
                     }
 
-                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    return geometryExpression;
                 }
-
-                if (!field.IsGeometry)
+            case PropertyReference property:
                 {
-                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
-                }
+                    var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                    if (field == null)
+                    {
+                        if (IsGeometryAlias(property.PropertyName))
+                        {
+                            return GetGeometryColumnExpression(layer);
+                        }
 
-                return GetGeometryColumnExpression(layer);
-            }
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
+
+                    if (!field.IsGeometry)
+                    {
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
+
+                    return GetGeometryColumnExpression(layer);
+                }
             case FunctionCall functionCall:
                 return TranslateFunction(functionCall, layer);
             default:
@@ -468,43 +468,43 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         switch (expression)
         {
             case GeometryLiteral geometry:
-            {
-                var wkbParam = $"@p{_paramIndex++}";
-                var sridParam = $"@p{_paramIndex++}";
-                _parameters.Add(geometry.Wkb);
-                _parameters.Add(geometry.Srid);
-
-                var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
-                var wgs84Srid = SpatialReference.WGS84.Wkid;
-                if (geometry.Srid != wgs84Srid)
                 {
-                    geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
-                }
+                    var wkbParam = $"@p{_paramIndex++}";
+                    var sridParam = $"@p{_paramIndex++}";
+                    _parameters.Add(geometry.Wkb);
+                    _parameters.Add(geometry.Srid);
 
-                return $"{geometryExpression}::geography";
-            }
+                    var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
+                    var wgs84Srid = SpatialReference.WGS84.Wkid;
+                    if (geometry.Srid != wgs84Srid)
+                    {
+                        geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
+                    }
+
+                    return $"{geometryExpression}::geography";
+                }
             case PropertyReference property:
-            {
-                var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-                if (field == null && !IsGeometryAlias(property.PropertyName))
                 {
-                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
-                }
+                    var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                    if (field == null && !IsGeometryAlias(property.PropertyName))
+                    {
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
 
-                if (field != null && !field.IsGeometry)
-                {
-                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
-                }
+                    if (field != null && !field.IsGeometry)
+                    {
+                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                    }
 
-                var geometryExpression = GetGeometryColumnExpression(layer);
-                var wgs84Srid = SpatialReference.WGS84.Wkid;
-                if (layer.SpatialReference.Wkid != wgs84Srid)
-                {
-                    geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
-                }
+                    var geometryExpression = GetGeometryColumnExpression(layer);
+                    var wgs84Srid = SpatialReference.WGS84.Wkid;
+                    if (layer.SpatialReference.Wkid != wgs84Srid)
+                    {
+                        geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
+                    }
 
-                return $"{geometryExpression}::geography";
-            }
+                    return $"{geometryExpression}::geography";
+                }
             default:
                 throw new NotSupportedException($"Unsupported geography expression: {expression.GetType()}");
         }
@@ -690,40 +690,40 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         switch (expression)
         {
             case IntervalLiteral interval:
-            {
-                var kind = interval.Start?.Type == LiteralType.Date || interval.End?.Type == LiteralType.Date
-                    ? TemporalKind.Date
-                    : TemporalKind.Timestamp;
+                {
+                    var kind = interval.Start?.Type == LiteralType.Date || interval.End?.Type == LiteralType.Date
+                        ? TemporalKind.Date
+                        : TemporalKind.Timestamp;
 
-                var startSql = interval.Start == null ? "NULL" : TranslateLiteral(interval.Start);
-                var endSql = interval.End == null ? "NULL" : TranslateLiteral(interval.End);
+                    var startSql = interval.Start == null ? "NULL" : TranslateLiteral(interval.Start);
+                    var endSql = interval.End == null ? "NULL" : TranslateLiteral(interval.End);
 
-                return new TemporalBounds(
-                    startSql,
-                    endSql,
-                    kind,
-                    true,
-                    interval.Start == null,
-                    interval.End == null);
-            }
+                    return new TemporalBounds(
+                        startSql,
+                        endSql,
+                        kind,
+                        true,
+                        interval.Start == null,
+                        interval.End == null);
+                }
             case Literal literal when literal.Type is LiteralType.Date or LiteralType.DateTime:
-            {
-                var sql = TranslateLiteral(literal);
-                var kind = literal.Type == LiteralType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
-                return new TemporalBounds(sql, sql, kind, false, false, false);
-            }
+                {
+                    var sql = TranslateLiteral(literal);
+                    var kind = literal.Type == LiteralType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    return new TemporalBounds(sql, sql, kind, false, false, false);
+                }
             case PropertyReference property:
-            {
-                var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-                var kind = field?.Type == FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
-                var sql = TranslateProperty(property, layer);
-                return new TemporalBounds(sql, sql, kind, false, false, false);
-            }
+                {
+                    var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                    var kind = field?.Type == FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    var sql = TranslateProperty(property, layer);
+                    return new TemporalBounds(sql, sql, kind, false, false, false);
+                }
             case FunctionCall functionCall:
-            {
-                var sql = TranslateFunction(functionCall, layer);
-                return new TemporalBounds(sql, sql, TemporalKind.Timestamp, false, false, false);
-            }
+                {
+                    var sql = TranslateFunction(functionCall, layer);
+                    return new TemporalBounds(sql, sql, TemporalKind.Timestamp, false, false, false);
+                }
             default:
                 throw new NotSupportedException($"Unsupported temporal expression: {expression.GetType()}");
         }

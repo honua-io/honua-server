@@ -108,84 +108,84 @@ internal sealed class SkiaMapRenderer : IDisposable
         switch (styleLayer.Type)
         {
             case "fill":
-            {
-                var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, emptyProps);
-                using var fillPaint = new SKPaint
                 {
-                    Style = SKPaintStyle.Fill,
-                    Color = fillStyle.FillColor,
-                    IsAntialias = fillStyle.Antialias
-                };
-                canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, fillPaint);
-
-                if (fillStyle.OutlineColor.HasValue)
-                {
-                    using var outlinePaint = new SKPaint
+                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, emptyProps);
+                    using var fillPaint = new SKPaint
                     {
-                        Style = SKPaintStyle.Stroke,
-                        Color = fillStyle.OutlineColor.Value,
-                        StrokeWidth = fillStyle.OutlineWidth,
+                        Style = SKPaintStyle.Fill,
+                        Color = fillStyle.FillColor,
                         IsAntialias = fillStyle.Antialias
                     };
-                    canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, outlinePaint);
-                }
+                    canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, fillPaint);
 
-                break;
-            }
+                    if (fillStyle.OutlineColor.HasValue)
+                    {
+                        using var outlinePaint = new SKPaint
+                        {
+                            Style = SKPaintStyle.Stroke,
+                            Color = fillStyle.OutlineColor.Value,
+                            StrokeWidth = fillStyle.OutlineWidth,
+                            IsAntialias = fillStyle.Antialias
+                        };
+                        canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, outlinePaint);
+                    }
+
+                    break;
+                }
             case "line":
-            {
-                var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, emptyProps);
-                using var linePaint = new SKPaint
                 {
-                    Style = SKPaintStyle.Stroke,
-                    Color = lineStyle.LineColor,
-                    StrokeWidth = Math.Min(lineStyle.LineWidth, height / 4f),
-                    StrokeCap = lineStyle.LineCap,
-                    StrokeJoin = lineStyle.LineJoin,
-                    IsAntialias = true
-                };
-
-                if (lineStyle.DashArray is { Length: > 0 })
-                {
-                    using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
-                    linePaint.PathEffect = dashEffect;
-                }
-
-                canvas.DrawLine(padding, height / 2f, width - padding, height / 2f, linePaint);
-                break;
-            }
-            case "circle":
-            {
-                var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, emptyProps);
-                var radius = Math.Min(circleStyle.Radius, Math.Min(width, height) / 2f - padding);
-                using var circlePaint = new SKPaint
-                {
-                    Style = SKPaintStyle.Fill,
-                    Color = circleStyle.FillColor,
-                    IsAntialias = true
-                };
-                canvas.DrawCircle(width / 2f, height / 2f, radius, circlePaint);
-
-                if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
-                {
-                    using var strokePaint = new SKPaint
+                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, emptyProps);
+                    using var linePaint = new SKPaint
                     {
                         Style = SKPaintStyle.Stroke,
-                        Color = circleStyle.StrokeColor.Value,
-                        StrokeWidth = circleStyle.StrokeWidth,
+                        Color = lineStyle.LineColor,
+                        StrokeWidth = Math.Min(lineStyle.LineWidth, height / 4f),
+                        StrokeCap = lineStyle.LineCap,
+                        StrokeJoin = lineStyle.LineJoin,
                         IsAntialias = true
                     };
-                    canvas.DrawCircle(width / 2f, height / 2f, radius, strokePaint);
-                }
 
-                break;
-            }
+                    if (lineStyle.DashArray is { Length: > 0 })
+                    {
+                        using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
+                        linePaint.PathEffect = dashEffect;
+                    }
+
+                    canvas.DrawLine(padding, height / 2f, width - padding, height / 2f, linePaint);
+                    break;
+                }
+            case "circle":
+                {
+                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, emptyProps);
+                    var radius = Math.Min(circleStyle.Radius, Math.Min(width, height) / 2f - padding);
+                    using var circlePaint = new SKPaint
+                    {
+                        Style = SKPaintStyle.Fill,
+                        Color = circleStyle.FillColor,
+                        IsAntialias = true
+                    };
+                    canvas.DrawCircle(width / 2f, height / 2f, radius, circlePaint);
+
+                    if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                    {
+                        using var strokePaint = new SKPaint
+                        {
+                            Style = SKPaintStyle.Stroke,
+                            Color = circleStyle.StrokeColor.Value,
+                            StrokeWidth = circleStyle.StrokeWidth,
+                            IsAntialias = true
+                        };
+                        canvas.DrawCircle(width / 2f, height / 2f, radius, strokePaint);
+                    }
+
+                    break;
+                }
             default:
-            {
-                // Default swatch based on geometry type
-                RenderDefaultLegendSwatch(canvas, geometryType, width, height, padding);
-                break;
-            }
+                {
+                    // Default swatch based on geometry type
+                    RenderDefaultLegendSwatch(canvas, geometryType, width, height, padding);
+                    break;
+                }
         }
 
         return EncodeSurface(surface);
@@ -291,95 +291,95 @@ internal sealed class SkiaMapRenderer : IDisposable
             switch (styleLayer.Type)
             {
                 case "fill":
-                {
-                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes);
-                    using var fillPaint = new SKPaint
                     {
-                        Style = SKPaintStyle.Fill,
-                        Color = fillStyle.FillColor,
-                        IsAntialias = fillStyle.Antialias
-                    };
-
-                    if (result.Path != null)
-                    {
-                        canvas.DrawPath(result.Path, fillPaint);
-                    }
-
-                    if (fillStyle.OutlineColor.HasValue && result.Path != null)
-                    {
-                        using var outlinePaint = new SKPaint
+                        var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes);
+                        using var fillPaint = new SKPaint
                         {
-                            Style = SKPaintStyle.Stroke,
-                            Color = fillStyle.OutlineColor.Value,
-                            StrokeWidth = fillStyle.OutlineWidth,
+                            Style = SKPaintStyle.Fill,
+                            Color = fillStyle.FillColor,
                             IsAntialias = fillStyle.Antialias
                         };
-                        canvas.DrawPath(result.Path, outlinePaint);
-                    }
 
-                    break;
-                }
-                case "line":
-                {
-                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes);
-                    using var linePaint = new SKPaint
-                    {
-                        Style = SKPaintStyle.Stroke,
-                        Color = lineStyle.LineColor,
-                        StrokeWidth = lineStyle.LineWidth,
-                        StrokeCap = lineStyle.LineCap,
-                        StrokeJoin = lineStyle.LineJoin,
-                        IsAntialias = true
-                    };
-
-                    if (lineStyle.DashArray is { Length: > 0 })
-                    {
-                        using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
-                        linePaint.PathEffect = dashEffect;
-                    }
-
-                    if (result.Path != null)
-                    {
-                        canvas.DrawPath(result.Path, linePaint);
-                    }
-
-                    break;
-                }
-                case "circle":
-                {
-                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes);
-                    using var circlePaint = new SKPaint
-                    {
-                        Style = SKPaintStyle.Fill,
-                        Color = circleStyle.FillColor,
-                        IsAntialias = true
-                    };
-
-                    if (result.Points != null)
-                    {
-                        foreach (var point in result.Points)
+                        if (result.Path != null)
                         {
-                            canvas.DrawCircle(point, circleStyle.Radius, circlePaint);
+                            canvas.DrawPath(result.Path, fillPaint);
                         }
 
-                        if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                        if (fillStyle.OutlineColor.HasValue && result.Path != null)
                         {
-                            using var strokePaint = new SKPaint
+                            using var outlinePaint = new SKPaint
                             {
                                 Style = SKPaintStyle.Stroke,
-                                Color = circleStyle.StrokeColor.Value,
-                                StrokeWidth = circleStyle.StrokeWidth,
-                                IsAntialias = true
+                                Color = fillStyle.OutlineColor.Value,
+                                StrokeWidth = fillStyle.OutlineWidth,
+                                IsAntialias = fillStyle.Antialias
                             };
+                            canvas.DrawPath(result.Path, outlinePaint);
+                        }
+
+                        break;
+                    }
+                case "line":
+                    {
+                        var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes);
+                        using var linePaint = new SKPaint
+                        {
+                            Style = SKPaintStyle.Stroke,
+                            Color = lineStyle.LineColor,
+                            StrokeWidth = lineStyle.LineWidth,
+                            StrokeCap = lineStyle.LineCap,
+                            StrokeJoin = lineStyle.LineJoin,
+                            IsAntialias = true
+                        };
+
+                        if (lineStyle.DashArray is { Length: > 0 })
+                        {
+                            using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
+                            linePaint.PathEffect = dashEffect;
+                        }
+
+                        if (result.Path != null)
+                        {
+                            canvas.DrawPath(result.Path, linePaint);
+                        }
+
+                        break;
+                    }
+                case "circle":
+                    {
+                        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes);
+                        using var circlePaint = new SKPaint
+                        {
+                            Style = SKPaintStyle.Fill,
+                            Color = circleStyle.FillColor,
+                            IsAntialias = true
+                        };
+
+                        if (result.Points != null)
+                        {
                             foreach (var point in result.Points)
                             {
-                                canvas.DrawCircle(point, circleStyle.Radius, strokePaint);
+                                canvas.DrawCircle(point, circleStyle.Radius, circlePaint);
+                            }
+
+                            if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                            {
+                                using var strokePaint = new SKPaint
+                                {
+                                    Style = SKPaintStyle.Stroke,
+                                    Color = circleStyle.StrokeColor.Value,
+                                    StrokeWidth = circleStyle.StrokeWidth,
+                                    IsAntialias = true
+                                };
+                                foreach (var point in result.Points)
+                                {
+                                    canvas.DrawCircle(point, circleStyle.Radius, strokePaint);
+                                }
                             }
                         }
-                    }
 
-                    break;
-                }
+                        break;
+                    }
             }
         }
         finally

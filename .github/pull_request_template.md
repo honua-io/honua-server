@@ -46,6 +46,8 @@ None
 - [ ] Tests added for new functionality
 - [ ] Documentation updated if needed
 - [ ] If protocol/auth behavior changed, updated MVP compatibility contract and release checklist notes
+- [ ] If breaking admin/control-plane API changes: updated migration guide and versioning policy docs
+- [ ] If breaking gRPC/proto wire changes: confirmed with explicit review and documented in migration guide
 
 ## Reviewer Checklist
 - [ ] Code follows project architecture (vertical slices, no controllers)

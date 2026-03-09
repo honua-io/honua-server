@@ -824,66 +824,66 @@ internal static partial class MapServerEndpoints
             switch (kind)
             {
                 case IdentifyGeometryKind.Point:
-                {
-                    if (!geometry.X.HasValue || !geometry.Y.HasValue)
                     {
-                        error = "Point geometry must include x and y values.";
-                        return false;
+                        if (!geometry.X.HasValue || !geometry.Y.HasValue)
+                        {
+                            error = "Point geometry must include x and y values.";
+                            return false;
+                        }
+
+                        var x = geometry.X.Value;
+                        var y = geometry.Y.Value;
+
+                        var wkb = tolerance > 0
+                            ? CreatePointBufferWkb(x, y, tolerance)
+                            : CreatePointGeometryWkb(geometry, geometryConverter, x, y);
+
+                        if (wkb is null)
+                        {
+                            error = "Point geometry is invalid.";
+                            return false;
+                        }
+
+                        spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
+                        return true;
                     }
-
-                    var x = geometry.X.Value;
-                    var y = geometry.Y.Value;
-
-                    var wkb = tolerance > 0
-                        ? CreatePointBufferWkb(x, y, tolerance)
-                        : CreatePointGeometryWkb(geometry, geometryConverter, x, y);
-
-                    if (wkb is null)
-                    {
-                        error = "Point geometry is invalid.";
-                        return false;
-                    }
-
-                    spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
-                    return true;
-                }
                 case IdentifyGeometryKind.Envelope:
-                {
-                    if (!geometry.Xmin.HasValue || !geometry.Ymin.HasValue || !geometry.Xmax.HasValue || !geometry.Ymax.HasValue)
                     {
-                        error = "Envelope geometry must include xmin, ymin, xmax, and ymax.";
-                        return false;
+                        if (!geometry.Xmin.HasValue || !geometry.Ymin.HasValue || !geometry.Xmax.HasValue || !geometry.Ymax.HasValue)
+                        {
+                            error = "Envelope geometry must include xmin, ymin, xmax, and ymax.";
+                            return false;
+                        }
+
+                        var wkb = CreateEnvelopeWkb(
+                            geometry.Xmin.Value,
+                            geometry.Ymin.Value,
+                            geometry.Xmax.Value,
+                            geometry.Ymax.Value);
+
+                        spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
+                        return true;
                     }
-
-                    var wkb = CreateEnvelopeWkb(
-                        geometry.Xmin.Value,
-                        geometry.Ymin.Value,
-                        geometry.Xmax.Value,
-                        geometry.Ymax.Value);
-
-                    spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
-                    return true;
-                }
                 case IdentifyGeometryKind.MultiPoint:
                 case IdentifyGeometryKind.Polyline:
                 case IdentifyGeometryKind.Polygon:
-                {
-                    if (!geometry.IsJson)
                     {
-                        error = "Geometry must be provided as GeoServices JSON for this geometry type.";
-                        return false;
-                    }
+                        if (!geometry.IsJson)
+                        {
+                            error = "Geometry must be provided as GeoServices JSON for this geometry type.";
+                            return false;
+                        }
 
-                    var wkb = geometryConverter.ConvertGeoServicesJsonToWkb(geometry.RawValue);
-                    if (wkb is null)
-                    {
-                        error = "Geometry parameter is invalid.";
-                        return false;
-                    }
+                        var wkb = geometryConverter.ConvertGeoServicesJsonToWkb(geometry.RawValue);
+                        if (wkb is null)
+                        {
+                            error = "Geometry parameter is invalid.";
+                            return false;
+                        }
 
-                    spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
-                    return true;
-                }
+                        spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
+                        return true;
+                    }
                 default:
                     error = "Unsupported geometry type.";
                     return false;

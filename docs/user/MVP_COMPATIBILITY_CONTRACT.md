@@ -35,6 +35,11 @@ Recommended use during MVP:
 - client compatibility validation
 - controlled operational scenarios where full historical change tracking is not required
 
+## Versioning Policies
+
+- **Control-plane/admin APIs**: Path-versioned with deprecation lifecycle, preview channels, and OpenAPI contract governance. See [CONTROL_PLANE_VERSIONING_POLICY.md](CONTROL_PLANE_VERSIONING_POLICY.md).
+- **Standards APIs**: Stable protocol paths defined by external specifications, not path-versioned by Honua. See [STANDARDS_APIS.md — Versioning and Compatibility Policy](STANDARDS_APIS.md#versioning-and-compatibility-policy).
+
 ## Release Ownership
 
 Each release must update compatibility notes and caveats:

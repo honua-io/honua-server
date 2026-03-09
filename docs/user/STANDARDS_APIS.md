@@ -215,6 +215,39 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 ---
 
+## **Versioning and Compatibility Policy**
+
+Standards-based APIs follow a fundamentally different versioning model than the control-plane admin API.
+
+### Path stability
+
+Standards endpoints (`/rest/services/*/FeatureServer`, `/rest/services/*/MapServer`, `/ogc/*`, `/odata`, WMS/WMTS) use **stable protocol paths dictated by the specification they implement**. They are **not path-versioned by Honua**. The URL structure is defined by the external standard (Esri REST, OGC, OData), not by Honua's internal release cadence.
+
+### Backward compatibility
+
+Backward compatibility for standards APIs is defined by the external standard, not by Honua versioning. A change that conforms to the upstream specification is not considered a Honua breaking change, even if it alters behavior. Conversely, deviating from the specification in a way that breaks compliant clients is treated as a bug, not a version change.
+
+### Compatibility artifacts
+
+Compatibility is validated through:
+- **Coverage matrices** tracking supported operations per standard (see [Coverage and Compliance](#coverage-and-compliance) below).
+- **CITE conformance results** for OGC standards (automated in CI, 100% pass rate required).
+- **Client template validation** via the [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
+- **Release notes** documenting any changes to standards API behavior.
+
+### Honua-specific additions
+
+Any Honua-specific extensions to standards APIs (e.g., additional query parameters, extra response fields) are:
+- Additive only (they do not alter standard-defined behavior).
+- Discoverable via the standard's introspection mechanism where applicable.
+- Documented in the relevant coverage matrix.
+
+### Deprecation of previously supported operations
+
+Removal of previously supported standards API operations follows the same deprecation lifecycle as control-plane APIs: a minimum of **90 calendar days** and at least **2 minor releases**, whichever is longer. See [CONTROL_PLANE_VERSIONING_POLICY.md](CONTROL_PLANE_VERSIONING_POLICY.md#deprecation-lifecycle) for the full lifecycle.
+
+---
+
 ## **Coverage and Compliance**
 
 Protocol support is tracked per standard and operation. Use these docs to confirm supported behaviors:

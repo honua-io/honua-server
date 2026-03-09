@@ -245,10 +245,10 @@ internal sealed class RawJsonStringConverter : JsonConverter<string?>
                     : reader.GetDouble().ToString(CultureInfo.InvariantCulture);
             case JsonTokenType.StartObject:
             case JsonTokenType.StartArray:
-            {
-                using var document = JsonDocument.ParseValue(ref reader);
-                return document.RootElement.GetRawText();
-            }
+                {
+                    using var document = JsonDocument.ParseValue(ref reader);
+                    return document.RootElement.GetRawText();
+                }
             case JsonTokenType.Null:
                 return null;
             default:
