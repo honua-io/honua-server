@@ -11,7 +11,9 @@ This section is for people **using Honua in production** — API consumers, GIS 
 - **[Geospatial API Examples](API_EXAMPLES.md)** - Practical request/response examples for data access
 - **[Client Templates + Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)** - ArcGIS Pro, QGIS, Power BI, and Excel demo/client validation
 - **[Server Management API](CONTROL_PLANE_API.md)** - Admin + automation API for workflows and UI
-- **[Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)** - SDK generation + upgrade workflow
+- **[Server + SDK Compatibility Matrix](SDK_COMPATIBILITY_MATRIX.md)** - Supported control-plane server/SDK combinations, channels, and migration baseline
+- **[SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md)** - Required release-note and migration-guide structure for JS, Python, and .NET SDK repos
+- **[Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)** - SDK generation + upgrade workflow after picking a supported server/SDK line
 
 ## Reference & Optimization
 - **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices

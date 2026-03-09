@@ -4,6 +4,8 @@
 
 * [Documentation Overview](README.md)
 * [User Journeys](user/USER_JOURNEYS.md)
+* [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md)
+* [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md)
 * [MVP Sales Playbook + Launch GTM](user/MVP_LAUNCH_GTM_PLAYBOOK.md)
 * [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
 * [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
@@ -32,6 +34,7 @@
 * [Admin API Reference](user/CONTROL_PLANE_API.md)
 * [Admin UI](user/admin-ui.md)
 * [MCP Server](user/MCP_SERVER.md)
+* [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md)
 * [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md)
 * [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md)
 
