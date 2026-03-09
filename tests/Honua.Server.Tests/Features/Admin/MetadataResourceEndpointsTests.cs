@@ -50,7 +50,7 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /api/v1/admin/capabilities")]
-    public async Task GetAdminCapabilities_ReturnsCapabilities()
+    public async Task GetAdminCapabilities_ReturnsSdkCompatibilityContract()
     {
         var client = _fixture.CreateAdminClient();
 
@@ -66,6 +66,53 @@ public sealed class MetadataResourceEndpointsTests : IAsyncLifetime
         apiResponse!.Success.Should().BeTrue();
         apiResponse.Data.Should().NotBeNull();
         apiResponse.Data!.ResourceKinds.Should().Contain(MetadataResourceKinds.Layer);
+        apiResponse.Data.MetadataApiVersions.Should().Contain(MetadataSchemaRegistry.CurrentVersion);
+        apiResponse.Data.Compatibility.ServerVersion.Should().NotBeNullOrWhiteSpace();
+        apiResponse.Data.Compatibility.ReleaseChannel.Should().NotBeNullOrWhiteSpace();
+        apiResponse.Data.Compatibility.ControlPlaneApi.Major.Should().Be(1);
+        apiResponse.Data.Compatibility.ControlPlaneApi.BasePath.Should().Be("/api/v1/admin");
+        apiResponse.Data.Compatibility.ControlPlaneApi.Deprecated.Should().BeFalse();
+        apiResponse.Data.Compatibility.MetadataSchemas.Should().Contain(schema =>
+            schema.Version == MetadataSchemaRegistry.CurrentVersion &&
+            schema.Deprecated == false);
+        apiResponse.Data.Compatibility.MetadataSchemas.Should().Contain(schema =>
+            schema.Version == MetadataSchemaRegistry.LegacyVersion &&
+            schema.Deprecated);
+        apiResponse.Data.Compatibility.Features.MetadataResources.Should().BeTrue();
+        apiResponse.Data.Compatibility.Features.ManifestExport.Should().BeTrue();
+        apiResponse.Data.Compatibility.Features.ManifestApply.Should().BeTrue();
+        apiResponse.Data.Compatibility.Features.ManifestDryRun.Should().BeTrue();
+        apiResponse.Data.Compatibility.Features.ManifestPrune.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/capabilities")]
+    public async Task GetAdminCapabilities_UsesStableJsonShapeForSdkHandshake()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var response = await client.GetAsync("/api/v1/admin/capabilities");
+
+        response.Be200Ok();
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var compatibility = payload.RootElement
+            .GetProperty("data")
+            .GetProperty("compatibility");
+
+        compatibility.GetProperty("serverVersion").GetString().Should().NotBeNullOrWhiteSpace();
+        compatibility.GetProperty("releaseChannel").GetString().Should().NotBeNullOrWhiteSpace();
+        compatibility.GetProperty("controlPlaneApi").GetProperty("major").GetInt32().Should().Be(1);
+        compatibility.GetProperty("controlPlaneApi").GetProperty("basePath").GetString().Should().Be("/api/v1/admin");
+        compatibility.GetProperty("controlPlaneApi").GetProperty("deprecated").GetBoolean().Should().BeFalse();
+        compatibility.GetProperty("features").GetProperty("metadataResources").GetBoolean().Should().BeTrue();
+        compatibility.GetProperty("features").GetProperty("manifestApply").GetBoolean().Should().BeTrue();
+        compatibility.GetProperty("metadataSchemas")
+            .EnumerateArray()
+            .Should()
+            .Contain(element =>
+                element.GetProperty("version").GetString() == MetadataSchemaRegistry.LegacyVersion &&
+                element.GetProperty("deprecated").GetBoolean());
     }
 
     [IntegrationTest]

@@ -196,6 +196,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         json.RootElement.TryGetProperty("paths", out var pathsElement).Should().BeTrue();
 
         var paths = pathsElement;
+        paths.TryGetProperty("/capabilities", out _).Should().BeTrue();
         paths.TryGetProperty("/openapi.json", out _).Should().BeTrue();
         paths.TryGetProperty("/services", out _).Should().BeTrue();
         paths.TryGetProperty("/services/{serviceName}/settings", out _).Should().BeTrue();

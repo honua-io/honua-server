@@ -64,9 +64,14 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Exact endpoints and payloads vary by build. Use `/api/v1/admin/config` for runtime validation. `/api/v1/admin/openapi.json` serves the bundled `docs/api-specs/admin-api.json` contract snapshot used for SDK generation.
+**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/api-specs/admin-api.json` contract snapshot used for SDK generation.
 
 ## **SDKs and Contract Governance**
+
+- Runtime SDK handshake:
+- Use `GET /api/v1/admin/capabilities` as the canonical compatibility document.
+- Treat `data.compatibility` as the stable SDK-facing shape for server version, control-plane major, release channel, deprecation markers, and coarse feature flags.
+- Do not infer feature support from `serverVersion` alone, and do not probe multiple endpoints when `data.compatibility` is present.
 
 - Generate control-plane SDK artifacts locally:
 
@@ -238,8 +243,8 @@ Content-Type: application/json
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/v1/admin/version` | GET | Get server + metadata API version info |
-| `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities |
+| `/api/v1/admin/version` | GET | Get legacy server + metadata API version info |
+| `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities and the SDK compatibility contract |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
 | `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
@@ -250,6 +255,18 @@ Content-Type: application/json
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | DELETE | Delete metadata resource |
 | `/api/v1/admin/metadata/layers/{layerId}/style` | GET | Get layer style payload |
 | `/api/v1/admin/metadata/layers/{layerId}/style` | PUT | Update layer style payload |
+
+### **SDK Compatibility Handshake**
+
+SDKs should call `GET /api/v1/admin/capabilities` once per authenticated session and cache the `data.compatibility` object.
+
+- `controlPlaneApi.major`: reject unsupported majors without guessing path shape.
+- `metadataSchemas`: prefer non-deprecated metadata schema versions when sending resource documents.
+- `features`: branch on coarse capabilities such as manifest support instead of probing extra endpoints.
+- `serverVersion` and `releaseChannel`: log or surface for diagnostics, rollout targeting, and support.
+
+Focused guidance and a concrete JSON example:
+- [SDK Compatibility Metadata](SDK_COMPATIBILITY_METADATA.md)
 
 ### **Operations and Monitoring Endpoints**
 
