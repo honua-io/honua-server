@@ -8,6 +8,8 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 |---|---|
 | **Consume geospatial data** | [Protocols Overview](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
 | **Manage the server** | [Admin API](user/CONTROL_PLANE_API.md) / [Admin UI](user/admin-ui.md) |
+| **Check server/SDK compatibility** | [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md) / [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) |
+| **Standardize SDK release docs** | [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) |
 | **Integrate AI agents** | [MCP Server](user/MCP_SERVER.md) |
 | **Deploy to production** | [Infrastructure & Deployment](devops/infrastructure.md) |
 | **Monitor and troubleshoot** | [Monitoring](devops/monitoring.md) / [Troubleshooting](devops/troubleshooting.md) |
@@ -22,6 +24,8 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [API Examples](user/API_EXAMPLES.md) — request/response examples
 - [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches
 - [Admin API](user/CONTROL_PLANE_API.md) — server management endpoints
+- [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md) — supported control-plane server/SDK combinations and migration baseline
+- [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) — required migration/changelog structure for SDK repos
 - [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) — SDK and upgrade workflow
 - [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md) — deprecation and compatibility guarantees
 - [MCP Server](user/MCP_SERVER.md) — AI/agent integration via Model Context Protocol
