@@ -1000,13 +1000,13 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                 parsed = dto;
                 return true;
             case DateTime dt:
-            {
-                var normalized = dt.Kind == DateTimeKind.Unspecified
-                    ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
-                    : dt.ToUniversalTime();
-                parsed = new DateTimeOffset(normalized);
-                return true;
-            }
+                {
+                    var normalized = dt.Kind == DateTimeKind.Unspecified
+                        ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+                        : dt.ToUniversalTime();
+                    parsed = new DateTimeOffset(normalized);
+                    return true;
+                }
             case string text:
                 return DateTimeOffset.TryParse(
                     text,

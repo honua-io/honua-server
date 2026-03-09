@@ -459,22 +459,22 @@ public sealed class PbfQueryFormatterTests
                     offset += 8;
                     break;
                 case 2:
-                {
-                    var length = checked((int)ReadVarint(message, ref offset));
-                    if (length < 0 || offset + length > message.Length)
                     {
-                        throw new InvalidOperationException("Malformed protobuf length-delimited field.");
-                    }
+                        var length = checked((int)ReadVarint(message, ref offset));
+                        if (length < 0 || offset + length > message.Length)
+                        {
+                            throw new InvalidOperationException("Malformed protobuf length-delimited field.");
+                        }
 
-                    var payload = message.Slice(offset, length);
-                    offset += length;
-                    if (currentField == fieldNumber)
-                    {
-                        return payload.ToArray();
-                    }
+                        var payload = message.Slice(offset, length);
+                        offset += length;
+                        if (currentField == fieldNumber)
+                        {
+                            return payload.ToArray();
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case 5:
                     offset += 4;
                     break;

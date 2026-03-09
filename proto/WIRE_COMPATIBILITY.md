@@ -42,10 +42,10 @@ A breaking wire change is any modification that causes existing serialized data 
 
 Breaking wire changes require:
 1. Explicit reviewer approval.
-2. A package version bump (e.g., `geospatial.v1` to `geospatial.v2`).
-3. Documentation in `docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md`.
+2. Documentation in `docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md`.
+3. A documented migration and rollout plan for affected consumers.
 4. Setting `BUF_ALLOW_BREAKING_CHANGES=true` in CI to bypass the `proto-wire-governance.yml` gate.
 
 ## CI Enforcement
 
-Wire compatibility is enforced by `buf breaking` in the `proto-wire-governance.yml` workflow. This runs on every PR that modifies `.proto` files and compares against the `trunk` branch baseline.
+Wire compatibility is enforced by `buf breaking` in the `proto-wire-governance.yml` workflow. This runs on every PR that modifies `.proto` files and compares against the PR base branch. Pushes compare against the previous commit on the protected branch.

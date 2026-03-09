@@ -532,95 +532,95 @@ internal static partial class MapServerEndpoints
         switch (styleLayer.Type)
         {
             case "fill":
-            {
-                var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes);
-                using var fillPaint = new SKPaint
                 {
-                    Style = SKPaintStyle.Fill,
-                    Color = fillStyle.FillColor,
-                    IsAntialias = fillStyle.Antialias
-                };
-
-                if (result.Path != null)
-                {
-                    canvas.DrawPath(result.Path, fillPaint);
-                }
-
-                if (fillStyle.OutlineColor.HasValue && result.Path != null)
-                {
-                    using var outlinePaint = new SKPaint
+                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes);
+                    using var fillPaint = new SKPaint
                     {
-                        Style = SKPaintStyle.Stroke,
-                        Color = fillStyle.OutlineColor.Value,
-                        StrokeWidth = fillStyle.OutlineWidth,
+                        Style = SKPaintStyle.Fill,
+                        Color = fillStyle.FillColor,
                         IsAntialias = fillStyle.Antialias
                     };
-                    canvas.DrawPath(result.Path, outlinePaint);
-                }
 
-                break;
-            }
-            case "line":
-            {
-                var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes);
-                using var linePaint = new SKPaint
-                {
-                    Style = SKPaintStyle.Stroke,
-                    Color = lineStyle.LineColor,
-                    StrokeWidth = lineStyle.LineWidth,
-                    StrokeCap = lineStyle.LineCap,
-                    StrokeJoin = lineStyle.LineJoin,
-                    IsAntialias = true
-                };
-
-                if (lineStyle.DashArray is { Length: > 0 })
-                {
-                    using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
-                    linePaint.PathEffect = dashEffect;
-                }
-
-                if (result.Path != null)
-                {
-                    canvas.DrawPath(result.Path, linePaint);
-                }
-
-                break;
-            }
-            case "circle":
-            {
-                var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes);
-                using var circlePaint = new SKPaint
-                {
-                    Style = SKPaintStyle.Fill,
-                    Color = circleStyle.FillColor,
-                    IsAntialias = true
-                };
-
-                if (result.Points != null)
-                {
-                    foreach (var point in result.Points)
+                    if (result.Path != null)
                     {
-                        canvas.DrawCircle(point, circleStyle.Radius, circlePaint);
+                        canvas.DrawPath(result.Path, fillPaint);
                     }
 
-                    if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                    if (fillStyle.OutlineColor.HasValue && result.Path != null)
                     {
-                        using var strokePaint = new SKPaint
+                        using var outlinePaint = new SKPaint
                         {
                             Style = SKPaintStyle.Stroke,
-                            Color = circleStyle.StrokeColor.Value,
-                            StrokeWidth = circleStyle.StrokeWidth,
-                            IsAntialias = true
+                            Color = fillStyle.OutlineColor.Value,
+                            StrokeWidth = fillStyle.OutlineWidth,
+                            IsAntialias = fillStyle.Antialias
                         };
+                        canvas.DrawPath(result.Path, outlinePaint);
+                    }
+
+                    break;
+                }
+            case "line":
+                {
+                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes);
+                    using var linePaint = new SKPaint
+                    {
+                        Style = SKPaintStyle.Stroke,
+                        Color = lineStyle.LineColor,
+                        StrokeWidth = lineStyle.LineWidth,
+                        StrokeCap = lineStyle.LineCap,
+                        StrokeJoin = lineStyle.LineJoin,
+                        IsAntialias = true
+                    };
+
+                    if (lineStyle.DashArray is { Length: > 0 })
+                    {
+                        using var dashEffect = SKPathEffect.CreateDash(lineStyle.DashArray, 0);
+                        linePaint.PathEffect = dashEffect;
+                    }
+
+                    if (result.Path != null)
+                    {
+                        canvas.DrawPath(result.Path, linePaint);
+                    }
+
+                    break;
+                }
+            case "circle":
+                {
+                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes);
+                    using var circlePaint = new SKPaint
+                    {
+                        Style = SKPaintStyle.Fill,
+                        Color = circleStyle.FillColor,
+                        IsAntialias = true
+                    };
+
+                    if (result.Points != null)
+                    {
                         foreach (var point in result.Points)
                         {
-                            canvas.DrawCircle(point, circleStyle.Radius, strokePaint);
+                            canvas.DrawCircle(point, circleStyle.Radius, circlePaint);
+                        }
+
+                        if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                        {
+                            using var strokePaint = new SKPaint
+                            {
+                                Style = SKPaintStyle.Stroke,
+                                Color = circleStyle.StrokeColor.Value,
+                                StrokeWidth = circleStyle.StrokeWidth,
+                                IsAntialias = true
+                            };
+                            foreach (var point in result.Points)
+                            {
+                                canvas.DrawCircle(point, circleStyle.Radius, strokePaint);
+                            }
                         }
                     }
-                }
 
-                break;
-            }
+                    break;
+                }
         }
 
         result.Path?.Dispose();
@@ -1547,83 +1547,83 @@ internal static partial class MapServerEndpoints
             case "esritimeunitsyears":
             case "years":
             case "year":
-            {
-                if (!TryToIntegerOffset(offset, out var intOffset, out error))
                 {
-                    return false;
-                }
+                    if (!TryToIntegerOffset(offset, out var intOffset, out error))
+                    {
+                        return false;
+                    }
 
-                adjustedStart = start?.AddYears(-intOffset);
-                adjustedEnd = end?.AddYears(-intOffset);
-                return true;
-            }
+                    adjustedStart = start?.AddYears(-intOffset);
+                    adjustedEnd = end?.AddYears(-intOffset);
+                    return true;
+                }
             case "esritimeunitsmonths":
             case "months":
             case "month":
-            {
-                if (!TryToIntegerOffset(offset, out var intOffset, out error))
                 {
-                    return false;
-                }
+                    if (!TryToIntegerOffset(offset, out var intOffset, out error))
+                    {
+                        return false;
+                    }
 
-                adjustedStart = start?.AddMonths(-intOffset);
-                adjustedEnd = end?.AddMonths(-intOffset);
-                return true;
-            }
+                    adjustedStart = start?.AddMonths(-intOffset);
+                    adjustedEnd = end?.AddMonths(-intOffset);
+                    return true;
+                }
             case "esritimeunitsweeks":
             case "weeks":
             case "week":
-            {
-                var span = TimeSpan.FromDays(7 * signedOffset);
-                adjustedStart = start?.Add(span);
-                adjustedEnd = end?.Add(span);
-                return true;
-            }
+                {
+                    var span = TimeSpan.FromDays(7 * signedOffset);
+                    adjustedStart = start?.Add(span);
+                    adjustedEnd = end?.Add(span);
+                    return true;
+                }
             case "esritimeunitsdays":
             case "days":
             case "day":
-            {
-                var span = TimeSpan.FromDays(signedOffset);
-                adjustedStart = start?.Add(span);
-                adjustedEnd = end?.Add(span);
-                return true;
-            }
+                {
+                    var span = TimeSpan.FromDays(signedOffset);
+                    adjustedStart = start?.Add(span);
+                    adjustedEnd = end?.Add(span);
+                    return true;
+                }
             case "esritimeunitshours":
             case "hours":
             case "hour":
-            {
-                var span = TimeSpan.FromHours(signedOffset);
-                adjustedStart = start?.Add(span);
-                adjustedEnd = end?.Add(span);
-                return true;
-            }
+                {
+                    var span = TimeSpan.FromHours(signedOffset);
+                    adjustedStart = start?.Add(span);
+                    adjustedEnd = end?.Add(span);
+                    return true;
+                }
             case "esritimeunitsminutes":
             case "minutes":
             case "minute":
-            {
-                var span = TimeSpan.FromMinutes(signedOffset);
-                adjustedStart = start?.Add(span);
-                adjustedEnd = end?.Add(span);
-                return true;
-            }
+                {
+                    var span = TimeSpan.FromMinutes(signedOffset);
+                    adjustedStart = start?.Add(span);
+                    adjustedEnd = end?.Add(span);
+                    return true;
+                }
             case "esritimeunitsseconds":
             case "seconds":
             case "second":
-            {
-                var span = TimeSpan.FromSeconds(signedOffset);
-                adjustedStart = start?.Add(span);
-                adjustedEnd = end?.Add(span);
-                return true;
-            }
+                {
+                    var span = TimeSpan.FromSeconds(signedOffset);
+                    adjustedStart = start?.Add(span);
+                    adjustedEnd = end?.Add(span);
+                    return true;
+                }
             case "esritimeunitsmilliseconds":
             case "milliseconds":
             case "millisecond":
-            {
-                var span = TimeSpan.FromMilliseconds(signedOffset);
-                adjustedStart = start?.Add(span);
-                adjustedEnd = end?.Add(span);
-                return true;
-            }
+                {
+                    var span = TimeSpan.FromMilliseconds(signedOffset);
+                    adjustedStart = start?.Add(span);
+                    adjustedEnd = end?.Add(span);
+                    return true;
+                }
             default:
                 error = $"Unsupported timeOffsetUnits value '{units}'.";
                 return false;

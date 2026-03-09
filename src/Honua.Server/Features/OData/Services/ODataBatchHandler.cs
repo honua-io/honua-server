@@ -439,146 +439,146 @@ internal sealed partial class ODataBatchHandler
                         break;
 
                     case "POST":
-                    {
-                        if (request.Body == null)
                         {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                400,
-                                "InvalidRequest",
-                                "Request body is required for POST operations."));
-                            rollback = true;
+                            if (request.Body == null)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    "Request body is required for POST operations."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var feature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
+                            if (!createRequests.TryGetValue(layerId.Value, out var createList))
+                            {
+                                createList = new List<(string requestId, Feature feature)>();
+                                createRequests[layerId.Value] = createList;
+                            }
+
+                            createList.Add((request.Id, feature));
+                            writeLayerIds.Add(layerId.Value);
                             break;
                         }
-
-                        var feature = await CreateFeatureFromBodyAsync(request.Body, layer, cancellationToken: cancellationToken);
-                        if (!createRequests.TryGetValue(layerId.Value, out var createList))
-                        {
-                            createList = new List<(string requestId, Feature feature)>();
-                            createRequests[layerId.Value] = createList;
-                        }
-
-                        createList.Add((request.Id, feature));
-                        writeLayerIds.Add(layerId.Value);
-                        break;
-                    }
 
                     case "PATCH":
-                    {
-                        if (!objectId.HasValue)
                         {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                400,
-                                "InvalidRequest",
-                                "ObjectId is required for update operations."));
-                            rollback = true;
+                            if (!objectId.HasValue)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    "ObjectId is required for update operations."));
+                                rollback = true;
+                                break;
+                            }
+
+                            if (request.Body == null)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    "Request body is required for update operations."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
+                            if (!existing.HasValue)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    404,
+                                    "ResourceNotFound",
+                                    $"Feature {objectId} not found in layer {layerId}."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
+                            if (!precondition.IsValid)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    412,
+                                    "PreconditionFailed",
+                                    precondition.ErrorMessage ?? "Precondition failed."));
+                                rollback = true;
+                                break;
+                            }
+
+                            Feature? mergeExisting = request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase)
+                                ? existing.Value
+                                : null;
+
+                            var feature = await CreateFeatureFromBodyAsync(
+                                request.Body,
+                                layer,
+                                objectId.Value,
+                                mergeExisting,
+                                cancellationToken: cancellationToken);
+                            if (!updateRequests.TryGetValue(layerId.Value, out var updateList))
+                            {
+                                updateList = new List<(string requestId, long objectId, Feature feature)>();
+                                updateRequests[layerId.Value] = updateList;
+                            }
+
+                            updateList.Add((request.Id, objectId.Value, feature));
+                            writeLayerIds.Add(layerId.Value);
                             break;
                         }
-
-                        if (request.Body == null)
-                        {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                400,
-                                "InvalidRequest",
-                                "Request body is required for update operations."));
-                            rollback = true;
-                            break;
-                        }
-
-                        var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
-                        if (!existing.HasValue)
-                        {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                404,
-                                "ResourceNotFound",
-                                $"Feature {objectId} not found in layer {layerId}."));
-                            rollback = true;
-                            break;
-                        }
-
-                        var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
-                        if (!precondition.IsValid)
-                        {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                412,
-                                "PreconditionFailed",
-                                precondition.ErrorMessage ?? "Precondition failed."));
-                            rollback = true;
-                            break;
-                        }
-
-                        Feature? mergeExisting = request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase)
-                            ? existing.Value
-                            : null;
-
-                        var feature = await CreateFeatureFromBodyAsync(
-                            request.Body,
-                            layer,
-                            objectId.Value,
-                            mergeExisting,
-                            cancellationToken: cancellationToken);
-                        if (!updateRequests.TryGetValue(layerId.Value, out var updateList))
-                        {
-                            updateList = new List<(string requestId, long objectId, Feature feature)>();
-                            updateRequests[layerId.Value] = updateList;
-                        }
-
-                        updateList.Add((request.Id, objectId.Value, feature));
-                        writeLayerIds.Add(layerId.Value);
-                        break;
-                    }
 
                     case "DELETE":
-                    {
-                        if (!objectId.HasValue)
                         {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                400,
-                                "InvalidRequest",
-                                "ObjectId is required for delete operations."));
-                            rollback = true;
+                            if (!objectId.HasValue)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    400,
+                                    "InvalidRequest",
+                                    "ObjectId is required for delete operations."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
+                            if (!existing.HasValue)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    404,
+                                    "ResourceNotFound",
+                                    $"Feature {objectId} not found in layer {layerId}."));
+                                rollback = true;
+                                break;
+                            }
+
+                            var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
+                            if (!precondition.IsValid)
+                            {
+                                responses.Add(CreateErrorResponse(
+                                    request.Id,
+                                    412,
+                                    "PreconditionFailed",
+                                    precondition.ErrorMessage ?? "Precondition failed."));
+                                rollback = true;
+                                break;
+                            }
+
+                            if (!deleteRequests.TryGetValue(layerId.Value, out var deleteList))
+                            {
+                                deleteList = new List<(string requestId, long objectId)>();
+                                deleteRequests[layerId.Value] = deleteList;
+                            }
+
+                            deleteList.Add((request.Id, objectId.Value));
+                            writeLayerIds.Add(layerId.Value);
                             break;
                         }
-
-                        var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
-                        if (!existing.HasValue)
-                        {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                404,
-                                "ResourceNotFound",
-                                $"Feature {objectId} not found in layer {layerId}."));
-                            rollback = true;
-                            break;
-                        }
-
-                        var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
-                        if (!precondition.IsValid)
-                        {
-                            responses.Add(CreateErrorResponse(
-                                request.Id,
-                                412,
-                                "PreconditionFailed",
-                                precondition.ErrorMessage ?? "Precondition failed."));
-                            rollback = true;
-                            break;
-                        }
-
-                        if (!deleteRequests.TryGetValue(layerId.Value, out var deleteList))
-                        {
-                            deleteList = new List<(string requestId, long objectId)>();
-                            deleteRequests[layerId.Value] = deleteList;
-                        }
-
-                        deleteList.Add((request.Id, objectId.Value));
-                        writeLayerIds.Add(layerId.Value);
-                        break;
-                    }
 
                     default:
                         responses.Add(CreateErrorResponse(

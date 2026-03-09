@@ -31,14 +31,11 @@ Fully supported with backward-compatibility guaranteed for the current major ver
 
 ### Preview
 
-Opt-in access to upcoming features before they graduate to stable. Preview endpoints are available via:
-- Path prefix: `/api/v1/admin/preview/*`
-- Request header: `X-Honua-Preview: true`
+Opt-in access to upcoming features before they graduate to stable. Preview features must be explicitly marked in the affected API documentation and release notes before release.
 
 Preview guarantees:
 - Preview features may change or be removed without a major version bump.
 - Preview features must graduate to stable or be removed within **3 minor releases** of their introduction.
-- Preview endpoints are documented in the OpenAPI spec with `x-honua-preview: true`.
 - Clients should not depend on preview behavior in production workflows.
 
 ### LTS (Long-Term Support)
@@ -94,7 +91,7 @@ Protobuf contracts live at `src/Honua.Core/Transport/Proto/geospatial/v1/`. The 
 - **Additive message evolution only.** New fields must be optional and appended with new (higher) field numbers.
 - **Enum values are append-only.** New enum values are appended at the end; existing values must not be reordered or renumbered.
 - **Deprecated fields** are marked with `[deprecated = true]`. If a field is removed, its field number must be `reserved` to prevent accidental reuse.
-- **Breaking wire changes** require explicit review and a package version bump (e.g., `geospatial.v1` to `geospatial.v2`) for breaking wire format changes.
+- **Breaking wire changes** require explicit review plus a documented migration and rollout plan before merge.
 - **CI enforcement** via `buf breaking` in `proto-wire-governance.yml`. Wire-incompatible changes fail CI unless `BUF_ALLOW_BREAKING_CHANGES=true` is set.
 
 For detailed wire compatibility rules, see [proto/WIRE_COMPATIBILITY.md](../../proto/WIRE_COMPATIBILITY.md).

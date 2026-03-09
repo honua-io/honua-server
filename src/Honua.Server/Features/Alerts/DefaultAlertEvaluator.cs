@@ -64,18 +64,18 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                 break;
 
             case AlertTriggerType.Threshold:
-            {
-                var previousBreached = ParseThresholdState(currentState?.ThresholdStateJson);
-                var breachedNow = EvaluateThreshold(rule.ConditionsJson, feature);
-                thresholdStateJson = CreateThresholdStateJson(breachedNow);
-
-                if (!previousBreached && breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                 {
-                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold", feature, zone, evaluatedAt.ToUnixTimeSeconds());
-                }
+                    var previousBreached = ParseThresholdState(currentState?.ThresholdStateJson);
+                    var breachedNow = EvaluateThreshold(rule.ConditionsJson, feature);
+                    thresholdStateJson = CreateThresholdStateJson(breachedNow);
 
-                break;
-            }
+                    if (!previousBreached && breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    {
+                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold", feature, zone, evaluatedAt.ToUnixTimeSeconds());
+                    }
+
+                    break;
+                }
 
             default:
                 break;

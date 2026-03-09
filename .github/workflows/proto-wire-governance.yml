@@ -35,11 +35,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Determine baseline ref
+        id: baseline
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            echo "ref=origin/${GITHUB_BASE_REF}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install buf
         uses: bufbuild/buf-setup-action@v1
 
       - name: Check wire compatibility
         env:
+          BUF_BASE_REF: ${{ steps.baseline.outputs.ref }}
           BUF_ALLOW_BREAKING_CHANGES: ${{ vars.BUF_ALLOW_BREAKING_CHANGES || 'false' }}
         run: |
           if [[ "${BUF_ALLOW_BREAKING_CHANGES}" == "true" ]]; then
@@ -48,5 +58,5 @@ jobs:
             exit 0
           fi
 
-          echo "Running buf breaking change detection against trunk..."
-          buf breaking --against '.git#branch=trunk'
+          echo "Running buf breaking change detection against ${BUF_BASE_REF}..."
+          buf breaking --against ".git#ref=${BUF_BASE_REF}" --against-config buf.yaml
