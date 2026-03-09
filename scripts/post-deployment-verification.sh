@@ -203,11 +203,15 @@ security_checks() {
     # HTTPS verification (if applicable)
     if [[ "$BASE_URL" == https* ]]; then
         echo "🔍 Checking HTTPS configuration..."
-        local ssl_info=$(curl -s -I --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live" | head -n1)
-        if echo "$ssl_info" | grep -q "200"; then
+        local https_status
+        https_status=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time $TIMEOUT \
+            "${ROUTING_ARGS[@]}" \
+            "$BASE_URL/healthz/live" || echo "000")
+        if [[ "$https_status" == "200" ]]; then
             echo "✅ HTTPS working correctly"
         else
-            echo "❌ HTTPS configuration issues"
+            echo "❌ HTTPS configuration issues (HTTP $https_status)"
             ((failed_checks++))
         fi
     fi
