@@ -24,6 +24,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - image_key: ecs-jit
+            image_name: ECS JIT Image
+            dockerfile: Dockerfile
+            tag_suffix: -ecs
+            cache_scope: release-ecs-jit
+            sarif_output: trivy-results-ecs
+            sarif_category: trivy-ecs
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: ecs-aot
+            image_name: ECS AOT Image
+            dockerfile: docker/Dockerfile.aot
+            tag_suffix: -ecs-aot
+            cache_scope: release-ecs-aot
+            sarif_output: trivy-results-ecs-aot
+            sarif_category: trivy-ecs-aot
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
           - image_key: lambda-jit
             image_name: Lambda JIT Image
             dockerfile: docker/Dockerfile.lambda
@@ -277,6 +297,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - image_name: ECS JIT Image
+            tag_suffix: -ecs
+            source_arches: "arm64"
+          - image_name: ECS AOT Image
+            tag_suffix: -ecs-aot
+            source_arches: "arm64"
           - image_name: Lambda JIT Image
             tag_suffix: -lambda
             source_arches: "arm64"

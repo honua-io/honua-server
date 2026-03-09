@@ -58,18 +58,22 @@ See `.env.example` in the repo root for every available setting.
 ## Container images
 
 Web runtime tags are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`).
-Serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
+Cloud-targeted platform tags (`*-ecs`, `*-ecs-aot`, `*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 
 | Tag | Build | Use for | Registry |
 |-----|-------|---------|----------|
 | `vX.Y.Z-aot` | AOT | Production (recommended) | GHCR + Docker Hub |
 | `vX.Y.Z` | JIT | Production (if AOT incompatible) | GHCR + Docker Hub |
+| `vX.Y.Z-ecs-aot` | AOT | AWS ECS/Fargate (preferred) | ECR (and optional ACR mirror) |
+| `vX.Y.Z-ecs` | JIT | AWS ECS/Fargate debug fallback | ECR (and optional ACR mirror) |
 | `vX.Y.Z-lambda-aot` | AOT | AWS Lambda (preferred) | ECR (and optional ACR mirror) |
 | `vX.Y.Z-lambda` | JIT | AWS Lambda debug fallback | ECR (and optional ACR mirror) |
 | `vX.Y.Z-functions-aot` | AOT | Azure Functions (preferred) | ACR (and optional ECR mirror) |
 | `vX.Y.Z-functions` | JIT | Azure Functions debug fallback | ACR (and optional ECR mirror) |
 | `latest-aot` | AOT | Development (tracks trunk) | GHCR + Docker Hub |
 | `latest` | JIT | Development (tracks trunk) | GHCR + Docker Hub |
+| `latest-ecs-aot` | AOT | ECS validation / dev | ECR (and optional ACR mirror) |
+| `latest-ecs` | JIT | ECS debug fallback / dev | ECR (and optional ACR mirror) |
 | `latest-lambda-aot` | AOT | Lambda validation / dev | ECR (and optional ACR mirror) |
 | `latest-lambda` | JIT | Lambda debug fallback / dev | ECR (and optional ACR mirror) |
 | `latest-functions-aot` | AOT | Functions validation / dev | ACR (and optional ECR mirror) |
@@ -82,6 +86,7 @@ Serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-function
 Workflow: `.github/workflows/deploy-platform-images.yml`
 
 - Publishes only platform tags to cloud registries (`ECR` and/or `ACR`).
+- Publishes AWS ECS tags (`*-ecs`, `*-ecs-aot`) as `linux/arm64` only, because Honua's ECS/Fargate default runtime target is Arm.
 - Publishes Lambda tags for AWS as `linux/arm64` only, because Honua's AWS default runtime target is Arm.
 - Publishes Azure Functions tags as `linux/amd64` only, because Azure Functions custom containers are treated as x86-64.
 - Keeps generic web images multi-arch for Kubernetes and general container use; AKS Arm node pools should pull the `arm64` variant from the generic image family.
@@ -94,7 +99,7 @@ Workflow: `.github/workflows/deploy-platform-images.yml`
   - Secrets: `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
   - ACR login is derived at runtime via `az login` + `az acr login`; do not store long-lived `ACR_USERNAME` / `ACR_PASSWORD` secrets for this workflow
 
-AOT images start faster and use less memory. Keep JIT serverless tags as debug fallback only.
+AOT images start faster and use less memory. Keep JIT cloud-targeted tags as debug fallback only.
 
 ## Production checklist
 
