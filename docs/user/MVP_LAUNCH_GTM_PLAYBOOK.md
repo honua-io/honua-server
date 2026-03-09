@@ -3,6 +3,8 @@
 ## Purpose
 This playbook defines a low-touch, product-led launch motion with simple pricing, self-service trials, and cloud marketplace distribution.
 
+For the customer-facing procurement packet, support commitments, licensing posture, and security response policy, use [Enterprise Procurement Readiness](ENTERPRISE_PROCUREMENT_READINESS.md) as the canonical source.
+
 ## Launch Goals (First 90 Days)
 - `100-200` Community edition deployments
 - `20-40` Community-to-Pro conversions

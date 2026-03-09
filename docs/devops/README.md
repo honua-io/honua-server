@@ -16,6 +16,7 @@ Control-plane direction:
 ## Security
 
 - [Security](security.md) — authentication, authorization, rate limiting, CSP, credential rotation
+- [Enterprise Procurement Readiness](../user/ENTERPRISE_PROCUREMENT_READINESS.md) — buyer-facing summary of security policy, support levels, and deployment commitments
 
 ## Monitoring & Performance
 

@@ -12,6 +12,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 | **Standardize SDK release docs** | [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) |
 | **Integrate AI agents** | [MCP Server](user/MCP_SERVER.md) |
 | **Deploy to production** | [Infrastructure & Deployment](devops/infrastructure.md) |
+| **Review enterprise procurement readiness** | [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md) |
 | **Monitor and troubleshoot** | [Monitoring](devops/monitoring.md) / [Troubleshooting](devops/troubleshooting.md) |
 | **Evaluate protocol coverage** | [Coverage Matrices](#coverage-matrices) |
 | **Check MVP launch limits** | [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) |
@@ -29,6 +30,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) — SDK and upgrade workflow
 - [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md) — deprecation and compatibility guarantees
 - [MCP Server](user/MCP_SERVER.md) — AI/agent integration via Model Context Protocol
+- [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md) — buyer-facing security, support, licensing, and architecture package
 - [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) — launch-ready protocol and limitation summary
 - [Admin UI](user/admin-ui.md) — browser interface guide
 - [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling
