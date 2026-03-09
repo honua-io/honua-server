@@ -12,18 +12,60 @@ env:
   IMAGE_NAME_GHCR: ${{ github.repository }}
   REGISTRY_DOCKERHUB: docker.io
   IMAGE_NAME_DOCKERHUB: honuaio/honua-server
+  TRIVY_IMAGE: aquasec/trivy:0.68.1
 
 jobs:
   build-and-push:
-    name: Build & Push Container Image
-    runs-on: ubuntu-latest
+    name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image_key: jit
+            image_name: Container Image
+            dockerfile: Dockerfile
+            tag_suffix: ""
+            cache_scope: release-jit
+            sarif_output: trivy-results
+            sarif_category: trivy
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: jit
+            image_name: Container Image
+            dockerfile: Dockerfile
+            tag_suffix: ""
+            cache_scope: release-jit
+            sarif_output: trivy-results
+            sarif_category: trivy
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image_key: aot
+            image_name: AOT Container Image
+            dockerfile: docker/Dockerfile.aot
+            tag_suffix: -aot
+            cache_scope: release-aot
+            sarif_output: trivy-results-aot
+            sarif_category: trivy-aot
+            arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - image_key: aot
+            image_name: AOT Container Image
+            dockerfile: docker/Dockerfile.aot
+            tag_suffix: -aot
+            cache_scope: release-aot
+            sarif_output: trivy-results-aot
+            sarif_category: trivy-aot
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
       security-events: write
-    outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,57 +97,102 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch,suffix=${{ matrix.tag_suffix }}
+            type=ref,event=tag,suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{version}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
+            type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
+
+      - name: Add explicit arch suffixes to image tags
+        id: arch_tags
+        shell: bash
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          {
+            echo "tags<<EOF"
+            while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
+              printf '%s-%s\n' "$tag" "$ARCH"
+            done <<< "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.arch_tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-jit
-          cache-to: type=gha,mode=max,scope=release-jit
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
           provenance: true
           sbom: true
 
+      - name: Pull image for Trivy scan
+        id: scan_prep
+        shell: bash
+        env:
+          SCAN_SOURCE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+          SCAN_LOCAL: honua-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker pull "$SCAN_SOURCE"
+          docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
+          echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
+
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
-        with:
-          image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+        shell: bash
+        env:
+          SARIF_OUTPUT: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
+          SCAN_LOCAL: ${{ steps.scan_prep.outputs.scan_local }}
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          set -euo pipefail
+          mkdir -p "$TRIVY_CACHE_DIR"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/work" \
+            -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --skip-version-check \
+            --format sarif \
+            --output "/work/$SARIF_OUTPUT" \
+            "$SCAN_LOCAL"
 
       - name: Upload Trivy scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles(format('{0}-{1}.sarif', matrix.sarif_output, matrix.arch)) != ''
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
+          category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
 
-  build-and-push-aot:
-    name: Build & Push AOT Container Image
-    runs-on: ubuntu-latest
+  publish-manifests:
+    name: Publish ${{ matrix.image_name }} Manifest
+    needs: build-and-push
+    if: ${{ needs.build-and-push.result == 'success' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image_name: Container Image
+            tag_suffix: ""
+          - image_name: AOT Container Image
+            tag_suffix: -aot
     permissions:
       contents: read
       packages: write
-      security-events: write
-    outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-      image-tag: ${{ steps.meta.outputs.tags }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -131,41 +218,22 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=ref,event=branch,suffix=-aot
-            type=ref,event=tag,suffix=-aot
-            type=semver,pattern={{version}},suffix=-aot
-            type=semver,pattern={{major}}.{{minor}},suffix=-aot
-            type=semver,pattern={{major}},suffix=-aot
-            type=sha,prefix={{branch}}-,suffix=-aot
-            type=raw,value=latest-aot,enable={{is_default_branch}}
+            type=ref,event=branch,suffix=${{ matrix.tag_suffix }}
+            type=ref,event=tag,suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{version}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.tag_suffix }}
+            type=semver,pattern={{major}},suffix=${{ matrix.tag_suffix }}
+            type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
 
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.aot
-          # linux/arm64 AOT currently fails nondeterministically under qemu in this workflow.
-          # Nightly native-arm runners continue validating/publishing arm64 AOT.
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-aot
-          cache-to: type=gha,mode=max,scope=release-aot
-          provenance: true
-          sbom: true
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac # master
-        with:
-          image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
-          format: 'sarif'
-          output: 'trivy-results-aot.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results-aot.sarif') != ''
-        with:
-          sarif_file: 'trivy-results-aot.sarif'
-          category: 'trivy-aot'
+      - name: Create and push multi-arch manifests
+        shell: bash
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for tag in $TAGS; do
+            docker buildx imagetools create -t "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
+          done

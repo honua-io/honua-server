@@ -31,29 +31,9 @@ jobs:
             cache_scope: release-lambda-jit
             sarif_output: trivy-results-lambda
             sarif_category: trivy-lambda
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-          - image_key: lambda-jit
-            image_name: Lambda JIT Image
-            dockerfile: docker/Dockerfile.lambda
-            tag_suffix: -lambda
-            cache_scope: release-lambda-jit
-            sarif_output: trivy-results-lambda
-            sarif_category: trivy-lambda
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - image_key: lambda-aot
-            image_name: Lambda AOT Image
-            dockerfile: docker/Dockerfile.lambda.aot
-            tag_suffix: -lambda-aot
-            cache_scope: release-lambda-aot
-            sarif_output: trivy-results-lambda-aot
-            sarif_category: trivy-lambda-aot
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
           - image_key: lambda-aot
             image_name: Lambda AOT Image
             dockerfile: docker/Dockerfile.lambda.aot
@@ -74,16 +54,6 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
-          - image_key: functions-jit
-            image_name: Functions JIT Image
-            dockerfile: docker/Dockerfile.functions
-            tag_suffix: -functions
-            cache_scope: release-functions-jit
-            sarif_output: trivy-results-functions
-            sarif_category: trivy-functions
-            arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
           - image_key: functions-aot
             image_name: Functions AOT Image
             dockerfile: docker/Dockerfile.functions.aot
@@ -94,16 +64,6 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
-          - image_key: functions-aot
-            image_name: Functions AOT Image
-            dockerfile: docker/Dockerfile.functions.aot
-            tag_suffix: -functions-aot
-            cache_scope: release-functions-aot
-            sarif_output: trivy-results-functions-aot
-            sarif_category: trivy-functions-aot
-            arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       security-events: write
@@ -319,12 +279,16 @@ jobs:
         include:
           - image_name: Lambda JIT Image
             tag_suffix: -lambda
+            source_arches: "arm64"
           - image_name: Lambda AOT Image
             tag_suffix: -lambda-aot
+            source_arches: "arm64"
           - image_name: Functions JIT Image
             tag_suffix: -functions
+            source_arches: "amd64"
           - image_name: Functions AOT Image
             tag_suffix: -functions-aot
+            source_arches: "amd64"
     permissions:
       contents: read
     steps:
@@ -451,14 +415,25 @@ jobs:
             type=sha,prefix={{branch}}-,suffix=${{ matrix.tag_suffix }}
             type=raw,value=latest${{ matrix.tag_suffix }},enable={{is_default_branch}}
 
-      - name: Create and push multi-arch manifests
+      - name: Publish target tags
         shell: bash
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          SOURCE_ARCHES: ${{ matrix.source_arches }}
         run: |
           set -euo pipefail
+          read -r -a source_arches <<< "$SOURCE_ARCHES"
+
+          if [[ "${#source_arches[@]}" -eq 0 ]]; then
+            echo "No source architectures configured for ${TAGS:-<empty tag set>}." >&2
+            exit 1
+          fi
+
           for tag in $TAGS; do
-            docker buildx imagetools create -t "$tag" \
-              "${tag}-amd64" \
-              "${tag}-arm64"
+            refs=()
+            for arch in "${source_arches[@]}"; do
+              refs+=("${tag}-${arch}")
+            done
+
+            docker buildx imagetools create -t "$tag" "${refs[@]}"
           done
