@@ -16,6 +16,7 @@ RUN apk add --no-cache \
     gcompat \
     clang21 \
     build-base \
+    protobuf \
     zlib-dev \
     && rm -rf /var/cache/apk/*
 
@@ -35,6 +36,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
@@ -51,6 +53,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ; ILC_SINGLE_THREADED="true" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
