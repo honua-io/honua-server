@@ -82,7 +82,9 @@ Serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-function
 Workflow: `.github/workflows/deploy-platform-images.yml`
 
 - Publishes only platform tags to cloud registries (`ECR` and/or `ACR`).
-- Publishes AOT platform lanes for Lambda and Functions as multi-arch (`linux/amd64`, `linux/arm64`), with JIT lanes kept for debug fallback.
+- Publishes Lambda tags for AWS as `linux/arm64` only, because Honua's AWS default runtime target is Arm.
+- Publishes Azure Functions tags as `linux/amd64` only, because Azure Functions custom containers are treated as x86-64.
+- Keeps generic web images multi-arch for Kubernetes and general container use; AKS Arm node pools should pull the `arm64` variant from the generic image family.
 - Requires at least one configured target (ECR or ACR), otherwise the workflow fails fast.
 - ECR config:
   - Repository variable: `AWS_ECR_REGION` (required for ECR lane), `AWS_ECR_REPOSITORY` (optional; defaults to `honua-server`)
