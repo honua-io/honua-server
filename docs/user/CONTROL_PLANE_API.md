@@ -8,10 +8,11 @@ The Server Management API powers the Honua Admin UI and supports headless automa
 
 The Honua Admin UI is intended to operate as a UI on top of this control-plane API.
 
-- This API is the foundation for a Honua-managed GitOps controller.
+- This API is the foundation for a Honua-managed control plane and related automation surfaces.
 - Honua is not positioning Flux or Argo CD as its primary control plane.
 - Helm and Terraform remain infrastructure and packaging surfaces around the platform.
 - Deploy coordination, upgrade readiness, and change-management workflows are expected to be expressed through the Honua control plane.
+- This public API is intentionally broader than any single operator product. Base control-plane primitives remain documented here even when higher-level AI DevOps/operator tooling is delivered through private enterprise surfaces.
 
 ## **When to Use the Management API**
 

@@ -2,6 +2,8 @@
 
 Honua ships an MCP server package in the `honua-sdk-js` repository (path `mcp`, package `@honua/mcp-server`) so AI clients can safely discover services, inspect layer schema, and run filtered geospatial queries.
 
+This document covers the public/open-core MCP data-access surface. It does **not** describe Honua's private operator tooling or AI DevOps rollout automation layer.
+
 ## Capabilities
 
 - Service discovery: list available services and metadata

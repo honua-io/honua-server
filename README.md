@@ -149,6 +149,7 @@ Honua's admin UI and admin API are intended to become the foundation of a Honua-
 - Honua is not standardizing on Flux or Argo CD as its primary rollout controller.
 - Helm and Terraform remain packaging and infrastructure surfaces.
 - Change management, deploy coordination, and instance lifecycle workflows are expected to live in the Honua control plane.
+- The public admin API is the substrate for those workflows; operator-grade AI DevOps/copilot tooling may be delivered through private enterprise surfaces on top of it rather than through the open-core server repository.
 
 ## Documentation
 
