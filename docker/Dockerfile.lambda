@@ -63,7 +63,9 @@ WORKDIR /var/task
 COPY --from=build /app /var/task
 COPY docker/lambda/bootstrap.sh /var/runtime/bootstrap
 
-RUN chmod +x /var/runtime/bootstrap /var/task/Honua.Server
+RUN dnf install -y krb5-libs && \
+    dnf clean all && \
+    chmod +x /var/runtime/bootstrap /var/task/Honua.Server
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \

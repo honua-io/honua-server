@@ -59,6 +59,18 @@ public sealed class HostValidationMiddlewareTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("Invalid Host header");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /healthz/live")]
+    public async Task HealthRequest_WithForgedHostHeader_AllowsRequest()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
+        request.Headers.Host = "attacker.example";
+
+        using var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }
 
 [Collection("Database")]
@@ -155,6 +167,18 @@ public sealed class HostValidationMiddlewareUnitTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status204NoContent);
     }
 
+    [Fact]
+    public async Task InvokeAsync_HealthProbePath_BypassesHostValidation()
+    {
+        var (middleware, tracker) = CreateMiddleware();
+        var context = CreateContext("203.0.113.77", IPAddress.Parse("198.51.100.10"), path: "/healthz/ready");
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status204NoContent);
+    }
+
     private static (HostValidationMiddleware Middleware, InvocationTracker Tracker) CreateMiddleware(string environmentName = "Production")
     {
         var tracker = new InvocationTracker();
@@ -181,7 +205,11 @@ public sealed class HostValidationMiddlewareUnitTests
         return (middleware, tracker);
     }
 
-    private static DefaultHttpContext CreateContext(string host, IPAddress? localIpAddress, IPAddress? remoteIpAddress = null)
+    private static DefaultHttpContext CreateContext(
+        string host,
+        IPAddress? localIpAddress,
+        IPAddress? remoteIpAddress = null,
+        string path = "/ogc/features")
     {
         var services = new ServiceCollection()
             .AddLogging()
@@ -192,7 +220,7 @@ public sealed class HostValidationMiddlewareUnitTests
         var context = new DefaultHttpContext();
         context.RequestServices = services;
         context.Request.Host = new HostString(host);
-        context.Request.Path = "/ogc/features";
+        context.Request.Path = path;
         context.Connection.LocalIpAddress = localIpAddress;
         context.Connection.RemoteIpAddress = remoteIpAddress;
         context.Response.Body = new MemoryStream();

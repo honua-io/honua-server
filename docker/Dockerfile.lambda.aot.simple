@@ -62,7 +62,9 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt
 WORKDIR ${LAMBDA_TASK_ROOT}
 COPY --from=build /app ${LAMBDA_TASK_ROOT}
 
-RUN chmod +x ${LAMBDA_TASK_ROOT}/Honua.Server
+RUN yum install -y krb5-libs && \
+    yum clean all && \
+    chmod +x ${LAMBDA_TASK_ROOT}/Honua.Server
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \

@@ -24,7 +24,9 @@ internal sealed class HostValidationMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!_enabled || IsRequestHostAllowed(context, context.Request.Host))
+        if (IsHealthProbeRequest(context.Request.Path) ||
+            !_enabled ||
+            IsRequestHostAllowed(context, context.Request.Host))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -39,6 +41,9 @@ internal sealed class HostValidationMiddleware(
             .ExecuteAsync(context)
             .ConfigureAwait(false);
     }
+
+    private static bool IsHealthProbeRequest(PathString path)
+        => path.StartsWithSegments("/healthz", StringComparison.OrdinalIgnoreCase);
 
     private bool IsRequestHostAllowed(HttpContext context, HostString requestHost)
     {

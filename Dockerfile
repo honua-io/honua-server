@@ -8,8 +8,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# glibc compat required for Grpc.Tools protoc binary on Alpine/musl
-RUN apk add --no-cache gcompat
+# grpc.tools' bundled linux_arm64 protoc segfaults on native ARM runners.
+# Use the distro compiler through the supported PROTOBUF_PROTOC override instead.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
 
 # Security: Create non-root build user
 RUN groupadd --gid 1001 --system builduser && \
@@ -34,6 +37,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI" && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
@@ -50,6 +54,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-musl-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    export PROTOBUF_PROTOC=/usr/bin/protoc && \
     EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
@@ -70,6 +75,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 # Security: Install runtime dependencies
 RUN apk add --no-cache \
     icu-libs \
+    krb5-libs \
     tzdata \
     fontconfig \
     ca-certificates && \

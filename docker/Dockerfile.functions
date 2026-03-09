@@ -59,7 +59,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin honua && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libgssapi-krb5-2 && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --uid 1001 --create-home --shell /usr/sbin/nologin honua && \
     mkdir -p /home/site/wwwroot /home/LogFiles /appsvctmp /tmp/honua-logs /tmp/honua-cache && \
     chown -R 1001:1001 /home/site /home/LogFiles /appsvctmp /tmp/honua-logs /tmp/honua-cache
 

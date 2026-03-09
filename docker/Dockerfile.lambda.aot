@@ -60,7 +60,10 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt
 WORKDIR /var/task
 COPY --from=build /app /var/task
 
-RUN chmod +x /var/task/Honua.Server
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libgssapi-krb5-2 && \
+    rm -rf /var/lib/apt/lists/* && \
+    chmod +x /var/task/Honua.Server
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
