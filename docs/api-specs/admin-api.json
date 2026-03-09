@@ -36,6 +36,10 @@
       "description": "System configuration and documentation"
     },
     {
+      "name": "Metadata",
+      "description": "Metadata capabilities and compatibility surfaces"
+    },
+    {
       "name": "Connections",
       "description": "Database connection management"
     },
@@ -76,6 +80,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConfigurationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Get Admin Capabilities",
+        "description": "Returns metadata capabilities and the canonical SDK compatibility contract for the control plane.",
+        "operationId": "getAdminCapabilities",
+        "responses": {
+          "200": {
+            "description": "Admin metadata capabilities and SDK compatibility metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminCapabilitiesResponse"
                 }
               }
             }
@@ -1390,6 +1422,180 @@
           "version": {
             "type": "string",
             "description": "Server version"
+          }
+        }
+      },
+      "AdminCapabilitiesResponse": {
+        "type": "object",
+        "properties": {
+          "metadataApiVersions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Supported metadata API schema versions"
+          },
+          "resourceKinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Service",
+                "Layer",
+                "Relationship",
+                "Style",
+                "Connection"
+              ]
+            },
+            "description": "Supported metadata resource kinds"
+          },
+          "manifestSupported": {
+            "type": "boolean",
+            "description": "Whether metadata manifest export and apply are supported"
+          },
+          "manifestDryRunSupported": {
+            "type": "boolean",
+            "description": "Whether manifest apply dry-run is supported"
+          },
+          "manifestPruneSupported": {
+            "type": "boolean",
+            "description": "Whether manifest apply prune is supported"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/AdminCompatibilityMetadata"
+          }
+        }
+      },
+      "AdminCompatibilityMetadata": {
+        "type": "object",
+        "required": [
+          "serverVersion",
+          "releaseChannel",
+          "controlPlaneApi",
+          "metadataSchemas",
+          "features"
+        ],
+        "properties": {
+          "serverVersion": {
+            "type": "string",
+            "description": "Server version reported by the runtime build"
+          },
+          "releaseChannel": {
+            "type": "string",
+            "description": "Release channel derived from build metadata",
+            "enum": [
+              "stable",
+              "lts",
+              "preview",
+              "alpha",
+              "beta",
+              "rc",
+              "nightly",
+              "dev"
+            ]
+          },
+          "controlPlaneApi": {
+            "$ref": "#/components/schemas/AdminControlPlaneApiCompatibility"
+          },
+          "metadataSchemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMetadataSchemaCompatibility"
+            },
+            "description": "Supported metadata schema versions and their deprecation markers"
+          },
+          "features": {
+            "$ref": "#/components/schemas/AdminCompatibilityFeatureFlags"
+          }
+        }
+      },
+      "AdminControlPlaneApiCompatibility": {
+        "type": "object",
+        "required": [
+          "major",
+          "basePath",
+          "deprecated"
+        ],
+        "properties": {
+          "major": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Supported control-plane API major"
+          },
+          "basePath": {
+            "type": "string",
+            "description": "Versioned base path for the control-plane API major"
+          },
+          "deprecated": {
+            "type": "boolean",
+            "description": "Whether the control-plane API major is deprecated"
+          }
+        }
+      },
+      "AdminMetadataSchemaCompatibility": {
+        "type": "object",
+        "required": [
+          "version",
+          "deprecated"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Metadata schema version"
+          },
+          "deprecated": {
+            "type": "boolean",
+            "description": "Whether the metadata schema version is deprecated"
+          }
+        }
+      },
+      "AdminCompatibilityFeatureFlags": {
+        "type": "object",
+        "required": [
+          "metadataResources",
+          "manifestExport",
+          "manifestApply",
+          "manifestDryRun",
+          "manifestPrune"
+        ],
+        "properties": {
+          "metadataResources": {
+            "type": "boolean",
+            "description": "Whether metadata resource CRUD endpoints are supported"
+          },
+          "manifestExport": {
+            "type": "boolean",
+            "description": "Whether manifest export is supported"
+          },
+          "manifestApply": {
+            "type": "boolean",
+            "description": "Whether manifest apply is supported"
+          },
+          "manifestDryRun": {
+            "type": "boolean",
+            "description": "Whether manifest apply dry runs are supported"
+          },
+          "manifestPrune": {
+            "type": "boolean",
+            "description": "Whether manifest apply prune is supported"
+          }
+        }
+      },
+      "ApiResponseAdminCapabilitiesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminCapabilitiesResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

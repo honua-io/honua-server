@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -64,7 +65,7 @@ internal static class AdminMetadataEndpoints
             return;
         }
 
-        var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+        var version = GetServerVersion();
         var response = new AdminVersionResponse
         {
             Version = version,
@@ -86,23 +87,126 @@ internal static class AdminMetadataEndpoints
             return;
         }
 
-        var versions = new List<string>
-        {
-            schemaRegistry.CurrentApiVersion,
-            schemaRegistry.LegacyApiVersion
-        };
+        var compatibility = CreateCompatibilityMetadata(schemaRegistry);
 
         var response = new AdminCapabilitiesResponse
         {
-            MetadataApiVersions = versions.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            MetadataApiVersions = compatibility.MetadataSchemas
+                .Select(static schema => schema.Version)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
             ResourceKinds = MetadataResourceKinds.All,
             ManifestSupported = true,
             ManifestDryRunSupported = true,
-            ManifestPruneSupported = true
+            ManifestPruneSupported = true,
+            Compatibility = compatibility
         };
 
         var payload = ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response);
         await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+    }
+
+    private static AdminCompatibilityMetadata CreateCompatibilityMetadata(IMetadataSchemaRegistry schemaRegistry)
+    {
+        var serverVersion = GetServerVersion();
+        var schemas = new List<AdminMetadataSchemaCompatibility>
+        {
+            new()
+            {
+                Version = schemaRegistry.CurrentApiVersion,
+                Deprecated = false
+            }
+        };
+
+        if (!string.Equals(schemaRegistry.LegacyApiVersion, schemaRegistry.CurrentApiVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            schemas.Add(new AdminMetadataSchemaCompatibility
+            {
+                Version = schemaRegistry.LegacyApiVersion,
+                Deprecated = true
+            });
+        }
+
+        return new AdminCompatibilityMetadata
+        {
+            ServerVersion = serverVersion,
+            ReleaseChannel = InferReleaseChannel(serverVersion),
+            ControlPlaneApi = new AdminControlPlaneApiCompatibility
+            {
+                Major = 1,
+                BasePath = "/api/v1/admin",
+                Deprecated = false
+            },
+            MetadataSchemas = schemas,
+            Features = new AdminCompatibilityFeatureFlags
+            {
+                MetadataResources = true,
+                ManifestExport = true,
+                ManifestApply = true,
+                ManifestDryRun = true,
+                ManifestPrune = true
+            }
+        };
+    }
+
+    private static string GetServerVersion()
+    {
+        var assembly = typeof(Program).Assembly;
+        var informationalVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return informationalVersion;
+        }
+
+        return assembly.GetName().Version?.ToString() ?? "unknown";
+    }
+
+    private static string InferReleaseChannel(string serverVersion)
+    {
+        if (string.IsNullOrWhiteSpace(serverVersion))
+        {
+            return "stable";
+        }
+
+        var normalizedVersion = serverVersion.ToLowerInvariant();
+        if (normalizedVersion.Contains("nightly", StringComparison.Ordinal))
+        {
+            return "nightly";
+        }
+
+        if (normalizedVersion.Contains("preview", StringComparison.Ordinal))
+        {
+            return "preview";
+        }
+
+        if (normalizedVersion.Contains("lts", StringComparison.Ordinal))
+        {
+            return "lts";
+        }
+
+        if (normalizedVersion.Contains("alpha", StringComparison.Ordinal))
+        {
+            return "alpha";
+        }
+
+        if (normalizedVersion.Contains("beta", StringComparison.Ordinal))
+        {
+            return "beta";
+        }
+
+        if (normalizedVersion.Contains("-rc", StringComparison.Ordinal) ||
+            normalizedVersion.Contains(".rc", StringComparison.Ordinal))
+        {
+            return "rc";
+        }
+
+        if (normalizedVersion.Contains("dev", StringComparison.Ordinal) ||
+            normalizedVersion.Contains("ci", StringComparison.Ordinal))
+        {
+            return "dev";
+        }
+
+        return "stable";
     }
 
     private static async Task HandleGetManifest(

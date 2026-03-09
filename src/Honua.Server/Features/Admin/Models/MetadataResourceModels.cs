@@ -202,6 +202,126 @@ public sealed class AdminCapabilitiesResponse
     /// </summary>
     [JsonPropertyName("manifestPruneSupported")]
     public bool ManifestPruneSupported { get; init; }
+
+    /// <summary>
+    /// Canonical compatibility contract for SDK startup handshakes.
+    /// </summary>
+    [JsonPropertyName("compatibility")]
+    public AdminCompatibilityMetadata Compatibility { get; init; } = new();
+}
+
+/// <summary>
+/// SDK-facing compatibility metadata for the control plane.
+/// </summary>
+public sealed class AdminCompatibilityMetadata
+{
+    /// <summary>
+    /// Server version reported by the runtime build.
+    /// </summary>
+    [JsonPropertyName("serverVersion")]
+    public string ServerVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Release channel inferred from build metadata.
+    /// </summary>
+    [JsonPropertyName("releaseChannel")]
+    public string ReleaseChannel { get; init; } = "stable";
+
+    /// <summary>
+    /// Control-plane API compatibility markers.
+    /// </summary>
+    [JsonPropertyName("controlPlaneApi")]
+    public AdminControlPlaneApiCompatibility ControlPlaneApi { get; init; } = new();
+
+    /// <summary>
+    /// Supported metadata schema versions and their deprecation state.
+    /// </summary>
+    [JsonPropertyName("metadataSchemas")]
+    public IReadOnlyList<AdminMetadataSchemaCompatibility> MetadataSchemas { get; init; } = Array.Empty<AdminMetadataSchemaCompatibility>();
+
+    /// <summary>
+    /// Coarse feature flags for SDK capability branching.
+    /// </summary>
+    [JsonPropertyName("features")]
+    public AdminCompatibilityFeatureFlags Features { get; init; } = new();
+}
+
+/// <summary>
+/// Control-plane API compatibility markers.
+/// </summary>
+public sealed class AdminControlPlaneApiCompatibility
+{
+    /// <summary>
+    /// Supported control-plane major version.
+    /// </summary>
+    [JsonPropertyName("major")]
+    public int Major { get; init; }
+
+    /// <summary>
+    /// Versioned base path for this control-plane API major.
+    /// </summary>
+    [JsonPropertyName("basePath")]
+    public string BasePath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Indicates that this control-plane API major is deprecated.
+    /// </summary>
+    [JsonPropertyName("deprecated")]
+    public bool Deprecated { get; init; }
+}
+
+/// <summary>
+/// Metadata schema compatibility markers.
+/// </summary>
+public sealed class AdminMetadataSchemaCompatibility
+{
+    /// <summary>
+    /// Metadata schema version.
+    /// </summary>
+    [JsonPropertyName("version")]
+    public string Version { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Indicates that the schema version is deprecated.
+    /// </summary>
+    [JsonPropertyName("deprecated")]
+    public bool Deprecated { get; init; }
+}
+
+/// <summary>
+/// Coarse feature flags used by SDKs to branch without endpoint probing.
+/// </summary>
+public sealed class AdminCompatibilityFeatureFlags
+{
+    /// <summary>
+    /// Indicates support for metadata resource CRUD endpoints.
+    /// </summary>
+    [JsonPropertyName("metadataResources")]
+    public bool MetadataResources { get; init; }
+
+    /// <summary>
+    /// Indicates support for manifest export.
+    /// </summary>
+    [JsonPropertyName("manifestExport")]
+    public bool ManifestExport { get; init; }
+
+    /// <summary>
+    /// Indicates support for manifest apply.
+    /// </summary>
+    [JsonPropertyName("manifestApply")]
+    public bool ManifestApply { get; init; }
+
+    /// <summary>
+    /// Indicates support for manifest dry runs.
+    /// </summary>
+    [JsonPropertyName("manifestDryRun")]
+    public bool ManifestDryRun { get; init; }
+
+    /// <summary>
+    /// Indicates support for manifest pruning.
+    /// </summary>
+    [JsonPropertyName("manifestPrune")]
+    public bool ManifestPrune { get; init; }
 }
 
 /// <summary>

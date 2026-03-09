@@ -1,0 +1,70 @@
+# SDK Compatibility Metadata
+
+SDKs should use `GET /api/v1/admin/capabilities` as the runtime compatibility handshake for the Honua control plane.
+
+- Canonical document: `data.compatibility`
+- Purpose: decide whether the SDK can talk to this server without guessing endpoint shape or feature support
+- Non-goal: inferring behavior from `serverVersion` strings alone
+
+## Contract
+
+Example response fragment:
+
+```json
+{
+  "success": true,
+  "data": {
+    "compatibility": {
+      "serverVersion": "1.2.3",
+      "releaseChannel": "stable",
+      "controlPlaneApi": {
+        "major": 1,
+        "basePath": "/api/v1/admin",
+        "deprecated": false
+      },
+      "metadataSchemas": [
+        {
+          "version": "honua.io/v1alpha1",
+          "deprecated": false
+        },
+        {
+          "version": "honua.io/v1alpha0",
+          "deprecated": true
+        }
+      ],
+      "features": {
+        "metadataResources": true,
+        "manifestExport": true,
+        "manifestApply": true,
+        "manifestDryRun": true,
+        "manifestPrune": true
+      }
+    }
+  }
+}
+```
+
+## SDK Use
+
+1. Validate `controlPlaneApi.major` before constructing admin paths.
+2. Enforce the SDK's documented minimum supported `serverVersion` only after the major matches.
+3. Stop or degrade gracefully if `controlPlaneApi.deprecated` is `true`.
+4. Prefer the newest `metadataSchemas` entry where `deprecated` is `false`.
+5. Use `features` for coarse branches such as manifest workflows instead of probing endpoints.
+6. Treat `releaseChannel` as rollout metadata and `serverVersion` as a minimum-version floor within the same major, not as the full feature contract.
+
+## Minimum Version Check Rule
+
+- First gate on `controlPlaneApi.major`. A different major is incompatible even if the semantic version string looks newer.
+- When the major matches, compare `serverVersion` against the SDK's documented minimum supported server version using normal semantic-version ordering and ignoring build metadata.
+- If a server reports an unparseable `serverVersion`, do not guess support from the string. Fall back to the major check plus `features` and log a warning for operators.
+- Preview, alpha, beta, and RC builds should only be treated as supported when the SDK release notes explicitly call out that pre-release line.
+
+## Release Channel Values
+
+`releaseChannel` is derived from build version metadata and can report values such as `stable`, `lts`, `preview`, `alpha`, `beta`, `rc`, `nightly`, or `dev`.
+
+## Notes
+
+- `/api/v1/admin/version` remains available for legacy callers, but SDK compatibility decisions should use `/api/v1/admin/capabilities`.
+- Adding new fields under `data.compatibility` is a backward-compatible `v1` change per the control-plane versioning policy.
