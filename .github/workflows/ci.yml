@@ -842,11 +842,12 @@ jobs:
           dotnet new console
 
           # Add local package source
-          dotnet nuget add source ../packages --name local-packages
+          PACKAGE_SOURCE="$(realpath ../packages)"
+          dotnet nuget add source "$PACKAGE_SOURCE" --name local-packages
 
           # Add package under test
           VERSION=$(basename "$(ls ../packages/Honua.Core*.nupkg | head -1)" | sed -E 's/^Honua\.Core\.([0-9A-Za-z.-]+)\.nupkg$/\1/')
-          dotnet add package Honua.Core --source local-packages --version "$VERSION"
+          dotnet add package Honua.Core --source "$PACKAGE_SOURCE" --version "$VERSION"
 
           # Test build
           dotnet build --configuration Release
