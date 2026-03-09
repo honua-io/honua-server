@@ -205,6 +205,108 @@ public sealed class AdminCapabilitiesResponse
 }
 
 /// <summary>
+/// Server compatibility metadata response for SDK version negotiation.
+/// </summary>
+public sealed class ServerCompatibilityResponse
+{
+    /// <summary>
+    /// Server version string.
+    /// </summary>
+    [JsonPropertyName("version")]
+    public string Version { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Control plane API version supported by the server.
+    /// </summary>
+    [JsonPropertyName("controlPlaneApiVersion")]
+    public string ControlPlaneApiVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Release channel of the server build (stable, preview, or lts).
+    /// </summary>
+    [JsonPropertyName("releaseChannel")]
+    public string ReleaseChannel { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Server edition (community, pro, or enterprise).
+    /// </summary>
+    [JsonPropertyName("edition")]
+    public string Edition { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Server time in UTC.
+    /// </summary>
+    [JsonPropertyName("serverTime")]
+    public DateTimeOffset ServerTime { get; init; }
+
+    /// <summary>
+    /// SDK compatibility information including minimum supported versions.
+    /// </summary>
+    [JsonPropertyName("sdk")]
+    public SdkCompatibilityInfo Sdk { get; init; } = new();
+
+    /// <summary>
+    /// Feature capability flags keyed by feature name.
+    /// </summary>
+    [JsonPropertyName("capabilities")]
+    public Dictionary<string, bool> Capabilities { get; init; } = new();
+
+    /// <summary>
+    /// Active deprecation notices for endpoints or features.
+    /// </summary>
+    [JsonPropertyName("deprecations")]
+    public IReadOnlyList<DeprecationNotice> Deprecations { get; init; } = Array.Empty<DeprecationNotice>();
+}
+
+/// <summary>
+/// SDK version compatibility contract information.
+/// </summary>
+public sealed class SdkCompatibilityInfo
+{
+    /// <summary>
+    /// Minimum SDK versions required to communicate with this server, keyed by platform (js, python, dotnet).
+    /// </summary>
+    [JsonPropertyName("minimumSupportedVersions")]
+    public Dictionary<string, string> MinimumSupportedVersions { get; init; } = new();
+
+    /// <summary>
+    /// Compatibility contract version identifier (e.g. "2026.1").
+    /// </summary>
+    [JsonPropertyName("compatibilityContract")]
+    public string CompatibilityContract { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Deprecation notice for a deprecated endpoint or feature.
+/// </summary>
+public sealed class DeprecationNotice
+{
+    /// <summary>
+    /// The deprecated endpoint path.
+    /// </summary>
+    [JsonPropertyName("endpoint")]
+    public string Endpoint { get; init; } = string.Empty;
+
+    /// <summary>
+    /// ISO date when the endpoint will be removed.
+    /// </summary>
+    [JsonPropertyName("sunsetDate")]
+    public string SunsetDate { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The replacement endpoint, if any.
+    /// </summary>
+    [JsonPropertyName("replacement")]
+    public string? Replacement { get; init; }
+
+    /// <summary>
+    /// Human-readable deprecation message.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+}
+
+/// <summary>
 /// Compilation status representation for metadata resources.
 /// </summary>
 public sealed class MetadataCompilationStatus

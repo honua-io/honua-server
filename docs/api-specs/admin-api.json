@@ -58,6 +58,10 @@
     {
       "name": "Services",
       "description": "Service-level protocol and metadata settings"
+    },
+    {
+      "name": "Metadata",
+      "description": "Server metadata, versioning, and SDK compatibility"
     }
   ],
   "paths": {
@@ -76,6 +80,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConfigurationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/compatibility": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Get Server SDK Compatibility Metadata",
+        "description": "Returns server compatibility metadata including version, edition, SDK minimum version requirements, feature capability flags, and deprecation notices. SDKs use this endpoint to negotiate compatibility at startup.",
+        "operationId": "getServerCompatibility",
+        "responses": {
+          "200": {
+            "description": "Server compatibility metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServerCompatibility"
                 }
               }
             }
@@ -2816,6 +2848,109 @@
           },
           "timeInfo": {
             "$ref": "#/components/schemas/UpdateTimeInfoRequest"
+          }
+        }
+      },
+      "ApiResponseServerCompatibility": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ServerCompatibilityResponse"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ServerCompatibilityResponse": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Server version string"
+          },
+          "controlPlaneApiVersion": {
+            "type": "string",
+            "description": "Control plane API version (e.g. v1)"
+          },
+          "releaseChannel": {
+            "type": "string",
+            "description": "Release channel (stable, preview, or lts)",
+            "enum": ["stable", "preview", "lts"]
+          },
+          "edition": {
+            "type": "string",
+            "description": "Server edition",
+            "enum": ["community", "pro", "enterprise"]
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server time in UTC"
+          },
+          "sdk": {
+            "$ref": "#/components/schemas/SdkCompatibilityInfo"
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Feature capability flags keyed by feature name"
+          },
+          "deprecations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeprecationNotice"
+            },
+            "description": "Active deprecation notices"
+          }
+        }
+      },
+      "SdkCompatibilityInfo": {
+        "type": "object",
+        "properties": {
+          "minimumSupportedVersions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Minimum SDK versions keyed by platform (js, python, dotnet)"
+          },
+          "compatibilityContract": {
+            "type": "string",
+            "description": "Compatibility contract version identifier (e.g. 2026.1)"
+          }
+        }
+      },
+      "DeprecationNotice": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "description": "The deprecated endpoint path"
+          },
+          "sunsetDate": {
+            "type": "string",
+            "description": "ISO date when the endpoint will be removed"
+          },
+          "replacement": {
+            "type": "string",
+            "nullable": true,
+            "description": "The replacement endpoint, if any"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "Human-readable deprecation message"
           }
         }
       }

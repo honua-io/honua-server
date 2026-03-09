@@ -43,6 +43,11 @@ internal static class AdminMetadataEndpoints
             .WithSummary("Get admin API capabilities")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        _ = group.Map("/compatibility", HandleGetCompatibility)
+            .WithName("GetServerCompatibility")
+            .WithSummary("Get server SDK compatibility metadata")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         _ = group.Map("/manifest", HandleGetManifest)
             .WithName("GetMetadataManifest")
             .WithSummary("Export metadata manifest")
@@ -103,6 +108,77 @@ internal static class AdminMetadataEndpoints
 
         var payload = ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response);
         await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+    }
+
+    // SDK minimum version constants — updated when new SDK releases ship.
+    private const string MinSdkVersionJs = "0.1.0";
+    private const string MinSdkVersionPython = "0.1.0";
+    private const string MinSdkVersionDotnet = "0.1.0";
+    private const string CompatibilityContractVersion = "2026.1";
+    private const string DefaultEdition = "community";
+    private const string DefaultReleaseChannel = "stable";
+    private const string DefaultControlPlaneApiVersion = "v1";
+
+    private static async Task HandleGetCompatibility(
+        HttpContext context,
+        [FromServices] IConfiguration configuration)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method))
+        {
+            await AdminResponseWriter.WriteMethodNotAllowedAsync(context);
+            return;
+        }
+
+        var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+        var edition = configuration["Honua:Edition"] ?? DefaultEdition;
+        var releaseChannel = configuration["Honua:ReleaseChannel"] ?? DefaultReleaseChannel;
+
+        var capabilities = BuildCapabilities(edition);
+
+        var response = new ServerCompatibilityResponse
+        {
+            Version = version,
+            ControlPlaneApiVersion = DefaultControlPlaneApiVersion,
+            ReleaseChannel = releaseChannel,
+            Edition = edition.ToLowerInvariant(),
+            ServerTime = DateTimeOffset.UtcNow,
+            Sdk = new SdkCompatibilityInfo
+            {
+                MinimumSupportedVersions = new Dictionary<string, string>
+                {
+                    ["js"] = MinSdkVersionJs,
+                    ["python"] = MinSdkVersionPython,
+                    ["dotnet"] = MinSdkVersionDotnet
+                },
+                CompatibilityContract = CompatibilityContractVersion
+            },
+            Capabilities = capabilities,
+            Deprecations = Array.Empty<DeprecationNotice>()
+        };
+
+        var payload = ApiResponse<ServerCompatibilityResponse>.CreateSuccess(response);
+        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseServerCompatibilityResponse);
+    }
+
+    private static Dictionary<string, bool> BuildCapabilities(string edition)
+    {
+        var isProOrHigher = string.Equals(edition, "pro", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(edition, "enterprise", StringComparison.OrdinalIgnoreCase);
+        var isEnterprise = string.Equals(edition, "enterprise", StringComparison.OrdinalIgnoreCase);
+
+        return new Dictionary<string, bool>
+        {
+            ["grpcStreaming"] = isProOrHigher,
+            ["distributedCache"] = isProOrHigher,
+            ["offlineSync"] = isProOrHigher,
+            ["cdc"] = isProOrHigher,
+            ["spatialAnalytics"] = isProOrHigher,
+            ["aiSpatialAgent"] = isProOrHigher,
+            ["sso"] = isEnterprise,
+            ["rbac"] = isEnterprise,
+            ["multiTenancy"] = isEnterprise,
+            ["pluginSdk"] = isEnterprise
+        };
     }
 
     private static async Task HandleGetManifest(

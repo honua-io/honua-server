@@ -215,4 +215,88 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Compatibility)]
+    [Endpoint("GET /api/v1/admin/compatibility")]
+    public async Task GetCompatibility_ReturnsExpectedResponseShape()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/compatibility");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotBeNullOrEmpty();
+
+        var json = JsonDocument.Parse(content);
+        var root = json.RootElement;
+
+        root.GetProperty("success").GetBoolean().Should().BeTrue();
+        root.TryGetProperty("data", out var data).Should().BeTrue();
+
+        // Top-level fields
+        data.GetProperty("version").GetString().Should().NotBeNullOrEmpty();
+        data.GetProperty("controlPlaneApiVersion").GetString().Should().Be("v1");
+        data.GetProperty("releaseChannel").GetString().Should().NotBeNullOrEmpty();
+        data.GetProperty("edition").GetString().Should().NotBeNullOrEmpty();
+        data.TryGetProperty("serverTime", out _).Should().BeTrue();
+
+        // SDK compatibility block
+        var sdk = data.GetProperty("sdk");
+        sdk.GetProperty("compatibilityContract").GetString().Should().NotBeNullOrEmpty();
+        var minVersions = sdk.GetProperty("minimumSupportedVersions");
+        minVersions.GetProperty("js").GetString().Should().NotBeNullOrEmpty();
+        minVersions.GetProperty("python").GetString().Should().NotBeNullOrEmpty();
+        minVersions.GetProperty("dotnet").GetString().Should().NotBeNullOrEmpty();
+
+        // Capabilities block
+        var capabilities = data.GetProperty("capabilities");
+        capabilities.TryGetProperty("grpcStreaming", out _).Should().BeTrue();
+        capabilities.TryGetProperty("distributedCache", out _).Should().BeTrue();
+        capabilities.TryGetProperty("offlineSync", out _).Should().BeTrue();
+        capabilities.TryGetProperty("cdc", out _).Should().BeTrue();
+        capabilities.TryGetProperty("spatialAnalytics", out _).Should().BeTrue();
+        capabilities.TryGetProperty("aiSpatialAgent", out _).Should().BeTrue();
+        capabilities.TryGetProperty("sso", out _).Should().BeTrue();
+        capabilities.TryGetProperty("rbac", out _).Should().BeTrue();
+        capabilities.TryGetProperty("multiTenancy", out _).Should().BeTrue();
+        capabilities.TryGetProperty("pluginSdk", out _).Should().BeTrue();
+
+        // Deprecations block
+        data.TryGetProperty("deprecations", out var deprecations).Should().BeTrue();
+        deprecations.GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Compatibility)]
+    [Endpoint("GET /api/v1/admin/compatibility")]
+    public async Task GetCompatibility_CommunityEdition_AllCapabilitiesFalse()
+    {
+        // Act - default test config has no Honua:Edition set, so defaults to community
+        var response = await _fixture.Client.GetAsync("/api/v1/admin/compatibility");
+
+        // Assert
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var data = json.RootElement.GetProperty("data");
+
+        data.GetProperty("edition").GetString().Should().Be("community");
+
+        var capabilities = data.GetProperty("capabilities");
+        capabilities.GetProperty("grpcStreaming").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("distributedCache").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("offlineSync").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("cdc").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("spatialAnalytics").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("aiSpatialAgent").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("sso").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("rbac").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("multiTenancy").GetBoolean().Should().BeFalse();
+        capabilities.GetProperty("pluginSdk").GetBoolean().Should().BeFalse();
+    }
 }
