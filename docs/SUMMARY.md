@@ -35,6 +35,11 @@
 * [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md)
 * [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md)
 
+## SDKs
+
+* [SDK Compatibility Matrix](user/SDK_VERSION_MATRIX.md)
+* [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md)
+
 ## DevOps Guide
 
 * [DevOps Overview](devops/README.md)

@@ -281,3 +281,4 @@ GET /healthz/live
 - [Security](../devops/security.md)
 - [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [SDK Compatibility Matrix](SDK_VERSION_MATRIX.md)

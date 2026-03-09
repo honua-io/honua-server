@@ -254,3 +254,4 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
 - [MapServer Coverage Matrix](map-server-matrix.md)
+- [SDK Compatibility Matrix](SDK_VERSION_MATRIX.md)

@@ -35,6 +35,16 @@ Recommended use during MVP:
 - client compatibility validation
 - controlled operational scenarios where full historical change tracking is not required
 
+## SDK Compatibility
+
+SDK version compatibility with this server release is tracked in the [SDK Compatibility Matrix](SDK_VERSION_MATRIX.md). That matrix covers:
+- Tested SDK/server version combinations
+- Protocol coverage per SDK
+- Edition compatibility (Community, Pro, Enterprise)
+- Version status definitions and support windows
+
+For SDK migration guidance, see [SDK Migration Guide Baseline](SDK_MIGRATION_GUIDE_BASELINE.md).
+
 ## Release Ownership
 
 Each release must update compatibility notes and caveats:
