@@ -24,6 +24,7 @@ This document tracks the current workflow layout. The source of truth is `.githu
 | `cite-wmts-conformance.yml` | OGC WMTS 1.0 CITE tests | PR + push + schedule + manual |
 | `openapi-contract-governance.yml` | Control-plane OpenAPI validation + breaking-change diff | PR + push + manual |
 | `control-plane-sdk-governance.yml` | Reproducible control-plane SDK generation and release assets | PR + push + release + manual |
+| `proto-wire-governance.yml` | Protobuf wire compatibility via `buf breaking` | PR + push (proto changes) + manual |
 | `performance.yml` | Performance benchmark pipeline | PR/push/manual |
 | `performance-benchmarks.yml` | Extended benchmark + baseline flow | PR/push/manual |
 | `load-soak-nightly.yml` | Load/soak runs | schedule + manual |

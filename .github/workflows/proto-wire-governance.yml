@@ -1,0 +1,52 @@
+name: Proto Wire Compatibility
+
+on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/**/Proto/**'
+      - 'proto/**'
+      - 'buf.yaml'
+      - '.github/workflows/proto-wire-governance.yml'
+  push:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/**/Proto/**'
+      - 'proto/**'
+      - 'buf.yaml'
+      - '.github/workflows/proto-wire-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proto-wire-breaking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+
+      - name: Check wire compatibility
+        env:
+          BUF_ALLOW_BREAKING_CHANGES: ${{ vars.BUF_ALLOW_BREAKING_CHANGES || 'false' }}
+        run: |
+          if [[ "${BUF_ALLOW_BREAKING_CHANGES}" == "true" ]]; then
+            echo "::warning::BUF_ALLOW_BREAKING_CHANGES is set — skipping wire compatibility check."
+            echo "Ensure breaking changes are documented in docs/user/CONTROL_PLANE_MIGRATION_GUIDE.md."
+            exit 0
+          fi
+
+          echo "Running buf breaking change detection against trunk..."
+          buf breaking --against '.git#branch=trunk'

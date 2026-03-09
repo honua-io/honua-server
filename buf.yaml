@@ -2,3 +2,6 @@ version: v2
 deps:
   - buf.build/geospatial/standard:v0.2.0
   - buf.build/googleapis/googleapis
+breaking:
+  use:
+    - WIRE
