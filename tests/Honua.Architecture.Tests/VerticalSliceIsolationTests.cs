@@ -31,6 +31,7 @@ public sealed class VerticalSliceIsolationTests
         "OgcMaps",
         "OgcTiles",
         "Tiles",
+        "Wfs20",
         "OData",
         "Grpc",
         "Import",
@@ -45,7 +46,7 @@ public sealed class VerticalSliceIsolationTests
         var serverAssembly = typeof(EndpointRegistry).Assembly;
         var violations = new List<string>();
 
-        foreach (var featureName in _featureNames.Where(f => f is not ("Infrastructure" or "Ogc")))
+        foreach (var featureName in _featureNames.Where(f => f is not ("Infrastructure" or "Ogc" or "Wfs20")))
         {
             var featureTypes = GetTypesInFeature(serverAssembly, featureName);
             var illegalReferences = FindCrossFeatureReferences(featureTypes, featureName);
@@ -159,7 +160,7 @@ public sealed class VerticalSliceIsolationTests
     private static List<string> FindCrossFeatureReferences(Type[] featureTypes, string currentFeature)
     {
         var violations = new List<string>();
-        var otherFeatures = _featureNames.Where(f => f != currentFeature && f is not ("Infrastructure" or "Ogc")).ToArray();
+        var otherFeatures = _featureNames.Where(f => f != currentFeature && f is not ("Infrastructure" or "Ogc" or "Wfs20")).ToArray();
 
         foreach (var type in featureTypes)
         {

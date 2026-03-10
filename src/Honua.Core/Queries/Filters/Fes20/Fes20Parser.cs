@@ -155,7 +155,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses logical NOT operation
     /// </summary>
-    private static FilterExpression ParseNot(XElement element)
+    private static UnaryExpression ParseNot(XElement element)
     {
         var child = element.Elements().FirstOrDefault();
         if (child == null)
@@ -169,7 +169,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses comparison operations
     /// </summary>
-    private static FilterExpression ParseComparison(XElement element, BinaryOperator op)
+    private static BinaryExpression ParseComparison(XElement element, BinaryOperator op)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -186,7 +186,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses PropertyIsLike operation
     /// </summary>
-    private static FilterExpression ParseLike(XElement element)
+    private static BinaryExpression ParseLike(XElement element)
     {
         var wildCard = element.Attribute("wildCard")?.Value ?? "%";
         var singleChar = element.Attribute("singleChar")?.Value ?? "_";
@@ -215,7 +215,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses PropertyIsNull operation
     /// </summary>
-    private static FilterExpression ParseIsNull(XElement element)
+    private static UnaryExpression ParseIsNull(XElement element)
     {
         var child = element.Elements().FirstOrDefault();
         if (child == null)
@@ -230,7 +230,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses PropertyIsBetween operation
     /// </summary>
-    private static FilterExpression ParseBetween(XElement element)
+    private static BinaryExpression ParseBetween(XElement element)
     {
         var valueRef = element.Elements().FirstOrDefault(e => e.Name.LocalName == "ValueReference");
         var lowerBoundary = element.Elements().FirstOrDefault(e => e.Name.LocalName == "LowerBoundary");
@@ -255,7 +255,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses BBOX spatial operation
     /// </summary>
-    private static FilterExpression ParseBBox(XElement element)
+    private static SpatialPredicate ParseBBox(XElement element)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -280,7 +280,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses binary spatial operations
     /// </summary>
-    private static FilterExpression ParseSpatialBinary(XElement element, SpatialOperator op)
+    private static SpatialPredicate ParseSpatialBinary(XElement element, SpatialOperator op)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -305,7 +305,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses DWithin spatial operation
     /// </summary>
-    private static FilterExpression ParseDWithin(XElement element)
+    private static SpatialPredicate ParseDWithin(XElement element)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 3)
@@ -338,7 +338,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses Beyond spatial operation
     /// </summary>
-    private static FilterExpression ParseBeyond(XElement element)
+    private static SpatialPredicate ParseBeyond(XElement element)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 3)
@@ -381,7 +381,7 @@ public sealed class Fes20Parser
     /// <summary>
     /// Parses ResourceId element
     /// </summary>
-    private static FilterExpression ParseResourceId(XElement element)
+    private static BinaryExpression ParseResourceId(XElement element)
     {
         var rid = element.Attribute("rid")?.Value;
         if (string.IsNullOrEmpty(rid))

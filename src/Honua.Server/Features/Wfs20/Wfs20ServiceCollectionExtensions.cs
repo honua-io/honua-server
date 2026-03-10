@@ -22,6 +22,7 @@ internal static class Wfs20ServiceCollectionExtensions
         services.AddSingleton<Fes20Parser>();
 
         // Register WFS 2.0 core services following established patterns
+        services.AddScoped<Wfs20QueryServices>();
         services.AddScoped<Wfs20Handler>();
 
         // TODO: Register additional WFS 2.0 services as needed:

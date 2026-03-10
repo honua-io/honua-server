@@ -47,18 +47,14 @@ internal sealed class Wfs20Handler
 
     public Wfs20Handler(
         ILogger<Wfs20Handler> logger,
-        ILayerCatalog layerCatalog,
-        IFeatureReader featureReader,
-        IGmlFeatureStore gmlFeatureStore,
-        IFilterExpressionService filterExpressionService,
-        OgcFeaturesGeometryServices geometryServices)
+        Wfs20QueryServices queryServices)
     {
         _logger = logger;
-        _layerCatalog = layerCatalog;
-        _featureReader = featureReader;
-        _gmlFeatureStore = gmlFeatureStore;
-        _filterExpressionService = filterExpressionService;
-        _geometryServices = geometryServices;
+        _layerCatalog = queryServices.LayerCatalog;
+        _featureReader = queryServices.FeatureReader;
+        _gmlFeatureStore = queryServices.GmlFeatureStore;
+        _filterExpressionService = queryServices.FilterExpressionService;
+        _geometryServices = queryServices.GeometryServices;
     }
 
     public async Task<WfsCapabilities> HandleGetCapabilitiesAsync(
