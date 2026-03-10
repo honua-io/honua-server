@@ -135,11 +135,30 @@ internal sealed partial class GeoServerRestClient
             var response = await _httpClient.GetStringAsync(BuildXmlUrl(baseUrl, "about/version"), cancellationToken);
             var doc = XDocument.Parse(response);
 
-            var versionElement = doc.Root?.Element("about")?.Element("resource");
+            var aboutElement = doc.Root?.Name.LocalName == "about"
+                ? doc.Root
+                : doc.Root?.Element("about");
+            XElement? versionElement = null;
+            if (aboutElement != null)
+            {
+                foreach (var resourceElement in aboutElement.Elements("resource"))
+                {
+                    if (!string.Equals(resourceElement.Attribute("name")?.Value, "GeoServer", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    versionElement = resourceElement;
+                    break;
+                }
+
+                versionElement ??= aboutElement.Element("resource");
+            }
+
             if (versionElement != null)
             {
                 return (
-                    Version: versionElement.Attribute("name")?.Value,
+                    Version: versionElement.Element("Version")?.Value,
                     BuildTimestamp: versionElement.Element("Build-Timestamp")?.Value,
                     GitRevision: versionElement.Element("Git-Revision")?.Value
                 );
