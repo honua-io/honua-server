@@ -135,10 +135,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                         continue;
                     }
 
-                    var channels = rule.Channels
-                        .Where(_editionPolicy.IsChannelAllowed)
-                        .Distinct()
-                        .ToImmutableArray();
+                    var channels = GetDeliverableChannels(rule);
 
                     await _dispatchStore.EnqueueAsync(eventId.Value, channels, cancellationToken).ConfigureAwait(false);
                 }
@@ -217,10 +214,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                     continue;
                 }
 
-                var channels = rule.Channels
-                    .Where(_editionPolicy.IsChannelAllowed)
-                    .Distinct()
-                    .ToImmutableArray();
+                var channels = GetDeliverableChannels(rule);
 
                 await _dispatchStore.EnqueueAsync(eventId.Value, channels, cancellationToken).ConfigureAwait(false);
             }
@@ -347,6 +341,33 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         return zones.TryGetValue(zoneId.Value, out var zone) ? zone : null;
     }
 
+    private ImmutableArray<AlertChannelType> GetDeliverableChannels(AlertRuleDefinition rule)
+    {
+        var builder = ImmutableArray.CreateBuilder<AlertChannelType>(rule.Channels.Length);
+
+        foreach (var channel in rule.Channels.Distinct())
+        {
+            if (!_editionPolicy.IsChannelAllowed(channel))
+            {
+                LogChannelSkipped(_logger, rule.RuleId, channel, "edition");
+                continue;
+            }
+
+            if (!_editionPolicy.IsChannelConfigured(channel))
+            {
+                LogChannelSkipped(_logger, rule.RuleId, channel, "configuration");
+                continue;
+            }
+
+            builder.Add(channel);
+        }
+
+        return builder.ToImmutable();
+    }
+
     [LoggerMessage(EventId = 9401, Level = LogLevel.Debug, Message = "Alert event deduplicated for key {DedupeKey} (rule {RuleId}, object {ObjectId}).")]
     private static partial void LogEventDeduplicated(ILogger logger, string dedupeKey, long ruleId, long objectId);
+
+    [LoggerMessage(EventId = 9440, Level = LogLevel.Warning, Message = "Skipping alert channel {ChannelType} for rule {RuleId} because it is unavailable under the current {Reason} policy.")]
+    private static partial void LogChannelSkipped(ILogger logger, long ruleId, AlertChannelType channelType, string reason);
 }

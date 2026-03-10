@@ -103,7 +103,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             return;
         }
 
-        var nextAttempt = ComputeNextAttempt(item.Attempts + 1, now);
+        var nextAttempt = AlertDispatchRetryPolicy.ComputeNextAttempt(item.Attempts + 1, now, _options.Dispatch);
         var exhausted = item.Attempts + 1 >= item.MaxAttempts || !result.Retryable;
 
         await dispatchStore
@@ -111,19 +111,6 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             .ConfigureAwait(false);
 
         LogFailed(_logger, item.DispatchId, item.ChannelType, exhausted, result.Error ?? "Delivery failed.");
-    }
-
-    private DateTimeOffset ComputeNextAttempt(int attemptNumber, DateTimeOffset now)
-    {
-        var exponent = Math.Clamp(attemptNumber - 1, 0, 10);
-        var multiplier = 1 << exponent;
-
-        var rawDelay = TimeSpan.FromTicks(_options.Dispatch.InitialBackoff.Ticks * multiplier);
-        var delay = rawDelay > _options.Dispatch.MaxBackoff
-            ? _options.Dispatch.MaxBackoff
-            : rawDelay;
-
-        return now + delay;
     }
 
     [LoggerMessage(EventId = 9420, Level = LogLevel.Information, Message = "Alert dispatcher is disabled.")]

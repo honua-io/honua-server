@@ -40,14 +40,17 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             case AlertTriggerType.Enter:
                 if (!previousInside && insideNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                 {
-                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "enter", feature, zone, evaluatedAt.ToUnixTimeSeconds());
+                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "enter", feature, zone,
+                        evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Started, 0);
                 }
                 break;
 
             case AlertTriggerType.Exit:
                 if (previousInside && !insideNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                 {
-                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "exit", feature, zone, evaluatedAt.ToUnixTimeSeconds());
+                    var durationMs = (long)(evaluatedAt - (currentState?.EnteredAt ?? evaluatedAt)).TotalMilliseconds;
+                    generatedEvent = CreateEvent(change, rule, evaluatedAt, "exit", feature, zone,
+                        evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Ended, durationMs);
                 }
                 break;
 
@@ -58,7 +61,10 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
                     var elapsedSeconds = (evaluatedAt - (enteredAt ?? evaluatedAt)).TotalSeconds;
                     if (elapsedSeconds >= dwellSeconds && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
-                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "dwell", feature, zone, evaluatedAt.ToUnixTimeSeconds());
+                        var durationMs = (long)(evaluatedAt - (enteredAt ?? evaluatedAt)).TotalMilliseconds;
+                        var status = lastAlertAt.HasValue ? AlertIncidentStatus.Ongoing : AlertIncidentStatus.Started;
+                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "dwell", feature, zone,
+                            evaluatedAt.ToUnixTimeSeconds(), status, durationMs);
                     }
                 }
                 break;
@@ -71,7 +77,14 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
 
                     if (!previousBreached && breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
-                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold", feature, zone, evaluatedAt.ToUnixTimeSeconds());
+                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold", feature, zone,
+                            evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Started, 0);
+                    }
+                    else if (previousBreached && !breachedNow && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
+                    {
+                        var durationMs = (long)(evaluatedAt - (currentState?.LastAlertAt ?? evaluatedAt)).TotalMilliseconds;
+                        generatedEvent = CreateEvent(change, rule, evaluatedAt, "threshold_resolved", feature, zone,
+                            evaluatedAt.ToUnixTimeSeconds(), AlertIncidentStatus.Ended, durationMs);
                     }
 
                     break;
@@ -116,7 +129,9 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         string transition,
         Feature? feature,
         AlertZoneDefinition? zone,
-        long occurrenceToken)
+        long occurrenceToken,
+        AlertIncidentStatus incidentStatus,
+        long incidentDurationMs)
     {
         var dedupeKey = string.Create(
             CultureInfo.InvariantCulture,
@@ -131,6 +146,8 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             ["ruleName"] = rule.RuleName,
             ["trigger"] = rule.TriggerType.ToString(),
             ["transition"] = transition,
+            ["incidentStatus"] = incidentStatus.ToString(),
+            ["incidentDurationMs"] = incidentDurationMs,
             ["generation"] = change.Generation,
             ["occurredAt"] = occurredAt,
             ["zoneId"] = zone?.ZoneId,
@@ -150,7 +167,9 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             Generation = change.Generation,
             Severity = rule.Severity,
             OccurredAt = occurredAt,
-            PayloadJson = payload.ToJsonString()
+            PayloadJson = payload.ToJsonString(),
+            IncidentStatus = incidentStatus,
+            IncidentDurationMs = incidentDurationMs
         };
     }
 
@@ -184,8 +203,22 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         try
         {
             var zoneGeometry = _wkbReader.Read(zone.Geometry);
+            if (zone.GeometrySrid.HasValue && zoneGeometry.SRID <= 0)
+            {
+                zoneGeometry.SRID = zone.GeometrySrid.Value;
+            }
+
             var featureGeometry = _wkbReader.Read(featureValue.Geometry);
-            return zoneGeometry.Covers(featureGeometry) || zoneGeometry.Intersects(featureGeometry);
+
+            // Bail out when SRIDs are known but differ — planar comparison
+            // across different projections produces incorrect results.
+            if (zoneGeometry.SRID > 0 && featureGeometry.SRID > 0 &&
+                zoneGeometry.SRID != featureGeometry.SRID)
+            {
+                return previousInside;
+            }
+
+            return zoneGeometry.Intersects(featureGeometry);
         }
         catch (ArgumentException)
         {

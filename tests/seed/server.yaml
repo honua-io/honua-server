@@ -305,6 +305,122 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_features_geometry ON features USING GIST(geometry);"
   - "CREATE INDEX IF NOT EXISTS idx_features_geography ON features USING GIST ((ST_Transform(geometry, 4326)::geography));"
   - "CREATE INDEX IF NOT EXISTS idx_features_attributes ON features USING GIN(attributes);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.alert_zones (
+          zone_id BIGSERIAL PRIMARY KEY,
+          service_id TEXT NOT NULL,
+          zone_name TEXT NOT NULL,
+          geometry GEOMETRY(MULTIPOLYGON),
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT alert_zones_valid_service CHECK (length(service_id) > 0),
+          CONSTRAINT alert_zones_valid_name CHECK (length(zone_name) > 0)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.alert_rules (
+          rule_id BIGSERIAL PRIMARY KEY,
+          service_id TEXT NOT NULL,
+          layer_id INT NOT NULL,
+          zone_id BIGINT NULL REFERENCES honua.alert_zones(zone_id) ON DELETE CASCADE,
+          rule_name TEXT NOT NULL,
+          trigger_type SMALLINT NOT NULL,
+          conditions JSONB NOT NULL DEFAULT '{}'::jsonb,
+          cooldown_seconds INT NOT NULL DEFAULT 0,
+          severity TEXT NOT NULL DEFAULT 'warning',
+          edition_required SMALLINT NOT NULL DEFAULT 1,
+          channels TEXT[] NOT NULL DEFAULT '{}'::text[],
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT alert_rules_valid_service CHECK (length(service_id) > 0),
+          CONSTRAINT alert_rules_valid_name CHECK (length(rule_name) > 0),
+          CONSTRAINT alert_rules_valid_trigger CHECK (trigger_type IN (1, 2, 3, 4)),
+          CONSTRAINT alert_rules_valid_cooldown CHECK (cooldown_seconds >= 0),
+          CONSTRAINT alert_rules_valid_severity CHECK (severity IN ('info', 'warning', 'critical')),
+          CONSTRAINT alert_rules_valid_edition CHECK (edition_required IN (1, 2))
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.alert_state (
+          rule_id BIGINT NOT NULL REFERENCES honua.alert_rules(rule_id) ON DELETE CASCADE,
+          layer_id INT NOT NULL,
+          objectid BIGINT NOT NULL,
+          inside BOOLEAN NOT NULL DEFAULT FALSE,
+          entered_at TIMESTAMPTZ,
+          last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          last_alert_at TIMESTAMPTZ,
+          last_generation BIGINT NOT NULL DEFAULT 0,
+          threshold_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+          PRIMARY KEY (rule_id, layer_id, objectid)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.alert_events (
+          event_id BIGSERIAL PRIMARY KEY,
+          dedupe_key TEXT NOT NULL,
+          rule_id BIGINT NOT NULL REFERENCES honua.alert_rules(rule_id) ON DELETE CASCADE,
+          zone_id BIGINT NULL REFERENCES honua.alert_zones(zone_id) ON DELETE SET NULL,
+          service_id TEXT NOT NULL,
+          layer_id INT NOT NULL,
+          objectid BIGINT NOT NULL,
+          trigger_type SMALLINT NOT NULL,
+          generation BIGINT NOT NULL,
+          severity TEXT NOT NULL,
+          occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+          incident_status SMALLINT NOT NULL DEFAULT 1,
+          incident_duration_ms BIGINT NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT alert_events_valid_dedupe_key CHECK (length(dedupe_key) > 0),
+          CONSTRAINT alert_events_valid_trigger CHECK (trigger_type IN (1, 2, 3, 4)),
+          CONSTRAINT alert_events_valid_generation CHECK (generation >= 0),
+          CONSTRAINT alert_events_valid_severity CHECK (severity IN ('info', 'warning', 'critical')),
+          CONSTRAINT alert_events_valid_incident_status CHECK (incident_status IN (1, 2, 3))
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_events_dedupe_key ON honua.alert_events(dedupe_key);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.alert_dispatch (
+          dispatch_id BIGSERIAL PRIMARY KEY,
+          event_id BIGINT NOT NULL REFERENCES honua.alert_events(event_id) ON DELETE CASCADE,
+          channel_type SMALLINT NOT NULL,
+          destination TEXT,
+          status SMALLINT NOT NULL DEFAULT 0,
+          attempts INT NOT NULL DEFAULT 0,
+          max_attempts INT NOT NULL DEFAULT 5,
+          next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          last_attempt_at TIMESTAMPTZ,
+          delivered_at TIMESTAMPTZ,
+          last_error TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT alert_dispatch_valid_channel CHECK (channel_type BETWEEN 1 AND 10),
+          CONSTRAINT alert_dispatch_valid_status CHECK (status IN (0, 1, 2, 3, 4)),
+          CONSTRAINT alert_dispatch_valid_attempts CHECK (attempts >= 0),
+          CONSTRAINT alert_dispatch_valid_max_attempts CHECK (max_attempts > 0)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.alert_worker_checkpoint (
+          worker_name TEXT PRIMARY KEY,
+          last_generation BIGINT NOT NULL DEFAULT 0,
+          last_dwell_sweep_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT alert_worker_checkpoint_valid_worker CHECK (length(worker_name) > 0),
+          CONSTRAINT alert_worker_checkpoint_valid_generation CHECK (last_generation >= 0)
+      );
+  - |
+      INSERT INTO honua.alert_worker_checkpoint(worker_name, last_generation)
+      VALUES ('evaluator', 0)
+      ON CONFLICT (worker_name) DO NOTHING;
+  - "CREATE INDEX IF NOT EXISTS idx_alert_zones_service_active ON honua.alert_zones(service_id) WHERE is_active = TRUE;"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_zones_geometry ON honua.alert_zones USING GIST(geometry);"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_rules_service_layer_active ON honua.alert_rules(service_id, layer_id) WHERE is_active = TRUE;"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_rules_zone ON honua.alert_rules(zone_id) WHERE zone_id IS NOT NULL;"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_state_inside_entered ON honua.alert_state(rule_id, inside, entered_at) WHERE inside = TRUE;"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_state_last_generation ON honua.alert_state(last_generation);"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_events_rule_generation ON honua.alert_events(rule_id, generation);"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_events_layer_objectid_generation ON honua.alert_events(layer_id, objectid, generation);"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_dispatch_claim ON honua.alert_dispatch(status, next_attempt_at, dispatch_id) WHERE status IN (0, 3);"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_dispatch_event ON honua.alert_dispatch(event_id);"
   - "CREATE SEQUENCE IF NOT EXISTS honua.sync_generation AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;"
   - |
       CREATE TABLE IF NOT EXISTS honua.replicas (
