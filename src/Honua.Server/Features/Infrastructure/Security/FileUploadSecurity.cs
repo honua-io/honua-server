@@ -114,42 +114,70 @@ internal static class FileUploadSecurity
         long? maxFileSizeBytes,
         long? maxScanSizeBytes,
         CancellationToken cancellationToken = default)
+        => await ValidateFileAsync(
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            () => file.OpenReadStream(),
+            maxFileSizeBytes,
+            maxScanSizeBytes,
+            cancellationToken);
+
+    /// <summary>
+    /// Validates a file source using metadata plus a stream factory.
+    /// </summary>
+    public static async Task<FileValidationResult> ValidateFileAsync(
+        string fileName,
+        string? contentType,
+        long fileSize,
+        Func<Stream> openReadStream,
+        long? maxFileSizeBytes,
+        long? maxScanSizeBytes,
+        CancellationToken cancellationToken = default)
     {
-        if (file == null || file.Length == 0)
+        ArgumentNullException.ThrowIfNull(openReadStream);
+
+        if (fileSize == 0)
         {
             return FileValidationResult.Invalid("No file provided or file is empty.");
         }
 
         // 1. Check file name for dangerous patterns
-        var fileNameResult = ValidateFileName(file.FileName);
+        var fileNameResult = ValidateFileName(fileName);
         if (!fileNameResult.IsValid)
         {
             return fileNameResult;
         }
 
         // 2. Check file extension
-        var extensionResult = ValidateFileExtension(file.FileName);
+        var extensionResult = ValidateFileExtension(fileName);
         if (!extensionResult.IsValid)
         {
             return extensionResult;
         }
 
         // 3. Check MIME type
-        var mimeTypeResult = ValidateMimeType(file.ContentType);
+        var mimeTypeResult = ValidateMimeType(contentType);
         if (!mimeTypeResult.IsValid)
         {
             return mimeTypeResult;
         }
 
         // 4. Check file size
-        var sizeResult = ValidateFileSize(file.Length, maxFileSizeBytes ?? DefaultMaxFileSizeBytes);
+        var sizeResult = ValidateFileSize(fileSize, maxFileSizeBytes ?? DefaultMaxFileSizeBytes);
         if (!sizeResult.IsValid)
         {
             return sizeResult;
         }
 
         // 5. Check file content (magic number validation)
-        var contentResult = await ValidateFileContentAsync(file, maxScanSizeBytes, cancellationToken);
+        var contentResult = await ValidateFileContentAsync(
+            fileName,
+            contentType,
+            fileSize,
+            openReadStream,
+            maxScanSizeBytes,
+            cancellationToken);
         if (!contentResult.IsValid)
         {
             return contentResult;
@@ -276,16 +304,36 @@ internal static class FileUploadSecurity
         IFormFile file,
         long? maxScanSizeBytes,
         CancellationToken cancellationToken = default)
+        => await ValidateFileContentAsync(
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            () => file.OpenReadStream(),
+            maxScanSizeBytes,
+            cancellationToken);
+
+    /// <summary>
+    /// Validates file content with a stream factory.
+    /// </summary>
+    public static async Task<FileValidationResult> ValidateFileContentAsync(
+        string fileName,
+        string? contentType,
+        long fileSize,
+        Func<Stream> openReadStream,
+        long? maxScanSizeBytes,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var scanLimit = ResolveScanLimit(file.Length, maxScanSizeBytes);
+            ArgumentNullException.ThrowIfNull(openReadStream);
+
+            var scanLimit = ResolveScanLimit(fileSize, maxScanSizeBytes);
             if (scanLimit <= 0)
             {
                 return FileValidationResult.Valid();
             }
 
-            using var stream = file.OpenReadStream();
+            using var stream = openReadStream();
 
             // Read first few KB for magic number detection
             var signatureLength = (int)Math.Min(8192, scanLimit);
@@ -314,10 +362,10 @@ internal static class FileUploadSecurity
             }
 
             // Additional content validation for text files
-            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
             if (IsTextFile(extension))
             {
-                await using var limitedStream = new LimitedReadStream(file.OpenReadStream(), scanLimit);
+                await using var limitedStream = new LimitedReadStream(openReadStream(), scanLimit);
                 var textValidationResult = await ValidateTextFileContentAsync(limitedStream, cancellationToken);
                 if (!textValidationResult.IsValid)
                 {

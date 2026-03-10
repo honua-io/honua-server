@@ -3,6 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -11,7 +14,10 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Import;
 
@@ -59,12 +65,22 @@ internal static partial class ImportEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .DisableAntiforgery(); // For file uploads
 
+        _ = group.Map("/preview-url", HandlePreviewFileFromUrl)
+            .WithName($"PreviewFileFromUrl{nameSuffix}")
+            .WithSummary("Preview geospatial file contents from a public object URL")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
         // Import geospatial file
         _ = group.Map("/upload", HandleImportFile)
             .WithName($"ImportFile{nameSuffix}")
-            .WithSummary("Import geospatial file to PostgreSQL using memory-efficient streaming")
+            .WithSummary("Import geospatial file to PostgreSQL using streamed multipart ingest")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .DisableAntiforgery(); // For file uploads
+
+        _ = group.Map("/upload-url", HandleImportFileFromUrl)
+            .WithName($"ImportFileFromUrl{nameSuffix}")
+            .WithSummary("Import geospatial data from a public object URL")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         // Get upload progress
         _ = group.Map("/uploads/{uploadId}/progress", HandleGetUploadProgress)
@@ -138,7 +154,9 @@ internal static partial class ImportEndpoints
             [".gml"] = "GML - Geography Markup Language",
             [".wkt"] = "WKT - Well-Known Text format",
             [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
-            [".twkb"] = "TinyWKB - Compact binary format"
+            [".twkb"] = "TinyWKB - Compact binary format",
+            [".gdb"] = "Esri File Geodatabase - native Esri vector format",
+            [".gdb.zip"] = "Zipped File Geodatabase - compressed .gdb archive"
         };
 
         var response = new FileFormatsResponse
@@ -249,24 +267,147 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        IFormCollection form = await context.Request.ReadFormAsync(cancellationToken);
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
+        var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
+        var parseResult = await ParseMultipartImportUploadAsync(
+            context,
+            importService,
+            maxFileSizeBytes,
+            securityOptions.Value.MaxSecurityScanSizeBytes,
+            cancellationToken);
 
-        IFormFile? file = GetFormFile(form, "File", "file");
-        if (file == null || file.Length == 0)
+        if (parseResult.ErrorMessage != null)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, "File is required", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                parseResult.ErrorMessage,
+                parseResult.StatusCode ?? StatusCodes.Status400BadRequest);
             return;
         }
 
-        string tableName = form["TableName"].ToString();
-        if (string.IsNullOrWhiteSpace(tableName))
+        try
+        {
+            await ExecuteStagedImportAsync(context, parseResult.Request!, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, parseResult.Request?.TableName ?? "unknown", ex);
+            // Provide generic error message - details logged for debugging
+            await AdminResponseWriter.WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.ImportFailed(logger, parseResult.Request?.TableName ?? "unknown", ex);
+            await AdminResponseWriter.WriteErrorAsync(context, "Import failed", StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task HandlePreviewFileFromUrl(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var request = await JsonSerializer.DeserializeAsync(
+            context.Request.Body,
+            ImportJsonContext.Default.PreviewUrlImportRequest,
+            cancellationToken);
+
+        if (request == null || string.IsNullOrWhiteSpace(request.SourceUrl))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "SourceUrl is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
+        var staged = await DownloadRemoteImportSourceAsync(
+            context,
+            request.SourceUrl,
+            request.FileName,
+            importService,
+            importService.Limits.MaxPreviewSizeBytes,
+            securityOptions.Value.MaxSecurityScanSizeBytes,
+            cancellationToken);
+
+        if (staged.ErrorMessage != null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                staged.ErrorMessage,
+                staged.StatusCode ?? StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        try
+        {
+            await using var previewStream = OpenSequentialReadStream(
+                staged.File!.LocalFilePath,
+                importService.Limits.StreamBufferSize);
+            FilePreview preview = await importService.PreviewFileAsync(
+                previewStream,
+                staged.File.FileName,
+                cancellationToken);
+            IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
+            await result.ExecuteAsync(context);
+        }
+        finally
+        {
+            TryDeleteFile(staged.File?.LocalFilePath);
+        }
+    }
+
+    private static async Task HandleImportFileFromUrl(HttpContext context)
+    {
+        if (!HttpMethods.IsPost(context.Request.Method))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "Method not allowed.")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var request = await JsonSerializer.DeserializeAsync(
+            context.Request.Body,
+            ImportJsonContext.Default.ImportUrlImportRequest,
+            cancellationToken);
+
+        if (request == null)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "Request body is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.SourceUrl))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "SourceUrl is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.TableName))
         {
             await AdminResponseWriter.WriteErrorAsync(context, "Table name is required", StatusCodes.Status400BadRequest);
             return;
         }
 
-        // Validate table name (basic SQL injection prevention)
-        if (!ImportValidationHelpers.IsValidTableName(tableName))
+        if (!ImportValidationHelpers.IsValidTableName(request.TableName))
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context,
@@ -278,213 +419,38 @@ internal static partial class ImportEndpoints
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
-        var uploadValidation = await FileUploadSecurity.ValidateFileAsync(
-            file,
+        var staged = await DownloadRemoteImportSourceAsync(
+            context,
+            request.SourceUrl,
+            request.FileName,
+            importService,
             maxFileSizeBytes,
             securityOptions.Value.MaxSecurityScanSizeBytes,
             cancellationToken);
-        if (!uploadValidation.IsValid)
+
+        if (staged.ErrorMessage != null)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, uploadValidation.ErrorMessage ?? "File validation failed", StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                staged.ErrorMessage,
+                staged.StatusCode ?? StatusCodes.Status400BadRequest);
             return;
         }
 
-        var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
-        var extension = Path.GetExtension(safeFileName);
-        if (string.Equals(extension, ".shp", StringComparison.OrdinalIgnoreCase))
+        var executionRequest = new ImportExecutionRequest
         {
-            await AdminResponseWriter.WriteErrorAsync(context, "Shapefile uploads must be a .zip containing .shp and .dbf files.",
-                StatusCodes.Status400BadRequest);
-            return;
-        }
-
-        SupportedFileFormat? format = importService.DetectFormat(safeFileName);
-        if (format == null)
-        {
-            await AdminResponseWriter.WriteErrorAsync(context, $"Unsupported file format: {Path.GetExtension(safeFileName)}",
-                StatusCodes.Status400BadRequest);
-            return;
-        }
+            File = staged.File!,
+            TableName = request.TableName,
+            SourceSrid = request.SourceSrid,
+            TargetSrid = request.TargetSrid,
+            OverwriteExisting = request.OverwriteExisting,
+            ForceBackground = request.ForceBackground,
+            TrackProgress = request.TrackProgress
+        };
 
         try
         {
-            // Parse optional parameters
-            int? sourceSrid = int.TryParse(form["SourceSrid"], NumberStyles.Integer, CultureInfo.InvariantCulture, out int src)
-                ? src
-                : (int?)null;
-            int targetSrid = int.TryParse(form["TargetSrid"], NumberStyles.Integer, CultureInfo.InvariantCulture, out int tgt)
-                ? tgt
-                : 4326;
-            bool overwriteExisting = bool.TryParse(form["OverwriteExisting"], out bool overwrite) && overwrite;
-            bool forceBackground = bool.TryParse(form["ForceBackground"], out bool forceBg) && forceBg;
-            bool trackProgress = bool.TryParse(form["TrackProgress"], out bool track) && track;
-
-            // Check if file should be processed in background
-            var limits = importService.Limits;
-            var shouldQueueBackground = forceBackground || file.Length > limits.BackgroundJobThresholdBytes;
-
-            // First, upload file to cloud storage for better handling of large files
-            var cloudStorage = context.RequestServices.GetService<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>();
-            string? cloudFileId = null;
-            string? uploadId = null;
-
-            if (cloudStorage != null && (shouldQueueBackground || file.Length > 10 * 1024 * 1024)) // Use cloud storage for files > 10MB
-            {
-                using Stream uploadStream = file.OpenReadStream();
-                uploadId = Guid.NewGuid().ToString();
-
-                // Set up progress tracking if requested
-                IProgress<UploadProgress>? progressReporter = null;
-                if (trackProgress)
-                {
-                    var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
-                    if (progressStore != null)
-                    {
-                        var progressLogger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-
-                        async Task ReportProgressAsync(UploadProgress progress)
-                        {
-                            try
-                            {
-                                await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
-                            }
-                            catch (Exception ex)
-                            {
-                                Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
-                            }
-                        }
-
-                        progressReporter = new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
-                    }
-                }
-
-                var uploadRequest = new Honua.Core.Features.Infrastructure.Domain.FileUploadRequest
-                {
-                    Content = uploadStream,
-                    FileName = safeFileName,
-                    ContentType = file.ContentType ?? "application/octet-stream",
-                    SizeBytes = file.Length,
-                    TimeToLive = TimeSpan.FromDays(1), // Temporary storage for processing
-                    Folder = "imports",
-                    Progress = progressReporter,
-                    UploadId = uploadId,
-                    Metadata = new Dictionary<string, string>
-                    {
-                        ["tableName"] = tableName,
-                        ["uploadedAt"] = DateTimeOffset.UtcNow.ToString("O"),
-                        ["sourceSrid"] = sourceSrid?.ToString() ?? "",
-                        ["targetSrid"] = targetSrid.ToString()
-                    }.ToImmutableDictionary()
-                };
-
-                var uploadResult = await cloudStorage.UploadAsync(uploadRequest, cancellationToken);
-                if (!uploadResult.Success)
-                {
-                    var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-                    Log.CloudUploadFailed(
-                        logger,
-                        safeFileName,
-                        uploadResult.ErrorMessage ?? "Unknown cloud upload failure");
-                    await AdminResponseWriter.WriteErrorAsync(
-                        context,
-                        "Failed to upload file to cloud storage.",
-                        StatusCodes.Status500InternalServerError);
-                    return;
-                }
-                cloudFileId = uploadResult.File!.FileId;
-            }
-
-            Stream? localStream = null;
-            try
-            {
-                // Create import request with either cloud file reference or local stream
-                ImportRequest importRequest;
-                if (cloudFileId != null)
-                {
-                    // Create request referencing cloud-stored file
-                    importRequest = new ImportRequest
-                    {
-                        CloudFileId = cloudFileId,
-                        FileName = safeFileName,
-                        TableName = tableName,
-                        SourceSrid = sourceSrid,
-                        TargetSrid = targetSrid,
-                        OverwriteExisting = overwriteExisting
-                    };
-                }
-                else
-                {
-                    // Fallback to local stream processing
-                    localStream = file.OpenReadStream();
-                    importRequest = new ImportRequest
-                    {
-                        FileStream = localStream,
-                        FileName = safeFileName,
-                        TableName = tableName,
-                        SourceSrid = sourceSrid,
-                        TargetSrid = targetSrid,
-                        OverwriteExisting = overwriteExisting
-                    };
-                }
-
-                if (shouldQueueBackground)
-                {
-                    // Queue for background processing
-                    var jobService = context.RequestServices.GetService<IImportJobService>();
-                    if (jobService == null)
-                    {
-                        await AdminResponseWriter.WriteErrorAsync(context,
-                            "Background import service not available. File is too large for synchronous import.",
-                            StatusCodes.Status503ServiceUnavailable);
-                        return;
-                    }
-
-                    var jobId = await jobService.QueueImportAsync(importRequest, file.Length, cancellationToken);
-
-                    var response = new BackgroundImportResponse
-                    {
-                        JobId = jobId,
-                        Message = "File queued for background processing",
-                        StatusUrl = $"/api/v1/admin/operations/{jobId}",
-                        CancelUrl = $"/api/v1/admin/operations/{jobId}/cancel",
-                        UploadId = uploadId // Include upload ID for progress tracking
-                    };
-
-                    IResult result = Results.Json(response, ImportJsonContext.Default.BackgroundImportResponse, statusCode: StatusCodes.Status202Accepted);
-                    await result.ExecuteAsync(context);
-                }
-                else
-                {
-                    // Process synchronously with streaming
-                    ImportResult result = await importService.ImportFileAsync(importRequest, cancellationToken);
-                    IResult response = Results.Json(result, ImportJsonContext.Default.ImportResult);
-                    await response.ExecuteAsync(context);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Enhanced cleanup on cancellation: Clean up cloud storage if upload was started
-                if (cloudStorage != null && !string.IsNullOrEmpty(uploadId))
-                {
-                    try
-                    {
-                        _ = await cloudStorage.CancelUploadAsync(uploadId, CancellationToken.None);
-                    }
-                    catch (Exception cleanupEx)
-                    {
-                        var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-                        Log.CleanupFailed(logger, uploadId, cleanupEx);
-                    }
-                }
-                throw;
-            }
-            finally
-            {
-                if (localStream != null)
-                {
-                    await localStream.DisposeAsync();
-                }
-            }
+            await ExecuteStagedImportAsync(context, executionRequest, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -493,15 +459,567 @@ internal static partial class ImportEndpoints
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-            Log.ImportFailed(logger, tableName, ex);
-            // Provide generic error message - details logged for debugging
+            Log.ImportFailed(logger, executionRequest.TableName, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-            Log.ImportFailed(logger, tableName, ex);
+            Log.ImportFailed(logger, executionRequest.TableName, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Import failed", StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task ExecuteStagedImportAsync(
+        HttpContext context,
+        ImportExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+        var limits = importService.Limits;
+        var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
+        var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
+        var deleteLocalFile = true;
+        string? cloudFileId = null;
+        string? uploadId = null;
+
+        try
+        {
+            if (cloudStorage != null && (shouldQueueBackground || request.File.SizeBytes > 10 * 1024 * 1024))
+            {
+                var cloudUploadResult = await UploadStagedFileToCloudAsync(context, request, cloudStorage, cancellationToken);
+                if (!cloudUploadResult.Success)
+                {
+                    await AdminResponseWriter.WriteErrorAsync(
+                        context,
+                        cloudUploadResult.ErrorMessage ?? "Failed to upload file to cloud storage.",
+                        StatusCodes.Status500InternalServerError);
+                    return;
+                }
+
+                cloudFileId = cloudUploadResult.CloudFileId;
+                uploadId = cloudUploadResult.UploadId;
+            }
+
+            var importRequest = new ImportRequest
+            {
+                CloudFileId = cloudFileId,
+                LocalFilePath = cloudFileId == null ? request.File.LocalFilePath : null,
+                FileName = request.File.FileName,
+                TableName = request.TableName,
+                SourceSrid = request.SourceSrid,
+                TargetSrid = request.TargetSrid,
+                OverwriteExisting = request.OverwriteExisting
+            };
+
+            if (shouldQueueBackground)
+            {
+                var jobService = context.RequestServices.GetService<IImportJobService>();
+                if (jobService == null)
+                {
+                    await AdminResponseWriter.WriteErrorAsync(
+                        context,
+                        "Background import service not available. File is too large for synchronous import.",
+                        StatusCodes.Status503ServiceUnavailable);
+                    return;
+                }
+
+                var jobId = await jobService.QueueImportAsync(importRequest, request.File.SizeBytes, cancellationToken);
+                deleteLocalFile = cloudFileId != null;
+
+                var response = new BackgroundImportResponse
+                {
+                    JobId = jobId,
+                    Message = "File queued for background processing",
+                    StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
+                    CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel",
+                    UploadId = uploadId
+                };
+
+                IResult result = Results.Json(
+                    response,
+                    ImportJsonContext.Default.BackgroundImportResponse,
+                    statusCode: StatusCodes.Status202Accepted);
+                await result.ExecuteAsync(context);
+                return;
+            }
+
+            ImportResult importResult = await importService.ImportFileAsync(importRequest, cancellationToken);
+            IResult syncResult = Results.Json(importResult, ImportJsonContext.Default.ImportResult);
+            await syncResult.ExecuteAsync(context);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (cloudStorage != null && !string.IsNullOrEmpty(uploadId))
+            {
+                try
+                {
+                    _ = await cloudStorage.CancelUploadAsync(uploadId, CancellationToken.None);
+                }
+                catch (Exception cleanupEx)
+                {
+                    var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+                    Log.CleanupFailed(logger, uploadId, cleanupEx);
+                }
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (deleteLocalFile)
+            {
+                TryDeleteFile(request.File.LocalFilePath);
+            }
+        }
+    }
+
+    private static async Task<CloudUploadStageResult> UploadStagedFileToCloudAsync(
+        HttpContext context,
+        ImportExecutionRequest request,
+        ICloudFileStorage cloudStorage,
+        CancellationToken cancellationToken)
+    {
+        var uploadId = Guid.NewGuid().ToString();
+        var progressReporter = request.TrackProgress
+            ? CreateUploadProgressReporter(context, uploadId)
+            : null;
+        var contentType = string.IsNullOrWhiteSpace(request.File.ContentType)
+            ? "application/octet-stream"
+            : request.File.ContentType!;
+
+        await using var uploadStream = OpenSequentialReadStream(
+            request.File.LocalFilePath,
+            context.RequestServices.GetRequiredService<IFileImportService>().Limits.StreamBufferSize);
+
+        var uploadRequest = new FileUploadRequest
+        {
+            Content = uploadStream,
+            FileName = request.File.FileName,
+            ContentType = contentType,
+            SizeBytes = request.File.SizeBytes,
+            TimeToLive = TimeSpan.FromDays(1),
+            Folder = "imports",
+            Progress = progressReporter,
+            UploadId = uploadId,
+            Metadata = new Dictionary<string, string>
+            {
+                ["tableName"] = request.TableName,
+                ["uploadedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+                ["sourceSrid"] = request.SourceSrid?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ["targetSrid"] = request.TargetSrid.ToString(CultureInfo.InvariantCulture)
+            }.ToImmutableDictionary()
+        };
+
+        var uploadResult = await cloudStorage.UploadAsync(uploadRequest, cancellationToken);
+        if (!uploadResult.Success || uploadResult.File == null)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.CloudUploadFailed(
+                logger,
+                request.File.FileName,
+                uploadResult.ErrorMessage ?? "Unknown cloud upload failure");
+            return new CloudUploadStageResult
+            {
+                Success = false,
+                ErrorMessage = "Failed to upload file to cloud storage."
+            };
+        }
+
+        return new CloudUploadStageResult
+        {
+            Success = true,
+            CloudFileId = uploadResult.File.FileId,
+            UploadId = uploadId
+        };
+    }
+
+    private static Progress<UploadProgress>? CreateUploadProgressReporter(HttpContext context, string uploadId)
+    {
+        var progressStore = context.RequestServices.GetService<IUploadProgressStore>();
+        if (progressStore == null)
+        {
+            return null;
+        }
+
+        var progressLogger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+        return new Progress<UploadProgress>(progress => _ = ReportProgressAsync(progress));
+
+        async Task ReportProgressAsync(UploadProgress progress)
+        {
+            try
+            {
+                await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
+            }
+        }
+    }
+
+    private static async Task<MultipartImportParseResult> ParseMultipartImportUploadAsync(
+        HttpContext context,
+        IFileImportService importService,
+        long maxFileSizeBytes,
+        long maxScanSizeBytes,
+        CancellationToken cancellationToken)
+    {
+        if (!MediaTypeHeaderValue.TryParse(context.Request.ContentType, out var mediaType))
+        {
+            return MultipartImportParseResult.Failure("Invalid multipart content type.", StatusCodes.Status400BadRequest);
+        }
+
+        var boundary = HeaderUtilities.RemoveQuotes(mediaType.Boundary).Value;
+        if (string.IsNullOrWhiteSpace(boundary))
+        {
+            return MultipartImportParseResult.Failure("Multipart request is missing a boundary.", StatusCodes.Status400BadRequest);
+        }
+
+        var reader = new MultipartReader(boundary, context.Request.Body);
+        var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        StagedImportFile? stagedFile = null;
+
+        try
+        {
+            MultipartSection? section;
+            while ((section = await reader.ReadNextSectionAsync(cancellationToken)) != null)
+            {
+                if (!ContentDispositionHeaderValue.TryParse(section.ContentDisposition, out var contentDisposition))
+                {
+                    continue;
+                }
+
+                if (HasFileContentDisposition(contentDisposition))
+                {
+                    if (stagedFile != null)
+                    {
+                        return MultipartImportParseResult.Failure("Only one file upload is supported per request.", StatusCodes.Status400BadRequest);
+                    }
+
+                    var fileName = ResolveMultipartFileName(contentDisposition);
+                    if (string.IsNullOrWhiteSpace(fileName))
+                    {
+                        return MultipartImportParseResult.Failure("File name is required", StatusCodes.Status400BadRequest);
+                    }
+
+                    stagedFile = await StageImportSourceAsync(
+                        section.Body,
+                        fileName,
+                        section.ContentType,
+                        importService,
+                        maxFileSizeBytes,
+                        maxScanSizeBytes,
+                        cancellationToken);
+                    continue;
+                }
+
+                if (HasFormDataContentDisposition(contentDisposition))
+                {
+                    var fieldName = HeaderUtilities.RemoveQuotes(contentDisposition.Name).Value;
+                    if (!string.IsNullOrWhiteSpace(fieldName))
+                    {
+                        fields[fieldName] = await ReadMultipartFieldValueAsync(section, cancellationToken);
+                    }
+                }
+            }
+
+            if (stagedFile == null)
+            {
+                return MultipartImportParseResult.Failure("File is required", StatusCodes.Status400BadRequest);
+            }
+
+            if (!fields.TryGetValue("TableName", out var tableName) || string.IsNullOrWhiteSpace(tableName))
+            {
+                TryDeleteFile(stagedFile.LocalFilePath);
+                return MultipartImportParseResult.Failure("Table name is required", StatusCodes.Status400BadRequest);
+            }
+
+            if (!ImportValidationHelpers.IsValidTableName(tableName))
+            {
+                TryDeleteFile(stagedFile.LocalFilePath);
+                return MultipartImportParseResult.Failure(
+                    "Invalid table name. Use only letters, numbers, and underscores.",
+                    StatusCodes.Status400BadRequest);
+            }
+
+            var request = new ImportExecutionRequest
+            {
+                File = stagedFile,
+                TableName = tableName,
+                SourceSrid = TryParseNullableInt(fields, "SourceSrid"),
+                TargetSrid = TryParseNullableInt(fields, "TargetSrid") ?? 4326,
+                OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
+                ForceBackground = TryParseBool(fields, "ForceBackground"),
+                TrackProgress = TryParseBool(fields, "TrackProgress")
+            };
+
+            return MultipartImportParseResult.Success(request);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
+        {
+            TryDeleteFile(stagedFile?.LocalFilePath);
+            return MultipartImportParseResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private static async Task<RemoteImportDownloadResult> DownloadRemoteImportSourceAsync(
+        HttpContext context,
+        string sourceUrl,
+        string? fileNameOverride,
+        IFileImportService importService,
+        long maxFileSizeBytes,
+        long maxScanSizeBytes,
+        CancellationToken cancellationToken)
+    {
+        var validation = await ImportSourceUrlValidation.ValidateAsync(sourceUrl, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return RemoteImportDownloadResult.Failure(
+                validation.ErrorMessage ?? "SourceUrl is invalid.",
+                StatusCodes.Status400BadRequest);
+        }
+
+        if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var sourceUri))
+        {
+            return RemoteImportDownloadResult.Failure("SourceUrl is invalid.", StatusCodes.Status400BadRequest);
+        }
+
+        var httpClientFactory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Get, sourceUri);
+        using var response = await httpClientFactory
+            .CreateClient()
+            .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return RemoteImportDownloadResult.Failure(
+                $"Failed to fetch source object: {(int)response.StatusCode} {response.ReasonPhrase}",
+                StatusCodes.Status502BadGateway);
+        }
+
+        var fileName = ResolveRemoteFileName(
+            sourceUri,
+            response.Content.Headers.ContentDisposition?.FileNameStar,
+            response.Content.Headers.ContentDisposition?.FileName,
+            fileNameOverride);
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return RemoteImportDownloadResult.Failure(
+                "Unable to determine file name for remote import source.",
+                StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var stagedFile = await StageImportSourceAsync(
+                responseStream,
+                fileName,
+                response.Content.Headers.ContentType?.MediaType,
+                importService,
+                maxFileSizeBytes,
+                maxScanSizeBytes,
+                cancellationToken);
+            return RemoteImportDownloadResult.Success(stagedFile);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
+        {
+            return RemoteImportDownloadResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private static async Task<StagedImportFile> StageImportSourceAsync(
+        Stream sourceStream,
+        string originalFileName,
+        string? contentType,
+        IFileImportService importService,
+        long maxFileSizeBytes,
+        long maxScanSizeBytes,
+        CancellationToken cancellationToken)
+    {
+        var safeFileName = FileUploadSecurity.SanitizeFileName(originalFileName);
+        var extension = Path.GetExtension(safeFileName);
+        if (string.Equals(extension, ".shp", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Shapefile uploads must be a .zip containing .shp and .dbf files.");
+        }
+
+        var tempFilePath = CreateStagedImportFilePath(safeFileName);
+        try
+        {
+            var sizeBytes = await CopySourceToTempFileAsync(sourceStream, tempFilePath, maxFileSizeBytes, cancellationToken);
+            var validation = await FileUploadSecurity.ValidateFileAsync(
+                safeFileName,
+                string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+                sizeBytes,
+                () => OpenSequentialReadStream(tempFilePath, importService.Limits.StreamBufferSize),
+                maxFileSizeBytes,
+                maxScanSizeBytes,
+                cancellationToken);
+            if (!validation.IsValid)
+            {
+                throw new InvalidDataException(validation.ErrorMessage ?? "File validation failed.");
+            }
+
+            SupportedFileFormat? format = importService.DetectFormat(safeFileName);
+            if (format == null)
+            {
+                throw new NotSupportedException($"Unsupported file format: {Path.GetExtension(safeFileName)}");
+            }
+
+            return new StagedImportFile
+            {
+                FileName = safeFileName,
+                ContentType = contentType,
+                LocalFilePath = tempFilePath,
+                SizeBytes = sizeBytes
+            };
+        }
+        catch
+        {
+            TryDeleteFile(tempFilePath);
+            throw;
+        }
+    }
+
+    private static async Task<long> CopySourceToTempFileAsync(
+        Stream sourceStream,
+        string tempFilePath,
+        long maxFileSizeBytes,
+        CancellationToken cancellationToken)
+    {
+        var totalBytes = 0L;
+        Directory.CreateDirectory(Path.GetDirectoryName(tempFilePath)!);
+        await using var targetStream = new FileStream(tempFilePath, new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            BufferSize = 64 * 1024,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
+
+        var buffer = new byte[64 * 1024];
+        while (true)
+        {
+            var bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            totalBytes += bytesRead;
+            if (totalBytes > maxFileSizeBytes)
+            {
+                throw new InvalidDataException($"File size exceeds maximum allowed size of {maxFileSizeBytes:N0} bytes.");
+            }
+
+            await targetStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+        }
+
+        return totalBytes;
+    }
+
+    private static async Task<string> ReadMultipartFieldValueAsync(MultipartSection section, CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(section.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    private static string? ResolveMultipartFileName(ContentDispositionHeaderValue contentDisposition)
+    {
+        var fileNameStar = HeaderUtilities.RemoveQuotes(contentDisposition.FileNameStar).Value;
+        if (!string.IsNullOrWhiteSpace(fileNameStar))
+        {
+            return fileNameStar;
+        }
+
+        return HeaderUtilities.RemoveQuotes(contentDisposition.FileName).Value;
+    }
+
+    private static string? ResolveRemoteFileName(
+        Uri sourceUri,
+        string? contentDispositionFileNameStar,
+        string? contentDispositionFileName,
+        string? fileNameOverride)
+    {
+        if (!string.IsNullOrWhiteSpace(fileNameOverride))
+        {
+            return fileNameOverride;
+        }
+
+        if (!string.IsNullOrWhiteSpace(contentDispositionFileNameStar))
+        {
+            return HeaderUtilities.RemoveQuotes(contentDispositionFileNameStar).Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(contentDispositionFileName))
+        {
+            return HeaderUtilities.RemoveQuotes(contentDispositionFileName).Value;
+        }
+
+        var fileName = Path.GetFileName(sourceUri.AbsolutePath);
+        return string.IsNullOrWhiteSpace(fileName) ? null : WebUtility.UrlDecode(fileName);
+    }
+
+    private static bool HasFileContentDisposition(ContentDispositionHeaderValue contentDisposition)
+        => contentDisposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase) &&
+           (!StringSegment.IsNullOrEmpty(contentDisposition.FileName) ||
+            !StringSegment.IsNullOrEmpty(contentDisposition.FileNameStar));
+
+    private static bool HasFormDataContentDisposition(ContentDispositionHeaderValue contentDisposition)
+        => contentDisposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase) &&
+           StringSegment.IsNullOrEmpty(contentDisposition.FileName) &&
+           StringSegment.IsNullOrEmpty(contentDisposition.FileNameStar);
+
+    private static int? TryParseNullableInt(Dictionary<string, string> fields, string fieldName)
+        => fields.TryGetValue(fieldName, out var value) &&
+           int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+
+    private static bool TryParseBool(Dictionary<string, string> fields, string fieldName)
+        => fields.TryGetValue(fieldName, out var value) &&
+           bool.TryParse(value, out var parsed) &&
+           parsed;
+
+    private static string CreateStagedImportFilePath(string fileName)
+    {
+        var extension = Path.GetExtension(fileName);
+        return Path.Combine(
+            Path.GetTempPath(),
+            "honua-import-staging",
+            $"{Guid.NewGuid():N}{extension}");
+    }
+
+    private static FileStream OpenSequentialReadStream(string path, int bufferSize)
+        => new(path, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            BufferSize = bufferSize,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
+
+    private static void TryDeleteFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
         }
     }
 
@@ -880,6 +1398,77 @@ internal sealed record BackgroundImportResponse
     /// Upload ID for tracking file upload progress (optional)
     /// </summary>
     public string? UploadId { get; init; }
+}
+
+internal sealed record PreviewUrlImportRequest
+{
+    public required string SourceUrl { get; init; }
+    public string? FileName { get; init; }
+}
+
+internal sealed record ImportUrlImportRequest
+{
+    public required string SourceUrl { get; init; }
+    public string? FileName { get; init; }
+    public required string TableName { get; init; }
+    public int? SourceSrid { get; init; }
+    public int TargetSrid { get; init; } = 4326;
+    public bool OverwriteExisting { get; init; }
+    public bool ForceBackground { get; init; }
+    public bool TrackProgress { get; init; }
+}
+
+internal sealed record StagedImportFile
+{
+    public required string FileName { get; init; }
+    public string? ContentType { get; init; }
+    public required string LocalFilePath { get; init; }
+    public long SizeBytes { get; init; }
+}
+
+internal sealed record ImportExecutionRequest
+{
+    public required StagedImportFile File { get; init; }
+    public required string TableName { get; init; }
+    public int? SourceSrid { get; init; }
+    public int TargetSrid { get; init; } = 4326;
+    public bool OverwriteExisting { get; init; }
+    public bool ForceBackground { get; init; }
+    public bool TrackProgress { get; init; }
+}
+
+internal sealed record MultipartImportParseResult
+{
+    public ImportExecutionRequest? Request { get; init; }
+    public string? ErrorMessage { get; init; }
+    public int? StatusCode { get; init; }
+
+    public static MultipartImportParseResult Success(ImportExecutionRequest request)
+        => new() { Request = request };
+
+    public static MultipartImportParseResult Failure(string errorMessage, int statusCode)
+        => new() { ErrorMessage = errorMessage, StatusCode = statusCode };
+}
+
+internal sealed record RemoteImportDownloadResult
+{
+    public StagedImportFile? File { get; init; }
+    public string? ErrorMessage { get; init; }
+    public int? StatusCode { get; init; }
+
+    public static RemoteImportDownloadResult Success(StagedImportFile file)
+        => new() { File = file };
+
+    public static RemoteImportDownloadResult Failure(string errorMessage, int statusCode)
+        => new() { ErrorMessage = errorMessage, StatusCode = statusCode };
+}
+
+internal sealed record CloudUploadStageResult
+{
+    public bool Success { get; init; }
+    public string? CloudFileId { get; init; }
+    public string? UploadId { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 

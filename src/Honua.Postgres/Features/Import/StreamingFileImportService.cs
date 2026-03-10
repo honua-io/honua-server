@@ -62,7 +62,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".zip"] = SupportedFileFormat.Shapefile,
             [".gpkg"] = SupportedFileFormat.GeoPackage,
             [".gpx"] = SupportedFileFormat.Gpx,
-            [".csv"] = SupportedFileFormat.Csv
+            [".csv"] = SupportedFileFormat.Csv,
+            [".gdb"] = SupportedFileFormat.FileGdb
         }
         .ToFrozenDictionary();
     private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
@@ -73,6 +74,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly string _shapefileScratchRoot = Path.Combine(Path.GetTempPath(), "honua-shapefile");
     private static readonly string _geoPackageScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geopackage");
     private static readonly string _kmzScratchRoot = Path.Combine(Path.GetTempPath(), "honua-kmz");
+    private static readonly string _fileGdbScratchRoot = Path.Combine(Path.GetTempPath(), "honua-filegdb");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -103,13 +105,19 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <inheritdoc/>
     public SupportedFileFormat? DetectFormat(string fileName)
     {
+        // FileGDB archives are typically named *.gdb.zip
+        if (fileName.EndsWith(".gdb.zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return SupportedFileFormat.FileGdb;
+        }
+
         var extension = Path.GetExtension(fileName);
         return string.IsNullOrEmpty(extension) ? null :
                _fileExtensions.TryGetValue(extension, out var format) ? format : null;
     }
 
     /// <inheritdoc/>
-    public string[] GetSupportedExtensions() => _fileExtensions.Keys.ToArray();
+    public string[] GetSupportedExtensions() => _fileExtensions.Keys.Append(".gdb.zip").ToArray();
 
     /// <inheritdoc/>
     public Task<ImportResult> ImportFileAsync(ImportRequest request, CancellationToken cancellationToken = default)
@@ -121,7 +129,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         IProgress<ImportProgress>? progress,
         CancellationToken cancellationToken = default)
     {
-        // Validate request has either FileStream or CloudFileId
+        // Validate request has exactly one source: FileStream, CloudFileId, or LocalFilePath
         request.Validate();
 
         var stopwatch = Stopwatch.StartNew();
@@ -158,6 +166,25 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             shouldDisposeStream = true;
             totalBytes = metadata?.SizeBytes;
         }
+        else if (request.UsesLocalFile)
+        {
+            var fileInfo = new FileInfo(request.LocalFilePath!);
+            if (!fileInfo.Exists)
+            {
+                throw new FileNotFoundException("Local staged import file was not found.", request.LocalFilePath);
+            }
+
+            fileStream = new FileStream(request.LocalFilePath!, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                BufferSize = _limits.StreamBufferSize,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+            shouldDisposeStream = true;
+            totalBytes = fileInfo.Length;
+        }
         else
         {
             fileStream = request.FileStream!;
@@ -173,6 +200,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ShapefileScratch? shapefileScratch = null;
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
+        FileGdbScratch? fileGdbScratch = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
@@ -263,6 +291,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 totalBytes = fileStream.Length;
                 detectedSrid = request.SourceSrid ?? 4326;
             }
+            else if (format.Value == SupportedFileFormat.FileGdb)
+            {
+                fileGdbScratch = await PrepareFileGdbScratchAsync(fileStream, cancellationToken);
+                detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+            }
             else
             {
                 if (request.SourceSrid.HasValue)
@@ -287,7 +320,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
             }
 
-            var sourceSrid = request.SourceSrid ?? detectedSrid;
+            // For FileGDB with no detectable SRID, fall back to TargetSrid (coordinates
+            // may not need transformation if the GDB has no spatial features).
+            var sourceSrid = request.SourceSrid ?? detectedSrid
+                ?? (format.Value == SupportedFileFormat.FileGdb ? request.TargetSrid : null);
             if (!sourceSrid.HasValue)
             {
                 errorMessage = $"Source SRID is required for {format.Value} imports when CRS cannot be detected.";
@@ -315,7 +351,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 progress,
                 jobId,
                 cancellationToken,
-                shapefileScratch);
+                shapefileScratch,
+                fileGdbScratch);
 
             if (importedCount == 0 && failedCount == 0)
             {
@@ -376,6 +413,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             CleanupShapefileScratch(shapefileScratch);
             CleanupGeoPackageScratch(geoPackageScratch);
             CleanupKmzScratch(kmzScratch);
+            CleanupFileGdbScratch(fileGdbScratch);
             RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
 
             if (status == "success")
@@ -407,7 +445,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         IProgress<ImportProgress>? progress,
         string jobId,
         CancellationToken cancellationToken,
-        ShapefileScratch? shapefileScratch = null)
+        ShapefileScratch? shapefileScratch = null,
+        FileGdbScratch? fileGdbScratch = null)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
@@ -441,6 +480,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
         };
 
@@ -888,6 +928,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
     }
 
+    private static partial class FileGdbLog
+    {
+        [LoggerMessage(
+            EventId = 7411,
+            Level = LogLevel.Warning,
+            Message = "Failed to clean up FileGDB scratch directory {ScratchDir}")]
+        public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
+    }
+
     /// <inheritdoc/>
     public async Task<FilePreview> PreviewFileAsync(
         Stream fileStream,
@@ -904,6 +953,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ShapefileScratch? shapefileScratch = null;
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
+        FileGdbScratch? fileGdbScratch = null;
         Stream? kmzStream = null;
         try
         {
@@ -946,6 +996,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 fileStream = kmzStream;
                 detectedSrid = 4326;
             }
+            else if (format.Value == SupportedFileFormat.FileGdb)
+            {
+                fileGdbScratch = await PrepareFileGdbScratchAsync(fileStream, cancellationToken);
+                detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+            }
             else
             {
                 if (!fileStream.CanSeek)
@@ -977,6 +1032,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
                 SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
+                SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
             };
 
@@ -993,7 +1049,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             {
                 var names = firstFeature.Attributes.GetNames();
                 var values = firstFeature.Attributes.GetValues();
-                sampleProperties = names.Zip(values).ToDictionary(pair => pair.First, pair => (object?)pair.Second);
+                sampleProperties = names.Zip(values).ToDictionary(
+                    pair => pair.First,
+                    pair => pair.Second is byte[] bytes
+                        ? (object?)Convert.ToBase64String(bytes)
+                        : pair.Second);
             }
 
             return new FilePreview
@@ -1015,6 +1075,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             CleanupShapefileScratch(shapefileScratch);
             CleanupGeoPackageScratch(geoPackageScratch);
             CleanupKmzScratch(kmzScratch);
+            CleanupFileGdbScratch(fileGdbScratch);
         }
     }
 
@@ -1036,6 +1097,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Csv => 4326,
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
+                SupportedFileFormat.FileGdb => null, // CRS detected during preparation via FileGdbReader.DetectSrid
                 _ => null
             };
         }
@@ -1131,6 +1193,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private sealed record GeoPackageScratch(string DirectoryPath, string FilePath);
 
     private sealed record KmzScratch(string DirectoryPath, string KmlPath);
+
+    private sealed record FileGdbScratch(string DirectoryPath, string GdbPath);
 
     private sealed record GeoPackageLayerInfo(string TableName, string GeometryColumn, int? Srid);
 
@@ -1498,6 +1562,116 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
     }
 
+    /// <summary>
+    /// Extract a FileGDB .gdb.zip archive to a scratch directory.
+    /// </summary>
+    private async Task<FileGdbScratch> PrepareFileGdbScratchAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        var scratchDir = Path.Combine(_fileGdbScratchRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratchDir);
+
+        string? zipPath = null;
+        Stream? zipStream = null;
+        var leaveOpen = false;
+
+        try
+        {
+            if (stream.CanSeek)
+            {
+                if (stream.Position != 0)
+                {
+                    stream.Position = 0;
+                }
+
+                zipStream = stream;
+                leaveOpen = true;
+            }
+            else
+            {
+                zipPath = Path.Combine(scratchDir, "upload.gdb.zip");
+                await using (var zipFileStream = File.Create(zipPath))
+                {
+                    await stream.CopyToAsync(zipFileStream, cancellationToken);
+                }
+
+                zipStream = File.OpenRead(zipPath);
+            }
+
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen);
+            var extractionBudget = CreateArchiveExtractionBudget();
+
+            // Extract all entries, maintaining directory structure
+            foreach (var entry in archive.Entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (string.IsNullOrEmpty(entry.Name))
+                {
+                    continue; // directory entry
+                }
+
+                // Security: prevent path traversal
+                var entryPath = Path.GetFullPath(Path.Combine(scratchDir, entry.FullName));
+                if (!entryPath.StartsWith(scratchDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("Archive contains path traversal.");
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(entryPath)!);
+                await ExtractEntryAsync(entry, entryPath, extractionBudget, cancellationToken);
+            }
+
+            // Find the .gdb directory
+            var gdbDir = Directory.GetDirectories(scratchDir, "*.gdb", SearchOption.AllDirectories)
+                .FirstOrDefault();
+            if (gdbDir == null)
+            {
+                // Maybe the files are at the root level (no subfolder)
+                gdbDir = Directory.GetFiles(scratchDir, "a00000001.gdbtable", SearchOption.AllDirectories)
+                    .Select(f => Path.GetDirectoryName(f))
+                    .FirstOrDefault();
+            }
+
+            if (gdbDir == null)
+            {
+                throw new InvalidDataException("Archive does not contain a valid File Geodatabase (.gdb directory).");
+            }
+
+            return new FileGdbScratch(scratchDir, gdbDir);
+        }
+        catch (InvalidDataException)
+        {
+            CleanupFileGdbScratchDirectory(scratchDir);
+            throw;
+        }
+        catch
+        {
+            CleanupFileGdbScratchDirectory(scratchDir);
+            throw;
+        }
+        finally
+        {
+            if (zipStream != null && !leaveOpen)
+            {
+                await zipStream.DisposeAsync();
+            }
+
+            if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
+            {
+                try
+                {
+                    File.Delete(zipPath);
+                }
+                catch
+                {
+                    // Best-effort cleanup; scratch directory deletion will handle this
+                }
+            }
+        }
+    }
+
     private static ShapefileEntries? SelectShapefileEntries(ZipArchive archive)
     {
         var groups = new Dictionary<string, ShapefileEntryGroup>(StringComparer.OrdinalIgnoreCase);
@@ -1760,6 +1934,36 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         catch (Exception ex)
         {
             KmzLog.CleanupScratchFailed(_logger, ex, scratchDir);
+        }
+    }
+
+    private void CleanupFileGdbScratch(FileGdbScratch? scratch)
+    {
+        if (scratch == null)
+        {
+            return;
+        }
+
+        CleanupFileGdbScratchDirectory(scratch.DirectoryPath);
+    }
+
+    private void CleanupFileGdbScratchDirectory(string scratchDir)
+    {
+        if (string.IsNullOrWhiteSpace(scratchDir))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(scratchDir))
+            {
+                Directory.Delete(scratchDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            FileGdbLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
 

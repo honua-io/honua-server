@@ -24,7 +24,7 @@ public sealed class ImportRequestTests
         Action act = () => request.Validate();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Either FileStream or CloudFileId must be provided*");
+            .WithMessage("*Either FileStream, CloudFileId, or LocalFilePath must be provided*");
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class ImportRequestTests
         Action act = () => request.Validate();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Only one of FileStream or CloudFileId should be provided*");
+            .WithMessage("*Only one of FileStream, CloudFileId, or LocalFilePath should be provided*");
     }
 
     [Fact]
@@ -73,5 +73,33 @@ public sealed class ImportRequestTests
         };
 
         request.UsesCloudStorage.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Validate_WhenLocalFilePathProvided_DoesNotThrow()
+    {
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table",
+            LocalFilePath = "/tmp/honua-import-test.geojson"
+        };
+
+        Action act = () => request.Validate();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void UsesLocalFile_WhenLocalFilePathWhitespace_ReturnsFalse()
+    {
+        var request = new ImportRequest
+        {
+            FileName = "data.geojson",
+            TableName = "table",
+            LocalFilePath = "   "
+        };
+
+        request.UsesLocalFile.Should().BeFalse();
     }
 }

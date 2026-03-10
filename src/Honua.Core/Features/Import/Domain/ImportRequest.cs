@@ -19,6 +19,12 @@ public sealed record ImportRequest
     public string? CloudFileId { get; init; }
 
     /// <summary>
+    /// Local staged file path (optional if FileStream or CloudFileId is provided).
+    /// Used for streamed ingest paths that spool to disk before import processing.
+    /// </summary>
+    public string? LocalFilePath { get; init; }
+
+    /// <summary>
     /// Original filename (used for format detection)
     /// </summary>
     public required string FileName { get; init; }
@@ -50,15 +56,32 @@ public sealed record ImportRequest
     public void Validate()
     {
         var cloudFileId = string.IsNullOrWhiteSpace(CloudFileId) ? null : CloudFileId;
+        var localFilePath = string.IsNullOrWhiteSpace(LocalFilePath) ? null : LocalFilePath;
+        var sourceCount = 0;
 
-        if (FileStream == null && cloudFileId == null)
+        if (FileStream != null)
         {
-            throw new InvalidOperationException("Either FileStream or CloudFileId must be provided.");
+            sourceCount++;
         }
 
-        if (FileStream != null && cloudFileId != null)
+        if (cloudFileId != null)
         {
-            throw new InvalidOperationException("Only one of FileStream or CloudFileId should be provided, not both.");
+            sourceCount++;
+        }
+
+        if (localFilePath != null)
+        {
+            sourceCount++;
+        }
+
+        if (sourceCount == 0)
+        {
+            throw new InvalidOperationException("Either FileStream, CloudFileId, or LocalFilePath must be provided.");
+        }
+
+        if (sourceCount > 1)
+        {
+            throw new InvalidOperationException("Only one of FileStream, CloudFileId, or LocalFilePath should be provided, not multiple sources.");
         }
     }
 
@@ -66,4 +89,9 @@ public sealed record ImportRequest
     /// Gets a value indicating whether this request uses cloud storage
     /// </summary>
     public bool UsesCloudStorage => !string.IsNullOrWhiteSpace(CloudFileId);
+
+    /// <summary>
+    /// Gets a value indicating whether this request uses a local staged file path.
+    /// </summary>
+    public bool UsesLocalFile => !string.IsNullOrWhiteSpace(LocalFilePath);
 }
