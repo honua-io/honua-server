@@ -71,11 +71,11 @@ internal sealed class EventHubPublisher : IEventHubPublisher
 internal sealed class AzureEventHubAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IEventHubPublisher _publisher;
-    private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _options;
 
     public AzureEventHubAlertDeliverySink(
         IEventHubPublisher publisher,
-        IOptions<AlertOptions> options)
+        IOptions<AlertDeliveryOptions> options)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));

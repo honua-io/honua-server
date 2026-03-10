@@ -13,7 +13,9 @@ public sealed class AlertEditionPolicyTests
     [UnitTest]
     public void IsChannelAllowed_ProEdition_AllowsWebhookOnly()
     {
-        var policy = new AlertEditionPolicy(Options.Create(new AlertOptions { Edition = AlertEdition.Pro }));
+        var policy = new AlertEditionPolicy(
+            Options.Create(new AlertOptions { Edition = AlertEdition.Pro }),
+            Options.Create(new AlertDeliveryOptions()));
 
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Webhook));
         Assert.False(policy.IsChannelAllowed(AlertChannelType.WebSocket));
@@ -30,7 +32,9 @@ public sealed class AlertEditionPolicyTests
     [UnitTest]
     public void IsChannelAllowed_EnterpriseEdition_AllowsAllChannels()
     {
-        var policy = new AlertEditionPolicy(Options.Create(new AlertOptions { Edition = AlertEdition.Enterprise }));
+        var policy = new AlertEditionPolicy(
+            Options.Create(new AlertOptions { Edition = AlertEdition.Enterprise }),
+            Options.Create(new AlertDeliveryOptions()));
 
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Webhook));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.WebSocket));
@@ -47,30 +51,37 @@ public sealed class AlertEditionPolicyTests
     [UnitTest]
     public void IsChannelConfigured_WithConfiguredDispatchTargets_ReturnsExpectedAvailability()
     {
-        var policy = new AlertEditionPolicy(Options.Create(new AlertOptions
-        {
-            Dispatch = new AlertDispatchOptions
+        var policy = new AlertEditionPolicy(
+            Options.Create(new AlertOptions
             {
-                DefaultWebhookUrl = "https://hooks.example.com/alerts",
-                Email = new EmailAlertOptions
+                Dispatch = new AlertDispatchOptions
                 {
-                    SmtpHost = "smtp.example.com",
-                    FromAddress = "alerts@example.com",
-                    DefaultRecipient = "ops@example.com"
-                },
-                Digest = new DigestAlertOptions { WebhookUrl = "https://hooks.example.com/digest" },
-                AwsSns = new AwsSnsAlertOptions { TopicArn = "arn:aws:sns:us-east-1:123456789012:test-topic" },
-                AzureEventGrid = new AzureEventGridAlertOptions { TopicEndpoint = "https://alerts.example.com/api/events" },
-                Slack = new SlackAlertOptions { WebhookUrl = "https://hooks.slack.com/services/T00/B00/xxx" },
-                Teams = new TeamsAlertOptions { WebhookUrl = "https://outlook.office.com/webhook/xxx" },
-                AwsSqs = new AwsSqsAlertOptions { QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456/test-queue" },
-                AzureEventHub = new AzureEventHubAlertOptions
-                {
-                    ConnectionString = "Endpoint=sb://alerts.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=xxx",
-                    EventHubName = "alerts"
+                    DefaultWebhookUrl = "https://hooks.example.com/alerts",
+                    Digest = new DigestAlertOptions { WebhookUrl = "https://hooks.example.com/digest" }
                 }
-            }
-        }));
+            }),
+            Options.Create(new AlertDeliveryOptions
+            {
+                Dispatch = new AlertDeliveryDispatchOptions
+                {
+                    Email = new EmailChannelOptions
+                    {
+                        SmtpHost = "smtp.example.com",
+                        FromAddress = "alerts@example.com",
+                        DefaultRecipient = "ops@example.com"
+                    },
+                    AwsSns = new AwsSnsChannelOptions { TopicArn = "arn:aws:sns:us-east-1:123456789012:test-topic" },
+                    AzureEventGrid = new AzureEventGridChannelOptions { TopicEndpoint = "https://alerts.example.com/api/events" },
+                    Slack = new SlackChannelOptions { WebhookUrl = "https://hooks.slack.com/services/T00/B00/xxx" },
+                    Teams = new TeamsChannelOptions { WebhookUrl = "https://outlook.office.com/webhook/xxx" },
+                    AwsSqs = new AwsSqsChannelOptions { QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456/test-queue" },
+                    AzureEventHub = new AzureEventHubChannelOptions
+                    {
+                        ConnectionString = "Endpoint=sb://alerts.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=xxx",
+                        EventHubName = "alerts"
+                    }
+                }
+            }));
 
         Assert.True(policy.IsChannelConfigured(AlertChannelType.Webhook));
         Assert.False(policy.IsChannelConfigured(AlertChannelType.WebSocket));

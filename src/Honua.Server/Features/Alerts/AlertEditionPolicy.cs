@@ -10,10 +10,14 @@ namespace Honua.Server.Features.Alerts;
 internal sealed class AlertEditionPolicy : IAlertEditionPolicy
 {
     private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _deliveryOptions;
 
-    public AlertEditionPolicy(IOptions<AlertOptions> options)
+    public AlertEditionPolicy(
+        IOptions<AlertOptions> options,
+        IOptions<AlertDeliveryOptions> deliveryOptions)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _deliveryOptions = deliveryOptions?.Value ?? throw new ArgumentNullException(nameof(deliveryOptions));
     }
 
     public bool IsRuleAllowed(AlertRuleDefinition rule)
@@ -56,15 +60,15 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         {
             AlertChannelType.Webhook => !string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookUrl),
             AlertChannelType.WebSocket => false,
-            AlertChannelType.Email => _options.Dispatch.Email is { SmtpHost.Length: > 0, FromAddress.Length: > 0, DefaultRecipient.Length: > 0 },
+            AlertChannelType.Email => _deliveryOptions.Dispatch.Email is { SmtpHost.Length: > 0, FromAddress.Length: > 0, DefaultRecipient.Length: > 0 },
             AlertChannelType.Digest => !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookUrl),
-            AlertChannelType.AwsSns => !string.IsNullOrWhiteSpace(_options.Dispatch.AwsSns?.TopicArn),
-            AlertChannelType.AzureEventGrid => !string.IsNullOrWhiteSpace(_options.Dispatch.AzureEventGrid?.TopicEndpoint),
-            AlertChannelType.Slack => !string.IsNullOrWhiteSpace(_options.Dispatch.Slack?.WebhookUrl),
-            AlertChannelType.MicrosoftTeams => !string.IsNullOrWhiteSpace(_options.Dispatch.Teams?.WebhookUrl),
-            AlertChannelType.AwsSqs => !string.IsNullOrWhiteSpace(_options.Dispatch.AwsSqs?.QueueUrl),
-            AlertChannelType.AzureEventHub => !string.IsNullOrWhiteSpace(_options.Dispatch.AzureEventHub?.ConnectionString)
-                && !string.IsNullOrWhiteSpace(_options.Dispatch.AzureEventHub?.EventHubName),
+            AlertChannelType.AwsSns => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AwsSns?.TopicArn),
+            AlertChannelType.AzureEventGrid => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventGrid?.TopicEndpoint),
+            AlertChannelType.Slack => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Slack?.WebhookUrl),
+            AlertChannelType.MicrosoftTeams => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Teams?.WebhookUrl),
+            AlertChannelType.AwsSqs => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AwsSqs?.QueueUrl),
+            AlertChannelType.AzureEventHub => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventHub?.ConnectionString)
+                && !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventHub?.EventHubName),
             _ => false
         };
     }

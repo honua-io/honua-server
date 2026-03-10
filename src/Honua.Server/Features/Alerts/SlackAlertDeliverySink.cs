@@ -13,11 +13,11 @@ namespace Honua.Server.Features.Alerts;
 internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _options;
 
     public SlackAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
-        IOptions<AlertOptions> options)
+        IOptions<AlertDeliveryOptions> options)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));

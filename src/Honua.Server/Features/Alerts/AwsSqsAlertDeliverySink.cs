@@ -77,11 +77,11 @@ internal sealed class AwsSqsPublisher : ISqsPublisher, IDisposable
 internal sealed class AwsSqsAlertDeliverySink : IAlertDeliverySink
 {
     private readonly ISqsPublisher _publisher;
-    private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _options;
 
     public AwsSqsAlertDeliverySink(
         ISqsPublisher publisher,
-        IOptions<AlertOptions> options)
+        IOptions<AlertDeliveryOptions> options)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));

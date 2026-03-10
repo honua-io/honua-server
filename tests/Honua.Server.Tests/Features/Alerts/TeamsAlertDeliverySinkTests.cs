@@ -13,12 +13,12 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class TeamsAlertDeliverySinkTests
 {
-    private static AlertOptions CreateOptionsWithTeams(string webhookUrl = "https://outlook.office.com/webhook/xxx") =>
+    private static AlertDeliveryOptions CreateOptionsWithTeams(string webhookUrl = "https://outlook.office.com/webhook/xxx") =>
         new()
         {
-            Dispatch = new AlertDispatchOptions
+            Dispatch = new AlertDeliveryDispatchOptions
             {
-                Teams = new TeamsAlertOptions { WebhookUrl = webhookUrl }
+                Teams = new TeamsChannelOptions { WebhookUrl = webhookUrl }
             }
         };
 
@@ -26,7 +26,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoWebhookUrlConfigured_ReturnsNonRetryableFailure()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertOptions()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
@@ -97,7 +97,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public void ChannelType_ReturnsMicrosoftTeams()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertOptions()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
         Assert.Equal(AlertChannelType.MicrosoftTeams, sink.ChannelType);
     }
 

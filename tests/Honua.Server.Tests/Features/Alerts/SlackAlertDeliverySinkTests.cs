@@ -12,12 +12,12 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class SlackAlertDeliverySinkTests
 {
-    private static AlertOptions CreateOptionsWithSlack(string webhookUrl = "https://hooks.slack.com/services/T00/B00/xxx") =>
+    private static AlertDeliveryOptions CreateOptionsWithSlack(string webhookUrl = "https://hooks.slack.com/services/T00/B00/xxx") =>
         new()
         {
-            Dispatch = new AlertDispatchOptions
+            Dispatch = new AlertDeliveryDispatchOptions
             {
-                Slack = new SlackAlertOptions { WebhookUrl = webhookUrl }
+                Slack = new SlackChannelOptions { WebhookUrl = webhookUrl }
             }
         };
 
@@ -25,7 +25,7 @@ public sealed class SlackAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoWebhookUrlConfigured_ReturnsNonRetryableFailure()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertOptions()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
@@ -91,7 +91,7 @@ public sealed class SlackAlertDeliverySinkTests
     public void ChannelType_ReturnsSlack()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertOptions()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
         Assert.Equal(AlertChannelType.Slack, sink.ChannelType);
     }
 }

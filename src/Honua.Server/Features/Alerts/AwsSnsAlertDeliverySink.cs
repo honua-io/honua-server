@@ -84,11 +84,11 @@ internal sealed class AwsSnsPublisher : ISnsPublisher, IDisposable
 internal sealed class AwsSnsAlertDeliverySink : IAlertDeliverySink
 {
     private readonly ISnsPublisher _publisher;
-    private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _options;
 
     public AwsSnsAlertDeliverySink(
         ISnsPublisher publisher,
-        IOptions<AlertOptions> options)
+        IOptions<AlertDeliveryOptions> options)
     {
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));

@@ -76,63 +76,6 @@ public sealed class AlertOptionsValidator : OptionsValidator<AlertOptions>
                 failures);
         }
 
-        if (options.Dispatch.AwsSns is { } awsSns)
-        {
-            ValidateDataAnnotations(awsSns, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.AwsSns)}");
-        }
-
-        if (options.Dispatch.AzureEventGrid is { } eventGrid)
-        {
-            ValidateDataAnnotations(eventGrid, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.AzureEventGrid)}");
-
-            if (!string.IsNullOrWhiteSpace(eventGrid.TopicEndpoint) &&
-                !Uri.TryCreate(eventGrid.TopicEndpoint, UriKind.Absolute, out _))
-            {
-                failures.Add($"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.AzureEventGrid)}.{nameof(AzureEventGridAlertOptions.TopicEndpoint)} must be a valid absolute URL.");
-            }
-        }
-
-        if (options.Dispatch.Email is { } email)
-        {
-            ValidateDataAnnotations(email, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Email)}");
-        }
-
-        if (options.Dispatch.Slack is { } slack)
-        {
-            ValidateDataAnnotations(slack, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Slack)}");
-
-            if (!string.IsNullOrWhiteSpace(slack.WebhookUrl))
-            {
-                ValidateOutboundHttpUrl(
-                    slack.WebhookUrl,
-                    $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Slack)}.{nameof(SlackAlertOptions.WebhookUrl)}",
-                    failures);
-            }
-        }
-
-        if (options.Dispatch.Teams is { } teams)
-        {
-            ValidateDataAnnotations(teams, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Teams)}");
-
-            if (!string.IsNullOrWhiteSpace(teams.WebhookUrl))
-            {
-                ValidateOutboundHttpUrl(
-                    teams.WebhookUrl,
-                    $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Teams)}.{nameof(TeamsAlertOptions.WebhookUrl)}",
-                    failures);
-            }
-        }
-
-        if (options.Dispatch.AwsSqs is { } awsSqs)
-        {
-            ValidateDataAnnotations(awsSqs, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.AwsSqs)}");
-        }
-
-        if (options.Dispatch.AzureEventHub is { } eventHub)
-        {
-            ValidateDataAnnotations(eventHub, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.AzureEventHub)}");
-        }
-
         ValidateDataAnnotations(options.Dispatch.Digest, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}");
 
         if (!string.IsNullOrWhiteSpace(options.Dispatch.Digest.WebhookUrl))
