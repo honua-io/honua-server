@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Geocoding;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
 using Honua.Postgres.Features.Geocoding;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Postgres.Tests.Features.Geocoding;
 
@@ -34,16 +36,23 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
 
             services.AddLogging(builder => builder.AddConsole());
 
-            services.AddEsriGeocoding(options =>
+            // Configure Esri options using instance binding for testing
+            var esriOptions = new EsriGeocodingOptions
             {
-                options.ApiKey = apiKey;
-                options.BaseUrl = "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer";
-                options.MaxResults = 5;
-                options.TimeoutSeconds = 30;
-                options.EnableSuggestions = true;
-                options.EnableBatchGeocoding = true;
-                options.UserAgent = "Honua-IntegrationTest/1.0";
-            });
+                ApiKey = apiKey,
+                BaseUrl = "https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer",
+                MaxResults = 5,
+                TimeoutSeconds = 30,
+                EnableSuggestions = true,
+                EnableBatchGeocoding = true,
+                UserAgent = "Honua-IntegrationTest/1.0"
+            };
+            services.AddSingleton(Options.Create(esriOptions));
+
+            // Register Esri provider services manually
+            services.AddSingleton<IValidateOptions<EsriGeocodingOptions>, EsriGeocodingOptionsValidator>();
+            services.AddHttpClient<EsriGeocodeProvider>();
+            services.AddGeocodeProvider<EsriGeocodeProvider>("esri");
 
             _serviceProvider = services.BuildServiceProvider();
             _provider = _serviceProvider.GetRequiredService<IGeocodeProvider>();
@@ -55,8 +64,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange
@@ -85,8 +93,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange
@@ -118,8 +125,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange - Google headquarters coordinates
@@ -145,8 +151,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange
@@ -173,8 +178,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange
@@ -207,8 +211,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Act
@@ -226,8 +229,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange - Search for "Main Street" only in Seattle area
@@ -259,8 +261,7 @@ public sealed class EsriGeocodingIntegrationTests : IAsyncDisposable
     {
         if (!_canRunTests)
         {
-            Skip.If(true, "Skipping integration test - ESRI_API_KEY environment variable not set");
-            return;
+            return; // Skip test - ESRI_API_KEY environment variable not set
         }
 
         // Arrange
