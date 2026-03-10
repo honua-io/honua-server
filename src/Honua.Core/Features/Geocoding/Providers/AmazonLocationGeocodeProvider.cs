@@ -387,7 +387,7 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
                 {
                     ["relevance"] = result.Relevance.ToString(),
                     ["distance"] = result.Distance.ToString(),
-                    ["interpolated"] = result.Place?.Interpolated.ToString().ToLowerInvariant()
+                    ["interpolated"] = result.Place?.Interpolated?.ToString().ToLowerInvariant() ?? "false"
                 });
 
             var score = CalculateSearchScore(result, i);
@@ -426,7 +426,7 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
             additionalAttributes: new Dictionary<string, string?>
             {
                 ["distance"] = result.Distance.ToString(),
-                ["interpolated"] = result.Place.Interpolated.ToString().ToLowerInvariant()
+                ["interpolated"] = result.Place.Interpolated?.ToString().ToLowerInvariant() ?? "false"
             });
 
         var structuredAddress = ConvertPlace(result.Place);
@@ -471,7 +471,7 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
         var baseScore = Math.Max(100 - (resultIndex * 5), 20);
 
         // Adjust based on relevance if available
-        baseScore = (int)(baseScore * result.Relevance);
+        baseScore = (int)(baseScore * (result.Relevance ?? 1.0));
 
         return Math.Clamp(baseScore, 0, 100);
     }

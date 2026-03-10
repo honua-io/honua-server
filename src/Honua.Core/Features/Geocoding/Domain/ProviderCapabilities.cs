@@ -52,7 +52,7 @@ public sealed record GeocodeProviderCapabilities(
     /// <summary>
     /// Whether the provider requires authentication
     /// </summary>
-    public bool RequiresAuthentication { get; init; } = false;
+    public bool RequiresAuthentication { get; init; }
 
     /// <summary>
     /// Whether the provider supports HTTPS
@@ -78,7 +78,7 @@ public abstract record GeocodeProviderConfiguration
     /// <summary>
     /// Provider priority (higher numbers = higher priority)
     /// </summary>
-    public int Priority { get; init; } = 0;
+    public int Priority { get; init; }
 
     /// <summary>
     /// Timeout in seconds for requests

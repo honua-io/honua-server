@@ -314,17 +314,17 @@ public sealed record MockGeocodeProviderConfiguration : GeocodeProviderConfigura
     /// <summary>
     /// Whether to simulate provider failures
     /// </summary>
-    public bool SimulateFailure { get; init; } = false;
+    public bool SimulateFailure { get; init; }
 
     /// <summary>
     /// Whether to return no results
     /// </summary>
-    public bool ReturnNoResults { get; init; } = false;
+    public bool ReturnNoResults { get; init; }
 
     /// <summary>
     /// Delay in milliseconds to simulate processing time
     /// </summary>
-    public int DelayMs { get; init; } = 0;
+    public int DelayMs { get; init; }
 
     /// <summary>
     /// Number of results to return

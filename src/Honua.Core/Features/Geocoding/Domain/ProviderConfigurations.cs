@@ -26,7 +26,7 @@ public sealed record NominatimProviderConfiguration : GeocodeProviderConfigurati
     /// <summary>
     /// Enable suggest functionality using search endpoint
     /// </summary>
-    public bool EnableSuggestFromSearch { get; init; } = false;
+    public bool EnableSuggestFromSearch { get; init; }
 
     /// <summary>
     /// Default maximum suggestions for autocomplete
@@ -134,7 +134,7 @@ public sealed record EsriProviderConfiguration : GeocodeProviderConfiguration
     /// <summary>
     /// Storage parameter for ArcGIS Online usage tracking
     /// </summary>
-    public bool ForStorage { get; init; } = false;
+    public bool ForStorage { get; init; }
 }
 
 /// <summary>
