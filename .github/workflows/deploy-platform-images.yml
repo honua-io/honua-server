@@ -34,6 +34,8 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            provenance: true
+            sbom: true
           - image_key: ecs-aot
             image_name: ECS AOT Image
             dockerfile: docker/Dockerfile.aot
@@ -44,6 +46,8 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            provenance: true
+            sbom: true
           - image_key: lambda-jit
             image_name: Lambda JIT Image
             dockerfile: docker/Dockerfile.lambda
@@ -54,6 +58,8 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            provenance: false
+            sbom: false
           - image_key: lambda-aot
             image_name: Lambda AOT Image
             dockerfile: docker/Dockerfile.lambda.aot
@@ -64,6 +70,8 @@ jobs:
             arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            provenance: false
+            sbom: false
           - image_key: functions-jit
             image_name: Functions JIT Image
             dockerfile: docker/Dockerfile.functions
@@ -74,6 +82,8 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
+            provenance: true
+            sbom: true
           - image_key: functions-aot
             image_name: Functions AOT Image
             dockerfile: docker/Dockerfile.functions.aot
@@ -84,6 +94,8 @@ jobs:
             arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
+            provenance: true
+            sbom: true
     permissions:
       contents: read
       security-events: write
@@ -246,8 +258,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
-          provenance: true
-          sbom: true
+          provenance: ${{ matrix.provenance }}
+          sbom: ${{ matrix.sbom }}
 
       - name: Pull image for Trivy scan
         id: scan_prep
