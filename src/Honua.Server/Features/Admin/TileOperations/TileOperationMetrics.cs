@@ -30,5 +30,15 @@ internal static class TileOperationMetrics
         "honua.tile.jobs.tiles_processed",
         "tiles",
         "Number of tiles processed by tile jobs.");
+
+    public static readonly Counter<long> ArchivesGenerated = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.tile.archives.total",
+        "archives",
+        "Number of PMTiles archives generated.");
+
+    public static readonly Histogram<double> ArchiveSizeBytes = HonuaTelemetry.Meter.CreateHistogram<double>(
+        "honua.tile.archives.size_bytes",
+        "bytes",
+        "Size of generated PMTiles archives.");
 }
 

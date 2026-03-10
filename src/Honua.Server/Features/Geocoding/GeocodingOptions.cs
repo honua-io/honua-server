@@ -19,6 +19,7 @@ internal sealed class GeocodingOptions
     public int DefaultSpatialReferenceWkid { get; set; } = 4326;
 
     public NominatimGeocodingOptions Nominatim { get; set; } = new();
+
 }
 
 internal sealed class NominatimGeocodingOptions

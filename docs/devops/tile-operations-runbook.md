@@ -1,6 +1,6 @@
 # Tile Operations Runbook
 
-This runbook covers asynchronous tile lifecycle jobs for cache management and priming.
+This runbook covers asynchronous tile lifecycle jobs for cache management, priming, and archive generation.
 
 ## Supported Operations
 
@@ -14,6 +14,7 @@ Start jobs through:
 - `warm`
 - `invalidate`
 - `purge`
+- `archive`
 
 Request scope options:
 
@@ -33,9 +34,10 @@ Request scope options:
 
 ## Operational Notes
 
-- Jobs are tracked via the unified operations progress store as `OperationType.TileCache`.
+- Jobs are tracked via the unified operations progress store as `OperationType.TileCache` (or `OperationType.PMTilesArchive` for archive jobs).
 - `seed`/`warm` currently target MVT generation through the standard tile provider.
 - `invalidate`/`purge` use output cache invalidation scopes (layer/service/global metadata).
+- `archive` generates a PMTiles v3 archive from tile outputs and uploads it to cloud storage.
 - Retry creates a new job ID while preserving the original request parameters.
 
 ## Metrics
@@ -46,6 +48,8 @@ Prometheus/OpenTelemetry surfaces include:
 - `honua.tile.jobs.total` (tagged by `operation`, `status`)
 - `honua.tile.jobs.duration_ms`
 - `honua.tile.jobs.tiles_processed`
+- `honua.tile.archives.total` (archive generation count)
+- `honua.tile.archives.size_bytes` (archive size histogram)
 
 ## Example: Invalidate a Layer
 
@@ -69,4 +73,51 @@ curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
     "maxTiles":2000
   }'
 ```
+
+## PMTiles Archive Generation
+
+Generate a PMTiles v3 archive from existing tile outputs. The archive is built by fetching tiles through the standard tile provider, assembling them into a sorted Hilbert-curve-indexed PMTiles v3 file, and uploading the result to cloud storage.
+
+### Request
+
+```bash
+curl -X POST https://<host>/api/v1/admin/tile-operations/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "archive",
+    "layerId": 3,
+    "minZoom": 0,
+    "maxZoom": 10,
+    "bbox": [-123.0, 37.0, -121.0, 38.0],
+    "maxTiles": 5000
+  }'
+```
+
+The `archive` operation requires `layerId` (single-layer archives only for this release).
+
+### Archive-Specific Response Fields
+
+When querying job status (`GET /api/v1/admin/tile-operations/jobs/{jobId}`), archive jobs include:
+
+| Field | Description |
+|-------|-------------|
+| `archiveFileId` | Cloud storage file ID for the generated archive |
+| `downloadUrl` | Time-limited presigned URL to download the `.pmtiles` file (24h expiry) |
+| `archiveSizeBytes` | Final archive size in bytes |
+
+### Validation
+
+Download the archive and inspect with `pmtiles show`:
+
+```bash
+curl -o output.pmtiles "<downloadUrl>"
+pmtiles show output.pmtiles
+```
+
+### Notes
+
+- Archives are stored with a 24-hour TTL in cloud storage.
+- If cloud storage is not configured, both `archiveFileId` and `downloadUrl` will be null.
+- This operation generates tiles on-demand (does not read from cache). For large tile sets, use `maxTiles` to limit scope.
+- The archive uses PMTiles v3 format with MVT tile type and tiles sorted by Hilbert curve index.
 
