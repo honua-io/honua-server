@@ -262,8 +262,9 @@ public sealed class CloudDeploymentValidationTests
     [Endpoint("POST /api/v1/admin/connections")]
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task CloudStagedImport_CompletesAndPublishedLayerCanBeQueried_WhenMutationChecksAreEnabled()
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task CloudStagedImport_CompletesAndPublishedLayerBecomesPublicMetadata_WhenMutationChecksAreEnabled()
     {
         using var client = CreateClient();
         var tablePrefix = GetRequiredEnv(ImportTablePrefixEnv);
@@ -298,14 +299,31 @@ public sealed class CloudDeploymentValidationTests
         var connectionId = await CreateSecureConnectionAsync(client, tableName);
         var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName, timeout);
         var publishedLayer = await PublishImportedTableAsync(client, connectionId, importedTable, tableName);
-        var featureCount = await WaitForPublishedFeatureCountAsync(
+        var serviceLayer = await WaitForPublishedServiceLayerAsync(
             client,
             publishedLayer.ServiceName,
             publishedLayer.LayerId,
-            expectedCount: 1,
+            timeout);
+        var publicLayer = await WaitForPublishedLayerMetadataAsync(
+            client,
+            publishedLayer.ServiceName,
+            publishedLayer.LayerId,
             timeout);
 
-        featureCount.Should().Be(1, "the published layer should expose the imported feature through the live FeatureServer endpoint");
+        var expectedLayerName = $"Cloud Validation {tableName}";
+        serviceLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.LayerId);
+        serviceLayer.GetProperty("name").GetString().Should().Be(expectedLayerName);
+
+        publicLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.LayerId);
+        publicLayer.GetProperty("name").GetString().Should().Be(expectedLayerName);
+        publicLayer.GetProperty("type").GetString().Should().Be("Feature Layer");
+        publicLayer.GetProperty("geometryType").GetString().Should().NotBeNullOrWhiteSpace();
+        publicLayer.GetProperty("fields").EnumerateArray()
+            .Select(field => field.GetProperty("name").GetString())
+            .OfType<string>()
+            .Should()
+            .Contain(fieldName => string.Equals(fieldName, importedTable.PrimaryKey, StringComparison.OrdinalIgnoreCase),
+                "the published layer metadata should expose the imported table primary key");
     }
 
     private static HttpClient CreateClient()
@@ -709,61 +727,98 @@ public sealed class CloudDeploymentValidationTests
             data.GetProperty("layerId").GetInt32());
     }
 
-    private static async Task<int> QueryPublishedFeatureCountAsync(HttpClient client, string serviceName, int layerId)
-    {
-        using var request = CreateOptionalApiKeyRequest(
-            HttpMethod.Get,
-            $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?where=1%3D1&returnCountOnly=true&f=json");
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
-
-        using var document = JsonDocument.Parse(payload);
-        return document.RootElement.GetProperty("count").GetInt32();
-    }
-
-    private static async Task<int> WaitForPublishedFeatureCountAsync(
+    private static async Task<JsonElement> WaitForPublishedServiceLayerAsync(
         HttpClient client,
         string serviceName,
         int layerId,
-        int expectedCount,
         TimeSpan timeout)
     {
-        using var cancellationSource = new CancellationTokenSource(timeout);
-        var delay = TimeSpan.FromSeconds(2);
-        var lastObservedCount = -1;
-        string? lastFailure = null;
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        string? lastPayload = null;
+        HttpStatusCode? lastStatusCode = null;
 
-        while (!cancellationSource.IsCancellationRequested)
+        while (DateTimeOffset.UtcNow < deadline)
         {
-            try
-            {
-                lastObservedCount = await QueryPublishedFeatureCountAsync(client, serviceName, layerId);
-                if (lastObservedCount >= expectedCount)
-                {
-                    return lastObservedCount;
-                }
+            using var request = CreateOptionalApiKeyRequest(
+                HttpMethod.Get,
+                $"/rest/services/{serviceName}/FeatureServer?f=json");
+            using var response = await client.SendAsync(request);
+            var payload = await response.Content.ReadAsStringAsync();
+            lastPayload = payload;
+            lastStatusCode = response.StatusCode;
 
-                lastFailure = $"count={lastObservedCount}";
-            }
-            catch (Exception ex)
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.InternalServerError)
             {
-                lastFailure = ex.Message;
+                await Task.Delay(1000);
+                continue;
             }
 
-            try
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+
+            using var document = JsonDocument.Parse(payload);
+            var layer = document.RootElement
+                .GetProperty("layers")
+                .EnumerateArray()
+                .FirstOrDefault(candidate =>
+                    candidate.TryGetProperty("id", out var idElement) &&
+                    idElement.TryGetInt32(out var candidateLayerId) &&
+                    candidateLayerId == layerId);
+
+            if (layer.ValueKind != JsonValueKind.Undefined)
             {
-                await Task.Delay(delay, cancellationSource.Token);
+                return layer.Clone();
             }
-            catch (TaskCanceledException)
-            {
-                break;
-            }
+
+            await Task.Delay(1000);
         }
 
         throw new TimeoutException(
-            $"Published layer '{serviceName}/{layerId}' did not reach featureCount>={expectedCount} within {timeout.TotalSeconds} seconds. " +
-            $"Last observation: {lastFailure ?? "<none>"}");
+            $"Published service layer '{serviceName}/{layerId}' was not visible within {timeout.TotalSeconds} seconds. " +
+            $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
+    }
+
+    private static async Task<JsonElement> WaitForPublishedLayerMetadataAsync(
+        HttpClient client,
+        string serviceName,
+        int layerId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        string? lastPayload = null;
+        HttpStatusCode? lastStatusCode = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var request = CreateOptionalApiKeyRequest(
+                HttpMethod.Get,
+                $"/rest/services/{serviceName}/FeatureServer/{layerId}?f=json");
+            using var response = await client.SendAsync(request);
+            var payload = await response.Content.ReadAsStringAsync();
+            lastPayload = payload;
+            lastStatusCode = response.StatusCode;
+
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.InternalServerError)
+            {
+                await Task.Delay(1000);
+                continue;
+            }
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            var fields = root.GetProperty("fields");
+            if (fields.ValueKind == JsonValueKind.Array && fields.GetArrayLength() > 0)
+            {
+                return root.Clone();
+            }
+
+            await Task.Delay(1000);
+        }
+
+        throw new TimeoutException(
+            $"Published layer metadata '{serviceName}/{layerId}' was not available within {timeout.TotalSeconds} seconds. " +
+            $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
     }
 
     private static OperationStatus ReadOperationStatus(JsonElement element)
