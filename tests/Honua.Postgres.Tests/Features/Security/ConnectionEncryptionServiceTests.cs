@@ -196,6 +196,34 @@ public class ConnectionEncryptionServiceTests : IDisposable
 
     [SecurityTest]
     [Fact]
+    public async Task EncryptDecrypt_WithoutConfiguredSalt_RemainsPortableAcrossInstances()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new KeyValuePair<string, string?>(
+                    "Security:ConnectionEncryption:MasterKey",
+                    "portable-master-key-that-is-at-least-32-characters-long")
+            })
+            .Build();
+
+        using var encryptingService = new ConnectionEncryptionService(config, NullLogger<ConnectionEncryptionService>.Instance);
+        using var decryptingService = new ConnectionEncryptionService(config, NullLogger<ConnectionEncryptionService>.Instance);
+
+        const string connectionString = "Host=db.example.com;Database=portable;Username=app;Password=secret";
+
+        // Act
+        var encrypted = await encryptingService.EncryptConnectionStringAsync(connectionString);
+        var keyVersion = await encryptingService.GetCurrentKeyVersionAsync();
+        var decrypted = await decryptingService.DecryptConnectionStringAsync(encrypted, keyVersion);
+
+        // Assert
+        Assert.Equal(connectionString, decrypted);
+    }
+
+    [SecurityTest]
+    [Fact]
     public async Task EncryptionDeterministic_SameInput_ProducesDifferentOutput()
     {
         // Arrange

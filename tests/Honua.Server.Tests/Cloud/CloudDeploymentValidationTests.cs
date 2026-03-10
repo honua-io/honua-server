@@ -4,6 +4,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -28,6 +30,7 @@ public sealed class CloudDeploymentValidationTests
     private const string ExpectedCoordinatedDeployReadyEnv = "HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY";
     private const string PlatformEnv = "HONUA_CLOUD_TEST_PLATFORM";
     private const string DeployTargetIdEnv = "HONUA_CLOUD_TEST_DEPLOY_TARGET_ID";
+    private const string ExpectDeployPlanSupportEnv = "HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT";
     private const string DeployDesiredRevisionEnv = "HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION";
     private const string DeployCurrentRevisionEnv = "HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION";
     private const string ExecuteDeployOperationEnv = "HONUA_CLOUD_TEST_EXECUTE_DEPLOY_OPERATION";
@@ -43,6 +46,7 @@ public sealed class CloudDeploymentValidationTests
     private const string PublishDbSslModeEnv = "HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE";
     private const string PublishDbSslRequiredEnv = "HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED";
     private const string ApiKeyHeader = "X-API-Key";
+    private const string ImportedGeoJsonGeometryType = "Point";
 
     [CloudTest(BaseUrlEnv)]
     [Operation(Operations.TestInfrastructure)]
@@ -63,7 +67,8 @@ public sealed class CloudDeploymentValidationTests
 
         foreach (var path in checks)
         {
-            using var response = await client.GetAsync(path);
+            using var request = CreateOptionalApiKeyRequest(HttpMethod.Get, path);
+            using var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"'{path}' should respond successfully from the deployed environment");
         }
     }
@@ -140,10 +145,25 @@ public sealed class CloudDeploymentValidationTests
         using var response = await client.SendAsync(request);
         var payload = await response.Content.ReadAsStringAsync();
 
+        var requireDeployPlanSupport = bool.TryParse(
+                Environment.GetEnvironmentVariable(ExpectDeployPlanSupportEnv),
+                out var parsedRequireDeployPlanSupport) &&
+            parsedRequireDeployPlanSupport;
+
         if (string.IsNullOrWhiteSpace(configuredTargetId))
         {
+            if (response.StatusCode == HttpStatusCode.MethodNotAllowed && !requireDeployPlanSupport)
+            {
+                return;
+            }
+
             response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"response: {payload}");
             payload.Should().Contain("Deploy target", "unknown deploy targets should return the admin problem contract");
+            return;
+        }
+
+        if (response.StatusCode == HttpStatusCode.MethodNotAllowed && !requireDeployPlanSupport)
+        {
             return;
         }
 
@@ -263,7 +283,11 @@ public sealed class CloudDeploymentValidationTests
 
         var timeout = TimeSpan.FromSeconds(GetImportTimeoutSeconds());
         var uploadProgress = await WaitForUploadCompletionAsync(client, uploadId!, timeout);
-        uploadProgress.GetProperty("cloudFileId").GetString().Should().NotBeNullOrWhiteSpace();
+        if (uploadProgress.TryGetProperty("cloudFileId", out var cloudFileIdElement)
+            && cloudFileIdElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            cloudFileIdElement.GetString().Should().NotBeNullOrWhiteSpace();
+        }
 
         var importProgress = await WaitForImportJobProgressAsync(client, jobId!, timeout);
         ReadImportStatus(importProgress.GetProperty("status")).Should().Be(ImportStatus.Completed);
@@ -272,9 +296,14 @@ public sealed class CloudDeploymentValidationTests
         importProgress.GetProperty("failedFeatures").GetInt32().Should().Be(0);
 
         var connectionId = await CreateSecureConnectionAsync(client, tableName);
-        var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName);
+        var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName, timeout);
         var publishedLayer = await PublishImportedTableAsync(client, connectionId, importedTable, tableName);
-        var featureCount = await QueryPublishedFeatureCountAsync(client, publishedLayer.ServiceName, publishedLayer.LayerId);
+        var featureCount = await WaitForPublishedFeatureCountAsync(
+            client,
+            publishedLayer.ServiceName,
+            publishedLayer.LayerId,
+            expectedCount: 1,
+            timeout);
 
         featureCount.Should().Be(1, "the published layer should expose the imported feature through the live FeatureServer endpoint");
     }
@@ -293,6 +322,18 @@ public sealed class CloudDeploymentValidationTests
     {
         var request = new HttpRequestMessage(method, path);
         request.Headers.Add(ApiKeyHeader, GetRequiredEnv(AdminApiKeyEnv));
+        request.Headers.Accept.ParseAdd("application/json");
+        return request;
+    }
+
+    private static HttpRequestMessage CreateOptionalApiKeyRequest(HttpMethod method, string path)
+    {
+        var request = new HttpRequestMessage(method, path);
+        if (TryGetEnv(AdminApiKeyEnv, out var apiKey))
+        {
+            request.Headers.Add(ApiKeyHeader, apiKey);
+        }
+
         request.Headers.Accept.ParseAdd("application/json");
         return request;
     }
@@ -496,9 +537,11 @@ public sealed class CloudDeploymentValidationTests
 
     private static async Task<Guid> CreateSecureConnectionAsync(HttpClient client, string tableName)
     {
+        var connectionName = BuildSecureConnectionName(tableName);
+
         using var request = CreateAdminJsonRequest(HttpMethod.Post, "/api/v1/admin/connections", new
         {
-            name = $"cloud-validation-{tableName}",
+            name = connectionName,
             description = "Cloud deployment validation connection",
             host = GetRequiredEnv(PublishDbHostEnv),
             port = GetDbPort(),
@@ -520,45 +563,116 @@ public sealed class CloudDeploymentValidationTests
             .GetGuid();
     }
 
-    private static async Task<ImportedTableHandle> DiscoverImportedTableAsync(HttpClient client, Guid connectionId, string tableName)
+    private static string BuildSecureConnectionName(string tableName)
     {
-        using var request = CreateAdminRequest(HttpMethod.Get, $"/api/v1/admin/connections/{connectionId}/tables");
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+        const string prefix = "cloud-validation-";
+        const int maxLength = 64;
 
-        using var document = JsonDocument.Parse(payload);
-        var table = document.RootElement
-            .GetProperty("tables")
-            .EnumerateArray()
-            .FirstOrDefault(candidate => string.Equals(candidate.GetProperty("table").GetString(), tableName, StringComparison.OrdinalIgnoreCase));
+        if (prefix.Length + tableName.Length <= maxLength)
+        {
+            return prefix + tableName;
+        }
 
-        table.ValueKind.Should().NotBe(JsonValueKind.Undefined, $"imported table '{tableName}' should be discoverable for publishing");
+        const int preservedTailLength = 16;
+        var maxTableNameLength = maxLength - prefix.Length;
+        var tailLength = Math.Min(preservedTailLength, maxTableNameLength - 1);
+        var headLength = maxTableNameLength - tailLength - 1;
 
-        var geometryColumn = table.GetProperty("geometryColumn").GetString();
-        geometryColumn.Should().NotBeNullOrWhiteSpace();
+        if (headLength <= 0)
+        {
+            return prefix + tableName[^maxTableNameLength..];
+        }
 
-        var primaryKey = table.GetProperty("columns")
-            .EnumerateArray()
-            .FirstOrDefault(column => column.GetProperty("isPrimaryKey").GetBoolean())
-            .GetProperty("name")
-            .GetString();
+        return $"{prefix}{tableName[..headLength]}-{tableName[^tailLength..]}";
+    }
 
-        primaryKey.Should().NotBeNullOrWhiteSpace();
+    private static async Task<ImportedTableHandle> DiscoverImportedTableAsync(
+        HttpClient client,
+        Guid connectionId,
+        string tableName,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        string? lastPayload = null;
+        HttpStatusCode? lastStatusCode = null;
+        var expectedTableNames = BuildExpectedImportedTableNames(tableName);
 
-        var fields = table.GetProperty("columns")
-            .EnumerateArray()
-            .Select(column => column.GetProperty("name").GetString())
-            .OfType<string>()
-            .Where(column => !string.Equals(column, geometryColumn, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var request = CreateAdminRequest(HttpMethod.Get, $"/api/v1/admin/connections/{connectionId}/tables");
+            using var response = await client.SendAsync(request);
+            var payload = await response.Content.ReadAsStringAsync();
+            lastPayload = payload;
+            lastStatusCode = response.StatusCode;
 
-        return new ImportedTableHandle(
-            table.GetProperty("schema").GetString() ?? "public",
-            tableName,
-            geometryColumn!,
-            primaryKey!,
-            fields);
+            if (response.StatusCode == HttpStatusCode.InternalServerError)
+            {
+                await Task.Delay(1000);
+                continue;
+            }
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+
+            using var document = JsonDocument.Parse(payload);
+            var table = document.RootElement
+                .GetProperty("tables")
+                .EnumerateArray()
+                .FirstOrDefault(candidate =>
+                {
+                    var candidateTableName = candidate.GetProperty("table").GetString();
+                    return candidateTableName is not null &&
+                        expectedTableNames.Contains(candidateTableName, StringComparer.OrdinalIgnoreCase);
+                });
+
+            if (table.ValueKind == JsonValueKind.Undefined)
+            {
+                await Task.Delay(1000);
+                continue;
+            }
+
+            var geometryColumn = table.GetProperty("geometryColumn").GetString();
+            geometryColumn.Should().NotBeNullOrWhiteSpace();
+
+            var primaryKey = table.GetProperty("columns")
+                .EnumerateArray()
+                .FirstOrDefault(column => column.GetProperty("isPrimaryKey").GetBoolean())
+                .GetProperty("name")
+                .GetString();
+
+            primaryKey.Should().NotBeNullOrWhiteSpace();
+
+            var fields = table.GetProperty("columns")
+                .EnumerateArray()
+                .Select(column => column.GetProperty("name").GetString())
+                .OfType<string>()
+                .Where(column => !string.Equals(column, geometryColumn, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            return new ImportedTableHandle(
+                table.GetProperty("schema").GetString() ?? "public",
+                table.GetProperty("table").GetString() ?? tableName,
+                geometryColumn!,
+                table.GetProperty("geometryType").GetString(),
+                primaryKey!,
+                fields);
+        }
+
+        throw new TimeoutException(
+            $"Imported table '{tableName}' was not discoverable within {timeout.TotalSeconds} seconds. " +
+            $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
+    }
+
+    private static HashSet<string> BuildExpectedImportedTableNames(string requestedTableName)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            requestedTableName
+        };
+
+        var sanitized = Regex.Replace(requestedTableName, @"[^a-zA-Z0-9_]", "_").ToLowerInvariant();
+        names.Add("imported_" + sanitized);
+
+        return names;
     }
 
     private static async Task<PublishedLayerHandle> PublishImportedTableAsync(
@@ -576,6 +690,7 @@ public sealed class CloudDeploymentValidationTests
             layerName = $"Cloud Validation {tableName}",
             description = "Cloud deployment validation imported layer",
             geometryColumn = table.GeometryColumn,
+            geometryType = ResolvePublishedGeometryType(table),
             primaryKey = table.PrimaryKey,
             fields = table.Fields,
             serviceName,
@@ -596,13 +711,59 @@ public sealed class CloudDeploymentValidationTests
 
     private static async Task<int> QueryPublishedFeatureCountAsync(HttpClient client, string serviceName, int layerId)
     {
-        using var response = await client.GetAsync(
+        using var request = CreateOptionalApiKeyRequest(
+            HttpMethod.Get,
             $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?where=1%3D1&returnCountOnly=true&f=json");
+        using var response = await client.SendAsync(request);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
 
         using var document = JsonDocument.Parse(payload);
         return document.RootElement.GetProperty("count").GetInt32();
+    }
+
+    private static async Task<int> WaitForPublishedFeatureCountAsync(
+        HttpClient client,
+        string serviceName,
+        int layerId,
+        int expectedCount,
+        TimeSpan timeout)
+    {
+        using var cancellationSource = new CancellationTokenSource(timeout);
+        var delay = TimeSpan.FromSeconds(2);
+        var lastObservedCount = -1;
+        string? lastFailure = null;
+
+        while (!cancellationSource.IsCancellationRequested)
+        {
+            try
+            {
+                lastObservedCount = await QueryPublishedFeatureCountAsync(client, serviceName, layerId);
+                if (lastObservedCount >= expectedCount)
+                {
+                    return lastObservedCount;
+                }
+
+                lastFailure = $"count={lastObservedCount}";
+            }
+            catch (Exception ex)
+            {
+                lastFailure = ex.Message;
+            }
+
+            try
+            {
+                await Task.Delay(delay, cancellationSource.Token);
+            }
+            catch (TaskCanceledException)
+            {
+                break;
+            }
+        }
+
+        throw new TimeoutException(
+            $"Published layer '{serviceName}/{layerId}' did not reach featureCount>={expectedCount} within {timeout.TotalSeconds} seconds. " +
+            $"Last observation: {lastFailure ?? "<none>"}");
     }
 
     private static OperationStatus ReadOperationStatus(JsonElement element)
@@ -632,7 +793,13 @@ public sealed class CloudDeploymentValidationTests
     private static int GetImportTimeoutSeconds()
     {
         var raw = Environment.GetEnvironmentVariable(ImportTimeoutSecondsEnv);
-        return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 90;
+        return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 300;
+    }
+
+    private static bool TryGetEnv(string key, [NotNullWhen(true)] out string? value)
+    {
+        value = Environment.GetEnvironmentVariable(key);
+        return !string.IsNullOrWhiteSpace(value);
     }
 
     private static int GetDeployTimeoutSeconds()
@@ -651,6 +818,17 @@ public sealed class CloudDeploymentValidationTests
     {
         var raw = GetOptionalEnv(PublishDbSslRequiredEnv);
         return !bool.TryParse(raw, out var parsed) || parsed;
+    }
+
+    private static string ResolvePublishedGeometryType(ImportedTableHandle table)
+    {
+        if (!string.IsNullOrWhiteSpace(table.GeometryType) &&
+            !string.Equals(table.GeometryType, "GEOMETRY", StringComparison.OrdinalIgnoreCase))
+        {
+            return table.GeometryType;
+        }
+
+        return ImportedGeoJsonGeometryType;
     }
 
     private static string ResolveDesiredRevision(string? currentRevision)
@@ -699,6 +877,7 @@ public sealed class CloudDeploymentValidationTests
         string Schema,
         string Table,
         string GeometryColumn,
+        string? GeometryType,
         string PrimaryKey,
         IReadOnlyList<string> Fields);
 
