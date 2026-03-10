@@ -55,9 +55,6 @@ public sealed class GeocodingConfigurationValidator : OptionsValidator<Geocoding
         ValidateNominatimConfiguration(options.Providers.Nominatim, failures);
         ValidateAmazonLocationConfiguration(options.Providers.AmazonLocation, failures);
         ValidateAzureMapsConfiguration(options.Providers.AzureMaps, failures);
-        ValidateEsriConfiguration(options.Providers.Esri, failures);
-        ValidateGoogleMapsConfiguration(options.Providers.GoogleMaps, failures);
-        ValidateMapboxConfiguration(options.Providers.Mapbox, failures);
     }
 
     private static void ValidateNominatimConfiguration(NominatimProviderConfiguration config, List<string> failures)
@@ -149,73 +146,4 @@ public sealed class GeocodingConfigurationValidator : OptionsValidator<Geocoding
         }
     }
 
-    private static void ValidateEsriConfiguration(EsriProviderConfiguration config, List<string> failures)
-    {
-        if (!config.Enabled)
-            return;
-
-        if (string.IsNullOrWhiteSpace(config.BaseUrl))
-        {
-            failures.Add("Geocoding:Providers:Esri:BaseUrl is required when provider is enabled.");
-        }
-        else
-        {
-            ValidateOutboundHttpUrl(config.BaseUrl, "Geocoding:Providers:Esri:BaseUrl", failures);
-        }
-
-        if (config.UseArcGISOnline && string.IsNullOrWhiteSpace(config.Token) &&
-            (string.IsNullOrWhiteSpace(config.ClientId) || string.IsNullOrWhiteSpace(config.ClientSecret)))
-        {
-            failures.Add("Geocoding:Providers:Esri:Token or ClientId/ClientSecret is required for ArcGIS Online.");
-        }
-    }
-
-    private static void ValidateGoogleMapsConfiguration(GoogleMapsProviderConfiguration config, List<string> failures)
-    {
-        if (!config.Enabled)
-            return;
-
-        if (string.IsNullOrWhiteSpace(config.ApiKey))
-        {
-            failures.Add("Geocoding:Providers:GoogleMaps:ApiKey is required when provider is enabled.");
-        }
-
-        if (string.IsNullOrWhiteSpace(config.BaseUrl))
-        {
-            failures.Add("Geocoding:Providers:GoogleMaps:BaseUrl is required when provider is enabled.");
-        }
-        else
-        {
-            ValidateOutboundHttpUrl(config.BaseUrl, "Geocoding:Providers:GoogleMaps:BaseUrl", failures);
-        }
-
-        if (string.IsNullOrWhiteSpace(config.PlacesBaseUrl))
-        {
-            failures.Add("Geocoding:Providers:GoogleMaps:PlacesBaseUrl is required when provider is enabled.");
-        }
-        else
-        {
-            ValidateOutboundHttpUrl(config.PlacesBaseUrl, "Geocoding:Providers:GoogleMaps:PlacesBaseUrl", failures);
-        }
-    }
-
-    private static void ValidateMapboxConfiguration(MapboxProviderConfiguration config, List<string> failures)
-    {
-        if (!config.Enabled)
-            return;
-
-        if (string.IsNullOrWhiteSpace(config.AccessToken))
-        {
-            failures.Add("Geocoding:Providers:Mapbox:AccessToken is required when provider is enabled.");
-        }
-
-        if (string.IsNullOrWhiteSpace(config.BaseUrl))
-        {
-            failures.Add("Geocoding:Providers:Mapbox:BaseUrl is required when provider is enabled.");
-        }
-        else
-        {
-            ValidateOutboundHttpUrl(config.BaseUrl, "Geocoding:Providers:Mapbox:BaseUrl", failures);
-        }
-    }
 }

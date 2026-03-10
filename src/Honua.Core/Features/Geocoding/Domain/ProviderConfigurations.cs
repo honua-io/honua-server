@@ -8,6 +8,11 @@ namespace Honua.Core.Features.Geocoding.Domain;
 /// </summary>
 public sealed record NominatimProviderConfiguration : GeocodeProviderConfiguration
 {
+    public NominatimProviderConfiguration()
+    {
+        Enabled = true;
+    }
+
     /// <summary>
     /// Base URL for the Nominatim service
     /// </summary>
@@ -94,112 +99,4 @@ public sealed record AzureMapsProviderConfiguration : GeocodeProviderConfigurati
     /// Language for localized results
     /// </summary>
     public string? Language { get; init; }
-}
-
-/// <summary>
-/// Configuration for Esri ArcGIS geocoding provider
-/// </summary>
-public sealed record EsriProviderConfiguration : GeocodeProviderConfiguration
-{
-    /// <summary>
-    /// Base URL for the ArcGIS geocoding service
-    /// </summary>
-    public string BaseUrl { get; init; } = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer";
-
-    /// <summary>
-    /// ArcGIS Online token for authenticated requests
-    /// </summary>
-    public string? Token { get; init; }
-
-    /// <summary>
-    /// Client ID for OAuth authentication
-    /// </summary>
-    public string? ClientId { get; init; }
-
-    /// <summary>
-    /// Client secret for OAuth authentication
-    /// </summary>
-    public string? ClientSecret { get; init; }
-
-    /// <summary>
-    /// Use ArcGIS Online service (true) or custom service (false)
-    /// </summary>
-    public bool UseArcGISOnline { get; init; } = true;
-
-    /// <summary>
-    /// Preferred language for results
-    /// </summary>
-    public string? Language { get; init; }
-
-    /// <summary>
-    /// Storage parameter for ArcGIS Online usage tracking
-    /// </summary>
-    public bool ForStorage { get; init; }
-}
-
-/// <summary>
-/// Configuration for Google Maps geocoding provider
-/// </summary>
-public sealed record GoogleMapsProviderConfiguration : GeocodeProviderConfiguration
-{
-    /// <summary>
-    /// Google Maps API key
-    /// </summary>
-    public string ApiKey { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Base URL for Google Maps Geocoding API
-    /// </summary>
-    public string BaseUrl { get; init; } = "https://maps.googleapis.com/maps/api/geocode";
-
-    /// <summary>
-    /// Base URL for Google Places API (for suggestions)
-    /// </summary>
-    public string PlacesBaseUrl { get; init; } = "https://maps.googleapis.com/maps/api/place";
-
-    /// <summary>
-    /// Language for localized results
-    /// </summary>
-    public string? Language { get; init; }
-
-    /// <summary>
-    /// Region biasing for results
-    /// </summary>
-    public string? Region { get; init; }
-
-    /// <summary>
-    /// Component restrictions (e.g., country:US)
-    /// </summary>
-    public string[]? Components { get; init; }
-}
-
-/// <summary>
-/// Configuration for MapBox geocoding provider
-/// </summary>
-public sealed record MapboxProviderConfiguration : GeocodeProviderConfiguration
-{
-    /// <summary>
-    /// MapBox access token
-    /// </summary>
-    public string AccessToken { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Base URL for MapBox Geocoding API
-    /// </summary>
-    public string BaseUrl { get; init; } = "https://api.mapbox.com/geocoding/v5/mapbox.places";
-
-    /// <summary>
-    /// Language for localized results
-    /// </summary>
-    public string? Language { get; init; }
-
-    /// <summary>
-    /// Feature types to include in results
-    /// </summary>
-    public string[]? Types { get; init; }
-
-    /// <summary>
-    /// Use autocomplete endpoint for suggestions
-    /// </summary>
-    public bool UseAutocomplete { get; init; } = true;
 }

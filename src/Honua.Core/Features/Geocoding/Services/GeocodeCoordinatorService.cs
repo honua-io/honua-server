@@ -48,16 +48,19 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 if (!provider.Capabilities.SupportsForwardGeocode)
                 {
-                    _logger.LogDebug("Provider {ProviderName} does not support forward geocoding", provider.Name);
+                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "forward geocoding");
                     continue;
                 }
 
                 var results = await provider.ForwardGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
-                _logger.LogDebug(
-                    "Forward geocoding completed successfully with provider {ProviderName} in {ElapsedMs}ms, returned {ResultCount} results",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds, results.Count);
+                GeocodeCoordinatorLog.OperationCompleted(
+                    _logger,
+                    "forward geocoding",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    results.Count);
 
                 return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Success(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
@@ -67,9 +70,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 stopwatch.Stop();
                 lastException = ex;
 
-                _logger.LogWarning(ex,
-                    "Forward geocoding failed with provider {ProviderName} after {ElapsedMs}ms",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+                GeocodeCoordinatorLog.OperationFailed(
+                    _logger,
+                    "forward geocoding",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    ex);
 
                 if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
@@ -81,9 +87,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         var errorMessage = lastException?.Message ?? "No providers available for forward geocoding";
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
-        _logger.LogError(lastException,
-            "All forward geocoding attempts failed. Attempted providers: {AttemptedProviders}",
-            string.Join(", ", attemptedProviders));
+        GeocodeCoordinatorLog.AllAttemptsFailed(
+            _logger,
+            "forward geocoding",
+            string.Join(", ", attemptedProviders),
+            lastException);
 
         return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Failure(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
@@ -109,16 +117,19 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 if (!provider.Capabilities.SupportsReverseGeocode)
                 {
-                    _logger.LogDebug("Provider {ProviderName} does not support reverse geocoding", provider.Name);
+                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "reverse geocoding");
                     continue;
                 }
 
                 var result = await provider.ReverseGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
-                _logger.LogDebug(
-                    "Reverse geocoding completed with provider {ProviderName} in {ElapsedMs}ms, found match: {HasMatch}",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds, result != null);
+                GeocodeCoordinatorLog.ReverseOperationCompleted(
+                    _logger,
+                    "reverse geocoding",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    result != null);
 
                 return GeocodeResult<ReverseGeocodeMatch?>.Success(
                     result, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
@@ -128,9 +139,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 stopwatch.Stop();
                 lastException = ex;
 
-                _logger.LogWarning(ex,
-                    "Reverse geocoding failed with provider {ProviderName} after {ElapsedMs}ms",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+                GeocodeCoordinatorLog.OperationFailed(
+                    _logger,
+                    "reverse geocoding",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    ex);
 
                 if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
@@ -142,9 +156,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         var errorMessage = lastException?.Message ?? "No providers available for reverse geocoding";
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
-        _logger.LogError(lastException,
-            "All reverse geocoding attempts failed. Attempted providers: {AttemptedProviders}",
-            string.Join(", ", attemptedProviders));
+        GeocodeCoordinatorLog.AllAttemptsFailed(
+            _logger,
+            "reverse geocoding",
+            string.Join(", ", attemptedProviders),
+            lastException);
 
         return GeocodeResult<ReverseGeocodeMatch?>.Failure(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
@@ -170,16 +186,19 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 if (!provider.Capabilities.SupportsSuggest)
                 {
-                    _logger.LogDebug("Provider {ProviderName} does not support suggestions", provider.Name);
+                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "suggest");
                     continue;
                 }
 
                 var results = await provider.SuggestAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
-                _logger.LogDebug(
-                    "Suggest completed successfully with provider {ProviderName} in {ElapsedMs}ms, returned {ResultCount} suggestions",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds, results.Count);
+                GeocodeCoordinatorLog.OperationCompleted(
+                    _logger,
+                    "suggest",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    results.Count);
 
                 return GeocodeResult<IReadOnlyList<GeocodeSuggestion>>.Success(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
@@ -189,9 +208,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 stopwatch.Stop();
                 lastException = ex;
 
-                _logger.LogWarning(ex,
-                    "Suggest failed with provider {ProviderName} after {ElapsedMs}ms",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+                GeocodeCoordinatorLog.OperationFailed(
+                    _logger,
+                    "suggest",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    ex);
 
                 if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
@@ -203,9 +225,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         var errorMessage = lastException?.Message ?? "No providers available for suggestions";
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
-        _logger.LogError(lastException,
-            "All suggest attempts failed. Attempted providers: {AttemptedProviders}",
-            string.Join(", ", attemptedProviders));
+        GeocodeCoordinatorLog.AllAttemptsFailed(
+            _logger,
+            "suggest",
+            string.Join(", ", attemptedProviders),
+            lastException);
 
         return GeocodeResult<IReadOnlyList<GeocodeSuggestion>>.Failure(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
@@ -231,16 +255,19 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 if (!provider.Capabilities.SupportsBatch)
                 {
-                    _logger.LogDebug("Provider {ProviderName} does not support batch geocoding", provider.Name);
+                    GeocodeCoordinatorLog.CapabilityNotSupported(_logger, provider.Name, "batch geocoding");
                     continue;
                 }
 
                 var results = await provider.BatchGeocodeAsync(request, cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
 
-                _logger.LogDebug(
-                    "Batch geocoding completed successfully with provider {ProviderName} in {ElapsedMs}ms, returned {ResultCount} results",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds, results.Count);
+                GeocodeCoordinatorLog.OperationCompleted(
+                    _logger,
+                    "batch geocoding",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    results.Count);
 
                 return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Success(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
@@ -250,9 +277,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                 stopwatch.Stop();
                 lastException = ex;
 
-                _logger.LogWarning(ex,
-                    "Batch geocoding failed with provider {ProviderName} after {ElapsedMs}ms",
-                    provider.Name, stopwatch.Elapsed.TotalMilliseconds);
+                GeocodeCoordinatorLog.OperationFailed(
+                    _logger,
+                    "batch geocoding",
+                    provider.Name,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    ex);
 
                 if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
@@ -264,9 +294,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         var errorMessage = lastException?.Message ?? "No providers available for batch geocoding";
         var failedProviderName = attemptedProviders.LastOrDefault() ?? "unknown";
 
-        _logger.LogError(lastException,
-            "All batch geocoding attempts failed. Attempted providers: {AttemptedProviders}",
-            string.Join(", ", attemptedProviders));
+        GeocodeCoordinatorLog.AllAttemptsFailed(
+            _logger,
+            "batch geocoding",
+            string.Join(", ", attemptedProviders),
+            lastException);
 
         return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Failure(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
@@ -286,7 +318,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
             else
             {
-                _logger.LogWarning("Preferred provider {ProviderName} is not available", preferredProviderName);
+                GeocodeCoordinatorLog.PreferredProviderUnavailable(_logger, preferredProviderName);
             }
         }
 

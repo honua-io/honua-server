@@ -45,8 +45,9 @@ internal sealed class GeocodingHandler(
 
         try
         {
-            var providerName = context.Request.Query["provider"].ToString();
-            var provider = _providerRegistry.GetProvider(providerName ?? _options.DefaultProvider);
+            var requestedProviderName = context.Request.Query["provider"].ToString();
+            var providerName = ResolveProviderName(requestedProviderName);
+            var provider = _providerRegistry.GetProvider(providerName);
             if (provider == null)
             {
                 return Task.FromResult(StandardErrorHelpers.CreateBadRequest(context, "Geocoding provider not found or not configured."));
@@ -133,7 +134,9 @@ internal sealed class GeocodingHandler(
 
         try
         {
-            var providerName = GetValue(values, "provider");
+            var requestedProviderName = GetValue(values, "provider");
+            var providerName = NormalizeProviderName(requestedProviderName);
+            var resolvedProviderName = ResolveProviderName(requestedProviderName);
             var providerRequest = new Core.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
@@ -148,7 +151,7 @@ internal sealed class GeocodingHandler(
             {
                 var errorMessage = result.ErrorMessage ?? "Geocoding request failed";
 
-                GeocodingLog.OperationFailed(_logger, "findAddressCandidates", providerName ?? _options.DefaultProvider, errorMessage, new InvalidOperationException(errorMessage));
+                GeocodingLog.OperationFailed(_logger, "findAddressCandidates", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
 
                 // Check error message content to determine response type
                 if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
@@ -198,8 +201,8 @@ internal sealed class GeocodingHandler(
                 })]
             };
 
-            var provider = _providerRegistry.GetProvider(providerName ?? _options.DefaultProvider);
-            var usedProviderName = provider?.Name ?? providerName ?? _options.DefaultProvider;
+            var provider = _providerRegistry.GetProvider(resolvedProviderName);
+            var usedProviderName = provider?.Name ?? resolvedProviderName;
 
             GeocodingLog.OperationCompleted(_logger, "findAddressCandidates", usedProviderName, response.Candidates.Length, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -207,7 +210,7 @@ internal sealed class GeocodingHandler(
         }
         catch (Exception ex)
         {
-            var providerName = GetValue(values, "provider") ?? _options.DefaultProvider;
+            var providerName = ResolveProviderName(GetValue(values, "provider"));
             GeocodingLog.OperationFailed(_logger, "findAddressCandidates", providerName, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Geocoding request failed.");
         }
@@ -255,7 +258,9 @@ internal sealed class GeocodingHandler(
 
         try
         {
-            var providerName = GetValue(values, "provider");
+            var requestedProviderName = GetValue(values, "provider");
+            var providerName = NormalizeProviderName(requestedProviderName);
+            var resolvedProviderName = ResolveProviderName(requestedProviderName);
             var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(x, y, outSrid);
 
             var stopwatch = Stopwatch.StartNew();
@@ -266,7 +271,7 @@ internal sealed class GeocodingHandler(
             {
                 var errorMessage = result.ErrorMessage ?? "Reverse geocoding request failed";
 
-                GeocodingLog.OperationFailed(_logger, "reverseGeocode", providerName ?? _options.DefaultProvider, errorMessage, new InvalidOperationException(errorMessage));
+                GeocodingLog.OperationFailed(_logger, "reverseGeocode", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
 
                 // Check error message content to determine response type
                 if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
@@ -322,8 +327,8 @@ internal sealed class GeocodingHandler(
                 }
             };
 
-            var provider = _providerRegistry.GetProvider(providerName ?? _options.DefaultProvider);
-            var usedProviderName = provider?.Name ?? providerName ?? _options.DefaultProvider;
+            var provider = _providerRegistry.GetProvider(resolvedProviderName);
+            var usedProviderName = provider?.Name ?? resolvedProviderName;
 
             GeocodingLog.OperationCompleted(_logger, "reverseGeocode", usedProviderName, 1, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -331,7 +336,7 @@ internal sealed class GeocodingHandler(
         }
         catch (Exception ex)
         {
-            var providerName = GetValue(values, "provider") ?? _options.DefaultProvider;
+            var providerName = ResolveProviderName(GetValue(values, "provider"));
             GeocodingLog.OperationFailed(_logger, "reverseGeocode", providerName, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Reverse geocoding request failed.");
         }
@@ -375,8 +380,10 @@ internal sealed class GeocodingHandler(
 
         try
         {
-            var providerName = GetValue(values, "provider");
-            var provider = _providerRegistry.GetProvider(providerName ?? _options.DefaultProvider);
+            var requestedProviderName = GetValue(values, "provider");
+            var providerName = NormalizeProviderName(requestedProviderName);
+            var resolvedProviderName = ResolveProviderName(requestedProviderName);
+            var provider = _providerRegistry.GetProvider(resolvedProviderName);
             if (provider != null && !provider.Capabilities.SupportsSuggest)
             {
                 GeocodingLog.CapabilityNotSupported(_logger, "suggest", provider.Name);
@@ -399,7 +406,7 @@ internal sealed class GeocodingHandler(
             {
                 var errorMessage = result.ErrorMessage ?? "Suggest request failed";
 
-                GeocodingLog.OperationFailed(_logger, "suggest", providerName ?? _options.DefaultProvider, errorMessage, new InvalidOperationException(errorMessage));
+                GeocodingLog.OperationFailed(_logger, "suggest", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
 
                 // Check error message content to determine response type
                 if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
@@ -434,7 +441,7 @@ internal sealed class GeocodingHandler(
                 })]
             };
 
-            var usedProviderName = provider?.Name ?? providerName ?? _options.DefaultProvider;
+            var usedProviderName = provider?.Name ?? resolvedProviderName;
 
             GeocodingLog.OperationCompleted(_logger, "suggest", usedProviderName, response.Suggestions.Length, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -442,7 +449,7 @@ internal sealed class GeocodingHandler(
         }
         catch (Exception ex)
         {
-            var providerName = GetValue(values, "provider") ?? _options.DefaultProvider;
+            var providerName = ResolveProviderName(GetValue(values, "provider"));
             GeocodingLog.OperationFailed(_logger, "suggest", providerName, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Suggest request failed.");
         }
@@ -469,8 +476,9 @@ internal sealed class GeocodingHandler(
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var providerName = GetValue(values, "provider");
-        var provider = _providerRegistry.GetProvider(providerName ?? _options.DefaultProvider);
+        var requestedProviderName = GetValue(values, "provider");
+        var providerName = ResolveProviderName(requestedProviderName);
+        var provider = _providerRegistry.GetProvider(providerName);
         if (provider != null && !provider.Capabilities.SupportsBatch)
         {
             GeocodingLog.CapabilityNotSupported(_logger, "geocodeAddresses", provider.Name);
@@ -482,6 +490,18 @@ internal sealed class GeocodingHandler(
         return StandardErrorHelpers.CreateBadRequest(
             context,
             "Batch geocoding request parsing is not yet available in this release.");
+    }
+
+    private static string? NormalizeProviderName(string? providerName)
+    {
+        return string.IsNullOrWhiteSpace(providerName)
+            ? null
+            : providerName.Trim();
+    }
+
+    private string ResolveProviderName(string? providerName)
+    {
+        return NormalizeProviderName(providerName) ?? _options.DefaultProvider;
     }
 
     private IResult? ValidateLocatorName(HttpContext context, string? locatorName)

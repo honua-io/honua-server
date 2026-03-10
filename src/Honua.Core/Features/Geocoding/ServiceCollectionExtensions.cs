@@ -34,8 +34,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<GeocodingConfiguration>, GeocodingConfigurationValidator>();
 
         // Add core abstractions
-        services.TryAddSingleton<IGeocodeProviderRegistry, GeocodeProviderRegistry>();
-        services.TryAddSingleton<IGeocodeProviderFactory, GeocodeProviderFactory>();
+        services.TryAddScoped<IGeocodeProviderRegistry, GeocodeProviderRegistry>();
+        services.TryAddScoped<IGeocodeProviderFactory, GeocodeProviderFactory>();
         services.TryAddScoped<IGeocodeProviderCoordinator, GeocodeProviderCoordinator>();
         services.TryAddScoped<IGeocodeCoordinatorService, GeocodeCoordinatorService>();
 

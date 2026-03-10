@@ -39,7 +39,6 @@
     <PackageReference Include="dbup-postgresql" Version="6.1.5" />
     <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" />
     <PackageReference Include="NetTopologySuite.IO.GeoPackage" Version="2.0.0" />
-    <PackageReference Include="System.Threading.RateLimiting" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>

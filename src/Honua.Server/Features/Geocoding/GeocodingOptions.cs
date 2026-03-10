@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Postgres.Features.Geocoding;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geocoding;
@@ -21,7 +20,6 @@ internal sealed class GeocodingOptions
 
     public NominatimGeocodingOptions Nominatim { get; set; } = new();
 
-    public EsriGeocodingOptions Esri { get; set; } = new();
 }
 
 internal sealed class NominatimGeocodingOptions

@@ -94,20 +94,6 @@ public sealed class ProvidersConfiguration
     /// </summary>
     public AzureMapsProviderConfiguration AzureMaps { get; set; } = new();
 
-    /// <summary>
-    /// Esri provider configuration
-    /// </summary>
-    public EsriProviderConfiguration Esri { get; set; } = new();
-
-    /// <summary>
-    /// Google Maps provider configuration
-    /// </summary>
-    public GoogleMapsProviderConfiguration GoogleMaps { get; set; } = new();
-
-    /// <summary>
-    /// MapBox provider configuration
-    /// </summary>
-    public MapboxProviderConfiguration Mapbox { get; set; } = new();
 }
 
 /// <summary>
@@ -131,25 +117,10 @@ public static class GeocodeProviderNames
     public const string AzureMaps = "azure-maps";
 
     /// <summary>
-    /// Esri provider name
-    /// </summary>
-    public const string Esri = "esri";
-
-    /// <summary>
-    /// Google Maps provider name
-    /// </summary>
-    public const string GoogleMaps = "google-maps";
-
-    /// <summary>
-    /// MapBox provider name
-    /// </summary>
-    public const string Mapbox = "mapbox";
-
-    /// <summary>
     /// Get all available provider names
     /// </summary>
     /// <returns>Array of provider names</returns>
-    public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps, Esri, GoogleMaps, Mapbox];
+    public static string[] GetAll() => [Nominatim, AmazonLocation, AzureMaps];
 }
 
 /// <summary>

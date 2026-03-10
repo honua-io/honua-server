@@ -39,7 +39,7 @@ internal static class GeocodingServiceCollectionExtensions
             services.AddAzureMapsGeocodeProvider(configuration);
         }
 
-        // Register the handler for Esri REST endpoints
+        // Register the handler for GeoServices-compatible geocoding endpoints
         services.AddScoped<GeocodingHandler>();
 
         return services;

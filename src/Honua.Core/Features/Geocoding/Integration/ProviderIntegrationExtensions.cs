@@ -131,28 +131,6 @@ public static class ProviderIntegrationExtensions
     }
 
     /// <summary>
-    /// Add Esri geocoding provider
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Configuration</param>
-    /// <returns>Service collection for chaining</returns>
-    public static IServiceCollection AddEsriGeocodeProvider(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(configuration);
-
-        services.AddOptions<EsriProviderConfiguration>()
-            .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Esri"));
-
-        // TODO: Implement Esri provider
-        // This would target the ArcGIS REST Geocoding API
-
-        return services;
-    }
-
-    /// <summary>
     /// Add all available geocoding providers based on configuration
     /// </summary>
     /// <param name="services">Service collection</param>
@@ -181,11 +159,6 @@ public static class ProviderIntegrationExtensions
         if (geocodingConfig.GetValue<bool>("Providers:AzureMaps:Enabled"))
         {
             services.AddAzureMapsGeocodeProvider(configuration);
-        }
-
-        if (geocodingConfig.GetValue<bool>("Providers:Esri:Enabled"))
-        {
-            services.AddEsriGeocodeProvider(configuration);
         }
 
         // Always add mock provider for testing/fallback if enabled

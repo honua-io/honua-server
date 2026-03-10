@@ -73,7 +73,7 @@ public abstract record GeocodeProviderConfiguration
     /// <summary>
     /// Whether the provider is enabled
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; init; }
 
     /// <summary>
     /// Provider priority (higher numbers = higher priority)
