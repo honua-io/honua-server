@@ -496,9 +496,11 @@ public sealed class CloudDeploymentValidationTests
 
     private static async Task<Guid> CreateSecureConnectionAsync(HttpClient client, string tableName)
     {
+        var connectionName = BuildSecureConnectionName(tableName);
+
         using var request = CreateAdminJsonRequest(HttpMethod.Post, "/api/v1/admin/connections", new
         {
-            name = $"cloud-validation-{tableName}",
+            name = connectionName,
             description = "Cloud deployment validation connection",
             host = GetRequiredEnv(PublishDbHostEnv),
             port = GetDbPort(),
@@ -518,6 +520,29 @@ public sealed class CloudDeploymentValidationTests
             .GetProperty("data")
             .GetProperty("connectionId")
             .GetGuid();
+    }
+
+    private static string BuildSecureConnectionName(string tableName)
+    {
+        const string prefix = "cloud-validation-";
+        const int maxLength = 64;
+
+        if (prefix.Length + tableName.Length <= maxLength)
+        {
+            return prefix + tableName;
+        }
+
+        const int preservedTailLength = 16;
+        var maxTableNameLength = maxLength - prefix.Length;
+        var tailLength = Math.Min(preservedTailLength, maxTableNameLength - 1);
+        var headLength = maxTableNameLength - tailLength - 1;
+
+        if (headLength <= 0)
+        {
+            return prefix + tableName[^maxTableNameLength..];
+        }
+
+        return $"{prefix}{tableName[..headLength]}-{tableName[^tailLength..]}";
     }
 
     private static async Task<ImportedTableHandle> DiscoverImportedTableAsync(HttpClient client, Guid connectionId, string tableName)
