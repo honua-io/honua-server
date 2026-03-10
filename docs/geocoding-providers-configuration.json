@@ -1,0 +1,99 @@
+{
+  "Geocoding": {
+    "Enabled": true,
+    "DefaultProvider": "nominatim",
+    "DefaultSpatialReferenceWkid": 4326,
+    "DefaultMaxResults": 10,
+    "DefaultTimeoutSeconds": 30,
+    "EnableFailover": true,
+    "MaxFailoverAttempts": 3,
+    "EnableCaching": true,
+    "CacheExpirationMinutes": 60,
+    "EnableLogging": true,
+    "LocatorName": "World",
+    "Providers": {
+      "Nominatim": {
+        "Enabled": true,
+        "Priority": 100,
+        "BaseUrl": "https://nominatim.openstreetmap.org",
+        "UserAgent": "Honua/1.0 (+https://honua.io)",
+        "Email": "contact@example.com",
+        "TimeoutSeconds": 10,
+        "MaxResults": 10,
+        "EnableSuggestFromSearch": false,
+        "MaxSuggestions": 5,
+        "DefaultCountryCodes": "US,CA"
+      },
+      "AmazonLocation": {
+        "Enabled": false,
+        "Priority": 90,
+        "Region": "us-east-1",
+        "PlaceIndexName": "ExamplePlaceIndex",
+        "UseIamRole": true,
+        "AccessKeyId": "",
+        "SecretAccessKey": "",
+        "TimeoutSeconds": 30,
+        "MaxResults": 50
+      },
+      "AzureMaps": {
+        "Enabled": false,
+        "Priority": 80,
+        "SubscriptionKey": "your-azure-maps-key",
+        "ApiVersion": "1.0",
+        "BaseUrl": "https://atlas.microsoft.com",
+        "View": "Auto",
+        "Language": "en-US",
+        "TimeoutSeconds": 30,
+        "MaxResults": 20
+      },
+      "Esri": {
+        "Enabled": false,
+        "Priority": 70,
+        "BaseUrl": "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer",
+        "Token": "",
+        "ClientId": "",
+        "ClientSecret": "",
+        "UseArcGISOnline": true,
+        "Language": "en",
+        "ForStorage": false,
+        "TimeoutSeconds": 30,
+        "MaxResults": 20
+      },
+      "GoogleMaps": {
+        "Enabled": false,
+        "Priority": 60,
+        "ApiKey": "your-google-maps-api-key",
+        "BaseUrl": "https://maps.googleapis.com/maps/api/geocode",
+        "PlacesBaseUrl": "https://maps.googleapis.com/maps/api/place",
+        "Language": "en",
+        "Region": "us",
+        "Components": ["country:US"],
+        "TimeoutSeconds": 30,
+        "MaxResults": 20
+      },
+      "Mapbox": {
+        "Enabled": false,
+        "Priority": 50,
+        "AccessToken": "your-mapbox-access-token",
+        "BaseUrl": "https://api.mapbox.com/geocoding/v5/mapbox.places",
+        "Language": "en",
+        "Types": ["address", "poi"],
+        "UseAutocomplete": true,
+        "TimeoutSeconds": 30,
+        "MaxResults": 10
+      },
+      "Mock": {
+        "Enabled": false,
+        "Priority": 1,
+        "TimeoutSeconds": 1,
+        "MaxResults": 5,
+        "EnableSuggest": true,
+        "EnableBatch": true,
+        "SimulateFailure": false,
+        "ReturnNoResults": false,
+        "DelayMs": 100,
+        "ResultCount": 3
+      }
+    }
+  }
+}

@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Configuration;
-using Honua.Server.Features.Geocoding.Providers;
+using Honua.Core.Features.Geocoding;
+using Honua.Core.Features.Geocoding.Integration;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geocoding;
@@ -14,38 +14,32 @@ internal static class GeocodingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // Register server-specific options
         services.AddOptions<GeocodingOptions>()
             .Bind(configuration.GetSection(GeocodingOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<GeocodingOptions>, GeocodingOptionsValidator>();
 
-        services.AddHttpClient<NominatimGeocodeProvider>((serviceProvider, client) =>
+        // Add core geocoding services
+        services.AddGeocodingCore(configuration);
+
+        // Always register Nominatim by default (maintains backwards compatibility with trunk)
+        services.AddNominatimGeocodeProvider(configuration);
+
+        // Add other providers based on configuration
+        var geocodingConfig = configuration.GetSection("Geocoding");
+
+        if (geocodingConfig.GetValue<bool>("Providers:AmazonLocation:Enabled"))
         {
-            var geocodingOptions = serviceProvider.GetRequiredService<IOptions<GeocodingOptions>>().Value;
-            var nominatim = geocodingOptions.Nominatim;
-            var baseUrlValidation = OutboundHttpUrlValidator.ValidateConfiguration(nominatim.BaseUrl);
-            if (!baseUrlValidation.IsValid || baseUrlValidation.Uri is null)
-            {
-                throw new InvalidOperationException(
-                    $"Geocoding:Nominatim:BaseUrl {baseUrlValidation.ErrorMessage ?? "must be a valid HTTPS URL."}");
-            }
+            services.AddAmazonLocationGeocodeProvider(configuration);
+        }
 
-            var baseAddress = baseUrlValidation.Uri.AbsoluteUri.TrimEnd('/') + "/";
-            client.BaseAddress = new Uri(baseAddress, UriKind.Absolute);
-            client.Timeout = TimeSpan.FromSeconds(nominatim.TimeoutSeconds);
+        if (geocodingConfig.GetValue<bool>("Providers:AzureMaps:Enabled"))
+        {
+            services.AddAzureMapsGeocodeProvider(configuration);
+        }
 
-            client.DefaultRequestHeaders.UserAgent.Clear();
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(nominatim.UserAgent);
-
-            if (!string.IsNullOrWhiteSpace(nominatim.Email))
-            {
-                client.DefaultRequestHeaders.Remove("From");
-                client.DefaultRequestHeaders.Add("From", nominatim.Email);
-            }
-        });
-
-        services.AddScoped<IGeocodeProvider, NominatimGeocodeProvider>();
-        services.AddScoped<IGeocodeProviderResolver, GeocodeProviderResolver>();
+        // Register the handler for Esri REST endpoints
         services.AddScoped<GeocodingHandler>();
 
         return services;
