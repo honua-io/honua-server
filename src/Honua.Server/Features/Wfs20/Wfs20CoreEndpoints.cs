@@ -4,8 +4,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text;
-using System.Xml;
-using System.Xml.Serialization;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Wfs20.Models;
@@ -448,22 +446,7 @@ internal static class Wfs20CoreEndpoints
     /// </summary>
     private static IResult SerializeXmlResponse<T>(T obj, string contentType) where T : class
     {
-        var serializer = new XmlSerializer(typeof(T));
-        var settings = new XmlWriterSettings
-        {
-            Indent = true,
-            IndentChars = "  ",
-            NewLineChars = "\n",
-            Encoding = Encoding.UTF8,
-            OmitXmlDeclaration = false
-        };
-
-        using var stringWriter = new StringWriter();
-        using var xmlWriter = XmlWriter.Create(stringWriter, settings);
-
-        serializer.Serialize(xmlWriter, obj);
-
-        var xmlContent = stringWriter.ToString();
+        var xmlContent = XmlResultSerializer.Serialize(obj);
         return Results.Content(xmlContent, contentType, Encoding.UTF8);
     }
 

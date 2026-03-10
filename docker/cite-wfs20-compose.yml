@@ -71,7 +71,7 @@ services:
 
   # CITE Test Runner - executes the tests and collects results
   cite-runner:
-    image: curlimages/curl:8.5.0
+    image: ogccite/ets-wfs20:latest
     user: "0:0"
     depends_on:
       cite-teamengine:
