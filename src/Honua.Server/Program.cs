@@ -301,6 +301,14 @@ builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistribut
         sp.GetRequiredService<IHostEnvironment>(),
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoservicesImportBackgroundService>();
+builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobManager>(sp =>
+    new Honua.Server.Features.Import.GeoServerImportJobManager(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
+        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.GeoServerImportJobManager>>(),
+        sp.GetRequiredService<IHostEnvironment>(),
+        sp.GetService<IConnectionMultiplexer>()));
+builder.Services.AddHostedService<Honua.Server.Features.Import.GeoServerImportBackgroundService>();
 
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions.SectionName));
@@ -680,6 +688,9 @@ app.MapImportEndpoints();
 
 // Configure Geoservices service import endpoints
 app.MapGeoservicesImportEndpoints();
+
+// Configure GeoServer import endpoints
+app.MapGeoServerImportEndpoints();
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();
