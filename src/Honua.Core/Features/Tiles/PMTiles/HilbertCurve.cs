@@ -21,13 +21,15 @@ public static class HilbertCurve
     /// <returns>The Hilbert tile ID.</returns>
     public static ulong XYZToTileId(int z, int x, int y)
     {
-        if (z == 0)
-        {
-            return 0;
-        }
-
         ArgumentOutOfRangeException.ThrowIfNegative(z);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(z, 26);
+
+        if (z == 0)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(x, 0);
+            ArgumentOutOfRangeException.ThrowIfNotEqual(y, 0);
+            return 0;
+        }
         var n = 1 << z;
         ArgumentOutOfRangeException.ThrowIfNegative(x);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(x, n);

@@ -186,7 +186,11 @@ public sealed class PMTilesWriter
         return stream.ToArray();
     }
 
-    private static int ToE7(double value) => (int)(value * 10_000_000);
+    private static int ToE7(double value)
+    {
+        var scaled = Math.Clamp(value, -180.0, 180.0) * 10_000_000;
+        return (int)Math.Round(scaled);
+    }
 
     private static int ContentHash(byte[] data)
     {
