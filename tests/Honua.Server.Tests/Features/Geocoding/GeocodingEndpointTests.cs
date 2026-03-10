@@ -3,13 +3,23 @@
 
 using System.Net;
 using System.Text.Json;
+using Honua.Core.Features.Geocoding;
+using CoreGeocodeProvider = Honua.Core.Features.Geocoding.Abstractions.IGeocodeProvider;
+using CoreGeocodeProviderCapabilities = Honua.Core.Features.Geocoding.Domain.GeocodeProviderCapabilities;
+using CoreGeocodeProviderHealth = Honua.Core.Features.Geocoding.Domain.GeocodeProviderHealth;
+using CoreGeocodeCandidate = Honua.Core.Features.Geocoding.Domain.GeocodeCandidate;
+using CoreForwardGeocodeRequest = Honua.Core.Features.Geocoding.Domain.ForwardGeocodeRequest;
+using CoreReverseGeocodeMatch = Honua.Core.Features.Geocoding.Domain.ReverseGeocodeMatch;
+using CoreReverseGeocodeRequest = Honua.Core.Features.Geocoding.Domain.ReverseGeocodeRequest;
+using CoreSuggestGeocodeRequest = Honua.Core.Features.Geocoding.Domain.SuggestGeocodeRequest;
+using CoreBatchGeocodeRequest = Honua.Core.Features.Geocoding.Domain.BatchGeocodeRequest;
+using CoreGeocodeSuggestion = Honua.Core.Features.Geocoding.Domain.GeocodeSuggestion;
 using Honua.Server.Features.Geocoding;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
@@ -23,7 +33,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
             SupportsSuggest: true,
             SupportsBatch: false,
             SupportsStructuredInput: false,
@@ -54,7 +64,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer")]
     public async Task GeocodeServerMetadata_ExposesProviderCapabilities()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
             SupportsSuggest: true,
             SupportsBatch: false,
             SupportsStructuredInput: false,
@@ -77,7 +87,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer/suggest")]
     public async Task Suggest_ReturnsBadRequest_WhenProviderDoesNotSupportSuggest()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
             SupportsSuggest: false,
             SupportsBatch: false,
             SupportsStructuredInput: false,
@@ -95,7 +105,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_ReturnsBadRequest_WhenProviderDoesNotSupportBatch()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
             SupportsSuggest: true,
             SupportsBatch: false,
             SupportsStructuredInput: false,
@@ -114,7 +124,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new GeocodeProviderCapabilities(
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
             SupportsSuggest: true,
             SupportsBatch: false,
             SupportsStructuredInput: false,
@@ -150,24 +160,20 @@ public sealed class GeocodingEndpointTests
 
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<IGeocodeProvider>();
-                services.RemoveAll<IGeocodeProviderResolver>();
-
-                services.AddSingleton<IGeocodeProvider>(fakeProvider);
-                services.AddScoped<IGeocodeProviderResolver, GeocodeProviderResolver>();
+                services.AddGeocodeProvider(fakeProvider.Name, _ => fakeProvider, ServiceLifetime.Singleton);
             });
         });
     }
 
-    private sealed class FakeGeocodeProvider(GeocodeProviderCapabilities capabilities) : IGeocodeProvider
+    private sealed class FakeGeocodeProvider(CoreGeocodeProviderCapabilities capabilities) : CoreGeocodeProvider
     {
         public string Name => "fake";
 
-        public GeocodeProviderCapabilities Capabilities => capabilities;
+        public CoreGeocodeProviderCapabilities Capabilities => capabilities;
 
-        public Task<IReadOnlyList<GeocodeCandidate>> ForwardGeocodeAsync(ForwardGeocodeRequest request, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<CoreGeocodeCandidate>> ForwardGeocodeAsync(CoreForwardGeocodeRequest request, CancellationToken cancellationToken)
         {
-            var candidate = new GeocodeCandidate(
+            var candidate = new CoreGeocodeCandidate(
                 Address: "1600 Pennsylvania Ave NW",
                 X: -77.03655,
                 Y: 38.89768,
@@ -179,12 +185,12 @@ public sealed class GeocodingEndpointTests
                 },
                 ProviderId: "fake-1");
 
-            return Task.FromResult<IReadOnlyList<GeocodeCandidate>>([candidate]);
+            return Task.FromResult<IReadOnlyList<CoreGeocodeCandidate>>([candidate]);
         }
 
-        public Task<ReverseGeocodeMatch?> ReverseGeocodeAsync(ReverseGeocodeRequest request, CancellationToken cancellationToken)
+        public Task<CoreReverseGeocodeMatch?> ReverseGeocodeAsync(CoreReverseGeocodeRequest request, CancellationToken cancellationToken)
         {
-            var match = new ReverseGeocodeMatch(
+            var match = new CoreReverseGeocodeMatch(
                 Address: "1600 Pennsylvania Ave NW",
                 X: request.X,
                 Y: request.Y,
@@ -195,16 +201,19 @@ public sealed class GeocodingEndpointTests
                 },
                 ProviderId: "fake-rev-1");
 
-            return Task.FromResult<ReverseGeocodeMatch?>(match);
+            return Task.FromResult<CoreReverseGeocodeMatch?>(match);
         }
 
-        public Task<IReadOnlyList<GeocodeSuggestion>> SuggestAsync(SuggestGeocodeRequest request, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<CoreGeocodeSuggestion>> SuggestAsync(CoreSuggestGeocodeRequest request, CancellationToken cancellationToken)
         {
-            var suggestion = new GeocodeSuggestion("Honua HQ", "fake-suggest-1", false);
-            return Task.FromResult<IReadOnlyList<GeocodeSuggestion>>([suggestion]);
+            var suggestion = new CoreGeocodeSuggestion("Honua HQ", "fake-suggest-1", false);
+            return Task.FromResult<IReadOnlyList<CoreGeocodeSuggestion>>([suggestion]);
         }
 
-        public Task<IReadOnlyList<GeocodeCandidate>> BatchGeocodeAsync(BatchGeocodeRequest request, CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyList<GeocodeCandidate>>([]);
+        public Task<IReadOnlyList<CoreGeocodeCandidate>> BatchGeocodeAsync(CoreBatchGeocodeRequest request, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<CoreGeocodeCandidate>>([]);
+
+        public Task<CoreGeocodeProviderHealth> CheckHealthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new CoreGeocodeProviderHealth(Name, true));
     }
 }
