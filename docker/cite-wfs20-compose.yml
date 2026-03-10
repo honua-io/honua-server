@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # Honua Server under test
+  honua-server:
+    image: honua-server:latest
+    ports:
+      - "8090:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Testing
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=honua_cite;Username=postgres;Password=postgres;Include Error Detail=true
+      - HONUA_ADMIN_PASSWORD=cite_testing_admin_password_123!
+      - Security__ConnectionEncryption__MasterKey=cite_testing_master_key_for_testing_only_not_secure
+      - HostValidation__Enabled=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # healthcheck:
+    #   test: ["CMD", "sh", "-c", "netstat -tlnp | grep :8080 || ss -tlnp | grep :8080"]
+    #   interval: 15s
+    #   timeout: 10s
+    #   retries: 5
+    #   start_period: 60s
+    networks:
+      - cite-network
+
+  # PostgreSQL with PostGIS for test data
+  postgres:
+    image: postgis/postgis:15-3.3
+    environment:
+      - POSTGRES_DB=honua_cite
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --locale=C
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./cite-test-data:/docker-entrypoint-initdb.d:ro
+    networks:
+      - cite-network
+
+  # OGC CITE Team Engine for WFS 2.0 conformance testing
+  cite-teamengine:
+    image: ogccite/ets-wfs20:latest
+    ports:
+      - "8081:8080"
+    environment:
+      - CATALINA_OPTS=-Xms1g -Xmx2g
+      - TE_BASE=/root/te_base
+      - TE_HOME=/root/teamengine
+    depends_on:
+      - honua-server
+    volumes:
+      - cite_data:/root/te_base
+      - ./cite-config:/cite-config:ro
+    networks:
+      - cite-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/teamengine/"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # CITE Test Runner - executes the tests and collects results
+  cite-runner:
+    image: curlimages/curl:8.5.0
+    depends_on:
+      cite-teamengine:
+        condition: service_healthy
+      honua-server:
+        condition: service_started
+    environment:
+      - WFS_ENDPOINT=http://honua-server:8080/wfs
+      - CITE_ENGINE=http://cite-teamengine:8080/teamengine
+      - TEST_PROFILE=${CITE_PROFILE:-basic}
+    volumes:
+      - ../cite-wfs20-results:/results
+      - ./cite-scripts:/scripts:ro
+    networks:
+      - cite-network
+    command: ["/scripts/execute-cite-tests.sh"]
+
+volumes:
+  postgres_data:
+    driver: local
+  cite_data:
+    driver: local
+
+networks:
+  cite-network:
+    driver: bridge

@@ -27,6 +27,8 @@ internal static class ProtocolRequestClassifier
         path.StartsWithSegments("/ogc/tiles") ||
         path.StartsWithSegments("/collections");
 
+    internal static bool IsWfs(PathString path) => path.StartsWithSegments("/wfs");
+
     internal static bool IsAdmin(PathString path)
     {
         if (!path.StartsWithSegments("/api", out var remaining))

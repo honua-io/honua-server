@@ -5,6 +5,8 @@ using System.Globalization;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.OData.Models;
+using Honua.Server.Features.Wfs20;
+using Honua.Server.Features.Wfs20.Models;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
@@ -40,6 +42,11 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsOgc(path))
         {
             return FormatOgcError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWfs(path))
+        {
+            return FormatWfsError(context, errorResponse, options);
         }
 
         if (ProtocolRequestClassifier.IsAdmin(path))
@@ -107,6 +114,33 @@ internal static class StandardErrorResponseFormatter
             statusCode: errorResponse.StatusCode,
             title: errorResponse.Title,
             detail: BuildDetailWithExtras(errorResponse, options));
+    }
+
+    /// <summary>
+    /// Formats error for WFS 2.0 protocol.
+    /// </summary>
+    private static IResult FormatWfsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+
+        var report = new ExceptionReport
+        {
+            Version = Wfs20Utilities.Version,
+            Exceptions =
+            [
+                new ExceptionType
+                {
+                    ExceptionCode = MapWfsCode(errorResponse),
+                    ExceptionText = BuildDetailWithExtras(errorResponse, options)
+                }
+            ]
+        };
+
+        return Results.Content(
+            XmlResultSerializer.Serialize(report),
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
     }
 
     /// <summary>
@@ -279,6 +313,33 @@ internal static class StandardErrorResponseFormatter
         }
 
         return detailParts.Count > 0 ? string.Join(" ", detailParts) : errorResponse.Title;
+    }
+
+    private static string MapWfsCode(StandardErrorResponse errorResponse)
+    {
+        if (errorResponse.StatusCode == StatusCodes.Status501NotImplemented)
+        {
+            return "OperationNotSupported";
+        }
+
+        if (errorResponse.StatusCode == StatusCodes.Status400BadRequest)
+        {
+            if (!string.IsNullOrWhiteSpace(errorResponse.Detail) &&
+                errorResponse.Detail.Contains("missing", StringComparison.OrdinalIgnoreCase))
+            {
+                return "MissingParameterValue";
+            }
+
+            if (!string.IsNullOrWhiteSpace(errorResponse.Detail) &&
+                errorResponse.Detail.Contains("version", StringComparison.OrdinalIgnoreCase))
+            {
+                return "VersionNegotiationFailed";
+            }
+
+            return "InvalidParameterValue";
+        }
+
+        return "NoApplicableCode";
     }
 
     /// <summary>

@@ -91,6 +91,23 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Not Implemented error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Not Implemented response.</returns>
+    public static IResult CreateNotImplemented(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status501NotImplemented,
+            "Not Implemented",
+            detail,
+            additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates a Not Acceptable error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>
