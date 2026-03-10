@@ -278,7 +278,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         return url;
     }
 
-    private IReadOnlyList<GeocodeCandidate> ConvertSearchResults(
+    private List<GeocodeCandidate> ConvertSearchResults(
         NominatimSearchResult[] results,
         ForwardGeocodeRequest request)
     {
@@ -289,11 +289,11 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             var result = results[i];
 
             var attributes = BuildAttributes(
-                providerId: result.PlaceId?.ToString(),
+                providerId: result.PlaceId?.ToString(CultureInfo.InvariantCulture),
                 additionalAttributes: new Dictionary<string, string?>
                 {
                     ["osm_type"] = result.OsmType,
-                    ["osm_id"] = result.OsmId?.ToString(),
+                    ["osm_id"] = result.OsmId?.ToString(CultureInfo.InvariantCulture),
                     ["class"] = result.Class,
                     ["type"] = result.Type,
                     ["importance"] = result.Importance?.ToString("F3", CultureInfo.InvariantCulture),
@@ -310,7 +310,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
                 Y: result.Lat,
                 Score: score,
                 Attributes: attributes,
-                ProviderId: result.PlaceId?.ToString())
+                ProviderId: result.PlaceId?.ToString(CultureInfo.InvariantCulture))
             {
                 MatchLevel = score > 90 ? "exact" : score > 70 ? "interpolated" : "approximate",
                 AddressType = GetAddressType(result.Type),
@@ -332,11 +332,11 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         }
 
         var attributes = BuildAttributes(
-            providerId: result.PlaceId?.ToString(),
+            providerId: result.PlaceId?.ToString(CultureInfo.InvariantCulture),
             additionalAttributes: new Dictionary<string, string?>
             {
                 ["osm_type"] = result.OsmType,
-                ["osm_id"] = result.OsmId?.ToString(),
+                ["osm_id"] = result.OsmId?.ToString(CultureInfo.InvariantCulture),
                 ["display_name"] = result.DisplayName,
                 ["licence"] = result.Licence
             });
@@ -348,7 +348,7 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             X: request.X,
             Y: request.Y,
             Attributes: attributes,
-            ProviderId: result.PlaceId?.ToString())
+            ProviderId: result.PlaceId?.ToString(CultureInfo.InvariantCulture))
         {
             AddressType = GetAddressType(result.AddressType),
             SpatialReferenceWkid = request.SpatialReferenceWkid,

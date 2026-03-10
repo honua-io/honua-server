@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Geocoding.Abstractions;
 using Honua.Core.Features.Geocoding.Domain;
 
@@ -66,10 +67,10 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
         if (_configuration.DelayMs > 0)
         {
             return Task.Delay(_configuration.DelayMs, cancellationToken)
-                .ContinueWith(_ => CreateMockForwardResults(request), cancellationToken);
+                .ContinueWith<IReadOnlyList<GeocodeCandidate>>(_ => CreateMockForwardResults(request), cancellationToken);
         }
 
-        return Task.FromResult(CreateMockForwardResults(request));
+        return Task.FromResult<IReadOnlyList<GeocodeCandidate>>(CreateMockForwardResults(request));
     }
 
     /// <inheritdoc />
@@ -118,10 +119,10 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
         if (_configuration.DelayMs > 0)
         {
             return Task.Delay(_configuration.DelayMs, cancellationToken)
-                .ContinueWith(_ => CreateMockSuggestions(request), cancellationToken);
+                .ContinueWith<IReadOnlyList<GeocodeSuggestion>>(_ => CreateMockSuggestions(request), cancellationToken);
         }
 
-        return Task.FromResult(CreateMockSuggestions(request));
+        return Task.FromResult<IReadOnlyList<GeocodeSuggestion>>(CreateMockSuggestions(request));
     }
 
     /// <inheritdoc />
@@ -144,10 +145,10 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
         if (_configuration.DelayMs > 0)
         {
             return Task.Delay(_configuration.DelayMs, cancellationToken)
-                .ContinueWith(_ => CreateMockBatchResults(request), cancellationToken);
+                .ContinueWith<IReadOnlyList<GeocodeCandidate>>(_ => CreateMockBatchResults(request), cancellationToken);
         }
 
-        return Task.FromResult(CreateMockBatchResults(request));
+        return Task.FromResult<IReadOnlyList<GeocodeCandidate>>(CreateMockBatchResults(request));
     }
 
     /// <inheritdoc />
@@ -165,7 +166,7 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
         return Task.CompletedTask;
     }
 
-    private IReadOnlyList<GeocodeCandidate> CreateMockForwardResults(ForwardGeocodeRequest request)
+    private List<GeocodeCandidate> CreateMockForwardResults(ForwardGeocodeRequest request)
     {
         var maxResults = ValidateMaxResults(request.MaxResults);
         var results = new List<GeocodeCandidate>();
@@ -181,7 +182,7 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
                 additionalAttributes: new Dictionary<string, string?>
                 {
                     ["Match_addr"] = $"{request.Query} (Mock Result {i + 1})",
-                    ["Score"] = score.ToString("F1"),
+                    ["Score"] = score.ToString("F1", CultureInfo.InvariantCulture),
                     ["AddressType"] = i == 0 ? "PointAddress" : "StreetAddress"
                 });
 
@@ -238,7 +239,7 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
         };
     }
 
-    private IReadOnlyList<GeocodeSuggestion> CreateMockSuggestions(SuggestGeocodeRequest request)
+    private List<GeocodeSuggestion> CreateMockSuggestions(SuggestGeocodeRequest request)
     {
         var maxResults = ValidateMaxResults(request.MaxResults);
         var suggestions = new List<GeocodeSuggestion>();
@@ -257,7 +258,7 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
         return suggestions;
     }
 
-    private IReadOnlyList<GeocodeCandidate> CreateMockBatchResults(BatchGeocodeRequest request)
+    private List<GeocodeCandidate> CreateMockBatchResults(BatchGeocodeRequest request)
     {
         var results = new List<GeocodeCandidate>();
 
@@ -272,7 +273,7 @@ public sealed class MockGeocodeProvider : BaseGeocodeProvider
                 additionalAttributes: new Dictionary<string, string?>
                 {
                     ["Match_addr"] = $"{query} (Batch Result)",
-                    ["BatchIndex"] = queryIndex.ToString()
+                    ["BatchIndex"] = queryIndex.ToString(CultureInfo.InvariantCulture)
                 });
 
             results.Add(new GeocodeCandidate(

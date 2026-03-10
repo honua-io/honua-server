@@ -152,14 +152,17 @@ public sealed record GeocodeResult<T>
     /// </summary>
     public IReadOnlyDictionary<string, object>? Metadata { get; init; }
 
+}
+
+/// <summary>
+/// Helpers for constructing geocoding results
+/// </summary>
+public static class GeocodeResults
+{
     /// <summary>
     /// Create a successful result
     /// </summary>
-    /// <param name="data">Result data</param>
-    /// <param name="providerName">Provider name</param>
-    /// <param name="responseTimeMs">Response time in milliseconds</param>
-    /// <returns>Successful geocode result</returns>
-    public static GeocodeResult<T> Success(T data, string providerName, double? responseTimeMs = null)
+    public static GeocodeResult<T> Success<T>(T data, string providerName, double? responseTimeMs = null)
     {
         return new GeocodeResult<T>
         {
@@ -173,12 +176,7 @@ public sealed record GeocodeResult<T>
     /// <summary>
     /// Create a failed result
     /// </summary>
-    /// <param name="errorMessage">Error message</param>
-    /// <param name="providerName">Provider name</param>
-    /// <param name="responseTimeMs">Response time in milliseconds</param>
-    /// <param name="attemptedProviders">List of attempted providers</param>
-    /// <returns>Failed geocode result</returns>
-    public static GeocodeResult<T> Failure(
+    public static GeocodeResult<T> Failure<T>(
         string errorMessage,
         string providerName,
         double? responseTimeMs = null,
@@ -186,7 +184,7 @@ public sealed record GeocodeResult<T>
     {
         return new GeocodeResult<T>
         {
-            Data = default(T)!,
+            Data = default!,
             ProviderName = providerName,
             IsSuccess = false,
             ErrorMessage = errorMessage,

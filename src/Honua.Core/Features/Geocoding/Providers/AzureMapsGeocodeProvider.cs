@@ -389,7 +389,7 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         return url;
     }
 
-    private IReadOnlyList<GeocodeCandidate> ConvertSearchResults(
+    private List<GeocodeCandidate> ConvertSearchResults(
         AzureMapsSearchResult[] results,
         ForwardGeocodeRequest request)
     {
@@ -463,7 +463,7 @@ public sealed class AzureMapsGeocodeProvider : BaseGeocodeProvider
         };
     }
 
-    private IReadOnlyList<GeocodeSuggestion> ConvertSuggestionResults(AzureMapsSearchResult[] results)
+    private static List<GeocodeSuggestion> ConvertSuggestionResults(AzureMapsSearchResult[] results)
     {
         var suggestions = new List<GeocodeSuggestion>();
 

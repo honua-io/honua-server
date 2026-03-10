@@ -62,7 +62,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
-                return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Success(
+                return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
             catch (Exception ex)
@@ -93,7 +93,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
-        return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Failure(
+        return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
@@ -131,7 +131,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     result != null);
 
-                return GeocodeResult<ReverseGeocodeMatch?>.Success(
+                return GeocodeResults.Success<ReverseGeocodeMatch?>(
                     result, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
             catch (Exception ex)
@@ -162,7 +162,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
-        return GeocodeResult<ReverseGeocodeMatch?>.Failure(
+        return GeocodeResults.Failure<ReverseGeocodeMatch?>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
@@ -200,7 +200,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
-                return GeocodeResult<IReadOnlyList<GeocodeSuggestion>>.Success(
+                return GeocodeResults.Success<IReadOnlyList<GeocodeSuggestion>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
             catch (Exception ex)
@@ -231,7 +231,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
-        return GeocodeResult<IReadOnlyList<GeocodeSuggestion>>.Failure(
+        return GeocodeResults.Failure<IReadOnlyList<GeocodeSuggestion>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
@@ -269,7 +269,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     results.Count);
 
-                return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Success(
+                return GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
                     results, provider.Name, stopwatch.Elapsed.TotalMilliseconds);
             }
             catch (Exception ex)
@@ -300,11 +300,11 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             string.Join(", ", attemptedProviders),
             lastException);
 
-        return GeocodeResult<IReadOnlyList<GeocodeCandidate>>.Failure(
+        return GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
-    private IReadOnlyList<IGeocodeProvider> GetProvidersToTry(string? preferredProviderName)
+    private List<IGeocodeProvider> GetProvidersToTry(string? preferredProviderName)
     {
         var providers = new List<IGeocodeProvider>();
 
@@ -365,9 +365,13 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
 
     public IGeocodeProvider? GetProvider(string? providerName = null)
     {
-        return string.IsNullOrWhiteSpace(providerName)
-            ? _providerRegistry.GetAllProviders().FirstOrDefault()
-            : _providerRegistry.GetProvider(providerName);
+        if (!string.IsNullOrWhiteSpace(providerName))
+        {
+            return _providerRegistry.GetProvider(providerName);
+        }
+
+        var providers = _providerRegistry.GetAllProviders();
+        return providers.Count > 0 ? providers[0] : null;
     }
 
     public IReadOnlyList<IGeocodeProvider> GetAllProviders()

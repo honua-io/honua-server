@@ -347,7 +347,7 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
         }
     }
 
-    private IAmazonLocationService CreateLocationClient(AmazonLocationProviderConfiguration configuration)
+    private static AmazonLocationServiceClient CreateLocationClient(AmazonLocationProviderConfiguration configuration)
     {
         var regionEndpoint = RegionEndpoint.GetBySystemName(configuration.Region);
 
@@ -371,7 +371,7 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
         return new AmazonLocationServiceClient(regionEndpoint);
     }
 
-    private IReadOnlyList<GeocodeCandidate> ConvertSearchResults(
+    private List<GeocodeCandidate> ConvertSearchResults(
         List<SearchForTextResult> results,
         ForwardGeocodeRequest request)
     {
@@ -385,8 +385,8 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
                 providerId: result.PlaceId,
                 additionalAttributes: new Dictionary<string, string?>
                 {
-                    ["relevance"] = result.Relevance.ToString(),
-                    ["distance"] = result.Distance.ToString(),
+                    ["relevance"] = result.Relevance is double relevance ? relevance.ToString(CultureInfo.InvariantCulture) : null,
+                    ["distance"] = result.Distance is double distance ? distance.ToString(CultureInfo.InvariantCulture) : null,
                     ["interpolated"] = result.Place?.Interpolated?.ToString().ToLowerInvariant() ?? "false"
                 });
 
@@ -422,12 +422,12 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
         }
 
         var attributes = BuildAttributes(
-            providerId: result.PlaceId,
-            additionalAttributes: new Dictionary<string, string?>
-            {
-                ["distance"] = result.Distance.ToString(),
-                ["interpolated"] = result.Place.Interpolated?.ToString().ToLowerInvariant() ?? "false"
-            });
+                providerId: result.PlaceId,
+                additionalAttributes: new Dictionary<string, string?>
+                {
+                    ["distance"] = result.Distance is double distance ? distance.ToString(CultureInfo.InvariantCulture) : null,
+                    ["interpolated"] = result.Place.Interpolated?.ToString().ToLowerInvariant() ?? "false"
+                });
 
         var structuredAddress = ConvertPlace(result.Place);
 
@@ -445,7 +445,7 @@ public sealed class AmazonLocationGeocodeProvider : BaseGeocodeProvider, IDispos
         };
     }
 
-    private IReadOnlyList<GeocodeSuggestion> ConvertSuggestionResults(List<SearchForSuggestionsResult> results)
+    private static List<GeocodeSuggestion> ConvertSuggestionResults(List<SearchForSuggestionsResult> results)
     {
         var suggestions = new List<GeocodeSuggestion>();
 
