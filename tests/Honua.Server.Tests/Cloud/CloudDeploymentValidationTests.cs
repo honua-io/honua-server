@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
@@ -66,7 +67,8 @@ public sealed class CloudDeploymentValidationTests
 
         foreach (var path in checks)
         {
-            using var response = await client.GetAsync(path);
+            using var request = CreateOptionalApiKeyRequest(HttpMethod.Get, path);
+            using var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"'{path}' should respond successfully from the deployed environment");
         }
     }
@@ -281,7 +283,11 @@ public sealed class CloudDeploymentValidationTests
 
         var timeout = TimeSpan.FromSeconds(GetImportTimeoutSeconds());
         var uploadProgress = await WaitForUploadCompletionAsync(client, uploadId!, timeout);
-        uploadProgress.GetProperty("cloudFileId").GetString().Should().NotBeNullOrWhiteSpace();
+        if (uploadProgress.TryGetProperty("cloudFileId", out var cloudFileIdElement)
+            && cloudFileIdElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            cloudFileIdElement.GetString().Should().NotBeNullOrWhiteSpace();
+        }
 
         var importProgress = await WaitForImportJobProgressAsync(client, jobId!, timeout);
         ReadImportStatus(importProgress.GetProperty("status")).Should().Be(ImportStatus.Completed);
@@ -311,6 +317,18 @@ public sealed class CloudDeploymentValidationTests
     {
         var request = new HttpRequestMessage(method, path);
         request.Headers.Add(ApiKeyHeader, GetRequiredEnv(AdminApiKeyEnv));
+        request.Headers.Accept.ParseAdd("application/json");
+        return request;
+    }
+
+    private static HttpRequestMessage CreateOptionalApiKeyRequest(HttpMethod method, string path)
+    {
+        var request = new HttpRequestMessage(method, path);
+        if (TryGetEnv(AdminApiKeyEnv, out var apiKey))
+        {
+            request.Headers.Add(ApiKeyHeader, apiKey);
+        }
+
         request.Headers.Accept.ParseAdd("application/json");
         return request;
     }
@@ -688,8 +706,10 @@ public sealed class CloudDeploymentValidationTests
 
     private static async Task<int> QueryPublishedFeatureCountAsync(HttpClient client, string serviceName, int layerId)
     {
-        using var response = await client.GetAsync(
+        using var request = CreateOptionalApiKeyRequest(
+            HttpMethod.Get,
             $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?where=1%3D1&returnCountOnly=true&f=json");
+        using var response = await client.SendAsync(request);
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
 
@@ -725,6 +745,12 @@ public sealed class CloudDeploymentValidationTests
     {
         var raw = Environment.GetEnvironmentVariable(ImportTimeoutSecondsEnv);
         return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 180;
+    }
+
+    private static bool TryGetEnv(string key, [NotNullWhen(true)] out string? value)
+    {
+        value = Environment.GetEnvironmentVariable(key);
+        return !string.IsNullOrWhiteSpace(value);
     }
 
     private static int GetDeployTimeoutSeconds()

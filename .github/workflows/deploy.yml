@@ -12,6 +12,10 @@ env:
   IMAGE_NAME_GHCR: ${{ github.repository }}
   REGISTRY_DOCKERHUB: docker.io
   IMAGE_NAME_DOCKERHUB: honuaio/honua-server
+  AWS_ECR_REGION: ${{ vars.AWS_ECR_REGION }}
+  AWS_ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
   TRIVY_IMAGE: aquasec/trivy:0.68.1
 
 jobs:
@@ -89,13 +93,106 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Configure AWS credentials for ECR
+        if: ${{ env.AWS_ECR_REGION != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_ECR_REGION }}
+
+      - name: Resolve ECR registry
+        if: ${{ env.AWS_ECR_REGION != '' }}
+        id: ecr
+        shell: bash
+        env:
+          ECR_REGION: ${{ env.AWS_ECR_REGION }}
+        run: |
+          set -euo pipefail
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        shell: bash
+        env:
+          ECR_REGION: ${{ env.AWS_ECR_REGION }}
+        run: |
+          set -euo pipefail
+          repo="${AWS_ECR_REPOSITORY:-honua-server}"
+          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$repo" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$ECR_REGION" >/dev/null
+          fi
+
+      - name: Log in to ECR
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Validate Azure ACR publish credentials
+        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          for name in ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required Azure credential for ACR publish: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Log in to ACR
+        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          acr_name="${ACR_LOGIN_SERVER%%.*}"
+          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+          az acr login --name "$acr_name"
+
+      - name: Resolve target image names
+        id: targets
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          ecr_repo="${AWS_ECR_REPOSITORY:-honua-server}"
+          acr_repo="${ACR_REPOSITORY:-honua-server}"
+          {
+            echo "images<<EOF"
+            printf '%s\n' \
+              "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
+              "${REGISTRY_DOCKERHUB}/${IMAGE_NAME_DOCKERHUB}"
+            if [ -n "$ECR_REGISTRY" ]; then
+              printf '%s\n' "${ECR_REGISTRY}/${ecr_repo}"
+            fi
+            if [ -n "$ACR_LOGIN_SERVER" ]; then
+              printf '%s\n' "${ACR_LOGIN_SERVER}/${acr_repo}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
-            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME_DOCKERHUB }}
+          images: ${{ steps.targets.outputs.images }}
           tags: |
             type=ref,event=branch,suffix=${{ matrix.tag_suffix }}
             type=ref,event=tag,suffix=${{ matrix.tag_suffix }}
@@ -210,13 +307,106 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Configure AWS credentials for ECR
+        if: ${{ env.AWS_ECR_REGION != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_ECR_REGION }}
+
+      - name: Resolve ECR registry
+        if: ${{ env.AWS_ECR_REGION != '' }}
+        id: ecr
+        shell: bash
+        env:
+          ECR_REGION: ${{ env.AWS_ECR_REGION }}
+        run: |
+          set -euo pipefail
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        shell: bash
+        env:
+          ECR_REGION: ${{ env.AWS_ECR_REGION }}
+        run: |
+          set -euo pipefail
+          repo="${AWS_ECR_REPOSITORY:-honua-server}"
+          if ! aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$repo" \
+              --image-scanning-configuration scanOnPush=true \
+              --region "$ECR_REGION" >/dev/null
+          fi
+
+      - name: Log in to ECR
+        if: ${{ steps.ecr.outputs.registry != '' }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Validate Azure ACR publish credentials
+        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          for name in ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required Azure credential for ACR publish: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Log in to ACR
+        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          acr_name="${ACR_LOGIN_SERVER%%.*}"
+          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+          az acr login --name "$acr_name"
+
+      - name: Resolve target image names
+        id: targets
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ACR_LOGIN_SERVER: ${{ env.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          ecr_repo="${AWS_ECR_REPOSITORY:-honua-server}"
+          acr_repo="${ACR_REPOSITORY:-honua-server}"
+          {
+            echo "images<<EOF"
+            printf '%s\n' \
+              "${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}" \
+              "${REGISTRY_DOCKERHUB}/${IMAGE_NAME_DOCKERHUB}"
+            if [ -n "$ECR_REGISTRY" ]; then
+              printf '%s\n' "${ECR_REGISTRY}/${ecr_repo}"
+            fi
+            if [ -n "$ACR_LOGIN_SERVER" ]; then
+              printf '%s\n' "${ACR_LOGIN_SERVER}/${acr_repo}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
-            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME_DOCKERHUB }}
+          images: ${{ steps.targets.outputs.images }}
           tags: |
             type=ref,event=branch,suffix=${{ matrix.tag_suffix }}
             type=ref,event=tag,suffix=${{ matrix.tag_suffix }}
