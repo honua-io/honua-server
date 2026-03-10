@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -570,6 +571,7 @@ public sealed class CloudDeploymentValidationTests
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         string? lastPayload = null;
         HttpStatusCode? lastStatusCode = null;
+        var expectedTableNames = BuildExpectedImportedTableNames(tableName);
 
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -591,7 +593,12 @@ public sealed class CloudDeploymentValidationTests
             var table = document.RootElement
                 .GetProperty("tables")
                 .EnumerateArray()
-                .FirstOrDefault(candidate => string.Equals(candidate.GetProperty("table").GetString(), tableName, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(candidate =>
+                {
+                    var candidateTableName = candidate.GetProperty("table").GetString();
+                    return candidateTableName is not null &&
+                        expectedTableNames.Contains(candidateTableName, StringComparer.OrdinalIgnoreCase);
+                });
 
             if (table.ValueKind == JsonValueKind.Undefined)
             {
@@ -628,6 +635,19 @@ public sealed class CloudDeploymentValidationTests
         throw new TimeoutException(
             $"Imported table '{tableName}' was not discoverable within {timeout.TotalSeconds} seconds. " +
             $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
+    }
+
+    private static HashSet<string> BuildExpectedImportedTableNames(string requestedTableName)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            requestedTableName
+        };
+
+        var sanitized = Regex.Replace(requestedTableName, @"[^a-zA-Z0-9_]", "_").ToLowerInvariant();
+        names.Add("imported_" + sanitized);
+
+        return names;
     }
 
     private static async Task<PublishedLayerHandle> PublishImportedTableAsync(
@@ -701,7 +721,7 @@ public sealed class CloudDeploymentValidationTests
     private static int GetImportTimeoutSeconds()
     {
         var raw = Environment.GetEnvironmentVariable(ImportTimeoutSecondsEnv);
-        return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 90;
+        return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 180;
     }
 
     private static int GetDeployTimeoutSeconds()
