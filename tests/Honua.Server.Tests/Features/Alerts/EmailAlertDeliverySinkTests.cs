@@ -13,7 +13,7 @@ public sealed class EmailAlertDeliverySinkTests
     [UnitTest]
     public async Task DeliverAsync_WithNoSmtpConfigured_ReturnsNonRetryableFailure()
     {
-        var sink = new EmailAlertDeliverySink(Options.Create(new AlertOptions()));
+        var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Email),
@@ -27,11 +27,11 @@ public sealed class EmailAlertDeliverySinkTests
     [UnitTest]
     public async Task DeliverAsync_WithNoRecipient_ReturnsNonRetryableFailure()
     {
-        var options = new AlertOptions
+        var options = new AlertDeliveryOptions
         {
-            Dispatch = new AlertDispatchOptions
+            Dispatch = new AlertDeliveryDispatchOptions
             {
-                Email = new EmailAlertOptions
+                Email = new EmailChannelOptions
                 {
                     SmtpHost = "smtp.example.com",
                     FromAddress = "alerts@example.com"
@@ -52,11 +52,11 @@ public sealed class EmailAlertDeliverySinkTests
     [UnitTest]
     public async Task DeliverAsync_WithDispatchDestination_AttemptsDeliveryWithoutRecipientError()
     {
-        var options = new AlertOptions
+        var options = new AlertDeliveryOptions
         {
-            Dispatch = new AlertDispatchOptions
+            Dispatch = new AlertDeliveryDispatchOptions
             {
-                Email = new EmailAlertOptions
+                Email = new EmailChannelOptions
                 {
                     // Use a non-routable host so SendMailAsync fails predictably.
                     SmtpHost = "192.0.2.1",
@@ -81,7 +81,7 @@ public sealed class EmailAlertDeliverySinkTests
     [UnitTest]
     public void ChannelType_ReturnsEmail()
     {
-        var sink = new EmailAlertDeliverySink(Options.Create(new AlertOptions()));
+        var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()));
         Assert.Equal(AlertChannelType.Email, sink.ChannelType);
     }
 }

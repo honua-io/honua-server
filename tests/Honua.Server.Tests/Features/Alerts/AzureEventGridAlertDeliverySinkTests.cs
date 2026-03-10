@@ -19,7 +19,7 @@ public sealed class AzureEventGridAlertDeliverySinkTests
         var client = CreateDummyClient();
         var sink = new AzureEventGridAlertDeliverySink(
             client,
-            Options.Create(new AlertOptions()));
+            Options.Create(new AlertDeliveryOptions()));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.AzureEventGrid),
@@ -34,7 +34,7 @@ public sealed class AzureEventGridAlertDeliverySinkTests
     public void ChannelType_ReturnsAzureEventGrid()
     {
         var client = CreateDummyClient();
-        var sink = new AzureEventGridAlertDeliverySink(client, Options.Create(new AlertOptions()));
+        var sink = new AzureEventGridAlertDeliverySink(client, Options.Create(new AlertDeliveryOptions()));
 
         Assert.Equal(AlertChannelType.AzureEventGrid, sink.ChannelType);
     }

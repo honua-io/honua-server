@@ -13,11 +13,11 @@ namespace Honua.Server.Features.Alerts;
 internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
 {
     private readonly EventGridPublisherClient _client;
-    private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _options;
 
     public AzureEventGridAlertDeliverySink(
         EventGridPublisherClient client,
-        IOptions<AlertOptions> options)
+        IOptions<AlertDeliveryOptions> options)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));

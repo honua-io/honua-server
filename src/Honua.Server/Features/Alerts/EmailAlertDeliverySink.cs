@@ -11,9 +11,9 @@ namespace Honua.Server.Features.Alerts;
 
 internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
 {
-    private readonly AlertOptions _options;
+    private readonly AlertDeliveryOptions _options;
 
-    public EmailAlertDeliverySink(IOptions<AlertOptions> options)
+    public EmailAlertDeliverySink(IOptions<AlertDeliveryOptions> options)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }

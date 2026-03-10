@@ -3,6 +3,7 @@
 
 using System.Net;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Server.Features.Alerts;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -86,4 +87,72 @@ internal sealed class CapturingHttpMessageHandler : HttpMessageHandler
 
         return new HttpResponseMessage(_statusCode);
     }
+}
+
+internal sealed class FakeSnsPublisher : ISnsPublisher
+{
+    public string? LastTopicArn { get; private set; }
+
+    public Dictionary<string, string>? LastAttributes { get; private set; }
+
+    public Func<string, string, string?, Dictionary<string, string>, CancellationToken, Task<SnsPublishResult>>? PublishAsyncHandler { get; init; }
+
+    public Task<SnsPublishResult> PublishAsync(
+        string topicArn,
+        string message,
+        string? subject,
+        Dictionary<string, string> attributes,
+        CancellationToken cancellationToken)
+    {
+        LastTopicArn = topicArn;
+        LastAttributes = attributes;
+
+        return PublishAsyncHandler is null
+            ? Task.FromResult(new SnsPublishResult(true, false, null))
+            : PublishAsyncHandler(topicArn, message, subject, attributes, cancellationToken);
+    }
+}
+
+internal sealed class FakeSqsPublisher : ISqsPublisher
+{
+    public string? LastQueueUrl { get; private set; }
+
+    public Dictionary<string, string>? LastAttributes { get; private set; }
+
+    public Func<string, string, Dictionary<string, string>, CancellationToken, Task<SqsPublishResult>>? SendMessageAsyncHandler { get; init; }
+
+    public Task<SqsPublishResult> SendMessageAsync(
+        string queueUrl,
+        string messageBody,
+        Dictionary<string, string> attributes,
+        CancellationToken cancellationToken)
+    {
+        LastQueueUrl = queueUrl;
+        LastAttributes = attributes;
+
+        return SendMessageAsyncHandler is null
+            ? Task.FromResult(new SqsPublishResult(true, false, null))
+            : SendMessageAsyncHandler(queueUrl, messageBody, attributes, cancellationToken);
+    }
+}
+
+internal sealed class FakeEventHubPublisher : IEventHubPublisher
+{
+    public Dictionary<string, object>? LastProperties { get; private set; }
+
+    public Func<BinaryData, Dictionary<string, object>, CancellationToken, Task<EventHubPublishResult>>? SendAsyncHandler { get; init; }
+
+    public Task<EventHubPublishResult> SendAsync(
+        BinaryData body,
+        Dictionary<string, object> properties,
+        CancellationToken cancellationToken)
+    {
+        LastProperties = properties;
+
+        return SendAsyncHandler is null
+            ? Task.FromResult(new EventHubPublishResult(true, false, null))
+            : SendAsyncHandler(body, properties, cancellationToken);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

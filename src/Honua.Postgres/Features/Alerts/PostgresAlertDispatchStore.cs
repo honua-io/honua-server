@@ -47,18 +47,18 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         }
     }
 
-    public async Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingAsync(
+    async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingAsync(
         int maxCount,
         DateTimeOffset now,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         return await ClaimPendingByChannelAsync(maxCount, now, AlertChannelType.Digest, excludeChannel: true, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingDigestAsync(
+    async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingDigestAsync(
         int maxCount,
         DateTimeOffset now,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         return await ClaimPendingByChannelAsync(maxCount, now, AlertChannelType.Digest, excludeChannel: false, cancellationToken).ConfigureAwait(false);
     }
