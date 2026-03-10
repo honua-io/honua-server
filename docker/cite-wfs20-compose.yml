@@ -72,6 +72,7 @@ services:
   # CITE Test Runner - executes the tests and collects results
   cite-runner:
     image: curlimages/curl:8.5.0
+    user: "0:0"
     depends_on:
       cite-teamengine:
         condition: service_healthy
