@@ -70,9 +70,9 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         LoggerMessage.Define(LogLevel.Error, new EventId(10, nameof(_logValidationException)),
             "Encryption validation failed with exception");
 
-    private static readonly Action<ILogger, Exception?> _logSaltGenerated =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(11, nameof(_logSaltGenerated)),
-            "No salt configured. A random salt was generated. Configure 'Security:ConnectionEncryption:Salt' for production use.");
+    private static readonly Action<ILogger, Exception?> _logSaltDerived =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(11, nameof(_logSaltDerived)),
+            "No salt configured. A deterministic salt was derived from the master key. Configure 'Security:ConnectionEncryption:Salt' to control salt rotation explicitly.");
 
     private static readonly Action<ILogger, string, Exception?> _logSaltFingerprint =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(12, nameof(_logSaltFingerprint)),
@@ -392,11 +392,8 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
         else
         {
-            // Generate a new salt (this should be saved for production use)
-            salt = new byte[SaltSize];
-            RandomNumberGenerator.Fill(salt);
-
-            _logSaltGenerated(_logger, null);
+            salt = DeriveDeterministicSalt(keyMaterial);
+            _logSaltDerived(_logger, null);
 
             // Log a truncated fingerprint (first 8 chars of SHA256 hash) for debugging without exposing the salt
             var saltHash = SHA256.HashData(salt);
@@ -411,6 +408,12 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
             Pbkdf2Iterations,
             HashAlgorithmName.SHA256,
             AesKeySize);
+    }
+
+    private static byte[] DeriveDeterministicSalt(string keyMaterial)
+    {
+        var material = Encoding.UTF8.GetBytes($"honua-connection-encryption-salt:v1:{keyMaterial}");
+        return SHA256.HashData(material);
     }
 
     private void ThrowIfDisposed()
