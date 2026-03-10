@@ -20,23 +20,25 @@ internal sealed class GdbGeometryReader
 {
     // FileGDB geometry type codes stored in geometry blobs.
     private const int ShptNull = 0;
-    private const int ShptPointZM = 3;
+    private const int ShptPointZ = 9;
+    private const int ShptPointZM = 11;
+    private const int ShptPointM = 21;
     private const int ShptMultipoint = 8;
-    private const int ShptMultipointM = 9;
-    private const int ShptMultipointZM = 10;
-    private const int ShptMultipointZ = 11;
-    private const int ShptArc = 13;
-    private const int ShptArcM = 14;
-    private const int ShptArcZM = 15;
-    private const int ShptArcZ = 16;
-    private const int ShptArea = 18;
-    private const int ShptAreaM = 19;
-    private const int ShptAreaZM = 20;
-    private const int ShptAreaZ = 21;
-    private const int ShptGeneralPoint = 53;
-    private const int ShptGeneralMultipoint = 54;
-    private const int ShptGeneralPolyline = 55;
-    private const int ShptGeneralPolygon = 56;
+    private const int ShptMultipointZ = 20;
+    private const int ShptMultipointZM = 18;
+    private const int ShptMultipointM = 28;
+    private const int ShptArc = 3;
+    private const int ShptArcZ = 10;
+    private const int ShptArcZM = 13;
+    private const int ShptArcM = 23;
+    private const int ShptArea = 5;
+    private const int ShptAreaZ = 19;
+    private const int ShptAreaZM = 15;
+    private const int ShptAreaM = 25;
+    private const int ShptGeneralPoint = 50;
+    private const int ShptGeneralMultipoint = 51;
+    private const int ShptGeneralPolyline = 52;
+    private const int ShptGeneralPolygon = 53;
 
     private readonly GeometryFactory _factory;
     private readonly GdbGeometryDef _geomDef;
@@ -73,28 +75,27 @@ internal sealed class GdbGeometryReader
 
                 // Point types.
                 1 => ReadPoint(blob, ref offset, hasZ: false, hasM: false),
-                2 => ReadPoint(blob, ref offset, hasZ: false, hasM: true),
+                ShptPointZ => ReadPoint(blob, ref offset, hasZ: true, hasM: false),
+                ShptPointM => ReadPoint(blob, ref offset, hasZ: false, hasM: true),
                 ShptPointZM => ReadPoint(blob, ref offset, hasZ: true, hasM: true),
-                4 => ReadPoint(blob, ref offset, hasZ: true, hasM: false),
 
                 // Polyline types.
-                ShptArc or 13 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: false, hasM: false),
-                ShptArcM or 14 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: false, hasM: true),
-                ShptArcZM or 15 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: true, hasM: true),
-                ShptArcZ or 16 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: true, hasM: false),
+                ShptArc => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: false, hasM: false),
+                ShptArcZ => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: true, hasM: false),
+                ShptArcM => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: false, hasM: true),
+                ShptArcZM => ReadMultiVertexGeometry(blob, ref offset, isPolygon: false, hasZ: true, hasM: true),
 
                 // Polygon types.
-                5 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: false, hasM: false),
-                ShptArea or 18 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: false, hasM: false),
-                ShptAreaM or 19 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: false, hasM: true),
-                ShptAreaZM or 20 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: true, hasM: true),
-                ShptAreaZ or 21 => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: true, hasM: false),
+                ShptArea => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: false, hasM: false),
+                ShptAreaZ => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: true, hasM: false),
+                ShptAreaM => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: false, hasM: true),
+                ShptAreaZM => ReadMultiVertexGeometry(blob, ref offset, isPolygon: true, hasZ: true, hasM: true),
 
                 // Multipoint types.
-                ShptMultipoint or 8 => ReadMultiPoint(blob, ref offset, hasZ: false, hasM: false),
-                ShptMultipointM or 9 => ReadMultiPoint(blob, ref offset, hasZ: false, hasM: true),
-                ShptMultipointZM or 10 => ReadMultiPoint(blob, ref offset, hasZ: true, hasM: true),
-                ShptMultipointZ or 11 => ReadMultiPoint(blob, ref offset, hasZ: true, hasM: false),
+                ShptMultipoint => ReadMultiPoint(blob, ref offset, hasZ: false, hasM: false),
+                ShptMultipointZ => ReadMultiPoint(blob, ref offset, hasZ: true, hasM: false),
+                ShptMultipointM => ReadMultiPoint(blob, ref offset, hasZ: false, hasM: true),
+                ShptMultipointZM => ReadMultiPoint(blob, ref offset, hasZ: true, hasM: true),
 
                 // General types (have a flags byte indicating components).
                 ShptGeneralPoint => ReadGeneralPoint(blob, ref offset),
@@ -162,6 +163,15 @@ internal sealed class GdbGeometryReader
         }
 
         var numParts = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
+        if (numParts <= 0 || numParts > numPoints)
+        {
+            throw new InvalidDataException("FileGDB geometry contains invalid point or part counts.");
+        }
+
+        if (numPoints > blob.Length || numParts > blob.Length)
+        {
+            throw new InvalidDataException("FileGDB geometry contains impossible point or part counts.");
+        }
 
         // Read envelope (xmin, ymin, width, height) as unsigned varints.
         GdbVarInt.ReadVarUInt(blob, ref offset); // xmin
@@ -311,6 +321,11 @@ internal sealed class GdbGeometryReader
         if (numPoints == 0)
         {
             return _factory.CreateMultiPoint();
+        }
+
+        if (numPoints > blob.Length)
+        {
+            throw new InvalidDataException("FileGDB geometry contains an impossible point count.");
         }
 
         // Read envelope.

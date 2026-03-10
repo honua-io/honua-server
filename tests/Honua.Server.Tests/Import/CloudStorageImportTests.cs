@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -141,6 +142,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
               "sourceUrl": "https://s3.amazonaws.com/bucket/test.gdb.zip",
               "tableName": "{{tableName}}",
               "fileName": "test.gdb.zip",
+              "targetSrid": 4326,
               "overwriteExisting": true
             }
             """));
@@ -149,6 +151,8 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain(tableName);
         content.Should().Contain("FileGdb");
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTest]
