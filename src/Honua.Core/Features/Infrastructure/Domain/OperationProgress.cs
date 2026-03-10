@@ -119,5 +119,10 @@ public enum OperationType
     /// <summary>
     /// Tile cache lifecycle operation (seed/warm/invalidate/purge).
     /// </summary>
-    TileCache
+    TileCache,
+
+    /// <summary>
+    /// PMTiles archive generation operation.
+    /// </summary>
+    PMTilesArchive
 }
