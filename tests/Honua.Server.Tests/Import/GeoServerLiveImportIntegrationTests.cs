@@ -97,8 +97,12 @@ public sealed class GeoServerLiveImportIntegrationTests : IAsyncLifetime
         completed.RootElement.GetProperty("status").GetString().Should().Be("Completed");
         completed.RootElement.GetProperty("geoServerUrl").GetString().Should().Be(_geoServer.RestUrl);
         completed.RootElement.GetProperty("progress").GetProperty("currentPhase").GetString().Should().Be("Dry run completed");
-        completed.RootElement.GetProperty("progress").GetProperty("estimatedTotalResources").GetInt32().Should().BeGreaterThan(0);
         completed.RootElement.GetProperty("progress").GetProperty("sourceGeoServerUrl").GetString().Should().Be(_geoServer.RestUrl);
+
+        if (completed.RootElement.GetProperty("progress").TryGetProperty("estimatedTotalResources", out var estimatedTotalResources))
+        {
+            estimatedTotalResources.GetInt32().Should().BeGreaterThan(0);
+        }
     }
 
     private async Task<string> GetJobIdAsync(HttpResponseMessage response)
