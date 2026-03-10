@@ -298,7 +298,12 @@ public sealed class CloudDeploymentValidationTests
         var connectionId = await CreateSecureConnectionAsync(client, tableName);
         var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName, timeout);
         var publishedLayer = await PublishImportedTableAsync(client, connectionId, importedTable, tableName);
-        var featureCount = await QueryPublishedFeatureCountAsync(client, publishedLayer.ServiceName, publishedLayer.LayerId);
+        var featureCount = await WaitForPublishedFeatureCountAsync(
+            client,
+            publishedLayer.ServiceName,
+            publishedLayer.LayerId,
+            expectedCount: 1,
+            timeout);
 
         featureCount.Should().Be(1, "the published layer should expose the imported feature through the live FeatureServer endpoint");
     }
@@ -715,6 +720,43 @@ public sealed class CloudDeploymentValidationTests
 
         using var document = JsonDocument.Parse(payload);
         return document.RootElement.GetProperty("count").GetInt32();
+    }
+
+    private static async Task<int> WaitForPublishedFeatureCountAsync(
+        HttpClient client,
+        string serviceName,
+        int layerId,
+        int expectedCount,
+        TimeSpan timeout)
+    {
+        using var cancellationSource = new CancellationTokenSource(timeout);
+        var delay = TimeSpan.FromSeconds(2);
+        var lastObservedCount = -1;
+        string? lastFailure = null;
+
+        while (!cancellationSource.IsCancellationRequested)
+        {
+            try
+            {
+                lastObservedCount = await QueryPublishedFeatureCountAsync(client, serviceName, layerId);
+                if (lastObservedCount >= expectedCount)
+                {
+                    return lastObservedCount;
+                }
+
+                lastFailure = $"count={lastObservedCount}";
+            }
+            catch (Exception ex)
+            {
+                lastFailure = ex.Message;
+            }
+
+            await Task.Delay(delay, cancellationSource.Token);
+        }
+
+        throw new TimeoutException(
+            $"Published layer '{serviceName}/{layerId}' did not reach featureCount>={expectedCount} within {timeout.TotalSeconds} seconds. " +
+            $"Last observation: {lastFailure ?? "<none>"}");
     }
 
     private static OperationStatus ReadOperationStatus(JsonElement element)
