@@ -93,6 +93,13 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoservices/jobs"),
 
+        // v1 admin import endpoints (GeoServer)
+        new("POST", "/api/v1/admin/import/geoserver/discover"),
+        new("POST", "/api/v1/admin/import/geoserver/start"),
+        new("GET", "/api/v1/admin/import/geoserver/jobs/{jobId}"),
+        new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
+        new("GET", "/api/v1/admin/import/geoserver/jobs"),
+
         // v1 admin operations progress endpoints
         new("GET", "/api/v1/admin/operations/{operationId}"),
         new("POST", "/api/v1/admin/operations/{operationId}/cancel"),

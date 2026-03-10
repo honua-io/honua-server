@@ -238,6 +238,17 @@ internal static class ServiceCollectionExtensions
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
 
+        // Register GeoServer REST client for GeoServer migration imports
+        services.AddHttpClient<GeoServerRestClient>()
+            .ConfigureHttpClient(client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(5);
+            });
+
+        // Register GeoServer import service
+        services.AddScoped<IGeoServerImportService, GeoServerImportService>();
+
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);
         services.UseSecureConnectionProvider(configuration);

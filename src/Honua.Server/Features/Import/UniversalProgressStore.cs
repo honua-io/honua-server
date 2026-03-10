@@ -500,9 +500,16 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
 
     public async Task<IReadOnlyList<string>> GetActiveJobIdsAsync(CancellationToken cancellationToken = default)
     {
-        // We need to determine the operation type from TProgress to filter properly
         var operationType = GetOperationTypeForProgressType<TProgress>();
-        return await _universalStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
+        if (operationType is not { } resolvedOperationType)
+        {
+            return [];
+        }
+
+        var operations = await _universalStore.GetActiveOperationsAsync<TProgress>(resolvedOperationType, cancellationToken);
+        return operations
+            .Select(progress => progress.OperationId)
+            .ToArray();
     }
 
     private static OperationType? GetOperationTypeForProgressType<T>()
@@ -513,6 +520,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
         {
             nameof(ImportProgress) => OperationType.Import,
             nameof(GeoservicesImportProgress) => OperationType.ExternalImport,
+            nameof(GeoServerImportProgress) => OperationType.ExternalImport,
             nameof(TileOperationProgress) => OperationType.TileCache,
             _ => null
         };
@@ -537,6 +545,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(IOperationProgress))]
 [JsonSerializable(typeof(ImportProgress))]
 [JsonSerializable(typeof(GeoservicesImportProgress))]
+[JsonSerializable(typeof(GeoServerImportProgress))]
 [JsonSerializable(typeof(UploadProgress))]
 [JsonSerializable(typeof(IngestProgress))]
 [JsonSerializable(typeof(TileOperationProgress))]
@@ -544,6 +553,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]
 [JsonSerializable(typeof(GeoservicesImportStatus))]
+[JsonSerializable(typeof(GeoServerImportStatus))]
 internal sealed partial class UniversalProgressJsonContext : JsonSerializerContext
 {
 }
