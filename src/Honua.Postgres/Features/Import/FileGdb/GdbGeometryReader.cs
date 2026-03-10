@@ -399,7 +399,7 @@ internal sealed class GdbGeometryReader
         return ReadMultiVertexGeometry(blob, ref offset, isPolygon, hasZ, hasM);
     }
 
-    private Polygon BuildPolygon(Coordinate[] allCoords, int[] partPointCounts)
+    private NtsGeometry BuildPolygon(Coordinate[] allCoords, int[] partPointCounts)
     {
         var rings = new List<LinearRing>();
         var coordIndex = 0;
@@ -442,10 +442,49 @@ internal sealed class GdbGeometryReader
             return _factory.CreatePolygon(rings[0]);
         }
 
-        // First ring is the exterior ring; subsequent are holes.
-        var shell = rings[0];
-        var holes = rings.Skip(1).ToArray();
-        return _factory.CreatePolygon(shell, holes);
+        // Esri convention: clockwise rings are exterior shells, counter-clockwise
+        // are holes. Classify each ring and group holes with their preceding shell.
+        // NTS IsCCW uses the signed-area test; Esri CW = !IsCCW = shell.
+        var polygons = new List<Polygon>();
+        LinearRing? currentShell = null;
+        var currentHoles = new List<LinearRing>();
+
+        foreach (var ring in rings)
+        {
+            var isCcw = NetTopologySuite.Algorithm.Orientation.IsCCW(ring.Coordinates);
+            if (!isCcw)
+            {
+                // New exterior shell — flush the previous polygon if any.
+                if (currentShell != null)
+                {
+                    polygons.Add(_factory.CreatePolygon(currentShell, currentHoles.ToArray()));
+                    currentHoles.Clear();
+                }
+
+                currentShell = ring;
+            }
+            else
+            {
+                // Hole — attach to current shell.
+                if (currentShell != null)
+                {
+                    currentHoles.Add(ring);
+                }
+            }
+        }
+
+        // Flush the last polygon.
+        if (currentShell != null)
+        {
+            polygons.Add(_factory.CreatePolygon(currentShell, currentHoles.ToArray()));
+        }
+
+        if (polygons.Count == 1)
+        {
+            return polygons[0];
+        }
+
+        return _factory.CreateMultiPolygon(polygons.ToArray());
     }
 
     private NtsGeometry BuildPolyline(Coordinate[] allCoords, int[] partPointCounts)

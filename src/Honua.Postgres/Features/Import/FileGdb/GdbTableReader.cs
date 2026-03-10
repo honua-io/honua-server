@@ -637,8 +637,9 @@ internal sealed class GdbTableReader : IDisposable
             return 0;
         }
 
-        // Look for common EPSG authority codes in the WKT.
-        var authorityIndex = wkt.IndexOf("AUTHORITY[", StringComparison.OrdinalIgnoreCase);
+        // Use LastIndexOf so we find the outermost CRS AUTHORITY, not a nested
+        // datum/spheroid AUTHORITY that appears earlier in projected WKT.
+        var authorityIndex = wkt.LastIndexOf("AUTHORITY[", StringComparison.OrdinalIgnoreCase);
         if (authorityIndex >= 0)
         {
             var epsgStart = wkt.IndexOf("\"EPSG\"", authorityIndex, StringComparison.OrdinalIgnoreCase);

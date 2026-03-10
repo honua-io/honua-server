@@ -621,7 +621,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         };
         command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
         var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
-        command.Parameters.Add("source_srid", NpgsqlDbType.Integer).Value = sourceSrid;
+        var sourceSridParameter = command.Parameters.Add("source_srid", NpgsqlDbType.Integer);
+        sourceSridParameter.Value = sourceSrid;
         command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
         var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
 
@@ -634,6 +635,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 try
                 {
                     wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
+                    // Use per-feature SRID when available (e.g. multi-layer FileGDBs
+                    // where each layer may have its own CRS).
+                    var featureSrid = feature.Geometry?.SRID;
+                    sourceSridParameter.Value = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
                     propertiesParameter.Value = BuildPropertiesJson(feature);
                     await command.ExecuteNonQueryAsync(cancellationToken);
                     imported++;
@@ -1612,9 +1617,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     continue; // directory entry
                 }
 
-                // Security: prevent path traversal
+                // Security: prevent path traversal. The trailing separator ensures
+                // a sibling directory that shares a prefix cannot pass the check.
+                var normalizedRoot = scratchDir.EndsWith(Path.DirectorySeparatorChar)
+                    ? scratchDir
+                    : scratchDir + Path.DirectorySeparatorChar;
                 var entryPath = Path.GetFullPath(Path.Combine(scratchDir, entry.FullName));
-                if (!entryPath.StartsWith(scratchDir, StringComparison.OrdinalIgnoreCase))
+                if (!entryPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidDataException("Archive contains path traversal.");
                 }

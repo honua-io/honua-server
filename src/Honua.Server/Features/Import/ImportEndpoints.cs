@@ -787,9 +787,18 @@ internal static partial class ImportEndpoints
 
         var httpClientFactory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
         using var requestMessage = new HttpRequestMessage(HttpMethod.Get, sourceUri);
-        using var response = await httpClientFactory
-            .CreateClient()
+        var httpClient = httpClientFactory.CreateClient("import-source");
+        using var response = await httpClient
             .SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        // If the server responds with a redirect, reject it rather than following
+        // to an unvalidated destination (SSRF defense).
+        if ((int)response.StatusCode is >= 300 and < 400)
+        {
+            return RemoteImportDownloadResult.Failure(
+                "Source URL returned a redirect, which is not permitted.",
+                StatusCodes.Status400BadRequest);
+        }
 
         if (!response.IsSuccessStatusCode)
         {
