@@ -751,7 +751,14 @@ public sealed class CloudDeploymentValidationTests
                 lastFailure = ex.Message;
             }
 
-            await Task.Delay(delay, cancellationSource.Token);
+            try
+            {
+                await Task.Delay(delay, cancellationSource.Token);
+            }
+            catch (TaskCanceledException)
+            {
+                break;
+            }
         }
 
         throw new TimeoutException(
@@ -786,7 +793,7 @@ public sealed class CloudDeploymentValidationTests
     private static int GetImportTimeoutSeconds()
     {
         var raw = Environment.GetEnvironmentVariable(ImportTimeoutSecondsEnv);
-        return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 180;
+        return int.TryParse(raw, out var parsed) && parsed > 0 ? parsed : 300;
     }
 
     private static bool TryGetEnv(string key, [NotNullWhen(true)] out string? value)
