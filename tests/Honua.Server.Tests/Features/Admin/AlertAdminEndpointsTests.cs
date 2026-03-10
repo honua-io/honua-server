@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,7 +18,9 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.Configuration)]
 public sealed class AlertAdminEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = CreateFixture(
+        allowedChannels: [AlertChannelType.Webhook],
+        configuredChannels: [AlertChannelType.Webhook]);
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
@@ -170,5 +174,75 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
 
         using var deleteDocument = JsonDocument.Parse(await deleteResponse.Content.ReadAsStringAsync());
         deleteDocument.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules")]
+    public async Task CreateRule_WithUnconfiguredChannel_ReturnsBadRequest()
+    {
+        var fixture = CreateFixture(
+            allowedChannels: [AlertChannelType.MicrosoftTeams],
+            configuredChannels: []);
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var payload = new
+            {
+                serviceId = $"rules-{Guid.NewGuid():N}",
+                layerId = 1,
+                zoneId = (long?)null,
+                ruleName = "Teams Alert",
+                triggerType = "enter",
+                conditionsJson = "{}",
+                cooldownSeconds = 30,
+                severity = "warning",
+                editionRequired = "enterprise",
+                channels = new[] { "microsoft_teams" },
+                isActive = true
+            };
+
+            var response = await client.PostAsJsonAsync("/api/v1/admin/alerts/rules", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+            document.RootElement.GetProperty("message").GetString().Should().Contain("not configured");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static WebAppFixture CreateFixture(
+        IReadOnlyCollection<AlertChannelType> allowedChannels,
+        IReadOnlyCollection<AlertChannelType> configuredChannels)
+    {
+        return new WebAppFixture().ReplaceService<IAlertEditionPolicy>(
+            new TestAlertEditionPolicy(allowedChannels, configuredChannels));
+    }
+
+    private sealed class TestAlertEditionPolicy : IAlertEditionPolicy
+    {
+        private readonly HashSet<AlertChannelType> _allowedChannels;
+        private readonly HashSet<AlertChannelType> _configuredChannels;
+
+        public TestAlertEditionPolicy(
+            IReadOnlyCollection<AlertChannelType> allowedChannels,
+            IReadOnlyCollection<AlertChannelType> configuredChannels)
+        {
+            _allowedChannels = allowedChannels.ToHashSet();
+            _configuredChannels = configuredChannels.ToHashSet();
+        }
+
+        public bool IsRuleAllowed(AlertRuleDefinition rule) => true;
+
+        public bool IsChannelAllowed(AlertChannelType channelType) => _allowedChannels.Contains(channelType);
+
+        public bool IsChannelConfigured(AlertChannelType channelType) => _configuredChannels.Contains(channelType);
     }
 }

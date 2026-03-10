@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>
@@ -64,6 +65,10 @@
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.2" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.18" />
+    <PackageReference Include="AWSSDK.SQS" Version="4.0.2.16" />
+    <PackageReference Include="Azure.Messaging.EventGrid" Version="5.0.0" />
+    <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.3" />
   <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.24" />

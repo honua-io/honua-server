@@ -100,6 +100,28 @@ internal static class AlertStoreConversions
         };
     }
 
+    public static AlertIncidentStatus ToIncidentStatus(short value)
+    {
+        return value switch
+        {
+            1 => AlertIncidentStatus.Started,
+            2 => AlertIncidentStatus.Ongoing,
+            3 => AlertIncidentStatus.Ended,
+            _ => throw new InvalidOperationException($"Unsupported alert incident status '{value}'.")
+        };
+    }
+
+    public static short ToDbValue(this AlertIncidentStatus value)
+    {
+        return value switch
+        {
+            AlertIncidentStatus.Started => 1,
+            AlertIncidentStatus.Ongoing => 2,
+            AlertIncidentStatus.Ended => 3,
+            _ => throw new InvalidOperationException($"Unsupported alert incident status '{value}'.")
+        };
+    }
+
     public static AlertChannelType ToChannelType(short value)
     {
         return value switch
@@ -108,6 +130,12 @@ internal static class AlertStoreConversions
             2 => AlertChannelType.WebSocket,
             3 => AlertChannelType.Email,
             4 => AlertChannelType.Digest,
+            5 => AlertChannelType.AwsSns,
+            6 => AlertChannelType.AzureEventGrid,
+            7 => AlertChannelType.Slack,
+            8 => AlertChannelType.MicrosoftTeams,
+            9 => AlertChannelType.AwsSqs,
+            10 => AlertChannelType.AzureEventHub,
             _ => throw new InvalidOperationException($"Unsupported alert channel type '{value}'.")
         };
     }
@@ -120,31 +148,23 @@ internal static class AlertStoreConversions
             AlertChannelType.WebSocket => 2,
             AlertChannelType.Email => 3,
             AlertChannelType.Digest => 4,
+            AlertChannelType.AwsSns => 5,
+            AlertChannelType.AzureEventGrid => 6,
+            AlertChannelType.Slack => 7,
+            AlertChannelType.MicrosoftTeams => 8,
+            AlertChannelType.AwsSqs => 9,
+            AlertChannelType.AzureEventHub => 10,
             _ => throw new InvalidOperationException($"Unsupported alert channel type '{value}'.")
         };
     }
 
     public static AlertChannelType ParseChannel(string value)
     {
-        return value.Trim().ToLowerInvariant() switch
-        {
-            "webhook" => AlertChannelType.Webhook,
-            "websocket" => AlertChannelType.WebSocket,
-            "email" => AlertChannelType.Email,
-            "digest" => AlertChannelType.Digest,
-            _ => throw new InvalidOperationException($"Unsupported alert channel '{value}'.")
-        };
+        return AlertChannelNames.Parse(value);
     }
 
     public static string ToChannelName(this AlertChannelType value)
     {
-        return value switch
-        {
-            AlertChannelType.Webhook => "webhook",
-            AlertChannelType.WebSocket => "websocket",
-            AlertChannelType.Email => "email",
-            AlertChannelType.Digest => "digest",
-            _ => throw new InvalidOperationException($"Unsupported alert channel type '{value}'.")
-        };
+        return value.ToExternalName();
     }
 }

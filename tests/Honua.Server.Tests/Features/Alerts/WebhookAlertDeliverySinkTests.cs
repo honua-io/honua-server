@@ -24,30 +24,8 @@ public sealed class WebhookAlertDeliverySinkTests
             Options.Create(new AlertOptions()));
 
         var result = await sink.DeliverAsync(
-            new AlertDispatchItem
-            {
-                DispatchId = 1,
-                EventId = 2,
-                ChannelType = AlertChannelType.Webhook,
-                Destination = "https://localhost/webhook",
-                Status = AlertDispatchStatus.Pending,
-                Attempts = 0,
-                MaxAttempts = 3,
-                NextAttemptAt = DateTimeOffset.UtcNow
-            },
-            new AlertEventEnvelope
-            {
-                DedupeKey = "evt-1",
-                RuleId = 99,
-                ServiceId = "svc-1",
-                LayerId = 7,
-                ObjectId = 100,
-                TriggerType = AlertTriggerType.Enter,
-                Generation = 1,
-                Severity = AlertSeverity.Warning,
-                OccurredAt = DateTimeOffset.UtcNow,
-                PayloadJson = "{}"
-            });
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Webhook, destination: "https://localhost/webhook"),
+            AlertTestFixtures.CreateAlertEvent());
 
         Assert.False(result.Succeeded);
         Assert.False(result.Retryable);

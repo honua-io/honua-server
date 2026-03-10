@@ -92,6 +92,57 @@ public enum AlertChannelType
     /// Batched digest delivery.
     /// </summary>
     Digest = 4,
+
+    /// <summary>
+    /// AWS Simple Notification Service delivery.
+    /// </summary>
+    AwsSns = 5,
+
+    /// <summary>
+    /// Azure Event Grid delivery.
+    /// </summary>
+    AzureEventGrid = 6,
+
+    /// <summary>
+    /// Slack incoming webhook delivery.
+    /// </summary>
+    Slack = 7,
+
+    /// <summary>
+    /// Microsoft Teams incoming webhook delivery.
+    /// </summary>
+    MicrosoftTeams = 8,
+
+    /// <summary>
+    /// AWS Simple Queue Service delivery.
+    /// </summary>
+    AwsSqs = 9,
+
+    /// <summary>
+    /// Azure Event Hubs delivery.
+    /// </summary>
+    AzureEventHub = 10,
+}
+
+/// <summary>
+/// Incident lifecycle status for alert events, following the Started/Ongoing/Ended model.
+/// </summary>
+public enum AlertIncidentStatus
+{
+    /// <summary>
+    /// Initial observation that triggered the alert condition.
+    /// </summary>
+    Started = 1,
+
+    /// <summary>
+    /// Subsequent observations that continue to satisfy the alert condition.
+    /// </summary>
+    Ongoing = 2,
+
+    /// <summary>
+    /// Observation that no longer satisfies the alert condition (incident resolved).
+    /// </summary>
+    Ended = 3,
 }
 
 /// <summary>
@@ -399,6 +450,16 @@ public sealed record AlertEventEnvelope
     /// JSON payload used by downstream delivery sinks.
     /// </summary>
     public string PayloadJson { get; init; } = "{}";
+
+    /// <summary>
+    /// Incident lifecycle status (Started, Ongoing, Ended).
+    /// </summary>
+    public AlertIncidentStatus IncidentStatus { get; init; } = AlertIncidentStatus.Started;
+
+    /// <summary>
+    /// Duration of the incident in milliseconds from when it started.
+    /// </summary>
+    public long IncidentDurationMs { get; init; }
 }
 
 /// <summary>

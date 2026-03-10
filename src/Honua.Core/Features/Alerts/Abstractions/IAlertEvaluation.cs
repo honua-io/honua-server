@@ -50,6 +50,13 @@ public interface IAlertEditionPolicy
     /// <param name="channelType">Delivery channel</param>
     /// <returns>True when the channel is allowed</returns>
     bool IsChannelAllowed(AlertChannelType channelType);
+
+    /// <summary>
+    /// Returns true when the current server configuration can deliver the specified channel.
+    /// </summary>
+    /// <param name="channelType">Delivery channel</param>
+    /// <returns>True when the channel is configured for delivery</returns>
+    bool IsChannelConfigured(AlertChannelType channelType);
 }
 
 /// <summary>

@@ -36,7 +36,35 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         return _options.Edition switch
         {
             AlertEdition.Pro => channelType == AlertChannelType.Webhook,
-            AlertEdition.Enterprise => true,
+            AlertEdition.Enterprise => channelType is AlertChannelType.Webhook
+                or AlertChannelType.WebSocket
+                or AlertChannelType.Email
+                or AlertChannelType.Digest
+                or AlertChannelType.AwsSns
+                or AlertChannelType.AzureEventGrid
+                or AlertChannelType.Slack
+                or AlertChannelType.MicrosoftTeams
+                or AlertChannelType.AwsSqs
+                or AlertChannelType.AzureEventHub,
+            _ => false
+        };
+    }
+
+    public bool IsChannelConfigured(AlertChannelType channelType)
+    {
+        return channelType switch
+        {
+            AlertChannelType.Webhook => !string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookUrl),
+            AlertChannelType.WebSocket => false,
+            AlertChannelType.Email => _options.Dispatch.Email is { SmtpHost.Length: > 0, FromAddress.Length: > 0, DefaultRecipient.Length: > 0 },
+            AlertChannelType.Digest => !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookUrl),
+            AlertChannelType.AwsSns => !string.IsNullOrWhiteSpace(_options.Dispatch.AwsSns?.TopicArn),
+            AlertChannelType.AzureEventGrid => !string.IsNullOrWhiteSpace(_options.Dispatch.AzureEventGrid?.TopicEndpoint),
+            AlertChannelType.Slack => !string.IsNullOrWhiteSpace(_options.Dispatch.Slack?.WebhookUrl),
+            AlertChannelType.MicrosoftTeams => !string.IsNullOrWhiteSpace(_options.Dispatch.Teams?.WebhookUrl),
+            AlertChannelType.AwsSqs => !string.IsNullOrWhiteSpace(_options.Dispatch.AwsSqs?.QueueUrl),
+            AlertChannelType.AzureEventHub => !string.IsNullOrWhiteSpace(_options.Dispatch.AzureEventHub?.ConnectionString)
+                && !string.IsNullOrWhiteSpace(_options.Dispatch.AzureEventHub?.EventHubName),
             _ => false
         };
     }
