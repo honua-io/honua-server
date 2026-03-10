@@ -45,6 +45,7 @@ public sealed class CloudDeploymentValidationTests
     private const string PublishDbSslModeEnv = "HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE";
     private const string PublishDbSslRequiredEnv = "HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED";
     private const string ApiKeyHeader = "X-API-Key";
+    private const string ImportedGeoJsonGeometryType = "Point";
 
     [CloudTest(BaseUrlEnv)]
     [Operation(Operations.TestInfrastructure)]
@@ -626,8 +627,9 @@ public sealed class CloudDeploymentValidationTests
 
             return new ImportedTableHandle(
                 table.GetProperty("schema").GetString() ?? "public",
-                tableName,
+                table.GetProperty("table").GetString() ?? tableName,
                 geometryColumn!,
+                table.GetProperty("geometryType").GetString(),
                 primaryKey!,
                 fields);
         }
@@ -665,6 +667,7 @@ public sealed class CloudDeploymentValidationTests
             layerName = $"Cloud Validation {tableName}",
             description = "Cloud deployment validation imported layer",
             geometryColumn = table.GeometryColumn,
+            geometryType = ResolvePublishedGeometryType(table),
             primaryKey = table.PrimaryKey,
             fields = table.Fields,
             serviceName,
@@ -742,6 +745,17 @@ public sealed class CloudDeploymentValidationTests
         return !bool.TryParse(raw, out var parsed) || parsed;
     }
 
+    private static string ResolvePublishedGeometryType(ImportedTableHandle table)
+    {
+        if (!string.IsNullOrWhiteSpace(table.GeometryType) &&
+            !string.Equals(table.GeometryType, "GEOMETRY", StringComparison.OrdinalIgnoreCase))
+        {
+            return table.GeometryType;
+        }
+
+        return ImportedGeoJsonGeometryType;
+    }
+
     private static string ResolveDesiredRevision(string? currentRevision)
     {
         var configured = GetOptionalEnv(DeployDesiredRevisionEnv);
@@ -788,6 +802,7 @@ public sealed class CloudDeploymentValidationTests
         string Schema,
         string Table,
         string GeometryColumn,
+        string? GeometryType,
         string PrimaryKey,
         IReadOnlyList<string> Fields);
 
