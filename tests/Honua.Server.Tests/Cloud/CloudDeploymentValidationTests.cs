@@ -288,7 +288,7 @@ public sealed class CloudDeploymentValidationTests
         importProgress.GetProperty("failedFeatures").GetInt32().Should().Be(0);
 
         var connectionId = await CreateSecureConnectionAsync(client, tableName);
-        var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName);
+        var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName, timeout);
         var publishedLayer = await PublishImportedTableAsync(client, connectionId, importedTable, tableName);
         var featureCount = await QueryPublishedFeatureCountAsync(client, publishedLayer.ServiceName, publishedLayer.LayerId);
 
@@ -561,45 +561,73 @@ public sealed class CloudDeploymentValidationTests
         return $"{prefix}{tableName[..headLength]}-{tableName[^tailLength..]}";
     }
 
-    private static async Task<ImportedTableHandle> DiscoverImportedTableAsync(HttpClient client, Guid connectionId, string tableName)
+    private static async Task<ImportedTableHandle> DiscoverImportedTableAsync(
+        HttpClient client,
+        Guid connectionId,
+        string tableName,
+        TimeSpan timeout)
     {
-        using var request = CreateAdminRequest(HttpMethod.Get, $"/api/v1/admin/connections/{connectionId}/tables");
-        using var response = await client.SendAsync(request);
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
+        var deadline = DateTimeOffset.UtcNow.Add(timeout);
+        string? lastPayload = null;
+        HttpStatusCode? lastStatusCode = null;
 
-        using var document = JsonDocument.Parse(payload);
-        var table = document.RootElement
-            .GetProperty("tables")
-            .EnumerateArray()
-            .FirstOrDefault(candidate => string.Equals(candidate.GetProperty("table").GetString(), tableName, StringComparison.OrdinalIgnoreCase));
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var request = CreateAdminRequest(HttpMethod.Get, $"/api/v1/admin/connections/{connectionId}/tables");
+            using var response = await client.SendAsync(request);
+            var payload = await response.Content.ReadAsStringAsync();
+            lastPayload = payload;
+            lastStatusCode = response.StatusCode;
 
-        table.ValueKind.Should().NotBe(JsonValueKind.Undefined, $"imported table '{tableName}' should be discoverable for publishing");
+            if (response.StatusCode == HttpStatusCode.InternalServerError)
+            {
+                await Task.Delay(1000);
+                continue;
+            }
 
-        var geometryColumn = table.GetProperty("geometryColumn").GetString();
-        geometryColumn.Should().NotBeNullOrWhiteSpace();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
 
-        var primaryKey = table.GetProperty("columns")
-            .EnumerateArray()
-            .FirstOrDefault(column => column.GetProperty("isPrimaryKey").GetBoolean())
-            .GetProperty("name")
-            .GetString();
+            using var document = JsonDocument.Parse(payload);
+            var table = document.RootElement
+                .GetProperty("tables")
+                .EnumerateArray()
+                .FirstOrDefault(candidate => string.Equals(candidate.GetProperty("table").GetString(), tableName, StringComparison.OrdinalIgnoreCase));
 
-        primaryKey.Should().NotBeNullOrWhiteSpace();
+            if (table.ValueKind == JsonValueKind.Undefined)
+            {
+                await Task.Delay(1000);
+                continue;
+            }
 
-        var fields = table.GetProperty("columns")
-            .EnumerateArray()
-            .Select(column => column.GetProperty("name").GetString())
-            .OfType<string>()
-            .Where(column => !string.Equals(column, geometryColumn, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+            var geometryColumn = table.GetProperty("geometryColumn").GetString();
+            geometryColumn.Should().NotBeNullOrWhiteSpace();
 
-        return new ImportedTableHandle(
-            table.GetProperty("schema").GetString() ?? "public",
-            tableName,
-            geometryColumn!,
-            primaryKey!,
-            fields);
+            var primaryKey = table.GetProperty("columns")
+                .EnumerateArray()
+                .FirstOrDefault(column => column.GetProperty("isPrimaryKey").GetBoolean())
+                .GetProperty("name")
+                .GetString();
+
+            primaryKey.Should().NotBeNullOrWhiteSpace();
+
+            var fields = table.GetProperty("columns")
+                .EnumerateArray()
+                .Select(column => column.GetProperty("name").GetString())
+                .OfType<string>()
+                .Where(column => !string.Equals(column, geometryColumn, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            return new ImportedTableHandle(
+                table.GetProperty("schema").GetString() ?? "public",
+                tableName,
+                geometryColumn!,
+                primaryKey!,
+                fields);
+        }
+
+        throw new TimeoutException(
+            $"Imported table '{tableName}' was not discoverable within {timeout.TotalSeconds} seconds. " +
+            $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
     }
 
     private static async Task<PublishedLayerHandle> PublishImportedTableAsync(
