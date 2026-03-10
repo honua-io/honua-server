@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -12,7 +13,9 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.DependencyInjection;
@@ -92,7 +95,9 @@ internal sealed partial class TileOperationJobService(
 
     public async Task<IReadOnlyList<TileOperationProgress>> ListAsync(bool activeOnly, CancellationToken cancellationToken = default)
     {
-        var operationIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
+        var tileCacheIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
+        var archiveIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesArchive, cancellationToken).ConfigureAwait(false);
+        var operationIds = tileCacheIds.Concat(archiveIds).Distinct().ToList();
         var result = new List<TileOperationProgress>(operationIds.Count);
         foreach (var operationId in operationIds)
         {
@@ -220,6 +225,7 @@ internal sealed partial class TileOperationJobService(
                 "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
                 "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
                 "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
                 _ => started with
                 {
                     Status = OperationStatus.Failed,
@@ -409,6 +415,225 @@ internal sealed partial class TileOperationJobService(
         };
     }
 
+    private async Task<TileOperationProgress> ExecuteArchiveAsync(
+        TileOperationProgress progress,
+        TileOperationStartRequest request,
+        ILayerCatalog layerCatalog,
+        ITileProvider tileProvider,
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.TileMatrixSetId, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
+        }
+
+        if (!request.LayerId.HasValue)
+        {
+            throw new InvalidOperationException("Archive operations require a layerId.");
+        }
+
+        var layerId = request.LayerId.Value;
+
+        var tileCoordinates = BuildTileCoordinates(request);
+        if (tileCoordinates.Count == 0)
+        {
+            throw new InvalidOperationException("Archive operation produced no target tiles.");
+        }
+
+        var total = (long)tileCoordinates.Count;
+        var processed = 0L;
+        var successful = 0L;
+        var failed = 0L;
+        var warningList = new List<string>();
+
+        var current = progress with
+        {
+            TotalTiles = total,
+            CurrentPhase = "Generating tiles for archive"
+        };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+        // Phase 1: Collect all tiles for the single layer
+        var writer = new PMTilesWriter(tileCompression: PMTilesCompression.None);
+        foreach (var coordinate in tileCoordinates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var tileData = await tileProvider.GetMvtTileAsync(
+                    layerId,
+                    coordinate.X,
+                    coordinate.Y,
+                    coordinate.Z,
+                    query: null,
+                    _tileOptions,
+                    _tileLimits,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (tileData is { Length: > 0 })
+                {
+                    writer.AddTile(coordinate.Z, coordinate.X, coordinate.Y, tileData);
+                    successful++;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failed++;
+                if (warningList.Count < 20)
+                {
+                    warningList.Add($"Layer {layerId} tile {coordinate.Z}/{coordinate.X}/{coordinate.Y}: {ex.Message}");
+                }
+            }
+
+            processed++;
+            if (processed % 25 == 0 || processed == total)
+            {
+                current = current with
+                {
+                    ProcessedTiles = processed,
+                    SuccessfulTiles = successful,
+                    FailedTiles = failed,
+                    Warnings = warningList.ToArray(),
+                    CurrentPhase = $"Generating tiles ({processed}/{total})"
+                };
+                await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (processed > 0)
+        {
+            TileOperationMetrics.TileThroughput.Add(processed, new TagList { { "operation", "archive" } });
+        }
+
+        if (writer.TileCount == 0)
+        {
+            return current with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "No tiles were generated for the archive.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        // Phase 2: Write PMTiles archive
+        current = current with { CurrentPhase = "Writing PMTiles archive" };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+        var bbox = request.Bbox is { Length: 4 }
+            ? request.Bbox
+            : [-180d, -SpatialConstants.WebMercatorMaxLatitude, 180d, SpatialConstants.WebMercatorMaxLatitude];
+
+        var minZoom = Math.Clamp(request.MinZoom ?? _tileLimits.MinTileZoom, _tileLimits.MinTileZoom, _tileLimits.MaxTileZoom);
+        var maxZoom = Math.Clamp(request.MaxZoom ?? minZoom, minZoom, _tileLimits.MaxTileZoom);
+
+        var metadata = new PMTilesArchiveMetadata
+        {
+            MinLon = Math.Min(bbox[0], bbox[2]),
+            MinLat = Math.Min(bbox[1], bbox[3]),
+            MaxLon = Math.Max(bbox[0], bbox[2]),
+            MaxLat = Math.Max(bbox[1], bbox[3]),
+            MinZoom = minZoom,
+            MaxZoom = maxZoom
+        };
+
+        using var archiveStream = new MemoryStream();
+        var archiveSize = await writer.WriteAsync(archiveStream, metadata, cancellationToken).ConfigureAwait(false);
+        archiveStream.Position = 0;
+
+        // Phase 3: Upload archive
+        current = current with { CurrentPhase = "Uploading archive" };
+        await _progressStore.SetProgressAsync(current.JobId, current, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+
+        var cloudStorage = serviceProvider.GetService<ICloudFileStorage>();
+        if (cloudStorage == null)
+        {
+            return current with
+            {
+                ProcessedTiles = processed,
+                SuccessfulTiles = successful,
+                FailedTiles = failed,
+                ArchiveSizeBytes = archiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Warnings = warningList.ToArray(),
+                ErrorMessage = "Cloud storage is not configured. Archive operations require cloud storage.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
+        {
+            Content = archiveStream,
+            FileName = $"{current.JobId}.pmtiles",
+            ContentType = "application/vnd.pmtiles",
+            SizeBytes = archiveSize,
+            TimeToLive = TimeSpan.FromHours(24),
+            Folder = "pmtiles",
+            Metadata = ImmutableDictionary<string, string>.Empty
+                .Add("jobId", current.JobId)
+                .Add("operation", "archive")
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (!uploadResult.Success)
+        {
+            return current with
+            {
+                ProcessedTiles = processed,
+                SuccessfulTiles = successful,
+                FailedTiles = failed,
+                ArchiveSizeBytes = archiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Warnings = warningList.ToArray(),
+                ErrorMessage = $"Archive upload failed: {uploadResult.ErrorMessage ?? "unknown error"}.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var archiveFileId = uploadResult.File?.FileId;
+        if (string.IsNullOrWhiteSpace(archiveFileId))
+        {
+            return current with
+            {
+                ProcessedTiles = processed,
+                SuccessfulTiles = successful,
+                FailedTiles = failed,
+                ArchiveSizeBytes = archiveSize,
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Warnings = warningList.ToArray(),
+                ErrorMessage = "Archive upload succeeded but returned no file ID.",
+                CurrentPhase = "Failed"
+            };
+        }
+
+        var downloadUrl = await cloudStorage.GetPresignedUrlAsync(
+            archiveFileId,
+            TimeSpan.FromHours(24),
+            cancellationToken).ConfigureAwait(false);
+
+        TileOperationMetrics.ArchivesGenerated.Add(1);
+        TileOperationMetrics.ArchiveSizeBytes.Record(archiveSize);
+
+        var completedStatus = failed > 0 ? OperationStatus.Failed : OperationStatus.Completed;
+        return current with
+        {
+            ProcessedTiles = processed,
+            SuccessfulTiles = successful,
+            FailedTiles = failed,
+            ArchiveSizeBytes = archiveSize,
+            ArchiveFileId = archiveFileId,
+            DownloadUrl = downloadUrl,
+            Status = completedStatus,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Warnings = warningList.ToArray(),
+            ErrorMessage = failed > 0 ? $"{failed} tiles failed during generation." : null,
+            CurrentPhase = failed > 0 ? "Archive completed with failures" : "Archive generation completed"
+        };
+    }
+
     private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
         TileOperationStartRequest request,
         ILayerCatalog layerCatalog,
@@ -441,7 +666,7 @@ internal sealed partial class TileOperationJobService(
 
         var bbox = request.Bbox is { Length: 4 }
             ? request.Bbox
-            : [-180d, -85.05112878d, 180d, 85.05112878d];
+            : [-180d, -SpatialConstants.WebMercatorMaxLatitude, 180d, SpatialConstants.WebMercatorMaxLatitude];
 
         var minLon = Math.Min(bbox[0], bbox[2]);
         var maxLon = Math.Max(bbox[0], bbox[2]);
@@ -482,7 +707,7 @@ internal sealed partial class TileOperationJobService(
 
     private static int LatToTileY(double lat, int z, int n)
     {
-        var clampedLat = Math.Clamp(lat, -85.05112878d, 85.05112878d);
+        var clampedLat = Math.Clamp(lat, -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
         var latRad = clampedLat * Math.PI / 180d;
         var y = (int)Math.Floor(
             (1d - Math.Log(Math.Tan(latRad) + (1d / Math.Cos(latRad))) / Math.PI) / 2d * n);
@@ -492,9 +717,9 @@ internal sealed partial class TileOperationJobService(
     private static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
     {
         var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is not ("seed" or "warm" or "invalidate" or "purge"))
+        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive"))
         {
-            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge.", nameof(request));
+            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive.", nameof(request));
         }
 
         return request with
@@ -596,7 +821,9 @@ internal sealed partial class TileOperationJobService(
 
     private async Task<IReadOnlyList<string>> RecoverQueuedJobIdsAsync(CancellationToken cancellationToken)
     {
-        var activeOperationIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
+        var tileCacheIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.TileCache, cancellationToken).ConfigureAwait(false);
+        var archiveIds = await _progressStore.GetActiveOperationIdsAsync(OperationType.PMTilesArchive, cancellationToken).ConfigureAwait(false);
+        var activeOperationIds = tileCacheIds.Concat(archiveIds).Distinct().ToList();
         var recovered = new List<string>(activeOperationIds.Count);
 
         foreach (var jobId in activeOperationIds)
