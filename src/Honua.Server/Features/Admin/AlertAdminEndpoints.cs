@@ -143,7 +143,7 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
-        if (!ValidateEdition(editionPolicy, rule, out error))
+        if (!ValidateRuleExecution(editionPolicy, rule, out error))
         {
             return BadRequest(error);
         }
@@ -164,7 +164,7 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
-        if (!ValidateEdition(editionPolicy, rule, out error))
+        if (!ValidateRuleExecution(editionPolicy, rule, out error))
         {
             return BadRequest(error);
         }
@@ -293,7 +293,7 @@ internal static class AlertAdminEndpoints
         return true;
     }
 
-    private static bool ValidateEdition(IAlertEditionPolicy editionPolicy, AlertRuleDefinition rule, out string error)
+    private static bool ValidateRuleExecution(IAlertEditionPolicy editionPolicy, AlertRuleDefinition rule, out string error)
     {
         if (!editionPolicy.IsRuleAllowed(rule))
         {
@@ -306,6 +306,12 @@ internal static class AlertAdminEndpoints
             if (!editionPolicy.IsChannelAllowed(channel))
             {
                 error = $"The configured edition does not allow the '{channel}' delivery channel.";
+                return false;
+            }
+
+            if (!editionPolicy.IsChannelConfigured(channel))
+            {
+                error = $"The server is not configured to deliver the '{channel}' channel.";
                 return false;
             }
         }
@@ -342,7 +348,7 @@ internal static class AlertAdminEndpoints
             CooldownSeconds = rule.CooldownSeconds,
             Severity = rule.Severity.ToString().ToLowerInvariant(),
             EditionRequired = rule.EditionRequired.ToString().ToLowerInvariant(),
-            Channels = rule.Channels.Select(static channel => channel.ToString().ToLowerInvariant()).ToArray(),
+            Channels = rule.Channels.Select(static channel => channel.ToExternalName()).ToArray(),
             IsActive = rule.IsActive
         };
     }
@@ -442,7 +448,7 @@ internal static class AlertAdminEndpoints
                 continue;
             }
 
-            if (!Enum.TryParse<AlertChannelType>(value, true, out var channel))
+            if (!AlertChannelNames.TryParse(value, out var channel))
             {
                 channels = ImmutableArray<AlertChannelType>.Empty;
                 error = $"Unsupported channel '{value}'.";

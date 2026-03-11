@@ -109,4 +109,31 @@ public sealed class AlertDispatchOptions
     /// Delay when no dispatch work is available.
     /// </summary>
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Digest delivery settings.
+    /// </summary>
+    public DigestAlertOptions Digest { get; init; } = new();
+}
+
+/// <summary>
+/// Settings for batched digest alert delivery.
+/// </summary>
+public sealed class DigestAlertOptions
+{
+    /// <summary>
+    /// Webhook URL for digest delivery. If null, digest items are dead-lettered.
+    /// </summary>
+    public string? WebhookUrl { get; init; }
+
+    /// <summary>
+    /// Interval between digest flushes.
+    /// </summary>
+    public TimeSpan FlushInterval { get; init; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Maximum events per digest batch.
+    /// </summary>
+    [Range(1, 10000)]
+    public int MaxBatchSize { get; init; } = 50;
 }

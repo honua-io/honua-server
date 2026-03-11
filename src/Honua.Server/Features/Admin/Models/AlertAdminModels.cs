@@ -135,7 +135,7 @@ internal sealed class AlertRuleRequest
     public string EditionRequired { get; init; } = "pro";
 
     /// <summary>
-    /// Delivery channels (webhook|websocket|email|digest).
+    /// Delivery channels (webhook|websocket|email|digest|aws_sns|azure_eventgrid|slack|microsoft_teams|aws_sqs|azure_eventhub).
     /// </summary>
     public string[]? Channels { get; init; }
 

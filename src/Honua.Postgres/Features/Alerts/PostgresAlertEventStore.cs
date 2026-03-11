@@ -27,10 +27,10 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
         const string sql = """
             INSERT INTO honua.alert_events (
                 dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-                generation, severity, occurred_at, payload)
+                generation, severity, occurred_at, payload, incident_status, incident_duration_ms)
             VALUES (
                 @dedupe_key, @rule_id, @zone_id, @service_id, @layer_id, @objectid, @trigger_type,
-                @generation, @severity, @occurred_at, @payload::jsonb)
+                @generation, @severity, @occurred_at, @payload::jsonb, @incident_status, @incident_duration_ms)
             ON CONFLICT (dedupe_key) DO NOTHING
             RETURNING event_id
             """;
@@ -51,6 +51,8 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
         command.Parameters.AddWithValue("severity", NpgsqlDbType.Text, alertEvent.Severity.ToDbValue());
         command.Parameters.AddWithValue("occurred_at", NpgsqlDbType.TimestampTz, alertEvent.OccurredAt);
         command.Parameters.AddWithValue("payload", NpgsqlDbType.Text, alertEvent.PayloadJson);
+        command.Parameters.AddWithValue("incident_status", NpgsqlDbType.Smallint, alertEvent.IncidentStatus.ToDbValue());
+        command.Parameters.AddWithValue("incident_duration_ms", NpgsqlDbType.Bigint, alertEvent.IncidentDurationMs);
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is long eventId ? eventId : null;
@@ -60,7 +62,7 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
     {
         const string sql = """
             SELECT dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-                   generation, severity, occurred_at, payload
+                   generation, severity, occurred_at, payload, incident_status, incident_duration_ms
             FROM honua.alert_events
             WHERE event_id = @event_id
             """;
@@ -89,7 +91,9 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
             Generation = reader.GetInt64(7),
             Severity = AlertStoreConversions.ToSeverity(reader.GetString(8)),
             OccurredAt = reader.GetFieldValue<DateTimeOffset>(9),
-            PayloadJson = reader.IsDBNull(10) ? "{}" : reader.GetString(10)
+            PayloadJson = reader.IsDBNull(10) ? "{}" : reader.GetString(10),
+            IncidentStatus = AlertStoreConversions.ToIncidentStatus(reader.GetInt16(11)),
+            IncidentDurationMs = reader.GetInt64(12)
         };
     }
 }

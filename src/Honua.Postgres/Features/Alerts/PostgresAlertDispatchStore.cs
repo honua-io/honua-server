@@ -47,10 +47,28 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         }
     }
 
-    public async Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingAsync(
+    async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingAsync(
         int maxCount,
         DateTimeOffset now,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
+    {
+        return await ClaimPendingByChannelAsync(maxCount, now, AlertChannelType.Digest, excludeChannel: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingDigestAsync(
+        int maxCount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        return await ClaimPendingByChannelAsync(maxCount, now, AlertChannelType.Digest, excludeChannel: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingByChannelAsync(
+        int maxCount,
+        DateTimeOffset now,
+        AlertChannelType? channelType,
+        bool excludeChannel,
+        CancellationToken cancellationToken)
     {
         const string sql = """
             WITH claim AS (
@@ -58,6 +76,11 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                 FROM honua.alert_dispatch
                 WHERE status IN (0, 3)
                   AND next_attempt_at <= @now
+                  AND (
+                    @channel_type IS NULL
+                    OR (@exclude_channel = true AND channel_type <> @channel_type)
+                    OR (@exclude_channel = false AND channel_type = @channel_type)
+                  )
                 ORDER BY next_attempt_at, dispatch_id
                 FOR UPDATE SKIP LOCKED
                 LIMIT @max_count
@@ -79,6 +102,11 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 
         command.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
         command.Parameters.AddWithValue("max_count", NpgsqlDbType.Integer, maxCount);
+        command.Parameters.AddWithValue(
+            "channel_type",
+            NpgsqlDbType.Smallint,
+            channelType is null ? DBNull.Value : channelType.Value.ToDbValue());
+        command.Parameters.AddWithValue("exclude_channel", NpgsqlDbType.Boolean, excludeChannel);
 
         var rows = new List<AlertDispatchItem>(Math.Max(1, maxCount));
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))

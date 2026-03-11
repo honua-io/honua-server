@@ -21,6 +21,11 @@ internal static class AlertsServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();
+        services
+            .AddOptions<AlertDeliveryOptions>()
+            .Bind(configuration.GetSection(AlertDeliveryOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<AlertDeliveryOptions>, AlertDeliveryOptionsValidator>();
 
         services.AddScoped<IAlertPipeline, AlertPipeline>();
         services.AddScoped<IAlertEvaluator, DefaultAlertEvaluator>();
@@ -32,12 +37,7 @@ internal static class AlertsServiceCollectionExtensions
                 ? new SingleInstanceLeaderElectionStrategy()
                 : ActivatorUtilities.CreateInstance<PostgresAdvisoryLockLeaderElectionStrategy>(serviceProvider, dataSource);
         });
-        services.AddHttpClient("alerts-webhook");
-
-        services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
-        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.WebSocket));
-        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.Email));
-        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.Digest));
+        services.AddAlertDeliveryChannels(configuration);
 
         services.AddHostedService<AlertEvaluationBackgroundService>();
         services.AddHostedService<AlertDispatchBackgroundService>();

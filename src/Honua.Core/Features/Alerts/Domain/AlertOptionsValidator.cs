@@ -75,5 +75,22 @@ public sealed class AlertOptionsValidator : OptionsValidator<AlertOptions>
                 $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookUrl)}",
                 failures);
         }
+
+        ValidateDataAnnotations(options.Dispatch.Digest, failures, $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}");
+
+        if (!string.IsNullOrWhiteSpace(options.Dispatch.Digest.WebhookUrl))
+        {
+            ValidateOutboundHttpUrl(
+                options.Dispatch.Digest.WebhookUrl,
+                $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.WebhookUrl)}",
+                failures);
+        }
+
+        ValidateTimeSpan(
+            options.Dispatch.Digest.FlushInterval,
+            TimeSpan.FromSeconds(30),
+            TimeSpan.FromHours(24),
+            $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.FlushInterval)}",
+            failures);
     }
 }

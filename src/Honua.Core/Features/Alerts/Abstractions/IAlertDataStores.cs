@@ -188,6 +188,18 @@ public interface IAlertDispatchStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Claims eligible digest outbox jobs for batched processing.
+    /// </summary>
+    /// <param name="maxCount">Maximum jobs to claim</param>
+    /// <param name="now">Current timestamp</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Claimed digest dispatch jobs</returns>
+    Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingDigestAsync(
+        int maxCount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Marks a dispatch job as delivered.
     /// </summary>
     /// <param name="dispatchId">Dispatch identifier</param>
