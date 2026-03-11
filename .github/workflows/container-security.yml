@@ -44,7 +44,7 @@ jobs:
       # 2. BUILD IMAGE ONCE
       - name: Build container image for security testing
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
