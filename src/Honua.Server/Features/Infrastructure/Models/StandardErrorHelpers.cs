@@ -19,7 +19,7 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Bad Request response.</returns>
-    public static IResult CreateBadRequest(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateBadRequest(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.BadRequest(detail, additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
@@ -32,7 +32,7 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Unauthorized response.</returns>
-    public static IResult CreateUnauthorized(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateUnauthorized(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.Unauthorized(detail, additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
@@ -45,7 +45,7 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Forbidden response.</returns>
-    public static IResult CreateForbidden(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateForbidden(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.Forbidden(detail, additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
@@ -58,7 +58,7 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Not Found response.</returns>
-    public static IResult CreateNotFound(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateNotFound(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.NotFound(detail, additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
@@ -71,7 +71,7 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Conflict response.</returns>
-    public static IResult CreateConflict(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateConflict(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.Conflict(detail, additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
@@ -84,9 +84,26 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Internal Server Error response.</returns>
-    public static IResult CreateInternalServerError(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateInternalServerError(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.InternalServerError(detail, additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
+    /// Creates a Not Implemented error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Not Implemented response.</returns>
+    internal static IResult CreateNotImplemented(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status501NotImplemented,
+            "Not Implemented",
+            detail,
+            additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 
@@ -97,7 +114,7 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Not Acceptable response.</returns>
-    public static IResult CreateNotAcceptable(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateNotAcceptable(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = new StandardErrorResponse(
             StatusCodes.Status406NotAcceptable,
@@ -115,7 +132,7 @@ internal static class StandardErrorHelpers
     /// <param name="retryAfterSeconds">Optional retry-after seconds.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
     /// <returns>A protocol-specific Service Unavailable response.</returns>
-    public static IResult CreateServiceUnavailable(HttpContext context, string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateServiceUnavailable(HttpContext context, string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = StandardErrorResponse.ServiceUnavailable(detail, retryAfterSeconds, additionalDetails);
 
@@ -145,7 +162,7 @@ internal static class StandardErrorHelpers
     /// <param name="exception">The exception to convert to an error response.</param>
     /// <param name="includeDebugDetails">Whether to include debug details (typically only in Development).</param>
     /// <returns>A protocol-specific error response.</returns>
-    public static IResult CreateFromException(HttpContext context, Exception exception, bool includeDebugDetails = false)
+    internal static IResult CreateFromException(HttpContext context, Exception exception, bool includeDebugDetails = false)
     {
         var errorResponse = StandardErrorResponse.FromException(exception, includeDebugDetails);
 
@@ -178,7 +195,7 @@ internal static class StandardErrorHelpers
     /// <param name="context">The HTTP context for protocol detection.</param>
     /// <param name="validationException">The validation exception containing error details.</param>
     /// <returns>A protocol-specific validation error response.</returns>
-    public static IResult CreateValidationError(HttpContext context, ValidationException validationException)
+    internal static IResult CreateValidationError(HttpContext context, ValidationException validationException)
     {
         var errorResponse = StandardErrorResponse.BadRequest(
             validationException.Message,
@@ -194,7 +211,7 @@ internal static class StandardErrorHelpers
     /// <param name="parameterName">The name of the invalid parameter.</param>
     /// <param name="errorMessage">The error message (will be sanitized).</param>
     /// <returns>A protocol-specific query parameter error response.</returns>
-    public static IResult CreateQueryParameterError(HttpContext context, string parameterName, string errorMessage)
+    internal static IResult CreateQueryParameterError(HttpContext context, string parameterName, string errorMessage)
     {
         // Use ExceptionMapper's sanitization logic for query parameter errors
         var argumentException = new ArgumentException(errorMessage, parameterName);

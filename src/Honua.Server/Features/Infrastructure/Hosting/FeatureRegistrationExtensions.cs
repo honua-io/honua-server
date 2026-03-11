@@ -16,6 +16,7 @@ using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcMaps;
 using Honua.Server.Features.OgcTiles;
 using Honua.Server.Features.Tiles;
+using Honua.Server.Features.Wfs20;
 
 namespace Honua.Server.Features.Infrastructure.Hosting;
 
@@ -38,6 +39,7 @@ internal static class FeatureRegistrationExtensions
         services.AddMapServer();
         services.AddOgcFeatures();
         services.AddOgcMaps();
+        services.AddWfs20();
         services.AddOData();
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
@@ -65,6 +67,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
         endpoints.MapOgcTilesEndpoints();
+        endpoints.MapWfs20Endpoints();
         endpoints.MapODataEndpoints();
         endpoints.MapGeometryServiceEndpoints();
 

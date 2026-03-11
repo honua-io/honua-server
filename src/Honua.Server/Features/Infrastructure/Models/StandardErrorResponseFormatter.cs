@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.OData.Models;
@@ -24,7 +25,7 @@ internal static class StandardErrorResponseFormatter
     /// <param name="errorResponse">The standard error response to format.</param>
     /// <param name="options">Optional formatting options.</param>
     /// <returns>An IResult formatted for the detected protocol.</returns>
-    public static IResult FormatError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
+    internal static IResult FormatError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         options ??= new ErrorResponseFormatterOptions();
 
@@ -40,6 +41,11 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsOgc(path))
         {
             return FormatOgcError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWfs(path))
+        {
+            return FormatWfsError(context, errorResponse, options);
         }
 
         if (ProtocolRequestClassifier.IsAdmin(path))
@@ -63,7 +69,7 @@ internal static class StandardErrorResponseFormatter
     /// <param name="errorResponse">The standard error response to write.</param>
     /// <param name="options">Optional formatting options.</param>
     /// <returns>A Task representing the asynchronous write operation.</returns>
-    public static Task WriteErrorAsync(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
+    internal static Task WriteErrorAsync(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         var result = FormatError(context, errorResponse, options);
         return result.ExecuteAsync(context);
@@ -107,6 +113,29 @@ internal static class StandardErrorResponseFormatter
             statusCode: errorResponse.StatusCode,
             title: errorResponse.Title,
             detail: BuildDetailWithExtras(errorResponse, options));
+    }
+
+    /// <summary>
+    /// Formats error for WFS 2.0 protocol.
+    /// </summary>
+    private static IResult FormatWfsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="1.1.0">
+              <ows:Exception exceptionCode="{{EscapeForXml(MapWfsCode(errorResponse))}}">
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
+
+        return Results.Content(
+            xmlContent,
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
     }
 
     /// <summary>
@@ -279,6 +308,38 @@ internal static class StandardErrorResponseFormatter
         }
 
         return detailParts.Count > 0 ? string.Join(" ", detailParts) : errorResponse.Title;
+    }
+
+    private static string MapWfsCode(StandardErrorResponse errorResponse)
+    {
+        if (errorResponse.StatusCode == StatusCodes.Status501NotImplemented)
+        {
+            return "OperationNotSupported";
+        }
+
+        if (errorResponse.StatusCode == StatusCodes.Status400BadRequest)
+        {
+            if (!string.IsNullOrWhiteSpace(errorResponse.Detail) &&
+                errorResponse.Detail.Contains("missing", StringComparison.OrdinalIgnoreCase))
+            {
+                return "MissingParameterValue";
+            }
+
+            if (!string.IsNullOrWhiteSpace(errorResponse.Detail) &&
+                errorResponse.Detail.Contains("version", StringComparison.OrdinalIgnoreCase))
+            {
+                return "VersionNegotiationFailed";
+            }
+
+            return "InvalidParameterValue";
+        }
+
+        return "NoApplicableCode";
+    }
+
+    private static string EscapeForXml(string value)
+    {
+        return SecurityElement.Escape(value) ?? string.Empty;
     }
 
     /// <summary>

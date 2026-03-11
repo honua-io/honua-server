@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testConfig xmlns="http://www.occamlab.com/te/engine">
+    <organization>Honua Project</organization>
+    <standard>
+        <name>OGC Web Feature Service 2.0</name>
+        <version>2.0.0</version>
+        <specification>OGC 09-025r2</specification>
+    </standard>
+
+    <profiles>
+        <profile name="basic">
+            <description>Basic WFS 2.0 conformance testing (Core + Basic operations)</description>
+            <requirements>
+                <requirement>Core</requirement>
+                <requirement>BasicWFS</requirement>
+                <requirement>GetCapabilities</requirement>
+                <requirement>DescribeFeatureType</requirement>
+                <requirement>GetFeature</requirement>
+            </requirements>
+        </profile>
+
+        <profile name="transactional">
+            <description>WFS 2.0 Transactional operations testing</description>
+            <requirements>
+                <requirement>Core</requirement>
+                <requirement>BasicWFS</requirement>
+                <requirement>TransactionalWFS</requirement>
+                <requirement>Transaction</requirement>
+            </requirements>
+        </profile>
+
+        <profile name="full">
+            <description>Complete WFS 2.0 conformance testing</description>
+            <requirements>
+                <requirement>Core</requirement>
+                <requirement>BasicWFS</requirement>
+                <requirement>TransactionalWFS</requirement>
+                <requirement>GetPropertyValue</requirement>
+                <requirement>StoredQuery</requirement>
+                <requirement>StandardJoins</requirement>
+                <requirement>SpatialJoins</requirement>
+                <requirement>TemporalJoins</requirement>
+            </requirements>
+        </profile>
+    </profiles>
+
+    <testData>
+        <featureTypes>
+            <featureType>
+                <name>cite_test:poi</name>
+                <description>Points of interest test features</description>
+                <geometry>Point</geometry>
+                <properties>
+                    <property name="fid" type="string" required="true"/>
+                    <property name="name" type="string" required="true"/>
+                    <property name="category" type="string"/>
+                    <property name="description" type="string"/>
+                    <property name="created_date" type="datetime"/>
+                </properties>
+            </featureType>
+
+            <featureType>
+                <name>cite_test:admin_boundaries</name>
+                <description>Administrative boundary test features</description>
+                <geometry>Polygon</geometry>
+                <properties>
+                    <property name="fid" type="string" required="true"/>
+                    <property name="name" type="string" required="true"/>
+                    <property name="admin_level" type="integer"/>
+                    <property name="area_km2" type="decimal"/>
+                    <property name="population" type="integer"/>
+                    <property name="created_date" type="datetime"/>
+                </properties>
+            </featureType>
+
+            <featureType>
+                <name>cite_test:transport_lines</name>
+                <description>Transportation line test features</description>
+                <geometry>LineString</geometry>
+                <properties>
+                    <property name="fid" type="string" required="true"/>
+                    <property name="name" type="string"/>
+                    <property name="transport_type" type="string"/>
+                    <property name="length_km" type="decimal"/>
+                    <property name="created_date" type="datetime"/>
+                </properties>
+            </featureType>
+        </featureTypes>
+
+        <spatialExtent>
+            <minx>-122.5</minx>
+            <miny>37.7</miny>
+            <maxx>-122.4</maxx>
+            <maxy>37.8</maxy>
+            <srs>EPSG:4326</srs>
+        </spatialExtent>
+    </testData>
+
+    <testParameters>
+        <parameter name="serviceUrl">http://honua-server:8080/wfs</parameter>
+        <parameter name="capabilitiesUrl">http://honua-server:8080/wfs?service=WFS&amp;version=2.0.0&amp;request=GetCapabilities</parameter>
+        <parameter name="version">2.0.0</parameter>
+        <parameter name="outputFormat">application/gml+xml; version=3.2</parameter>
+        <parameter name="maxFeatures">100</parameter>
+        <parameter name="timeout">60</parameter>
+    </testParameters>
+
+    <validation>
+        <schemaValidation enabled="true"/>
+        <conformanceClasses>
+            <class>Core</class>
+            <class>BasicWFS</class>
+            <class>TransactionalWFS</class>
+        </conformanceClasses>
+    </validation>
+</testConfig>

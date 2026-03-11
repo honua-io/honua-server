@@ -17,6 +17,9 @@ public static class ServiceProtocols
     /// <summary>OGC API Features protocol.</summary>
     public const string OgcFeatures = "OgcFeatures";
 
+    /// <summary>OGC Web Feature Service 2.0 protocol.</summary>
+    public const string Wfs20 = "Wfs20";
+
     /// <summary>OData v4 protocol.</summary>
     public const string OData = "OData";
 
@@ -26,7 +29,7 @@ public static class ServiceProtocols
     /// <summary>
     /// All supported protocol identifiers.
     /// </summary>
-    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, OData, Grpc];
+    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, Wfs20, OData, Grpc];
 
     /// <summary>
     /// Checks whether a protocol is enabled for a service based on its metadata.

@@ -93,4 +93,9 @@ public static class Protocols
     /// gRPC/gRPC-Web protocol.
     /// </summary>
     public const string Grpc = "Grpc";
+
+    /// <summary>
+    /// OGC WFS 2.0 protocol.
+    /// </summary>
+    public const string Wfs20 = "WFS-2.0";
 }

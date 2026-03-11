@@ -235,6 +235,9 @@ public static class HonuaTelemetry
 
         /// <summary>Geometry service operations (buffer, simplify, project).</summary>
         public const string GeometryService = "GeometryService";
+
+        /// <summary>OGC Web Feature Service 2.0.</summary>
+        public const string Wfs20 = "WFS-2.0";
     }
 
     /// <summary>
