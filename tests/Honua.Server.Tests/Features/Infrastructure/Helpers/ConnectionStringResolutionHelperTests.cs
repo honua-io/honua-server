@@ -1,0 +1,55 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Microsoft.Extensions.Configuration;
+
+namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
+
+public sealed class ConnectionStringResolutionHelperTests
+{
+    [Fact]
+    public async Task ResolveDefaultConnectionStringAsync_WhenSecretResolverCanResolve_ReturnsResolvedValue()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "aws:secretsmanager:test-db"
+            })
+            .Build();
+        var resolver = new StubConnectionSecretResolver("aws:secretsmanager:test-db", "Host=resolved;Database=honua;Username=test;Password=secret");
+
+        var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(configuration, resolver);
+
+        connectionString.Should().Be("Host=resolved;Database=honua;Username=test;Password=secret");
+    }
+
+    [Fact]
+    public async Task ResolveDefaultConnectionStringAsync_WhenResolverCannotResolve_ReturnsOriginalValue()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+            })
+            .Build();
+        var resolver = new StubConnectionSecretResolver("aws:secretsmanager:test-db", "Host=resolved;Database=honua;Username=test;Password=secret");
+
+        var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(configuration, resolver);
+
+        connectionString.Should().Be("Host=localhost;Database=test;Username=test;Password=test");
+    }
+
+    private sealed class StubConnectionSecretResolver(string secretRef, string resolvedConnectionString) : IConnectionSecretResolver
+    {
+        public Task<string> ResolveConnectionStringAsync(string candidate, CancellationToken cancellationToken = default)
+            => Task.FromResult(candidate == secretRef ? resolvedConnectionString : candidate);
+
+        public Task<bool> CanResolveSecretAsync(string candidate, CancellationToken cancellationToken = default)
+            => Task.FromResult(candidate == secretRef);
+
+        public string[] GetSupportedProviders() => ["aws"];
+    }
+}
