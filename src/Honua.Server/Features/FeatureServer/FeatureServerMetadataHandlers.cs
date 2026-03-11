@@ -109,7 +109,11 @@ internal static partial class FeatureServerEndpoints
         {
             FeatureServerLog.ServiceMetadataRequested(logger, service.Name);
 
-            FeatureServerResponse response = MapServiceToResponse(service, limits);
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            FeatureServerResponse response = MapServiceToResponse(
+                service,
+                limits,
+                supportsGeobufOutput: featureReader is IGeobufFeatureStore);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Name, response.Layers.Length);
 
@@ -221,7 +225,13 @@ internal static partial class FeatureServerEndpoints
                 drawingInfo = await styleService.GetDrawingInfoAsync(layer, cancellationToken).ConfigureAwait(false);
             }
 
-            LayerResponse response = MapLayerToResponse(service, layer, limits, timeInfo, drawingInfo);
+            LayerResponse response = MapLayerToResponse(
+                service,
+                layer,
+                limits,
+                timeInfo,
+                drawingInfo,
+                supportsGeobufOutput: featureReader is IGeobufFeatureStore);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, layer.Id, layer.Name);
 

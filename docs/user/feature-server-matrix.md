@@ -194,7 +194,7 @@ MapServer coverage is tracked separately:
 | `spatialReference` | Implemented | From service definition. |
 | `initialExtent` / `fullExtent` | Implemented | From service effective extent. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized to uppercase. |
+| `supportedQueryFormats` | Implemented | Normalized to uppercase and augmented with runtime-supported binary formats (`PBF`, `FGB`, and `GEOBUF` when the backing store exposes native GeoBuf output). |
 | `supportsAdvancedQueries` | Implemented | From service definition. |
 | `supportsStatistics` | Implemented | Always true. |
 | `objectIdField` | Implemented | Resolved from layer primary keys or defaults to `objectid`. |
@@ -226,4 +226,4 @@ MapServer coverage is tracked separately:
 | `templates` | Implemented | Empty array (no feature templates configured). |
 | `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized format list. |
+| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, and conditional `GEOBUF`). |

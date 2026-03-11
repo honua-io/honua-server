@@ -283,6 +283,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         serviceResponse.Layers.Should().NotBeNull();
         serviceResponse.MaxRecordCount.Should().BeGreaterThan(0);
         serviceResponse.SupportedQueryFormats.Should().NotBeEmpty();
+        serviceResponse.SupportedQueryFormats.Should().Contain("PBF");
+        serviceResponse.SupportedQueryFormats.Should().Contain("FGB");
+        serviceResponse.SupportedQueryFormats.Should().Contain("GEOBUF");
         serviceResponse.Capabilities.Should().NotBeNullOrEmpty();
     }
 
@@ -356,6 +359,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         layerResponse.ObjectIdField.Should().NotBeNullOrEmpty();
         layerResponse.MaxRecordCount.Should().BeGreaterThan(0);
         layerResponse.SupportedQueryFormats.Should().NotBeEmpty();
+        layerResponse.SupportedQueryFormats.Should().Contain("PBF");
+        layerResponse.SupportedQueryFormats.Should().Contain("FGB");
+        layerResponse.SupportedQueryFormats.Should().Contain("GEOBUF");
         layerResponse.Capabilities.Should().NotBeNullOrEmpty();
 
         // Validate fields structure

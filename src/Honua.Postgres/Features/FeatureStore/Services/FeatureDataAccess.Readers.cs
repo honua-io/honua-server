@@ -106,15 +106,19 @@ internal sealed partial class FeatureDataAccess
                 for (var i = 3; i < reader.FieldCount; i++)
                 {
                     var fieldName = reader.GetName(i);
-                    if (fieldName.Equals("total_count", StringComparison.OrdinalIgnoreCase))
+                    if (fieldName.Equals(FeatureQueryEncoding.InternalTotalCountColumn, StringComparison.OrdinalIgnoreCase))
                     {
-                        attributesDictionary["total_count"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<long>(i);
+                        attributesDictionary[FeatureQueryEncoding.InternalTotalCountColumn] = reader.IsDBNull(i)
+                            ? null
+                            : reader.GetFieldValue<long>(i);
                         continue;
                     }
 
-                    if (fieldName.Equals("distance", StringComparison.OrdinalIgnoreCase))
+                    if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
                     {
-                        attributesDictionary["distance"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<double>(i);
+                        attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(i)
+                            ? null
+                            : reader.GetFieldValue<double>(i);
                     }
                 }
             }

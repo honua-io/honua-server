@@ -67,6 +67,10 @@ internal sealed class FeatureServerQueryExecutor
         {
             throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
         }
+        catch (NpgsqlException ex)
+        {
+            throw new InvalidOperationException($"Query execution failed: {ex.Message}");
+        }
     }
 
     public async Task<byte[]?> QueryFlatGeobufWithValidationAsync(
@@ -89,6 +93,10 @@ internal sealed class FeatureServerQueryExecutor
         catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
             throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+        }
+        catch (NpgsqlException ex)
+        {
+            throw new InvalidOperationException($"Query execution failed: {ex.Message}");
         }
     }
 
@@ -117,6 +125,10 @@ internal sealed class FeatureServerQueryExecutor
         catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
             throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+        }
+        catch (NpgsqlException ex)
+        {
+            throw new InvalidOperationException($"Query execution failed: {ex.Message}");
         }
     }
 
