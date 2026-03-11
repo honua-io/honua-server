@@ -43,6 +43,11 @@ curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=populati
 curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=geojson"
 ```
 
+**GeoBuf output:**
+```bash
+curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=geobuf" --output features.geobuf
+```
+
 **Example response (trimmed):**
 ```json
 {
@@ -88,6 +93,16 @@ curl "http://localhost:8080/rest/services/1/MapServer/identify?geometry=-122.41,
 
 ```bash
 curl "http://localhost:8080/rest/services/1/MapServer/legend?f=json"
+```
+
+### **Generate KML / KMZ**
+
+```bash
+curl "http://localhost:8080/rest/services/1/MapServer/generateKml?f=kml" --output map.kml
+```
+
+```bash
+curl "http://localhost:8080/rest/services/1/MapServer/generateKml?f=kmz" --output map.kmz
 ```
 
 ---

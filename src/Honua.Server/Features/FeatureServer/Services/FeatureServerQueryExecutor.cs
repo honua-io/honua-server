@@ -32,6 +32,8 @@ internal sealed class FeatureServerQueryExecutor
         _streamingFormatter = streamingFormatter ?? throw new ArgumentNullException(nameof(streamingFormatter));
     }
 
+    public bool SupportsGeobufOutput => _featureReader is IGeobufFeatureStore;
+
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.CountAsync(layerId, query, cancellationToken);
 
@@ -75,6 +77,34 @@ internal sealed class FeatureServerQueryExecutor
         try
         {
             return await _featureReader.QueryFlatGeobufAsync(layerId, query, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException($"Invalid query: {ex.Message}");
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+        }
+        catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
+        {
+            throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+        }
+    }
+
+    public async Task<byte[]?> QueryGeobufWithValidationAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_featureReader is not IGeobufFeatureStore geobufFeatureStore)
+            {
+                throw new InvalidOperationException("Geobuf output is not supported by the configured feature store.");
+            }
+
+            return await geobufFeatureStore.QueryGeobufAsync(layerId, query, cancellationToken);
         }
         catch (ArgumentException ex)
         {

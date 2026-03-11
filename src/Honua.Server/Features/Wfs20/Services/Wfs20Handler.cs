@@ -1186,18 +1186,35 @@ internal sealed class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var features = new List<GeoJsonFeature>();
+        var geoJsonFeatureStore = _featureReader as IGeoJsonFeatureStore;
 
         foreach (var plan in planSet.Plans)
         {
-            var result = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
-            foreach (var feature in result.Items)
+            if (geoJsonFeatureStore is not null)
+            {
+                var result = await geoJsonFeatureStore.QueryGeoJsonAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
+                foreach (var feature in result.Items)
+                {
+                    features.Add(new GeoJsonFeature
+                    {
+                        Id = BuildFeatureId(plan.Descriptor, feature.Id),
+                        Geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, AxisOrder.EastNorth),
+                        Properties = BuildGeoJsonProperties(feature.Attributes, plan.Descriptor.Layer, plan.Query)
+                    });
+                }
+
+                continue;
+            }
+
+            var fallbackResult = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
+            foreach (var feature in fallbackResult.Items)
             {
                 var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, AxisOrder.EastNorth);
                 features.Add(new GeoJsonFeature
                 {
                     Id = BuildFeatureId(plan.Descriptor, feature.Id),
                     Geometry = geometry,
-                    Properties = BuildGeoJsonProperties(feature, plan.Descriptor.Layer, plan.Query)
+                    Properties = BuildGeoJsonProperties(feature.Attributes, plan.Descriptor.Layer, plan.Query)
                 });
             }
         }
@@ -1386,14 +1403,14 @@ internal sealed class Wfs20Handler
         => $"{descriptor.LocalName}.{featureId.ToString(CultureInfo.InvariantCulture)}";
 
     private static Dictionary<string, object?> BuildGeoJsonProperties(
-        Feature feature,
+        ImmutableDictionary<string, object?> attributes,
         LayerDefinition layer,
         FeatureQuery query)
     {
         var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in GetProjectedAttributeFields(layer, query))
         {
-            if (feature.Attributes.TryGetValue(field.Name, out var value))
+            if (attributes.TryGetValue(field.Name, out var value))
             {
                 properties[field.Name] = value;
             }

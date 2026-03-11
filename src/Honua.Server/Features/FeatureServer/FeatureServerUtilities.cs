@@ -203,7 +203,7 @@ internal static partial class FeatureServerEndpoints
     private static class SupportedFormats
     {
         public static readonly FrozenSet<string> Query =
-            new[] { "json", "pjson", "geojson", "pbf", "fgb" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "json", "pjson", "geojson", "pbf", "fgb", "geobuf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -599,6 +599,12 @@ internal static partial class FeatureServerEndpoints
                     mediaType.Equals("application/flatgeobuf", StringComparison.OrdinalIgnoreCase))
                 {
                     format = "fgb";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/geobuf", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "geobuf";
                     return true;
                 }
 

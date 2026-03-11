@@ -38,9 +38,33 @@ internal interface IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>
+    /// Builds a provider-native Geobuf query.
+    /// </summary>
+    ParameterizedQuery BuildSelectGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
     /// Builds a SELECT query for GML features
     /// </summary>
     ParameterizedQuery BuildSelectGmlQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a SELECT query for GeoJSON-encoded features.
+    /// </summary>
+    ParameterizedQuery BuildSelectGeoJsonQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds a SELECT query for KML features.
+    /// </summary>
+    ParameterizedQuery BuildSelectKmlQuery(
         int layerId,
         FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
@@ -65,6 +89,22 @@ internal interface IFeatureQueryBuilder
     /// Builds an optimized GML query with window functions for pagination
     /// </summary>
     ParameterizedQuery BuildOptimizedSelectGmlQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds an optimized GeoJSON query with window functions for pagination.
+    /// </summary>
+    ParameterizedQuery BuildOptimizedSelectGeoJsonQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds an optimized KML query with window functions for pagination.
+    /// </summary>
+    ParameterizedQuery BuildOptimizedSelectKmlQuery(
         int layerId,
         FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);

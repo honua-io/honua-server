@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
@@ -225,6 +226,63 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 ALTER TABLE {_testSchema}.features ALTER COLUMN attributes SET NOT NULL;
                 """);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryGeoJsonAsync_WithObjectIdFilter_ReturnsGeoJsonGeometry()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326
+        };
+
+        var result = await ((IGeoJsonFeatureStore)store).QueryGeoJsonAsync(PointsLayerId, query, CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].GeometryGeoJson.Should().Contain("\"type\":\"Point\"");
+        result.Items[0].Attributes.Should().ContainKey("objectid");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryKmlAsync_WithObjectIdFilter_ReturnsKmlGeometry()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326
+        };
+
+        var result = await ((IKmlFeatureStore)store).QueryKmlAsync(PointsLayerId, query, CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].GeometryKml.Should().Contain("<Point>");
+        result.Items[0].GeometryKml.Should().Contain("<coordinates>");
+        result.Items[0].Attributes.Should().ContainKey("objectid");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryGeobufAsync_WithObjectIdFilter_ReturnsPayload()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326
+        };
+
+        var payload = await ((IGeobufFeatureStore)store).QueryGeobufAsync(PointsLayerId, query, CancellationToken.None);
+
+        payload.Should().NotBeNull();
+        payload.Should().NotBeEmpty();
     }
 
     [IntegrationTest]

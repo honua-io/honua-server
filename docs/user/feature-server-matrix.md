@@ -106,7 +106,7 @@ MapServer coverage is tracked separately:
 | Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
 | KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. |
 | Temporal | `time`, `timeRelation` | Implemented | Uses layer timeInfo or first temporal field. |
-| Output format | `f=json`, `f=geojson` | Partial | `f=pbf` rejected. |
+| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf` | Implemented | `f=fgb` and `f=geobuf` return binary payloads; `f=geobuf` requires a store with native GeoBuf support. |
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
 
 ### Not implemented (explicitly rejected)

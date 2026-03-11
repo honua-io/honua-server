@@ -82,6 +82,33 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
+    public async Task QueryGeobufWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IGeobufFeatureStore>();
+        ((IGeobufFeatureStore)featureReader).QueryGeobufAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new ArgumentException("Invalid where clause")));
+
+        var sut = CreateSut(featureReader);
+
+        Func<Task> act = () => sut.QueryGeobufWithValidationAsync(1, default, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Invalid query:*");
+    }
+
+    [Fact]
+    public async Task QueryGeobufWithValidationAsync_WhenStoreNotSupported_ThrowsInvalidOperationException()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var sut = CreateSut(featureReader);
+
+        Func<Task> act = () => sut.QueryGeobufWithValidationAsync(1, default, CancellationToken.None);
+
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>()
+            .WithMessage("Geobuf output is not supported by the configured feature store.");
+    }
+
+    [Fact]
     public async Task StreamQueryAsync_WithPagedQuery_UsesLimitProbeInsteadOfCount()
     {
         var featureReader = Substitute.For<IFeatureReader>();

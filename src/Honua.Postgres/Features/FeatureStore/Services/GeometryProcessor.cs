@@ -41,6 +41,32 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         return $"ST_AsGML(3, {baseGeometry}, 15, 1)";
     }
 
+    public string GetGeometryGeoJsonExpression(CoreGeometryStorageType storageType, FeatureQuery query)
+    {
+        var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
+
+        if (query.OutputSrid.HasValue &&
+            (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+        {
+            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+        }
+
+        return $"ST_AsGeoJSON({baseGeometry}, 15, 0)";
+    }
+
+    public string GetGeometryKmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)
+    {
+        var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
+
+        if (query.OutputSrid.HasValue &&
+            (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+        {
+            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+        }
+
+        return $"ST_AsKML({baseGeometry}, 15)";
+    }
+
     public string GetGeometryWriteExpression(CoreGeometryStorageType storageType, string parameterName, int? layerSrid)
     {
         return storageType switch

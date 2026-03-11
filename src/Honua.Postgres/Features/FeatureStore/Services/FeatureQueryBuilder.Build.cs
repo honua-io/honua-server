@@ -97,6 +97,68 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    public CoreParameterizedQuery BuildSelectGeoJsonQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+
+            BuildGeoJsonSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    public CoreParameterizedQuery BuildSelectKmlQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+
+            BuildKmlSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildCountQuery(
         int layerId,
         FeatureQuery query,
@@ -212,6 +274,66 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    public CoreParameterizedQuery BuildSelectGeobufQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var geometrySelect = _geometryProcessor.GetGeometryOperand(
+                geometryStorageType,
+                layerSrid: query.SpatialReferenceSrid);
+
+            if (query.OutputSrid.HasValue &&
+                (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+            {
+                geometrySelect = $"ST_Transform({geometrySelect}, {query.OutputSrid.Value})";
+            }
+
+            sql.Append("SELECT ST_AsGeobuf(q, 'geometry') FROM (SELECT ");
+            sql.Append(DatabaseSchema.ObjectIdColumn);
+            sql.Append(", ");
+            sql.Append(geometrySelect);
+            sql.Append(" AS geometry, ");
+
+            if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+            {
+                for (var i = 0; i < query.OutFields.Value.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        sql.Append(", ");
+                    }
+
+                    sql.Append(CultureInfo.InvariantCulture, $"attributes->> ${paramIndex++} AS \"{query.OutFields.Value[i]}\"");
+                    parameters.Add(query.OutFields.Value[i]);
+                }
+            }
+            else
+            {
+                sql.Append("attributes::text AS attributes");
+            }
+
+            sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            AppendPagination(sql, false, query, null, ref paramIndex);
+            sql.Append(") q");
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildOptimizedSelectQuery(
         int layerId,
         FeatureQuery query,
@@ -267,6 +389,92 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var parameters = new List<object>();
 
             var geometrySelect = _geometryProcessor.GetGeometryGmlExpression(geometryStorageType, query);
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+                SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as total_count
+                FROM {_tableName}
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    public CoreParameterizedQuery BuildOptimizedSelectGeoJsonQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+
+            var geometrySelect = _geometryProcessor.GetGeometryGeoJsonExpression(geometryStorageType, query);
+
+            sql.Append(CultureInfo.InvariantCulture, $@"
+                SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as total_count
+                FROM {_tableName}
+                WHERE {DatabaseSchema.LayerIdColumn} = $1");
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
+    public CoreParameterizedQuery BuildOptimizedSelectKmlQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+
+            var geometrySelect = _geometryProcessor.GetGeometryKmlExpression(geometryStorageType, query);
 
             sql.Append(CultureInfo.InvariantCulture, $@"
                 SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect} AS geometry, {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as total_count

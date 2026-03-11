@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.Wfs20;
 
@@ -65,5 +66,24 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("ExceptionReport");
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("DescribeFeatureType requires XML-based formats");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_GetFeature_GeoJsonOutput_ReturnsFeatureCollection()
+    {
+        const string outputFormat = "application/geo%2Bjson";
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&OUTPUTFORMAT={outputFormat}&COUNT=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        document.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
+        document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
     }
 }

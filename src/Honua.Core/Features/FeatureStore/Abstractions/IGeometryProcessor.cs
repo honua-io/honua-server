@@ -21,6 +21,16 @@ internal interface IGeometryProcessor
     string GetGeometryGmlExpression(GeometryStorageType storageType, FeatureQuery query);
 
     /// <summary>
+    /// Gets the SQL expression for selecting GeoJSON geometry.
+    /// </summary>
+    string GetGeometryGeoJsonExpression(GeometryStorageType storageType, FeatureQuery query);
+
+    /// <summary>
+    /// Gets the SQL expression for selecting KML geometry.
+    /// </summary>
+    string GetGeometryKmlExpression(GeometryStorageType storageType, FeatureQuery query);
+
+    /// <summary>
     /// Gets the SQL expression for writing/inserting geometry
     /// </summary>
     string GetGeometryWriteExpression(GeometryStorageType storageType, string parameterName, int? layerSrid);
