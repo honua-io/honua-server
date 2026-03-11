@@ -196,7 +196,7 @@ jobs:
           terraform show -json tfplan.binary > tfplan.json
 
       - name: Upload AWS Plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aws-terraform-plan
           path: infrastructure/terraform/environments/aws-dev/tfplan.*
@@ -232,7 +232,7 @@ jobs:
           terraform show -json tfplan.binary > tfplan.json
 
       - name: Upload Azure Plan
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: azure-terraform-plan
           path: infrastructure/terraform/environments/azure-dev/tfplan.*
