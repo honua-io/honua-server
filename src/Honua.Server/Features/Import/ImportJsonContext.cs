@@ -19,6 +19,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(ImportLimits))]
 [JsonSerializable(typeof(ImportStatus))]
 [JsonSerializable(typeof(BackgroundImportResponse))]
+[JsonSerializable(typeof(PreviewUrlImportRequest))]
+[JsonSerializable(typeof(ImportUrlImportRequest))]
 [JsonSerializable(typeof(ImportProgress[]))]
 [JsonSerializable(typeof(CancelUploadResponse))]
 [JsonSerializable(typeof(CancelImportJobResponse))]

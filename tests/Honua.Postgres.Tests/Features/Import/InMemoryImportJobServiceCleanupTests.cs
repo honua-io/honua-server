@@ -62,6 +62,31 @@ public sealed class InMemoryImportJobServiceCleanupTests
         newest.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task QueueImportAsync_WithLocalFilePath_DeletesStagedFileAfterCompletion()
+    {
+        var importService = new FakeFileImportService();
+        var performanceMonitor = new NoopPerformanceMonitor();
+        var logger = NullLogger<InMemoryImportJobService>.Instance;
+        using var jobService = new InMemoryImportJobService(importService, performanceMonitor, logger);
+
+        var tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-local-import-{Guid.NewGuid():N}.geojson");
+        await File.WriteAllTextAsync(tempFilePath, "{\"type\":\"FeatureCollection\",\"features\":[]}");
+
+        var request = new ImportRequest
+        {
+            LocalFilePath = tempFilePath,
+            FileName = "local-file.geojson",
+            TableName = "import_local",
+            TargetSrid = 4326
+        };
+
+        _ = await jobService.QueueImportAsync(request, fileSize: new FileInfo(tempFilePath).Length);
+        await WaitForCompletionAsync(jobService, TimeSpan.FromSeconds(30));
+
+        File.Exists(tempFilePath).Should().BeFalse();
+    }
+
     private static async Task WaitForCompletionAsync(InMemoryImportJobService jobService, TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);

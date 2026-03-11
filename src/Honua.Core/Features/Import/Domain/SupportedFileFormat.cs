@@ -54,5 +54,10 @@ public enum SupportedFileFormat
     /// <summary>
     /// Tiny Well-Known Binary format (.twkb)
     /// </summary>
-    TinyWkb
+    TinyWkb,
+
+    /// <summary>
+    /// Esri File Geodatabase format (.gdb)
+    /// </summary>
+    FileGdb
 }

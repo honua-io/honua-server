@@ -83,7 +83,11 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         string? tempFilePath = null;
         var backgroundRequest = request;
 
-        if (!request.UsesCloudStorage)
+        if (request.UsesLocalFile)
+        {
+            tempFilePath = request.LocalFilePath;
+        }
+        else if (!request.UsesCloudStorage)
         {
             // Copy stream to a temp file for background processing
             // In production, you'd want to save to durable storage

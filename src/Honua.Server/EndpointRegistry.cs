@@ -77,7 +77,9 @@ public static class EndpointRegistry
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),
         new("POST", "/api/v1/admin/import/preview"),
+        new("POST", "/api/v1/admin/import/preview-url"),
         new("POST", "/api/v1/admin/import/upload"),
+        new("POST", "/api/v1/admin/import/upload-url"),
         new("GET", "/api/v1/admin/import/uploads/{uploadId}/progress"),
         new("POST", "/api/v1/admin/import/uploads/{uploadId}/cancel"),
         new("GET", "/api/v1/admin/import/uploads"),

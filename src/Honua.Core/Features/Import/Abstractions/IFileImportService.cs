@@ -87,4 +87,9 @@ public sealed record FilePreview
     /// Available layers (for multi-layer formats like GeoPackage)
     /// </summary>
     public string[] AvailableLayers { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Warnings about advanced constructs or unsupported features detected during preview
+    /// </summary>
+    public string[] Warnings { get; init; } = Array.Empty<string>();
 }
