@@ -1,0 +1,48 @@
+name: Parity Scorecard Governance
+
+on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'tests/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
+      - 'tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
+      - 'scripts/check-parity-scorecard-regression.sh'
+      - 'scripts/check-parity-scorecard-baseline-sync.sh'
+      - '.github/workflows/geoservices-parity-nightly.yml'
+      - '.github/workflows/parity-scorecard-governance.yml'
+  push:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'tests/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
+      - 'tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
+      - 'scripts/check-parity-scorecard-regression.sh'
+      - 'scripts/check-parity-scorecard-baseline-sync.sh'
+      - '.github/workflows/geoservices-parity-nightly.yml'
+      - '.github/workflows/parity-scorecard-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-parity-scorecard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Smoke test parity regression gate
+        run: |
+          bash scripts/check-parity-scorecard-regression.sh \
+            tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json \
+            tests/Honua.Server.Tests/Import/parity-scorecard-baseline.json
+
+      - name: Verify parity baseline sync
+        run: |
+          bash scripts/check-parity-scorecard-baseline-sync.sh

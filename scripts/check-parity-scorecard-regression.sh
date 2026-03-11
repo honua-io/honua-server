@@ -27,11 +27,17 @@ fi
 
 regressions="$(
   jq -n \
-    --argfile baseline "$baseline_scorecard" \
-    --argfile current "$current_scorecard" '
-      [
-        $baseline.Cases[] as $baselineCase
-        | ($current.Cases[] | select(.ServiceCase == $baselineCase.ServiceCase)) as $currentCase?
+    --slurpfile baseline "$baseline_scorecard" \
+    --slurpfile current "$current_scorecard" '
+      # Keep this query compatible with jq 1.6 on GitHub-hosted runners.
+      def case_index($cases):
+        reduce $cases[] as $case ({}; .[$case.ServiceCase] = $case);
+
+      ($baseline[0].Cases // []) as $baselineCases
+      | ($current[0].Cases // [] | case_index(.)) as $currentCases
+      | [
+        $baselineCases[] as $baselineCase
+        | ($currentCases[$baselineCase.ServiceCase] // null) as $currentCase
         | if $currentCase == null then
             {
               serviceCase: $baselineCase.ServiceCase,
@@ -39,11 +45,10 @@ regressions="$(
               reason: "missing_case_in_current"
             }
           else
-            (
-              $baselineCase.Checks[]
-              | select(.Applicable == true and .Passed == true)
-            ) as $baselineCheck
-            | ($currentCase.Checks[] | select(.Name == $baselineCheck.Name)) as $currentCheck?
+            $baselineCase.Checks[]
+            | select(.Applicable == true and .Passed == true)
+            | . as $baselineCheck
+            | ([ $currentCase.Checks[]? | select(.Name == $baselineCheck.Name) ][0] // null) as $currentCheck
             | if $currentCheck == null then
                 {
                   serviceCase: $baselineCase.ServiceCase,

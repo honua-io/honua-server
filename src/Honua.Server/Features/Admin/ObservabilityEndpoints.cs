@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -71,7 +73,8 @@ internal static class ObservabilityEndpoints
         [FromServices] IConfiguration configuration,
         [FromServices] IDatabaseMigrationRunner migrationRunner,
         [FromServices] MigrationState migrationState,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] IConnectionSecretResolver? secretResolver = null)
     {
         var response = new MigrationObservabilityResponse
         {
@@ -82,33 +85,51 @@ internal static class ObservabilityEndpoints
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrWhiteSpace(connectionString))
+        try
+        {
+            var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+                configuration,
+                secretResolver,
+                context.RequestAborted).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                return Results.Json(
+                    response with
+                    {
+                        PlanAvailable = false,
+                        PlanError = "No database connection string configured."
+                    },
+                    MetricsJsonContext.Default.MigrationObservabilityResponse);
+            }
+
+            var plan = await migrationRunner.PlanMigrationsAsync(
+                connectionString,
+                typeof(Program).Assembly,
+                context.RequestAborted).ConfigureAwait(false);
+
+            return Results.Json(
+                response with
+                {
+                    PlanAvailable = plan.Successful,
+                    UpgradeRequired = plan.UpgradeRequired,
+                    PendingScripts = plan.PendingScripts,
+                    ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
+                    PlanError = plan.Successful ? null : plan.ErrorMessage
+                },
+                MetricsJsonContext.Default.MigrationObservabilityResponse);
+        }
+        catch (Exception exception)
         {
             return Results.Json(
                 response with
                 {
                     PlanAvailable = false,
-                    PlanError = "No database connection string configured."
+                    UpgradeRequired = false,
+                    PlanError = exception.Message
                 },
                 MetricsJsonContext.Default.MigrationObservabilityResponse);
         }
-
-        var plan = await migrationRunner.PlanMigrationsAsync(
-            connectionString,
-            typeof(Program).Assembly,
-            context.RequestAborted).ConfigureAwait(false);
-
-        return Results.Json(
-            response with
-            {
-                PlanAvailable = plan.Successful,
-                UpgradeRequired = plan.UpgradeRequired,
-                PendingScripts = plan.PendingScripts,
-                ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                PlanError = plan.Successful ? null : plan.ErrorMessage
-            },
-            MetricsJsonContext.Default.MigrationObservabilityResponse);
     }
 
     private static string? ResolveOtlpEndpoint(TracingOptions tracingOptions, IConfiguration configuration)

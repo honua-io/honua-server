@@ -43,7 +43,7 @@ jobs:
       azure: ${{ steps.filter.outputs.azure }}
       k8s: ${{ steps.filter.outputs.k8s }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -69,7 +69,7 @@ jobs:
     if: needs.changes.outputs.terraform == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -110,7 +110,7 @@ jobs:
     if: needs.changes.outputs.terraform == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup TFSec
         run: |
@@ -145,7 +145,7 @@ jobs:
     if: needs.changes.outputs.terraform == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup TFLint
         run: |
@@ -175,7 +175,7 @@ jobs:
     environment: development
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -210,7 +210,7 @@ jobs:
     environment: development
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Azure Login
         uses: azure/login@v2
@@ -245,7 +245,7 @@ jobs:
     if: always() && (needs.terraform-plan-aws.result == 'success' || needs.terraform-plan-azure.result == 'success')
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download Plans
         uses: actions/download-artifact@v4
@@ -319,7 +319,7 @@ jobs:
     environment: ${{ inputs.environment || 'development' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download Plans
         uses: actions/download-artifact@v4
@@ -367,7 +367,7 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
