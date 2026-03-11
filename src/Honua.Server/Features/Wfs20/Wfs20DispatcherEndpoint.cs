@@ -5,7 +5,6 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Wfs20.Models;
 using Honua.Server.Features.Wfs20.Services;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Wfs20;
 
@@ -18,7 +17,7 @@ internal static class Wfs20DispatcherEndpoint
     /// <summary>
     /// Maps the single WFS 2.0 dispatcher endpoint
     /// </summary>
-    public static IEndpointRouteBuilder MapWfs20DispatcherEndpoint(this IEndpointRouteBuilder endpoints)
+    internal static IEndpointRouteBuilder MapWfs20DispatcherEndpoint(this IEndpointRouteBuilder endpoints)
     {
         // Single WFS endpoint that dispatches based on request parameter
         endpoints.MapMethods("/wfs", HttpMethods, HandleWfsRequest)
@@ -43,8 +42,8 @@ internal static class Wfs20DispatcherEndpoint
         string? service,
         string? version,
         string? request,
-        [FromServices] Wfs20Handler handler,
-        [FromServices] ILogger<Wfs20Endpoints.Wfs20EndpointsLog> logger)
+        Wfs20Handler handler,
+        ILogger<Wfs20Endpoints.Wfs20EndpointsLog> logger)
     {
         try
         {

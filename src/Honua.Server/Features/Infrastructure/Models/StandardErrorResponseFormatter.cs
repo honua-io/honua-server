@@ -2,11 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.OData.Models;
-using Honua.Server.Features.Wfs20;
-using Honua.Server.Features.Wfs20.Models;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
@@ -26,7 +25,7 @@ internal static class StandardErrorResponseFormatter
     /// <param name="errorResponse">The standard error response to format.</param>
     /// <param name="options">Optional formatting options.</param>
     /// <returns>An IResult formatted for the detected protocol.</returns>
-    public static IResult FormatError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
+    internal static IResult FormatError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         options ??= new ErrorResponseFormatterOptions();
 
@@ -70,7 +69,7 @@ internal static class StandardErrorResponseFormatter
     /// <param name="errorResponse">The standard error response to write.</param>
     /// <param name="options">Optional formatting options.</param>
     /// <returns>A Task representing the asynchronous write operation.</returns>
-    public static Task WriteErrorAsync(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
+    internal static Task WriteErrorAsync(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         var result = FormatError(context, errorResponse, options);
         return result.ExecuteAsync(context);
@@ -123,21 +122,17 @@ internal static class StandardErrorResponseFormatter
     {
         AddResponseHeaders(context, options);
 
-        var report = new ExceptionReport
-        {
-            Version = Wfs20Utilities.Version,
-            Exceptions =
-            [
-                new ExceptionType
-                {
-                    ExceptionCode = MapWfsCode(errorResponse),
-                    ExceptionText = BuildDetailWithExtras(errorResponse, options)
-                }
-            ]
-        };
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1" version="1.1.0">
+              <ows:Exception exceptionCode="{{EscapeForXml(MapWfsCode(errorResponse))}}">
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
 
         return Results.Content(
-            XmlResultSerializer.Serialize(report),
+            xmlContent,
             "application/xml",
             System.Text.Encoding.UTF8,
             errorResponse.StatusCode);
@@ -340,6 +335,11 @@ internal static class StandardErrorResponseFormatter
         }
 
         return "NoApplicableCode";
+    }
+
+    private static string EscapeForXml(string value)
+    {
+        return SecurityElement.Escape(value) ?? string.Empty;
     }
 
     /// <summary>

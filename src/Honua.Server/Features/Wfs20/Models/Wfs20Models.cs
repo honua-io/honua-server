@@ -6,6 +6,9 @@ using System.Xml.Serialization;
 
 namespace Honua.Server.Features.Wfs20.Models;
 
+// These types are public by design because XmlSerializer requires public CLR contracts for
+// the WFS 2.0 XML payloads emitted by the protocol endpoints.
+
 /// <summary>
 /// WFS 2.0 GetCapabilities response
 /// </summary>

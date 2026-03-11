@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Wfs20.Services;
 
 namespace Honua.Server.Features.Wfs20;
@@ -14,12 +13,9 @@ internal static class Wfs20ServiceCollectionExtensions
     /// <summary>
     /// Registers WFS 2.0 services
     /// </summary>
-    public static IServiceCollection AddWfs20(this IServiceCollection services)
+    internal static IServiceCollection AddWfs20(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-
-        // Register FES 2.0 parser for filter parsing
-        services.AddSingleton<Fes20Parser>();
 
         // Register WFS 2.0 core services following established patterns
         services.AddScoped<Wfs20QueryServices>();

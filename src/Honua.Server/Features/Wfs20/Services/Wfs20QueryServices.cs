@@ -20,13 +20,13 @@ internal sealed class Wfs20QueryServices(
     IFilterExpressionService filterExpressionService,
     OgcFeaturesGeometryServices geometryServices)
 {
-    public ILayerCatalog LayerCatalog { get; } = layerCatalog;
+    internal ILayerCatalog LayerCatalog { get; } = layerCatalog;
 
-    public IFeatureReader FeatureReader { get; } = featureReader;
+    internal IFeatureReader FeatureReader { get; } = featureReader;
 
-    public IGmlFeatureStore GmlFeatureStore { get; } = gmlFeatureStore;
+    internal IGmlFeatureStore GmlFeatureStore { get; } = gmlFeatureStore;
 
-    public IFilterExpressionService FilterExpressionService { get; } = filterExpressionService;
+    internal IFilterExpressionService FilterExpressionService { get; } = filterExpressionService;
 
-    public OgcFeaturesGeometryServices GeometryServices { get; } = geometryServices;
+    internal OgcFeaturesGeometryServices GeometryServices { get; } = geometryServices;
 }

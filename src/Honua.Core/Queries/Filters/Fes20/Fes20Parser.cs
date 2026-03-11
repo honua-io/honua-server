@@ -14,7 +14,7 @@ namespace Honua.Core.Queries.Filters.Fes20;
 /// <summary>
 /// Parser for OGC Filter Encoding 2.0 XML filters that produces the shared Filter AST
 /// </summary>
-public sealed class Fes20Parser
+public static class Fes20Parser
 {
     private const string FesNamespace = "http://www.opengis.net/fes/2.0";
     private const string GmlNamespace = "http://www.opengis.net/gml/3.2";
@@ -575,6 +575,16 @@ public sealed class Fes20Parser
 /// </summary>
 public sealed class Fes20ParseException : Exception
 {
+    /// <summary>
+    /// Initializes a new exception with the supplied parse error message.
+    /// </summary>
+    /// <param name="message">The parse failure message.</param>
     public Fes20ParseException(string message) : base(message) { }
+
+    /// <summary>
+    /// Initializes a new exception with the supplied parse error message and inner exception.
+    /// </summary>
+    /// <param name="message">The parse failure message.</param>
+    /// <param name="innerException">The underlying parse failure.</param>
     public Fes20ParseException(string message, Exception innerException) : base(message, innerException) { }
 }
