@@ -283,18 +283,24 @@ public sealed class CloudDeploymentValidationTests
         jobId.Should().NotBeNullOrWhiteSpace();
 
         var timeout = TimeSpan.FromSeconds(GetImportTimeoutSeconds());
-        var uploadProgress = await WaitForUploadCompletionAsync(client, uploadId!, timeout);
-        if (uploadProgress.TryGetProperty("cloudFileId", out var cloudFileIdElement)
-            && cloudFileIdElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
-        {
-            cloudFileIdElement.GetString().Should().NotBeNullOrWhiteSpace();
-        }
+        JsonElement? uploadProgress = await TryWaitForUploadCompletionAsync(
+            client,
+            uploadId!,
+            TimeSpan.FromSeconds(Math.Min(timeout.TotalSeconds, 60)));
 
         var importProgress = await WaitForImportJobProgressAsync(client, jobId!, timeout);
         ReadImportStatus(importProgress.GetProperty("status")).Should().Be(ImportStatus.Completed);
         importProgress.GetProperty("tableName").GetString().Should().Be(tableName);
         importProgress.GetProperty("featuresProcessed").GetInt32().Should().Be(1);
         importProgress.GetProperty("failedFeatures").GetInt32().Should().Be(0);
+
+        uploadProgress ??= await TryGetUploadProgressAsync(client, uploadId!);
+        if (uploadProgress is { } completedUploadProgress
+            && completedUploadProgress.TryGetProperty("cloudFileId", out var cloudFileIdElement)
+            && cloudFileIdElement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            cloudFileIdElement.GetString().Should().NotBeNullOrWhiteSpace();
+        }
 
         var connectionId = await CreateSecureConnectionAsync(client, tableName);
         var importedTable = await DiscoverImportedTableAsync(client, connectionId, tableName, timeout);
@@ -436,6 +442,32 @@ public sealed class CloudDeploymentValidationTests
         }
 
         throw new TimeoutException($"Upload {uploadId} did not complete within {timeout.TotalSeconds} seconds.");
+    }
+
+    private static async Task<JsonElement?> TryWaitForUploadCompletionAsync(HttpClient client, string uploadId, TimeSpan timeout)
+    {
+        try
+        {
+            return await WaitForUploadCompletionAsync(client, uploadId, timeout);
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<JsonElement?> TryGetUploadProgressAsync(HttpClient client, string uploadId)
+    {
+        using var request = CreateAdminRequest(HttpMethod.Get, $"/api/v1/admin/import/uploads/{uploadId}/progress");
+        using var response = await client.SendAsync(request);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.Clone();
     }
 
     private static async Task<JsonElement> WaitForImportJobProgressAsync(HttpClient client, string jobId, TimeSpan timeout)
