@@ -263,25 +263,56 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 }
             }
 
-            var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
-            var features = result.Items
-                .Select(feature =>
-                {
-                    var links = OgcFeaturesUtilities.BuildFeatureLinks(
-                        request,
-                        collectionId,
-                        FormattableString.Invariant($"{feature.Id}"),
-                        outputFormat);
-                    return ToOgcFeature(
-                        feature,
-                        filterResult.CrsDefinition.AxisOrder,
-                        _geometryServices,
-                        projectedProperties,
-                        links);
-                })
-                .ToArray();
+            var useNativeGeoJson = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+                                   string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase);
+            QueryResult<Feature>? featureResult = null;
+            QueryResult<EncodedGeoJsonFeature>? encodedResult = null;
+            GeoJsonFeature[] features;
+
+            if (useNativeGeoJson && _featureReader is IGeoJsonFeatureStore geoJsonFeatureStore)
+            {
+                encodedResult = await geoJsonFeatureStore.QueryGeoJsonAsync(layerId, query, cancellationToken);
+                features = encodedResult.Value.Items
+                    .Select(feature =>
+                    {
+                        var links = OgcFeaturesUtilities.BuildFeatureLinks(
+                            request,
+                            collectionId,
+                            FormattableString.Invariant($"{feature.Id}"),
+                            outputFormat);
+                        return ToOgcFeature(
+                            feature,
+                            filterResult.CrsDefinition.AxisOrder,
+                            _geometryServices,
+                            projectedProperties,
+                            links);
+                    })
+                    .ToArray();
+            }
+            else
+            {
+                featureResult = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+                features = featureResult.Value.Items
+                    .Select(feature =>
+                    {
+                        var links = OgcFeaturesUtilities.BuildFeatureLinks(
+                            request,
+                            collectionId,
+                            FormattableString.Invariant($"{feature.Id}"),
+                            outputFormat);
+                        return ToOgcFeature(
+                            feature,
+                            filterResult.CrsDefinition.AxisOrder,
+                            _geometryServices,
+                            projectedProperties,
+                            links);
+                    })
+                    .ToArray();
+            }
             stopwatch.Stop();
-            OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, features.Length, result.TotalCount, stopwatch.Elapsed.TotalMilliseconds);
+            var queryTotalCount = encodedResult?.TotalCount ?? featureResult?.TotalCount ?? 0;
+            var queryHasMoreResults = encodedResult?.HasMoreResults ?? featureResult?.HasMoreResults ?? false;
+            OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, features.Length, queryTotalCount, stopwatch.Elapsed.TotalMilliseconds);
             HonuaTelemetry.SetSuccess(featureActivity, features.Length);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -294,12 +325,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 outputFormat,
                 effectiveLimit,
                 effectiveOffset,
-                result.HasMoreResults);
+                queryHasMoreResults);
 
             var response = new FeatureCollection
             {
                 Features = features,
-                NumberMatched = result.TotalCount,
+                NumberMatched = queryTotalCount,
                 NumberReturned = features.Length,
                 Links = links,
                 TimeStamp = DateTimeOffset.UtcNow
@@ -462,17 +493,37 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
                 OutputSrid = crsDefinition.Srid
             };
-            var queryResult = await _featureReader.QueryAsync(layerId, query, cancellationToken);
-            stopwatch.Stop();
-            OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
-            if (queryResult.Items.IsDefaultOrEmpty)
+            GeoJsonFeature? ogcFeature;
+            if (_featureReader is IGeoJsonFeatureStore geoJsonFeatureStore &&
+                (string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase)))
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
-            }
+                var queryResult = await geoJsonFeatureStore.QueryGeoJsonAsync(layerId, query, cancellationToken);
+                stopwatch.Stop();
+                OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
+                if (queryResult.Items.IsDefaultOrEmpty)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                }
 
-            var feature = queryResult.Items[0];
-            var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat);
-            var ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+                var feature = queryResult.Items[0];
+                var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat);
+                ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+            }
+            else
+            {
+                var queryResult = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+                stopwatch.Stop();
+                OgcFeaturesLog.ItemQueryCompleted(_logger, collectionId, featureId, stopwatch.Elapsed.TotalMilliseconds);
+                if (queryResult.Items.IsDefaultOrEmpty)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
+                }
+
+                var feature = queryResult.Items[0];
+                var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat);
+                ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+            }
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
 
@@ -555,6 +606,41 @@ internal sealed partial class OgcFeaturesQueryHandler(
             Type = "Feature",
             Id = feature.Id,
             Geometry = geometry,
+            Properties = properties,
+            Links = links
+        };
+    }
+
+    private static GeoJsonFeature ToOgcFeature(
+        EncodedGeoJsonFeature feature,
+        AxisOrder axisOrder,
+        OgcFeaturesGeometryServices geometryServices,
+        ImmutableHashSet<string>? projectedProperties = null,
+        ImmutableArray<Link>? links = null)
+    {
+        Dictionary<string, object?> properties;
+        if (projectedProperties == null)
+        {
+            properties = feature.Attributes.ToDictionary(
+                static kvp => kvp.Key,
+                static kvp => kvp.Value,
+                StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            properties = feature.Attributes
+                .Where(kvp => projectedProperties.Contains(kvp.Key))
+                .ToDictionary(
+                    static kvp => kvp.Key,
+                    static kvp => kvp.Value,
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        return new GeoJsonFeature
+        {
+            Type = "Feature",
+            Id = feature.Id,
+            Geometry = geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder),
             Properties = properties,
             Links = links
         };

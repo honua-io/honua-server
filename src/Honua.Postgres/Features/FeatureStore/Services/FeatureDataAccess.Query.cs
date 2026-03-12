@@ -117,6 +117,86 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    public async Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var features = new List<EncodedGeoJsonFeature>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var feature = await ReadGeoJsonFeatureAsync(reader, cancellationToken);
+                features.Add(feature);
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_geojson", stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery("select_geojson", layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery("select_geojson", stopwatch.ElapsedMilliseconds, layerId, features.Count);
+
+            return features.ToImmutableArray();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_geojson_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    public async Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var features = new List<KmlFeature>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var feature = await ReadKmlFeatureAsync(reader, cancellationToken);
+                features.Add(feature);
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_kml", stopwatch.ElapsedMilliseconds, features.Count);
+            RecordPerformanceQuery("select_kml", layerId, stopwatch.ElapsedMilliseconds, features.Count);
+            LogSlowQuery("select_kml", stopwatch.ElapsedMilliseconds, layerId, features.Count);
+
+            return features.ToImmutableArray();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_kml_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
     public async Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
         CoreParameterizedQuery query,
         FeatureQuery featureQuery,
@@ -156,6 +236,49 @@ internal sealed partial class FeatureDataAccess
         {
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("select_fgb_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    public async Task<byte[]?> ExecuteSelectGeobufQueryAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
+            {
+                stopwatch.Stop();
+                _cacheManager.RecordQueryMetrics("select_geobuf", stopwatch.ElapsedMilliseconds, 0);
+                RecordPerformanceQuery("select_geobuf", layerId, stopwatch.ElapsedMilliseconds, 0);
+                LogSlowQuery("select_geobuf", stopwatch.ElapsedMilliseconds, layerId, 0);
+                return null;
+            }
+
+            var payload = reader.GetFieldValue<byte[]>(0);
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_geobuf", stopwatch.ElapsedMilliseconds, payload.Length > 0 ? 1 : 0);
+            RecordPerformanceQuery("select_geobuf", layerId, stopwatch.ElapsedMilliseconds, payload.Length > 0 ? 1 : 0);
+            LogSlowQuery("select_geobuf", stopwatch.ElapsedMilliseconds, layerId, payload.Length > 0 ? 1 : 0);
+
+            return payload;
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_geobuf_error", stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

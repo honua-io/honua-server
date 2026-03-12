@@ -59,6 +59,41 @@ internal sealed partial class OgcFeaturesGeometryServices
             return null;
         }
 
+        return ConvertGeometryToSimpleGeometry(geometry, axisOrder);
+    }
+
+    /// <summary>
+    /// Converts a GeoJSON geometry fragment to simple GeoJSON geometry with proper axis ordering.
+    /// </summary>
+    /// <param name="geoJson">GeoJSON geometry fragment.</param>
+    /// <param name="axisOrder">Requested output axis order.</param>
+    /// <returns>Simple geometry representation, or null when the input cannot be parsed.</returns>
+    public SimpleGeoJsonGeometry? ConvertGeoJsonToSimpleGeometry(string? geoJson, AxisOrder axisOrder)
+    {
+        if (string.IsNullOrWhiteSpace(geoJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            var reader = new GeoJsonReader();
+            var geometry = reader.Read<Geometry>(geoJson);
+            if (geometry == null)
+            {
+                return null;
+            }
+
+            return ConvertGeometryToSimpleGeometry(geometry, axisOrder);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException or JsonException or Newtonsoft.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private SimpleGeoJsonGeometry ConvertGeometryToSimpleGeometry(Geometry geometry, AxisOrder axisOrder)
+    {
         if (axisOrder == AxisOrder.NorthEast)
         {
             geometry = (Geometry)geometry.Copy();

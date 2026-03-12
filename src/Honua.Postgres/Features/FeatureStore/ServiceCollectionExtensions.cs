@@ -79,7 +79,10 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IGeoJsonFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IGeobufFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IKmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
 
         return services;

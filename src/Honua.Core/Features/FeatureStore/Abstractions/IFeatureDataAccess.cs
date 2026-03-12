@@ -27,9 +27,36 @@ internal interface IFeatureDataAccess
     Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes a select query and returns GeoJSON-encoded features.
+    /// </summary>
+    Task<ImmutableArray<EncodedGeoJsonFeature>> ExecuteSelectGeoJsonQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executes a select query and returns KML features.
+    /// </summary>
+    Task<ImmutableArray<KmlFeature>> ExecuteSelectKmlQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Executes a provider-native FlatGeobuf query and returns raw bytes.
     /// </summary>
     Task<byte[]?> ExecuteSelectFlatGeobufQueryAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Executes a provider-native Geobuf query and returns raw bytes.
+    /// </summary>
+    Task<byte[]?> ExecuteSelectGeobufQueryAsync(
         ParameterizedQuery query,
         FeatureQuery featureQuery,
         int layerId,

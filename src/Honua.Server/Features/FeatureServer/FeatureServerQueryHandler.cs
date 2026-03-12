@@ -492,7 +492,8 @@ internal sealed class FeatureServerQueryHandler(
             var effectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
             var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
             var isFgb = string.Equals(format, "fgb", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb;
+            var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf;
 
             if (!useStreaming)
             {
@@ -522,6 +523,36 @@ internal sealed class FeatureServerQueryHandler(
                     HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
 
                     return await CreateCachedBytesResultAsync(payload, "application/vnd.flatgeobuf");
+                }
+
+                if (isGeobuf)
+                {
+                    if (validatedParams.ReturnDistinctValues)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Unsupported query parameters",
+                            ["returnDistinctValues is not supported when f=geobuf."]);
+                    }
+
+                    if (!_queryExecutor.SupportsGeobufOutput)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Unsupported output format",
+                            ["Output format 'geobuf' is not supported by the configured feature store."]);
+                    }
+
+                    var geobufStopwatch = Stopwatch.StartNew();
+                    var geobufPayload = await _queryExecutor.QueryGeobufWithValidationAsync(layerId, query, cancellationToken);
+                    geobufStopwatch.Stop();
+                    FeatureServerLog.QueryExecuted(_logger, "query_geobuf", serviceId, layerId, geobufStopwatch.Elapsed.TotalMilliseconds);
+
+                    var payload = geobufPayload ?? [];
+                    FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, payload.Length > 0 ? 1 : 0, payload.Length > 0 ? 1 : 0);
+                    HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
+
+                    return await CreateCachedBytesResultAsync(payload, "application/geobuf");
                 }
 
                 var queryStopwatch = Stopwatch.StartNew();

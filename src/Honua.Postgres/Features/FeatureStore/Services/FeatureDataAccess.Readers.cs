@@ -15,102 +15,32 @@ internal sealed partial class FeatureDataAccess
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
-        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
-
-        // Use pooled dictionary for performance
-        var attributesDictionary = _dictionaryPool.Get();
-        try
-        {
-            // Deserialize JSON using AOT-compatible source generators
-            var deserializedDict = string.IsNullOrWhiteSpace(attributesJson)
-                ? new Dictionary<string, object?>()
-                : DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
-
-            // Convert JsonElement values to primitive types for compatibility
-            foreach (var (key, value) in deserializedDict)
-            {
-                attributesDictionary[key] = ConvertJsonElementToObject(value);
-            }
-
-            // Inject objectid into attributes for GeoServices FeatureServer compatibility
-            attributesDictionary["objectid"] = id;
-
-            if (reader.FieldCount > 3)
-            {
-                for (var i = 3; i < reader.FieldCount; i++)
-                {
-                    var fieldName = reader.GetName(i);
-                    if (fieldName.Equals("total_count", StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary["total_count"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<long>(i);
-                        continue;
-                    }
-
-                    if (fieldName.Equals("distance", StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary["distance"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<double>(i);
-                    }
-                }
-            }
-
-            var attributes = attributesDictionary.ToImmutableDictionary();
-            return Task.FromResult(Feature.Create(id, geometry, attributes));
-        }
-        finally
-        {
-            _dictionaryPool.Return(attributesDictionary);
-        }
+        var attributes = ReadAttributes(reader, id);
+        return Task.FromResult(Feature.Create(id, geometry, attributes));
     }
 
     private Task<GmlFeature> ReadGmlFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
     {
         var id = reader.GetInt64(0);
         var geometryGml = reader.IsDBNull(1) ? null : reader.GetString(1);
-        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+        var attributes = ReadAttributes(reader, id);
+        return Task.FromResult(GmlFeature.Create(id, geometryGml, attributes));
+    }
 
-        // Use pooled dictionary for performance
-        var attributesDictionary = _dictionaryPool.Get();
-        try
-        {
-            // Deserialize JSON using AOT-compatible source generators
-            var deserializedDict = string.IsNullOrWhiteSpace(attributesJson)
-                ? new Dictionary<string, object?>()
-                : DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
+    private Task<EncodedGeoJsonFeature> ReadGeoJsonFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
+    {
+        var id = reader.GetInt64(0);
+        var geometryGeoJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+        var attributes = ReadAttributes(reader, id);
+        return Task.FromResult(EncodedGeoJsonFeature.Create(id, geometryGeoJson, attributes));
+    }
 
-            // Convert JsonElement values to primitive types for compatibility
-            foreach (var (key, value) in deserializedDict)
-            {
-                attributesDictionary[key] = ConvertJsonElementToObject(value);
-            }
-
-            // Inject objectid into attributes for GeoServices FeatureServer compatibility
-            attributesDictionary["objectid"] = id;
-
-            if (reader.FieldCount > 3)
-            {
-                for (var i = 3; i < reader.FieldCount; i++)
-                {
-                    var fieldName = reader.GetName(i);
-                    if (fieldName.Equals("total_count", StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary["total_count"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<long>(i);
-                        continue;
-                    }
-
-                    if (fieldName.Equals("distance", StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary["distance"] = reader.IsDBNull(i) ? null : reader.GetFieldValue<double>(i);
-                    }
-                }
-            }
-
-            var attributes = attributesDictionary.ToImmutableDictionary();
-            return Task.FromResult(GmlFeature.Create(id, geometryGml, attributes));
-        }
-        finally
-        {
-            _dictionaryPool.Return(attributesDictionary);
-        }
+    private Task<KmlFeature> ReadKmlFeatureAsync(NpgsqlDataReader reader, CancellationToken cancellationToken = default)
+    {
+        var id = reader.GetInt64(0);
+        var geometryKml = reader.IsDBNull(1) ? null : reader.GetString(1);
+        var attributes = ReadAttributes(reader, id);
+        return Task.FromResult(KmlFeature.Create(id, geometryKml, attributes));
     }
 
     private static Feature FilterFeatureFields(Feature feature, ImmutableArray<string> outFields)
@@ -151,5 +81,53 @@ internal sealed partial class FeatureDataAccess
         }
 
         return value;
+    }
+
+    private ImmutableDictionary<string, object?> ReadAttributes(NpgsqlDataReader reader, long id)
+    {
+        var attributesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+        var attributesDictionary = _dictionaryPool.Get();
+
+        try
+        {
+            var deserializedDict = string.IsNullOrWhiteSpace(attributesJson)
+                ? new Dictionary<string, object?>()
+                : DeserializeFromJsonString(attributesJson) ?? new Dictionary<string, object?>();
+
+            foreach (var (key, value) in deserializedDict)
+            {
+                attributesDictionary[key] = ConvertJsonElementToObject(value);
+            }
+
+            attributesDictionary["objectid"] = id;
+
+            if (reader.FieldCount > 3)
+            {
+                for (var i = 3; i < reader.FieldCount; i++)
+                {
+                    var fieldName = reader.GetName(i);
+                    if (fieldName.Equals(FeatureQueryEncoding.InternalTotalCountColumn, StringComparison.OrdinalIgnoreCase))
+                    {
+                        attributesDictionary[FeatureQueryEncoding.InternalTotalCountColumn] = reader.IsDBNull(i)
+                            ? null
+                            : reader.GetFieldValue<long>(i);
+                        continue;
+                    }
+
+                    if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
+                    {
+                        attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(i)
+                            ? null
+                            : reader.GetFieldValue<double>(i);
+                    }
+                }
+            }
+
+            return attributesDictionary.ToImmutableDictionary();
+        }
+        finally
+        {
+            _dictionaryPool.Return(attributesDictionary);
+        }
     }
 }

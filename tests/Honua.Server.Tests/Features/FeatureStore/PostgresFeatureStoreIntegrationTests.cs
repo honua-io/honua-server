@@ -4,7 +4,11 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -225,6 +229,63 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
                 ALTER TABLE {_testSchema}.features ALTER COLUMN attributes SET NOT NULL;
                 """);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryGeoJsonAsync_WithObjectIdFilter_ReturnsGeoJsonGeometry()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326
+        };
+
+        var result = await ((IGeoJsonFeatureStore)store).QueryGeoJsonAsync(PointsLayerId, query, CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].GeometryGeoJson.Should().Contain("\"type\":\"Point\"");
+        result.Items[0].Attributes.Should().ContainKey("objectid");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryKmlAsync_WithObjectIdFilter_ReturnsKmlGeometry()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326
+        };
+
+        var result = await ((IKmlFeatureStore)store).QueryKmlAsync(PointsLayerId, query, CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].GeometryKml.Should().Contain("<Point>");
+        result.Items[0].GeometryKml.Should().Contain("<coordinates>");
+        result.Items[0].Attributes.Should().ContainKey("objectid");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryGeobufAsync_WithObjectIdFilter_ReturnsPayload()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326
+        };
+
+        var payload = await ((IGeobufFeatureStore)store).QueryGeobufAsync(PointsLayerId, query, CancellationToken.None);
+
+        payload.Should().NotBeNull();
+        payload.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -532,7 +593,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             PerformanceMonitor: null,
             SchemaName: _testSchema));
 
-        return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager);
+        return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager, CreateLayerCatalog());
     }
 
     private static int GetLayerId(string tableName)
@@ -564,5 +625,82 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         var polygon = new WKTReader(NtsGeometryServices.Instance).Read(wkt);
         polygon.SRID = _geometryFactory.SRID;
         return new WKBWriter().Write(polygon);
+    }
+
+    private static StubLayerCatalog CreateLayerCatalog()
+    {
+        var spatialReference = SpatialReference.Create(4326);
+
+        var layers = new Dictionary<int, LayerDefinition>
+        {
+            [PointsLayerId] = new LayerDefinition(
+                PointsLayerId,
+                "Test Points",
+                null,
+                Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+                spatialReference,
+                [
+                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                    new FieldDefinition("shape", FieldType.Geometry),
+                    new FieldDefinition("category", FieldType.String, Length: 64),
+                    new FieldDefinition("value", FieldType.Integer),
+                    new FieldDefinition("active", FieldType.Boolean),
+                    new FieldDefinition("created_date", FieldType.DateTime)
+                ]),
+            [PolygonsLayerId] = new LayerDefinition(
+                PolygonsLayerId,
+                "Test Polygons",
+                null,
+                Honua.Core.Features.Catalog.Domain.GeometryType.Polygon,
+                spatialReference,
+                [
+                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                    new FieldDefinition("shape", FieldType.Geometry),
+                    new FieldDefinition("area_name", FieldType.String, Length: 128),
+                    new FieldDefinition("population", FieldType.Integer),
+                    new FieldDefinition("density", FieldType.Double)
+                ]),
+            [LinesLayerId] = new LayerDefinition(
+                LinesLayerId,
+                "Test Lines",
+                null,
+                Honua.Core.Features.Catalog.Domain.GeometryType.LineString,
+                spatialReference,
+                [
+                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                    new FieldDefinition("shape", FieldType.Geometry),
+                    new FieldDefinition("road_type", FieldType.String, Length: 64),
+                    new FieldDefinition("length_km", FieldType.Double)
+                ])
+        };
+
+        return new StubLayerCatalog(layers);
+    }
+
+    private sealed class StubLayerCatalog(Dictionary<int, LayerDefinition> layers) : ILayerCatalog
+    {
+        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(layers.TryGetValue(layerId, out var layer) ? layer : null);
+
+        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(layers.Values.ToArray());
+
+        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult<ServiceDefinition?>(null);
+
+        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<ServiceDefinition>());
+
+        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(layers.ContainsKey(layerId));
+
+        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
+            => Task.FromResult<Relationship?>(null);
+
+        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<Relationship>());
     }
 }

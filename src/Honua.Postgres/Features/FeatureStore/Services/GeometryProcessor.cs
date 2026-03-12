@@ -13,8 +13,6 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class GeometryProcessor : IGeometryProcessor
 {
-    private const string GeometryColumnName = "geometry";
-
     public string GetGeometrySelectExpression(CoreGeometryStorageType storageType, FeatureQuery query)
     {
         var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
@@ -25,7 +23,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
         }
 
-        return $"ST_AsBinary({baseGeometry}) AS {GeometryColumnName}";
+        return $"ST_AsBinary({baseGeometry}) AS {FeatureQueryEncoding.GeometryColumn}";
     }
 
     public string GetGeometryGmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)
@@ -38,7 +36,33 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
         }
 
-        return $"ST_AsGML(3, {baseGeometry}, 15, 1)";
+        return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, 1)";
+    }
+
+    public string GetGeometryGeoJsonExpression(CoreGeometryStorageType storageType, FeatureQuery query)
+    {
+        var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
+
+        if (query.OutputSrid.HasValue &&
+            (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+        {
+            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+        }
+
+        return $"ST_AsGeoJSON({baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, 0)";
+    }
+
+    public string GetGeometryKmlExpression(CoreGeometryStorageType storageType, FeatureQuery query)
+    {
+        var baseGeometry = GetGeometryOperand(storageType, layerSrid: query.SpatialReferenceSrid);
+
+        if (query.OutputSrid.HasValue &&
+            (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+        {
+            baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
+        }
+
+        return $"ST_AsKML({baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision})";
     }
 
     public string GetGeometryWriteExpression(CoreGeometryStorageType storageType, string parameterName, int? layerSrid)
@@ -54,7 +78,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
 
     public string GetGeometryOperand(CoreGeometryStorageType storageType, string? columnExpression = null, int? layerSrid = null)
     {
-        var column = columnExpression ?? GeometryColumnName;
+        var column = columnExpression ?? FeatureQueryEncoding.GeometryColumn;
         var operand = storageType switch
         {
             CoreGeometryStorageType.Geometry => column,
@@ -111,10 +135,10 @@ internal sealed class GeometryProcessor : IGeometryProcessor
     {
         var geometryOperand = storageType switch
         {
-            CoreGeometryStorageType.Geography => GeometryColumnName,
-            CoreGeometryStorageType.Geometry => GeometryColumnName,
-            CoreGeometryStorageType.Bytea => $"ST_GeomFromEWKB({GeometryColumnName})",
-            _ => GeometryColumnName
+            CoreGeometryStorageType.Geography => FeatureQueryEncoding.GeometryColumn,
+            CoreGeometryStorageType.Geometry => FeatureQueryEncoding.GeometryColumn,
+            CoreGeometryStorageType.Bytea => $"ST_GeomFromEWKB({FeatureQueryEncoding.GeometryColumn})",
+            _ => FeatureQueryEncoding.GeometryColumn
         };
 
         if (storageType == CoreGeometryStorageType.Geography)

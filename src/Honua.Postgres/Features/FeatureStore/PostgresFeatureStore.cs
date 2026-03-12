@@ -4,10 +4,13 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Postgres.Features.FeatureStore.Services;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 
 namespace Honua.Postgres.Features.FeatureStore;
@@ -28,20 +31,31 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGmlFeatureStore, IStreamingFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
+    private readonly ILayerCatalog? _layerCatalog;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager)
+        : this(queryBuilder, dataAccess, cacheManager, layerCatalog: null)
+    {
+    }
+
+    public PostgresFeatureStoreRefactored(
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IFeatureCacheManager cacheManager,
+        ILayerCatalog? layerCatalog)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
+        _layerCatalog = layerCatalog;
     }
 
     #region Core CRUD Operations
@@ -125,8 +139,55 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
     public async Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(layerId, query, geometryStorageType);
+        var layer = await GetLayerDefinitionAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(layer, layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteSelectFlatGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
+    }
+
+    public async Task<byte[]?> QueryGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var layer = await GetLayerDefinitionAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectGeobufQuery(layer, layerId, query, geometryStorageType);
+        return await _dataAccess.ExecuteSelectGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
+    }
+
+    public async Task<QueryResult<EncodedGeoJsonFeature>> QueryGeoJsonAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var isKnnQuery = query.SpatialFilter.HasValue &&
+                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+
+        if (isKnnQuery)
+        {
+            var knnSelectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, query, geometryStorageType);
+            var knnFeatures = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
+            var knnTotalCount = knnFeatures.Length;
+            return knnFeatures.Length == 0
+                ? QueryResult<EncodedGeoJsonFeature>.Empty()
+                : QueryResult<EncodedGeoJsonFeature>.Create(knnTotalCount, knnFeatures, false);
+        }
+
+        if (query.Limit.HasValue || query.Offset.HasValue)
+        {
+            return await QueryOptimizedGeoJsonAsync(layerId, query, geometryStorageType, cancellationToken);
+        }
+
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
+        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
+
+        if (totalCount == 0)
+        {
+            return QueryResult<EncodedGeoJsonFeature>.Empty();
+        }
+
+        var selectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(selectQuery, query, layerId, cancellationToken);
+
+        return QueryResult<EncodedGeoJsonFeature>.Create(totalCount, features, false);
     }
 
     public async Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
@@ -162,6 +223,41 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         var features = await _dataAccess.ExecuteSelectGmlQueryAsync(selectQuery, query, layerId, cancellationToken);
 
         return QueryResult<GmlFeature>.Create(totalCount, features, false);
+    }
+
+    public async Task<QueryResult<KmlFeature>> QueryKmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+    {
+        var isKnnQuery = query.SpatialFilter.HasValue &&
+                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+
+        if (isKnnQuery)
+        {
+            var knnSelectQuery = _queryBuilder.BuildSelectKmlQuery(layerId, query, geometryStorageType);
+            var knnFeatures = await _dataAccess.ExecuteSelectKmlQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
+            var knnTotalCount = knnFeatures.Length;
+            return knnFeatures.Length == 0
+                ? QueryResult<KmlFeature>.Empty()
+                : QueryResult<KmlFeature>.Create(knnTotalCount, knnFeatures, false);
+        }
+
+        if (query.Limit.HasValue || query.Offset.HasValue)
+        {
+            return await QueryOptimizedKmlAsync(layerId, query, geometryStorageType, cancellationToken);
+        }
+
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
+        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
+
+        if (totalCount == 0)
+        {
+            return QueryResult<KmlFeature>.Empty();
+        }
+
+        var selectQuery = _queryBuilder.BuildSelectKmlQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectKmlQueryAsync(selectQuery, query, layerId, cancellationToken);
+
+        return QueryResult<KmlFeature>.Create(totalCount, features, false);
     }
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
@@ -361,7 +457,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
 
             // Extract total count from first row if available
             if (!hasCountColumn &&
-                feature.Attributes.TryGetValue("total_count", out var totalCountValue) &&
+                feature.Attributes.TryGetValue(FeatureQueryEncoding.InternalTotalCountColumn, out var totalCountValue) &&
                 totalCountValue is not null)
             {
                 totalCount = Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
@@ -407,7 +503,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
 
             // Extract total count from first row if available
             if (!hasCountColumn &&
-                feature.Attributes.TryGetValue("total_count", out var totalCountValue) &&
+                feature.Attributes.TryGetValue(FeatureQueryEncoding.InternalTotalCountColumn, out var totalCountValue) &&
                 totalCountValue is not null)
             {
                 totalCount = Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
@@ -435,26 +531,112 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         return QueryResult<GmlFeature>.Create(totalCount, features.ToImmutableArray(), hasMoreResults);
     }
 
+    private async Task<QueryResult<EncodedGeoJsonFeature>> QueryOptimizedGeoJsonAsync(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        CancellationToken cancellationToken)
+    {
+        var optimizedQuery = _queryBuilder.BuildOptimizedSelectGeoJsonQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(optimizedQuery, query, layerId, cancellationToken);
+
+        if (features.Length == 0)
+        {
+            return QueryResult<EncodedGeoJsonFeature>.Empty();
+        }
+
+        var totalCount = ExtractTotalCount(features[0].Attributes, features.Length);
+        var cleaned = features.Select(RemoveInternalAttributes).ToImmutableArray();
+        var offset = query.Offset ?? 0;
+        var hasMoreResults = totalCount > offset + cleaned.Length;
+        return QueryResult<EncodedGeoJsonFeature>.Create(totalCount, cleaned, hasMoreResults);
+    }
+
+    private async Task<QueryResult<KmlFeature>> QueryOptimizedKmlAsync(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        CancellationToken cancellationToken)
+    {
+        var optimizedQuery = _queryBuilder.BuildOptimizedSelectKmlQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectKmlQueryAsync(optimizedQuery, query, layerId, cancellationToken);
+
+        if (features.Length == 0)
+        {
+            return QueryResult<KmlFeature>.Empty();
+        }
+
+        var totalCount = ExtractTotalCount(features[0].Attributes, features.Length);
+        var cleaned = features.Select(RemoveInternalAttributes).ToImmutableArray();
+        var offset = query.Offset ?? 0;
+        var hasMoreResults = totalCount > offset + cleaned.Length;
+        return QueryResult<KmlFeature>.Create(totalCount, cleaned, hasMoreResults);
+    }
+
     private static Feature RemoveInternalAttributes(Feature feature)
     {
-        if (!feature.Attributes.ContainsKey("total_count"))
+        if (!feature.Attributes.ContainsKey(FeatureQueryEncoding.InternalTotalCountColumn))
         {
             return feature;
         }
 
-        var cleaned = feature.Attributes.Remove("total_count");
+        var cleaned = feature.Attributes.Remove(FeatureQueryEncoding.InternalTotalCountColumn);
         return feature with { Attributes = cleaned };
     }
 
     private static GmlFeature RemoveInternalAttributes(GmlFeature feature)
     {
-        if (!feature.Attributes.ContainsKey("total_count"))
+        if (!feature.Attributes.ContainsKey(FeatureQueryEncoding.InternalTotalCountColumn))
         {
             return feature;
         }
 
-        var cleaned = feature.Attributes.Remove("total_count");
+        var cleaned = feature.Attributes.Remove(FeatureQueryEncoding.InternalTotalCountColumn);
         return feature with { Attributes = cleaned };
+    }
+
+    private static EncodedGeoJsonFeature RemoveInternalAttributes(EncodedGeoJsonFeature feature)
+    {
+        if (!feature.Attributes.ContainsKey(FeatureQueryEncoding.InternalTotalCountColumn))
+        {
+            return feature;
+        }
+
+        var cleaned = feature.Attributes.Remove(FeatureQueryEncoding.InternalTotalCountColumn);
+        return feature with { Attributes = cleaned };
+    }
+
+    private static KmlFeature RemoveInternalAttributes(KmlFeature feature)
+    {
+        if (!feature.Attributes.ContainsKey(FeatureQueryEncoding.InternalTotalCountColumn))
+        {
+            return feature;
+        }
+
+        var cleaned = feature.Attributes.Remove(FeatureQueryEncoding.InternalTotalCountColumn);
+        return feature with { Attributes = cleaned };
+    }
+
+    private static long ExtractTotalCount(ImmutableDictionary<string, object?> attributes, int fallbackCount)
+    {
+        if (attributes.TryGetValue(FeatureQueryEncoding.InternalTotalCountColumn, out var totalCountValue) &&
+            totalCountValue is not null)
+        {
+            return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
+        }
+
+        return fallbackCount;
+    }
+
+    private async Task<LayerDefinition> GetLayerDefinitionAsync(int layerId, CancellationToken cancellationToken)
+    {
+        if (_layerCatalog == null)
+        {
+            throw new InvalidOperationException("Layer metadata is required for native binary encoders.");
+        }
+
+        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return layer ?? throw new ResourceNotFoundException($"Layer {layerId} not found.");
     }
 
     #endregion

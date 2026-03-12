@@ -203,7 +203,7 @@ internal static partial class FeatureServerEndpoints
     private static class SupportedFormats
     {
         public static readonly FrozenSet<string> Query =
-            new[] { "json", "pjson", "geojson", "pbf", "fgb" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "json", "pjson", "geojson", "pbf", "fgb", "geobuf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -249,7 +249,10 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Maps service definition to FeatureServer response
     /// </summary>
-    private static FeatureServerResponse MapServiceToResponse(ServiceDefinition service, QueryLimits queryLimits)
+    private static FeatureServerResponse MapServiceToResponse(
+        ServiceDefinition service,
+        QueryLimits queryLimits,
+        bool supportsGeobufOutput)
     {
         var objectIdField = ResolveServiceObjectIdField(service);
         var supportsStatistics = true;
@@ -265,7 +268,7 @@ internal static partial class FeatureServerEndpoints
             InitialExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             FullExtent = service.EffectiveExtent.HasValue ? service.EffectiveExtent.Value.ToExtentInfo() : null,
             MaxRecordCount = queryLimits.MaxRecordCount,
-            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats, supportsGeobufOutput),
             Capabilities = BuildServiceCapabilities(service),
             Fields = [.. service.AllFields.Select(MapFieldInfo)],
             ObjectIdField = objectIdField,
@@ -313,7 +316,8 @@ internal static partial class FeatureServerEndpoints
         LayerDefinition layer,
         QueryLimits queryLimits,
         FeatureServerTimeInfo? timeInfo,
-        JsonElement? drawingInfo)
+        JsonElement? drawingInfo,
+        bool supportsGeobufOutput)
     {
         var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var displayField = ResolveDisplayFieldFromLayer(layer, objectIdField);
@@ -349,7 +353,7 @@ internal static partial class FeatureServerEndpoints
             SupportsApplyEditsWithGlobalIds = false,
             HasAttachments = layer.SupportsAttachments,
             SupportsQueryRelated = supportsRelated,
-            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats),
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(service.SupportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = false,
             Relationships = BuildRelationshipResponse(layer),
             AllowGeometryUpdates = service.SupportsEditing,
@@ -472,14 +476,39 @@ internal static partial class FeatureServerEndpoints
         return error == null;
     }
 
-    private static string[] NormalizeSupportedQueryFormats(string[]? formats)
+    private static string[] NormalizeSupportedQueryFormats(string[]? formats, bool supportsGeobufOutput)
     {
-        if (formats == null || formats.Length == 0)
+        var normalizedFormats = new List<string>();
+
+        if (formats != null)
         {
-            return ["JSON"];
+            foreach (var format in formats)
+            {
+                AddSupportedFormat(normalizedFormats, format);
+            }
         }
 
-        return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
+        AddSupportedFormat(normalizedFormats, "JSON");
+        AddSupportedFormat(normalizedFormats, "GEOJSON");
+        AddSupportedFormat(normalizedFormats, "PBF");
+        AddSupportedFormat(normalizedFormats, "FGB");
+
+        if (supportsGeobufOutput)
+        {
+            AddSupportedFormat(normalizedFormats, "GEOBUF");
+        }
+
+        return [.. normalizedFormats];
+    }
+
+    private static void AddSupportedFormat(List<string> formats, string format)
+    {
+        if (formats.Any(existing => existing.Equals(format, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        formats.Add(format.ToUpperInvariant());
     }
 
     private static string BuildServiceCapabilities(ServiceDefinition service)
@@ -599,6 +628,12 @@ internal static partial class FeatureServerEndpoints
                     mediaType.Equals("application/flatgeobuf", StringComparison.OrdinalIgnoreCase))
                 {
                     format = "fgb";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/geobuf", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "geobuf";
                     return true;
                 }
 

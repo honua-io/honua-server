@@ -140,6 +140,7 @@ internal static partial class MapServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            var kmlFeatureStore = featureReader as IKmlFeatureStore;
             var wkbReader = new WKBReader();
 
             var renderLayers = ResolveRenderLayers(service, layersValue, dynamicLayers, context)
@@ -207,26 +208,43 @@ internal static partial class MapServerEndpoints
                         SqlFilter = sqlFilter
                     };
 
-                    var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
-                    totalFeatureCount += queryResult.Items.Length;
-
                     var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
                     var displayField = ResolveDisplayField(layer, objectIdField);
 
                     writer.WriteStartElement("Folder");
                     writer.WriteElementString("name", layer.Name);
 
-                    foreach (var feature in queryResult.Items)
+                    if (kmlFeatureStore is not null)
                     {
-                        if (!TryReadGeometry(feature.Geometry, wkbReader, out var geometry))
-                        {
-                            continue;
-                        }
+                        var queryResult = await kmlFeatureStore.QueryKmlAsync(layer.Id, featureQuery, context.RequestAborted);
+                        totalFeatureCount += queryResult.Items.Length;
 
-                        var displayValue = GetDisplayFieldValue(feature, displayField);
-                        if (WritePlacemark(writer, feature, displayValue, geometry!))
+                        foreach (var feature in queryResult.Items)
                         {
-                            totalPlacemarkCount++;
+                            var displayValue = GetDisplayFieldValue(feature, displayField);
+                            if (WritePlacemark(writer, feature, displayValue))
+                            {
+                                totalPlacemarkCount++;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+                        totalFeatureCount += queryResult.Items.Length;
+
+                        foreach (var feature in queryResult.Items)
+                        {
+                            if (!TryReadGeometry(feature.Geometry, wkbReader, out var geometry))
+                            {
+                                continue;
+                            }
+
+                            var displayValue = GetDisplayFieldValue(feature, displayField);
+                            if (WritePlacemark(writer, feature, displayValue, geometry!))
+                            {
+                                totalPlacemarkCount++;
+                            }
                         }
                     }
 
@@ -330,6 +348,27 @@ internal static partial class MapServerEndpoints
         return wroteGeometry;
     }
 
+    private static bool WritePlacemark(XmlWriter writer, KmlFeature feature, string? displayValue)
+    {
+        writer.WriteStartElement("Placemark");
+        writer.WriteElementString(
+            "name",
+            string.IsNullOrWhiteSpace(displayValue)
+                ? feature.Id.ToString(CultureInfo.InvariantCulture)
+                : displayValue);
+
+        WriteExtendedData(feature.Attributes, writer);
+
+        var wroteGeometry = !string.IsNullOrWhiteSpace(feature.GeometryKml);
+        if (wroteGeometry)
+        {
+            writer.WriteRaw(feature.GeometryKml!);
+        }
+
+        writer.WriteEndElement();
+        return wroteGeometry;
+    }
+
     private static void WriteExtendedData(
         ImmutableDictionary<string, object?> attributes,
         XmlWriter writer)
@@ -366,6 +405,16 @@ internal static partial class MapServerEndpoints
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
             _ => value.ToString() ?? string.Empty
         };
+    }
+
+    private static string? GetDisplayFieldValue(KmlFeature feature, string displayField)
+    {
+        if (feature.Attributes.TryGetValue(displayField, out var value) && value is string s && !string.IsNullOrWhiteSpace(s))
+        {
+            return s;
+        }
+
+        return feature.Id.ToString(CultureInfo.InvariantCulture);
     }
 
     private static bool TryWriteKmlGeometry(XmlWriter writer, NtsGeometry geometry)
