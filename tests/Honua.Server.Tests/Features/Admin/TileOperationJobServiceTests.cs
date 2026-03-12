@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -12,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
@@ -68,9 +70,72 @@ public sealed class TileOperationJobServiceTests
         retryJobId.Should().NotBe(failedJobId);
     }
 
+    [Fact]
+    public async Task RetryAsync_WithLegacyCachedRequestPayload_ReturnsNewJobId()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
+        const string jobId = "legacy-failed-job";
+
+        await cache.SetStringAsync(
+            $"tile:request:{jobId}",
+            JsonSerializer.Serialize(new TileOperationStartRequest
+            {
+                Operation = "seed",
+                LayerId = 1,
+                TileMatrixSetId = "UnsupportedSet"
+            }));
+
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, "seed", null, 1, "UnsupportedSet") with
+            {
+                Status = OperationStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = "Simulated failure"
+            });
+
+        var retryJobId = await sut.RetryAsync(jobId);
+
+        retryJobId.Should().NotBeNullOrWhiteSpace();
+        retryJobId.Should().NotBe(jobId);
+    }
+
+    [Fact]
+    public async Task ReadQueuedJobIdsAsync_WithLegacyCachedRequestPayload_RecoversQueuedJob()
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var sut = CreateSut(progressStore, serviceProvider.GetRequiredService<IServiceScopeFactory>(), cache);
+        const string jobId = "legacy-queued-job";
+
+        await cache.SetStringAsync(
+            $"tile:request:{jobId}",
+            JsonSerializer.Serialize(new TileOperationStartRequest
+            {
+                Operation = "archive",
+                LayerId = 1,
+                TileMatrixSetId = "WebMercatorQuad"
+            }));
+
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, "archive", null, 1, "WebMercatorQuad"));
+
+        await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
+        var hasRecoveredJob = await enumerator.MoveNextAsync();
+
+        hasRecoveredJob.Should().BeTrue();
+        enumerator.Current.Should().Be(jobId);
+    }
+
     private static TileOperationJobService CreateSut(
         IUniversalProgressStore progressStore,
-        IServiceScopeFactory serviceScopeFactory)
+        IServiceScopeFactory serviceScopeFactory,
+        IDistributedCache? requestCache = null)
     {
         var cacheInvalidationService = new OutputCacheInvalidationService(
             cacheStore: null,
@@ -80,7 +145,7 @@ public sealed class TileOperationJobServiceTests
 
         return new TileOperationJobService(
             progressStore,
-            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+            requestCache ?? new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
             cacheInvalidationService,
             serviceScopeFactory,
             Options.Create(new TileOptions()),

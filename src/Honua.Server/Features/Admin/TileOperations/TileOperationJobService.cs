@@ -768,7 +768,7 @@ internal sealed partial class TileOperationJobService(
             return null;
         }
 
-        var request = JsonSerializer.Deserialize<PersistedTileOperationRequest>(json);
+        var request = TryDeserializePersistedJobRequest(json);
         if (request == null)
         {
             await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -778,6 +778,39 @@ internal sealed partial class TileOperationJobService(
         var restoredRequest = CreateCachedRequest(request.Request, request.SchemaName);
         _jobRequests[jobId] = restoredRequest;
         return restoredRequest;
+    }
+
+    private static PersistedTileOperationRequest? TryDeserializePersistedJobRequest(string json)
+    {
+        try
+        {
+            var persistedRequest = JsonSerializer.Deserialize<PersistedTileOperationRequest>(json);
+            if (persistedRequest is { Request: not null })
+            {
+                return persistedRequest;
+            }
+        }
+        catch (JsonException)
+        {
+            // Older deployments stored TileOperationStartRequest directly in cache.
+        }
+
+        try
+        {
+            var legacyRequest = JsonSerializer.Deserialize<TileOperationStartRequest>(json);
+            if (legacyRequest != null)
+            {
+                return new PersistedTileOperationRequest
+                {
+                    Request = legacyRequest
+                };
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return null;
     }
 
     private void RefreshJobRequestRetention(string jobId)
