@@ -54,6 +54,24 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
         result.WhereParameters.Should().Equal("name", "population", "active");
     }
 
+    [Fact]
+    public void BuildSelectGeobufQuery_WithKnnFilter_AppliesNearestNeighborOrderingAndLimit()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var layer = CreateLayer();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = SpatialFilter.CreateKnnFilter(new byte[] { 1, 2, 3 }, count: 5, srid: 4326)
+        };
+
+        var result = queryBuilder.BuildSelectGeobufQuery(layer, layerId: 1, query: query);
+
+        result.Sql.Should().Contain("ORDER BY ST_Distance(");
+        result.Sql.Should().Contain("::geography");
+        result.Sql.Should().Contain(" LIMIT $");
+    }
+
     private static FeatureQueryBuilder CreateQueryBuilder()
     {
         var poolProvider = new DefaultObjectPoolProvider();

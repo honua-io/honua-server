@@ -20,6 +20,10 @@ internal sealed partial class FeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType)
     {
+        var spatialFilter = query.SpatialFilter;
+        var isKnnQuery = spatialFilter.HasValue &&
+                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -57,7 +61,8 @@ internal sealed partial class FeatureQueryBuilder
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendPagination(sql, false, query, null, ref paramIndex);
+            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
             sql.Append(") q");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
