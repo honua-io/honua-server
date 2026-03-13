@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Azure Functions-targeted Honua image (AOT).
-# Uses a glibc runtime base and keeps App Service writable paths.
+# Packages Honua as a custom-handler container behind the Azure Functions host.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
       --self-contained true \
-      --output /app \
+      --output /out/app \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
       -p:HonuaIncludeAdminUi="$HONUA_INCLUDE_ADMIN_UI" \
       -p:PublishAot=true \
@@ -54,31 +54,27 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:OptimizationPreference=Speed \
       -p:IlcOptimizationPreference=Speed \
       -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" && \
-    rm -rf /app/BlazorDebugProxy && \
-    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot; fi && \
-    find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
+    rm -rf /out/app/BlazorDebugProxy && \
+    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /out/app/wwwroot; fi && \
+    find /out/app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
-WORKDIR /app
+FROM mcr.microsoft.com/azure-functions/base:4-appservice AS runtime
+WORKDIR /home/site/wwwroot
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgssapi-krb5-2 && \
-    rm -rf /var/lib/apt/lists/* && \
-    useradd --uid 1001 --create-home --shell /usr/sbin/nologin honua && \
-    mkdir -p /home/site/wwwroot /home/LogFiles /appsvctmp /tmp/honua-logs /tmp/honua-cache && \
-    chown -R 1001:1001 /home/site /home/LogFiles /appsvctmp /tmp/honua-logs /tmp/honua-cache
+    apt-get install -y --no-install-recommends libgssapi-krb5-2 libstdc++6 zlib1g && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY --from=build --chown=1001:1001 /app /app
+COPY --from=build /out/app /home/site/wwwroot/app
+COPY docker/azure-functions/ /home/site/wwwroot/
 
-USER 1001:1001
+RUN chmod +x /home/site/wwwroot/handler.sh /home/site/wwwroot/app/Honua.Server
 
-ENV ASPNETCORE_ENVIRONMENT=Production \
-    ASPNETCORE_URLS=http://0.0.0.0:8080 \
-    WEBSITES_PORT=8080 \
-    DOTNET_RUNNING_IN_CONTAINER=true \
+ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
+    AzureFunctionsJobHost__Logging__Console__IsEnabled=true \
+    FUNCTIONS_WORKER_RUNTIME=custom \
+    FUNCTIONS_CUSTOMHANDLER_PORT=8080 \
     DOTNET_EnableDiagnostics=0 \
     HONUA_SERVE_ADMIN_UI=false
 
-EXPOSE 8080
-
-ENTRYPOINT ["/app/Honua.Server"]
+EXPOSE 80 8080
