@@ -61,6 +61,28 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_WhenCursorCacheThrows_ContinuesUntilCancellation()
+    {
+        var store = new InMemoryFeatureChangeEventStore(
+            Options.Create(new FeatureChangeEventOptions()),
+            new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())));
+        var dispatcher = new FeatureChangeWebhookDispatcher(
+            store,
+            new ThrowingDistributedCache(),
+            Substitute.For<IHttpClientFactory>(),
+            Options.Create(new FeatureChangeWebhookOptions
+            {
+                Enabled = false
+            }),
+            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => InvokeExecuteAsync(dispatcher, cts.Token));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void FeatureChangeWebhookOptionsValidator_WhenEnabledWithUnsafeUrl_FailsValidation()
     {
         var validator = new FeatureChangeWebhookOptionsValidator();
@@ -113,6 +135,23 @@ public sealed class FeatureChangeWebhookDispatcherTests
         await task!;
     }
 
+    private static async Task InvokeExecuteAsync(
+        FeatureChangeWebhookDispatcher dispatcher,
+        CancellationToken cancellationToken)
+    {
+        var method = typeof(FeatureChangeWebhookDispatcher).GetMethod(
+            "ExecuteAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(method);
+
+        var task = method!.Invoke(
+            dispatcher,
+            new object[] { cancellationToken }) as Task;
+        Assert.NotNull(task);
+        await task!;
+    }
+
     private sealed class CountingHandler : HttpMessageHandler
     {
         public int SendCount { get; private set; }
@@ -122,5 +161,17 @@ public sealed class FeatureChangeWebhookDispatcherTests
             SendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
+    }
+
+    private sealed class ThrowingDistributedCache : IDistributedCache
+    {
+        public byte[]? Get(string key) => throw new InvalidOperationException("boom");
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
+        public void Refresh(string key) => throw new InvalidOperationException("boom");
+        public Task RefreshAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
+        public void Remove(string key) => throw new InvalidOperationException("boom");
+        public Task RemoveAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) => throw new InvalidOperationException("boom");
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => throw new InvalidOperationException("boom");
     }
 }
