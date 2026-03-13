@@ -16,6 +16,7 @@ Use this checklist for every MVP release.
 - [ ] Update [MVP Compatibility Contract](../user/MVP_COMPATIBILITY_CONTRACT.md)
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../user/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Confirm supported/partial/unsupported protocol notes are current
+- [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices
 - [ ] Confirm replication limitations section reflects runtime behavior
 
 ### Tested Client Versions (Required)

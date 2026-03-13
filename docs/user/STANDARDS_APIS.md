@@ -32,10 +32,15 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-- /applyEdits
 ```
 
+**Output formats:**
+- Metadata: `json`
+- Features: `json` (GeoServices), `geojson`, `pbf` (Protocol Buffers), `fgb` (FlatGeobuf), `geobuf` (when store supports native output), `parquet` (GeoParquet with WKB geometry)
+
 **Typical use cases:**
 - ArcGIS Pro connectivity
 - ArcGIS SDK clients
 - Legacy FeatureServer integrations
+- Analytics workflows (GeoParquet export)
 
 ---
 

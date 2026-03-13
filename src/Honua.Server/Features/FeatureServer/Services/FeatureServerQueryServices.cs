@@ -36,7 +36,7 @@ internal sealed class FeatureServerQueryServices(
         CancellationToken cancellationToken = default)
         => _spatialReferenceResolver.ResolveSridAsync(srValue, geometrySpatialReference, cancellationToken);
 
-    public (object? Response, string? ContentType) FormatQueryResult(
+    public ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         LayerDefinition layer,
         string format,
@@ -47,7 +47,7 @@ internal sealed class FeatureServerQueryServices(
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields)
-        => _queryFormatter.FormatQueryResult(
+        => _queryFormatter.FormatQueryResultAsync(
             result,
             layer,
             format,

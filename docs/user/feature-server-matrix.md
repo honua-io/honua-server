@@ -106,7 +106,7 @@ MapServer coverage is tracked separately:
 | Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
 | KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. |
 | Temporal | `time`, `timeRelation` | Implemented | Uses layer timeInfo or first temporal field. |
-| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf` | Implemented | `f=fgb` and `f=geobuf` return binary payloads; `f=geobuf` requires a store with native GeoBuf support. |
+| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet` | Implemented | `f=fgb`, `f=geobuf`, and `f=parquet` return binary payloads; `f=geobuf` requires a store with native GeoBuf support; `f=parquet` returns GeoParquet format with WKB-encoded geometry. |
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
 
 ### Not implemented (explicitly rejected)
@@ -194,7 +194,7 @@ MapServer coverage is tracked separately:
 | `spatialReference` | Implemented | From service definition. |
 | `initialExtent` / `fullExtent` | Implemented | From service effective extent. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized to uppercase and augmented with runtime-supported binary formats (`PBF`, `FGB`, and `GEOBUF` when the backing store exposes native GeoBuf output). |
+| `supportedQueryFormats` | Implemented | Normalized to uppercase and augmented with runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and `GEOBUF` when the backing store exposes native GeoBuf output). |
 | `supportsAdvancedQueries` | Implemented | From service definition. |
 | `supportsStatistics` | Implemented | Always true. |
 | `objectIdField` | Implemented | Resolved from layer primary keys or defaults to `objectid`. |
@@ -226,4 +226,4 @@ MapServer coverage is tracked separately:
 | `templates` | Implemented | Empty array (no feature templates configured). |
 | `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, and conditional `GEOBUF`). |
+| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and conditional `GEOBUF`). |
