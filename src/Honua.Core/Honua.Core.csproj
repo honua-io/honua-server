@@ -39,7 +39,8 @@
     <!-- Generate C# clients from standard gRPC geospatial protocol files -->
     <Protobuf Include="Transport/Proto/geospatial/v1/*.proto"
               GrpcServices="Both"
-              ProtoRoot="Transport/Proto" />
+              ProtoRoot="Transport/Proto"
+              AdditionalProtocArguments="--experimental_allow_proto3_optional" />
   </ItemGroup>
 
   <ItemGroup>
