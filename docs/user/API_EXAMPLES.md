@@ -53,6 +53,11 @@ curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=populati
 curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=fgb" --output features.fgb
 ```
 
+**GeoParquet output:**
+```bash
+curl "http://localhost:8080/rest/services/1/FeatureServer/0/query?where=population%20%3E%2010000&outFields=*&f=parquet" --output features.parquet
+```
+
 **Example response (trimmed):**
 ```json
 {

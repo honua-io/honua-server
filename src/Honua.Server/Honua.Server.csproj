@@ -59,6 +59,7 @@
     <PackageReference Include="NetTopologySuite" Version="2.6.0" />
     <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.2" />
+    <PackageReference Include="Parquet.Net" Version="5.5.0" />
     <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
 

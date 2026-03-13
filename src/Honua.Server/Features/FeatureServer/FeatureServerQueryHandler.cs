@@ -493,7 +493,8 @@ internal sealed class FeatureServerQueryHandler(
             var isPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
             var isFgb = string.Equals(format, "fgb", StringComparison.OrdinalIgnoreCase);
             var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf;
+            var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet;
 
             if (!useStreaming)
             {
@@ -572,7 +573,7 @@ internal sealed class FeatureServerQueryHandler(
                     result = ApplyPaginationWindow(result, query.Offset, query.Limit);
                 }
 
-                (object? formattedResponse, string? contentType) = _queryServices.FormatQueryResult(
+                (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
                     result,
                     layer,
                     format,
@@ -592,6 +593,13 @@ internal sealed class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(
                         (byte[])formattedResponse!,
                         contentType ?? "application/x-protobuf");
+                }
+
+                if (isParquet)
+                {
+                    return await CreateCachedBytesResultAsync(
+                        (byte[])formattedResponse!,
+                        contentType ?? "application/vnd.apache.parquet");
                 }
 
                 return format.ToLowerInvariant() switch

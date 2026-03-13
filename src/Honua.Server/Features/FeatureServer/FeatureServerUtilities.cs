@@ -203,7 +203,7 @@ internal static partial class FeatureServerEndpoints
     private static class SupportedFormats
     {
         public static readonly FrozenSet<string> Query =
-            new[] { "json", "pjson", "geojson", "pbf", "fgb", "geobuf" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "json", "pjson", "geojson", "pbf", "fgb", "geobuf", "parquet" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -641,6 +641,12 @@ internal static partial class FeatureServerEndpoints
                     mediaType.Equals("application/vnd.google.protobuf", StringComparison.OrdinalIgnoreCase))
                 {
                     format = "pbf";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/vnd.apache.parquet", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "parquet";
                     return true;
                 }
 

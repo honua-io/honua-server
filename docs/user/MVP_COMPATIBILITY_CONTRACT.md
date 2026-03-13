@@ -7,7 +7,7 @@ Use this page first, then drill into the linked protocol matrices/spec docs.
 
 | Protocol | MVP status | Supported now | Partial / unsupported highlights | Deep reference |
 |---|---|---|---|---|
-| GeoServices REST FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replica endpoints, calculate, validateSQL, append | Advanced Esri operations remain partial/unsupported (query bins/top features, advanced SQL options, full offline parity) | [FeatureServer Coverage Matrix](feature-server-matrix.md) |
+| GeoServices REST FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replica endpoints, calculate, validateSQL, append, GeoParquet query export | Advanced Esri operations remain partial/unsupported (query bins/top features, advanced SQL options, full offline parity) | [FeatureServer Coverage Matrix](feature-server-matrix.md) |
 | GeoServices REST MapServer | Supported with partial parity | Export/identify/legend/find/query/tiles, WMS 1.3, WMTS 1.0 (KVP + RESTful) | WMTS scope limited to WebMercatorQuad; some Esri operations unsupported (generateKml) | [MapServer Coverage Matrix](map-server-matrix.md) |
 | GeoServices REST ImageServer | Supported | Service metadata, exportImage, identify, tile | Raster serving for ArcGIS image workflows | — |
 | GeoServices REST Geometry Service | Supported | Buffer, simplify, project, intersect, union, clip, difference, area, length | 9 geometry operations via PostGIS | [Geometry Service Coverage](specifications/geometry-service-coverage.md) |

@@ -21,7 +21,7 @@ internal interface IFeatureServerQueryServices
         GeoServicesSpatialReference? geometrySpatialReference,
         CancellationToken cancellationToken = default);
 
-    (object? Response, string? ContentType) FormatQueryResult(
+    ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         LayerDefinition layer,
         string format,
