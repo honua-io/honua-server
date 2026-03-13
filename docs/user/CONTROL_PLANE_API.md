@@ -202,13 +202,17 @@ Content-Type: multipart/form-data
 file=@parcels.geojson
 ```
 
+For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md).
+
 ### **Import Endpoints**
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/admin/import/formats` | GET | List supported import file formats |
 | `/api/v1/admin/import/preview` | POST | Preview uploaded file content before import |
+| `/api/v1/admin/import/preview-url` | POST | Preview data from a supported public object URL |
 | `/api/v1/admin/import/upload` | POST | Upload and import data |
+| `/api/v1/admin/import/upload-url` | POST | Import data from a supported public object URL |
 | `/api/v1/admin/import/uploads` | GET | List active uploads |
 | `/api/v1/admin/import/uploads/{uploadId}/progress` | GET | Get upload progress |
 | `/api/v1/admin/import/uploads/{uploadId}/cancel` | POST | Cancel an upload |
@@ -296,6 +300,7 @@ GET /healthz/live
 
 - [Admin UI](admin-ui.md)
 - [Geospatial API Examples](API_EXAMPLES.md)
+- [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md)
 - [Security](../devops/security.md)
 - [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
 - [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)

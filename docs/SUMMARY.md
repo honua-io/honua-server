@@ -33,6 +33,7 @@
 ## Server Management
 
 * [Admin API Reference](user/CONTROL_PLANE_API.md)
+* [FileGDB Import Workflow](user/FILEGDB_IMPORT_WORKFLOW.md)
 * [Admin UI](user/admin-ui.md)
 * [MCP Server](user/MCP_SERVER.md)
 * [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md)

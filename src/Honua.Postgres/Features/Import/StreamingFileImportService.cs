@@ -137,6 +137,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var formatName = format?.ToString() ?? "unknown";
         var mode = progress == null ? "sync" : "background";
         var jobId = Guid.NewGuid().ToString("N")[..8];
+        string[] warnings = [];
 
         // Handle cloud storage file download if needed
         Stream fileStream;
@@ -159,7 +160,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     request.TableName,
                     format ?? SupportedFileFormat.GeoJson,
                     cloudErrorMessage,
-                    stopwatch.Elapsed);
+                    stopwatch.Elapsed,
+                    warnings);
             }
 
             fileStream = downloadStream;
@@ -213,7 +215,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     request.TableName,
                     SupportedFileFormat.GeoJson,
                     errorMessage,
-                    stopwatch.Elapsed);
+                    stopwatch.Elapsed,
+                    warnings);
                 return result;
             }
 
@@ -229,7 +232,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                         request.TableName,
                         format.Value,
                         errorMessage,
-                        stopwatch.Elapsed);
+                        stopwatch.Elapsed,
+                        warnings);
                     return result;
                 }
 
@@ -262,7 +266,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                         request.TableName,
                         format.Value,
                         errorMessage,
-                        stopwatch.Elapsed);
+                        stopwatch.Elapsed,
+                        warnings);
                     return result;
                 }
 
@@ -295,6 +300,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             {
                 fileGdbScratch = await PrepareFileGdbScratchAsync(fileStream, cancellationToken);
                 detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else
             {
@@ -331,7 +337,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     request.TableName,
                     format.Value,
                     errorMessage,
-                    stopwatch.Elapsed);
+                    stopwatch.Elapsed,
+                    warnings);
                 return result;
             }
 
@@ -340,7 +347,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 jobId,
                 request.TableName,
                 format.Value,
-                fileStream.CanSeek ? fileStream.Length : null));
+                fileStream.CanSeek ? fileStream.Length : null,
+                warnings));
 
             // Stream features and insert in batches
             (importedCount, failedCount) = await ImportStreamingAsync(
@@ -348,6 +356,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 fileStream,
                 format.Value,
                 sourceSrid.Value,
+                warnings,
                 progress,
                 jobId,
                 cancellationToken,
@@ -361,7 +370,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     request.TableName,
                     format.Value,
                     errorMessage,
-                    stopwatch.Elapsed);
+                    stopwatch.Elapsed,
+                    warnings);
                 return result;
             }
 
@@ -371,7 +381,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 format.Value,
                 importedCount,
                 detectedSrid,
-                stopwatch.Elapsed);
+                stopwatch.Elapsed,
+                warnings);
             return result;
         }
         catch (OperationCanceledException)
@@ -382,7 +393,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
                 errorMessage,
-                stopwatch.Elapsed);
+                stopwatch.Elapsed,
+                warnings);
             return result;
         }
         catch (Exception ex)
@@ -393,7 +405,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 request.TableName,
                 format ?? SupportedFileFormat.GeoJson,
                 errorMessage,
-                stopwatch.Elapsed);
+                stopwatch.Elapsed,
+                warnings);
             return result;
         }
         finally
@@ -442,6 +455,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         Stream fileStream,
         SupportedFileFormat format,
         int sourceSrid,
+        IReadOnlyList<string> warnings,
         IProgress<ImportProgress>? progress,
         string jobId,
         CancellationToken cancellationToken,
@@ -517,7 +531,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Format = format,
                     StartedAt = startTime,
                     BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
-                    TotalBytes = fileStream.CanSeek ? fileStream.Length : null
+                    TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
+                    Warnings = warnings
                 });
 
                 // Yield control to prevent blocking
@@ -557,7 +572,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             StartedAt = startTime,
             CompletedAt = DateTimeOffset.UtcNow,
             BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
-            TotalBytes = fileStream.CanSeek ? fileStream.Length : null
+            TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
+            Warnings = warnings
         });
 
         return (totalImported, totalFailed);
@@ -959,6 +975,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
+        string[] warnings = [];
         Stream? kmzStream = null;
         try
         {
@@ -1005,6 +1022,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             {
                 fileGdbScratch = await PrepareFileGdbScratchAsync(fileStream, cancellationToken);
                 detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
+                warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
             else
             {
@@ -1067,7 +1085,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 TotalFeatureCount = features.Count,
                 DetectedSrid = detectedSrid,
                 SampleProperties = sampleProperties,
-                AvailableLayers = availableLayers
+                AvailableLayers = availableLayers,
+                Warnings = warnings
             };
         }
         finally

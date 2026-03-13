@@ -149,7 +149,12 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     /// <summary>
     /// Create an initial progress record for a new import job.
     /// </summary>
-    public static ImportProgress CreateInitial(string jobId, string tableName, SupportedFileFormat format, long? totalBytes = null)
+    public static ImportProgress CreateInitial(
+        string jobId,
+        string tableName,
+        SupportedFileFormat format,
+        long? totalBytes = null,
+        IReadOnlyList<string>? warnings = null)
         => new()
         {
             JobId = jobId,
@@ -158,7 +163,8 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
             Format = format,
             TotalBytes = totalBytes,
             StartedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Queued for processing"
+            CurrentPhase = "Queued for processing",
+            Warnings = warnings ?? []
         };
 }
 

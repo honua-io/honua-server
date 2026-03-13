@@ -44,6 +44,11 @@ public sealed record ImportResult
     public TimeSpan Duration { get; init; }
 
     /// <summary>
+    /// Warning messages surfaced during import.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
     /// Create successful import result
     /// </summary>
     public static ImportResult CreateSuccess(
@@ -51,7 +56,8 @@ public sealed record ImportResult
         SupportedFileFormat format,
         int featureCount,
         int? detectedSrid = null,
-        TimeSpan duration = default) =>
+        TimeSpan duration = default,
+        IReadOnlyList<string>? warnings = null) =>
         new()
         {
             Success = true,
@@ -59,7 +65,8 @@ public sealed record ImportResult
             Format = format,
             FeatureCount = featureCount,
             DetectedSrid = detectedSrid,
-            Duration = duration
+            Duration = duration,
+            Warnings = warnings ?? []
         };
 
     /// <summary>
@@ -69,13 +76,15 @@ public sealed record ImportResult
         string tableName,
         SupportedFileFormat format,
         string errorMessage,
-        TimeSpan duration = default) =>
+        TimeSpan duration = default,
+        IReadOnlyList<string>? warnings = null) =>
         new()
         {
             Success = false,
             TableName = tableName,
             Format = format,
             ErrorMessage = errorMessage,
-            Duration = duration
+            Duration = duration,
+            Warnings = warnings ?? []
         };
 }

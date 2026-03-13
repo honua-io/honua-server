@@ -25,6 +25,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [API Examples](user/API_EXAMPLES.md) — request/response examples
 - [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches
 - [Admin API](user/CONTROL_PLANE_API.md) — server management endpoints
+- [FileGDB Import Workflow](user/FILEGDB_IMPORT_WORKFLOW.md) — Esri File Geodatabase packaging, preview, upload, and limitations
 - [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md) — supported control-plane server/SDK combinations and migration baseline
 - [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) — required migration/changelog structure for SDK repos
 - [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) — SDK and upgrade workflow

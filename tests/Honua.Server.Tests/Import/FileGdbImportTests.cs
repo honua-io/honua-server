@@ -61,6 +61,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("filegdb_import_test");
         responseContent.Should().Contain("FileGdb");
+        responseContent.Should().Contain("warnings");
         responseContent.Should().Contain("\"success\":true");
     }
 
@@ -94,6 +95,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("filegdb_sparse_import_test");
         responseContent.Should().Contain("FileGdb");
+        responseContent.Should().Contain("warnings");
     }
 
     [IntegrationTest]
@@ -145,6 +147,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         var responseContent = await response2.Content.ReadAsStringAsync();
         responseContent.Should().Contain("filegdb_overwrite_test");
         responseContent.Should().Contain("FileGdb");
+        responseContent.Should().Contain("warnings");
         responseContent.Should().Contain("\"success\":true");
     }
 }
