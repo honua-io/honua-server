@@ -30,7 +30,11 @@ public static class FileStorageServiceExtensions
         // Bind configuration
         var section = configuration.GetSection("FileStorage");
         services.Configure<CloudStorageOptions>(section);
-        services.PostConfigure<CloudStorageOptions>(ResolveCloudStorageSecrets);
+        services.PostConfigure<CloudStorageOptions>(options =>
+        {
+            ResolveCloudStorageSecrets(options);
+            EnsureLocalStorageDefaults(options, section);
+        });
 
         // Bind provider-specific options
         var localSection = section.GetSection("LocalStorage");
@@ -166,6 +170,29 @@ public static class FileStorageServiceExtensions
                 "FileStorage:AzureBlob:ConnectionString") ?? string.Empty;
         }
 
+    }
+
+    private static void EnsureLocalStorageDefaults(CloudStorageOptions options, IConfiguration section)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(section);
+
+        if (options.Provider != CloudStorageProvider.Local)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.LocalStorage?.BasePath))
+        {
+            return;
+        }
+
+        options.LocalStorage = new LocalStorageOptions
+        {
+            BasePath = section.GetValue("LocalStorage:BasePath", null as string)
+                       ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
+            CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
+        };
     }
 
     private static void RegisterUploadProgressStore(IServiceCollection services)
