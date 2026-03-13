@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using OpenTelemetry;
@@ -183,6 +184,17 @@ public static partial class Extensions
     {
         var options = new PrometheusOptions();
         app.Configuration.GetSection(PrometheusOptions.SectionName).Bind(options);
+
+        if (app.Services.GetService<MeterProvider>() is null)
+        {
+            var logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger("Honua.ServiceDefaults");
+            if (logger is not null)
+            {
+                LogPrometheusEndpointSkipped(logger, NormalizePrometheusPath(options.Path));
+            }
+            return app;
+        }
+
         app.MapPrometheusScrapingEndpoint(NormalizePrometheusPath(options.Path));
         return app;
     }
@@ -241,6 +253,12 @@ public static partial class Extensions
 
         return normalized;
     }
+
+    [LoggerMessage(
+        EventId = 4101,
+        Level = LogLevel.Warning,
+        Message = "Prometheus endpoint '{Path}' was not mapped because no MeterProvider is registered.")]
+    private static partial void LogPrometheusEndpointSkipped(ILogger logger, string path);
 
     private sealed class SpanSanitizingProcessor : BaseProcessor<Activity>
     {
