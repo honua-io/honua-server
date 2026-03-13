@@ -4,6 +4,8 @@
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -21,52 +23,54 @@ internal static class TileOperationsEndpoints
             .WithDescription("Tile cache seed/warm/invalidate/purge/archive job control")
             .RequireAdminAuthorization();
 
-        _ = group.Map("/jobs", HandleStartJob)
+        _ = group.MapPost("/jobs", HandleStartJob)
             .WithName("StartTileOperationJob")
             .WithSummary("Start a tile operation job")
-            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive) for asynchronous execution")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
+            .WithDescription("Queues a tile operation (seed, warm, invalidate, purge, archive) for asynchronous execution");
 
-        _ = group.Map("/jobs/{jobId}", HandleGetJobStatus)
+        _ = group.MapGet("/jobs/{jobId}", HandleGetJobStatus)
             .WithName("GetTileOperationJobStatus")
             .WithSummary("Get tile operation job status")
-            .WithDescription("Returns progress and status details for a tile operation job")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns progress and status details for a tile operation job");
 
-        _ = group.Map("/jobs", HandleListJobs)
+        _ = group.MapGet("/jobs", HandleListJobs)
             .WithName("ListTileOperationJobs")
             .WithSummary("List tile operation jobs")
-            .WithDescription("Lists tile operation jobs, optionally including completed jobs")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Lists tile operation jobs, optionally including completed jobs");
 
-        _ = group.Map("/jobs/{jobId}/cancel", HandleCancelJob)
+        _ = group.MapPost("/jobs/{jobId}/cancel", HandleCancelJob)
             .WithName("CancelTileOperationJob")
             .WithSummary("Cancel tile operation job")
-            .WithDescription("Attempts to cancel a queued or running tile operation job")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
+            .WithDescription("Attempts to cancel a queued or running tile operation job");
 
-        _ = group.Map("/jobs/{jobId}/retry", HandleRetryJob)
+        _ = group.MapPost("/jobs/{jobId}/retry", HandleRetryJob)
             .WithName("RetryTileOperationJob")
             .WithSummary("Retry tile operation job")
-            .WithDescription("Queues a retry of a failed or cancelled tile operation job")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
+            .WithDescription("Queues a retry of a failed or cancelled tile operation job");
     }
 
-    private static async Task<IResult> HandleStartJob(
+    private static async Task<Results<JsonHttpResult<TileOperationStartResponse>, JsonHttpResult<ProblemDetailsResponse>>> HandleStartJob(
         TileOperationStartRequest request,
         HttpContext context,
         ITileOperationJobService jobService,
         CancellationToken cancellationToken)
     {
-        var validationError = ValidateStartRequest(request);
+        var validationError = ValidateStartRequest(context, request);
         if (validationError != null)
         {
-            return validationError;
+            return TypedResults.Json(
+                validationError,
+                ProblemJsonContext.Default.ProblemDetailsResponse,
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ProblemDetailsHelpers.ContentType);
         }
 
         try
         {
-            var jobId = await jobService.StartAsync(request, cancellationToken).ConfigureAwait(false);
+            var jobId = await jobService.StartAsync(
+                request,
+                context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+                cancellationToken).ConfigureAwait(false);
             var response = new TileOperationStartResponse
             {
                 JobId = jobId,
@@ -75,14 +79,18 @@ internal static class TileOperationsEndpoints
                 CancelUrl = $"/api/v1/admin/tile-operations/jobs/{jobId}/cancel"
             };
 
-            return Results.Json(
+            return TypedResults.Json(
                 response,
                 TileOperationsJsonContext.Default.TileOperationStartResponse,
                 statusCode: StatusCodes.Status202Accepted);
         }
         catch (ArgumentException ex)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return TypedResults.Json(
+                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status400BadRequest, ex.Message),
+                ProblemJsonContext.Default.ProblemDetailsResponse,
+                statusCode: StatusCodes.Status400BadRequest,
+                contentType: ProblemDetailsHelpers.ContentType);
         }
     }
 
@@ -173,30 +181,33 @@ internal static class TileOperationsEndpoints
             statusCode: StatusCodes.Status202Accepted);
     }
 
-    private static IResult? ValidateStartRequest(TileOperationStartRequest request)
+    private static ProblemDetailsResponse? ValidateStartRequest(HttpContext context, TileOperationStartRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Operation))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Property 'operation' is required."));
+                "Property 'operation' is required.");
         }
 
         if (request.Bbox != null && request.Bbox.Length != 4)
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Property 'bbox' must contain exactly four values: [minLon, minLat, maxLon, maxLat]."));
+                "Property 'bbox' must contain exactly four values: [minLon, minLat, maxLon, maxLat].");
         }
 
         if (request.MinZoom.HasValue && request.MaxZoom.HasValue && request.MinZoom > request.MaxZoom)
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Property 'minZoom' must be less than or equal to 'maxZoom'."));
+                "Property 'minZoom' must be less than or equal to 'maxZoom'.");
         }
 
         var operation = request.Operation.Trim().ToLowerInvariant();
@@ -204,10 +215,11 @@ internal static class TileOperationsEndpoints
         {
             if (!request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
             {
-                return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                    context,
                     StatusCodes.Status400BadRequest,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    "Seed/warm operations require either 'layerId' or 'serviceId'."));
+                    "Seed/warm operations require either 'layerId' or 'serviceId'.");
             }
         }
 
@@ -215,10 +227,11 @@ internal static class TileOperationsEndpoints
         {
             if (!request.LayerId.HasValue)
             {
-                return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                    context,
                     StatusCodes.Status400BadRequest,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    "Archive operations require 'layerId'."));
+                    "Archive operations require 'layerId'.");
             }
         }
 

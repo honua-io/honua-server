@@ -26,6 +26,12 @@ internal static class ProblemDetailsHelpers
     public static IResult CreateAdminProblem(HttpContext context, int statusCode, string title, string detail)
         => CreateProblem(context, AdminType, statusCode, title, detail);
 
+    public static ProblemDetailsResponse CreateAdminProblemDetails(HttpContext context, int statusCode, string detail)
+        => CreateProblemDetails(AdminType, statusCode, GetTitle(statusCode), detail, BuildInstance(context), context);
+
+    public static ProblemDetailsResponse CreateAdminProblemDetails(HttpContext context, int statusCode, string title, string detail)
+        => CreateProblemDetails(AdminType, statusCode, title, detail, BuildInstance(context), context);
+
     public static IResult CreateAdminProblem(int statusCode, string title, string detail, string? instance = null)
         => CreateProblem(AdminType, statusCode, title, detail, instance);
 
