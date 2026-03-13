@@ -2,11 +2,18 @@
 # Azure Functions-targeted Honua image (AOT).
 # Packages Honua as a custom-handler container behind the Azure Functions host.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/azure-functions/base:4-appservice AS build
 WORKDIR /src
 
+ENV DOTNET_ROOT=/usr/share/dotnet
+ENV PATH="${DOTNET_ROOT}:${PATH}"
+
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends clang lld protobuf-compiler zlib1g-dev && \
+    apt-get install -y --no-install-recommends ca-certificates clang lld protobuf-compiler wget zlib1g-dev && \
+    wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && \
+    bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_ROOT" && \
+    ln -sf "$DOTNET_ROOT/dotnet" /usr/bin/dotnet && \
+    rm -f /tmp/dotnet-install.sh && \
     rm -rf /var/lib/apt/lists/*
 
 COPY Honua.sln Directory.Build.props .editorconfig ./
