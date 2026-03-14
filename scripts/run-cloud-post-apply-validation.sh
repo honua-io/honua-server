@@ -103,6 +103,47 @@ normalize_base_url() {
     printf 'https://%s\n' "$base_url"
 }
 
+platform_capability_default() {
+    local platform="${1:-}"
+    local capability="${2:-}"
+
+    case "${platform}:${capability}" in
+        azure-functions:deploy-plan|azure-functions:mutation)
+            printf 'false\n'
+            ;;
+        azure-container-apps:deploy-plan|azure-container-apps:mutation)
+            printf 'false\n'
+            ;;
+        kubernetes:deploy-plan)
+            printf 'false\n'
+            ;;
+    esac
+}
+
+apply_platform_capability_defaults() {
+    local platform="${HONUA_CLOUD_TEST_PLATFORM:-}"
+    local deploy_plan_support=""
+    local mutation_support=""
+
+    if [[ -z "$platform" ]]; then
+        return 0
+    fi
+
+    if [[ -z "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" ]]; then
+        deploy_plan_support="$(platform_capability_default "$platform" "deploy-plan")"
+        if [[ -n "$deploy_plan_support" ]]; then
+            export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="$deploy_plan_support"
+        fi
+    fi
+
+    if [[ -z "${HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT:-}" ]]; then
+        mutation_support="$(platform_capability_default "$platform" "mutation")"
+        if [[ -n "$mutation_support" ]]; then
+            export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="$mutation_support"
+        fi
+    fi
+}
+
 resolve_tf_output() {
     local key=$1
     jq -r --arg key "$key" '
@@ -166,12 +207,7 @@ fi
 HONUA_CLOUD_TEST_BASE_URL="$(normalize_base_url "$HONUA_CLOUD_TEST_BASE_URL")"
 export HONUA_CLOUD_TEST_BASE_URL
 
-case "${HONUA_CLOUD_TEST_PLATFORM:-}" in
-    azure-functions)
-        export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-false}"
-        export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="${HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT:-false}"
-        ;;
-esac
+apply_platform_capability_defaults
 
 require_tool dotnet
 require_tool curl
