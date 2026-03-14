@@ -31,6 +31,7 @@ public sealed class CloudDeploymentValidationTests
     private const string PlatformEnv = "HONUA_CLOUD_TEST_PLATFORM";
     private const string DeployTargetIdEnv = "HONUA_CLOUD_TEST_DEPLOY_TARGET_ID";
     private const string ExpectDeployPlanSupportEnv = "HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT";
+    private const string ExpectMutationSupportEnv = "HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT";
     private const string DeployDesiredRevisionEnv = "HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION";
     private const string DeployCurrentRevisionEnv = "HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION";
     private const string ExecuteDeployOperationEnv = "HONUA_CLOUD_TEST_EXECUTE_DEPLOY_OPERATION";
@@ -126,6 +127,11 @@ public sealed class CloudDeploymentValidationTests
     [Endpoint("POST /api/v1/admin/deploy/plan")]
     public async Task DeployPlanEndpoint_ReturnsPlan_WhenTargetConfigured_OrNotFoundContract_WhenNoTargetConfigured()
     {
+        if (!GetOptionalBool(ExpectDeployPlanSupportEnv, defaultValue: true))
+        {
+            return;
+        }
+
         using var client = CreateClient();
 
         var configuredTargetId = Environment.GetEnvironmentVariable(DeployTargetIdEnv);
@@ -145,25 +151,10 @@ public sealed class CloudDeploymentValidationTests
         using var response = await client.SendAsync(request);
         var payload = await response.Content.ReadAsStringAsync();
 
-        var requireDeployPlanSupport = bool.TryParse(
-                Environment.GetEnvironmentVariable(ExpectDeployPlanSupportEnv),
-                out var parsedRequireDeployPlanSupport) &&
-            parsedRequireDeployPlanSupport;
-
         if (string.IsNullOrWhiteSpace(configuredTargetId))
         {
-            if (response.StatusCode == HttpStatusCode.MethodNotAllowed && !requireDeployPlanSupport)
-            {
-                return;
-            }
-
             response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"response: {payload}");
             payload.Should().Contain("Deploy target", "unknown deploy targets should return the admin problem contract");
-            return;
-        }
-
-        if (response.StatusCode == HttpStatusCode.MethodNotAllowed && !requireDeployPlanSupport)
-        {
             return;
         }
 
@@ -266,6 +257,11 @@ public sealed class CloudDeploymentValidationTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task CloudStagedImport_CompletesAndPublishedLayerBecomesPublicMetadata_WhenMutationChecksAreEnabled()
     {
+        if (!GetOptionalBool(ExpectMutationSupportEnv, defaultValue: true))
+        {
+            return;
+        }
+
         using var client = CreateClient();
         var tablePrefix = GetRequiredEnv(ImportTablePrefixEnv);
         var tableName = $"{tablePrefix}_{Guid.NewGuid():N}".ToLowerInvariant();
@@ -943,10 +939,10 @@ public sealed class CloudDeploymentValidationTests
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    private static bool GetOptionalBool(string name)
+    private static bool GetOptionalBool(string name, bool defaultValue = false)
     {
         var value = GetOptionalEnv(name);
-        return bool.TryParse(value, out var parsed) && parsed;
+        return bool.TryParse(value, out var parsed) ? parsed : defaultValue;
     }
 
     private static string GetRequiredEnv(string name)

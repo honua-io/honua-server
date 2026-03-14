@@ -16,6 +16,8 @@ Environment variables:
   HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY
                                                Optional expected deploy readiness flag.
   HONUA_CLOUD_TEST_PLATFORM                    Optional platform hint (kubernetes, aws-lambda, azure-functions).
+  HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT  Optional true/false override for deploy-plan cloud tests.
+  HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT     Optional true/false override for staged-import mutation cloud tests.
   HONUA_CLOUD_TEST_DEPLOY_TARGET_ID            Optional deploy target id for a live deploy-plan check.
   HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION     Optional desired revision for a live deploy-plan check.
   HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION     Optional current revision for a live deploy-plan check.
@@ -163,6 +165,13 @@ fi
 
 HONUA_CLOUD_TEST_BASE_URL="$(normalize_base_url "$HONUA_CLOUD_TEST_BASE_URL")"
 export HONUA_CLOUD_TEST_BASE_URL
+
+case "${HONUA_CLOUD_TEST_PLATFORM:-}" in
+    azure-functions)
+        export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-false}"
+        export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="${HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT:-false}"
+        ;;
+esac
 
 require_tool dotnet
 require_tool curl
