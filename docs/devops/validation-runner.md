@@ -35,6 +35,7 @@ The first slice provides:
 - explicit required Terraform outputs
 - explicit required environment variables
 - machine-readable request validation
+- structured issue codes and phase metadata for automation
 
 It does **not** run Terraform or replace the existing post-apply shell yet.
 
@@ -57,6 +58,21 @@ Validate a request file:
 ```bash
 dotnet run --project src/Honua.Validation.Runner -- validate-request --input request.json
 ```
+
+The validation result now includes:
+
+- `status`
+- `phase`
+- `issues[]`
+- `issues[].code`
+- `issues[].field`
+- `issues[].suggestedAction`
+
+That shape is intended for:
+
+- customer CI systems
+- AI DevOps agents
+- human triage without log scraping
 
 ## Design Direction
 

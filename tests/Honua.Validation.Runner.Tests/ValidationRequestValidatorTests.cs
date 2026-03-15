@@ -26,7 +26,9 @@ public sealed class ValidationRequestValidatorTests
         var result = ValidationRequestValidator.Validate(request);
 
         Assert.Equal(ValidationRunnerStatus.Valid, result.Status);
+        Assert.Equal(ValidationRunnerPhase.RequestValidation, result.Phase);
         Assert.Empty(result.Errors);
+        Assert.Empty(result.Issues);
         Assert.NotNull(result.Contract);
         Assert.Equal("azure-functions", result.Contract!.Key);
     }
@@ -51,7 +53,34 @@ public sealed class ValidationRequestValidatorTests
         var result = ValidationRequestValidator.Validate(request);
 
         Assert.Equal(ValidationRunnerStatus.Invalid, result.Status);
+        Assert.Equal(ValidationRunnerPhase.RequestValidation, result.Phase);
         Assert.Contains(result.Errors, error => error.Contains("db_endpoint", StringComparison.Ordinal));
         Assert.Contains(result.Errors, error => error.Contains("control_plane_backend_name", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Code == ValidationIssueCode.MissingTerraformOutput &&
+                     issue.Field == "db_endpoint");
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Code == ValidationIssueCode.MissingTerraformOutput &&
+                     issue.Field == "control_plane_backend_name");
+    }
+
+    [Fact]
+    public void Validate_WithUnsupportedTarget_ReturnsMachineReadableIssue()
+    {
+        var request = new ValidationRunnerRequest
+        {
+            Target = "azure-webapp",
+            BaseUrl = "https://webapp.example.honua.dev"
+        };
+
+        var result = ValidationRequestValidator.Validate(request);
+
+        Assert.Equal(ValidationRunnerStatus.Invalid, result.Status);
+        Assert.Equal(ValidationRunnerPhase.RequestValidation, result.Phase);
+        Assert.Single(result.Issues);
+        Assert.Equal(ValidationIssueCode.UnsupportedTarget, result.Issues[0].Code);
+        Assert.Equal(nameof(ValidationRunnerRequest.Target), result.Issues[0].Field);
     }
 }

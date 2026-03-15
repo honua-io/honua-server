@@ -35,6 +35,22 @@ public enum ValidationRunnerStatus
     Error
 }
 
+public enum ValidationRunnerPhase
+{
+    RequestValidation,
+    Unhandled
+}
+
+public enum ValidationIssueCode
+{
+    UnsupportedTarget,
+    InvalidBaseUrl,
+    InvalidBaseUrlScheme,
+    MissingTerraformOutput,
+    MissingEnvironmentVariable,
+    UnhandledException
+}
+
 public enum ValidationTargetId
 {
     AwsEcs,
@@ -96,13 +112,28 @@ public sealed record ValidationRunnerRequest
     public IDictionary<string, string> EnvironmentVariables { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
+public sealed record ValidationIssue
+{
+    public required ValidationIssueCode Code { get; init; }
+
+    public required string Message { get; init; }
+
+    public string? Field { get; init; }
+
+    public string? SuggestedAction { get; init; }
+}
+
 public sealed record ValidationRunnerResult
 {
     public required string Target { get; init; }
 
     public required ValidationRunnerStatus Status { get; init; }
 
+    public required ValidationRunnerPhase Phase { get; init; }
+
     public ValidationTargetContract? Contract { get; init; }
+
+    public IReadOnlyList<ValidationIssue> Issues { get; init; } = [];
 
     public IReadOnlyList<string> Errors { get; init; } = [];
 }

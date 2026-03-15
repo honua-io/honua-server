@@ -35,11 +35,19 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            var issue = new ValidationIssue
+            {
+                Code = ValidationIssueCode.UnhandledException,
+                Message = ex.Message,
+                SuggestedAction = "Inspect the runner stack trace and the supplied request payload."
+            };
             var failure = new ValidationRunnerResult
             {
                 Target = "unknown",
+                Phase = ValidationRunnerPhase.Unhandled,
                 Status = ValidationRunnerStatus.Error,
-                Errors = [ex.Message]
+                Issues = [issue],
+                Errors = [issue.Message]
             };
             WriteJson(failure);
             return 10;
