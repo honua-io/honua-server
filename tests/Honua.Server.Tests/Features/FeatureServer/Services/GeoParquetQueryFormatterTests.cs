@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Apache.Arrow;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -94,6 +95,47 @@ public sealed class GeoParquetQueryFormatterTests
         payload[1].Should().Be((byte)'A');
         payload[2].Should().Be((byte)'R');
         payload[3].Should().Be((byte)'1');
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_AppliesGeometryPrecisionAndDimensionFiltering()
+    {
+        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkbWithZm(1.2349, 2.3451, 3.4567, 4.5678),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: 2,
+            maxAllowableOffset: null,
+            baseGeometryLimits: new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        var geometryColumn = (BinaryArray)batch!.Column("geometry");
+        geometryColumn.IsNull(0).Should().BeFalse();
+
+        var geometry = new WKBReader().Read(geometryColumn.GetBytes(0).ToArray());
+        var point = geometry.Should().BeOfType<Point>().Subject;
+
+        point.X.Should().Be(1.23);
+        point.Y.Should().Be(2.35);
+        double.IsNaN(point.Coordinate.Z).Should().BeTrue();
+        double.IsNaN(point.Coordinate.M).Should().BeTrue();
     }
 
     [Fact]
@@ -673,4 +715,8 @@ public sealed class GeoParquetQueryFormatterTests
 
     private static byte[] CreatePointWkb(double x, double y)
         => new WKBWriter().Write(new Point(x, y) { SRID = 4326 });
+
+    private static byte[] CreatePointWkbWithZm(double x, double y, double z, double m)
+        => new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true)
+            .Write(new Point(new CoordinateZM(x, y, z, m)) { SRID = 4326 });
 }

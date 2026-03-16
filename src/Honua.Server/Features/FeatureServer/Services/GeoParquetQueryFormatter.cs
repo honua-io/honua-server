@@ -6,12 +6,16 @@ using System.Globalization;
 using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
-using ParquetSharp.Arrow;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using ParquetSharp.Arrow;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
@@ -27,6 +31,9 @@ internal sealed class GeoParquetQueryFormatter
     private const string GeoMetadataKey = "geo";
     private const string ContentType = "application/vnd.apache.parquet";
 
+    [ThreadStatic]
+    private static WKBReader? _wkbReader;
+
 
     /// <summary>
     /// Formats query result as GeoParquet
@@ -38,9 +45,10 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="returnZ">Whether to include Z values</param>
     /// <param name="returnM">Whether to include M values</param>
     /// <param name="geometryPrecision">Accepted for interface symmetry with other formatters; not applied to binary formats.</param>
-    /// <param name="maxAllowableOffset">Accepted for interface symmetry with other formatters; not applied to binary formats.</param>
+    /// <param name="maxAllowableOffset">Accepted for interface symmetry with other formatters.</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <param name="logger">Optional logger for conversion diagnostics</param>
+    /// <param name="baseGeometryLimits">Baseline geometry limits used to apply query-level precision and simplification overrides.</param>
     /// <returns>Formatted result as byte array and content type</returns>
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
@@ -52,24 +60,41 @@ internal sealed class GeoParquetQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        GeometryLimits? baseGeometryLimits = null)
     {
         var features = result.Items;
+        var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
+            baseGeometryLimits ?? new GeometryLimits(),
+            geometryPrecision,
+            maxAllowableOffset,
+            forceSimplify: maxAllowableOffset is > 0);
 
         if (features.Length == 0)
         {
             // Return empty GeoParquet file with schema only
-            return CreateEmptyGeoParquet(layer, returnGeometry, outFields, outputSrid);
+            return CreateEmptyGeoParquet(layer, returnGeometry, outFields, outputSrid, returnZ);
         }
 
         // Detect runtime-computed attributes (e.g. "distance" from KNN queries) that
         // exist in the result set but are not declared in the layer schema.
         var runtimeFields = DetectRuntimeFields(features, layer);
 
-        var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(layer, returnGeometry, outFields, outputSrid, runtimeFields);
+        var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(layer, returnGeometry, outFields, outputSrid, returnZ, runtimeFields);
 
         // Build record batch
-        var arrays = BuildArrays(features, schema, layer, returnGeometry, objectIdFieldName, fieldsToInclude, logger);
+        var arrays = BuildArrays(
+            features,
+            schema,
+            layer,
+            returnGeometry,
+            outputSrid,
+            returnZ,
+            returnM,
+            effectiveGeometryLimits,
+            objectIdFieldName,
+            fieldsToInclude,
+            logger);
 
         using var recordBatch = new RecordBatch(schema, arrays, features.Length);
 
@@ -92,9 +117,10 @@ internal sealed class GeoParquetQueryFormatter
         LayerDefinition layer,
         bool returnGeometry,
         string[]? outFields,
-        int? outputSrid)
+        int? outputSrid,
+        bool returnZ)
     {
-        var (schema, _, _) = BuildSchema(layer, returnGeometry, outFields, outputSrid);
+        var (schema, _, _) = BuildSchema(layer, returnGeometry, outFields, outputSrid, returnZ);
 
         using var stream = new MemoryStream();
         var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
@@ -114,6 +140,7 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="returnGeometry">Whether to include the geometry column.</param>
     /// <param name="outFields">Requested output fields, or null / ["*"] for all.</param>
     /// <param name="outputSrid">Output SRID for CRS metadata.</param>
+    /// <param name="returnZ">Whether Z dimensions should be advertised in GeoParquet metadata.</param>
     /// <param name="runtimeFields">
     /// Runtime-computed attributes detected from the result set (e.g. "distance" from KNN queries).
     /// These exist in <c>feature.Attributes</c> but are not part of the layer schema.
@@ -124,6 +151,7 @@ internal sealed class GeoParquetQueryFormatter
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
+        bool returnZ,
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null)
     {
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
@@ -165,7 +193,7 @@ internal sealed class GeoParquetQueryFormatter
             }
         }
 
-        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid));
+        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, returnZ));
         return (schema, fieldsToInclude, objectIdFieldName);
     }
 
@@ -175,7 +203,8 @@ internal sealed class GeoParquetQueryFormatter
     private static Dictionary<string, string> BuildGeoParquetMetadata(
         LayerDefinition layer,
         bool returnGeometry,
-        int? outputSrid)
+        int? outputSrid,
+        bool returnZ)
     {
         var metadata = new Dictionary<string, string>();
 
@@ -203,7 +232,7 @@ internal sealed class GeoParquetQueryFormatter
         // be incorrect for filtered or empty exports. Computing the actual result bbox
         // would require parsing every WKB geometry; deferred to a follow-up.
 
-        var geomType = MapGeometryTypeToGeoParquet(layer.GeometryType);
+        var geomType = MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ);
         var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":[""{geomType}""]{crsPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
@@ -272,9 +301,9 @@ internal sealed class GeoParquetQueryFormatter
     /// <summary>
     /// Maps layer geometry type to GeoParquet geometry type string
     /// </summary>
-    private static string MapGeometryTypeToGeoParquet(Core.Features.Catalog.Domain.GeometryType geometryType)
+    private static string MapGeometryTypeToGeoParquet(Core.Features.Catalog.Domain.GeometryType geometryType, bool returnZ)
     {
-        return geometryType switch
+        var baseType = geometryType switch
         {
             Core.Features.Catalog.Domain.GeometryType.Point => "Point",
             Core.Features.Catalog.Domain.GeometryType.LineString => "LineString",
@@ -285,6 +314,8 @@ internal sealed class GeoParquetQueryFormatter
             Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "GeometryCollection",
             _ => "Geometry"
         };
+
+        return returnZ ? $"{baseType} Z" : baseType;
     }
 
     /// <summary>
@@ -325,6 +356,10 @@ internal sealed class GeoParquetQueryFormatter
         Schema schema,
         LayerDefinition layer,
         bool returnGeometry,
+        int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits,
         string objectIdFieldName,
         List<FieldDefinition> fieldsToInclude,
         ILogger? logger = null)
@@ -339,7 +374,12 @@ internal sealed class GeoParquetQueryFormatter
             }
             else if (field.Name == GeometryColumnName && returnGeometry)
             {
-                arrays.Add(BuildGeometryArray(features));
+                arrays.Add(BuildGeometryArray(
+                    features,
+                    outputSrid ?? layer.SpatialReference.Wkid,
+                    returnZ,
+                    returnM,
+                    geometryLimits));
             }
             else
             {
@@ -376,15 +416,21 @@ internal sealed class GeoParquetQueryFormatter
     /// <summary>
     /// Builds binary array for WKB geometry data
     /// </summary>
-    private static BinaryArray BuildGeometryArray(ImmutableArray<Feature> features)
+    private static BinaryArray BuildGeometryArray(
+        ImmutableArray<Feature> features,
+        int outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits)
     {
         var builder = new BinaryArray.Builder();
 
         foreach (var feature in features)
         {
-            if (feature.Geometry != null && feature.Geometry.Length > 0)
+            var geometry = ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM);
+            if (geometry != null && geometry.Length > 0)
             {
-                builder.Append(feature.Geometry);
+                builder.Append(geometry);
             }
             else
             {
@@ -393,6 +439,44 @@ internal sealed class GeoParquetQueryFormatter
         }
 
         return builder.Build();
+    }
+
+    private static byte[]? ProcessGeometry(
+        byte[]? geometryBytes,
+        int outputSrid,
+        GeometryLimits geometryLimits,
+        bool returnZ,
+        bool returnM)
+    {
+        if (geometryBytes == null || geometryBytes.Length == 0)
+        {
+            return null;
+        }
+
+        var geometry = GetWkbReader().Read(geometryBytes);
+        if (geometry == null)
+        {
+            return null;
+        }
+
+        geometry.SRID = outputSrid;
+        geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits);
+        if (geometry == null)
+        {
+            return null;
+        }
+
+        if (!returnZ || !returnM)
+        {
+            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
+        }
+
+        var writer = new WKBWriter(
+            ByteOrder.LittleEndian,
+            handleSRID: false,
+            emitZ: GeometryHasZ(geometry),
+            emitM: GeometryHasM(geometry));
+        return writer.Write(geometry);
     }
 
     /// <summary>
@@ -717,6 +801,18 @@ internal sealed class GeoParquetQueryFormatter
             JsonValueKind.String => TryConvertTimeMilliseconds(element.GetString()),
             _ => null
         };
+    }
+
+    private static bool GeometryHasZ(Geometry geometry)
+        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
+
+    private static bool GeometryHasM(Geometry geometry)
+        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M));
+
+    private static WKBReader GetWkbReader()
+    {
+        _wkbReader ??= new WKBReader();
+        return _wkbReader;
     }
 
 }

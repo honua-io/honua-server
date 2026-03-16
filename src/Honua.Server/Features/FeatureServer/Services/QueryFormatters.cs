@@ -91,7 +91,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return ValueTask.FromResult(format.ToLowerInvariant() switch
         {
             "pbf" => _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields),
-            "parquet" => GeoParquetQueryFormatter.FormatAsGeoParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, _logger),
+            "parquet" => GeoParquetQueryFormatter.FormatAsGeoParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, _logger, _geometryLimits),
             "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
             "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
         });
