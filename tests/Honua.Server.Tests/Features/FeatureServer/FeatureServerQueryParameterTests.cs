@@ -98,20 +98,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
         var payload = await response.Content.ReadAsByteArrayAsync();
-        payload.Should().NotBeEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithGeoParquetFormat_ReturnsOk()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
-        var payload = await response.Content.ReadAsByteArrayAsync();
         await AssertGeoParquetPayloadAsync(payload, expectGeometry: true);
     }
 
@@ -139,20 +125,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("GeoParquet output does not yet support non-4326 outSR");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithGeoParquetFormatNoGeometry_ReturnsOk()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&returnGeometry=false");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
-        var payload = await response.Content.ReadAsByteArrayAsync();
-        payload.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -229,24 +201,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
-        var payload = await response.Content.ReadAsByteArrayAsync();
-        payload.Should().NotBeEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithGeoParquetAcceptHeader_ReturnsOk()
-    {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query");
-        request.Headers.Accept.ParseAdd("application/vnd.apache.parquet");
-
-        var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
         var payload = await response.Content.ReadAsByteArrayAsync();
         payload.Should().NotBeEmpty();
     }

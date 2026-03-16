@@ -36,7 +36,7 @@ internal interface IQueryFormatter
     /// <param name="maxAllowableOffset">Generalization tolerance override</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <returns>Formatted result and content type</returns>
-    (object response, string contentType) FormatQueryResult(
+    ValueTask<(object response, string contentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         LayerDefinition layer,
         string format,
@@ -70,7 +70,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Formats query result into the specified format
     /// </summary>
-    public (object response, string contentType) FormatQueryResult(
+    public ValueTask<(object response, string contentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         LayerDefinition layer,
         string format,
@@ -88,13 +88,13 @@ internal sealed class QueryFormatter : IQueryFormatter
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
 
-        return format.ToLowerInvariant() switch
+        return ValueTask.FromResult(format.ToLowerInvariant() switch
         {
             "pbf" => _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields),
             "parquet" => GeoParquetQueryFormatter.FormatAsGeoParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, _logger),
             "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
             "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
-        };
+        });
     }
 
     /// <summary>
