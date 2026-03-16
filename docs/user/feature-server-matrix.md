@@ -126,7 +126,7 @@ MapServer coverage is tracked separately:
 
 ### Output format details
 
-All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: application/vnd.apache.parquet`). When both `f=` and `Accept` are present, `f=` takes precedence.
+All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: application/vnd.apache.parquet`). When both `f=` and `Accept` are present, `f=` takes precedence. Accept negotiation uses first-recognized-type selection; quality values (`q=`) and media-range specificity are not evaluated. For deterministic results, prefer `f=` or send a single media type in the `Accept` header.
 
 **Special query modes**: `returnCountOnly`, `returnIdsOnly`, `returnExtentOnly`, and `outStatistics` queries always return JSON regardless of the requested format.
 
