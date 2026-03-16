@@ -224,16 +224,22 @@ internal sealed class GeoParquetQueryFormatter
 
         var layerFieldNames = new HashSet<string>(
             layer.Fields.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+        var seenRuntimeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (key, value) in features[0].Attributes)
+        foreach (var feature in features)
         {
-            if (layerFieldNames.Contains(key)) continue;
-            // Skip internal fields (e.g. __honua_total_count)
-            if (key.StartsWith("__", StringComparison.Ordinal)) continue;
+            foreach (var (key, value) in feature.Attributes)
+            {
+                if (seenRuntimeFields.Contains(key) || layerFieldNames.Contains(key)) continue;
+                // Skip internal fields (e.g. __honua_total_count)
+                if (key.StartsWith("__", StringComparison.Ordinal)) continue;
 
-            var arrowType = InferArrowTypeFromValue(value);
-            if (arrowType != null)
+                var arrowType = InferArrowTypeFromValue(value);
+                if (arrowType == null) continue;
+
                 result.Add((key, arrowType));
+                seenRuntimeFields.Add(key);
+            }
         }
 
         return result;

@@ -97,7 +97,7 @@ MapServer coverage is tracked separately:
 | --- | --- | --- | --- |
 | Filtering | `where`, `objectIds` | Implemented | ArcGIS SQL parser; objectIds bypass where. |
 | Spatial filters | `geometry`, `geometryType`, `spatialRel`, `distance`, `units` | Implemented | Distance + KNN supported; geometry supports GeoServices JSON or point/envelope CSV. |
-| Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON and GeoParquet output require EPSG:4326 when the response contains geometry; non-4326 `outSR` is rejected unless the geometry column is absent (`returnGeometry=false`, non-geometry layer, or a special query mode that returns JSON). Coordinates are reprojected to 4326 when `outSR` is omitted. |
+| Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON output requires EPSG:4326; non-4326 `outSR` is rejected for non-special query modes. GeoParquet output requires EPSG:4326 when the response includes a geometry column; non-4326 `outSR` is rejected unless geometry is absent (`returnGeometry=false`, non-geometry layer, or a special query mode). Both formats reproject coordinates to EPSG:4326 when `outSR` is omitted. |
 | Pagination | `resultOffset`, `resultRecordCount` | Implemented | Validated against limits. |
 | Fields | `outFields` | Implemented | `*` returns all fields. |
 | Sorting | `orderByFields` | Implemented | Validates against layer fields; supports any field with ASC/DESC. |

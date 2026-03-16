@@ -85,7 +85,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 ## Capabilities
 
-**Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoBuf formats with Accept-header content negotiation.
+**Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, and GeoParquet formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 

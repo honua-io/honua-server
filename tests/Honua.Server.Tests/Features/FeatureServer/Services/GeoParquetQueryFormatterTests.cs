@@ -356,6 +356,53 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoParquet_WithRuntimeDistanceOnlyOnLaterRow_IncludesDistanceColumn()
+    {
+        var layer = CreateLayer(
+            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
+            new FieldDefinition("name", FieldType.String, 255));
+        var firstFeature = Feature.Create(
+            1,
+            CreatePointWkb(-157.8583, 21.3069),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "First Row"
+            }.ToImmutableDictionary());
+        var secondFeature = Feature.Create(
+            2,
+            CreatePointWkb(-157.8580, 21.3071),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 2L,
+                ["name"] = "Second Row",
+                ["distance"] = 42.5
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(2, [firstFeature, secondFeature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Schema.FieldsList.Select(f => f.Name)
+            .Should().Contain("distance");
+        var distanceArray = (DoubleArray)batch.Column("distance");
+        distanceArray.GetValue(0).Should().BeNull();
+        distanceArray.GetValue(1).Should().BeApproximately(42.5, 1e-9);
+    }
+
+    [Fact]
     public async Task FormatAsGeoParquet_WithOutFieldsAndRuntimeDistance_ExcludesUnrequestedRuntimeFields()
     {
         var layer = CreateLayer(
