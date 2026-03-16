@@ -205,6 +205,19 @@ internal static partial class FeatureServerLog
         Message = "GeoParquet conversion failed for field '{FieldName}' (value type: {ValueType}), value treated as null")]
     public static partial void GeoParquetConversionFailed(ILogger logger, string fieldName, string valueType, Exception exception);
 
+    /// <summary>
+    /// Logs when a geometry WKB value cannot be parsed during GeoParquet export and is treated as null.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="featureId">The object ID of the feature with corrupt geometry.</param>
+    /// <param name="wkbLength">The byte length of the unparseable WKB payload.</param>
+    /// <param name="exception">The parse exception.</param>
+    [LoggerMessage(
+        EventId = 2208,
+        Level = LogLevel.Debug,
+        Message = "GeoParquet export: corrupt WKB for feature {FeatureId} ({WkbLength} bytes), geometry treated as null")]
+    public static partial void GeoParquetCorruptGeometry(ILogger logger, long featureId, int wkbLength, Exception exception);
+
     // ApplyEdits events (2300-2399)
 
     /// <summary>

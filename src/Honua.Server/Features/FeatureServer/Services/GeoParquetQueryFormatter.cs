@@ -84,7 +84,8 @@ internal sealed class GeoParquetQueryFormatter
                 outputSrid ?? layer.SpatialReference.Wkid,
                 returnZ,
                 returnM,
-                geometryLimits);
+                geometryLimits,
+                logger);
         }
 
         var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(
@@ -422,14 +423,15 @@ internal sealed class GeoParquetQueryFormatter
         int outputSrid,
         bool returnZ,
         bool returnM,
-        GeometryLimits geometryLimits)
+        GeometryLimits geometryLimits,
+        ILogger? logger = null)
     {
         var builder = new BinaryArray.Builder();
         var anyHasZ = false;
 
         foreach (var feature in features)
         {
-            var (wkb, hasZ) = ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM);
+            var (wkb, hasZ) = ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
             anyHasZ |= hasZ;
             if (wkb != null && wkb.Length > 0)
             {
@@ -449,7 +451,9 @@ internal sealed class GeoParquetQueryFormatter
         int outputSrid,
         GeometryLimits geometryLimits,
         bool returnZ,
-        bool returnM)
+        bool returnM,
+        long featureId = 0,
+        ILogger? logger = null)
     {
         if (geometryBytes == null || geometryBytes.Length == 0)
         {
@@ -463,6 +467,11 @@ internal sealed class GeoParquetQueryFormatter
         }
         catch (Exception ex) when (ex is ParseException or FormatException)
         {
+            if (logger != null)
+            {
+                FeatureServerLog.GeoParquetCorruptGeometry(logger, featureId, geometryBytes.Length, ex);
+            }
+
             return (null, false);
         }
 
