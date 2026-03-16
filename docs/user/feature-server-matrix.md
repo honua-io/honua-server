@@ -101,7 +101,7 @@ MapServer coverage is tracked separately:
 | Pagination | `resultOffset`, `resultRecordCount` | Implemented | Validated against limits. |
 | Fields | `outFields` | Implemented | `*` returns all fields. |
 | Sorting | `orderByFields` | Implemented | Validates against layer fields; supports any field with ASC/DESC. |
-| Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. `returnZ` and `returnM` are applied by `json`, `geojson`, `pbf`, and `parquet`. `fgb` and `geobuf` write raw geometry and do not filter dimensions. |
+| Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. `returnZ` and `returnM` are applied by `json`, `geojson`, and `pbf`. `parquet` applies `returnZ` but always strips M values (GeoParquet 1.1.0 only supports XY/XYZ). `fgb` and `geobuf` write raw geometry and do not filter dimensions. |
 | Distinct | `returnDistinctValues` | Implemented | In-memory distinct over returned features; works best with explicit `outFields`. |
 | Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
 | KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. The computed `distance` attribute is included in `json`, `geojson`, and `parquet` output; `pbf`, `fgb`, and `geobuf` build their schema from layer fields only and omit runtime-computed attributes. |
@@ -137,10 +137,10 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `pbf` | `application/x-protobuf` | Esri-compatible Protocol Buffers. |
 | `fgb` | `application/vnd.flatgeobuf` | FlatGeobuf binary. |
 | `geobuf` | `application/geobuf` | Requires a store with native GeoBuf support. |
-| `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0 with WKB-encoded geometry. Non-4326 `outSR` is rejected when the response includes a geometry column (CRS metadata cannot be written correctly; tracked as follow-up); allowed when `returnGeometry=false` or the layer has no geometry. When `outSR` is omitted, coordinates are reprojected to EPSG:4326 (matching GeoJSON behavior). CRS metadata omits the `crs` key for EPSG:4326 (spec-compliant OGC:CRS84 default). `bbox` is omitted because the spec defines it as the bounding box of geometries in the file, not the layer extent. |
+| `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0 with WKB-encoded geometry. M values are always stripped (the spec only supports XY/XYZ); `returnZ` is honored. Non-4326 `outSR` is rejected when the response includes a geometry column (CRS metadata cannot be written correctly; tracked as follow-up); allowed when `returnGeometry=false` or the layer has no geometry. When `outSR` is omitted, coordinates are reprojected to EPSG:4326 (matching GeoJSON behavior). CRS metadata omits the `crs` key for EPSG:4326 (spec-compliant OGC:CRS84 default). `bbox` is omitted because the spec defines it as the bounding box of geometries in the file, not the layer extent. |
 
 **Binary format limitations** (`fgb`, `geobuf`, `parquet`):
-- `parquet` applies `geometryPrecision`, `maxAllowableOffset`, `returnZ`, and `returnM` before writing WKB. `fgb` and `geobuf` still write raw geometry and ignore those parameters.
+- `parquet` applies `geometryPrecision`, `maxAllowableOffset`, and `returnZ` before writing WKB. M values are always stripped (GeoParquet 1.1.0 only supports XY/XYZ). `fgb` and `geobuf` still write raw geometry and ignore those parameters.
 - `exceededTransferLimit` is not conveyed. Clients should compare the returned feature count against `maxRecordCount` to detect truncation.
 
 ## ApplyEdits parameter coverage (layer `/applyEdits`)

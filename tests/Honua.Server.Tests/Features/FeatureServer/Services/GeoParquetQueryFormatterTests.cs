@@ -139,6 +139,49 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoParquet_WithZmGeometryAndReturnMTrue_StripsMPerGeoParquetSpec()
+    {
+        // GeoParquet 1.1.0 only supports XY and XYZ — M values must be stripped
+        // even when the caller requests returnM=true.
+        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkbWithZm(1.0, 2.0, 3.0, 4.0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: true,
+            returnM: true,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            baseGeometryLimits: new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        var geometryColumn = (BinaryArray)batch!.Column("geometry");
+        geometryColumn.IsNull(0).Should().BeFalse();
+
+        var geometry = new WKBReader().Read(geometryColumn.GetBytes(0).ToArray());
+        var point = geometry.Should().BeOfType<Point>().Subject;
+
+        point.X.Should().Be(1.0);
+        point.Y.Should().Be(2.0);
+        point.Coordinate.Z.Should().Be(3.0);
+        double.IsNaN(point.Coordinate.M).Should().BeTrue("GeoParquet 1.1.0 does not support M values");
+    }
+
+    [Fact]
     public async Task FormatAsGeoParquet_WithoutGeometry_OmitsGeometryColumn()
     {
         var layer = CreateLayer(
@@ -611,6 +654,10 @@ public sealed class GeoParquetQueryFormatterTests
     /// use independent switch statements over SQL type strings. If they diverge for any type,
     /// the Parquet write or read will fail because the schema declares one Arrow type but
     /// the column data uses another.
+    /// Note: The formatter also handles "smallint"/"int2" → Int16 and "decimal" → Double,
+    /// but these SQL types are not reachable via FieldDefinition.SqlType today (the Postgres
+    /// layer maps smallint → FieldType.Integer → "INTEGER"). Those branches are defensive
+    /// for future FieldType additions or raw SQL type overrides.
     /// </summary>
     [Fact]
     public async Task FormatAsGeoParquet_AllSqlTypes_SchemaAndBuilderTypesAreConsistent()

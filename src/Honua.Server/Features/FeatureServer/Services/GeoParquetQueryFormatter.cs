@@ -43,7 +43,8 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="returnGeometry">Whether to include geometry</param>
     /// <param name="outputSrid">Output SRID for geometry</param>
     /// <param name="returnZ">Whether to include Z values</param>
-    /// <param name="returnM">Whether to include M values</param>
+    /// <param name="returnM">Accepted for API symmetry but M values are always stripped.
+    /// GeoParquet 1.1.0 only supports XY and XYZ geometries.</param>
     /// <param name="geometryPrecision">Rounds coordinates to the specified decimal places before writing WKB.</param>
     /// <param name="maxAllowableOffset">Simplifies geometry to the given tolerance before writing WKB.</param>
     /// <param name="outFields">Fields to include in output</param>
@@ -466,16 +467,14 @@ internal sealed class GeoParquetQueryFormatter
             return null;
         }
 
-        if (!returnZ || !returnM)
-        {
-            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
-        }
+        // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
+        geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, includeM: false);
 
         var writer = new WKBWriter(
             ByteOrder.LittleEndian,
             handleSRID: false,
             emitZ: GeometryHasZ(geometry),
-            emitM: GeometryHasM(geometry));
+            emitM: false);
         return writer.Write(geometry);
     }
 
@@ -805,9 +804,6 @@ internal sealed class GeoParquetQueryFormatter
 
     private static bool GeometryHasZ(Geometry geometry)
         => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
-
-    private static bool GeometryHasM(Geometry geometry)
-        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M));
 
     private static WKBReader GetWkbReader()
     {
