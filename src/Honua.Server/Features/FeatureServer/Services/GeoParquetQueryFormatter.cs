@@ -44,8 +44,8 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="outputSrid">Output SRID for geometry</param>
     /// <param name="returnZ">Whether to include Z values</param>
     /// <param name="returnM">Whether to include M values</param>
-    /// <param name="geometryPrecision">Accepted for interface symmetry with other formatters; not applied to binary formats.</param>
-    /// <param name="maxAllowableOffset">Accepted for interface symmetry with other formatters.</param>
+    /// <param name="geometryPrecision">Rounds coordinates to the specified decimal places before writing WKB.</param>
+    /// <param name="maxAllowableOffset">Simplifies geometry to the given tolerance before writing WKB.</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <param name="logger">Optional logger for conversion diagnostics</param>
     /// <param name="baseGeometryLimits">Baseline geometry limits used to apply query-level precision and simplification overrides.</param>

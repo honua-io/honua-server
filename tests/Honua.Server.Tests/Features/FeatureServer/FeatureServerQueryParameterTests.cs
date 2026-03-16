@@ -9,8 +9,6 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Parquet;
-
 namespace Honua.Server.Tests.Features.FeatureServer;
 
 [Collection("Database")]
@@ -418,24 +416,27 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
 
         using var stream = new MemoryStream(payload);
-        using var reader = await ParquetReader.CreateAsync(stream);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        await batchReader.ReadNextRecordBatchAsync(); // materialize schema
 
-        var fields = reader.Schema.GetDataFields().ToArray();
-        fields.Select(field => field.Name).Should().OnlyHaveUniqueItems();
-        fields.Select(field => field.Name).Should().Contain("objectid");
+        var fieldNames = reader.Schema.FieldsList.Select(f => f.Name).ToArray();
+        fieldNames.Should().OnlyHaveUniqueItems();
+        fieldNames.Should().Contain("objectid");
 
         if (expectGeometry)
         {
-            fields.Select(field => field.Name).Should().Contain("geometry");
-            reader.CustomMetadata.Should().ContainKey("geo");
+            fieldNames.Should().Contain("geometry");
+            reader.Schema.Metadata.Should().ContainKey("geo");
 
-            using var metadataDocument = JsonDocument.Parse(reader.CustomMetadata["geo"]);
+            using var metadataDocument = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
             metadataDocument.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
         }
         else
         {
-            fields.Select(field => field.Name).Should().NotContain("geometry");
-            reader.CustomMetadata.Should().NotContainKey("geo");
+            fieldNames.Should().NotContain("geometry");
+            var hasGeoKey = reader.Schema.Metadata?.ContainsKey("geo") ?? false;
+            hasGeoKey.Should().BeFalse();
         }
     }
 }
