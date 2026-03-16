@@ -45,11 +45,9 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="returnZ">Whether to include Z values</param>
     /// <param name="returnM">Accepted for API symmetry but M values are always stripped.
     /// GeoParquet 1.1.0 only supports XY and XYZ geometries.</param>
-    /// <param name="geometryPrecision">Rounds coordinates to the specified decimal places before writing WKB.</param>
-    /// <param name="maxAllowableOffset">Simplifies geometry to the given tolerance before writing WKB.</param>
+    /// <param name="geometryLimits">Pre-computed effective geometry limits (precision, simplification).</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <param name="logger">Optional logger for conversion diagnostics</param>
-    /// <param name="baseGeometryLimits">Baseline geometry limits used to apply query-level precision and simplification overrides.</param>
     /// <returns>Formatted result as byte array and content type</returns>
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
@@ -58,18 +56,11 @@ internal sealed class GeoParquetQueryFormatter
         int? outputSrid,
         bool returnZ,
         bool returnM,
-        int? geometryPrecision,
-        double? maxAllowableOffset,
+        GeometryLimits geometryLimits,
         string[]? outFields = null,
-        ILogger? logger = null,
-        GeometryLimits? baseGeometryLimits = null)
+        ILogger? logger = null)
     {
         var features = result.Items;
-        var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            baseGeometryLimits ?? new GeometryLimits(),
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
 
         if (features.Length == 0)
         {
@@ -81,7 +72,25 @@ internal sealed class GeoParquetQueryFormatter
         // exist in the result set but are not declared in the layer schema.
         var runtimeFields = DetectRuntimeFields(features, layer);
 
-        var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(layer, returnGeometry, outFields, outputSrid, returnZ, runtimeFields);
+        // Build geometry column first so we know whether any geometry actually has Z.
+        // This drives the GeoParquet metadata `geometry_types` truthfully rather than
+        // relying on the `returnZ` flag which may not match the actual data.
+        BinaryArray? geometryArray = null;
+        bool anyGeometryHasZ = false;
+        if (returnGeometry && layer.HasGeometry)
+        {
+            (geometryArray, anyGeometryHasZ) = BuildGeometryArray(
+                features,
+                outputSrid ?? layer.SpatialReference.Wkid,
+                returnZ,
+                returnM,
+                geometryLimits);
+        }
+
+        var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(
+            layer, returnGeometry, outFields, outputSrid,
+            advertiseZ: anyGeometryHasZ,
+            runtimeFields);
 
         // Build record batch
         var arrays = BuildArrays(
@@ -89,10 +98,7 @@ internal sealed class GeoParquetQueryFormatter
             schema,
             layer,
             returnGeometry,
-            outputSrid,
-            returnZ,
-            returnM,
-            effectiveGeometryLimits,
+            geometryArray,
             objectIdFieldName,
             fieldsToInclude,
             logger);
@@ -141,7 +147,8 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="returnGeometry">Whether to include the geometry column.</param>
     /// <param name="outFields">Requested output fields, or null / ["*"] for all.</param>
     /// <param name="outputSrid">Output SRID for CRS metadata.</param>
-    /// <param name="returnZ">Whether Z dimensions should be advertised in GeoParquet metadata.</param>
+    /// <param name="advertiseZ">Whether Z dimensions should be advertised in GeoParquet metadata.
+    /// For populated results this reflects actual geometry content; for empty results it mirrors returnZ.</param>
     /// <param name="runtimeFields">
     /// Runtime-computed attributes detected from the result set (e.g. "distance" from KNN queries).
     /// These exist in <c>feature.Attributes</c> but are not part of the layer schema.
@@ -152,7 +159,7 @@ internal sealed class GeoParquetQueryFormatter
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
-        bool returnZ,
+        bool advertiseZ,
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null)
     {
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
@@ -194,7 +201,7 @@ internal sealed class GeoParquetQueryFormatter
             }
         }
 
-        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, returnZ));
+        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, advertiseZ));
         return (schema, fieldsToInclude, objectIdFieldName);
     }
 
@@ -205,7 +212,7 @@ internal sealed class GeoParquetQueryFormatter
         LayerDefinition layer,
         bool returnGeometry,
         int? outputSrid,
-        bool returnZ)
+        bool advertiseZ)
     {
         var metadata = new Dictionary<string, string>();
 
@@ -233,7 +240,7 @@ internal sealed class GeoParquetQueryFormatter
         // be incorrect for filtered or empty exports. Computing the actual result bbox
         // would require parsing every WKB geometry; deferred to a follow-up.
 
-        var geomType = MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ);
+        var geomType = MapGeometryTypeToGeoParquet(layer.GeometryType, advertiseZ);
         var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":[""{geomType}""]{crsPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
@@ -350,17 +357,15 @@ internal sealed class GeoParquetQueryFormatter
     }
 
     /// <summary>
-    /// Builds Arrow arrays for each column
+    /// Builds Arrow arrays for each column.
+    /// The geometry column is pre-built and passed in (null when geometry is excluded).
     /// </summary>
     private static IArrowArray[] BuildArrays(
         ImmutableArray<Feature> features,
         Schema schema,
         LayerDefinition layer,
         bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        GeometryLimits geometryLimits,
+        BinaryArray? geometryArray,
         string objectIdFieldName,
         List<FieldDefinition> fieldsToInclude,
         ILogger? logger = null)
@@ -373,14 +378,9 @@ internal sealed class GeoParquetQueryFormatter
             {
                 arrays.Add(BuildObjectIdArray(features));
             }
-            else if (field.Name == GeometryColumnName && returnGeometry)
+            else if (field.Name == GeometryColumnName && returnGeometry && geometryArray != null)
             {
-                arrays.Add(BuildGeometryArray(
-                    features,
-                    outputSrid ?? layer.SpatialReference.Wkid,
-                    returnZ,
-                    returnM,
-                    geometryLimits));
+                arrays.Add(geometryArray);
             }
             else
             {
@@ -415,9 +415,9 @@ internal sealed class GeoParquetQueryFormatter
     }
 
     /// <summary>
-    /// Builds binary array for WKB geometry data
+    /// Builds binary array for WKB geometry data and tracks whether any geometry retains Z coordinates.
     /// </summary>
-    private static BinaryArray BuildGeometryArray(
+    private static (BinaryArray array, bool anyHasZ) BuildGeometryArray(
         ImmutableArray<Feature> features,
         int outputSrid,
         bool returnZ,
@@ -425,13 +425,15 @@ internal sealed class GeoParquetQueryFormatter
         GeometryLimits geometryLimits)
     {
         var builder = new BinaryArray.Builder();
+        var anyHasZ = false;
 
         foreach (var feature in features)
         {
-            var geometry = ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM);
-            if (geometry != null && geometry.Length > 0)
+            var (wkb, hasZ) = ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM);
+            anyHasZ |= hasZ;
+            if (wkb != null && wkb.Length > 0)
             {
-                builder.Append(geometry);
+                builder.Append(wkb);
             }
             else
             {
@@ -439,10 +441,10 @@ internal sealed class GeoParquetQueryFormatter
             }
         }
 
-        return builder.Build();
+        return (builder.Build(), anyHasZ);
     }
 
-    private static byte[]? ProcessGeometry(
+    private static (byte[]? wkb, bool hasZ) ProcessGeometry(
         byte[]? geometryBytes,
         int outputSrid,
         GeometryLimits geometryLimits,
@@ -451,31 +453,32 @@ internal sealed class GeoParquetQueryFormatter
     {
         if (geometryBytes == null || geometryBytes.Length == 0)
         {
-            return null;
+            return (null, false);
         }
 
         var geometry = GetWkbReader().Read(geometryBytes);
         if (geometry == null)
         {
-            return null;
+            return (null, false);
         }
 
         geometry.SRID = outputSrid;
         geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits);
         if (geometry == null)
         {
-            return null;
+            return (null, false);
         }
 
         // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
         geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, includeM: false);
 
+        var hasZ = GeometryHasZ(geometry);
         var writer = new WKBWriter(
             ByteOrder.LittleEndian,
             handleSRID: false,
-            emitZ: GeometryHasZ(geometry),
+            emitZ: hasZ,
             emitM: false);
-        return writer.Write(geometry);
+        return (writer.Write(geometry), hasZ);
     }
 
     /// <summary>
@@ -802,8 +805,56 @@ internal sealed class GeoParquetQueryFormatter
         };
     }
 
+    /// <summary>
+    /// Checks whether the geometry contains any non-NaN Z value by walking
+    /// coordinate sequences directly, avoiding the intermediate Coordinate[]
+    /// allocation that <see cref="Geometry.Coordinates"/> would produce.
+    /// </summary>
     private static bool GeometryHasZ(Geometry geometry)
-        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
+    {
+        for (var g = 0; g < geometry.NumGeometries; g++)
+        {
+            var part = geometry.GetGeometryN(g);
+            if (part is Point point)
+            {
+                if (point.CoordinateSequence.Dimension > 2 &&
+                    !double.IsNaN(point.CoordinateSequence.GetOrdinate(0, Ordinate.Z)))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (part is LineString lineString)
+            {
+                if (SequenceHasZ(lineString.CoordinateSequence)) return true;
+                continue;
+            }
+
+            if (part is Polygon polygon)
+            {
+                if (SequenceHasZ(polygon.ExteriorRing.CoordinateSequence)) return true;
+                for (var h = 0; h < polygon.NumInteriorRings; h++)
+                {
+                    if (SequenceHasZ(polygon.GetInteriorRingN(h).CoordinateSequence)) return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool SequenceHasZ(CoordinateSequence sequence)
+    {
+        if (sequence.Dimension <= 2) return false;
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            if (!double.IsNaN(sequence.GetOrdinate(i, Ordinate.Z))) return true;
+        }
+
+        return false;
+    }
 
     private static WKBReader GetWkbReader()
     {

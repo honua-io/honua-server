@@ -42,8 +42,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         contentType.Should().Be("application/vnd.apache.parquet");
         payload.Should().NotBeEmpty();
@@ -84,8 +83,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         contentType.Should().Be("application/vnd.apache.parquet");
         payload.Should().NotBeEmpty();
@@ -116,9 +114,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: 2,
-            maxAllowableOffset: null,
-            baseGeometryLimits: new GeometryLimits());
+            new GeometryLimits { MaxCoordinatePrecision = 2 });
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -159,9 +155,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: true,
             returnM: true,
-            geometryPrecision: null,
-            maxAllowableOffset: null,
-            baseGeometryLimits: new GeometryLimits());
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -203,8 +197,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -245,8 +238,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null,
+            new GeometryLimits(),
             outFields: ["name"]);
 
         using var stream = new MemoryStream(payload);
@@ -276,8 +268,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -319,8 +310,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -356,8 +346,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -398,8 +387,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -430,8 +418,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 3857,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -470,8 +457,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -516,8 +502,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -556,8 +541,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null,
+            new GeometryLimits(),
             outFields: ["name"]);
 
         using var stream = new MemoryStream(payload);
@@ -598,8 +582,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -635,8 +618,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
@@ -714,8 +696,7 @@ public sealed class GeoParquetQueryFormatterTests
             outputSrid: 4326,
             returnZ: false,
             returnM: false,
-            geometryPrecision: null,
-            maxAllowableOffset: null);
+            new GeometryLimits());
 
         // Read back. A MapToArrowType / BuildAttributeArray mismatch causes
         // InvalidCastException or corrupt column data here.
@@ -745,6 +726,39 @@ public sealed class GeoParquetQueryFormatterTests
 
         var timeArray = (Time32Array)batch.Column("time_field");
         timeArray.GetValue(0).Should().Be(14 * 60 * 60 * 1000 + 30 * 60 * 1000);
+    }
+
+    [Fact]
+    public void FormatAsGeoParquet_With2DGeometryAndReturnZTrue_DoesNotAdvertiseZ()
+    {
+        // A 2D-only layer/feature with returnZ=true must not claim "Point Z" in metadata
+        // because the actual WKB payload is 2D.
+        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(1.0, 2.0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: true,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geomCol.GetProperty("geometry_types").EnumerateArray().First().GetString()
+            .Should().Be("Point", "2D geometry should not advertise Z even when returnZ=true");
     }
 
     private static LayerDefinition CreateLayer(params FieldDefinition[] fields)
