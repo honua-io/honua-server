@@ -47,3 +47,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [CodeCov Setup](CODECOV_SETUP.md) — code coverage monitoring
 - [LLM Architecture Review](development/llm-review-setup.md) — automated PR review
+
+## Project Operations
+
+- [Weekly Backlog Review](BACKLOG_REVIEW_CADENCE.md) — triage, scope gate, and done/close hygiene cadence
