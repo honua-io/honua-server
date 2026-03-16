@@ -456,7 +456,16 @@ internal sealed class GeoParquetQueryFormatter
             return (null, false);
         }
 
-        var geometry = GetWkbReader().Read(geometryBytes);
+        Geometry? geometry;
+        try
+        {
+            geometry = GetWkbReader().Read(geometryBytes);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException)
+        {
+            return (null, false);
+        }
+
         if (geometry == null)
         {
             return (null, false);

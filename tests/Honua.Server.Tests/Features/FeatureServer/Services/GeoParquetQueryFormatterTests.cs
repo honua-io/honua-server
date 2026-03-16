@@ -729,6 +729,51 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoParquet_WithCorruptWkb_TreatsGeometryAsNull()
+    {
+        var layer = CreateLayer(
+            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
+            new FieldDefinition("name", FieldType.String, 255));
+        var corruptWkb = new byte[] { 0xFF, 0xFE, 0x00, 0x01, 0x02, 0x03 };
+        var validFeature = Feature.Create(
+            1,
+            CreatePointWkb(1.0, 2.0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Valid"
+            }.ToImmutableDictionary());
+        var corruptFeature = Feature.Create(
+            2,
+            corruptWkb,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 2L,
+                ["name"] = "Corrupt"
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(2, [validFeature, corruptFeature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Length.Should().Be(2);
+        var geometryColumn = (BinaryArray)batch.Column("geometry");
+        geometryColumn.IsNull(0).Should().BeFalse("valid geometry should be preserved");
+        geometryColumn.IsNull(1).Should().BeTrue("corrupt WKB should produce null geometry");
+    }
+
+    [Fact]
     public void FormatAsGeoParquet_With2DGeometryAndReturnZTrue_DoesNotAdvertiseZ()
     {
         // A 2D-only layer/feature with returnZ=true must not claim "Point Z" in metadata
