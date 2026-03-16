@@ -288,6 +288,51 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoParquet_WithEpochMillisecondTemporalValues_PreservesDateAndTimestampColumns()
+    {
+        var layer = CreateLayer(
+            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
+            new FieldDefinition("updated_at", FieldType.DateTime),
+            new FieldDefinition("event_date", FieldType.Date));
+        const long updatedAtEpochMs = 1718454600000;
+        const long eventDateEpochMs = 1718409600000;
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(0, 0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["updated_at"] = updatedAtEpochMs,
+                ["event_date"] = eventDateEpochMs
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+
+        var timestampArray = (TimestampArray)batch!.Column("updated_at");
+        timestampArray.GetTimestamp(0)!.Value.ToUnixTimeMilliseconds().Should().Be(updatedAtEpochMs);
+
+        var dateArray = (Date32Array)batch.Column("event_date");
+        var epoch = DateOnly.FromDateTime(DateTime.UnixEpoch);
+        var expectedDate = DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(eventDateEpochMs).UtcDateTime);
+        dateArray.GetValue(0).Should().Be(expectedDate.DayNumber - epoch.DayNumber);
+    }
+
+    [Fact]
     public void FormatAsGeoParquet_EmptyResultWithNon4326Srid_WritesCrsNull()
     {
         var layer = CreateLayer(
@@ -546,7 +591,7 @@ public sealed class GeoParquetQueryFormatterTests
                 new FieldDefinition("bool_field", FieldType.Boolean),          // BOOLEAN
                 new FieldDefinition("datetime_field", FieldType.DateTime),     // TIMESTAMP WITH TIME ZONE
                 new FieldDefinition("date_field", FieldType.Date),             // DATE
-                new FieldDefinition("time_field", FieldType.Time),             // TIME (default → string)
+                new FieldDefinition("time_field", FieldType.Time),             // TIME
                 new FieldDefinition("json_field", FieldType.Json),             // JSONB
                 new FieldDefinition("binary_field", FieldType.Binary),         // BYTEA
                 new FieldDefinition("uuid_field", FieldType.Uuid),             // UUID
@@ -604,10 +649,13 @@ public sealed class GeoParquetQueryFormatterTests
         batch.Column("bool_field").Should().BeOfType<BooleanArray>();
         batch.Column("datetime_field").Should().BeOfType<TimestampArray>();
         batch.Column("date_field").Should().BeOfType<Date32Array>();
-        batch.Column("time_field").Should().BeOfType<StringArray>();
+        batch.Column("time_field").Should().BeOfType<Time32Array>();
         batch.Column("json_field").Should().BeOfType<StringArray>();
         batch.Column("binary_field").Should().BeOfType<BinaryArray>();
         batch.Column("uuid_field").Should().BeOfType<StringArray>();
+
+        var timeArray = (Time32Array)batch.Column("time_field");
+        timeArray.GetValue(0).Should().Be(14 * 60 * 60 * 1000 + 30 * 60 * 1000);
     }
 
     private static LayerDefinition CreateLayer(params FieldDefinition[] fields)

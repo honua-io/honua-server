@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
 using ParquetSharp.Arrow;
@@ -258,6 +260,9 @@ internal sealed class GeoParquetQueryFormatter
             long => new Int64Type(),
             bool => new BooleanType(),
             string => new StringType(),
+            DateOnly => new Date32Type(),
+            TimeOnly => new Time32Type(TimeUnit.Millisecond),
+            TimeSpan => new Time32Type(TimeUnit.Millisecond),
             DateTime => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
             DateTimeOffset => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
             _ => null
@@ -298,6 +303,7 @@ internal sealed class GeoParquetQueryFormatter
             "double precision" or "float8" => new DoubleType(),
             "boolean" or "bool" => new BooleanType(),
             "date" => new Date32Type(),
+            "time" => new Time32Type(TimeUnit.Millisecond),
             "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
             "bytea" => new BinaryType(),
             "uuid" => new StringType(),
@@ -411,6 +417,7 @@ internal sealed class GeoParquetQueryFormatter
             "boolean" or "bool" => BuildBooleanAttributeArray(features, fieldName, logger),
             "bytea" => BuildBinaryAttributeArray(features, fieldName, logger),
             "date" => BuildDate32AttributeArray(features, fieldName, logger),
+            "time" => BuildTime32AttributeArray(features, fieldName, logger),
             "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => BuildTimestampAttributeArray(features, fieldName, logger),
             _ when sqlType.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
             _ when sqlType.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
@@ -499,22 +506,69 @@ internal sealed class GeoParquetQueryFormatter
     private static Date32Array BuildDate32AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
         var builder = new Date32Array.Builder();
-        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDateTime(v)), () => builder.AppendNull(), logger);
+        ForEachAttribute(
+            features,
+            fieldName,
+            v =>
+            {
+                var dateTime = TryConvertDateTimeValue(v);
+                if (dateTime.HasValue)
+                {
+                    builder.Append(dateTime.Value);
+                }
+                else
+                {
+                    builder.AppendNull();
+                }
+            },
+            () => builder.AppendNull(),
+            logger);
+        return builder.Build();
+    }
+
+    private static Time32Array BuildTime32AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new Time32Array.Builder(TimeUnit.Millisecond);
+        ForEachAttribute(
+            features,
+            fieldName,
+            v =>
+            {
+                var milliseconds = TryConvertTimeMilliseconds(v);
+                if (milliseconds.HasValue)
+                {
+                    builder.Append(milliseconds.Value);
+                }
+                else
+                {
+                    builder.AppendNull();
+                }
+            },
+            () => builder.AppendNull(),
+            logger);
         return builder.Build();
     }
 
     private static TimestampArray BuildTimestampAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
         var builder = new TimestampArray.Builder(TimeUnit.Millisecond, TimeZoneInfo.Utc);
-        ForEachAttribute(features, fieldName,
+        ForEachAttribute(
+            features,
+            fieldName,
             v =>
             {
-                var dt = Convert.ToDateTime(v);
-                if (dt.Kind == DateTimeKind.Unspecified)
-                    dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
-                builder.Append(new DateTimeOffset(dt.ToUniversalTime()));
+                var dateTime = TryConvertDateTimeValue(v);
+                if (dateTime.HasValue)
+                {
+                    builder.Append(new DateTimeOffset(dateTime.Value));
+                }
+                else
+                {
+                    builder.AppendNull();
+                }
             },
-            () => builder.AppendNull(), logger);
+            () => builder.AppendNull(),
+            logger);
         return builder.Build();
     }
 
@@ -571,6 +625,8 @@ internal sealed class GeoParquetQueryFormatter
             Int32Type => BuildInt32AttributeArray(features, field.Name, logger),
             Int64Type => BuildInt64AttributeArray(features, field.Name, logger),
             BooleanType => BuildBooleanAttributeArray(features, field.Name, logger),
+            Date32Type => BuildDate32AttributeArray(features, field.Name, logger),
+            Time32Type => BuildTime32AttributeArray(features, field.Name, logger),
             TimestampType => BuildTimestampAttributeArray(features, field.Name, logger),
             _ => BuildStringAttributeArray(features, field.Name, logger)
         };
@@ -581,6 +637,86 @@ internal sealed class GeoParquetQueryFormatter
         var builder = new StringArray.Builder();
         ForEachAttribute(features, fieldName, v => builder.Append(v.ToString() ?? string.Empty), () => builder.AppendNull(), logger);
         return builder.Build();
+    }
+
+    private static DateTime? TryConvertDateTimeValue(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            DateTime dateTime => NormalizeDateTime(dateTime),
+            DateTimeOffset dateTimeOffset => dateTimeOffset.UtcDateTime,
+            DateOnly dateOnly => DateTime.SpecifyKind(dateOnly.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
+            JsonElement element => TryConvertDateTimeElement(element),
+            string stringValue when DateTimeOffset.TryParse(
+                stringValue,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsedDateTimeOffset) => parsedDateTimeOffset.UtcDateTime,
+            string stringValue when DateOnly.TryParse(
+                stringValue,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var parsedDateOnly) => DateTime.SpecifyKind(parsedDateOnly.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
+            byte byteValue => DateTimeOffset.FromUnixTimeMilliseconds(byteValue).UtcDateTime,
+            short shortValue => DateTimeOffset.FromUnixTimeMilliseconds(shortValue).UtcDateTime,
+            int intValue => DateTimeOffset.FromUnixTimeMilliseconds(intValue).UtcDateTime,
+            long longValue => DateTimeOffset.FromUnixTimeMilliseconds(longValue).UtcDateTime,
+            float floatValue => DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(floatValue, CultureInfo.InvariantCulture)).UtcDateTime,
+            double doubleValue => DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(doubleValue, CultureInfo.InvariantCulture)).UtcDateTime,
+            decimal decimalValue => DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(decimalValue, CultureInfo.InvariantCulture)).UtcDateTime,
+            _ => null
+        };
+    }
+
+    private static int? TryConvertTimeMilliseconds(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            TimeOnly timeOnly => checked((int)(timeOnly.Ticks / TimeSpan.TicksPerMillisecond)),
+            TimeSpan timeSpan => checked((int)(timeSpan.Ticks / TimeSpan.TicksPerMillisecond)),
+            DateTime dateTime => checked((int)(TimeOnly.FromDateTime(dateTime).Ticks / TimeSpan.TicksPerMillisecond)),
+            DateTimeOffset dateTimeOffset => checked((int)(TimeOnly.FromDateTime(dateTimeOffset.UtcDateTime).Ticks / TimeSpan.TicksPerMillisecond)),
+            JsonElement element => TryConvertTimeMillisecondsElement(element),
+            string stringValue when TimeOnly.TryParse(
+                stringValue,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var parsedTimeOnly) => checked((int)(parsedTimeOnly.Ticks / TimeSpan.TicksPerMillisecond)),
+            string stringValue when TimeSpan.TryParse(
+                stringValue,
+                CultureInfo.InvariantCulture,
+                out var parsedTimeSpan) => checked((int)(parsedTimeSpan.Ticks / TimeSpan.TicksPerMillisecond)),
+            _ => null
+        };
+    }
+
+    private static DateTime NormalizeDateTime(DateTime value)
+    {
+        return value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            : value.ToUniversalTime();
+    }
+
+    private static DateTime? TryConvertDateTimeElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => TryConvertDateTimeValue(element.GetString()),
+            JsonValueKind.Number when element.TryGetInt64(out var milliseconds) => DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime,
+            JsonValueKind.Number when element.TryGetDouble(out var milliseconds) => DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(milliseconds, CultureInfo.InvariantCulture)).UtcDateTime,
+            _ => null
+        };
+    }
+
+    private static int? TryConvertTimeMillisecondsElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => TryConvertTimeMilliseconds(element.GetString()),
+            _ => null
+        };
     }
 
 }
