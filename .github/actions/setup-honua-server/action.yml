@@ -1,0 +1,56 @@
+name: Setup Honua Server
+description: >
+  Builds Honua Server, seeds the base schema, and starts the server
+  against a running PostgreSQL service on localhost:5432.
+
+inputs:
+  dotnet-version:
+    description: .NET SDK version
+    required: true
+  post-seed-yaml:
+    description: >
+      Path to a version-1 seed YAML file to apply after the base schema
+      seed (via apply-yaml-seed.sh). Requires python3 and pyyaml on PATH;
+      see setup-honua-mcp which installs both before calling this action.
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Restore .NET packages
+      shell: bash
+      run: dotnet restore Honua.sln
+
+    - name: Build Honua Server
+      shell: bash
+      run: dotnet build src/Honua.Server --configuration Release --no-restore
+
+    - name: Seed base schema
+      shell: bash
+      run: PGPASSWORD=honua psql -v ON_ERROR_STOP=1 -h localhost -U honua -d honua_test -f tests/seed/base-schema.sql
+
+    - name: Apply additional seed data
+      if: ${{ inputs.post-seed-yaml != '' }}
+      shell: bash
+      run: bash tests/seed/apply-yaml-seed.sh "$SEED_YAML"
+      env:
+        SEED_YAML: ${{ inputs.post-seed-yaml }}
+
+    - name: Start Honua Server
+      shell: bash
+      run: |
+        dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile &
+        curl --retry 15 --retry-delay 2 --retry-connrefused --retry-all-errors -fsS http://localhost:5000/healthz/ready || exit 1
+      env:
+        ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
+        ASPNETCORE_URLS: "http://localhost:5000"
+        ASPNETCORE_ENVIRONMENT: "Development"
+        HONUA_DEV_AUTH: "true"
+        Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"
+        Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="

@@ -65,4 +65,5 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
 - [ADRs](contributor/adr/README.md) — architectural decisions
 - [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md) — triage, scope gate, and done/close hygiene cadence
+- [MCP Certification](contributor/mcp-certification.md) — cross-repo MCP certification testing, seed data, and CI jobs
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md) — required compatibility/certification updates per release

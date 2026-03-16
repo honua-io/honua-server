@@ -90,6 +90,7 @@
 * [CITE OGC Maps](contributor/ogc-maps-conformance-testing.md)
 * [CITE WMS 1.3](contributor/cite-wms-conformance-testing.md)
 * [CITE WMTS 1.0](contributor/cite-wmts-conformance-testing.md)
+* [MCP Certification](contributor/mcp-certification.md)
 
 ### CI/CD
 

@@ -20,7 +20,7 @@ on:
         required: false
         type: string
       platform:
-        description: Optional platform hint (kubernetes, aws-lambda, azure-functions).
+        description: Optional platform hint (kubernetes, aws-ecs, aws-lambda, azure-functions, azure-container-apps).
         required: false
         type: string
       deploy_target_id:
@@ -103,7 +103,7 @@ on:
         required: false
         type: string
       platform:
-        description: Optional platform hint (kubernetes, aws-lambda, azure-functions).
+        description: Optional platform hint (kubernetes, aws-ecs, aws-lambda, azure-functions, azure-container-apps).
         required: false
         type: string
       deploy_target_id:

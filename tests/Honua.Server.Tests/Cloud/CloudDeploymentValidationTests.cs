@@ -257,6 +257,10 @@ public sealed class CloudDeploymentValidationTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task CloudStagedImport_CompletesAndPublishedLayerBecomesPublicMetadata_WhenMutationChecksAreEnabled()
     {
+        // Unlike deploy-plan (single endpoint with a defined 405 contract), the import
+        // flow spans multiple endpoints and does not expose a uniform unsupported-operation
+        // response. Skip entirely when mutations are disabled rather than asserting a
+        // partial contract. See DeployPlanEndpoint for the contract-asserting pattern.
         if (!GetOptionalBool(ExpectMutationSupportEnv, defaultValue: true))
         {
             return;

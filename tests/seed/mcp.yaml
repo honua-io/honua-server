@@ -1,0 +1,180 @@
+version: 1
+# MCP certification seed data
+# Depends on: base CI seed (schema + test_service + layer 0 with fields)
+# Applied AFTER the base seed to add MCP-specific test data
+#
+# This file provides deterministic data for the MCP certification suite
+# in honua-sdk-js/mcp/test/certification/. Constants in that suite
+# reference line numbers in this file for traceability.
+#
+# Spatial extent: all features within WGS84 bounding box
+#   lon: -122.50 to -122.35
+#   lat:   37.70 to   37.84
+# SRID: 4326
+
+sql:
+  # ── Second service for multi-service listing ───────────────────────
+  # Line ~20: test_service_mcp
+  - |
+    INSERT INTO honua.services (
+        service_name, description, srid,
+        supported_formats, capabilities, service_extent, metadata
+    )
+    VALUES (
+        'test_service_mcp',
+        'MCP certification service',
+        4326,
+        ARRAY['JSON', 'GeoJSON'],
+        ARRAY['Query'],
+        ST_MakeEnvelope(-122.50, 37.70, -122.35, 37.84, 4326),
+        '{"accessPolicy":{"allowAnonymous":true}}'::jsonb
+    )
+    ON CONFLICT (service_name) DO NOTHING;
+
+  # ── Polygon layer (layer 10) for geometry-type diversity ───────────
+  # Line ~37: layer 10
+  - |
+    INSERT INTO honua.layers (
+        layer_id, layer_name, description, table_name,
+        geometry_type, srid, extent, default_visibility
+    )
+    VALUES (
+        10,
+        'MCP Polygon Layer',
+        'Polygon layer for MCP certification testing',
+        'features',
+        'Polygon',
+        4326,
+        ST_MakeEnvelope(-122.50, 37.70, -122.35, 37.84, 4326),
+        true
+    )
+    ON CONFLICT (layer_id) DO UPDATE SET
+        layer_name = EXCLUDED.layer_name,
+        description = EXCLUDED.description,
+        table_name = EXCLUDED.table_name,
+        geometry_type = EXCLUDED.geometry_type,
+        srid = EXCLUDED.srid,
+        extent = EXCLUDED.extent,
+        default_visibility = EXCLUDED.default_visibility;
+
+  - |
+    UPDATE honua.layers
+    SET metadata = '{"accessPolicy":{"allowAnonymous":true}}'::jsonb
+    WHERE layer_id = 10;
+
+  # ── Layer fields for layer 10 ──────────────────────────────────────
+  # Line ~68: layer 10 fields
+  - |
+    INSERT INTO honua.layer_fields (
+        layer_id, field_name, field_type, field_order, nullable, description
+    )
+    VALUES
+        (10, 'objectid', 'Integer', 0, false, 'Object ID'),
+        (10, 'name',     'String',  1, true,  'Feature name'),
+        (10, 'area',     'Double',  2, true,  'Area in square meters'),
+        (10, 'category', 'String',  3, true,  'Category'),
+        (10, 'shape',    'Geometry', 4, true, 'Geometry')
+    ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+  # ── Service-layer bindings ─────────────────────────────────────────
+  # Line ~82: bind test_service_mcp → layer 10
+  - |
+    INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+    VALUES ('test_service_mcp', 10, 0)
+    ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+  # Line ~88: bind test_service → layer 10 (layer_order 1, after existing layer 0)
+  - |
+    INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+    VALUES ('test_service', 10, 1)
+    ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+  # ── 15 point features in layer 0 (objectids 10–24) ────────────────
+  # Fields: objectid, name (String), count (Integer), ratio (Double), status (String)
+  # Deterministic values for statistics certification:
+  #   count: sum=725, min=10, max=100, avg≈48.33
+  #   ratio: sum=76.5, min=1.1, max=10.5, avg≈5.10
+  # Line ~99: MCP point features
+  - |
+    INSERT INTO features (objectid, layer_id, geometry, attributes)
+    VALUES
+        (10, 0, ST_SetSRID(ST_MakePoint(-122.45, 37.75), 4326),
+         '{"objectid":10,"name":"MCP Feature 01","count":10,"ratio":1.5,"status":"active"}'::jsonb),
+        (11, 0, ST_SetSRID(ST_MakePoint(-122.44, 37.76), 4326),
+         '{"objectid":11,"name":"MCP Feature 02","count":20,"ratio":2.5,"status":"active"}'::jsonb),
+        (12, 0, ST_SetSRID(ST_MakePoint(-122.43, 37.77), 4326),
+         '{"objectid":12,"name":"MCP Feature 03","count":30,"ratio":3.5,"status":"active"}'::jsonb),
+        (13, 0, ST_SetSRID(ST_MakePoint(-122.42, 37.78), 4326),
+         '{"objectid":13,"name":"MCP Feature 04","count":40,"ratio":4.5,"status":"inactive"}'::jsonb),
+        (14, 0, ST_SetSRID(ST_MakePoint(-122.41, 37.79), 4326),
+         '{"objectid":14,"name":"MCP Feature 05","count":50,"ratio":5.5,"status":"active"}'::jsonb),
+        (15, 0, ST_SetSRID(ST_MakePoint(-122.40, 37.80), 4326),
+         '{"objectid":15,"name":"MCP Feature 06","count":60,"ratio":6.5,"status":"inactive"}'::jsonb),
+        (16, 0, ST_SetSRID(ST_MakePoint(-122.39, 37.81), 4326),
+         '{"objectid":16,"name":"MCP Feature 07","count":70,"ratio":7.5,"status":"active"}'::jsonb),
+        (17, 0, ST_SetSRID(ST_MakePoint(-122.38, 37.82), 4326),
+         '{"objectid":17,"name":"MCP Feature 08","count":80,"ratio":8.5,"status":"active"}'::jsonb),
+        (18, 0, ST_SetSRID(ST_MakePoint(-122.37, 37.83), 4326),
+         '{"objectid":18,"name":"MCP Feature 09","count":90,"ratio":9.5,"status":"inactive"}'::jsonb),
+        (19, 0, ST_SetSRID(ST_MakePoint(-122.48, 37.71), 4326),
+         '{"objectid":19,"name":"MCP Feature 10","count":100,"ratio":10.5,"status":"active"}'::jsonb),
+        (20, 0, ST_SetSRID(ST_MakePoint(-122.47, 37.73), 4326),
+         '{"objectid":20,"name":"MCP Feature 11","count":15,"ratio":1.1,"status":"active"}'::jsonb),
+        (21, 0, ST_SetSRID(ST_MakePoint(-122.46, 37.74), 4326),
+         '{"objectid":21,"name":"MCP Feature 12","count":25,"ratio":2.2,"status":"inactive"}'::jsonb),
+        (22, 0, ST_SetSRID(ST_MakePoint(-122.36, 37.72), 4326),
+         '{"objectid":22,"name":"MCP Feature 13","count":35,"ratio":3.3,"status":"active"}'::jsonb),
+        (23, 0, ST_SetSRID(ST_MakePoint(-122.49, 37.84), 4326),
+         '{"objectid":23,"name":"MCP Feature 14","count":45,"ratio":4.4,"status":"active"}'::jsonb),
+        (24, 0, ST_SetSRID(ST_MakePoint(-122.35, 37.70), 4326),
+         '{"objectid":24,"name":"MCP Feature 15","count":55,"ratio":5.5,"status":"inactive"}'::jsonb)
+    ON CONFLICT (objectid) DO UPDATE SET
+        layer_id   = EXCLUDED.layer_id,
+        geometry   = EXCLUDED.geometry,
+        attributes = EXCLUDED.attributes,
+        updated_at = NOW();
+
+  # ── 5 polygon features in layer 10 (objectids 1001–1005) ──────────
+  # Fields: objectid, name (String), area (Double), category (String)
+  # Small rectangles within the SF-area bounding box
+  # Line ~142: MCP polygon features
+  - |
+    INSERT INTO features (objectid, layer_id, geometry, attributes)
+    VALUES
+        (1001, 10,
+         ST_SetSRID(ST_GeomFromText(
+           'POLYGON((-122.48 37.72, -122.46 37.72, -122.46 37.74, -122.48 37.74, -122.48 37.72))'
+         ), 4326),
+         '{"objectid":1001,"name":"MCP Polygon 01","area":1250.5,"category":"residential"}'::jsonb),
+        (1002, 10,
+         ST_SetSRID(ST_GeomFromText(
+           'POLYGON((-122.44 37.76, -122.42 37.76, -122.42 37.78, -122.44 37.78, -122.44 37.76))'
+         ), 4326),
+         '{"objectid":1002,"name":"MCP Polygon 02","area":1350.0,"category":"commercial"}'::jsonb),
+        (1003, 10,
+         ST_SetSRID(ST_GeomFromText(
+           'POLYGON((-122.40 37.80, -122.38 37.80, -122.38 37.82, -122.40 37.82, -122.40 37.80))'
+         ), 4326),
+         '{"objectid":1003,"name":"MCP Polygon 03","area":1150.0,"category":"industrial"}'::jsonb),
+        (1004, 10,
+         ST_SetSRID(ST_GeomFromText(
+           'POLYGON((-122.50 37.70, -122.48 37.70, -122.48 37.72, -122.50 37.72, -122.50 37.70))'
+         ), 4326),
+         '{"objectid":1004,"name":"MCP Polygon 04","area":1400.0,"category":"residential"}'::jsonb),
+        (1005, 10,
+         ST_SetSRID(ST_GeomFromText(
+           'POLYGON((-122.36 37.82, -122.35 37.82, -122.35 37.84, -122.36 37.84, -122.36 37.82))'
+         ), 4326),
+         '{"objectid":1005,"name":"MCP Polygon 05","area":980.0,"category":"park"}'::jsonb)
+    ON CONFLICT (objectid) DO UPDATE SET
+        layer_id   = EXCLUDED.layer_id,
+        geometry   = EXCLUDED.geometry,
+        attributes = EXCLUDED.attributes,
+        updated_at = NOW();
+
+  # ── Reset objectid sequence ────────────────────────────────────────
+  - |
+    SELECT setval(
+        pg_get_serial_sequence('features', 'objectid'),
+        (SELECT COALESCE(MAX(objectid), 0) FROM features)
+    );

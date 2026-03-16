@@ -8,6 +8,8 @@ Use this checklist for every MVP release.
 - [ ] Full production audit run completed: `./scripts/run-production-audit.sh --mode full`
 - [ ] Audit artifacts reviewed and attached from `.audit/runs/<timestamp>/summary.md`
 - [ ] Conformance workflows pass (OGC Features, OGC Tiles, WMS, WMTS)
+- [ ] MCP certification passes for both transports (`grpc-web`, `rest`) **and** certification artifacts (`mcp-certification-{transport}`) are produced — see [MCP Certification](mcp-certification.md). Skip if SDK-side scripts are not yet landed (CI jobs will show a warning annotation).
+- [ ] `MCP_SDK_REF` in `ci.yml` is pinned to a specific tag or commit SHA (not a branch name) for reproducible release evidence.
 - [ ] OpenAPI contract governance checks pass
 - [ ] Control-plane SDK artifacts generated and attached to release
 
