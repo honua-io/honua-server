@@ -101,4 +101,4 @@
 
 ### Project Operations
 
-* [Backlog Review Cadence](contributor/BACKLOG_REVIEW_CADENCE.md)
+* [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md)

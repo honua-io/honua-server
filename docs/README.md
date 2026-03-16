@@ -62,5 +62,5 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [Architecture](contributor/ARCHITECTURE.md) — system design
 - [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
 - [ADRs](contributor/adr/README.md) — architectural decisions
-- [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md) — operating cadence and triage checklist
+- [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md) — triage, scope gate, and done/close hygiene cadence
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md) — required compatibility/certification updates per release
