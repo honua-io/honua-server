@@ -432,7 +432,7 @@ internal sealed class FeatureServerQueryHandler(
                 return await CreateCachedResultAsync(statisticsResponse, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
-            var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+            var objectIdFieldName = layer.ObjectIdFieldName;
 
             if (validatedParams.ReturnCountOnly)
             {

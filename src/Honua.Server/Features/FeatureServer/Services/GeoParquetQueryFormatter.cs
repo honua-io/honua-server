@@ -9,7 +9,6 @@ using Apache.Arrow.Types;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
@@ -32,8 +31,10 @@ internal sealed class GeoParquetQueryFormatter
     private const string ContentType = "application/vnd.apache.parquet";
 
     [ThreadStatic]
-    private static WKBReader? _wkbReader;
+    private static WKBWriter? _wkbWriter2D;
 
+    [ThreadStatic]
+    private static WKBWriter? _wkbWriter3D;
 
     /// <summary>
     /// Formats query result as GeoParquet
@@ -163,7 +164,7 @@ internal sealed class GeoParquetQueryFormatter
         bool advertiseZ,
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = layer.ObjectIdFieldName;
         var includeAllFields = outFields == null || outFields.Length == 0 ||
                               (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
 
@@ -463,7 +464,7 @@ internal sealed class GeoParquetQueryFormatter
         Geometry? geometry;
         try
         {
-            geometry = GetWkbReader().Read(geometryBytes);
+            geometry = WkbReaderCache.Get().Read(geometryBytes);
         }
         catch (Exception ex) when (ex is ParseException or FormatException)
         {
@@ -491,11 +492,7 @@ internal sealed class GeoParquetQueryFormatter
         geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, includeM: false);
 
         var hasZ = GeometryHasZ(geometry);
-        var writer = new WKBWriter(
-            ByteOrder.LittleEndian,
-            handleSRID: false,
-            emitZ: hasZ,
-            emitM: false);
+        var writer = GetWkbWriter(hasZ);
         return (writer.Write(geometry), hasZ);
     }
 
@@ -874,10 +871,16 @@ internal sealed class GeoParquetQueryFormatter
         return false;
     }
 
-    private static WKBReader GetWkbReader()
+    private static WKBWriter GetWkbWriter(bool emitZ)
     {
-        _wkbReader ??= new WKBReader();
-        return _wkbReader;
+        if (emitZ)
+        {
+            _wkbWriter3D ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false);
+            return _wkbWriter3D;
+        }
+
+        _wkbWriter2D ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false);
+        return _wkbWriter2D;
     }
 
 }

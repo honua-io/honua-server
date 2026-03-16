@@ -319,7 +319,7 @@ internal static partial class FeatureServerEndpoints
         JsonElement? drawingInfo,
         bool supportsGeobufOutput)
     {
-        var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdField = layer.ObjectIdFieldName;
         var displayField = ResolveDisplayFieldFromLayer(layer, objectIdField);
         var supportsStatistics = true;
         var supportsAdvancedQueries = service.SupportsAdvancedQueries;

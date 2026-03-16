@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
@@ -34,9 +33,6 @@ internal sealed class PbfQueryFormatter
     private const double DefaultQuantizationScale = 1e6;
 
     private readonly GeometryLimits _geometryLimits;
-
-    [ThreadStatic]
-    private static WKBReader? _wkbReader;
 
     /// <summary>
     /// Initializes the PBF formatter with geometry processing limits.
@@ -67,7 +63,7 @@ internal sealed class PbfQueryFormatter
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = layer.ObjectIdFieldName;
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
 
         // Build the FeatureResult sub-message
@@ -347,11 +343,10 @@ internal sealed class PbfQueryFormatter
         GeometryLimits geometryLimits,
         double scale)
     {
-        _wkbReader ??= new WKBReader();
         Geometry? geometry;
         try
         {
-            geometry = _wkbReader.Read(wkb);
+            geometry = WkbReaderCache.Get().Read(wkb);
         }
         catch
         {

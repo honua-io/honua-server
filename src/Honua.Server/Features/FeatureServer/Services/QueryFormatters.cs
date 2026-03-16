@@ -57,8 +57,6 @@ internal sealed class QueryFormatter : IQueryFormatter
     private readonly GeometryLimits _geometryLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
     private readonly ILogger<QueryFormatter> _logger;
-    [ThreadStatic]
-    private static WKBReader? _wkbReader;
 
     public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter, ILogger<QueryFormatter> logger)
     {
@@ -110,7 +108,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = layer.ObjectIdFieldName;
         GeoServicesFeature[] features = result.Items
             .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
@@ -157,7 +155,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = layer.ObjectIdFieldName;
         GeoJsonFeature[] features = result.Items
             .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
@@ -400,7 +398,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
-        var reader = GetWkbReader();
+        var reader = WkbReaderCache.Get();
         Geometry geometry;
 
         try
@@ -423,12 +421,6 @@ internal sealed class QueryFormatter : IQueryFormatter
             geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
         }
         return ConvertGeometryToGeoJsonGeometry(geometry);
-    }
-
-    private static WKBReader GetWkbReader()
-    {
-        _wkbReader ??= new WKBReader();
-        return _wkbReader;
     }
 
     private static GeoJsonGeometry ConvertGeometryToGeoJsonGeometry(Geometry geometry)
@@ -632,7 +624,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = layer.ObjectIdFieldName;
         var outFieldLookup = CreateFieldLookup(outFields);
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
         var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
@@ -730,7 +722,7 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+        var objectIdFieldName = layer.ObjectIdFieldName;
         var outFieldLookup = CreateFieldLookup(outFields);
 
         // Start GeoJSON FeatureCollection
