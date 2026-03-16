@@ -95,6 +95,7 @@
 * [CI Workflows](contributor/ci-workflows.md)
 * [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
 * [Release Checklist](contributor/RELEASE_CHECKLIST.md)
+* [Backlog Review Cadence](contributor/BACKLOG_REVIEW_CADENCE.md)
 * [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)
 * [CodeCov Setup](contributor/CODECOV_SETUP.md)
 * [LLM Architecture Review](contributor/development/llm-review-setup.md)
