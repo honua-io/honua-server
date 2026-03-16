@@ -97,17 +97,18 @@ MapServer coverage is tracked separately:
 | --- | --- | --- | --- |
 | Filtering | `where`, `objectIds` | Implemented | ArcGIS SQL parser; objectIds bypass where. |
 | Spatial filters | `geometry`, `geometryType`, `spatialRel`, `distance`, `units` | Implemented | Distance + KNN supported; geometry supports GeoServices JSON or point/envelope CSV. |
-| Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON output requires EPSG:4326. |
+| Spatial reference | `inSR`, `outSR` | Implemented | GeoJSON and GeoParquet output require EPSG:4326 when the response contains geometry; non-4326 `outSR` is rejected unless the geometry column is absent (`returnGeometry=false`, non-geometry layer, or a special query mode that returns JSON). Coordinates are reprojected to 4326 when `outSR` is omitted. |
 | Pagination | `resultOffset`, `resultRecordCount` | Implemented | Validated against limits. |
 | Fields | `outFields` | Implemented | `*` returns all fields. |
 | Sorting | `orderByFields` | Implemented | Validates against layer fields; supports any field with ASC/DESC. |
-| Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. |
+| Output flags | `returnGeometry`, `returnIdsOnly`, `returnCountOnly`, `returnExtentOnly`, `returnZ`, `returnM` | Implemented | Standard query outputs supported. `returnZ` and `returnM` are applied by `json`, `geojson`, and `pbf` formatters; binary formats `fgb`, `geobuf`, and `parquet` write raw geometry and do not filter dimensions. |
 | Distinct | `returnDistinctValues` | Implemented | In-memory distinct over returned features; works best with explicit `outFields`. |
 | Statistics | `outStatistics`, `groupByFieldsForStatistics` | Implemented | Aggregate queries with COUNT, SUM, MIN, MAX, AVG, STDDEV, VAR. Supports GROUP BY on any layer field. |
-| KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. |
+| KNN output | `nearestCount`, `returnDistance` | Partial | `returnDistance` only affects KNN queries. The computed `distance` attribute is included in `json`, `geojson`, and `parquet` output; `pbf`, `fgb`, and `geobuf` build their schema from layer fields only and omit runtime-computed attributes. |
 | Temporal | `time`, `timeRelation` | Implemented | Uses layer timeInfo or first temporal field. |
-| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet` | Implemented | `f=fgb`, `f=geobuf`, and `f=parquet` return binary payloads; `f=geobuf` requires a store with native GeoBuf support; `f=parquet` returns GeoParquet format with WKB-encoded geometry. |
+| Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet` | Implemented | Six output formats supported. Binary formats (`fgb`, `geobuf`, `parquet`) also accept `Accept` header negotiation; `f=` takes precedence. See [Output format details](#output-format-details) below. |
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
+| Geometry simplification | `maxAllowableOffset` | Implemented | Simplifies geometry to the given tolerance. Applies to `json`, `geojson`, and `pbf` output only; `fgb`, `geobuf`, and `parquet` do not apply it. |
 
 ### Not implemented (explicitly rejected)
 
@@ -122,6 +123,25 @@ MapServer coverage is tracked separately:
 | GDB version | `gdbVersion` | Rejected. |
 | Quantization | `quantizationParameters` | Rejected. |
 | Datum transform | `datumTransformation` | Rejected. |
+
+### Output format details
+
+All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: application/vnd.apache.parquet`). When both `f=` and `Accept` are present, `f=` takes precedence.
+
+**Special query modes**: `returnCountOnly`, `returnIdsOnly`, `returnExtentOnly`, and `outStatistics` queries always return JSON regardless of the requested format.
+
+| Format | Content type | Notes |
+| --- | --- | --- |
+| `json` / `pjson` | `application/json` | Default GeoServices JSON. |
+| `geojson` | `application/geo+json` | RFC 7946. Requires EPSG:4326. |
+| `pbf` | `application/x-protobuf` | Esri-compatible Protocol Buffers. |
+| `fgb` | `application/vnd.flatgeobuf` | FlatGeobuf binary. |
+| `geobuf` | `application/geobuf` | Requires a store with native GeoBuf support. |
+| `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0 with WKB-encoded geometry. Non-4326 `outSR` is rejected when the response includes a geometry column (CRS metadata cannot be written correctly; tracked as follow-up); allowed when `returnGeometry=false` or the layer has no geometry. When `outSR` is omitted, coordinates are reprojected to EPSG:4326 (matching GeoJSON behavior). CRS metadata omits the `crs` key for EPSG:4326 (spec-compliant OGC:CRS84 default). `bbox` is omitted because the spec defines it as the bounding box of geometries in the file, not the layer extent. |
+
+**Binary format limitations** (`fgb`, `geobuf`, `parquet`):
+- `geometryPrecision`, `maxAllowableOffset`, `returnZ`, and `returnM` are not applied — geometry is written as raw WKB.
+- `exceededTransferLimit` is not conveyed. Clients should compare the returned feature count against `maxRecordCount` to detect truncation.
 
 ## ApplyEdits parameter coverage (layer `/applyEdits`)
 
@@ -226,4 +246,4 @@ MapServer coverage is tracked separately:
 | `templates` | Implemented | Empty array (no feature templates configured). |
 | `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
 | `maxRecordCount` | Implemented | From query limits. |
-| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and conditional `GEOBUF`). |
+| `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and conditional `GEOBUF` when the backing store exposes native GeoBuf output). |

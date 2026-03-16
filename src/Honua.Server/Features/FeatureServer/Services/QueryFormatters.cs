@@ -36,7 +36,7 @@ internal interface IQueryFormatter
     /// <param name="maxAllowableOffset">Generalization tolerance override</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <returns>Formatted result and content type</returns>
-    ValueTask<(object response, string contentType)> FormatQueryResultAsync(
+    (object response, string contentType) FormatQueryResult(
         QueryResult<Feature> result,
         LayerDefinition layer,
         string format,
@@ -56,19 +56,21 @@ internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
+    private readonly ILogger<QueryFormatter> _logger;
     [ThreadStatic]
     private static WKBReader? _wkbReader;
 
-    public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter)
+    public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter, ILogger<QueryFormatter> logger)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _pbfFormatter = pbfFormatter;
+        _logger = logger;
     }
 
     /// <summary>
     /// Formats query result into the specified format
     /// </summary>
-    public ValueTask<(object response, string contentType)> FormatQueryResultAsync(
+    public (object response, string contentType) FormatQueryResult(
         QueryResult<Feature> result,
         LayerDefinition layer,
         string format,
@@ -88,46 +90,11 @@ internal sealed class QueryFormatter : IQueryFormatter
 
         return format.ToLowerInvariant() switch
         {
-            "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields)),
-            "parquet" => new ValueTask<(object response, string contentType)>(
-                FormatParquetAsync(
-                    result,
-                    layer,
-                    returnGeometry,
-                    outputSrid,
-                    returnZ,
-                    returnM,
-                    effectiveLimits,
-                    outFields)),
-            "geojson" => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
-            "json" or _ => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields))
+            "pbf" => _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields),
+            "parquet" => GeoParquetQueryFormatter.FormatAsGeoParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, _logger),
+            "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
+            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
         };
-    }
-
-    private static async Task<(object response, string contentType)> FormatParquetAsync(
-        QueryResult<Feature> result,
-        LayerDefinition layer,
-        bool returnGeometry,
-        int? outputSrid,
-        bool returnZ,
-        bool returnM,
-        GeometryLimits effectiveLimits,
-        string[]? outFields)
-    {
-        var (response, contentType) = await GeoParquetQueryFormatter.FormatAsGeoParquetAsync(
-            result,
-            layer,
-            returnGeometry,
-            outputSrid,
-            returnZ,
-            returnM,
-            effectiveLimits,
-            outFields);
-
-        return (response, contentType);
     }
 
     /// <summary>

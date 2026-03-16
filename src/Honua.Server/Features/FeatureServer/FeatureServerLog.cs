@@ -192,6 +192,19 @@ internal static partial class FeatureServerLog
         Message = "Query {Operation} executed: {ServiceId}/FeatureServer/{LayerId} in {ElapsedMilliseconds} ms")]
     public static partial void QueryExecuted(ILogger logger, string operation, string serviceId, int layerId, double elapsedMilliseconds);
 
+    /// <summary>
+    /// Logs when a GeoParquet attribute conversion fails and the value is treated as null.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="fieldName">The field whose value could not be converted.</param>
+    /// <param name="valueType">The CLR type name of the unconvertible value.</param>
+    /// <param name="exception">The conversion exception.</param>
+    [LoggerMessage(
+        EventId = 2207,
+        Level = LogLevel.Debug,
+        Message = "GeoParquet conversion failed for field '{FieldName}' (value type: {ValueType}), value treated as null")]
+    public static partial void GeoParquetConversionFailed(ILogger logger, string fieldName, string valueType, Exception exception);
+
     // ApplyEdits events (2300-2399)
 
     /// <summary>

@@ -24,6 +24,7 @@
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="Parquet.Net" Version="5.5.0" />
     <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+    <PackageReference Include="ParquetSharp" Version="21.0.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

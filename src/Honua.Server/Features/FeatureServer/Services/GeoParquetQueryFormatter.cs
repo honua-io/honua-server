@@ -1,660 +1,580 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text.Json;
-using Honua.Core.Configuration;
+using System.Collections.Immutable;
+using Apache.Arrow;
+using Apache.Arrow.Types;
+using ParquetSharp.Arrow;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Services;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
-using Parquet;
-using Parquet.Schema;
-using ParquetDataColumn = Parquet.Data.DataColumn;
+using Honua.Server.Features.FeatureServer.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.FeatureServer.Services;
 
 /// <summary>
-/// Service for formatting query results as GeoParquet.
+/// Service for formatting query results as GeoParquet
 /// </summary>
 internal sealed class GeoParquetQueryFormatter
 {
+    // Constants for GeoParquet format
     private const string GeometryColumnName = "geometry";
+    private const string GeoParquetVersion = "1.1.0";
+    private const string GeometryEncoding = "WKB";
     private const string GeoMetadataKey = "geo";
+    private const string ContentType = "application/vnd.apache.parquet";
 
-    [ThreadStatic]
-    private static WKBReader? _wkbReader;
 
     /// <summary>
-    /// Formats query result as GeoParquet.
+    /// Formats query result as GeoParquet
     /// </summary>
-    public static async Task<(byte[] response, string contentType)> FormatAsGeoParquetAsync(
+    /// <param name="result">Query result with features</param>
+    /// <param name="layer">Layer definition for metadata</param>
+    /// <param name="returnGeometry">Whether to include geometry</param>
+    /// <param name="outputSrid">Output SRID for geometry</param>
+    /// <param name="returnZ">Whether to include Z values</param>
+    /// <param name="returnM">Whether to include M values</param>
+    /// <param name="geometryPrecision">Accepted for interface symmetry with other formatters; not applied to binary formats.</param>
+    /// <param name="maxAllowableOffset">Accepted for interface symmetry with other formatters; not applied to binary formats.</param>
+    /// <param name="outFields">Fields to include in output</param>
+    /// <param name="logger">Optional logger for conversion diagnostics</param>
+    /// <returns>Formatted result as byte array and content type</returns>
+    public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
         LayerDefinition layer,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
         bool returnM,
-        GeometryLimits geometryLimits,
+        int? geometryPrecision,
+        double? maxAllowableOffset,
         string[]? outFields = null,
-        CancellationToken cancellationToken = default)
+        ILogger? logger = null)
     {
-        var selectedFields = ResolveSelectedFields(layer, outFields);
-        var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
-        var schema = new ParquetSchema(BuildSchemaFields(selectedFields, returnGeometry && layer.HasGeometry));
-        var features = result.Items.ToList();
+        var features = result.Items;
 
-        using var stream = new MemoryStream();
-        using (var writer = await ParquetWriter.CreateAsync(schema, stream, cancellationToken: cancellationToken))
+        if (features.Length == 0)
         {
-            writer.CustomMetadata = BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, returnZ);
-
-            using (var rowGroupWriter = writer.CreateRowGroup())
-            {
-                foreach (var column in BuildColumns(
-                    features,
-                    selectedFields,
-                    schema,
-                    objectIdFieldName,
-                    returnGeometry && layer.HasGeometry,
-                    outputSrid ?? layer.SpatialReference.Wkid,
-                    geometryLimits,
-                    returnZ,
-                    returnM))
-                {
-                    await rowGroupWriter.WriteColumnAsync(column, cancellationToken);
-                }
-            }
+            // Return empty GeoParquet file with schema only
+            return CreateEmptyGeoParquet(layer, returnGeometry, outFields, outputSrid);
         }
 
-        return (stream.ToArray(), "application/vnd.apache.parquet");
+        // Detect runtime-computed attributes (e.g. "distance" from KNN queries) that
+        // exist in the result set but are not declared in the layer schema.
+        var runtimeFields = DetectRuntimeFields(features, layer);
+
+        var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(layer, returnGeometry, outFields, outputSrid, runtimeFields);
+
+        // Build record batch
+        var arrays = BuildArrays(features, schema, layer, returnGeometry, objectIdFieldName, fieldsToInclude, logger);
+
+        using var recordBatch = new RecordBatch(schema, arrays, features.Length);
+
+        // Write to Parquet format
+        using var stream = new MemoryStream();
+        var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
+        using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
+        {
+            writer.WriteRecordBatch(recordBatch);
+            writer.Close();
+        }
+
+        return (stream.ToArray(), ContentType);
     }
 
-    private static List<FieldDefinition> ResolveSelectedFields(LayerDefinition layer, string[]? outFields)
+    /// <summary>
+    /// Creates empty GeoParquet file with schema only
+    /// </summary>
+    private static (byte[] response, string contentType) CreateEmptyGeoParquet(
+        LayerDefinition layer,
+        bool returnGeometry,
+        string[]? outFields,
+        int? outputSrid)
+    {
+        var (schema, _, _) = BuildSchema(layer, returnGeometry, outFields, outputSrid);
+
+        using var stream = new MemoryStream();
+        var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
+        using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
+        {
+            writer.Close();
+        }
+
+        return (stream.ToArray(), ContentType);
+    }
+
+    /// <summary>
+    /// Builds the Arrow schema and resolves which attribute fields to include.
+    /// Shared by both populated and empty GeoParquet paths.
+    /// </summary>
+    /// <param name="layer">Layer definition for schema metadata.</param>
+    /// <param name="returnGeometry">Whether to include the geometry column.</param>
+    /// <param name="outFields">Requested output fields, or null / ["*"] for all.</param>
+    /// <param name="outputSrid">Output SRID for CRS metadata.</param>
+    /// <param name="runtimeFields">
+    /// Runtime-computed attributes detected from the result set (e.g. "distance" from KNN queries).
+    /// These exist in <c>feature.Attributes</c> but are not part of the layer schema.
+    /// Pass an empty list for the empty-result path.
+    /// </param>
+    private static (Schema schema, List<FieldDefinition> fieldsToInclude, string objectIdFieldName) BuildSchema(
+        LayerDefinition layer,
+        bool returnGeometry,
+        string[]? outFields,
+        int? outputSrid,
+        IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null)
     {
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var includeAllFields = outFields == null || outFields.Length == 0 ||
-            (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
+                              (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
 
-        HashSet<string>? requestedFields = null;
-        if (!includeAllFields)
+        var schemaFields = new List<Field>
         {
-            requestedFields = new HashSet<string>(outFields!, StringComparer.OrdinalIgnoreCase)
-            {
-                objectIdFieldName
-            };
+            new Field(objectIdFieldName, new Int64Type(), false)
+        };
+
+        if (returnGeometry && layer.HasGeometry)
+        {
+            schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
         }
 
-        var selectedFields = layer.Fields
-            .Where(field => !field.IsGeometry)
-            .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
+        var fieldsToInclude = (includeAllFields
+            ? layer.Fields.Where(f => !f.IsGeometry && !f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            : layer.Fields.Where(f => !f.IsGeometry && !f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase) && outFields!.Contains(f.Name, StringComparer.OrdinalIgnoreCase)))
             .ToList();
 
-        if (!selectedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
+        foreach (var field in fieldsToInclude)
         {
-            selectedFields.Insert(0, new FieldDefinition(objectIdFieldName, FieldType.BigInteger, Nullable: false));
+            schemaFields.Add(new Field(field.Name, MapToArrowType(field), field.Nullable));
         }
 
-        return selectedFields;
-    }
-
-    private static Field[] BuildSchemaFields(List<FieldDefinition> selectedFields, bool includeGeometry)
-    {
-        var fields = new List<Field>(selectedFields.Count + (includeGeometry ? 1 : 0));
-
-        foreach (var field in selectedFields)
+        // Append runtime-computed attributes (e.g. "distance" from KNN queries) that are
+        // not declared in the layer schema but appear in feature.Attributes.
+        // Only include when outFields is omitted / "*", or the field was explicitly requested,
+        // to match the filtering behavior of JSON/GeoJSON/PBF formatters.
+        if (runtimeFields != null)
         {
-            fields.Add(CreateSchemaField(field));
-        }
-
-        if (includeGeometry)
-        {
-            fields.Add(new DataField<byte[]>(GeometryColumnName, true));
-        }
-
-        return fields.ToArray();
-    }
-
-    private static IEnumerable<ParquetDataColumn> BuildColumns(
-        IReadOnlyList<Feature> features,
-        List<FieldDefinition> selectedFields,
-        ParquetSchema schema,
-        string objectIdFieldName,
-        bool includeGeometry,
-        int outputSrid,
-        GeometryLimits geometryLimits,
-        bool returnZ,
-        bool returnM)
-    {
-        foreach (var field in selectedFields)
-        {
-            yield return BuildAttributeColumn(
-                features,
-                schema.FindDataField(field.Name)!,
-                field,
-                field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (includeGeometry)
-        {
-            var geometryField = schema.FindDataField(GeometryColumnName)!;
-            var geometryValues = features
-                .Select(feature => ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM))
-                .ToArray();
-
-            yield return new ParquetDataColumn(geometryField, geometryValues);
-        }
-    }
-
-    private static ParquetDataColumn BuildAttributeColumn(
-        IReadOnlyList<Feature> features,
-        DataField dataField,
-        FieldDefinition field,
-        bool isObjectIdField)
-    {
-        return field.Type switch
-        {
-            FieldType.BigInteger => new ParquetDataColumn(
-                dataField,
-                BuildInt64Values(features, field, isObjectIdField)),
-            FieldType.Integer => new ParquetDataColumn(
-                dataField,
-                BuildInt32Values(features, field, isObjectIdField)),
-            FieldType.Float => new ParquetDataColumn(
-                dataField,
-                BuildFloatValues(features, field)),
-            FieldType.Double => new ParquetDataColumn(
-                dataField,
-                BuildDoubleValues(features, field)),
-            FieldType.Boolean => new ParquetDataColumn(
-                dataField,
-                BuildBooleanValues(features, field)),
-            FieldType.DateTime => new ParquetDataColumn(
-                dataField,
-                BuildDateTimeValues(features, field, dateOnly: false)),
-            FieldType.Date => new ParquetDataColumn(
-                dataField,
-                BuildDateTimeValues(features, field, dateOnly: true)),
-            FieldType.Time => new ParquetDataColumn(
-                dataField,
-                BuildTimeOnlyValues(features, field)),
-            FieldType.Binary => new ParquetDataColumn(
-                dataField,
-                BuildBinaryValues(features, field)),
-            _ => new ParquetDataColumn(
-                dataField,
-                BuildStringValues(features, field)),
-        };
-    }
-
-    private static DataField CreateSchemaField(FieldDefinition field)
-    {
-        return field.Type switch
-        {
-            FieldType.BigInteger => new DataField(field.Name, field.Nullable ? typeof(long?) : typeof(long), field.Nullable),
-            FieldType.Integer => new DataField(field.Name, field.Nullable ? typeof(int?) : typeof(int), field.Nullable),
-            FieldType.Float => new DataField(field.Name, field.Nullable ? typeof(float?) : typeof(float), field.Nullable),
-            FieldType.Double => new DataField(field.Name, field.Nullable ? typeof(double?) : typeof(double), field.Nullable),
-            FieldType.Boolean => new DataField(field.Name, field.Nullable ? typeof(bool?) : typeof(bool), field.Nullable),
-            FieldType.DateTime => new DateTimeDataField(
-                field.Name,
-                DateTimeFormat.DateAndTime,
-                isAdjustedToUTC: true,
-                DateTimeTimeUnit.Millis,
-                field.Nullable),
-            FieldType.Date => new DateTimeDataField(
-                field.Name,
-                DateTimeFormat.Date,
-                isAdjustedToUTC: true,
-                unit: null,
-                field.Nullable),
-            FieldType.Time => new TimeOnlyDataField(field.Name, TimeSpanFormat.MilliSeconds, field.Nullable),
-            FieldType.Binary => new DataField<byte[]>(field.Name, field.Nullable),
-            _ => new DataField<string>(field.Name, field.Nullable),
-        };
-    }
-
-    private static Array BuildInt64Values(IReadOnlyList<Feature> features, FieldDefinition field, bool isObjectIdField)
-    {
-        if (isObjectIdField)
-        {
-            var values = new long[features.Count];
-            for (var i = 0; i < features.Count; i++)
+            foreach (var (name, type) in runtimeFields)
             {
-                values[i] = GetInt64Value(features[i], field, isObjectIdField);
+                if (includeAllFields || outFields!.Contains(name, StringComparer.OrdinalIgnoreCase))
+                {
+                    schemaFields.Add(new Field(name, type, nullable: true));
+                }
             }
-
-            return values;
         }
 
-        var nullableValues = new long?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            nullableValues[i] = TryConvertInt64(GetAttributeValue(features[i], field.Name));
-        }
-
-        return nullableValues;
+        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid));
+        return (schema, fieldsToInclude, objectIdFieldName);
     }
 
-    private static Array BuildInt32Values(IReadOnlyList<Feature> features, FieldDefinition field, bool isObjectIdField)
-    {
-        if (isObjectIdField)
-        {
-            var objectIdValues = new int[features.Count];
-            for (var i = 0; i < features.Count; i++)
-            {
-                objectIdValues[i] = Convert.ToInt32(GetInt64Value(features[i], field, isObjectIdField), CultureInfo.InvariantCulture);
-            }
-
-            return objectIdValues;
-        }
-
-        var values = new int?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = TryConvertInt32(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static float?[] BuildFloatValues(IReadOnlyList<Feature> features, FieldDefinition field)
-    {
-        var values = new float?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = TryConvertFloat(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static double?[] BuildDoubleValues(IReadOnlyList<Feature> features, FieldDefinition field)
-    {
-        var values = new double?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = TryConvertDouble(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static bool?[] BuildBooleanValues(IReadOnlyList<Feature> features, FieldDefinition field)
-    {
-        var values = new bool?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = TryConvertBoolean(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static DateTime?[] BuildDateTimeValues(IReadOnlyList<Feature> features, FieldDefinition field, bool dateOnly)
-    {
-        var values = new DateTime?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            var value = TryConvertDateTime(GetAttributeValue(features[i], field.Name));
-            values[i] = dateOnly && value.HasValue
-                ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
-                : value;
-        }
-
-        return values;
-    }
-
-    private static TimeOnly?[] BuildTimeOnlyValues(IReadOnlyList<Feature> features, FieldDefinition field)
-    {
-        var values = new TimeOnly?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = TryConvertTimeOnly(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static byte[]?[] BuildBinaryValues(IReadOnlyList<Feature> features, FieldDefinition field)
-    {
-        var values = new byte[]?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = TryConvertBytes(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static string?[] BuildStringValues(IReadOnlyList<Feature> features, FieldDefinition field)
-    {
-        var values = new string?[features.Count];
-        for (var i = 0; i < features.Count; i++)
-        {
-            values[i] = ConvertToStringValue(GetAttributeValue(features[i], field.Name));
-        }
-
-        return values;
-    }
-
-    private static long GetInt64Value(Feature feature, FieldDefinition field, bool isObjectIdField)
-    {
-        var value = GetAttributeValue(feature, field.Name);
-        return TryConvertInt64(value) ?? (isObjectIdField ? feature.Id : 0L);
-    }
-
-    private static object? GetAttributeValue(Feature feature, string fieldName)
-    {
-        return feature.Attributes.TryGetValue(fieldName, out var value) ? value : null;
-    }
-
-    private static byte[]? ProcessGeometry(
-        byte[]? geometryBytes,
-        int outputSrid,
-        GeometryLimits geometryLimits,
-        bool returnZ,
-        bool returnM)
-    {
-        if (geometryBytes == null || geometryBytes.Length == 0)
-        {
-            return null;
-        }
-
-        var geometry = GetWkbReader().Read(geometryBytes);
-        if (geometry == null)
-        {
-            return null;
-        }
-
-        geometry.SRID = outputSrid;
-        geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits);
-        if (geometry == null)
-        {
-            return null;
-        }
-
-        if (!returnZ || !returnM)
-        {
-            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
-        }
-
-        var hasZ = GeometryHasZ(geometry);
-        var hasM = GeometryHasM(geometry);
-        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
-        return writer.Write(geometry);
-    }
-
+    /// <summary>
+    /// Builds GeoParquet metadata following the specification
+    /// </summary>
     private static Dictionary<string, string> BuildGeoParquetMetadata(
         LayerDefinition layer,
         bool returnGeometry,
-        int? outputSrid,
-        bool returnZ)
+        int? outputSrid)
     {
+        var metadata = new Dictionary<string, string>();
+
         if (!returnGeometry || !layer.HasGeometry)
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return metadata;
         }
 
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
-        var geometryType = MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ);
 
-        var geoMetadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["version"] = "1.1.0",
-            ["primary_column"] = GeometryColumnName,
-            ["columns"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                [GeometryColumnName] = BuildGeometryColumnMetadata(layer, srid, geometryType)
-            }
-        };
+        // Build JSON manually to avoid AOT issues.
+        // GeoParquet 1.1.0 spec CRS rules:
+        //   - Omitting the `crs` key implies OGC:CRS84 (WGS84 lon/lat).
+        //   - `"crs": null` means the CRS is undefined/unknown.
+        //   - Any present `crs` value must be a full PROJJSON CRS object.
+        // For EPSG:4326 we omit the key (spec-compliant OGC:CRS84 default).
+        // For other SRIDs we write null because generating valid PROJJSON requires
+        // a CRS lookup table or projection library; tracked as follow-up.
+        var crsPart = srid == 4326
+            ? ""
+            : ",\"crs\":null";
 
-        return new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [GeoMetadataKey] = JsonSerializer.Serialize(geoMetadata)
-        };
-    }
+        // bbox is omitted: GeoParquet 1.1.0 defines bbox as the bounding box of the
+        // geometries *in the file*, but we only have the full layer extent which would
+        // be incorrect for filtered or empty exports. Computing the actual result bbox
+        // would require parsing every WKB geometry; deferred to a follow-up.
 
-    private static Dictionary<string, object?> BuildGeometryColumnMetadata(
-        LayerDefinition layer,
-        int srid,
-        string geometryType)
-    {
-        var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["encoding"] = "WKB",
-            ["geometry_types"] = new[] { geometryType },
-            ["crs"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["type"] = "name",
-                ["properties"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["name"] = $"EPSG:{srid}"
-                }
-            }
-        };
+        var geomType = MapGeometryTypeToGeoParquet(layer.GeometryType);
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":[""{geomType}""]{crsPart}}}}}}}";
 
-        if (layer.Extent.HasValue && srid == layer.SpatialReference.Wkid)
-        {
-            metadata["bbox"] = new[]
-            {
-                layer.Extent.Value.MinX,
-                layer.Extent.Value.MinY,
-                layer.Extent.Value.MaxX,
-                layer.Extent.Value.MaxY
-            };
-        }
+        metadata[GeoMetadataKey] = geoJson;
 
         return metadata;
     }
 
-    private static string MapGeometryTypeToGeoParquet(Honua.Core.Features.Catalog.Domain.GeometryType geometryType, bool returnZ)
+
+    /// <summary>
+    /// Detects runtime-computed attributes present in the result set but not declared in the
+    /// layer schema (e.g. the "distance" field injected by KNN queries when returnDistance=true).
+    /// Internal fields prefixed with "__" are excluded.
+    /// </summary>
+    private static List<(string name, IArrowType type)> DetectRuntimeFields(
+        ImmutableArray<Feature> features,
+        LayerDefinition layer)
     {
-        var baseType = geometryType switch
+        var result = new List<(string name, IArrowType type)>();
+        if (features.Length == 0) return result;
+
+        var layerFieldNames = new HashSet<string>(
+            layer.Fields.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, value) in features[0].Attributes)
         {
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point => "Point",
-            Honua.Core.Features.Catalog.Domain.GeometryType.LineString => "LineString",
-            Honua.Core.Features.Catalog.Domain.GeometryType.Polygon => "Polygon",
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => "MultiPoint",
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => "MultiLineString",
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "MultiPolygon",
-            Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "GeometryCollection",
+            if (layerFieldNames.Contains(key)) continue;
+            // Skip internal fields (e.g. __honua_total_count)
+            if (key.StartsWith("__", StringComparison.Ordinal)) continue;
+
+            var arrowType = InferArrowTypeFromValue(value);
+            if (arrowType != null)
+                result.Add((key, arrowType));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Infers an Arrow type from a CLR runtime value. Returns null for unrecognised types.
+    /// </summary>
+    private static IArrowType? InferArrowTypeFromValue(object? value)
+    {
+        return value switch
+        {
+            double => new DoubleType(),
+            float => new FloatType(),
+            int => new Int32Type(),
+            long => new Int64Type(),
+            bool => new BooleanType(),
+            string => new StringType(),
+            DateTime => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            DateTimeOffset => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Maps layer geometry type to GeoParquet geometry type string
+    /// </summary>
+    private static string MapGeometryTypeToGeoParquet(Core.Features.Catalog.Domain.GeometryType geometryType)
+    {
+        return geometryType switch
+        {
+            Core.Features.Catalog.Domain.GeometryType.Point => "Point",
+            Core.Features.Catalog.Domain.GeometryType.LineString => "LineString",
+            Core.Features.Catalog.Domain.GeometryType.Polygon => "Polygon",
+            Core.Features.Catalog.Domain.GeometryType.MultiPoint => "MultiPoint",
+            Core.Features.Catalog.Domain.GeometryType.MultiLineString => "MultiLineString",
+            Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "MultiPolygon",
+            Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "GeometryCollection",
             _ => "Geometry"
         };
-
-        return returnZ ? $"{baseType} Z" : baseType;
     }
 
-    private static long? TryConvertInt64(object? value)
+    /// <summary>
+    /// Maps field definition to Arrow data type.
+    /// IMPORTANT: keep in sync with <see cref="BuildAttributeArray"/> which selects the
+    /// matching typed builder for the same SQL type strings.
+    /// </summary>
+    private static IArrowType MapToArrowType(FieldDefinition field)
     {
-        return value switch
+        return field.SqlType.ToLowerInvariant() switch
         {
-            null => null,
-            long longValue => longValue,
-            int intValue => intValue,
-            short shortValue => shortValue,
-            byte byteValue => byteValue,
-            double doubleValue => Convert.ToInt64(doubleValue, CultureInfo.InvariantCulture),
-            decimal decimalValue => Convert.ToInt64(decimalValue, CultureInfo.InvariantCulture),
-            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var jsonLong) => jsonLong,
-            string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => null
+            "bigint" or "int8" => new Int64Type(),
+            "integer" or "int4" => new Int32Type(),
+            "smallint" or "int2" => new Int16Type(),
+            "real" or "float4" => new FloatType(),
+            "double precision" or "float8" => new DoubleType(),
+            "boolean" or "bool" => new BooleanType(),
+            "date" => new Date32Type(),
+            "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            "bytea" => new BinaryType(),
+            "uuid" => new StringType(),
+            "json" or "jsonb" => new StringType(),
+            _ when field.SqlType.StartsWith("varchar", StringComparison.OrdinalIgnoreCase) => new StringType(),
+            _ when field.SqlType.StartsWith("char", StringComparison.OrdinalIgnoreCase) => new StringType(),
+            _ when field.SqlType.StartsWith("text", StringComparison.OrdinalIgnoreCase) => new StringType(),
+            _ when field.SqlType.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => new DoubleType(),
+            _ when field.SqlType.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => new DoubleType(),
+            _ => new StringType() // Default to string for unknown types
         };
     }
 
-    private static int? TryConvertInt32(object? value)
+    /// <summary>
+    /// Builds Arrow arrays for each column
+    /// </summary>
+    private static IArrowArray[] BuildArrays(
+        ImmutableArray<Feature> features,
+        Schema schema,
+        LayerDefinition layer,
+        bool returnGeometry,
+        string objectIdFieldName,
+        List<FieldDefinition> fieldsToInclude,
+        ILogger? logger = null)
     {
-        return value switch
-        {
-            null => null,
-            int intValue => intValue,
-            long longValue => Convert.ToInt32(longValue, CultureInfo.InvariantCulture),
-            short shortValue => shortValue,
-            byte byteValue => byteValue,
-            double doubleValue => Convert.ToInt32(doubleValue, CultureInfo.InvariantCulture),
-            decimal decimalValue => Convert.ToInt32(decimalValue, CultureInfo.InvariantCulture),
-            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var jsonInt) => jsonInt,
-            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => null
-        };
-    }
+        var arrays = new List<IArrowArray>();
 
-    private static float? TryConvertFloat(object? value)
-    {
-        return value switch
+        foreach (var field in schema.FieldsList)
         {
-            null => null,
-            float floatValue => floatValue,
-            double doubleValue => Convert.ToSingle(doubleValue, CultureInfo.InvariantCulture),
-            decimal decimalValue => Convert.ToSingle(decimalValue, CultureInfo.InvariantCulture),
-            int intValue => intValue,
-            long longValue => longValue,
-            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetSingle(out var jsonFloat) => jsonFloat,
-            string stringValue when float.TryParse(stringValue, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => null
-        };
-    }
-
-    private static double? TryConvertDouble(object? value)
-    {
-        return value switch
-        {
-            null => null,
-            double doubleValue => doubleValue,
-            float floatValue => floatValue,
-            decimal decimalValue => Convert.ToDouble(decimalValue, CultureInfo.InvariantCulture),
-            int intValue => intValue,
-            long longValue => longValue,
-            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out var jsonDouble) => jsonDouble,
-            string stringValue when double.TryParse(stringValue, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed) => parsed,
-            _ => null
-        };
-    }
-
-    private static bool? TryConvertBoolean(object? value)
-    {
-        return value switch
-        {
-            null => null,
-            bool boolValue => boolValue,
-            JsonElement element when element.ValueKind == JsonValueKind.True => true,
-            JsonElement element when element.ValueKind == JsonValueKind.False => false,
-            string stringValue when bool.TryParse(stringValue, out var parsedBool) => parsedBool,
-            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInt) => parsedInt != 0,
-            int intValue => intValue != 0,
-            long longValue => longValue != 0,
-            _ => null
-        };
-    }
-
-    private static DateTime? TryConvertDateTime(object? value)
-    {
-        return value switch
-        {
-            null => null,
-            DateTimeOffset dateTimeOffset => dateTimeOffset.UtcDateTime,
-            DateTime dateTime => dateTime.Kind switch
+            if (field.Name == objectIdFieldName)
             {
-                DateTimeKind.Utc => dateTime,
-                DateTimeKind.Local => dateTime.ToUniversalTime(),
-                _ => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                arrays.Add(BuildObjectIdArray(features));
+            }
+            else if (field.Name == GeometryColumnName && returnGeometry)
+            {
+                arrays.Add(BuildGeometryArray(features));
+            }
+            else
+            {
+                var fieldDef = fieldsToInclude.FirstOrDefault(f => f.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase));
+                if (fieldDef != null)
+                {
+                    arrays.Add(BuildAttributeArray(features, field.Name, fieldDef, logger));
+                }
+                else
+                {
+                    // Runtime-computed attribute (e.g. "distance" from KNN queries):
+                    // no FieldDefinition exists, so dispatch by the Arrow type declared in the schema.
+                    arrays.Add(BuildRuntimeAttributeArray(features, field, logger));
+                }
+            }
+        }
+
+        return arrays.ToArray();
+    }
+
+    /// <summary>
+    /// Builds Int64 array for object IDs directly from features without intermediate allocation
+    /// </summary>
+    private static Int64Array BuildObjectIdArray(ImmutableArray<Feature> features)
+    {
+        var builder = new Int64Array.Builder();
+        foreach (var feature in features)
+        {
+            builder.Append(feature.Id);
+        }
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds binary array for WKB geometry data
+    /// </summary>
+    private static BinaryArray BuildGeometryArray(ImmutableArray<Feature> features)
+    {
+        var builder = new BinaryArray.Builder();
+
+        foreach (var feature in features)
+        {
+            if (feature.Geometry != null && feature.Geometry.Length > 0)
+            {
+                builder.Append(feature.Geometry);
+            }
+            else
+            {
+                builder.AppendNull();
+            }
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds attribute array for a specific field.
+    /// IMPORTANT: keep in sync with <see cref="MapToArrowType"/> which declares the
+    /// Arrow schema type for the same SQL type strings.
+    /// </summary>
+    private static IArrowArray BuildAttributeArray(
+        ImmutableArray<Feature> features,
+        string fieldName,
+        FieldDefinition fieldDef,
+        ILogger? logger = null)
+    {
+        var sqlType = fieldDef.SqlType.ToLowerInvariant();
+        return sqlType switch
+        {
+            "bigint" or "int8" => BuildInt64AttributeArray(features, fieldName, logger),
+            "integer" or "int4" => BuildInt32AttributeArray(features, fieldName, logger),
+            "smallint" or "int2" => BuildInt16AttributeArray(features, fieldName, logger),
+            "real" or "float4" => BuildFloatAttributeArray(features, fieldName, logger),
+            "double precision" or "float8" => BuildDoubleAttributeArray(features, fieldName, logger),
+            "boolean" or "bool" => BuildBooleanAttributeArray(features, fieldName, logger),
+            "bytea" => BuildBinaryAttributeArray(features, fieldName, logger),
+            "date" => BuildDate32AttributeArray(features, fieldName, logger),
+            "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => BuildTimestampAttributeArray(features, fieldName, logger),
+            _ when sqlType.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
+            _ when sqlType.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
+            _ => BuildStringAttributeArray(features, fieldName, logger)
+        };
+    }
+
+
+    /// <summary>
+    /// Iterates features extracting attribute values, handling nulls and conversion errors.
+    /// </summary>
+    private static void ForEachAttribute(
+        ImmutableArray<Feature> features,
+        string fieldName,
+        Action<object> onValue,
+        Action onNull,
+        ILogger? logger = null)
+    {
+        foreach (var feature in features)
+        {
+            if (feature.Attributes.TryGetValue(fieldName, out var value) && value != null)
+            {
+                try
+                {
+                    onValue(value);
+                }
+                catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+                {
+                    if (logger != null)
+                    {
+                        FeatureServerLog.GeoParquetConversionFailed(logger, fieldName, value.GetType().Name, ex);
+                    }
+
+                    onNull();
+                }
+            }
+            else
+            {
+                onNull();
+            }
+        }
+    }
+
+    private static Int64Array BuildInt64AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new Int64Array.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToInt64(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static Int32Array BuildInt32AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new Int32Array.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToInt32(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static Int16Array BuildInt16AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new Int16Array.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToInt16(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static FloatArray BuildFloatAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new FloatArray.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToSingle(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static DoubleArray BuildDoubleAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new DoubleArray.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDouble(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static BooleanArray BuildBooleanAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new BooleanArray.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToBoolean(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static Date32Array BuildDate32AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new Date32Array.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDateTime(v)), () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static TimestampArray BuildTimestampAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new TimestampArray.Builder(TimeUnit.Millisecond, TimeZoneInfo.Utc);
+        ForEachAttribute(features, fieldName,
+            v =>
+            {
+                var dt = Convert.ToDateTime(v);
+                if (dt.Kind == DateTimeKind.Unspecified)
+                    dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                builder.Append(new DateTimeOffset(dt.ToUniversalTime()));
             },
-            DateOnly dateOnly => DateTime.SpecifyKind(dateOnly.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc),
-            JsonElement element when element.ValueKind == JsonValueKind.String => TryConvertDateTime(element.GetString()),
-            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var milliseconds) =>
-                DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime,
-            string stringValue when DateTimeOffset.TryParse(
-                stringValue,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind | DateTimeStyles.AllowWhiteSpaces,
-                out var parsedOffset) => parsedOffset.UtcDateTime,
-            string stringValue when DateTime.TryParse(
-                stringValue,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal | DateTimeStyles.AllowWhiteSpaces,
-                out var parsedDateTime) => parsedDateTime,
-            long milliseconds => DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime,
-            double milliseconds => DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(milliseconds, CultureInfo.InvariantCulture)).UtcDateTime,
-            _ => null
+            () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    private static BinaryArray BuildBinaryAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    {
+        var builder = new BinaryArray.Builder();
+        ForEachAttribute(features, fieldName,
+            v =>
+            {
+                if (v is byte[] bytes)
+                {
+                    builder.Append(bytes);
+                }
+                else if (v is string s)
+                {
+                    // BYTEA attributes stored in the JSONB column are serialised as base64
+                    // strings during JSON round-tripping. Decode them back to bytes.
+                    try
+                    {
+                        builder.Append(Convert.FromBase64String(s));
+                    }
+                    catch (FormatException ex)
+                    {
+                        // Not valid base64 — treat as null and log.
+                        if (logger != null)
+                        {
+                            FeatureServerLog.GeoParquetConversionFailed(logger, fieldName, "String(non-base64)", ex);
+                        }
+                        builder.AppendNull();
+                    }
+                }
+                else
+                {
+                    builder.AppendNull();
+                }
+            },
+            () => builder.AppendNull(), logger);
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds an array for a runtime-computed attribute (no <see cref="FieldDefinition"/>).
+    /// Dispatches by the Arrow type declared in the schema field.
+    /// </summary>
+    private static IArrowArray BuildRuntimeAttributeArray(
+        ImmutableArray<Feature> features,
+        Field field,
+        ILogger? logger = null)
+    {
+        return field.DataType switch
+        {
+            DoubleType => BuildDoubleAttributeArray(features, field.Name, logger),
+            FloatType => BuildFloatAttributeArray(features, field.Name, logger),
+            Int32Type => BuildInt32AttributeArray(features, field.Name, logger),
+            Int64Type => BuildInt64AttributeArray(features, field.Name, logger),
+            BooleanType => BuildBooleanAttributeArray(features, field.Name, logger),
+            TimestampType => BuildTimestampAttributeArray(features, field.Name, logger),
+            _ => BuildStringAttributeArray(features, field.Name, logger)
         };
     }
 
-    private static TimeOnly? TryConvertTimeOnly(object? value)
+    private static StringArray BuildStringAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
-        return value switch
-        {
-            null => null,
-            TimeOnly timeOnly => timeOnly,
-            TimeSpan timeSpan => TimeOnly.FromTimeSpan(timeSpan),
-            DateTime dateTime => TimeOnly.FromDateTime(dateTime),
-            DateTimeOffset dateTimeOffset => TimeOnly.FromDateTime(dateTimeOffset.UtcDateTime),
-            JsonElement element when element.ValueKind == JsonValueKind.String => TryConvertTimeOnly(element.GetString()),
-            string stringValue when TimeOnly.TryParse(stringValue, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var parsedTime) => parsedTime,
-            string stringValue when TimeSpan.TryParse(stringValue, CultureInfo.InvariantCulture, out var parsedSpan) => TimeOnly.FromTimeSpan(parsedSpan),
-            _ => null
-        };
+        var builder = new StringArray.Builder();
+        ForEachAttribute(features, fieldName, v => builder.Append(v.ToString() ?? string.Empty), () => builder.AppendNull(), logger);
+        return builder.Build();
     }
 
-    private static byte[]? TryConvertBytes(object? value)
-    {
-        return value switch
-        {
-            null => null,
-            byte[] bytes => bytes,
-            JsonElement element when element.ValueKind == JsonValueKind.String => TryConvertBytes(element.GetString()),
-            string stringValue when TryDecodeBase64(stringValue, out var decoded) => decoded,
-            string stringValue => System.Text.Encoding.UTF8.GetBytes(stringValue),
-            _ => null
-        };
-    }
-
-    private static string? ConvertToStringValue(object? value)
-    {
-        return value switch
-        {
-            null => null,
-            string stringValue => stringValue,
-            DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
-            DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
-            DateOnly dateOnly => dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            TimeOnly timeOnly => timeOnly.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture),
-            JsonElement element when element.ValueKind is JsonValueKind.Object or JsonValueKind.Array => element.GetRawText(),
-            JsonElement element => element.ToString(),
-            _ => value.ToString()
-        };
-    }
-
-    private static bool TryDecodeBase64(string? value, out byte[] decoded)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            decoded = [];
-            return false;
-        }
-
-        try
-        {
-            decoded = Convert.FromBase64String(value);
-            return true;
-        }
-        catch (FormatException)
-        {
-            decoded = [];
-            return false;
-        }
-    }
-
-    private static bool GeometryHasZ(Geometry geometry)
-        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
-
-    private static bool GeometryHasM(Geometry geometry)
-        => geometry.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M));
-
-    private static WKBReader GetWkbReader()
-    {
-        _wkbReader ??= new WKBReader();
-        return _wkbReader;
-    }
 }

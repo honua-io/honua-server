@@ -98,6 +98,20 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
         var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormat_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
         await AssertGeoParquetPayloadAsync(payload, expectGeometry: true);
     }
 
@@ -112,6 +126,66 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("returnDistinctValues is not supported when f=fgb.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatAndNon4326OutSR_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("GeoParquet output does not yet support non-4326 outSR");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatNoGeometry_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&returnGeometry=false");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatNoGeometryAndNon4326OutSR_ReturnsOk()
+    {
+        // When returnGeometry=false the parquet file has no geometry column or CRS metadata,
+        // so the 4326 restriction should not apply.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&returnGeometry=false&outSR=3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatAndOutStatisticsAndNon4326OutSR_ReturnsJson()
+    {
+        // outStatistics queries always return JSON regardless of f=, so the parquet
+        // CRS restriction must not reject the request.
+        var outStats = Uri.EscapeDataString(
+            """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"cnt"}]""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857&outStatistics={outStats}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
 
     [IntegrationTest]
@@ -155,6 +229,24 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.flatgeobuf");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetAcceptHeader_ReturnsOk()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query");
+        request.Headers.Accept.ParseAdd("application/vnd.apache.parquet");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
         var payload = await response.Content.ReadAsByteArrayAsync();
         payload.Should().NotBeEmpty();
     }

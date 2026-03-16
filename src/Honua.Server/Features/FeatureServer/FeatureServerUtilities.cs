@@ -492,6 +492,7 @@ internal static partial class FeatureServerEndpoints
         AddSupportedFormat(normalizedFormats, "GEOJSON");
         AddSupportedFormat(normalizedFormats, "PBF");
         AddSupportedFormat(normalizedFormats, "FGB");
+        AddSupportedFormat(normalizedFormats, "PARQUET");
 
         if (supportsGeobufOutput)
         {

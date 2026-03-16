@@ -53,7 +53,7 @@ Legend: **Implemented** | **Partial** | **Not implemented**
 | `maxImageWidth` | Optional | Implemented | Configurable, default 4096. |
 | `maxImageHeight` | Optional | Implemented | Configurable, default 4096. |
 | `maxRecordCount` | Optional | Implemented | From `LimitsOptions.Query.MaxRecordCount`. |
-| `supportedQueryFormats` | Optional | Implemented | Comma-separated string from service `SupportedFormats`. |
+| `supportedQueryFormats` | Optional | Implemented | Normalized to uppercase from service `SupportedFormats`. Unlike FeatureServer, MapServer does not augment with runtime binary formats; however, layer queries delegate to the FeatureServer handler and support its full format set (including `f=parquet`). |
 | `minScale` | Optional | Implemented | Derived from max of layer `minScale` values. |
 | `maxScale` | Optional | Implemented | Derived from min of layer `maxScale` values. |
 | `documentInfo` | Optional | Implemented | Title, Author, Comments, Subject, Category, Keywords. |
@@ -81,7 +81,7 @@ Legend: **Implemented** | **Partial** | **Not implemented**
 | `minScale` / `maxScale` | Required | Implemented | |
 | `defaultVisibility` | Required | Implemented | |
 | `maxRecordCount` | Required | Implemented | |
-| `supportedQueryFormats` | Optional | Implemented | Comma-separated string from service `SupportedFormats`. |
+| `supportedQueryFormats` | Optional | Implemented | Normalized to uppercase from service `SupportedFormats`. Layer queries delegate to FeatureServer and support its full format set. |
 | `supportsStatistics` | Optional | Implemented | `false` (not yet supported). |
 | `supportsOrderBy` | Optional | Implemented | `true`. |
 | `supportsDistinct` | Optional | Implemented | `true`. |

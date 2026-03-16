@@ -58,8 +58,15 @@ curl http://localhost:8080/healthz/ready
 http://<host>/odata/Features?$select=id,name,population&$filter=population%20gt%2010000&$top=50
 ```
 
+**GeoParquet export for analytics pipelines:**
+```bash
+curl "http://<host>/rest/services/1/FeatureServer/0/query?where=1%3D1&outFields=*&f=parquet" --output features.parquet
+```
+Use `f=parquet` to export query results as GeoParquet 1.1.0 for direct use with DuckDB, pandas/geopandas, or other columnar analytics tools. Results are subject to `maxRecordCount`; compare the returned row count against the service limit to detect truncation.
+
 **Next Steps:**
 - [OData API Examples](API_EXAMPLES.md#odata-v4-api)
+- [GeoParquet Export Examples](API_EXAMPLES.md#geoservices-rest-api)
 - [Client Templates + Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
 - [Data Modeling Guide](DATA_MODELING_GUIDE.md)
 
