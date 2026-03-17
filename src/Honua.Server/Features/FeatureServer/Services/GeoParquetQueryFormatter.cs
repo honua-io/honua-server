@@ -129,7 +129,7 @@ internal sealed class GeoParquetQueryFormatter
         int? outputSrid,
         bool returnZ)
     {
-        var (schema, _, _) = BuildSchema(layer, returnGeometry, outFields, outputSrid, returnZ);
+        var (schema, _, _) = BuildSchema(layer, returnGeometry, outFields, outputSrid, returnZ, isEmpty: true);
 
         using var stream = new MemoryStream();
         var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
@@ -156,13 +156,16 @@ internal sealed class GeoParquetQueryFormatter
     /// These exist in <c>feature.Attributes</c> but are not part of the layer schema.
     /// Pass an empty list for the empty-result path.
     /// </param>
+    /// <param name="isEmpty">True when the result set has zero features, so that
+    /// <c>geometry_types</c> is emitted as <c>[]</c> per GeoParquet 1.1.0 §4.1.</param>
     private static (Schema schema, List<FieldDefinition> fieldsToInclude, string objectIdFieldName) BuildSchema(
         LayerDefinition layer,
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
         bool advertiseZ,
-        IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null)
+        IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null,
+        bool isEmpty = false)
     {
         var objectIdFieldName = layer.ObjectIdFieldName;
         var includeAllFields = outFields == null || outFields.Length == 0 ||
@@ -203,18 +206,26 @@ internal sealed class GeoParquetQueryFormatter
             }
         }
 
-        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, advertiseZ));
+        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, advertiseZ, isEmpty));
         return (schema, fieldsToInclude, objectIdFieldName);
     }
 
     /// <summary>
-    /// Builds GeoParquet metadata following the specification
+    /// Builds GeoParquet metadata following the specification.
     /// </summary>
+    /// <param name="layer">Layer definition for CRS and geometry type metadata.</param>
+    /// <param name="returnGeometry">Whether the geometry column is included.</param>
+    /// <param name="outputSrid">Output SRID for CRS metadata.</param>
+    /// <param name="advertiseZ">Whether to advertise Z in geometry_types.</param>
+    /// <param name="isEmpty">True when the result set has zero features.
+    /// GeoParquet 1.1.0 §4.1 requires <c>geometry_types</c> to list actual geometry
+    /// types present in the file — an empty file must use <c>[]</c>.</param>
     private static Dictionary<string, string> BuildGeoParquetMetadata(
         LayerDefinition layer,
         bool returnGeometry,
         int? outputSrid,
-        bool advertiseZ)
+        bool advertiseZ,
+        bool isEmpty = false)
     {
         var metadata = new Dictionary<string, string>();
 
@@ -242,8 +253,12 @@ internal sealed class GeoParquetQueryFormatter
         // be incorrect for filtered or empty exports. Computing the actual result bbox
         // would require parsing every WKB geometry; deferred to a follow-up.
 
-        var geomType = MapGeometryTypeToGeoParquet(layer.GeometryType, advertiseZ);
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":[""{geomType}""]{crsPart}}}}}}}";
+        // GeoParquet 1.1.0 §4.1: geometry_types lists actual types in the file.
+        // An empty file has no geometries, so geometry_types must be [].
+        var geometryTypesPart = isEmpty
+            ? "[]"
+            : $"[\"{MapGeometryTypeToGeoParquet(layer.GeometryType, advertiseZ)}\"]";
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 

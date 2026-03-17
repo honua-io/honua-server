@@ -70,7 +70,7 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
-    public void FormatAsGeoParquet_EmptyResult_ReturnsValidParquetWithCorrectContentType()
+    public void FormatAsGeoParquet_EmptyResult_ReturnsValidParquetWithEmptyGeometryTypes()
     {
         var layer = CreateLayer(
             new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
@@ -93,6 +93,15 @@ public sealed class GeoParquetQueryFormatterTests
         payload[1].Should().Be((byte)'A');
         payload[2].Should().Be((byte)'R');
         payload[3].Should().Be((byte)'1');
+
+        // GeoParquet 1.1.0 §4.1: geometry_types must be [] for an empty file
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geomCol.GetProperty("geometry_types").EnumerateArray().Should().BeEmpty(
+            "empty GeoParquet file must have geometry_types:[] per spec §4.1");
     }
 
     [Fact]
@@ -431,6 +440,8 @@ public sealed class GeoParquetQueryFormatterTests
         geomCol.GetProperty("crs").ValueKind.Should().Be(JsonValueKind.Null);
         // bbox is omitted — layer extent is not the same as the exported result extent
         geomCol.TryGetProperty("bbox", out _).Should().BeFalse();
+        // Empty file must also have geometry_types:[]
+        geomCol.GetProperty("geometry_types").EnumerateArray().Should().BeEmpty();
     }
 
     [Fact]

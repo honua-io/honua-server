@@ -266,6 +266,8 @@ internal sealed class FeatureServerQueryHandler(
                     [$"Unsupported outSR value: {validatedParams.OutSr}"]);
             }
 
+            var wgs84Srid = SpatialReference.WGS84.Wkid;
+
             var requiresGeoJsonOutput = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase)
                 && !validatedParams.ReturnCountOnly
                 && !validatedParams.ReturnExtentOnly
@@ -273,7 +275,6 @@ internal sealed class FeatureServerQueryHandler(
 
             if (requiresGeoJsonOutput)
             {
-                var wgs84Srid = SpatialReference.WGS84.Wkid;
                 if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -299,7 +300,6 @@ internal sealed class FeatureServerQueryHandler(
 
             if (requiresParquetOutput)
             {
-                var wgs84Srid = SpatialReference.WGS84.Wkid;
                 if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
