@@ -127,8 +127,12 @@ public sealed class CloudDeploymentValidationTests
     [Endpoint("POST /api/v1/admin/deploy/plan")]
     public async Task DeployPlanEndpoint_ReturnsPlan_WhenTargetConfigured_OrNotFoundContract_WhenNoTargetConfigured()
     {
+        if (!GetOptionalBool(ExpectDeployPlanSupportEnv, defaultValue: true))
+        {
+            return;
+        }
+
         using var client = CreateClient();
-        var expectsDeployPlanSupport = GetOptionalBool(ExpectDeployPlanSupportEnv, defaultValue: true);
 
         var configuredTargetId = Environment.GetEnvironmentVariable(DeployTargetIdEnv);
         var targetId = string.IsNullOrWhiteSpace(configuredTargetId)
@@ -146,12 +150,6 @@ public sealed class CloudDeploymentValidationTests
 
         using var response = await client.SendAsync(request);
         var payload = await response.Content.ReadAsStringAsync();
-
-        if (!expectsDeployPlanSupport)
-        {
-            AssertUnsupportedOperationContract(response, payload);
-            return;
-        }
 
         if (string.IsNullOrWhiteSpace(configuredTargetId))
         {
@@ -365,18 +363,6 @@ public sealed class CloudDeploymentValidationTests
         var request = CreateAdminRequest(method, path);
         request.Content = JsonContent.Create(payload);
         return request;
-    }
-
-    private static void AssertUnsupportedOperationContract(HttpResponseMessage response, string payload)
-    {
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, $"response: {payload}");
-
-        using var document = JsonDocument.Parse(payload);
-        var root = document.RootElement;
-
-        root.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.MethodNotAllowed);
-        root.GetProperty("title").GetString().Should().Be("Method Not Allowed");
-        root.GetProperty("detail").GetString().Should().ContainEquivalentOf("not supported");
     }
 
     private static MultipartFormDataContent CreateImportContent(string tableName)

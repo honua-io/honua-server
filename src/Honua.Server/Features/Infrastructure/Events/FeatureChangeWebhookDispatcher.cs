@@ -35,10 +35,8 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     {
         _deliveredCursor = await TryLoadDeliveredCursorAsync(stoppingToken).ConfigureAwait(false);
 
-        while (true)
+        while (!stoppingToken.IsCancellationRequested)
         {
-            stoppingToken.ThrowIfCancellationRequested();
-
             try
             {
                 if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
