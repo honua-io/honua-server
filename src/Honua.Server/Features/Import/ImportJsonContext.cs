@@ -40,8 +40,14 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(IReadOnlyList<string>))]
 [JsonSerializable(typeof(object))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(sbyte))]
+[JsonSerializable(typeof(short))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(byte))]
+[JsonSerializable(typeof(ushort))]
+[JsonSerializable(typeof(uint))]
+[JsonSerializable(typeof(ulong))]
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(float))]
 [JsonSerializable(typeof(decimal))]
@@ -50,7 +56,9 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(TimeSpan))]
-[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(byte[]))]
+[JsonSerializable(typeof(TimeOnly))]
+[JsonSerializable(typeof(DateOnly))]
 internal sealed partial class ImportJsonContext : JsonSerializerContext
 {
 }

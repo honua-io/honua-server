@@ -3,30 +3,21 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Import;
+using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
-using Parquet;
-using Parquet.Schema;
-using ParquetDataColumn = Parquet.Data.DataColumn;
 
 namespace Honua.Postgres.Tests.Features.Import;
 
 public sealed class GeoParquetPreviewTests
 {
-    private static readonly string[] PointGeometryTypes = ["Point"];
-    private static readonly long?[] ObjectIdValues = [1L];
-    private static readonly string?[] NameValues = ["Test Feature"];
-
     [Fact]
     public async Task PreviewFileAsync_GeoParquet_ReturnsPreviewMetadata()
     {
-        await using var stream = await CreateGeoParquetStreamAsync();
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync();
         var service = CreateService();
 
         var preview = await service.PreviewFileAsync(stream, "sample.parquet");
@@ -36,6 +27,304 @@ public sealed class GeoParquetPreviewTests
         preview.TotalFeatureCount.Should().Be(1);
         preview.SampleProperties.Should().ContainKey("name");
         preview.SampleProperties["name"].Should().Be("Test Feature");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_NoCrsKey_DefaultsToSrid4326()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.Omitted);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "no_crs.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().Be(4326);
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_ExplicitNullCrs_ReturnsNullSrid()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.ExplicitNull);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "null_crs.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().BeNull();
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_OgcCrs84ProjJson_DefaultsToSrid4326()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.OgcCrs84ProjJson);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "ogc_crs84_projjson.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().Be(4326);
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_OgcCrs84PropertiesName_DefaultsToSrid4326()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.OgcCrs84PropertiesName);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "ogc_crs84_propname.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().Be(4326);
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_DecimalEpsgCode_FallsBackToNullSrid()
+    {
+        // CRS with decimal EPSG code (4326.5) — not a valid integer, should fall through gracefully
+        var crs = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["authority"] = "EPSG",
+                ["code"] = 4326.5
+            }
+        };
+        await using var stream = await GeoParquetTestFactory.CreateWithCustomCrsAsync(crs);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "decimal_crs.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().BeNull();
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_OutOfRangeEpsgCode_FallsBackToNullSrid()
+    {
+        // CRS with huge EPSG code exceeding Int32 range — should fall through gracefully
+        var crs = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["authority"] = "EPSG",
+                ["code"] = 99999999999L
+            }
+        };
+        await using var stream = await GeoParquetTestFactory.CreateWithCustomCrsAsync(crs);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "huge_crs.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().BeNull();
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_NonWkbEncoding_ThrowsNotSupportedException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(encoding: "point");
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "non_wkb.parquet");
+
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*Only WKB encoding is supported*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_SecondaryGeometryColumn_ExcludedFromProperties()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithSecondaryGeometryAsync();
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "multi_geom.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.SampleProperties.Should().ContainKey("name");
+        preview.SampleProperties.Should().NotContainKey("geometry");
+        preview.SampleProperties.Should().NotContainKey("geometry2");
+        preview.Warnings.Should().Contain(w => w.Contains("multiple geometry columns"));
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_MalformedGeoJson_ThrowsInvalidDataException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithMalformedMetadataAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "bad_meta.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*malformed*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_NoGeoMetadataKey_ThrowsInvalidDataException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithoutGeoMetadataAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "plain.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*missing required*geo*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_WrongShapedMetadata_ThrowsInvalidDataException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithWrongShapedMetadataAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "wrong_shape.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*unexpected structure*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_TotalFeatureCount_ReflectsFullRowCount()
+    {
+        // Create a file with 5 rows but cap preview samples at 2.
+        // TotalFeatureCount comes from Parquet footer metadata (5),
+        // not the sample size (2).
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(rowCount: 5);
+        var service = CreateService(maxPreviewFeatures: 2);
+
+        var preview = await service.PreviewFileAsync(stream, "multi_row.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.TotalFeatureCount.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_NullGeometryRow_ExcludedFromSamples()
+    {
+        // Row 1 has geometry, Row 2 has null geometry
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(includeNullGeometryRow: true);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "null_geom.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        // TotalFeatureCount comes from Parquet footer metadata (all rows)
+        preview.TotalFeatureCount.Should().Be(2);
+        // Preview samples exclude null-geometry rows
+        preview.SampleProperties.Should().ContainKey("name");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_TimeAndBinaryColumns_IncludedInSampleProperties()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithTimeAndBinaryColumnsAsync();
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "time_binary.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.SampleProperties.Should().ContainKey("event_time");
+        // byte[] is converted to base64 in preview path
+        preview.SampleProperties.Should().ContainKey("thumbnail");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_Int16Column_IncludedInSampleProperties()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithInt16ColumnAsync();
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "int16.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.SampleProperties.Should().ContainKey("priority");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_ProjJsonStringEpsgCode_DetectsSrid4326()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(crs: GeoParquetTestFactory.CrsStyle.ProjJsonStringCode);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "string_code.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.DetectedSrid.Should().Be(4326);
+        preview.TotalFeatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_MissingPrimaryColumn_ThrowsInvalidDataException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithMissingPrimaryColumnAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "no_primary_col.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*primary_column*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_MissingColumnsField_ThrowsInvalidDataException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateWithMissingColumnsFieldAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "no_columns.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*columns*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_LargeSingleRowGroup_ThrowsInvalidDataException()
+    {
+        // Create a file with more rows than MaxRowsPerRowGroup (100,000) in a single
+        // row group. Parquet.Net materializes the whole group in memory, so the service
+        // must reject these files to honour the bounded-memory contract.
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(
+            rowCount: 100_001);
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "large_rg.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*row group*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_MismatchedPrimaryColumn_ThrowsInvalidDataException()
+    {
+        // Geo metadata references "geometry" but the Parquet schema has no such column
+        await using var stream = await GeoParquetTestFactory.CreateWithMismatchedPrimaryColumnAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "mismatched.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*geometry*not found*schema*");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_PrimaryColumnMissingFromGeoColumns_ThrowsInvalidDataException()
+    {
+        // Parquet schema has "geometry", but geo.columns only describes "other_geom"
+        await using var stream = await GeoParquetTestFactory.CreateWithPrimaryColumnMissingFromGeoColumnsAsync();
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "missing_in_columns.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*primary_column*columns*");
     }
 
     [Fact]
@@ -49,63 +338,52 @@ public sealed class GeoParquetPreviewTests
         service.GetSupportedExtensions().Should().Contain(".geoparquet");
     }
 
-    private static async Task<MemoryStream> CreateGeoParquetStreamAsync()
+    [Fact]
+    public void DetectFormat_UppercaseExtension_StillDetectsGeoParquet()
     {
-        var objectIdField = new DataField<long?>("objectid");
-        var nameField = new DataField<string>("name", true);
-        var geometryField = new DataField<byte[]>("geometry", true);
-        var schema = new ParquetSchema(objectIdField, nameField, geometryField);
+        var service = CreateService();
 
-        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["geo"] = JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["version"] = "1.1.0",
-                ["primary_column"] = "geometry",
-                ["columns"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["geometry"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                    {
-                        ["encoding"] = "WKB",
-                        ["geometry_types"] = PointGeometryTypes,
-                        ["crs"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                        {
-                            ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                            {
-                                ["authority"] = "EPSG",
-                                ["code"] = 4326
-                            }
-                        }
-                    }
-                }
-            })
-        };
-
-        var point = new Point(-122.4194, 37.7749) { SRID = 4326 };
-        var geometryBytes = new WKBWriter().Write(point);
-
-        var stream = new MemoryStream();
-        using (var writer = await ParquetWriter.CreateAsync(schema, stream))
-        {
-            writer.CustomMetadata = metadata;
-            using var rowGroupWriter = writer.CreateRowGroup();
-            await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(objectIdField, ObjectIdValues));
-            await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(nameField, NameValues));
-            await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(geometryField, new byte[]?[] { geometryBytes }));
-        }
-
-        stream.Position = 0;
-        return stream;
+        service.DetectFormat("SAMPLE.PARQUET").Should().Be(SupportedFileFormat.GeoParquet);
+        service.DetectFormat("data.GeoParquet").Should().Be(SupportedFileFormat.GeoParquet);
+        service.DetectFormat("mixed.Parquet").Should().Be(SupportedFileFormat.GeoParquet);
     }
 
-    private static StreamingFileImportService CreateService()
+    [Fact]
+    public void DetectFormat_UppercaseExtension_WorksForPreExistingFormats()
+    {
+        var service = CreateService();
+
+        service.DetectFormat("data.GEOJSON").Should().Be(SupportedFileFormat.GeoJson);
+        service.DetectFormat("ARCHIVE.GPKG").Should().Be(SupportedFileFormat.GeoPackage);
+        service.DetectFormat("tracks.GPX").Should().Be(SupportedFileFormat.Gpx);
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_CorruptedFile_ThrowsInvalidDataException()
+    {
+        // A stream whose contents are not a valid Parquet file. Parquet.Net throws
+        // IOException for invalid magic bytes; GeoParquetReader must normalize this
+        // to InvalidDataException so the endpoint returns 400, not 500.
+        await using var stream = new MemoryStream("not a parquet file"u8.ToArray());
+        var service = CreateService();
+
+        var act = () => service.PreviewFileAsync(stream, "corrupted.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*not a valid Parquet*");
+    }
+
+    private static StreamingFileImportService CreateService(int? maxPreviewFeatures = null)
     {
         var connectionProvider = new ThrowingConnectionProvider();
         var crsDetectionService = new NoopCrsDetectionService();
         var performanceMonitor = new NoopPerformanceMonitor();
         var logger = NullLogger<StreamingFileImportService>.Instance;
+        var limits = maxPreviewFeatures.HasValue
+            ? new ImportLimits { MaxPreviewFeatures = maxPreviewFeatures.Value }
+            : null;
 
-        return new StreamingFileImportService(connectionProvider, crsDetectionService, performanceMonitor, logger);
+        return new StreamingFileImportService(connectionProvider, crsDetectionService, performanceMonitor, logger, limits);
     }
 
     private sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider

@@ -14,7 +14,7 @@
 
 - **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service), OGC API Features/Maps/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
-- **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, and File Geodatabase (`.gdb.zip`) directly. Import from live Esri REST services or public object URLs for migration.
+- **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
 
 ## Quick Start
@@ -93,7 +93,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 
-**File import** — GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, and File Geodatabase (`.gdb.zip`). CRS auto-detection and PostGIS-based reprojection.
+**File import** — GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`). CRS auto-detection and PostGIS-based reprojection.
 
 **Service import** — Migrate existing Esri feature and map services, preserving structure and metadata.
 

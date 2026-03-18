@@ -63,6 +63,9 @@ internal static class FileUploadSecurity
             // KML/KMZ
             "application/vnd.google-earth.kml+xml",
             "application/vnd.google-earth.kmz",
+            // GeoParquet
+            "application/vnd.apache.parquet",
+            "application/x-parquet",
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -83,6 +86,7 @@ internal static class FileUploadSecurity
             ".gml", ".xml",
             ".tab", ".mif", ".mid", // MapInfo formats
             ".gdb", // File geodatabase (folder)
+            ".parquet", ".geoparquet", // GeoParquet
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
