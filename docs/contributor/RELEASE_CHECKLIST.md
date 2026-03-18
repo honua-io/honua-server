@@ -19,6 +19,11 @@ Use this checklist for every MVP release.
 - [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices
 - [ ] Confirm replication limitations section reflects runtime behavior
 
+### Cross-Client Certification (Required)
+
+- [ ] Produce cross-client certification evidence per the [Evidence Specification](../user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
+- [ ] Verify all common-core CERT-\* test cases have results for each active client lane
+
 ### Tested Client Versions (Required)
 
 Update from certification workflow outputs and manual validation logs:
@@ -26,11 +31,14 @@ Update from certification workflow outputs and manual validation logs:
 
 | Client | Version tested | Protocol(s) | Result | Notes |
 |---|---|---|---|---|
-| ArcGIS Pro | _update_ | FeatureServer / MapServer | _update_ | _update_ |
-| QGIS | _update_ | OGC API Features / OGC API Tiles | _update_ | _update_ |
+| ArcGIS Pro | _update_ | FeatureServer | _update_ | _update_ |
+| ArcGIS Pro | _update_ | MapServer | _update_ | _update_ |
+| QGIS | _update_ | OGC API Features | _update_ | _update_ |
 | Power BI Desktop | _update_ | OData v4 | _update_ | _update_ |
 | Excel | _update_ | OData v4 | _update_ | _update_ |
-| MapLibre GL JS | _update_ | MVT / Tiles | _update_ | _update_ |
+| MapLibre GL JS ‡ | _update_ | MVT | _update_ | _update_ |
+
+‡ MapLibre GL JS certification is currently **manual** (visual browser-based verification). Evidence rolls up under the **JS lane** (`client_lane: "js"`) with protocol `"mvt"`. The existing Vitest suite does not yet include MVT tests; automated coverage is tracked as a follow-up. See [Certification Matrix — JS Lane Extensions](../user/CROSS_CLIENT_CERTIFICATION_MATRIX.md#js-lane) for JS-EXT-01/JS-EXT-02 scope.
 
 ### Known Caveats and Workarounds (Required)
 

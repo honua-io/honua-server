@@ -275,6 +275,8 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 **Client validation artifacts:**
 - [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
 - [Client Template Version Matrix](CLIENT_TEMPLATE_VERSION_MATRIX.md)
+- [Cross-Client Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md)
+- [Cross-Client Certification Evidence](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
 
 **OGC CITE conformance (100% pass rate):**
 - OGC API Features: 137/137 tests

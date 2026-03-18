@@ -33,6 +33,8 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [MCP Server](user/MCP_SERVER.md) — AI/agent integration via Model Context Protocol
 - [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md) — buyer-facing security, support, licensing, and architecture package
 - [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) — launch-ready protocol and limitation summary
+- [Cross-Client Certification Matrix](user/CROSS_CLIENT_CERTIFICATION_MATRIX.md) — shared certification vocabulary and common-core test cases for client interoperability
+- [Cross-Client Certification Evidence](user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — standardized `.cert.json` evidence format for certification runs
 - [Admin UI](user/admin-ui.md) — browser interface guide
 - [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling
 
