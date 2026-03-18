@@ -298,6 +298,10 @@ public static class EndpointRegistry
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),
         new("GET", "/ogc/maps/collections/{collectionId}/styles/{styleId}/map"),
         new("GET", "/ogc/maps/map"),
+
+        // WFS 2.0
+        new("GET", "/wfs"),
+        new("POST", "/wfs"),
     ];
 }
 

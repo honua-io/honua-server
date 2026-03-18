@@ -4,6 +4,7 @@
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -19,7 +20,7 @@ internal static class FeatureServerServiceCollectionExtensions
         services.AddScoped<IQueryFormatter, QueryFormatter>();
         services.AddScoped<IFeatureQueryValidator, FeatureQueryValidator>();
         services.AddScoped<IGeometryValidator, GeometryValidator>();
-        services.AddScoped<SpatialReferenceResolver>();
+        services.TryAddScoped<SpatialReferenceResolver>();
         services.AddScoped<IFeatureServerQueryServices, FeatureServerQueryServices>();
         services.AddScoped<IFeatureServerGeometryServices, FeatureServerGeometryServices>();
         services.AddScoped<StreamingQueryFormatter>();

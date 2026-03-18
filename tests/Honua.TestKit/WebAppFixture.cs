@@ -689,6 +689,19 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Creates an <see cref="HttpMessageHandler"/> connected to the in-memory test server.
+    /// Useful for constructing custom transports (e.g. gRPC channels) that route
+    /// through the same pipeline as <see cref="Client"/>.
+    /// </summary>
+    public HttpMessageHandler CreateHandler()
+    {
+        var factory = (_useSharedServer ? _sharedFactory : _factory)
+            ?? throw new InvalidOperationException("Web application factory not initialized.");
+
+        return factory.Server.CreateHandler();
+    }
+
+    /// <summary>
     /// Create a new HTTP client with custom configuration.
     /// </summary>
     public HttpClient CreateClient(Action<HttpClient>? configure = null)

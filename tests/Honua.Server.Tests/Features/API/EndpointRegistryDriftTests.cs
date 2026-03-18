@@ -3,6 +3,8 @@
 
 using System.Text.RegularExpressions;
 using FluentAssertions;
+using Honua.Server;
+using Honua.Server.Features.Wfs20;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -99,6 +101,109 @@ public sealed class EndpointRegistryDriftTests : IDisposable
             "Add missing endpoints to src/Honua.Server/EndpointRegistry.cs");
     }
 
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void AllDeployedGrpcMethods_AreTrackedInOperationRegistry()
+    {
+        using var _ = _factory.CreateClient();
+        var endpointSources = _factory.Services.GetServices<EndpointDataSource>();
+        var deployedGrpcMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in endpointSources)
+        {
+            foreach (var endpoint in source.Endpoints)
+            {
+                if (endpoint is not RouteEndpoint routeEndpoint)
+                {
+                    continue;
+                }
+
+                var pattern = routeEndpoint.RoutePattern.RawText;
+                if (string.IsNullOrEmpty(pattern))
+                {
+                    continue;
+                }
+
+                // Detect gRPC endpoints by checking for gRPC-specific metadata.
+                // ASP.NET Core gRPC endpoints carry metadata from Grpc.* assemblies
+                // alongside standard HttpMethodMetadata (POST).
+                var isGrpcEndpoint = endpoint.Metadata
+                    .Any(m => m.GetType().FullName?.StartsWith("Grpc.", StringComparison.Ordinal) == true);
+
+                if (!isGrpcEndpoint)
+                {
+                    continue;
+                }
+
+                // Normalize: strip leading slash to get the package.Service/Method
+                // format matching OperationRegistry entries.
+                var normalizedPattern = pattern.TrimStart('/');
+
+                // Exclude gRPC infrastructure (health checks, reflection, unimplemented handler)
+                if (normalizedPattern.StartsWith("grpc.health.", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedPattern.StartsWith("grpc.reflection.", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedPattern.Contains("{unimplemented", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                deployedGrpcMethods.Add(normalizedPattern);
+            }
+        }
+
+        var registeredGrpcOperations = OperationRegistry.All
+            .Where(op => string.Equals(op.Protocol, "Grpc", StringComparison.OrdinalIgnoreCase))
+            .Select(op => op.Operation)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var untracked = deployedGrpcMethods
+            .Where(m => !registeredGrpcOperations.Contains(m))
+            .OrderBy(m => m)
+            .ToArray();
+
+        untracked.Should().BeEmpty(
+            "every deployed gRPC method must be tracked in OperationRegistry.All. " +
+            "Add missing methods to src/Honua.Server/OperationRegistry.cs");
+
+        var stale = registeredGrpcOperations
+            .Where(op => !deployedGrpcMethods.Contains(op))
+            .OrderBy(op => op)
+            .ToArray();
+
+        stale.Should().BeEmpty(
+            "every Grpc entry in OperationRegistry.All must correspond to a deployed gRPC method. " +
+            "Remove stale entries from src/Honua.Server/OperationRegistry.cs or re-deploy the service");
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void AllImplementedWfsOperations_AreTrackedInOperationRegistry()
+    {
+        var registeredWfsOperations = OperationRegistry.All
+            .Where(op => string.Equals(op.Protocol, "WFS-2.0", StringComparison.OrdinalIgnoreCase))
+            .Select(op => op.Operation)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var untracked = Wfs20DispatcherEndpoint.ImplementedOperations
+            .Where(op => !registeredWfsOperations.Contains(op))
+            .OrderBy(op => op)
+            .ToArray();
+
+        untracked.Should().BeEmpty(
+            "every implemented WFS operation must be tracked in OperationRegistry.All. " +
+            "Add missing operations to src/Honua.Server/OperationRegistry.cs");
+
+        var stale = registeredWfsOperations
+            .Where(op => !Wfs20DispatcherEndpoint.ImplementedOperations.Contains(op))
+            .OrderBy(op => op)
+            .ToArray();
+
+        stale.Should().BeEmpty(
+            "every WFS-2.0 entry in OperationRegistry.All must have a corresponding " +
+            "implementation in the dispatcher. Remove stale entries from " +
+            "src/Honua.Server/OperationRegistry.cs or implement the operation");
+    }
+
     public void Dispose() => _factory.Dispose();
 
     private static string NormalizePath(string pattern)
@@ -158,6 +263,7 @@ public sealed class EndpointRegistryDriftTests : IDisposable
         return path.Equals("/csp-violation-report", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/openapi.json", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/wfs", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/healthz/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) ||

@@ -23,6 +23,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_ReturnsXmlWithoutTransactionOperation()
     {
         var response = await _fixture.Client.GetAsync(
@@ -55,6 +56,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "DescribeFeatureType")]
     public async Task Wfs_DescribeFeatureType_UnsupportedOutputFormat_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(
@@ -71,6 +73,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_GeoJsonOutput_ReturnsFeatureCollection()
     {
         const string outputFormat = "application/geo%2Bjson";
@@ -85,5 +88,34 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         document.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
         document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_GetPropertyValue_MissingValueReference_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("valueReference");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_Post_GetCapabilities_ReturnsXml()
+    {
+        // WFS dispatcher binds parameters from query string; POST body is for XML payloads.
+        var response = await _fixture.Client.PostAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0", null);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("WFS_Capabilities");
     }
 }

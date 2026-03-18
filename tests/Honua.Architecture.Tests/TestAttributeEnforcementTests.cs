@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
+using Honua.Server;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Xunit;
@@ -21,7 +22,7 @@ public sealed class TestAttributeEnforcementTests
         var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
         var classesWithoutProtocol = new List<string>();
 
-        foreach (var type in GetTypesSafely(testAssembly))
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {
             // Skip if not a test class
             if (!IsIntegrationTestClass(type))
@@ -55,7 +56,7 @@ public sealed class TestAttributeEnforcementTests
         var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
         var methodsWithMissingAttributes = new List<string>();
 
-        foreach (var type in GetTypesSafely(testAssembly))
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {
             var classOperations = GetOperationValues(type);
             var classProtocols = GetProtocolValues(type);
@@ -104,7 +105,7 @@ public sealed class TestAttributeEnforcementTests
 
         var validProtocols = GetConstantValues(typeof(Protocols));
 
-        foreach (var type in GetTypesSafely(testAssembly))
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {
             foreach (var protocolAttribute in type.GetCustomAttributes(typeof(ProtocolAttribute), inherit: true).Cast<ProtocolAttribute>())
             {
@@ -161,7 +162,7 @@ public sealed class TestAttributeEnforcementTests
 
         var validOperations = GetConstantValues(typeof(Operations));
 
-        foreach (var type in GetTypesSafely(testAssembly))
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {
             foreach (var operationAttribute in type.GetCustomAttributes(typeof(OperationAttribute), inherit: true).Cast<OperationAttribute>())
             {
@@ -216,7 +217,7 @@ public sealed class TestAttributeEnforcementTests
         var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
         var invalidEndpointFormats = new List<string>();
 
-        foreach (var type in GetTypesSafely(testAssembly))
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {
             foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             {
@@ -261,6 +262,39 @@ public sealed class TestAttributeEnforcementTests
             $"Invalid formats found:\n{string.Join("\n", invalidEndpointFormats)}");
     }
 
+    [ArchitectureTest]
+    public void AllInterfaceOperationAttributes_ShouldUseRegisteredValues()
+    {
+        var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
+        var invalidValues = new List<string>();
+
+        var registeredOperations = OperationRegistry.All
+            .Select(op => $"{op.Protocol}::{op.Operation}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        {
+            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            {
+                foreach (var attr in method.GetCustomAttributes(typeof(InterfaceOperationAttribute), inherit: true).Cast<InterfaceOperationAttribute>())
+                {
+                    var key = $"{attr.Protocol}::{attr.Operation}";
+                    if (!registeredOperations.Contains(key))
+                    {
+                        invalidValues.Add(
+                            $"{type.Name}.{method.Name} - [InterfaceOperation(\"{attr.Protocol}\", \"{attr.Operation}\")] " +
+                            $"does not match any entry in OperationRegistry.All. " +
+                            $"Valid entries: {string.Join(", ", registeredOperations.OrderBy(k => k))}");
+                    }
+                }
+            }
+        }
+
+        invalidValues.Should().BeEmpty(
+            "all [InterfaceOperation] attribute values must match entries in OperationRegistry.All. " +
+            $"Invalid values found:\n{string.Join("\n", invalidValues)}");
+    }
+
     private static bool IsIntegrationTestClass(Type type)
     {
         // Check if class has [IntegrationTest] attribute
@@ -272,18 +306,6 @@ public sealed class TestAttributeEnforcementTests
         // Check if any method has [IntegrationTest] attribute
         return type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Any(method => method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0);
-    }
-
-    private static IEnumerable<Type> GetTypesSafely(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            return ex.Types.Where(type => type != null)!;
-        }
     }
 
     private static bool IsIntegrationTestMethod(Type type, MethodInfo method)

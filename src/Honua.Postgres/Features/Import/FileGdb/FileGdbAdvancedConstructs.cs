@@ -62,106 +62,113 @@ internal static class FileGdbAdvancedConstructs
             return [];
         }
 
+        var warnings = new List<string>();
         GdbTableReader reader;
+
         try
         {
             reader = GdbTableReader.Open(gdbItemsPath);
         }
-        catch (InvalidDataException)
+        catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)
         {
             return [];
         }
 
-        var warnings = new List<string>();
-
-        using (reader)
+        try
         {
-            // Find the "Definition" (XML) field index.
-            var defFieldIndex = -1;
-            for (var i = 0; i < reader.Fields.Count; i++)
+            using (reader)
             {
-                if (string.Equals(reader.Fields[i].Name, "Definition", StringComparison.OrdinalIgnoreCase))
+                // Find the "Definition" (XML) field index.
+                var defFieldIndex = -1;
+                for (var i = 0; i < reader.Fields.Count; i++)
                 {
-                    defFieldIndex = i;
-                    break;
-                }
-            }
-
-            if (defFieldIndex < 0)
-            {
-                return [];
-            }
-
-            var defFieldName = reader.Fields[defFieldIndex].Name;
-            var hasDomains = false;
-            var hasRelationships = false;
-            var hasSubtypes = false;
-            var hasTopology = false;
-            var hasNetworks = false;
-
-            foreach (var row in reader.ReadRows())
-            {
-                if (!row.TryGetValue(defFieldName, out var defObj))
-                {
-                    continue;
+                    if (string.Equals(reader.Fields[i].Name, "Definition", StringComparison.OrdinalIgnoreCase))
+                    {
+                        defFieldIndex = i;
+                        break;
+                    }
                 }
 
-                var xml = defObj as string;
-                if (string.IsNullOrEmpty(xml))
+                if (defFieldIndex < 0)
                 {
-                    continue;
+                    return [];
                 }
 
-                if (!hasDomains)
+                var defFieldName = reader.Fields[defFieldIndex].Name;
+                var hasDomains = false;
+                var hasRelationships = false;
+                var hasSubtypes = false;
+                var hasTopology = false;
+                var hasNetworks = false;
+
+                foreach (var row in reader.ReadRows())
                 {
-                    hasDomains = ContainsAny(xml, DomainTypes);
+                    if (!row.TryGetValue(defFieldName, out var defObj))
+                    {
+                        continue;
+                    }
+
+                    var xml = defObj as string;
+                    if (string.IsNullOrEmpty(xml))
+                    {
+                        continue;
+                    }
+
+                    if (!hasDomains)
+                    {
+                        hasDomains = ContainsAny(xml, DomainTypes);
+                    }
+
+                    if (!hasRelationships)
+                    {
+                        hasRelationships = ContainsAny(xml, RelationshipTypes);
+                    }
+
+                    if (!hasSubtypes)
+                    {
+                        hasSubtypes = ContainsAny(xml, SubtypeKeywords);
+                    }
+
+                    if (!hasTopology)
+                    {
+                        hasTopology = ContainsAny(xml, TopologyTypes);
+                    }
+
+                    if (!hasNetworks)
+                    {
+                        hasNetworks = ContainsAny(xml, NetworkTypes);
+                    }
                 }
 
-                if (!hasRelationships)
+                if (hasDomains)
                 {
-                    hasRelationships = ContainsAny(xml, RelationshipTypes);
+                    warnings.Add("Geodatabase contains coded value or range domains. Domain constraints will not be imported.");
                 }
 
-                if (!hasSubtypes)
+                if (hasRelationships)
                 {
-                    hasSubtypes = ContainsAny(xml, SubtypeKeywords);
+                    warnings.Add("Geodatabase contains relationship classes. Relationships will not be imported.");
                 }
 
-                if (!hasTopology)
+                if (hasSubtypes)
                 {
-                    hasTopology = ContainsAny(xml, TopologyTypes);
+                    warnings.Add("Geodatabase contains subtypes. Subtype definitions will not be imported.");
                 }
 
-                if (!hasNetworks)
+                if (hasTopology)
                 {
-                    hasNetworks = ContainsAny(xml, NetworkTypes);
+                    warnings.Add("Geodatabase contains topology rules. Topology will not be imported.");
+                }
+
+                if (hasNetworks)
+                {
+                    warnings.Add("Geodatabase contains network datasets. Network topology will not be imported.");
                 }
             }
-
-            if (hasDomains)
-            {
-                warnings.Add("Geodatabase contains coded value or range domains. Domain constraints will not be imported.");
-            }
-
-            if (hasRelationships)
-            {
-                warnings.Add("Geodatabase contains relationship classes. Relationships will not be imported.");
-            }
-
-            if (hasSubtypes)
-            {
-                warnings.Add("Geodatabase contains subtypes. Subtype definitions will not be imported.");
-            }
-
-            if (hasTopology)
-            {
-                warnings.Add("Geodatabase contains topology rules. Topology will not be imported.");
-            }
-
-            if (hasNetworks)
-            {
-                warnings.Add("Geodatabase contains network datasets. Network topology will not be imported.");
-            }
+        }
+        catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)
+        {
+            return warnings.ToArray();
         }
 
         return warnings.ToArray();

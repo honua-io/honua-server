@@ -69,7 +69,7 @@ When porting behavior, document the source:
 
 **API Surface Coverage**: Every implemented endpoint requires at least one integration test. This is enforced by architecture tests.
 
-**Test Attributes**: Use protocol and operation attributes for discoverability:
+**Test Attributes**: Use protocol, operation, and endpoint attributes for discoverability:
 ```csharp
 [Collection("Database")]
 [Protocol(Protocols.FeatureServer)]
@@ -82,10 +82,25 @@ public class QueryEndpointTests
 }
 ```
 
+For WFS or gRPC operations, also add `[InterfaceOperation]` to map to `OperationRegistry`:
+```csharp
+[Collection("Database")]
+[Protocol(Protocols.Wfs20)]
+public class Wfs20EndpointsTests
+{
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_ReturnsFeatureCollection() { }
+}
+```
+
 **Coverage Levels**:
 | Level | Target | Enforcement |
 |-------|--------|-------------|
-| API Surface | 100% | Architecture test (hard fail) |
+| API Surface (HTTP routes) | 100% | Architecture test — `EndpointRegistry` (hard fail) |
+| Operation Coverage (WFS/gRPC) | 100% | Architecture test — `OperationRegistry` (hard fail) |
 | Line Coverage | 80% | CI gate (hard fail) |
 | Branch Coverage | 70% | CI gate (hard fail) |
 

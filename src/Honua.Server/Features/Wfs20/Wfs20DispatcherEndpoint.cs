@@ -13,6 +13,33 @@ namespace Honua.Server.Features.Wfs20;
 /// </summary>
 internal static class Wfs20DispatcherEndpoint
 {
+    private delegate Task<IResult> WfsOperationHandler(
+        HttpContext context, string? service, string? version, string? request,
+        Wfs20Handler handler, ILogger logger);
+
+    /// <summary>
+    /// Maps implemented WFS operation names to their handler methods.
+    /// This is the single source of truth: <see cref="ImplementedOperations"/> is derived from
+    /// its keys, and the dispatcher looks up handlers here instead of using a separate switch.
+    /// Excludes stubs (e.g. Transaction) that return "not implemented".
+    /// </summary>
+    private static readonly Dictionary<string, WfsOperationHandler> _operationHandlers =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["GetCapabilities"] = HandleGetCapabilities,
+            ["DescribeFeatureType"] = HandleDescribeFeatureType,
+            ["GetFeature"] = HandleGetFeature,
+            ["GetPropertyValue"] = HandleGetPropertyValue,
+        };
+
+    /// <summary>
+    /// WFS operations that have full handler implementations.
+    /// Derived from <see cref="_operationHandlers"/> to guarantee consistency with dispatch logic.
+    /// Used by architecture drift tests to verify <see cref="OperationRegistry"/> stays in sync.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> ImplementedOperations =
+        new HashSet<string>(_operationHandlers.Keys, StringComparer.OrdinalIgnoreCase);
+
     private static readonly string[] HttpMethods = new[] { "GET", "POST" };
     /// <summary>
     /// Maps the single WFS 2.0 dispatcher endpoint
@@ -56,17 +83,21 @@ internal static class Wfs20DispatcherEndpoint
                     "Missing required 'request' parameter. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction");
             }
 
-            // Dispatch to appropriate operation handler
-            return requestParam.ToUpperInvariant() switch
+            // Dispatch via the handler dictionary (single source of truth for implemented operations).
+            if (_operationHandlers.TryGetValue(requestParam, out var operationHandler))
             {
-                "GETCAPABILITIES" => await HandleGetCapabilities(context, service, version, request, handler, logger),
-                "DESCRIBEFEATURETYPE" => await HandleDescribeFeatureType(context, service, version, request, handler, logger),
-                "GETFEATURE" => await HandleGetFeature(context, service, version, request, handler, logger),
-                "GETPROPERTYVALUE" => await HandleGetPropertyValue(context, service, version, request, handler, logger),
-                "TRANSACTION" => await HandleTransaction(context, service, version, request, handler, logger),
-                _ => StandardErrorHelpers.CreateBadRequest(context,
-                    $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction")
-            };
+                return await operationHandler(context, service, version, request, handler, logger);
+            }
+
+            // Transaction is a known but unimplemented stub — kept out of _operationHandlers
+            // so it does not appear in ImplementedOperations or trigger coverage requirements.
+            if (string.Equals(requestParam, "TRANSACTION", StringComparison.OrdinalIgnoreCase))
+            {
+                return await HandleTransaction(context, service, version, request, handler, logger);
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(context,
+                $"Unsupported operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction");
         }
         catch (Exception ex)
         {
