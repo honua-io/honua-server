@@ -48,13 +48,15 @@ public void AllEndpoints_HaveIntegrationTests()
 
 Each protocol requires tests for all implemented operations:
 
-| Protocol | Operations | Required Test Classes |
-|----------|------------|----------------------|
-| **GeoServices REST** | Query, ApplyEdits, AddAttachment, DeleteAttachment, QueryAttachments, GenerateRenderer, QueryRelated | `FeatureServer/*Tests.cs` |
-| **OGC API Features** | Landing, Conformance, Collections, Collection, Items, Item, Create, Replace, Update, Delete | `OgcFeatures/*Tests.cs` |
-| **OData v4** | Query ($filter, $select, $expand, $orderby, $top, $skip), Batch | `OData/*Tests.cs` |
-| **MVT** | GetTile, TileJSON | `Tiles/*Tests.cs` |
-| **Admin** | CreateLayer, UpdateLayer, DeleteLayer, ListLayers, GetLayer | `Admin/*Tests.cs` |
+| Protocol | Operations | Required Test Classes | Registry |
+|----------|------------|----------------------|----------|
+| **GeoServices REST** | Query, ApplyEdits, AddAttachment, DeleteAttachment, QueryAttachments, GenerateRenderer, QueryRelated | `FeatureServer/*Tests.cs` | `EndpointRegistry` |
+| **OGC API Features** | Landing, Conformance, Collections, Collection, Items, Item, Create, Replace, Update, Delete | `OgcFeatures/*Tests.cs` | `EndpointRegistry` |
+| **OData v4** | Query ($filter, $select, $expand, $orderby, $top, $skip), Batch | `OData/*Tests.cs` | `EndpointRegistry` |
+| **MVT** | GetTile, TileJSON | `Tiles/*Tests.cs` | `EndpointRegistry` |
+| **WFS 2.0** | GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue | `Wfs20/*Tests.cs` | `EndpointRegistry` + `OperationRegistry` |
+| **gRPC** | QueryFeatures, QueryFeaturesStream, ApplyEdits | `Grpc/*Tests.cs` | `OperationRegistry` |
+| **Admin** | CreateLayer, UpdateLayer, DeleteLayer, ListLayers, GetLayer | `Admin/*Tests.cs` | `EndpointRegistry` |
 
 ### 3. Parameter and Filter Combination Coverage
 
@@ -149,7 +151,8 @@ public class QueryParameterTests
 
 | Level | Target | Enforcement |
 |-------|--------|-------------|
-| **API Surface** | 100% | Architecture test (hard fail) |
+| **API Surface (HTTP routes)** | 100% | Architecture test — `EndpointRegistry` (hard fail) |
+| **Operation Coverage (WFS/gRPC)** | 100% | Architecture test — `OperationRegistry` (hard fail) |
 | **Parameter Coverage** | All documented params | Code review checklist |
 | **Filter Operators** | All supported operators | Theory tests required |
 | **Line Coverage** | 80% | CI gate (hard fail) |
@@ -174,6 +177,23 @@ public class QueryEndpointTests
 ```
 
 The `[Endpoint]` attribute explicitly ties tests to route patterns, enabling the architecture test to verify coverage.
+
+For WFS and gRPC operations, add `[InterfaceOperation]` alongside `[Endpoint]`:
+
+```csharp
+[Collection("Database")]
+[Protocol(Protocols.Wfs20)]
+public class Wfs20EndpointsTests
+{
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_GeoJsonOutput_ReturnsFeatureCollection() { }
+}
+```
+
+The `[InterfaceOperation]` attribute maps to `OperationRegistry` entries rather than HTTP routes.
 
 ### 7. Conformance Test Requirements
 
@@ -290,6 +310,33 @@ test:
 
 ## Implementation Notes
 
+### HTTP Route Coverage vs Full Public-Interface Coverage
+
+The project enforces two complementary coverage gates:
+
+**`EndpointRegistry` — HTTP route coverage**
+
+`EndpointRegistry` tracks every HTTP route deployed by the application (e.g. `GET /rest/services/{id}/FeatureServer/{layerId}/query`). The drift test (`EndpointRegistryDriftTests`) fails the build when a deployed route is missing from the registry, and `ApiSurfaceCoverageTests` fails when a registered route lacks an `[IntegrationTest]`-tagged test with a matching `[Endpoint]` attribute.
+
+This gate works well for protocols where each operation maps to a unique HTTP route. However, two public surfaces escape it:
+
+- **WFS 2.0** dispatches multiple operations (GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue) through a single `GET|POST /wfs` route based on the `REQUEST` query parameter.
+- **gRPC** methods are mapped via `MapGrpcService` and carry gRPC-specific metadata alongside standard `HttpMethodMetadata` (POST). The HTTP drift test identifies them by their gRPC metadata and routes them to `OperationRegistry` coverage instead.
+
+**`OperationRegistry` — public-interface operation coverage**
+
+`OperationRegistry` extends the coverage policy to logical operations that are not fully represented by HTTP route metadata. Each entry is a `(Protocol, Operation)` pair — for example `("WFS-2.0", "GetCapabilities")` or `("Grpc", "geospatial.v1.FeatureService/QueryFeatures")`.
+
+Tests covering these operations use the `[InterfaceOperation(protocol, operation)]` attribute alongside the standard `[IntegrationTest]` and `[Endpoint]` attributes. The architecture test `OperationCoverageTests` fails the build when a registered operation has no matching integration test. A companion drift test detects new gRPC methods deployed without registry entries.
+
+**When to use which:**
+
+| Scenario | Registry | Test attribute |
+|----------|----------|----------------|
+| New HTTP endpoint (REST, OGC, OData, Admin) | `EndpointRegistry` | `[Endpoint("METHOD /path")]` |
+| New WFS 2.0 operation | `EndpointRegistry` (for `/wfs` route) + `OperationRegistry` | `[Endpoint]` + `[InterfaceOperation]` |
+| New gRPC service method | `OperationRegistry` | `[Endpoint]` + `[InterfaceOperation]` |
+
 ### Phase-by-Phase Coverage Requirements
 
 | Phase | Required Coverage |
@@ -302,7 +349,7 @@ test:
 
 ### Test-First Development
 
-When implementing a new endpoint:
+When implementing a new HTTP endpoint:
 
 1. Add endpoint to `EndpointRegistry`
 2. Create test class with proper attributes
@@ -311,4 +358,13 @@ When implementing a new endpoint:
 5. Add error case tests
 6. Verify architecture test passes
 
-This ensures no endpoint ships without tests.
+When implementing a new WFS operation or gRPC method:
+
+1. Add operation to `OperationRegistry`
+2. For WFS: ensure the `/wfs` route is in `EndpointRegistry` (already tracked)
+3. Create test with `[InterfaceOperation(protocol, operation)]` alongside `[Endpoint]`
+4. Write failing test for happy path
+5. Implement the operation/method
+6. Verify both `OperationCoverageTests` and drift tests pass
+
+This ensures no public interface ships without tests.

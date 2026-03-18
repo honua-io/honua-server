@@ -34,7 +34,7 @@ public sealed class ApiSurfaceCoverageTests
         var testAssembly = typeof(Honua.Server.Tests.AdminEndpointTests).Assembly;
         var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var type in GetTypesSafely(testAssembly))
+        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {
             var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
 
@@ -56,18 +56,6 @@ public sealed class ApiSurfaceCoverageTests
         }
 
         return endpoints;
-    }
-
-    private static IEnumerable<Type> GetTypesSafely(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            return ex.Types.Where(type => type != null)!;
-        }
     }
 
     private static bool IsCovered(EndpointDefinition endpoint, HashSet<string> testedEndpoints)

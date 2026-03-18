@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using Honua.Server.Features.Infrastructure.Services;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Grpc;
@@ -58,6 +60,8 @@ internal static class GrpcServiceCollectionExtensions
         {
             options.StreamBatchSize = configuration.GetValue<int?>("Grpc:StreamBatchSize") ?? 1000;
         });
+
+        services.TryAddScoped<SpatialReferenceResolver>();
 
         services.AddGrpcHealthChecks();
         services.AddGrpcReflection();
