@@ -101,3 +101,7 @@
 * [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)
 * [CodeCov Setup](contributor/CODECOV_SETUP.md)
 * [LLM Architecture Review](contributor/development/llm-review-setup.md)
+
+### Project Operations
+
+* [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md)
