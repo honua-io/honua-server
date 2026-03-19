@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+import httpx
 import pytest
 
 from .conftest import EvidenceCollector, OgrResult
@@ -21,12 +22,42 @@ class TestWfsQuery:
 
     def test_attribute_query(
         self,
+        http_client: httpx.Client,
         wfs_dsn: str,
         ogr_run,
         wfs_layer_name: str,
         evidence_collector: EvidenceCollector,
     ):
         """ogr2ogr -where filters WFS features by attribute."""
+        filter_xml = """
+<fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+  <fes:PropertyIsEqualTo>
+    <fes:ValueReference>name</fes:ValueReference>
+    <fes:Literal>alpha</fes:Literal>
+  </fes:PropertyIsEqualTo>
+</fes:Filter>
+""".strip()
+        server_response = http_client.get(
+            "/wfs",
+            params={
+                "SERVICE": "WFS",
+                "REQUEST": "GetFeature",
+                "VERSION": "2.0.0",
+                "TYPENAMES": wfs_layer_name,
+                "OUTPUTFORMAT": "application/geo+json",
+                "FILTER": filter_xml,
+            },
+        )
+        assert server_response.status_code == 200, server_response.text
+
+        server_data = server_response.json()
+        server_features = server_data["features"]
+        assert len(server_features) >= 1, "Server-side WFS filter returned no features"
+        server_names = {f["properties"]["name"] for f in server_features}
+        assert server_names == {"alpha"}, (
+            f"Expected server-side WFS filter to return only 'alpha', got {server_names}"
+        )
+
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "GeoJSON",

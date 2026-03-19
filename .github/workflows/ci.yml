@@ -402,7 +402,7 @@ jobs:
           name: all-test-results
           path: |
             tests/TestResults/
-            tests/python/gdal-ogr-results.json
+            tests/python/gdal-ogr-results*.json
           retention-days: 7
 
   js-integration-tests:

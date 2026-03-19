@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -218,7 +219,9 @@ def _write_evidence_report():
     """Write the evidence JSON report at session teardown."""
     yield
     if _evidence.has_records:
-        report_path = Path(__file__).parent.parent / "gdal-ogr-results.json"
+        worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+        suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
+        report_path = Path(__file__).parent.parent / f"gdal-ogr-results{suffix}.json"
         _evidence.write_report(report_path)
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+import httpx
 import pytest
 
 from .conftest import EvidenceCollector, OgrResult
@@ -21,12 +22,30 @@ class TestOapifQuery:
 
     def test_attribute_query(
         self,
+        http_client: httpx.Client,
         oapif_dsn: str,
         ogr_run,
         test_collection_id: str,
         evidence_collector: EvidenceCollector,
     ):
         """ogr2ogr -where filters features by attribute."""
+        server_response = http_client.get(
+            f"/ogc/features/collections/{test_collection_id}/items",
+            params={
+                "filter": "name = 'alpha'",
+                "filter-lang": "cql2-text",
+            },
+        )
+        assert server_response.status_code == 200, server_response.text
+
+        server_data = server_response.json()
+        server_features = server_data["features"]
+        assert len(server_features) >= 1, "Server-side OAPIF filter returned no features"
+        server_names = {f["properties"]["name"] for f in server_features}
+        assert server_names == {"alpha"}, (
+            f"Expected server-side OAPIF filter to return only 'alpha', got {server_names}"
+        )
+
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "GeoJSON",
