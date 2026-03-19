@@ -80,7 +80,6 @@ class TestWfsExport:
     ):
         """Export WFS data to CSV and verify header row."""
         out_dir = tmp_path / "wfs_csv_out"
-        out_dir.mkdir()
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "CSV",

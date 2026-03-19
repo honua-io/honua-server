@@ -183,7 +183,7 @@ def oapif_dsn(base_url: str) -> str:
 @pytest.fixture(scope="session")
 def wfs_dsn(base_url: str) -> str:
     """GDAL WFS driver connection string."""
-    return f"WFS:{base_url}/wfs"
+    return f"WFS:{base_url}/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities"
 
 
 @pytest.fixture
@@ -260,7 +260,7 @@ def _derive_protocol_category(item: pytest.Item) -> tuple[str, str]:
     e.g. ``test_oapif_discovery.py`` → ``("oapif", "discovery")``.
     """
     stem = Path(item.fspath).stem  # "test_oapif_discovery"
-    name = stem.removeprefix("test_")  # "oapif_discovery"
+    name = stem[5:] if stem.startswith("test_") else stem  # "oapif_discovery"
     tokens = name.split("_", 1)
     protocol = tokens[0] if tokens else "unknown"
     category = tokens[1] if len(tokens) > 1 else "general"

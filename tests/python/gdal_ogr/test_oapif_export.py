@@ -80,7 +80,6 @@ class TestOapifExport:
     ):
         """Export to CSV and verify header row is present."""
         out_dir = tmp_path / "csv_out"
-        out_dir.mkdir()
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "CSV",
