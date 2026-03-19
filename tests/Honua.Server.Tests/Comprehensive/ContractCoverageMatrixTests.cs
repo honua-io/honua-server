@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>POST /api/v1/admin/deploy/operations</term><description>happy, submit-immediately, 401</description></item>
 /// <item><term>GET  /api/v1/admin/deploy/operations/{id}</term><description>happy, 404, reconcile, 401</description></item>
 /// <item><term>POST /api/v1/admin/deploy/operations/{id}/submit</term><description>happy, double-submit</description></item>
-/// <item><term>POST /api/v1/admin/deploy/operations/{id}/rollback</term><description>happy</description></item>
+/// <item><term>POST /api/v1/admin/deploy/operations/{id}/rollback</term><description>happy, 404</description></item>
 /// <item><term>GET  /api/v1/admin/connections</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/connections</term><description>happy (encrypted, secret-ref), 400, duplicate, 401</description></item>
 /// <item><term>GET  /api/v1/admin/connections/{id}</term><description>happy, 404</description></item>
@@ -102,19 +102,19 @@ namespace Honua.Server.Tests.Comprehensive;
 public sealed class ContractCoverageMatrixTests
 {
     /// <summary>
-    /// The minimum number of distinct endpoint strings expected across Admin test classes.
+    /// The minimum number of Admin endpoints that must retain multiple scenario tests.
     /// </summary>
-    private const int MinimumAdminEndpoints = 30;
+    private const int MinimumAdminEndpointsWithScenarioDepth = 30;
 
     /// <summary>
-    /// The minimum number of distinct endpoint strings expected across Geocoding test classes.
+    /// The minimum number of Geocoding endpoints that must retain multiple scenario tests.
     /// </summary>
-    private const int MinimumGeocodingEndpoints = 5;
+    private const int MinimumGeocodingEndpointsWithScenarioDepth = 7;
 
     /// <summary>
-    /// The minimum number of distinct endpoint strings expected across GeometryService test classes.
+    /// The minimum number of Geometry Service endpoints that must retain multiple scenario tests.
     /// </summary>
-    private const int MinimumGeometryServiceEndpoints = 8;
+    private const int MinimumGeometryServiceEndpointsWithScenarioDepth = 12;
 
     [Fact]
     [Trait("Category", "Architecture")]
@@ -126,15 +126,10 @@ public sealed class ContractCoverageMatrixTests
                     || type.Name.Contains("Admin", StringComparison.Ordinal)))
             .ToArray();
 
-        var endpoints = adminTestTypes
-            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            .SelectMany(method => method.GetCustomAttributes<EndpointAttribute>())
-            .Select(attr => attr.Endpoint)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var endpointsWithDepth = CountEndpointsWithMinimumScenarioCoverage(adminTestTypes, 2);
 
-        endpoints.Length.Should().BeGreaterOrEqualTo(MinimumAdminEndpoints,
-            $"Admin area should cover at least {MinimumAdminEndpoints} distinct endpoints but found {endpoints.Length}");
+        endpointsWithDepth.Should().BeGreaterOrEqualTo(MinimumAdminEndpointsWithScenarioDepth,
+            $"Admin area should retain multiple-scenario coverage on at least {MinimumAdminEndpointsWithScenarioDepth} endpoints but found {endpointsWithDepth}");
     }
 
     [Fact]
@@ -146,15 +141,10 @@ public sealed class ContractCoverageMatrixTests
                 && type.Namespace.Contains("Geocoding", StringComparison.Ordinal))
             .ToArray();
 
-        var endpoints = geocodingTestTypes
-            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            .SelectMany(method => method.GetCustomAttributes<EndpointAttribute>())
-            .Select(attr => attr.Endpoint)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var endpointsWithDepth = CountEndpointsWithMinimumScenarioCoverage(geocodingTestTypes, 2);
 
-        endpoints.Length.Should().BeGreaterOrEqualTo(MinimumGeocodingEndpoints,
-            $"Geocoding area should cover at least {MinimumGeocodingEndpoints} distinct endpoints but found {endpoints.Length}");
+        endpointsWithDepth.Should().BeGreaterOrEqualTo(MinimumGeocodingEndpointsWithScenarioDepth,
+            $"Geocoding area should retain multiple-scenario coverage on at least {MinimumGeocodingEndpointsWithScenarioDepth} endpoints but found {endpointsWithDepth}");
     }
 
     [Fact]
@@ -166,15 +156,36 @@ public sealed class ContractCoverageMatrixTests
                 && type.Namespace.Contains("GeometryService", StringComparison.Ordinal))
             .ToArray();
 
-        var endpoints = geometryTestTypes
-            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            .SelectMany(method => method.GetCustomAttributes<EndpointAttribute>())
-            .Select(attr => attr.Endpoint)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var endpointsWithDepth = CountEndpointsWithMinimumScenarioCoverage(geometryTestTypes, 2);
 
-        endpoints.Length.Should().BeGreaterOrEqualTo(MinimumGeometryServiceEndpoints,
-            $"GeometryService area should cover at least {MinimumGeometryServiceEndpoints} distinct endpoints but found {endpoints.Length}");
+        endpointsWithDepth.Should().BeGreaterOrEqualTo(MinimumGeometryServiceEndpointsWithScenarioDepth,
+            $"GeometryService area should retain multiple-scenario coverage on at least {MinimumGeometryServiceEndpointsWithScenarioDepth} endpoints but found {endpointsWithDepth}");
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void AdminDeploy_Endpoints_HaveMultipleScenarioCoverage()
+    {
+        var deployTestType = typeof(ContractCoverageMatrixTests).Assembly.GetTypes()
+            .Single(type => type.Name == "DeployControlEndpointsTests");
+
+        var endpointCounts = CountEndpointScenarios([deployTestType]);
+        var expectedDeployEndpoints = new[]
+        {
+            "GET /api/v1/admin/deploy/preflight",
+            "POST /api/v1/admin/deploy/plan",
+            "POST /api/v1/admin/deploy/operations",
+            "GET /api/v1/admin/deploy/operations/{operationId}",
+            "POST /api/v1/admin/deploy/operations/{operationId}/submit",
+            "POST /api/v1/admin/deploy/operations/{operationId}/rollback"
+        };
+
+        foreach (var endpoint in expectedDeployEndpoints)
+        {
+            endpointCounts.Should().ContainKey(endpoint, $"deploy coverage should include {endpoint}");
+            endpointCounts[endpoint].Should().BeGreaterOrEqualTo(2,
+                $"{endpoint} should have both happy-path and negative-path coverage");
+        }
     }
 
     [Fact]
@@ -196,4 +207,15 @@ public sealed class ContractCoverageMatrixTests
         authEndpoints.Length.Should().BeGreaterOrEqualTo(20,
             "auth tests should cover at least 20 distinct admin endpoints");
     }
+
+    private static int CountEndpointsWithMinimumScenarioCoverage(IEnumerable<Type> testTypes, int minimumScenarioCount)
+        => CountEndpointScenarios(testTypes).Count(pair => pair.Value >= minimumScenarioCount);
+
+    private static Dictionary<string, int> CountEndpointScenarios(IEnumerable<Type> testTypes)
+        => testTypes
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            .SelectMany(method => method.GetCustomAttributes<EndpointAttribute>()
+                .Select(attr => attr.Endpoint))
+            .GroupBy(endpoint => endpoint, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
 }

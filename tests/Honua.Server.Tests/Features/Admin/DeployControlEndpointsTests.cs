@@ -245,10 +245,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             desiredRevision = "sha256:doesnotexist"
         });
 
-        // 405 persists even after removing redundant HttpMethodMetadata — root cause is
-        // deeper in the routing/API-versioning pipeline, not the endpoint registration.
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -257,8 +254,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     {
         var response = await _client.GetAsync("/api/v1/admin/deploy/operations/deploy-does-not-exist");
 
-        // 405 persists — see PlanDeployOperation_WhenTargetDoesNotExist comment.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -290,6 +286,20 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             reason = "Duplicate submission"
         });
         secondSubmit.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict, HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task RollbackDeployOperation_NonexistentOperationId_ReturnsNotFound()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/deploy/operations/deploy-does-not-exist/rollback",
+            new
+            {
+                reason = "No active deployment exists"
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

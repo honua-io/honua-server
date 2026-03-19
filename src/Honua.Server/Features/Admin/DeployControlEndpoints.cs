@@ -30,26 +30,32 @@ internal static class DeployControlEndpoints
 
         group.MapGet("/preflight", HandleGetDeployPreflight)
             .WithDisplayName("Get Deploy Preflight")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<DeployPreflightResponse>();
 
         group.MapPost("/plan", HandlePlanDeployOperation)
             .WithDisplayName("Plan Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployPlanResponse>();
 
         group.MapPost("/operations", HandleCreateDeployOperation)
             .WithDisplayName("Create Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
         group.MapGet("/operations/{operationId}", HandleGetDeployOperation)
             .WithDisplayName("Get Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<DeployOperationResponse>();
 
         group.MapPost("/operations/{operationId}/submit", HandleSubmitDeployOperation)
             .WithDisplayName("Submit Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
             .WithDisplayName("Rollback Deploy Operation")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
     }
 
@@ -99,10 +105,10 @@ internal static class DeployControlEndpoints
     {
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Both targetId and desiredRevision are required."));
+                "Both targetId and desiredRevision are required.");
         }
 
         var result = await deployWorkflowService.PlanAsync(
@@ -115,10 +121,10 @@ internal static class DeployControlEndpoints
 
         if (result == null)
         {
-            return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                $"Deploy target '{request.TargetId}' was not found."));
+                $"Deploy target '{request.TargetId}' was not found.");
         }
 
         return Results.Json(MapPlanResponse(result), DeployControlJsonContext.Default.DeployPlanResponse);
@@ -131,18 +137,18 @@ internal static class DeployControlEndpoints
     {
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Both targetId and desiredRevision are required."));
+                "Both targetId and desiredRevision are required.");
         }
 
         if (!TryParsePriority(request.Priority, out var priority))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Invalid priority '{request.Priority}'. Valid values: {string.Join(", ", Enum.GetNames<OperationPriority>())}."));
+                $"Invalid priority '{request.Priority}'. Valid values: {string.Join(", ", Enum.GetNames<OperationPriority>())}.");
         }
 
         try
@@ -163,10 +169,10 @@ internal static class DeployControlEndpoints
 
             if (operation == null)
             {
-                return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status404NotFound,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                    $"Deploy target '{request.TargetId}' was not found."));
+                    $"Deploy target '{request.TargetId}' was not found.");
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
@@ -175,10 +181,10 @@ internal static class DeployControlEndpoints
         {
             if (ex is ResourceConflictException)
             {
-                return Results.Conflict(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status409Conflict,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
-                    ex.Message));
+                    ex.Message);
             }
 
             return Results.Problem(
@@ -199,10 +205,10 @@ internal static class DeployControlEndpoints
             var operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
             if (operation == null)
             {
-                return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status404NotFound,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                    $"Deploy operation '{operationId}' was not found."));
+                    $"Deploy operation '{operationId}' was not found.");
             }
 
             if (operation.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested)
@@ -243,20 +249,20 @@ internal static class DeployControlEndpoints
 
             if (operation == null)
             {
-                return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status404NotFound,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                    $"Deploy operation '{operationId}' was not found."));
+                    $"Deploy operation '{operationId}' was not found.");
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
         }
         catch (ResourceConflictException ex)
         {
-            return Results.Conflict(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status409Conflict,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
-                ex.Message));
+                ex.Message);
         }
         catch (InvalidOperationException ex)
         {
@@ -284,10 +290,10 @@ internal static class DeployControlEndpoints
 
             if (operation == null)
             {
-                return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status404NotFound,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                    $"Deploy operation '{operationId}' was not found."));
+                    $"Deploy operation '{operationId}' was not found.");
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);

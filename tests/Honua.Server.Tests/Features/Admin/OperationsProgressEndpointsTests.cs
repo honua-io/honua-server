@@ -154,9 +154,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     {
         var response = await _client.GetAsync($"/api/v1/admin/operations/nonexistent-{Guid.NewGuid():N}");
 
-        // 405 persists even after migrating Map() to MapGet() — root cause is deeper
-        // in the routing/API-versioning pipeline, not the endpoint registration.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -174,8 +172,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
-        // 405 persists — see GetOperationStatus_NonexistentId comment.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict, HttpStatusCode.BadRequest, HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -193,8 +190,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
 
         var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
 
-        // 405 persists — see GetOperationStatus_NonexistentId comment.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Conflict, HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

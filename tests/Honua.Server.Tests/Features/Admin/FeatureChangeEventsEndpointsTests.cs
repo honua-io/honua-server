@@ -163,6 +163,27 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
         events.GetArrayLength().Should().Be(0);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/feature-events/replay")]
+    public async Task Replay_WithInvalidLimit_ReturnsBadRequest()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/feature-events/replay?limit=1001");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/feature-events/replay")]
+    public async Task Replay_WithInvertedWindow_ReturnsBadRequest()
+    {
+        var from = Uri.EscapeDataString(DateTimeOffset.UtcNow.ToString("O"));
+        var to = Uri.EscapeDataString(DateTimeOffset.UtcNow.AddHours(-1).ToString("O"));
+
+        var response = await _client.GetAsync($"/api/v1/admin/feature-events/replay?from={from}&to={to}&limit=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static JsonElement GetPropertyCaseInsensitive(JsonElement element, string propertyName)
     {
         foreach (var property in element.EnumerateObject())
