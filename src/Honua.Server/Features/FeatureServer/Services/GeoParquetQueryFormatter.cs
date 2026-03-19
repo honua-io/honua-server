@@ -119,6 +119,34 @@ internal sealed class GeoParquetQueryFormatter
         return (stream.ToArray(), ContentType);
     }
 
+    internal static List<FieldDefinition> ResolveSelectedFields(LayerDefinition layer, string[]? outFields)
+    {
+        var objectIdFieldName = layer.ObjectIdFieldName;
+        var includeAllFields = outFields == null || outFields.Length == 0 ||
+            (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
+
+        HashSet<string>? requestedFields = null;
+        if (!includeAllFields)
+        {
+            requestedFields = new HashSet<string>(outFields!, StringComparer.OrdinalIgnoreCase)
+            {
+                objectIdFieldName
+            };
+        }
+
+        var selectedFields = layer.Fields
+            .Where(field => !field.IsGeometry)
+            .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
+            .ToList();
+
+        if (!selectedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedFields.Insert(0, new FieldDefinition(objectIdFieldName, FieldType.BigInteger, Nullable: false));
+        }
+
+        return selectedFields;
+    }
+
     /// <summary>
     /// Creates empty GeoParquet file with schema only
     /// </summary>
@@ -168,8 +196,13 @@ internal sealed class GeoParquetQueryFormatter
         bool isEmpty = false)
     {
         var objectIdFieldName = layer.ObjectIdFieldName;
-        var includeAllFields = outFields == null || outFields.Length == 0 ||
-                              (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
+        var resolvedFields = ResolveSelectedFields(layer, outFields);
+
+        // BuildSchema handles objectId as the first dedicated column, so exclude it
+        // from the attribute fields list to avoid a duplicate column.
+        var fieldsToInclude = resolvedFields
+            .Where(f => !f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         var schemaFields = new List<Field>
         {
@@ -180,11 +213,6 @@ internal sealed class GeoParquetQueryFormatter
         {
             schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
         }
-
-        var fieldsToInclude = (includeAllFields
-            ? layer.Fields.Where(f => !f.IsGeometry && !f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
-            : layer.Fields.Where(f => !f.IsGeometry && !f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase) && outFields!.Contains(f.Name, StringComparer.OrdinalIgnoreCase)))
-            .ToList();
 
         foreach (var field in fieldsToInclude)
         {
@@ -197,6 +225,8 @@ internal sealed class GeoParquetQueryFormatter
         // to match the filtering behavior of JSON/GeoJSON/PBF formatters.
         if (runtimeFields != null)
         {
+            var includeAllFields = outFields == null || outFields.Length == 0 ||
+                                  (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
             foreach (var (name, type) in runtimeFields)
             {
                 if (includeAllFields || outFields!.Contains(name, StringComparer.OrdinalIgnoreCase))
@@ -271,7 +301,7 @@ internal sealed class GeoParquetQueryFormatter
     /// layer schema (e.g. the "distance" field injected by KNN queries when returnDistance=true).
     /// Internal fields prefixed with "__" are excluded.
     /// </summary>
-    private static List<(string name, IArrowType type)> DetectRuntimeFields(
+    internal static List<(string name, IArrowType type)> DetectRuntimeFields(
         ImmutableArray<Feature> features,
         LayerDefinition layer)
     {
@@ -326,7 +356,7 @@ internal sealed class GeoParquetQueryFormatter
     /// <summary>
     /// Maps layer geometry type to GeoParquet geometry type string
     /// </summary>
-    private static string MapGeometryTypeToGeoParquet(Core.Features.Catalog.Domain.GeometryType geometryType, bool returnZ)
+    internal static string MapGeometryTypeToGeoParquet(Core.Features.Catalog.Domain.GeometryType geometryType, bool returnZ)
     {
         var baseType = geometryType switch
         {
@@ -447,7 +477,7 @@ internal sealed class GeoParquetQueryFormatter
 
         foreach (var feature in features)
         {
-            var (wkb, hasZ) = ProcessGeometry(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
+            var (wkb, hasZ) = ProcessGeometryCore(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
             anyHasZ |= hasZ;
             if (wkb != null && wkb.Length > 0)
             {
@@ -462,7 +492,25 @@ internal sealed class GeoParquetQueryFormatter
         return (builder.Build(), anyHasZ);
     }
 
-    private static (byte[]? wkb, bool hasZ) ProcessGeometry(
+    internal static object? GetAttributeValue(Feature feature, string fieldName)
+    {
+        return feature.Attributes.TryGetValue(fieldName, out var value) ? value : null;
+    }
+
+    internal static byte[]? ProcessGeometry(
+        byte[]? geometryBytes,
+        int outputSrid,
+        GeometryLimits geometryLimits,
+        bool returnZ,
+        bool returnM,
+        long featureId = 0,
+        ILogger? logger = null)
+    {
+        var (wkb, _) = ProcessGeometryCore(geometryBytes, outputSrid, geometryLimits, returnZ, returnM, featureId, logger);
+        return wkb;
+    }
+
+    private static (byte[]? wkb, bool hasZ) ProcessGeometryCore(
         byte[]? geometryBytes,
         int outputSrid,
         GeometryLimits geometryLimits,

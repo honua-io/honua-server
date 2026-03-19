@@ -86,13 +86,74 @@ internal sealed class QueryFormatter : IQueryFormatter
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
 
-        return ValueTask.FromResult(format.ToLowerInvariant() switch
+        return format.ToLowerInvariant() switch
         {
-            "pbf" => _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields),
-            "parquet" => GeoParquetQueryFormatter.FormatAsGeoParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields, _logger),
-            "geojson" => FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields),
-            "json" or _ => FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)
-        });
+            "pbf" => ValueTask.FromResult<(object response, string contentType)>(
+                _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields)),
+            "parquet" => ValueTask.FromResult<(object response, string contentType)>(
+                FormatParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
+            "arrow" => new ValueTask<(object response, string contentType)>(
+                FormatArrowAsync(
+                    result,
+                    layer,
+                    returnGeometry,
+                    outputSrid,
+                    returnZ,
+                    returnM,
+                    effectiveLimits,
+                    outFields)),
+            "geojson" => ValueTask.FromResult<(object response, string contentType)>(
+                FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
+            "json" or _ => ValueTask.FromResult<(object response, string contentType)>(
+                FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields))
+        };
+    }
+
+    private (object response, string contentType) FormatParquet(
+        QueryResult<Feature> result,
+        LayerDefinition layer,
+        bool returnGeometry,
+        int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits effectiveLimits,
+        string[]? outFields)
+    {
+        var (response, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            result,
+            layer,
+            returnGeometry,
+            outputSrid,
+            returnZ,
+            returnM,
+            effectiveLimits,
+            outFields,
+            _logger);
+
+        return (response, contentType);
+    }
+
+    private static async Task<(object response, string contentType)> FormatArrowAsync(
+        QueryResult<Feature> result,
+        LayerDefinition layer,
+        bool returnGeometry,
+        int? outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits effectiveLimits,
+        string[]? outFields)
+    {
+        var (response, contentType) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            result,
+            layer,
+            returnGeometry,
+            outputSrid,
+            returnZ,
+            returnM,
+            effectiveLimits,
+            outFields);
+
+        return (response, contentType);
     }
 
     /// <summary>
