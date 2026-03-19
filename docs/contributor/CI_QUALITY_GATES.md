@@ -2,14 +2,17 @@
 
 This document summarizes the CI pipelines and quality gates that contributors must satisfy. It is not an operations runbook.
 
+> **Canonical references**: See [`docs/ci/gate-model.md`](../ci/gate-model.md) for the five-tier gate model, [`docs/ci/workflow-inventory.md`](../ci/workflow-inventory.md) for the full workflow inventory, and [`docs/ci/config-conventions.md`](../ci/config-conventions.md) for cross-repo configuration conventions.
+
 ## Core Workflows
 
 - `ci.yml`: build, formatting verification, and full test suite.
-- `pr-validation.yml`: fast validation for pull requests.
-- `codeql.yml`: static analysis.
-- `container-security.yml`: container security scanning.
-- `performance.yml`, `performance-benchmarks.yml`, `load-soak-nightly.yml`: performance coverage.
-- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing.
+- `pr-validation.yml`: PR template compliance validation.
+- `performance-benchmarks.yml`: performance benchmarks (`quick` mode on PR, `full` mode on nightly/manual).
+- `load-soak-nightly.yml`: nightly load/soak testing.
+- `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
+- `container-security.yml`: container security scanning (nightly).
+- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
 - `openapi-contract-governance.yml`: Admin/control-plane OpenAPI contract validation and breaking-change checks.
 - `control-plane-sdk-governance.yml`: reproducible control-plane SDK generation and release artifact publishing.
 - `proto-wire-governance.yml`: protobuf wire compatibility enforcement via `buf breaking`.
@@ -25,10 +28,11 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## Conformance Baseline Policy
 
-The CITE regression gates for implemented map/tile standards must pass on:
-- pull requests targeting `trunk`/`main`
-- pushes to `trunk`/`main`
-- scheduled weekly drift checks
+The CITE regression gates for implemented map/tile standards run on:
+- scheduled weekly drift checks (see [`docs/ci/workflow-inventory.md`](../ci/workflow-inventory.md) for schedule)
+- manual `workflow_dispatch` for on-demand validation
+
+> **Note**: Conformance suites are not PR-blocking. They are external, heavyweight, and non-deterministic. See [`docs/ci/gate-model.md`](../ci/gate-model.md) for the rationale.
 
 ### Current baseline thresholds
 

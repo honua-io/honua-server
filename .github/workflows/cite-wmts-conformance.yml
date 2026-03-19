@@ -1,28 +1,8 @@
 name: OGC WMTS CITE Conformance Tests
 
 on:
-  pull_request:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'src/Honua.Server/Features/MapServer/**'
-      - 'docker/cite-mapserver-seed.sql'
-      - 'docker/cite-wmts-compose.yml'
-      - 'docker/cite-wmts-config/**'
-      - 'scripts/run-cite-wmts-tests.sh'
-      - '.github/workflows/cite-wmts-conformance.yml'
-  push:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'src/Honua.Server/Features/MapServer/**'
-      - 'docker/cite-mapserver-seed.sql'
-      - 'docker/cite-wmts-compose.yml'
-      - 'docker/cite-wmts-config/**'
-      - 'scripts/run-cite-wmts-tests.sh'
-      - '.github/workflows/cite-wmts-conformance.yml'
+  # Tier: nightly — conformance suites are external and heavyweight.
+  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
   schedule:
     # Run weekly to track WMTS conformance drift
     - cron: '0 6 * * 4'

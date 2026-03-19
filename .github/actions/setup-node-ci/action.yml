@@ -1,0 +1,24 @@
+name: Setup Node CI
+description: Node.js setup and npm cache handling
+
+inputs:
+  node-version:
+    description: 'Node.js version'
+    required: false
+    default: '20'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache npm packages
+      uses: actions/cache@v5
+      with:
+        path: ~/.npm
+        key: ${{ github.repository }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ github.repository }}-${{ runner.os }}-npm-

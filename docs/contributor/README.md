@@ -41,8 +41,10 @@ This section is for people **building or extending** Honua (core contributors, a
 
 ## CI/CD
 
+- [CI Gate Model](../ci/gate-model.md) — five-tier quality gate definitions and governing rules
+- [CI Workflow Inventory](../ci/workflow-inventory.md) — every workflow, its tier, triggers, and merge-blocking status
+- [CI Config Conventions](../ci/config-conventions.md) — env vars, cache keys, artifact naming, and composite actions
 - [CI Monitoring](CI_MONITORING.md) — CI health and alert monitoring
-- [CI Workflows](ci-workflows.md) — GitHub Actions pipeline overview
 - [CI Quality Gates](CI_QUALITY_GATES.md) — automated quality enforcement
 - [Release Checklist](RELEASE_CHECKLIST.md) — required compatibility/client/caveat updates per release
 - [CodeCov Setup](CODECOV_SETUP.md) — code coverage monitoring

@@ -1,0 +1,24 @@
+name: Setup Python CI
+description: Python setup and pip cache handling
+
+inputs:
+  python-version:
+    description: 'Python version'
+    required: false
+    default: '3.11'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache pip packages
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/pip
+        key: ${{ github.repository }}-${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ github.repository }}-${{ runner.os }}-pip-

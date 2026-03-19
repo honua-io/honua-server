@@ -1,22 +1,92 @@
 name: Tech Debt
-description: Technical debt or refactoring
+description: Technical debt, refactoring, or infrastructure improvement
+title: "chore: "
 labels: ["tech-debt"]
 body:
   - type: textarea
     id: description
     attributes:
-      label: Description
-      description: What needs to be addressed?
+      label: Problem Summary
+      description: What needs to be addressed and what is the current state?
     validations:
       required: true
 
   - type: textarea
-    id: justification
+    id: why-now
     attributes:
-      label: Justification
-      description: Why is this important to address?
+      label: Why This Matters Now
+      description: Why is this important to address at this point? What is the cost of delay?
     validations:
       required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: |
+        What must be true for this work to be considered complete?
+        Use checkboxes for multiple criteria.
+      placeholder: |
+        - [ ] Duplicated code extracted into shared utility
+        - [ ] All existing tests still pass
+        - [ ] No new warnings introduced
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected-repos
+    attributes:
+      label: Affected Repo(s)
+      description: Which repositories need changes?
+      multiple: true
+      options:
+        - honua-server
+        - honua-sdk-js
+        - honua-sdk-dotnet
+        - honua-admin
+        - other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gate-tier-impact
+    attributes:
+      label: Gate Tier Impact
+      description: Which CI tiers will this work affect? See docs/ci/gate-model.md.
+      multiple: true
+      options:
+        - PR gates (build, test, governance)
+        - Nightly gates (conformance, performance, security)
+        - Release gates (packaging, publishing)
+        - Deploy gates (promotion, post-apply)
+        - None / unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: release-deploy-impact
+    attributes:
+      label: Release/Deploy Impact
+      description: Does this work require special release or deployment handling?
+      options:
+        - None — standard merge-and-release
+        - Requires coordinated release across repos
+        - Requires database migration
+        - Requires infrastructure changes
+    validations:
+      required: true
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What is explicitly out of scope for this work?
+
+  - type: textarea
+    id: follow-on-split
+    attributes:
+      label: Follow-on Split Guidance
+      description: If this is too large for one issue, how should it be split?
 
   - type: dropdown
     id: priority

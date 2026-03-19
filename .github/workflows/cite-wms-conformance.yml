@@ -1,28 +1,8 @@
 name: OGC WMS CITE Conformance Tests
 
 on:
-  pull_request:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'src/Honua.Server/Features/MapServer/**'
-      - 'docker/cite-mapserver-seed.sql'
-      - 'docker/cite-wms-compose.yml'
-      - 'docker/cite-wms-config/**'
-      - 'scripts/run-cite-wms-tests.sh'
-      - '.github/workflows/cite-wms-conformance.yml'
-  push:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'src/Honua.Server/Features/MapServer/**'
-      - 'docker/cite-mapserver-seed.sql'
-      - 'docker/cite-wms-compose.yml'
-      - 'docker/cite-wms-config/**'
-      - 'scripts/run-cite-wms-tests.sh'
-      - '.github/workflows/cite-wms-conformance.yml'
+  # Tier: nightly — conformance suites are external and heavyweight.
+  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
   schedule:
     # Run weekly to track WMS conformance drift
     - cron: '0 6 * * 3'

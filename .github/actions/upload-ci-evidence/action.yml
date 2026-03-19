@@ -1,0 +1,66 @@
+name: Upload CI Evidence
+description: Upload artifacts with standard naming, retention, and step-summary links
+
+inputs:
+  kind:
+    description: 'Artifact kind (test-results, coverage, benchmark, conformance, sarif, evidence)'
+    required: true
+  path:
+    description: 'Path to artifact files'
+    required: true
+  tier:
+    description: 'Gate tier (pr, nightly, release, deploy) — controls retention'
+    required: false
+    default: 'pr'
+  suffix:
+    description: 'Optional suffix appended to artifact name for disambiguation (e.g. matrix leg)'
+    required: false
+    default: ''
+  summary-file:
+    description: 'Optional markdown file to append to step summary'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Determine retention
+      id: retention
+      shell: bash
+      run: |
+        case "${{ inputs.tier }}" in
+          pr)      echo "days=7" >> "$GITHUB_OUTPUT" ;;
+          nightly) echo "days=30" >> "$GITHUB_OUTPUT" ;;
+          release|deploy) echo "days=90" >> "$GITHUB_OUTPUT" ;;
+          *)       echo "days=7" >> "$GITHUB_OUTPUT" ;;
+        esac
+
+    - name: Derive artifact name
+      id: name
+      shell: bash
+      run: |
+        REPO_NAME="${GITHUB_REPOSITORY##*/}"
+        WORKFLOW_NAME="${GITHUB_WORKFLOW// /-}"
+        WORKFLOW_NAME=$(echo "$WORKFLOW_NAME" | tr '[:upper:]' '[:lower:]')
+        SUFFIX="${{ inputs.suffix }}"
+        if [ -n "$SUFFIX" ]; then
+          echo "artifact_name=${REPO_NAME}-${WORKFLOW_NAME}-${{ github.run_id }}-${{ inputs.kind }}-${SUFFIX}" >> "$GITHUB_OUTPUT"
+        else
+          echo "artifact_name=${REPO_NAME}-${WORKFLOW_NAME}-${{ github.run_id }}-${{ inputs.kind }}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.name.outputs.artifact_name }}
+        path: ${{ inputs.path }}
+        retention-days: ${{ steps.retention.outputs.days }}
+        if-no-files-found: warn
+
+    - name: Append to step summary
+      if: inputs.summary-file != ''
+      shell: bash
+      run: |
+        if [ -f "${{ inputs.summary-file }}" ]; then
+          cat "${{ inputs.summary-file }}" >> "$GITHUB_STEP_SUMMARY"
+        fi

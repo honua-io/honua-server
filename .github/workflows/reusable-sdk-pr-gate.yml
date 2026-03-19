@@ -1,0 +1,99 @@
+# Reusable SDK PR gate workflow.
+# Provides a shared PR-gate contract for honua-sdk-js and honua-sdk-dotnet.
+# See docs/ci/gate-model.md and docs/ci/config-conventions.md.
+
+name: SDK PR Gate
+
+on:
+  workflow_call:
+    inputs:
+      build-command:
+        description: 'Repo-specific build command'
+        required: true
+        type: string
+      test-command:
+        description: 'Repo-specific test command'
+        required: true
+        type: string
+      lint-command:
+        description: 'Repo-specific lint command (optional)'
+        required: false
+        type: string
+        default: ''
+      node-version:
+        description: 'Node.js version (for JS SDKs)'
+        required: false
+        type: string
+        default: ''
+      dotnet-version:
+        description: '.NET SDK version (for .NET SDKs)'
+        required: false
+        type: string
+        default: ''
+      artifact-retention:
+        description: 'Artifact retention in days'
+        required: false
+        type: number
+        default: 7
+
+jobs:
+  sdk-pr-gate:
+    name: SDK PR Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        if: inputs.node-version != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm
+        if: inputs.node-version != ''
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: ${{ github.repository }}-${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ github.repository }}-${{ runner.os }}-npm-
+
+      - name: Setup .NET
+        if: inputs.dotnet-version != ''
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache NuGet
+        if: inputs.dotnet-version != ''
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ github.repository }}-${{ runner.os }}-nuget-
+
+      - name: Build
+        run: ${{ inputs.build-command }}
+
+      - name: Lint
+        if: inputs.lint-command != ''
+        run: ${{ inputs.lint-command }}
+
+      - name: Test
+        run: ${{ inputs.test-command }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}-sdk-pr-gate-${{ github.run_id }}-test-results
+          path: |
+            **/test-results/
+            **/TestResults/
+            **/coverage/
+          retention-days: ${{ inputs.artifact-retention }}
+          if-no-files-found: ignore

@@ -4,55 +4,59 @@
 <!-- Required: Link to the GitHub issue this PR addresses -->
 Fixes #
 
-<!-- Alternative formats: Closes #, Resolves #, Related to # -->
-
 ## Summary
-<!-- Brief description of what this PR does -->
+<!-- Required: Brief description of what this PR does and why -->
 
 
 ## Changes Made
-<!-- List key changes -->
+<!-- Required: List key changes as bullet points -->
 -
 -
 -
 
 ## Testing
-<!-- Describe how this was tested -->
+<!-- Check all that apply -->
 - [ ] Unit tests added/updated
 - [ ] Integration tests added/updated
 - [ ] Architecture tests pass
-- [ ] Local pre-PR validation passed (`scripts/pre-pr-check.sh`)
+- [ ] Manual testing performed
 
-## Coverage Impact
-<!-- Required if this adds new code -->
-- Line coverage: Before X% → After Y%
-- Branch coverage: Before X% → After Y%
+## Gate Impact
+<!-- Which CI tiers does this PR affect? Check all that apply. See docs/ci/gate-model.md. -->
+- [ ] PR gates (build, test, governance)
+- [ ] Nightly gates (conformance, performance, security)
+- [ ] Release gates (packaging, publishing)
+- [ ] Deploy gates (promotion, post-apply validation)
+- [ ] None — no gate impact
+
+## Docs or Contract Impact
+<!-- Does this PR change any API contracts, protocols, or documentation? -->
+- [ ] OpenAPI spec changed
+- [ ] Protobuf/gRPC contract changed
+- [ ] Control plane SDK surface changed
+- [ ] Documentation updated
+- [ ] None — no docs or contract impact
+
+## Release/Deploy Impact
+<!-- Does this PR require release or deployment coordination? -->
+- [ ] Requires coordinated release across repos
+- [ ] Requires database migration
+- [ ] Requires infrastructure changes
+- [ ] Requires environment variable or secret changes
+- [ ] None — standard merge-and-release flow
 
 ## Breaking Changes
-<!-- List any breaking changes, or write "None" -->
+<!-- Required: List any breaking changes, or write "None" -->
 None
-
-## Additional Context
-<!-- Any additional information -->
-
 
 ---
 
-## Pre-PR Checklist (for contributor)
+## Pre-PR Checklist
 - [ ] Ran `scripts/pre-pr-check.sh` and all checks passed
-- [ ] Commit message follows format: `type: description (#issue-number)`
+- [ ] Commit messages follow conventional format: `type: description (#issue)`
 - [ ] PR title matches main commit message
 - [ ] Issue number linked above
 - [ ] Tests added for new functionality
-- [ ] Documentation updated if needed
-- [ ] If protocol/auth behavior changed, updated MVP compatibility contract and release checklist notes
-- [ ] If breaking admin/control-plane API changes: updated migration guide and versioning policy docs
-- [ ] If breaking gRPC/proto wire changes: confirmed with explicit review and documented in migration guide
-
-## Reviewer Checklist
-- [ ] Code follows project architecture (vertical slices, no controllers)
-- [ ] Tests cover happy path and edge cases
-- [ ] No reflection in hot paths (AOT compatible)
-- [ ] Dependency limits respected (max 5 per endpoint)
-- [ ] Error handling follows project patterns
-- [ ] Security considerations addressed
+- [ ] If protocol/auth behavior changed: updated compatibility contract
+- [ ] If breaking admin/control-plane API changes: updated migration guide
+- [ ] If breaking gRPC/proto wire changes: confirmed with explicit review
