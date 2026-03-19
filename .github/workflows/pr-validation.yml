@@ -46,7 +46,7 @@ jobs:
             }
 
             // 3. Changes Made (at least one bullet, bounded to section)
-            const changesSection = body.match(/## Changes Made([\s\S]*?)(?=\n##|\n---|$)/m);
+            const changesSection = body.match(/## Changes Made([\s\S]*?)(?=\n##|\n---|\s*$)/);
             const hasChanges = changesSection && /\n- \S/.test(changesSection[1]);
             if (!hasChanges) {
               issues.push('**Changes Made incomplete** — list key changes as bullet points');
@@ -77,14 +77,14 @@ jobs:
             if (!hasGateImpact) {
               warnings.push('**Missing Gate Impact section** — template may be outdated');
             } else {
-              const gateSection = body.match(/## Gate Impact([\s\S]*?)(?=\n##|\n---|$)/m);
+              const gateSection = body.match(/## Gate Impact([\s\S]*?)(?=\n##|\n---|\s*$)/);
               if (!gateSection || !/- \[x\]/.test(gateSection[1])) {
                 warnings.push('**No Gate Impact boxes checked** — indicate which CI tiers are affected');
               }
             }
 
             // Testing section (bounded to section)
-            const testingSection = body.match(/## Testing([\s\S]*?)(?=\n##|\n---|$)/m);
+            const testingSection = body.match(/## Testing([\s\S]*?)(?=\n##|\n---|\s*$)/);
             if (!testingSection || !/- \[x\]/.test(testingSection[1])) {
               warnings.push('**No Testing boxes checked** — indicate what testing was performed');
             }
