@@ -132,6 +132,32 @@ resp = requests.post(
 resp.raise_for_status()
 ```
 
+### **Analytics Export (GeoParquet)**
+
+```python
+import requests
+
+HONUA = "http://localhost:8080"
+
+# Export features as GeoParquet for columnar analytics
+resp = requests.get(
+    f"{HONUA}/rest/services/1/FeatureServer/0/query",
+    params={"where": "1=1", "outFields": "*", "f": "parquet"}
+)
+resp.raise_for_status()
+
+with open("features.parquet", "wb") as f:
+    f.write(resp.content)
+
+# Load directly into DuckDB, pandas, or geopandas
+import geopandas as gpd
+gdf = gpd.read_parquet("features.parquet")
+```
+
+Use `f=parquet` (or `Accept: application/vnd.apache.parquet`) to get GeoParquet 1.1.0 output with WKB-encoded geometry and CRS metadata. Ideal for analytics pipelines, data science notebooks, and bulk data exchange. Non-4326 `outSR` is rejected when the GeoParquet response includes a geometry column; it is allowed when `returnGeometry=false` or the layer has no geometry. When `outSR` is omitted, coordinates are automatically reprojected to EPSG:4326.
+
+> **Truncation note:** The query endpoint applies `maxRecordCount` by default (typically 2 000 features). Binary formats like GeoParquet do not include an `exceededTransferLimit` flag. To verify completeness, compare the row count in the returned file against the service's `maxRecordCount`. For larger exports, page with `resultOffset`/`resultRecordCount` or first call `returnCountOnly=true` to check the total.
+
 **Orchestrators**: Use Airflow, Dagster, Prefect, or your existing ETL platform. The goal is consistent extraction, idempotent loads, and observability.
 
 ---

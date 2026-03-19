@@ -9,8 +9,6 @@ using Honua.Server.Features.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Parquet;
-
 namespace Honua.Server.Tests.Features.FeatureServer;
 
 [Collection("Database")]
@@ -112,6 +110,52 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("returnDistinctValues is not supported when f=fgb.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatAndNon4326OutSR_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("GeoParquet output does not yet support non-4326 outSR");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatNoGeometryAndNon4326OutSR_ReturnsOk()
+    {
+        // When returnGeometry=false the parquet file has no geometry column or CRS metadata,
+        // so the 4326 restriction should not apply.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&returnGeometry=false&outSR=3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        payload.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatAndOutStatisticsAndNon4326OutSR_ReturnsJson()
+    {
+        // outStatistics queries always return JSON regardless of f=, so the parquet
+        // CRS restriction must not reject the request.
+        var outStats = Uri.EscapeDataString(
+            """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"cnt"}]""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857&outStatistics={outStats}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
 
     [IntegrationTest]
@@ -372,24 +416,27 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
 
         using var stream = new MemoryStream(payload);
-        using var reader = await ParquetReader.CreateAsync(stream);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        await batchReader.ReadNextRecordBatchAsync(); // materialize schema
 
-        var fields = reader.Schema.GetDataFields().ToArray();
-        fields.Select(field => field.Name).Should().OnlyHaveUniqueItems();
-        fields.Select(field => field.Name).Should().Contain("objectid");
+        var fieldNames = reader.Schema.FieldsList.Select(f => f.Name).ToArray();
+        fieldNames.Should().OnlyHaveUniqueItems();
+        fieldNames.Should().Contain("objectid");
 
         if (expectGeometry)
         {
-            fields.Select(field => field.Name).Should().Contain("geometry");
-            reader.CustomMetadata.Should().ContainKey("geo");
+            fieldNames.Should().Contain("geometry");
+            reader.Schema.Metadata.Should().ContainKey("geo");
 
-            using var metadataDocument = JsonDocument.Parse(reader.CustomMetadata["geo"]);
+            using var metadataDocument = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
             metadataDocument.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
         }
         else
         {
-            fields.Select(field => field.Name).Should().NotContain("geometry");
-            reader.CustomMetadata.Should().NotContainKey("geo");
+            fieldNames.Should().NotContain("geometry");
+            var hasGeoKey = reader.Schema.Metadata?.ContainsKey("geo") ?? false;
+            hasGeoKey.Should().BeFalse();
         }
     }
 }

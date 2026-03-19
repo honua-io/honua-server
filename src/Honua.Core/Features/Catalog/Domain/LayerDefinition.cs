@@ -80,6 +80,12 @@ public record LayerDefinition(
     public bool HasGeometry => GeometryType != GeometryType.None;
 
     /// <summary>
+    /// Effective object identifier field name: the primary key field name if available,
+    /// otherwise the canonical <see cref="FieldNames.ObjectId"/> fallback.
+    /// </summary>
+    public string ObjectIdFieldName => PrimaryKeyField?.Name ?? FieldNames.ObjectId;
+
+    /// <summary>
     /// Primary key field (typically the first integer field named 'id' or 'objectid')
     /// </summary>
     public FieldDefinition? PrimaryKeyField => Fields.FirstOrDefault(f =>
