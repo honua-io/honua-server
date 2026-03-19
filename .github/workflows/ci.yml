@@ -24,7 +24,7 @@ env:
   # commit. While set to a branch name like 'trunk' the lane is useful for
   # development but certification artifacts are not release-grade evidence.
   # workflow_dispatch `sdk_ref` overrides this value for manual replays.
-  MCP_SDK_REF: 'trunk'
+  MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
 
 jobs:
   changes:
