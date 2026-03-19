@@ -1,6 +1,6 @@
 # Honua Integration Test Suite (Python)
 
-Python-based integration tests for Honua Server, covering OGC API Features and GeoServices REST/FeatureServer protocols.
+Python-based integration tests for Honua Server, covering OGC API Features, GeoServices REST/FeatureServer, and GDAL/OGR interoperability.
 
 ## Overview
 
@@ -25,6 +25,7 @@ pytest -n auto
 # Run specific protocol tests
 pytest -m ogc          # OGC API Features only
 pytest -m featureserver # GeoServices REST only
+pytest -m gdal           # GDAL/OGR interop only
 
 # Run smoke tests (quick validation)
 pytest -m smoke
@@ -46,13 +47,23 @@ tests/python/
 │   ├── test_conformance.py
 │   ├── test_collections.py
 │   └── test_items.py
-└── feature_server/          # GeoServices REST tests
-    ├── test_metadata.py
-    ├── test_query.py
-    ├── test_apply_edits.py
-    ├── test_related_records.py
-    ├── test_attachments.py
-    └── test_tiles.py
+├── feature_server/          # GeoServices REST tests
+│   ├── test_metadata.py
+│   ├── test_query.py
+│   ├── test_apply_edits.py
+│   ├── test_related_records.py
+│   ├── test_attachments.py
+│   └── test_tiles.py
+└── gdal_ogr/                # GDAL/OGR interoperability tests
+    ├── conftest.py           # GDAL fixtures, evidence collector
+    ├── test_oapif_discovery.py
+    ├── test_oapif_read.py
+    ├── test_oapif_query.py
+    ├── test_oapif_export.py
+    ├── test_wfs_discovery.py
+    ├── test_wfs_read.py
+    ├── test_wfs_query.py
+    └── test_wfs_export.py
 ```
 
 ## Prerequisites
@@ -60,6 +71,7 @@ tests/python/
 1. **Docker** - Required for Testcontainers (PostGIS)
 2. **Python 3.11+** - Required for type hints and features
 3. **Built Honua Server** - Run `dotnet build` before tests
+4. **GDAL tools** (optional) - Install `gdal-bin` to run GDAL/OGR interoperability tests. Requires GDAL 3.4+. Tests are skipped automatically when `ogrinfo` is not found.
 
 ## Configuration
 
@@ -90,6 +102,7 @@ The test suite automatically:
 | `@pytest.mark.geometry` | Geometry validation tests |
 | `@pytest.mark.slow` | Long-running tests |
 | `@pytest.mark.smoke` | Quick sanity checks |
+| `@pytest.mark.gdal` | GDAL/OGR interoperability tests (require gdal-bin) |
 
 ## Geometry Coverage
 

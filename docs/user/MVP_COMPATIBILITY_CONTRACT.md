@@ -18,6 +18,7 @@ Use this page first, then drill into the linked protocol matrices/spec docs.
 | WMTS 1.0 | Supported (CITE certified) | GetCapabilities, GetTile, GetFeatureInfo (KVP + RESTful) | 118/118 CITE tests passing; WebMercatorQuad only | [MapServer Coverage Matrix](map-server-matrix.md) |
 | OData v4 | Supported with partial parity | Core entities/metadata/query, `$batch`, `$apply`, `$search`, `$skiptoken`, `$deltatoken`, spatial functions | Delta change-tracking is timestamp-based (MVP-level); PUT not supported | [OData v4 Coverage](specifications/odata-v4-coverage.md) |
 | Vector Tiles (MVT) | Supported | PostGIS-native `ST_AsMVT` generation, TileJSON metadata, auto-generated MapLibre styles | — | — |
+| GDAL/OGR (ogrinfo / ogr2ogr) | Supported | OAPIF: discovery, read, query, export; WFS 2.0: discovery, read, query, export | Tested with GDAL 3.4+ against OGC API Features and WFS 2.0 endpoints | — |
 
 ## FeatureServer Replication Limitations (MVP)
 
