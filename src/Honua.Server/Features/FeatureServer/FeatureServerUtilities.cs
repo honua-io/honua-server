@@ -203,7 +203,7 @@ internal static partial class FeatureServerEndpoints
     private static class SupportedFormats
     {
         public static readonly FrozenSet<string> Query =
-            new[] { "json", "pjson", "geojson", "pbf", "fgb", "geobuf", "parquet" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "json", "pjson", "geojson", "pbf", "fgb", "geobuf", "parquet", "arrow" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> JsonOnly =
             new[] { "json", "pjson" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -499,6 +499,8 @@ internal static partial class FeatureServerEndpoints
             AddSupportedFormat(normalizedFormats, "GEOBUF");
         }
 
+        AddSupportedFormat(normalizedFormats, "ARROW");
+
         return [.. normalizedFormats];
     }
 
@@ -648,6 +650,12 @@ internal static partial class FeatureServerEndpoints
                 if (mediaType.Equals("application/vnd.apache.parquet", StringComparison.OrdinalIgnoreCase))
                 {
                     format = "parquet";
+                    return true;
+                }
+
+                if (mediaType.Equals("application/vnd.apache.arrow.stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    format = "arrow";
                     return true;
                 }
 

@@ -284,29 +284,32 @@ internal sealed class FeatureServerQueryHandler(
                 outputSrid ??= wgs84Srid;
             }
 
-            // GeoParquet CRS metadata: the formatter can only emit spec-compliant CRS for
-            // EPSG:4326 (omitted key = OGC:CRS84). Non-4326 outSR would produce a file
-            // with reprojected coordinates but "crs": null, misleading analytics clients.
-            // Only enforce when the response will actually contain geometry metadata —
-            // statistics, count, extent, and IDs queries always return JSON regardless of f=,
-            // and returnGeometry=false omits the geometry column entirely.
-            var requiresParquetOutput = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
+            // Cloud-native CRS metadata: GeoParquet and GeoArrow formatters can only emit
+            // spec-compliant CRS for EPSG:4326 (omitted key = OGC:CRS84). Non-4326 outSR
+            // would produce a file with reprojected coordinates but "crs": null, misleading
+            // analytics clients. Only enforce when the response will actually contain geometry
+            // metadata — statistics, count, extent, and IDs queries always return JSON
+            // regardless of f=, and returnGeometry=false omits the geometry column entirely.
+            var isCloudNativeFormat = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
+            var requiresCloudNativeCrs = isCloudNativeFormat
                 && !validatedParams.ReturnCountOnly
                 && !validatedParams.ReturnExtentOnly
                 && !validatedParams.ReturnIdsOnly
                 && validatedParams.ReturnGeometry
                 && layer.HasGeometry
                 && string.IsNullOrWhiteSpace(validatedParams.OutStatistics);
-
-            if (requiresParquetOutput)
+            if (requiresCloudNativeCrs)
             {
                 if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
                 {
+                    var formatLabel = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
+                        ? "GeoParquet" : "GeoArrow";
                     return StandardErrorHelpers.CreateBadRequest(context,
-                        "GeoParquet output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference.");
+                        $"{formatLabel} output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference.");
                 }
 
-                // Force 4326 reprojection for parquet output, matching GeoJSON behavior.
+                // Force 4326 reprojection for cloud-native output, matching GeoJSON behavior.
                 // Without this, a layer natively in e.g. EPSG:3857 would produce a file
                 // with 3857 coordinates but "crs": null metadata, misleading analytics clients.
                 outputSrid ??= wgs84Srid;
@@ -523,7 +526,8 @@ internal sealed class FeatureServerQueryHandler(
             var isFgb = string.Equals(format, "fgb", StringComparison.OrdinalIgnoreCase);
             var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
             var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet;
+            var isArrow = string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
+            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow;
 
             if (!useStreaming)
             {
@@ -594,7 +598,7 @@ internal sealed class FeatureServerQueryHandler(
                     : query;
                 QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(layerId, queryForExecution, cancellationToken);
                 queryStopwatch.Stop();
-                var queryOperation = isParquet ? "query_parquet" : "query";
+                var queryOperation = isParquet ? "query_parquet" : isArrow ? "query_arrow" : "query";
                 FeatureServerLog.QueryExecuted(_logger, queryOperation, serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
 
                 if (shouldApplyDistinct)
@@ -630,6 +634,13 @@ internal sealed class FeatureServerQueryHandler(
                     return await CreateCachedBytesResultAsync(
                         (byte[])formattedResponse!,
                         contentType ?? "application/vnd.apache.parquet");
+                }
+
+                if (isArrow)
+                {
+                    return await CreateCachedBytesResultAsync(
+                        (byte[])formattedResponse!,
+                        contentType ?? "application/vnd.apache.arrow.stream");
                 }
 
                 return format.ToLowerInvariant() switch
