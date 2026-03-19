@@ -1,10 +1,12 @@
 # Performance Benchmarking CI Workflow
-# Runs comprehensive performance benchmarks and detects regressions
+# Consolidated from performance-benchmarks.yml + performance.yml in #485.
+# Quick/full mode is event-driven: PR = quick, schedule/push/manual = full.
+# See docs/ci/gate-model.md for tier classification.
 
 name: Performance Benchmarks
 
 on:
-  # Run on PRs to trunk branch
+  # Tier: PR (quick mode) — path-scoped, reduced load parameters
   pull_request:
     branches: [ trunk ]
     paths:
@@ -12,14 +14,18 @@ on:
       - 'benchmarks/**'
       - '.github/workflows/performance-benchmarks.yml'
 
-  # Run on pushes to trunk (to update baseline)
+  # Update baseline on trunk push
   push:
     branches: [ trunk ]
     paths:
       - 'src/**'
       - 'benchmarks/**'
 
-  # Allow manual triggering
+  # Tier: nightly (full mode) — daily full benchmark suite
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6am UTC (absorbed from performance.yml)
+
+  # Manual trigger — always runs full mode (same as nightly)
   workflow_dispatch:
     inputs:
       benchmark_filter:
@@ -74,21 +80,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
       with:
-        # Fetch enough history to access baseline file
         fetch-depth: 10
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+    - name: Setup .NET CI
+      uses: ./.github/actions/setup-dotnet-ci
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
-
-    - name: Cache NuGet packages
-      uses: actions/cache@v5
-      with:
-        path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
 
     - name: Restore dependencies
       run: dotnet restore
@@ -182,7 +179,7 @@ jobs:
         RequestsPerSecond: 100
 
     - name: Run Load Test Benchmarks (Full)
-      if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.benchmark_filter, 'Load'))
+      if: github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && contains(github.event.inputs.benchmark_filter, 'Load'))
       run: |
         # Full load test for trunk branch
         dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- \
@@ -245,18 +242,13 @@ jobs:
         fi
 
     - name: Upload Benchmark Artifacts
-      uses: actions/upload-artifact@v7
       if: always()
+      uses: ./.github/actions/upload-ci-evidence
       with:
-        name: benchmark-results-${{ github.run_id }}
+        kind: benchmark
         path: ${{ env.BENCHMARK_ARTIFACTS_PATH }}
-        retention-days: 30
-
-    - name: Upload Performance Report to Job Summary
-      if: steps.analyze_results.outputs.report_generated == 'true'
-      run: |
-        echo "## Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
-        cat "${{ env.BENCHMARK_ARTIFACTS_PATH }}/ci-report.md" >> $GITHUB_STEP_SUMMARY
+        tier: ${{ github.event_name == 'pull_request' && 'pr' || 'nightly' }}
+        summary-file: ${{ env.BENCHMARK_ARTIFACTS_PATH }}/ci-report.md
 
     - name: Comment Performance Results on PR
       if: github.event_name == 'pull_request' && steps.analyze_results.outputs.report_generated == 'true'
@@ -306,8 +298,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+    - name: Setup .NET CI
+      uses: ./.github/actions/setup-dotnet-ci
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -315,8 +307,9 @@ jobs:
       run: dotnet run --project benchmarks/Honua.Benchmarks --configuration Release -- --filter "*SqlGeneration*" --job short --exporters json --artifacts "cross-platform-${{ matrix.os }}"
 
     - name: Upload Cross-Platform Results
-      uses: actions/upload-artifact@v7
+      uses: ./.github/actions/upload-ci-evidence
       with:
-        name: cross-platform-results-${{ matrix.os }}
+        kind: benchmark
+        suffix: cross-${{ matrix.os }}
         path: cross-platform-${{ matrix.os }}
-        retention-days: 7
+        tier: nightly

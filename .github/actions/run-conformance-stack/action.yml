@@ -1,0 +1,92 @@
+name: Run Conformance Stack
+description: Docker bootstrap, test execution, and teardown for CITE-style conformance workflows
+
+inputs:
+  compose-file:
+    description: 'Path to docker compose file for the conformance stack'
+    required: true
+  test-script:
+    description: 'Path to the conformance test runner script'
+    required: true
+  test-args:
+    description: 'Arguments to pass to the test script'
+    required: false
+    default: '--verbose'
+  results-dir:
+    description: 'Directory where test results are written'
+    required: true
+  timeout-minutes:
+    description: 'Timeout for the test execution in minutes'
+    required: false
+    default: '40'
+  server-image-tag:
+    description: 'Tag for the Honua server Docker image'
+    required: false
+    default: 'honua-server:latest'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Cache Docker layers
+      uses: actions/cache@v5
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ github.repository }}-${{ runner.os }}-buildx-conformance-${{ github.sha }}
+        restore-keys: |
+          ${{ github.repository }}-${{ runner.os }}-buildx-conformance-
+          ${{ github.repository }}-${{ runner.os }}-buildx-
+
+    - name: Build Honua Server image
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        tags: ${{ inputs.server-image-tag }}
+        cache-from: type=local,src=/tmp/.buildx-cache
+        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+    - name: Rotate cache
+      shell: bash
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl jq
+
+    - name: Start conformance stack
+      shell: bash
+      run: |
+        docker compose -f "${{ inputs.compose-file }}" up -d --wait
+        echo "Conformance stack started"
+
+    - name: Run conformance tests
+      shell: bash
+      run: |
+        chmod +x "${{ inputs.test-script }}"
+        TIMEOUT_SECS=$(( ${{ inputs.timeout-minutes }} * 60 ))
+        timeout "$TIMEOUT_SECS" "${{ inputs.test-script }}" ${{ inputs.test-args }} || exit_code=$?
+
+        if [[ ${exit_code:-0} -eq 124 ]]; then
+          echo "Conformance tests timed out after ${{ inputs.timeout-minutes }} minutes"
+          exit 1
+        elif [[ ${exit_code:-0} -ne 0 ]]; then
+          echo "Conformance tests failed with exit code: ${exit_code}"
+          exit 1
+        fi
+
+    - name: Ensure results directory exists
+      shell: bash
+      run: mkdir -p "${{ inputs.results-dir }}"
+
+    - name: Tear down conformance stack
+      if: always()
+      shell: bash
+      run: docker compose -f "${{ inputs.compose-file }}" down -v

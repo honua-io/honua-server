@@ -18,17 +18,8 @@ on:
   schedule:
     - cron: '0 3 * * 1'  # Monday 3 AM UTC
 
-  # Run on pull requests that modify WFS 2.0 implementation
-  pull_request:
-    paths:
-      - 'src/Honua.Server/Features/Wfs20/**'
-      - 'src/Honua.Core/Queries/Filters/Fes20/**'
-      - 'scripts/run-cite-wfs20-tests.sh'
-      - 'docker/cite-wfs20-compose.yml'
-      - 'docker/cite-scripts/**'
-      - 'docker/cite-test-data/**'
-      - 'docker/cite-config/**'
-      - '.github/workflows/cite-wfs20-conformance.yml'
+  # Tier: nightly — conformance suites are external and heavyweight.
+  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
 
 permissions:
   contents: read

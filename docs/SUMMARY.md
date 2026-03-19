@@ -91,8 +91,11 @@
 
 ### CI/CD
 
+* [CI Gate Model](ci/gate-model.md)
+* [CI Workflow Inventory](ci/workflow-inventory.md)
+* [CI Config Conventions](ci/config-conventions.md)
 * [CI Monitoring](contributor/CI_MONITORING.md)
-* [CI Workflows](contributor/ci-workflows.md)
+* [CI Workflows (legacy)](contributor/ci-workflows.md)
 * [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
 * [Release Checklist](contributor/RELEASE_CHECKLIST.md)
 * [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)

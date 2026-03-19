@@ -58,7 +58,7 @@ dotnet run --project src/Honua.AppHost
 We use GitHub Issues as the primary feedback loop for the open-core MVP.
 
 - Report bugs (include screenshots + repro steps): [Open bug report](https://github.com/honua-io/honua-server/issues/new?template=bug.yml)
-- Request features or share product feedback: [Open feature/feedback request](https://github.com/honua-io/honua-server/issues/new?template=feature.yml)
+- Request features or share feedback: [Open feature request](https://github.com/honua-io/honua-server/issues/new?template=feature.yml)
 
 Please use these forms instead of blank issues so reports include enough detail for triage.
 
@@ -161,6 +161,7 @@ Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuai
 | Call the API | [Protocols Overview](https://honua.gitbook.io/honuaio/) |
 | Check MVP compatibility limits | [MVP Compatibility Contract](docs/user/MVP_COMPATIBILITY_CONTRACT.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
+| Understand CI gates | [CI Gate Model](docs/ci/gate-model.md) |
 
 ## License
 

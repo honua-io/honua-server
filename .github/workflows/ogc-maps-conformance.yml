@@ -1,26 +1,8 @@
 name: OGC API Maps Conformance Tests
 
 on:
-  pull_request:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'src/Honua.Server/Features/OgcMaps/**'
-      - 'src/Honua.Postgres/Features/Raster/**'
-      - 'tests/Honua.Server.Tests/Features/OgcMaps/**'
-      - 'scripts/run-ogc-maps-conformance-tests.sh'
-      - '.github/workflows/ogc-maps-conformance.yml'
-  push:
-    branches:
-      - trunk
-      - main
-    paths:
-      - 'src/Honua.Server/Features/OgcMaps/**'
-      - 'src/Honua.Postgres/Features/Raster/**'
-      - 'tests/Honua.Server.Tests/Features/OgcMaps/**'
-      - 'scripts/run-ogc-maps-conformance-tests.sh'
-      - '.github/workflows/ogc-maps-conformance.yml'
+  # Tier: nightly — conformance suites are external and heavyweight.
+  # PR/push triggers removed in #485. See docs/ci/gate-model.md.
   schedule:
     # Weekly drift check for OGC API - Maps declarations and behavior
     - cron: '0 6 * * 5'
@@ -28,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write  # For PR comments
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -132,98 +113,6 @@ jobs:
           path: |
             ogc-maps-results/
           retention-days: 30
-
-      - name: Comment on PR (Success)
-        if: github.event_name == 'pull_request' && steps.parse-results.outputs.results_available == 'true' && steps.parse-results.outputs.failed_tests == '0'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const totalTests = '${{ steps.parse-results.outputs.total_tests }}';
-            const passedTests = '${{ steps.parse-results.outputs.passed_tests }}';
-            const corePass = '${{ steps.parse-results.outputs.core_passed }}' === 'true' ? 'Y' : 'N';
-            const collectionMapPass = '${{ steps.parse-results.outputs.collection_map_passed }}' === 'true' ? 'Y' : 'N';
-            const datasetMapPass = '${{ steps.parse-results.outputs.dataset_map_passed }}' === 'true' ? 'Y' : 'N';
-            const formatsPass = '${{ steps.parse-results.outputs.formats_passed }}' === 'true' ? 'Y' : 'N';
-            const spatialPass = '${{ steps.parse-results.outputs.spatial_passed }}' === 'true' ? 'Y' : 'N';
-
-            const body = `## OGC API Maps Conformance Tests - PASSED
-
-            ### Test Summary
-            - **Total Tests**: ${totalTests}
-            - **Passed**: ${passedTests}
-            - **Success Rate**: 100%
-
-            ### Conformance Classes
-            - **Core**: ${corePass}
-            - **Collection Map**: ${collectionMapPass}
-            - **Dataset Map**: ${datasetMapPass}
-            - **Formats (PNG/JPEG/TIFF)**: ${formatsPass}
-            - **Spatial (CRS/Subsetting)**: ${spatialPass}
-
-            ### Test Environment
-            - **Commit**: ${context.sha.substring(0, 8)}
-
-            **All OGC API Maps conformance tests passed successfully!**
-
-            <details>
-            <summary>View test artifacts</summary>
-
-            Download detailed results from the [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-
-            </details>`;
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-
-      - name: Comment on PR (Failure)
-        if: github.event_name == 'pull_request' && (steps.parse-results.outputs.results_available != 'true' || steps.parse-results.outputs.failed_tests != '0')
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const totalTests = '${{ steps.parse-results.outputs.total_tests }}' || '0';
-            const passedTests = '${{ steps.parse-results.outputs.passed_tests }}' || '0';
-            const failedTests = '${{ steps.parse-results.outputs.failed_tests }}' || 'unknown';
-            const skippedTests = '${{ steps.parse-results.outputs.skipped_tests }}' || '0';
-
-            const body = `## OGC API Maps Conformance Tests - FAILED
-
-            ### Test Summary
-            - **Total Tests**: ${totalTests}
-            - **Passed**: ${passedTests}
-            - **Failed**: ${failedTests}
-            - **Skipped**: ${skippedTests}
-
-            ### Next Steps
-            1. Review the [detailed test results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            2. Fix conformance issues in the implementation
-            3. Re-run tests to validate fixes
-
-            **OGC API Maps conformance validation failed. Please review and fix the issues before merging.**
-
-            <details>
-            <summary>Troubleshooting</summary>
-
-            Common conformance issues:
-            - Missing or incorrect conformance class declarations
-            - Invalid map rendering responses
-            - Incorrect HTTP status codes or content types
-            - Missing required query parameters support (bbox, width, height)
-            - Invalid spatial reference handling
-
-            Check the workflow logs and artifacts for detailed error information.
-
-            </details>`;
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
 
       - name: Fail on conformance issues
         if: always()

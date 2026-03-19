@@ -27,104 +27,110 @@ jobs:
             const title = pr.title || '';
 
             console.log('Validating PR:', title);
-            console.log('PR body length:', body.length);
 
             const issues = [];
             const warnings = [];
 
-            // Check 1: Issue link requirement
+            // --- Required sections ---
+
+            // 1. Issue link
             const hasIssueLink = /(?:Fixes|Closes|Resolves|Related to)\s+#\d+/i.test(body);
             if (!hasIssueLink) {
-              issues.push('❌ **Missing issue link** - Please include "Fixes #123" or similar');
+              issues.push('**Missing issue link** — add `Fixes #123` (or Closes/Resolves/Related to)');
             }
 
-            // Check 2: Summary section
-            const summaryMatch = body.match(/## Summary\s*(?:\s*<!--.*?-->\s*)?\n\s*(.*?)\n/s);
-            if (!summaryMatch || !summaryMatch[1].trim()) {
-              issues.push('❌ **Empty summary** - Please describe what this PR does');
+            // 2. Summary (non-empty content after the heading)
+            const hasSummary = /## Summary\s*\n(?:<!--[\s\S]*?-->\s*\n)?\s*\S+/m.test(body);
+            if (!hasSummary) {
+              issues.push('**Empty Summary** — describe what this PR does and why');
             }
 
-            // Check 3: Changes Made section
-            const changesMatch = body.match(/## Changes Made\s*(?:\s*<!--.*?-->\s*)?\n(.*?)(?=\n##|\n---|\n$)/s);
-            if (!changesMatch || !changesMatch[1].includes('-') || changesMatch[1].trim().length < 10) {
-              issues.push('❌ **Changes Made incomplete** - Please list key changes with bullet points');
+            // 3. Changes Made (at least one bullet, bounded to section)
+            const changesSection = body.match(/## Changes Made([\s\S]*?)(?=\n##|\n---|\s*$)/);
+            const hasChanges = changesSection && /\n- \S/.test(changesSection[1]);
+            if (!hasChanges) {
+              issues.push('**Changes Made incomplete** — list key changes as bullet points');
             }
 
-            // Check 4: Testing checklist
-            const testingChecked = body.match(/- \[x\]/i);
-            if (!testingChecked) {
-              warnings.push('⚠️ **No testing boxes checked** - Please indicate testing completed');
+            // 4. Breaking Changes (must have content, not just the heading)
+            const breakingSection = body.match(/## Breaking Changes\s*\n([\s\S]*?)(?=\n---|$)/m);
+            if (!breakingSection || !breakingSection[1].trim()) {
+              issues.push('**Breaking Changes empty** — list breaking changes or write "None"');
             }
 
-            // Check 5: Pre-PR checklist
-            const preChecklistComplete = body.match(/## Pre-PR Checklist[\s\S]*?- \[x\].*scripts\/pre-pr-check\.sh/i);
-            if (!preChecklistComplete) {
-              issues.push('❌ **Pre-PR validation not confirmed** - Please run `scripts/pre-pr-check.sh` and check the box');
+            // 5. Pre-PR check confirmed
+            const prePrChecked = /- \[x\].*scripts\/pre-pr-check\.sh/i.test(body);
+            if (!prePrChecked) {
+              issues.push('**Pre-PR validation not confirmed** — run `scripts/pre-pr-check.sh` and check the box');
             }
 
-            // Check 6: Breaking changes addressed
-            const hasBreakingSection = body.includes('## Breaking Changes');
-            if (!hasBreakingSection) {
-              warnings.push('⚠️ **Missing Breaking Changes section** - Template may be outdated');
-            }
-
-            // Check 7: Commit message format (check title)
-            const titleFormat = /^(feat|fix|docs|style|refactor|test|chore|ci|perf)(\([^)]+\))?: .+( \(#\d+\))?$/i;
+            // 6. PR title format (conventional commits)
+            const titleFormat = /^(feat|fix|docs|style|refactor|test|chore|ci|perf)(\([^)]+\))?: .+/i;
             if (!titleFormat.test(title)) {
-              issues.push('❌ **PR title format** - Should be "type: description (#issue)" (e.g., "feat: add login endpoint (#123)")');
+              issues.push('**PR title format** — use conventional format: `type(scope): description` (e.g., `feat: add query endpoint`)');
             }
 
-            // Generate comment
-            let comment = '## 🤖 PR Template Validation\n\n';
+            // --- Warnings (recommended but not blocking) ---
+
+            // Gate impact section
+            const hasGateImpact = /## Gate Impact/m.test(body);
+            if (!hasGateImpact) {
+              warnings.push('**Missing Gate Impact section** — template may be outdated');
+            } else {
+              const gateSection = body.match(/## Gate Impact([\s\S]*?)(?=\n##|\n---|\s*$)/);
+              if (!gateSection || !/- \[x\]/.test(gateSection[1])) {
+                warnings.push('**No Gate Impact boxes checked** — indicate which CI tiers are affected');
+              }
+            }
+
+            // Testing section (bounded to section)
+            const testingSection = body.match(/## Testing([\s\S]*?)(?=\n##|\n---|\s*$)/);
+            if (!testingSection || !/- \[x\]/.test(testingSection[1])) {
+              warnings.push('**No Testing boxes checked** — indicate what testing was performed');
+            }
+
+            // --- Generate comment ---
+            let comment = '## PR Template Validation\n\n';
 
             if (issues.length === 0 && warnings.length === 0) {
-              comment += '✅ **All checks passed!** Your PR follows the template correctly.\n\n';
-              comment += '**Next steps:**\n';
-              comment += '- Wait for CI to complete\n';
-              comment += '- Address any feedback from LLM architecture review\n';
-              comment += '- Request review from team members\n';
+              comment += 'All checks passed. Your PR follows the template correctly.\n';
             } else {
               if (issues.length > 0) {
-                comment += '### ❌ Issues (must fix)\n\n';
-                issues.forEach(issue => comment += `${issue}\n\n`);
+                comment += '### Issues (must fix)\n\n';
+                issues.forEach(issue => comment += `- ${issue}\n`);
+                comment += '\n';
               }
 
               if (warnings.length > 0) {
-                comment += '### ⚠️ Warnings (recommended fixes)\n\n';
-                warnings.forEach(warning => comment += `${warning}\n\n`);
+                comment += '### Warnings (recommended)\n\n';
+                warnings.forEach(warning => comment += `- ${warning}\n`);
+                comment += '\n';
               }
 
-              comment += '### 📚 Helpful Links\n';
-              comment += '- [PR Template Guide](../blob/trunk/.github/pull_request_template.md)\n';
-              comment += '- [Pre-PR Validation](../blob/trunk/scripts/pre-pr-check.sh)\n';
-              comment += '- [Commit Message Format](../blob/trunk/CLAUDE.md#commit-guidelines)\n\n';
-
-              comment += '💡 **Tip:** Edit your PR description to address these issues and this check will re-run automatically.\n';
+              comment += 'Edit your PR description to address these issues — this check re-runs automatically.\n';
             }
 
-            comment += '\n---\n*Automated validation powered by GitHub Actions*';
+            comment += '\n---\n*PR validation — see [template guide](../blob/trunk/.github/pull_request_template.md) and [gate model](../blob/trunk/docs/ci/gate-model.md)*';
 
-            // Check if we already have a validation comment
+            // Upsert validation comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number
             });
 
-            const existingComment = comments.find(comment =>
-              comment.body.includes('🤖 PR Template Validation')
+            const existing = comments.find(c =>
+              c.body.includes('## PR Template Validation') || c.body.includes('\u{1F916} PR Template Validation')
             );
 
-            if (existingComment) {
-              // Update existing comment
+            if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                comment_id: existingComment.id,
+                comment_id: existing.id,
                 body: comment
               });
             } else {
-              // Create new comment
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -133,9 +139,6 @@ jobs:
               });
             }
 
-            // Set status
             if (issues.length > 0) {
-              core.setFailed(`PR template validation failed: ${issues.length} issues found`);
-            } else {
-              console.log(`✅ PR template validation passed (${warnings.length} warnings)`);
+              core.setFailed(`PR template validation failed: ${issues.length} issue(s)`);
             }
