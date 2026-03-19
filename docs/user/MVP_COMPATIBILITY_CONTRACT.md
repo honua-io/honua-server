@@ -50,3 +50,4 @@ This checklist requires:
 - tested client versions from compatibility certification
 - known caveats and workarounds
 - client template validation via [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
+- cross-client certification evidence per the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)

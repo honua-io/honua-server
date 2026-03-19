@@ -9,6 +9,8 @@
 * [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md)
 * [MVP Sales Playbook + Launch GTM](user/MVP_LAUNCH_GTM_PLAYBOOK.md)
 * [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
+* [Cross-Client Certification Matrix](user/CROSS_CLIENT_CERTIFICATION_MATRIX.md)
+* [Cross-Client Certification Evidence](user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
 * [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
 
 ## Geospatial Data APIs

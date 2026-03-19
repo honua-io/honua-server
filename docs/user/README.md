@@ -21,6 +21,8 @@ This section is for people **using Honua in production** — API consumers, GIS 
 - **[Data Modeling Guide](DATA_MODELING_GUIDE.md)** - Spatial data modeling best practices
 - **[MVP Compatibility Contract](MVP_COMPATIBILITY_CONTRACT.md)** - Launch status and known limitations by protocol
 - **[Client Template Version Matrix](CLIENT_TEMPLATE_VERSION_MATRIX.md)** - Tested client version evidence tied to certification runs
+- **[Cross-Client Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md)** - Shared certification vocabulary and test case definitions for cross-client interoperability
+- **[Cross-Client Certification Evidence](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)** - Standardized evidence output format for certification results
 - **[FeatureServer Coverage Matrix](feature-server-matrix.md)** - Esri FeatureServer compatibility details
 - **[MapServer Coverage Matrix](map-server-matrix.md)** - Esri MapServer compatibility details
 - **[Protocols Overview](STANDARDS_APIS.md)** - Protocol selection and coverage links
