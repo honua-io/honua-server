@@ -65,7 +65,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".csv"] = SupportedFileFormat.Csv,
             [".gdb"] = SupportedFileFormat.FileGdb,
             [".parquet"] = SupportedFileFormat.GeoParquet,
-            [".geoparquet"] = SupportedFileFormat.GeoParquet
+            [".geoparquet"] = SupportedFileFormat.GeoParquet,
+            [".fgb"] = SupportedFileFormat.FlatGeobuf
         }
         .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
@@ -209,6 +210,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
         GeoParquetScratch? geoParquetScratch = null;
+        FileStream? fgbTempStream = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
@@ -330,7 +332,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 {
                     parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
                 {
                     // Preserve the specific validation message (malformed geo metadata,
@@ -381,6 +386,26 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 fileStream = scratchStream;
             }
+            else if (format.Value == SupportedFileFormat.FlatGeobuf && !fileStream.CanSeek)
+            {
+                // FlatGeobuf requires seeking for both CRS detection and Deserialize.
+                // Always spill non-seekable streams at the service level so progress
+                // metrics, BytesRead, and TotalBytes are available from the seekable temp file.
+                fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                if (shouldDisposeStream)
+                {
+                    await fileStream.DisposeAsync();
+                }
+
+                fileStream = fgbTempStream;
+                shouldDisposeStream = true;
+                totalBytes = fgbTempStream.Length;
+                ImportLog.SpilledToTempFile(_logger, totalBytes.Value);
+                detectedSrid = request.SourceSrid
+                    ?? await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                // ReadHeader advances position; reset so Deserialize can read from the start.
+                fileStream.Position = 0;
+            }
             else
             {
                 if (request.SourceSrid.HasValue)
@@ -403,6 +428,13 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     // Detect CRS using streaming (doesn't load entire file)
                     detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
                 }
+            }
+
+            // FlatGeobuf CRS detection reads the binary header, advancing stream position.
+            // Reset so Deserialize can read from the start (magic bytes at offset 0).
+            if (format.Value == SupportedFileFormat.FlatGeobuf && fileStream.CanSeek)
+            {
+                fileStream.Position = 0;
             }
 
             // For FileGDB with no detectable SRID, fall back to TargetSrid (coordinates
@@ -516,6 +548,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 await fileStream.DisposeAsync();
             }
 
+            if (fgbTempStream != null && fgbTempStream != fileStream)
+            {
+                await fgbTempStream.DisposeAsync();
+            }
+
             CleanupShapefileScratch(shapefileScratch);
             CleanupGeoPackageScratch(geoPackageScratch);
             CleanupKmzScratch(kmzScratch);
@@ -587,6 +624,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+            SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
@@ -1019,6 +1057,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ILogger logger,
             Exception exception,
             string tableName);
+
+        [LoggerMessage(
+            EventId = 7415,
+            Level = LogLevel.Debug,
+            Message = "Spilled non-seekable stream to temp file bytes={SpilledBytes}")]
+        public static partial void SpilledToTempFile(
+            ILogger logger,
+            long spilledBytes);
     }
 
     private static partial class ShapefileLog
@@ -1104,6 +1150,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         FileGdbScratch? fileGdbScratch = null;
         GeoParquetScratch? geoParquetScratch = null;
         long? geoParquetTotalRows = null;
+        FileStream? fgbTempStream = null;
         string[] warnings = [];
         Stream? kmzStream = null;
         try
@@ -1181,6 +1228,16 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 fileStream = scratchStream;
             }
+            else if (format.Value == SupportedFileFormat.FlatGeobuf && !fileStream.CanSeek)
+            {
+                // FlatGeobuf binary headers can exceed the 8 KB CRS-detection buffer when
+                // the schema has many columns. Spill to a seekable temp file so full-header
+                // CRS detection and the library's Deserialize (which requires seeking) work.
+                fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                fileStream = fgbTempStream;
+                ImportLog.SpilledToTempFile(_logger, fgbTempStream.Length);
+                detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+            }
             else
             {
                 if (!fileStream.CanSeek)
@@ -1201,6 +1258,19 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
             }
 
+            // FlatGeobuf embeds the total feature count in its binary header.
+            // Read it before enumeration so the preview can report the true total
+            // even when the file exceeds the sample cap.
+            int? headerFeatureCount = null;
+            if (format.Value == SupportedFileFormat.FlatGeobuf && fileStream.CanSeek)
+            {
+                // CRS detection may have advanced position past the header;
+                // reset so ReadHeaderFeatureCount reads from the magic bytes.
+                fileStream.Position = 0;
+                headerFeatureCount = FlatGeobufFormatReader.ReadHeaderFeatureCount(fileStream);
+                fileStream.Position = 0;
+            }
+
             // Stream features but only collect up to the limit
             var features = new List<IFeature>();
             var featureStream = format.Value switch
@@ -1210,6 +1280,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
                 SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
                 SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
@@ -1217,17 +1288,32 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
             };
 
+            // FlatGeobuf files serialized by some writers (including NTS) set FeaturesCount=0
+            // (meaning "unknown"). When the header count is unavailable, continue iterating
+            // past the sample cap to count features — but only up to MaxPreviewCountScan to
+            // prevent unbounded scans of very large files.
+            var needsFullCount = format.Value == SupportedFileFormat.FlatGeobuf
+                && !headerFeatureCount.HasValue;
+            var totalStreamedCount = 0;
+
             await foreach (var feature in featureStream.WithCancellation(cancellationToken))
             {
                 // GeoParquet: skip null-geometry rows from preview samples, matching
                 // the import path's skip behavior (ImportStreamingAsync).
                 if (format.Value == SupportedFileFormat.GeoParquet && feature.Geometry == null)
+                {
                     continue;
+                }
 
+                totalStreamedCount++;
                 if (features.Count < _limits.MaxPreviewFeatures)
+                {
                     features.Add(feature);
-                else
+                }
+                else if (!needsFullCount || totalStreamedCount >= _limits.MaxPreviewCountScan)
+                {
                     break;
+                }
             }
 
             var sampleProperties = new Dictionary<string, object?>();
@@ -1248,7 +1334,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 Format = format.Value,
                 TotalFeatureCount = geoParquetTotalRows.HasValue
                     ? (int)Math.Min(geoParquetTotalRows.Value, int.MaxValue)
-                    : features.Count,
+                    : headerFeatureCount ?? (needsFullCount ? totalStreamedCount : features.Count),
                 DetectedSrid = detectedSrid,
                 SampleProperties = sampleProperties,
                 AvailableLayers = availableLayers,
@@ -1260,6 +1346,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (kmzStream != null)
             {
                 await kmzStream.DisposeAsync();
+            }
+
+            if (fgbTempStream != null)
+            {
+                await fgbTempStream.DisposeAsync();
             }
 
             CleanupShapefileScratch(shapefileScratch);
@@ -1288,6 +1379,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Csv => 4326,
                 SupportedFileFormat.Wkt => await DetectWktSridAsync(stream, cancellationToken),
                 SupportedFileFormat.GeoPackage => await DetectGeoPackageSridAsync(stream, cancellationToken),
+                SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsAsync(stream),
                 SupportedFileFormat.FileGdb => null, // CRS detected during preparation via FileGdbReader.DetectSrid
                 _ => null
             };
@@ -1301,6 +1393,21 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (stream.CanSeek)
                 stream.Position = 0;
         }
+    }
+
+    /// <summary>
+    /// Detects the SRID from a FlatGeobuf stream by reading the binary header.
+    /// Tries code/codeString/authority resolution first, then falls back to WKT
+    /// parsing via <see cref="ICrsDetectionService.DetectFromWktAsync"/> when the
+    /// header embeds CRS as WKT only.
+    /// </summary>
+    private async Task<int?> DetectFlatGeobufCrsAsync(Stream stream)
+    {
+        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfo(stream);
+        if (srid.HasValue) return srid;
+        if (!string.IsNullOrEmpty(crsWkt))
+            return await _crsDetectionService.DetectFromWktAsync(crsWkt);
+        return null;
     }
 
     private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
@@ -1327,7 +1434,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         return buffer;
     }
 
-    private static async Task<int?> DetectCrsFromHeaderAsync(
+    private async Task<int?> DetectCrsFromHeaderAsync(
         byte[] header,
         SupportedFileFormat format,
         CancellationToken cancellationToken)
@@ -1341,8 +1448,25 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.Gpx => 4326,
             SupportedFileFormat.Csv => 4326,
             SupportedFileFormat.Wkt => await DetectWktSridAsync(headerStream, cancellationToken),
+            // Defensive: currently unreachable — FlatGeobuf non-seekable paths spill to
+            // a seekable temp file before reaching here (see the dedicated FlatGeobuf branch above).
+            SupportedFileFormat.FlatGeobuf => await DetectFlatGeobufCrsFromHeaderAsync(header),
             _ => null
         };
+    }
+
+    /// <summary>
+    /// Defensive buffer-based FlatGeobuf CRS detection with WKT fallback.
+    /// Currently unreachable — non-seekable FlatGeobuf streams are spilled to
+    /// seekable temp files before the header-buffer path.
+    /// </summary>
+    private async Task<int?> DetectFlatGeobufCrsFromHeaderAsync(byte[] headerBytes)
+    {
+        var (srid, crsWkt) = FlatGeobufFormatReader.ReadCrsInfoFromHeader(headerBytes);
+        if (srid.HasValue) return srid;
+        if (!string.IsNullOrEmpty(crsWkt))
+            return await _crsDetectionService.DetectFromWktAsync(crsWkt);
+        return null;
     }
 
     private static async Task<int?> DetectWktSridAsync(Stream stream, CancellationToken cancellationToken)
@@ -1403,11 +1527,20 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
     private sealed record GeoPackageLayerInfo(string TableName, string GeometryColumn, int? Srid);
 
+    /// <summary>
+    /// Copies a non-seekable stream into a seekable temporary file (DeleteOnClose).
+    /// Delegates to <see cref="ImportStreamHelper.SpillToSeekableTempAsync"/>.
+    /// </summary>
+    private static Task<FileStream> SpillToSeekableTempAsync(Stream source, CancellationToken cancellationToken)
+        => ImportStreamHelper.SpillToSeekableTempAsync(source, cancellationToken);
+
     private sealed class PrefixedReadStream : Stream
     {
         private readonly ReadOnlyMemory<byte> _prefix;
         private readonly Stream _inner;
         private int _prefixOffset;
+        // Track logical position for diagnostics even on non-seekable wrappers.
+        private long _position;
 
         public PrefixedReadStream(ReadOnlyMemory<byte> prefix, Stream inner)
         {
@@ -1422,7 +1555,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         public override long Position
         {
-            get => throw new NotSupportedException();
+            get => _position;
             set => throw new NotSupportedException();
         }
 
@@ -1439,6 +1572,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 bytesRead += _inner.Read(buffer, offset + bytesRead, count - bytesRead);
             }
 
+            _position += bytesRead;
             return bytesRead;
         }
 
@@ -1455,6 +1589,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 bytesRead += _inner.Read(buffer[bytesRead..]);
             }
 
+            _position += bytesRead;
             return bytesRead;
         }
 
@@ -1466,6 +1601,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 bytesRead += await _inner.ReadAsync(buffer.AsMemory(offset + bytesRead, count - bytesRead), cancellationToken);
             }
 
+            _position += bytesRead;
             return bytesRead;
         }
 
@@ -1477,6 +1613,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 bytesRead += await _inner.ReadAsync(buffer[bytesRead..], cancellationToken);
             }
 
+            _position += bytesRead;
             return bytesRead;
         }
 
