@@ -127,6 +127,42 @@ public sealed class FeatureChangeEventsEndpointsTests : IAsyncLifetime
             .Contain(inWindow.Cursor);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/feature-events/replay")]
+    public async Task Replay_WithNoCursor_ReturnsFromBeginning()
+    {
+        _ = await _store.AppendAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-nocursor",
+            LayerId = 1,
+            ObjectId = 1,
+            Operation = "create",
+            Protocol = "FeatureServer",
+            RequestId = "nocursor-1"
+        });
+
+        var response = await _client.GetAsync("/api/v1/admin/feature-events/replay?limit=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var events = GetPropertyCaseInsensitive(json.RootElement, "events");
+        events.ValueKind.Should().Be(JsonValueKind.Array);
+        events.GetArrayLength().Should().BeGreaterOrEqualTo(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/feature-events/replay")]
+    public async Task Replay_WhenEmpty_ReturnsEmptyList()
+    {
+        // Use a very high cursor to get past all existing events
+        var response = await _client.GetAsync("/api/v1/admin/feature-events/replay?cursor=999999999&limit=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var events = GetPropertyCaseInsensitive(json.RootElement, "events");
+        events.GetArrayLength().Should().Be(0);
+    }
+
     private static JsonElement GetPropertyCaseInsensitive(JsonElement element, string propertyName)
     {
         foreach (var property in element.EnumerateObject())

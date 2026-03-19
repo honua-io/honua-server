@@ -31,32 +31,28 @@ internal static class OperationsProgressEndpoints
             .RequireAdminAuthorization();
 
         // Get operation status by ID
-        _ = group.Map("/{operationId}", HandleGetOperationStatus)
+        _ = group.MapGet("/{operationId}", HandleGetOperationStatus)
             .WithName("GetOperationStatus")
             .WithSummary("Get the status of any operation by ID")
-            .WithDescription("Returns progress information for upload, import, ingest, or external import operations")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns progress information for upload, import, ingest, or external import operations");
 
         // Cancel operation
-        _ = group.Map("/{operationId}/cancel", HandleCancelOperation)
+        _ = group.MapPost("/{operationId}/cancel", HandleCancelOperation)
             .WithName("CancelOperation")
             .WithSummary("Cancel a running operation")
-            .WithDescription("Attempts to cancel an operation that is currently queued or processing")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
+            .WithDescription("Attempts to cancel an operation that is currently queued or processing");
 
         // List active operations by type
-        _ = group.Map("/active", HandleListActiveOperations)
+        _ = group.MapGet("/active", HandleListActiveOperations)
             .WithName("ListActiveOperations")
             .WithSummary("List all active operations")
-            .WithDescription("Returns all currently active operations, optionally filtered by type")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns all currently active operations, optionally filtered by type");
 
         // Get operations by type
-        _ = group.Map("/type/{operationType}", HandleGetOperationsByType)
+        _ = group.MapGet("/type/{operationType}", HandleGetOperationsByType)
             .WithName("GetOperationsByType")
             .WithSummary("Get all operations of a specific type")
-            .WithDescription("Returns all operations (active and completed) of the specified type")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns all operations (active and completed) of the specified type");
     }
 
     /// <summary>

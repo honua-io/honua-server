@@ -30,32 +30,26 @@ internal static class DeployControlEndpoints
 
         group.MapGet("/preflight", HandleGetDeployPreflight)
             .WithDisplayName("Get Deploy Preflight")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<DeployPreflightResponse>();
 
         group.MapPost("/plan", HandlePlanDeployOperation)
             .WithDisplayName("Plan Deploy Operation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployPlanResponse>();
 
         group.MapPost("/operations", HandleCreateDeployOperation)
             .WithDisplayName("Create Deploy Operation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
         group.MapGet("/operations/{operationId}", HandleGetDeployOperation)
             .WithDisplayName("Get Deploy Operation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<DeployOperationResponse>();
 
         group.MapPost("/operations/{operationId}/submit", HandleSubmitDeployOperation)
             .WithDisplayName("Submit Deploy Operation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
             .WithDisplayName("Rollback Deploy Operation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
     }
 
