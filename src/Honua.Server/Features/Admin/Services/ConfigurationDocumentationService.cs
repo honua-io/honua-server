@@ -384,6 +384,8 @@ internal sealed class ConfigurationDocumentationService
                     "Maximum import file size in bytes", FileSizeConstants.FiveHundredMB, opts.MaxImportSize, "Range: 50MB-5GB"),
                 BuildPropertyWithCurrent("Limits:Imports:MaxPreviewFeatures", "Limits__Imports__MaxPreviewFeatures", "integer",
                     "Maximum features in preview", 100, opts.MaxPreviewFeatures, "Range: 10-1000"),
+                BuildPropertyWithCurrent("Limits:Imports:MaxPreviewCountScan", "Limits__Imports__MaxPreviewCountScan", "integer",
+                    "Maximum features scanned while deriving preview counts for streaming formats with unknown totals", 100000, opts.MaxPreviewCountScan, "Range: 10-1000000"),
                 BuildPropertyWithCurrent("Limits:Imports:BatchSize", "Limits__Imports__BatchSize", "integer",
                     "Feature insertion batch size", 1000, opts.BatchSize, "Range: 100-10000")
             ]

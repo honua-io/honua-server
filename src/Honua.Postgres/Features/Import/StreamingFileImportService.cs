@@ -1305,12 +1305,17 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     continue;
                 }
 
+                if (needsFullCount && totalStreamedCount >= _limits.MaxPreviewCountScan)
+                {
+                    break;
+                }
+
                 totalStreamedCount++;
                 if (features.Count < _limits.MaxPreviewFeatures)
                 {
                     features.Add(feature);
                 }
-                else if (!needsFullCount || totalStreamedCount >= _limits.MaxPreviewCountScan)
+                else if (!needsFullCount)
                 {
                     break;
                 }

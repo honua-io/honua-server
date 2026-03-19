@@ -347,6 +347,15 @@ public sealed class ImportLimits
     public int MaxPreviewFeatures { get; init; } = 100;
 
     /// <summary>
+    /// Maximum number of features to scan while deriving a preview count for
+    /// streaming formats without a declared total (for example FlatGeobuf files
+    /// whose header reports an unknown feature count).
+    /// Range: 10-1,000,000.
+    /// </summary>
+    [Range(10, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxPreviewCountScan)]
+    public int MaxPreviewCountScan { get; init; } = 100000;
+
+    /// <summary>
     /// Batch size for feature insertion during import.
     /// Range: 100-10,000.
     /// </summary>
