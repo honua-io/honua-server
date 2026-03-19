@@ -59,5 +59,10 @@ public enum SupportedFileFormat
     /// <summary>
     /// Esri File Geodatabase format (.gdb)
     /// </summary>
-    FileGdb
+    FileGdb,
+
+    /// <summary>
+    /// GeoParquet format (.parquet, .geoparquet)
+    /// </summary>
+    GeoParquet
 }

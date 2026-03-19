@@ -156,7 +156,9 @@ internal static partial class ImportEndpoints
             [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
             [".twkb"] = "TinyWKB - Compact binary format",
             [".gdb"] = "Esri File Geodatabase - native Esri vector format",
-            [".gdb.zip"] = "Zipped File Geodatabase - compressed .gdb archive"
+            [".gdb.zip"] = "Zipped File Geodatabase - compressed .gdb archive",
+            [".parquet"] = "GeoParquet - Apache Parquet with geospatial metadata",
+            [".geoparquet"] = "GeoParquet - Apache Parquet with geospatial metadata"
         };
 
         var response = new FileFormatsResponse
@@ -364,6 +366,22 @@ internal static partial class ImportEndpoints
                 cancellationToken);
             IResult result = Results.Json(preview, ImportJsonContext.Default.FilePreview);
             await result.ExecuteAsync(context);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.PreviewFailed(logger, staged.File?.FileName ?? "unknown", ex);
+            await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.PreviewFailed(logger, staged.File?.FileName ?? "unknown", ex);
+            await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status500InternalServerError);
         }
         finally
         {

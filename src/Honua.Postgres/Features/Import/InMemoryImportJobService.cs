@@ -680,10 +680,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 status = result.Success ? "completed" : "failed";
                 featureCount = result.FeatureCount;
-                failedFeatures = 0; // ImportProgress doesn't track this directly
                 errorMessage = result.ErrorMessage;
 
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken);
+                failedFeatures = currentProgress?.FailedFeatures ?? 0;
                 if (currentProgress != null)
                 {
                     var finalProgress = currentProgress with
@@ -691,7 +691,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                         Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
                         FeaturesProcessed = result.FeatureCount,
                         CompletedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = result.ErrorMessage
+                        ErrorMessage = result.ErrorMessage,
+                        Warnings = result.Warnings
                     };
                     await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), cancellationToken);
                 }
@@ -714,6 +715,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 status = "cancelled";
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
+                failedFeatures = currentProgress?.FailedFeatures;
                 if (currentProgress != null)
                 {
                     var cancelledProgress = currentProgress with
@@ -735,6 +737,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 status = "failed";
                 errorMessage = "Import failed.";
                 var currentProgress = await _progressStore.GetProgressAsync<ImportProgress>(jobId, CancellationToken.None);
+                failedFeatures = currentProgress?.FailedFeatures;
                 if (currentProgress != null)
                 {
                     var failedProgress = currentProgress with

@@ -63,9 +63,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             [".gpkg"] = SupportedFileFormat.GeoPackage,
             [".gpx"] = SupportedFileFormat.Gpx,
             [".csv"] = SupportedFileFormat.Csv,
-            [".gdb"] = SupportedFileFormat.FileGdb
+            [".gdb"] = SupportedFileFormat.FileGdb,
+            [".parquet"] = SupportedFileFormat.GeoParquet,
+            [".geoparquet"] = SupportedFileFormat.GeoParquet
         }
-        .ToFrozenDictionary();
+        .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> _shapefileComponentExtensions = new[]
         {
             ".shp", ".dbf", ".shx", ".prj", ".cpg"
@@ -75,6 +77,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly string _geoPackageScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geopackage");
     private static readonly string _kmzScratchRoot = Path.Combine(Path.GetTempPath(), "honua-kmz");
     private static readonly string _fileGdbScratchRoot = Path.Combine(Path.GetTempPath(), "honua-filegdb");
+    private static readonly string _geoParquetScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geoparquet");
+    private static readonly CompositeFormat _nullGeometryWarningFormat =
+        CompositeFormat.Parse("{0} row(s) were skipped because geometry was null.");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -203,6 +208,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
+        GeoParquetScratch? geoParquetScratch = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
 
@@ -302,6 +308,79 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
+            else if (format.Value == SupportedFileFormat.GeoParquet)
+            {
+                try
+                {
+                    geoParquetScratch = await PrepareGeoParquetScratchAsync(fileStream, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    errorMessage = "Failed to buffer GeoParquet file for reading.";
+                    ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+                    result = ImportResult.CreateFailure(
+                        request.TableName, format.Value, errorMessage, stopwatch.Elapsed, warnings);
+                    return result;
+                }
+
+                var scratchStream = geoParquetScratch.Stream;
+
+                GeoParquetReader.GeoParquetFileMetadata parquetMeta;
+                try
+                {
+                    parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
+                {
+                    // Preserve the specific validation message (malformed geo metadata,
+                    // missing primary column, etc.) instead of collapsing to "Import failed."
+                    errorMessage = ex.Message;
+                    ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+                    result = ImportResult.CreateFailure(
+                        request.TableName, format.Value, errorMessage, stopwatch.Elapsed, warnings);
+                    return result;
+                }
+
+                warnings = parquetMeta.Warnings;
+
+                // Hard-reject files with any oversized row group — Parquet.Net materializes
+                // an entire row group's columns in memory, so unbounded groups defeat the
+                // streaming memory contract. Log and fail fast instead of silently spiking memory.
+                if (parquetMeta.MaxRowGroupRowCount > GeoParquetReader.MaxRowsPerRowGroup)
+                {
+                    GeoParquetLog.LargeRowGroupDetected(_logger, parquetMeta.RowGroupCount, parquetMeta.MaxRowGroupRowCount);
+                    errorMessage = GeoParquetReader.BuildLargeRowGroupMessage(
+                        parquetMeta.MaxRowGroupRowCount, parquetMeta.RowGroupCount);
+                    result = ImportResult.CreateFailure(
+                        request.TableName, format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed, warnings);
+                    return result;
+                }
+
+                // Hard-reject non-WKB encoding before any further processing
+                if (!parquetMeta.IsWkbEncoding)
+                {
+                    errorMessage = GeoParquetReader.UnsupportedEncodingMessage;
+                    result = ImportResult.CreateFailure(
+                        request.TableName, format.Value,
+                        errorMessage,
+                        stopwatch.Elapsed, warnings);
+                    return result;
+                }
+
+                detectedSrid = parquetMeta.Srid;
+
+                // If scratch created a new stream (non-seekable input), dispose the original
+                if (geoParquetScratch.ScratchDir != null && shouldDisposeStream)
+                {
+                    await fileStream.DisposeAsync();
+                    shouldDisposeStream = false;
+                }
+
+                fileStream = scratchStream;
+            }
             else
             {
                 if (request.SourceSrid.HasValue)
@@ -351,7 +430,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings));
 
             // Stream features and insert in batches
-            (importedCount, failedCount) = await ImportStreamingAsync(
+            (importedCount, failedCount, warnings) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -397,6 +476,20 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings);
             return result;
         }
+        catch (InvalidDataException ex)
+        {
+            // Preserve the specific message (e.g. "Row X in row group Y contains
+            // invalid WKB geometry data") instead of collapsing to "Import failed."
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = ex.Message;
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings);
+            return result;
+        }
         catch (Exception ex)
         {
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
@@ -427,6 +520,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             CleanupGeoPackageScratch(geoPackageScratch);
             CleanupKmzScratch(kmzScratch);
             CleanupFileGdbScratch(fileGdbScratch);
+            CleanupGeoParquetScratch(geoParquetScratch);
             RecordImportMetrics(formatName, mode, status, stopwatch.Elapsed, bytesRead, importedCount, failedCount);
 
             if (status == "success")
@@ -450,7 +544,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, string[] warnings)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -476,6 +570,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var batch = new List<IFeature>(_limits.BatchSize);
         var totalImported = 0;
         var totalFailed = 0;
+        var nullGeometrySkipped = 0;
         var batchesCommitted = 0;
         var startTime = DateTimeOffset.UtcNow;
 
@@ -495,11 +590,21 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
             SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
             SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
+            SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, cancellationToken),
             _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
         };
 
         await foreach (var feature in featureStream.WithCancellation(cancellationToken))
         {
+            // GeoParquet: skip rows with null geometry and count them as failures
+            // per design decision "Null geometry rows | Skip, count" (ticket #423).
+            if (format == SupportedFileFormat.GeoParquet && feature.Geometry == null)
+            {
+                totalFailed++;
+                nullGeometrySkipped++;
+                continue;
+            }
+
             batch.Add(feature);
 
             // Process batch when full
@@ -559,6 +664,12 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         await AnalyzeTableAsync(connection, allowedTableName, cancellationToken);
 
+        // Surface skipped null-geometry rows in the completion progress report
+        // so background/queued imports expose the same warning as synchronous results.
+        string[] completionWarnings = format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0
+            ? [.. warnings, string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped)]
+            : warnings as string[] ?? [.. warnings];
+
         // Report completion
         progress?.Report(new ImportProgress
         {
@@ -573,10 +684,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             CompletedAt = DateTimeOffset.UtcNow,
             BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
             TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
-            Warnings = warnings
+            Warnings = completionWarnings
         });
 
-        return (totalImported, totalFailed);
+        return (totalImported, totalFailed, completionWarnings);
     }
 
     private void RecordImportMetrics(
@@ -958,6 +1069,22 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
     }
 
+    private static partial class GeoParquetLog
+    {
+        [LoggerMessage(
+            EventId = 7440,
+            Level = LogLevel.Warning,
+            Message = "Failed to clean up GeoParquet scratch directory {ScratchDir}")]
+        public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
+
+        [LoggerMessage(
+            EventId = 7441,
+            Level = LogLevel.Warning,
+            Message = "GeoParquet file has {RowGroupCount} row group(s) with largest group containing {MaxGroupRows} rows. " +
+                      "Row groups exceeding the per-group limit will materialize too much data in memory during import")]
+        public static partial void LargeRowGroupDetected(ILogger logger, int rowGroupCount, long maxGroupRows);
+    }
+
     /// <inheritdoc/>
     public async Task<FilePreview> PreviewFileAsync(
         Stream fileStream,
@@ -975,6 +1102,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         GeoPackageScratch? geoPackageScratch = null;
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
+        GeoParquetScratch? geoParquetScratch = null;
+        long? geoParquetTotalRows = null;
         string[] warnings = [];
         Stream? kmzStream = null;
         try
@@ -1024,6 +1153,34 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 detectedSrid = FileGdb.FileGdbReader.DetectSrid(fileGdbScratch.GdbPath);
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
+            else if (format.Value == SupportedFileFormat.GeoParquet)
+            {
+                geoParquetScratch = await PrepareGeoParquetScratchAsync(fileStream, cancellationToken);
+                var scratchStream = geoParquetScratch.Stream;
+                var parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
+                detectedSrid = parquetMeta.Srid;
+                warnings = parquetMeta.Warnings;
+                geoParquetTotalRows = parquetMeta.TotalRowCount;
+
+                // Reject files with any oversized row group — consistent with import path
+                if (parquetMeta.MaxRowGroupRowCount > GeoParquetReader.MaxRowsPerRowGroup)
+                {
+                    throw new InvalidDataException(
+                        GeoParquetReader.BuildLargeRowGroupMessage(
+                            parquetMeta.MaxRowGroupRowCount, parquetMeta.RowGroupCount));
+                }
+
+                // Hard-reject non-WKB encoding — consistent with the import path
+                // (ImportFileAsync returns CreateFailure) and the documented contract
+                // ("Non-WKB encodings are rejected" in CONTROL_PLANE_API.md).
+                if (!parquetMeta.IsWkbEncoding)
+                {
+                    throw new NotSupportedException(
+                        GeoParquetReader.UnsupportedEncodingMessage);
+                }
+
+                fileStream = scratchStream;
+            }
             else
             {
                 if (!fileStream.CanSeek)
@@ -1056,13 +1213,20 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
                 SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(geoPackageScratch!.FilePath, cancellationToken),
                 SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
+                SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
             };
 
             await foreach (var feature in featureStream.WithCancellation(cancellationToken))
             {
-                features.Add(feature);
-                if (features.Count >= _limits.MaxPreviewFeatures)
+                // GeoParquet: skip null-geometry rows from preview samples, matching
+                // the import path's skip behavior (ImportStreamingAsync).
+                if (format.Value == SupportedFileFormat.GeoParquet && feature.Geometry == null)
+                    continue;
+
+                if (features.Count < _limits.MaxPreviewFeatures)
+                    features.Add(feature);
+                else
                     break;
             }
 
@@ -1082,7 +1246,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             return new FilePreview
             {
                 Format = format.Value,
-                TotalFeatureCount = features.Count,
+                TotalFeatureCount = geoParquetTotalRows.HasValue
+                    ? (int)Math.Min(geoParquetTotalRows.Value, int.MaxValue)
+                    : features.Count,
                 DetectedSrid = detectedSrid,
                 SampleProperties = sampleProperties,
                 AvailableLayers = availableLayers,
@@ -1100,6 +1266,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             CleanupGeoPackageScratch(geoPackageScratch);
             CleanupKmzScratch(kmzScratch);
             CleanupFileGdbScratch(fileGdbScratch);
+            CleanupGeoParquetScratch(geoParquetScratch);
         }
     }
 
@@ -1219,6 +1386,20 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private sealed record KmzScratch(string DirectoryPath, string KmlPath);
 
     private sealed record FileGdbScratch(string DirectoryPath, string GdbPath);
+
+    private sealed record GeoParquetScratch(Stream Stream, string? ScratchDir) : IDisposable
+    {
+        public void Dispose()
+        {
+            // Only dispose the stream when the scratch owns it (non-seekable buffered copy).
+            // When ScratchDir is null, the scratch wraps the caller's original seekable stream
+            // and the caller is responsible for its lifetime.
+            if (ScratchDir != null)
+            {
+                Stream.Dispose();
+            }
+        }
+    }
 
     private sealed record GeoPackageLayerInfo(string TableName, string GeometryColumn, int? Srid);
 
@@ -1583,6 +1764,58 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     KmzLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Buffer a GeoParquet stream to a seekable stream if needed.
+    /// </summary>
+    private async Task<GeoParquetScratch> PrepareGeoParquetScratchAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        if (stream.CanSeek)
+        {
+            if (stream.Position != 0)
+            {
+                stream.Position = 0;
+            }
+
+            return new GeoParquetScratch(stream, null);
+        }
+
+        var scratchDir = Path.Combine(_geoParquetScratchRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(scratchDir);
+
+        var filePath = Path.Combine(scratchDir, "upload.parquet");
+
+        try
+        {
+            await using var outputStream = new FileStream(filePath, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                BufferSize = _limits.StreamBufferSize,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+            });
+            await stream.CopyToAsync(outputStream, cancellationToken);
+
+            var readStream = new FileStream(filePath, new FileStreamOptions
+            {
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                BufferSize = _limits.StreamBufferSize,
+                Options = FileOptions.Asynchronous | FileOptions.RandomAccess
+            });
+
+            return new GeoParquetScratch(readStream, scratchDir);
+        }
+        catch
+        {
+            CleanupGeoParquetScratchDirectory(scratchDir);
+            throw;
         }
     }
 
@@ -1992,6 +2225,43 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         catch (Exception ex)
         {
             FileGdbLog.CleanupScratchFailed(_logger, ex, scratchDir);
+        }
+    }
+
+    private void CleanupGeoParquetScratch(GeoParquetScratch? scratch)
+    {
+        if (scratch == null)
+        {
+            return;
+        }
+
+        // Only dispose stream and directory if we created a scratch copy.
+        // When ScratchDir is null, the scratch wraps the caller's original seekable
+        // stream which is disposed by the caller.
+        if (scratch.ScratchDir != null)
+        {
+            scratch.Dispose();
+            CleanupGeoParquetScratchDirectory(scratch.ScratchDir);
+        }
+    }
+
+    private void CleanupGeoParquetScratchDirectory(string scratchDir)
+    {
+        if (string.IsNullOrWhiteSpace(scratchDir))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(scratchDir))
+            {
+                Directory.Delete(scratchDir, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            GeoParquetLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
 

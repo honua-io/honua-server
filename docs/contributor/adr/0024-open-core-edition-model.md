@@ -49,7 +49,7 @@ A complete, production-capable feature server for a single-process deployment.
 | Area | Included |
 |------|----------|
 | **Protocols** | All — GeoServices REST (FeatureServer, MapServer, ImageServer, GeometryService), OGC API (Features, Tiles, Maps), WMS 1.3, WMTS 1.0, OData v4, MVT, gRPC (unary) |
-| **Data** | PostGIS backend; GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT import; Esri REST service import |
+| **Data** | PostGIS backend; GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, GeoParquet import; Esri REST service import |
 | **Query** | Full Filter AST (CQL2, OData `$filter`, WHERE), spatial queries, statistics, pagination |
 | **Edits** | Full CRUD across GeoServices, OGC, and OData; attachments; related records |
 | **SDKs** | JS SDK, Python SDK, .NET SDK — full query + edit capabilities |
