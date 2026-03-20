@@ -282,15 +282,21 @@ def extract_first_layer_name(ogrinfo_output: str) -> str:
 
         1: layer_name (Point)
         2: another_layer (Polygon)
+
+    GDAL's WFS driver may also include the layer title before the
+    geometry suffix, for example::
+
+        1: honua:test_layer (title: Test Layer) (Point)
     """
     for line in ogrinfo_output.splitlines():
         line = line.strip()
         if line and line[0].isdigit() and ":" in line:
-            # "1: layer_name (Point)" -> "layer_name"
             after_colon = line.split(":", 1)[1].strip()
-            # Remove geometry type suffix like " (Point)"
-            if "(" in after_colon:
-                return after_colon.rsplit("(", 1)[0].strip()
+            if " (title:" in after_colon:
+                after_colon = after_colon.split(" (title:", 1)[0].strip()
+            elif after_colon.endswith(")") and " (" in after_colon:
+                after_colon = after_colon.rsplit(" (", 1)[0].strip()
+
             return after_colon
     pytest.fail(f"Could not extract layer name from ogrinfo output:\n{ogrinfo_output}")
 

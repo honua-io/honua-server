@@ -130,6 +130,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_DefaultGmlOutput_ReturnsFeatureCollection()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&COUNT=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        content.Should().Contain("FeatureCollection");
+        content.Should().Contain("test_layer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
     public async Task Wfs_GetPropertyValue_MissingValueReference_ReturnsExceptionReport()
     {

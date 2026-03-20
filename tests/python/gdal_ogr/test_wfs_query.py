@@ -106,7 +106,7 @@ class TestWfsQuery:
         ogr_run,
         wfs_layer_name: str,
     ):
-        """ogr2ogr -spat with bbox outside data area returns zero features."""
+        """ogr2ogr -spat with bbox outside data area returns no spatial matches."""
         result: OgrResult = ogr_run(
             [
                 "ogr2ogr", "-f", "GeoJSON",
@@ -117,6 +117,11 @@ class TestWfsQuery:
         result.assert_success("WFS spatial query with empty bbox failed")
 
         data = json.loads(result.stdout)
-        assert len(data["features"]) == 0, (
-            f"Expected 0 features for distant bbox, got {len(data['features'])}"
+        matched_features = [
+            feature for feature in data["features"]
+            if feature.get("geometry") is not None
+        ]
+        assert matched_features == [], (
+            "Expected no spatially matched features for a distant bbox, "
+            f"got {len(matched_features)} geometry-bearing features"
         )

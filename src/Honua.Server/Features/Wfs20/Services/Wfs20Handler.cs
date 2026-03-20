@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
@@ -1708,8 +1709,117 @@ internal sealed class Wfs20Handler
             TimeOnly timeOnly => timeOnly.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture),
             Guid guid => guid.ToString("D", CultureInfo.InvariantCulture),
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
-            _ => JsonSerializer.Serialize(value)
+            _ => ConvertStructuredValueToJson(value)
         };
+    }
+
+    private static string ConvertStructuredValueToJson(object value)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        WriteStructuredJsonValue(writer, value);
+        writer.Flush();
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteStructuredJsonValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                writer.WriteNullValue();
+                return;
+            case JsonElement element:
+                element.WriteTo(writer);
+                return;
+            case string text:
+                writer.WriteStringValue(text);
+                return;
+            case bool boolean:
+                writer.WriteBooleanValue(boolean);
+                return;
+            case byte byteValue:
+                writer.WriteNumberValue(byteValue);
+                return;
+            case sbyte signedByteValue:
+                writer.WriteNumberValue(signedByteValue);
+                return;
+            case short shortValue:
+                writer.WriteNumberValue(shortValue);
+                return;
+            case ushort ushortValue:
+                writer.WriteNumberValue(ushortValue);
+                return;
+            case int intValue:
+                writer.WriteNumberValue(intValue);
+                return;
+            case uint uintValue:
+                writer.WriteNumberValue(uintValue);
+                return;
+            case long longValue:
+                writer.WriteNumberValue(longValue);
+                return;
+            case ulong ulongValue:
+                writer.WriteNumberValue(ulongValue);
+                return;
+            case float floatValue:
+                writer.WriteNumberValue(floatValue);
+                return;
+            case double doubleValue:
+                writer.WriteNumberValue(doubleValue);
+                return;
+            case decimal decimalValue:
+                writer.WriteNumberValue(decimalValue);
+                return;
+            case DateTimeOffset dateTimeOffset:
+                writer.WriteStringValue(dateTimeOffset);
+                return;
+            case DateTime dateTime:
+                writer.WriteStringValue(dateTime);
+                return;
+            case DateOnly dateOnly:
+                writer.WriteStringValue(dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                return;
+            case TimeOnly timeOnly:
+                writer.WriteStringValue(timeOnly.ToString("HH:mm:ss.fffffff", CultureInfo.InvariantCulture));
+                return;
+            case Guid guid:
+                writer.WriteStringValue(guid);
+                return;
+            case byte[] bytes:
+                writer.WriteBase64StringValue(bytes);
+                return;
+            case IEnumerable<KeyValuePair<string, object?>> pairs:
+                writer.WriteStartObject();
+                foreach (var (key, nestedValue) in pairs)
+                {
+                    writer.WritePropertyName(key);
+                    WriteStructuredJsonValue(writer, nestedValue);
+                }
+                writer.WriteEndObject();
+                return;
+            case IDictionary dictionary:
+                writer.WriteStartObject();
+                foreach (DictionaryEntry entry in dictionary)
+                {
+                    var key = Convert.ToString(entry.Key, CultureInfo.InvariantCulture) ?? string.Empty;
+                    writer.WritePropertyName(key);
+                    WriteStructuredJsonValue(writer, entry.Value);
+                }
+                writer.WriteEndObject();
+                return;
+            case IEnumerable sequence:
+                writer.WriteStartArray();
+                foreach (var item in sequence)
+                {
+                    WriteStructuredJsonValue(writer, item);
+                }
+                writer.WriteEndArray();
+                return;
+            default:
+                writer.WriteStringValue(Convert.ToString(value, CultureInfo.InvariantCulture));
+                return;
+        }
     }
 
     private static string EscapeCsv(string? value)
