@@ -155,6 +155,7 @@ internal static partial class ImportEndpoints
             [".wkt"] = "WKT - Well-Known Text format",
             [".csv"] = "CSV - Comma-separated values with lon/lat or WKT geometry columns",
             [".twkb"] = "TinyWKB - Compact binary format",
+            [".fgb"] = "FlatGeobuf - Compact binary geospatial format",
             [".gdb"] = "Esri File Geodatabase - native Esri vector format",
             [".gdb.zip"] = "Zipped File Geodatabase - compressed .gdb archive",
             [".parquet"] = "GeoParquet - Apache Parquet with geospatial metadata",

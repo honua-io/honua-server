@@ -31,7 +31,7 @@ For automation, use the [Server Management API](CONTROL_PLANE_API.md) instead.
 ## Data Import
 
 1. Open **Import**.
-2. Upload your file (GeoJSON, Shapefile, GeoPackage, GeoParquet, and others).
+2. Upload your file (GeoJSON, Shapefile, GeoPackage, FlatGeobuf, GeoParquet, and others — see `/api/v1/admin/import/formats` for the full list).
 3. Preview the data.
 4. Confirm target layer and run the import.
 

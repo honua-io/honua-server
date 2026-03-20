@@ -42,6 +42,14 @@ public sealed record ImportLimits
     public int MaxPreviewFeatures { get; init; } = 100;
 
     /// <summary>
+    /// Maximum number of features to stream when counting features for preview
+    /// in formats whose header does not declare a feature count (e.g. FlatGeobuf
+    /// with FeaturesCount=0). Prevents unbounded scans of very large files.
+    /// Default: 100,000 features.
+    /// </summary>
+    public int MaxPreviewCountScan { get; init; } = 100_000;
+
+    /// <summary>
     /// Buffer size for streaming reads in bytes.
     /// Default: 64KB (65536 bytes).
     /// </summary>

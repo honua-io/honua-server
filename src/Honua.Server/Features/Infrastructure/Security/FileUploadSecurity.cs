@@ -66,6 +66,10 @@ internal static class FileUploadSecurity
             // GeoParquet
             "application/vnd.apache.parquet",
             "application/x-parquet",
+            // FlatGeobuf
+            "application/vnd.flatgeobuf",
+            "application/x-flatgeobuf",
+            "application/flatgeobuf",
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -87,6 +91,7 @@ internal static class FileUploadSecurity
             ".tab", ".mif", ".mid", // MapInfo formats
             ".gdb", // File geodatabase (folder)
             ".parquet", ".geoparquet", // GeoParquet
+            ".fgb", // FlatGeobuf
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

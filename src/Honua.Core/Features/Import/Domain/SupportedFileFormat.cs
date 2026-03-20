@@ -62,6 +62,11 @@ public enum SupportedFileFormat
     FileGdb,
 
     /// <summary>
+    /// FlatGeobuf format (.fgb) - compact binary geospatial format
+    /// </summary>
+    FlatGeobuf,
+
+    /// <summary>
     /// GeoParquet format (.parquet, .geoparquet)
     /// </summary>
     GeoParquet

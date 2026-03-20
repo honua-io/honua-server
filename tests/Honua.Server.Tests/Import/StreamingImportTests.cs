@@ -648,6 +648,55 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_FlatGeobufFile_StreamsFeaturesAndDetectsFormat()
+    {
+        // Arrange - Create a FlatGeobuf byte array in-memory
+        var attributes = new NetTopologySuite.Features.AttributesTable();
+        attributes.Add("name", "FGB Import Test");
+
+        var point = new NetTopologySuite.Geometries.Point(-122.4194, 37.7749) { SRID = 4326 };
+        var feature = new NetTopologySuite.Features.Feature(point, attributes);
+        var columns = new List<FlatGeobuf.NTS.ColumnMeta>
+        {
+            new() { Name = "name", Type = FlatGeobuf.ColumnType.String }
+        };
+
+        using var fgbStream = new MemoryStream();
+        FlatGeobuf.NTS.FeatureCollectionConversions.Serialize(
+            fgbStream,
+            new[] { feature },
+            FlatGeobuf.GeometryType.Point,
+            2,
+            columns);
+        var fgbBytes = fgbStream.ToArray();
+
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(fgbBytes);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        fileContent.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "test_import.fgb"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent("flatgeobuf_import_test"), "TableName");
+        content.Add(new StringContent("4326"), "SourceSrid");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        // Act
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        // Assert
+        var responseContent = await response.Content.ReadAsStringAsync();
+        response.IsSuccessStatusCode.Should().BeTrue(
+            $"Expected 2xx but got {(int)response.StatusCode}: {responseContent}");
+        responseContent.Should().Contain("FlatGeobuf");
+        responseContent.Should().Contain("flatgeobuf_import_test");
+        responseContent.Should().Contain("\"success\":true");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_EmptyFeatureCollection_ReturnsError()
     {
         // Arrange

@@ -205,6 +205,8 @@ MaxImportSize = "MaxImportSize must be between 50MB and 5GB";
         public const string         /// <inheritdoc/>
 MaxPreviewFeatures = "MaxPreviewFeatures must be between 10 and 1,000";
         public const string         /// <inheritdoc/>
+MaxPreviewCountScan = "MaxPreviewCountScan must be between 10 and 1,000,000";
+        public const string         /// <inheritdoc/>
 BatchSize = "BatchSize must be between 100 and 10,000";
         public const string         /// <inheritdoc/>
 MaxVertices = "MaxVertices must be between 1,000 and 100,000";
