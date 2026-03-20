@@ -180,7 +180,10 @@ internal static class Wfs20DispatcherEndpoint
             }
 
             // Extract parameters
-            var typeNames = context.Request.Query[Wfs20Utilities.ParameterNames.TypeNames].FirstOrDefault();
+            var typeNames = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.TypeNames,
+                Wfs20Utilities.ParameterNames.TypeName);
             var outputFormat = context.Request.Query[Wfs20Utilities.ParameterNames.OutputFormat].FirstOrDefault();
 
             // Validate output format
@@ -229,20 +232,33 @@ internal static class Wfs20DispatcherEndpoint
             }
 
             // Extract parameters
-            var typeNames = context.Request.Query[Wfs20Utilities.ParameterNames.TypeNames].FirstOrDefault();
+            var typeNames = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.TypeNames,
+                Wfs20Utilities.ParameterNames.TypeName);
             var outputFormat = context.Request.Query[Wfs20Utilities.ParameterNames.OutputFormat].FirstOrDefault();
-            var count = context.Request.Query[Wfs20Utilities.ParameterNames.Count].FirstOrDefault();
+            var count = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.Count,
+                Wfs20Utilities.ParameterNames.MaxFeatures);
             var startIndex = context.Request.Query[Wfs20Utilities.ParameterNames.StartIndex].FirstOrDefault();
             var sortBy = context.Request.Query[Wfs20Utilities.ParameterNames.SortBy].FirstOrDefault();
             var bbox = context.Request.Query[Wfs20Utilities.ParameterNames.BBox].FirstOrDefault();
             var filter = context.Request.Query[Wfs20Utilities.ParameterNames.Filter].FirstOrDefault();
-            var resourceId = context.Request.Query[Wfs20Utilities.ParameterNames.ResourceId].FirstOrDefault();
+            var resourceId = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.ResourceId,
+                Wfs20Utilities.ParameterNames.FeatureId);
             var propertyName = context.Request.Query[Wfs20Utilities.ParameterNames.PropertyName].FirstOrDefault();
-            var srsName = context.Request.Query[Wfs20Utilities.ParameterNames.SrsName].FirstOrDefault();
+            var srsName = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.SrsName,
+                Wfs20Utilities.ParameterNames.Srs);
+            var resultType = context.Request.Query[Wfs20Utilities.ParameterNames.ResultType].FirstOrDefault();
 
             // Handle the request
             return await handler.HandleGetFeatureAsync(
-                context, typeNames, outputFormat, count, startIndex, sortBy, bbox, filter, resourceId, propertyName, srsName,
+                context, typeNames, outputFormat, count, startIndex, sortBy, bbox, filter, resourceId, propertyName, srsName, resultType,
                 context.RequestAborted);
         }
         catch (Exception ex)
@@ -276,16 +292,28 @@ internal static class Wfs20DispatcherEndpoint
             }
 
             // Extract parameters
-            var typeNames = context.Request.Query[Wfs20Utilities.ParameterNames.TypeNames].FirstOrDefault();
+            var typeNames = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.TypeNames,
+                Wfs20Utilities.ParameterNames.TypeName);
             var outputFormat = context.Request.Query[Wfs20Utilities.ParameterNames.OutputFormat].FirstOrDefault();
             var valueReference = context.Request.Query[Wfs20Utilities.ParameterNames.ValueReference].FirstOrDefault()
                 ?? context.Request.Query[Wfs20Utilities.ParameterNames.PropertyName].FirstOrDefault();
-            var count = context.Request.Query[Wfs20Utilities.ParameterNames.Count].FirstOrDefault();
+            var count = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.Count,
+                Wfs20Utilities.ParameterNames.MaxFeatures);
             var startIndex = context.Request.Query[Wfs20Utilities.ParameterNames.StartIndex].FirstOrDefault();
             var bbox = context.Request.Query[Wfs20Utilities.ParameterNames.BBox].FirstOrDefault();
             var filter = context.Request.Query[Wfs20Utilities.ParameterNames.Filter].FirstOrDefault();
-            var resourceId = context.Request.Query[Wfs20Utilities.ParameterNames.ResourceId].FirstOrDefault();
-            var srsName = context.Request.Query[Wfs20Utilities.ParameterNames.SrsName].FirstOrDefault();
+            var resourceId = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.ResourceId,
+                Wfs20Utilities.ParameterNames.FeatureId);
+            var srsName = Wfs20Utilities.GetQueryValue(
+                context.Request.Query,
+                Wfs20Utilities.ParameterNames.SrsName,
+                Wfs20Utilities.ParameterNames.Srs);
 
             // Handle the request
             return await handler.HandleGetPropertyValueAsync(

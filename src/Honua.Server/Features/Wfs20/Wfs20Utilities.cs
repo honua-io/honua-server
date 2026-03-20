@@ -123,6 +123,7 @@ internal static class Wfs20Utilities
         public const string Service = "SERVICE";
         public const string Version = "VERSION";
         public const string Request = "REQUEST";
+        public const string Namespace = "NAMESPACE";
 
         // GetCapabilities parameters
         public const string AcceptVersions = "ACCEPTVERSIONS";
@@ -132,15 +133,19 @@ internal static class Wfs20Utilities
 
         // DescribeFeatureType parameters
         public const string TypeNames = "TYPENAMES";
+        public const string TypeName = "TYPENAME";
         public const string OutputFormat = "OUTPUTFORMAT";
 
         // GetFeature parameters
         public const string Count = "COUNT";
+        public const string MaxFeatures = "MAXFEATURES";
         public const string StartIndex = "STARTINDEX";
         public const string SortBy = "SORTBY";
         public const string Filter = "FILTER";
         public const string BBox = "BBOX";
         public const string ResourceId = "RESOURCEID";
+        public const string FeatureId = "FEATUREID";
+        public const string ResultType = "RESULTTYPE";
         public const string StoredQueryId = "STOREDQUERY_ID";
         public const string PropertyName = "PROPERTYNAME";
         public const string ValueReference = "VALUEREFERENCE";
@@ -173,6 +178,8 @@ internal static class Wfs20Utilities
             ParameterNames.Version,
             ParameterNames.Request,
             ParameterNames.TypeNames,
+            ParameterNames.TypeName,
+            ParameterNames.Namespace,
             ParameterNames.OutputFormat);
 
         public static readonly ImmutableHashSet<string> GetFeature = ImmutableHashSet.Create(
@@ -181,13 +188,18 @@ internal static class Wfs20Utilities
             ParameterNames.Version,
             ParameterNames.Request,
             ParameterNames.TypeNames,
+            ParameterNames.TypeName,
+            ParameterNames.Namespace,
             ParameterNames.OutputFormat,
             ParameterNames.Count,
+            ParameterNames.MaxFeatures,
             ParameterNames.StartIndex,
             ParameterNames.SortBy,
             ParameterNames.Filter,
             ParameterNames.BBox,
             ParameterNames.ResourceId,
+            ParameterNames.FeatureId,
+            ParameterNames.ResultType,
             ParameterNames.StoredQueryId,
             ParameterNames.PropertyName,
             ParameterNames.Srs,
@@ -199,12 +211,16 @@ internal static class Wfs20Utilities
             ParameterNames.Version,
             ParameterNames.Request,
             ParameterNames.TypeNames,
+            ParameterNames.TypeName,
+            ParameterNames.Namespace,
             ParameterNames.OutputFormat,
             ParameterNames.Count,
+            ParameterNames.MaxFeatures,
             ParameterNames.StartIndex,
             ParameterNames.Filter,
             ParameterNames.BBox,
             ParameterNames.ResourceId,
+            ParameterNames.FeatureId,
             ParameterNames.PropertyName,
             ParameterNames.ValueReference,
             ParameterNames.Srs,
@@ -269,23 +285,34 @@ internal static class Wfs20Utilities
     public static string? ValidateRequestParameters(IQueryCollection query, ImmutableHashSet<string> allowedParameters)
     {
         var service = query[ParameterNames.Service].FirstOrDefault();
-        if (service != ServiceType)
+        if (!string.Equals(service, ServiceType, StringComparison.OrdinalIgnoreCase))
         {
             return $"Invalid service parameter. Expected '{ServiceType}', got '{service}'";
         }
 
         var version = query[ParameterNames.Version].FirstOrDefault();
-        if (version != Version)
+        if (!string.Equals(version, Version, StringComparison.OrdinalIgnoreCase))
         {
             return $"Unsupported version. Expected '{Version}', got '{version}'";
         }
 
-        // Check for unknown parameters
-        foreach (var param in query.Keys)
+        return null;
+    }
+
+    public static string? GetQueryValue(IQueryCollection query, string primaryName, params string[] aliases)
+    {
+        var value = query[primaryName].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(value))
         {
-            if (!allowedParameters.Contains(param))
+            return value;
+        }
+
+        foreach (var alias in aliases)
+        {
+            value = query[alias].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(value))
             {
-                return $"Unknown parameter: {param}";
+                return value;
             }
         }
 

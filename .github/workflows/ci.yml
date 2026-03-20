@@ -371,12 +371,18 @@ jobs:
             --results-directory ./tests/TestResults \
             -- RunConfiguration.MaxCpuCount=1
 
+      - name: Install GDAL tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq gdal-bin
+          ogrinfo --version
+
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r tests/python/requirements.txt
 
-      - name: Run Python Integration Tests (OGC + FeatureServer)
+      - name: Run Python Integration Tests (OGC + FeatureServer + GDAL)
         run: pytest --tb=short
         working-directory: tests/python
 
@@ -394,7 +400,9 @@ jobs:
         timeout-minutes: 3
         with:
           name: all-test-results
-          path: tests/TestResults/
+          path: |
+            tests/TestResults/
+            tests/python/gdal-ogr-results*.json
           retention-days: 7
 
   js-integration-tests:
