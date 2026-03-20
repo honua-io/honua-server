@@ -143,9 +143,13 @@ This table describes what is published in-repo today. It is intentionally explic
 For the minimum current-state procurement packet, send:
 
 1. this document
-2. [root SECURITY.md](../../SECURITY.md)
-3. [Security Configuration](../devops/security.md)
-4. [Infrastructure](../devops/infrastructure.md)
+2. [Security Questionnaire Starter](ENTERPRISE_SECURITY_QUESTIONNAIRE_STARTER.md)
+3. [root SECURITY.md](../../SECURITY.md)
+4. [Security Configuration](../devops/security.md)
 5. [ADR 0024](../contributor/adr/0024-open-core-edition-model.md)
+6. [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
+7. [Infrastructure](../devops/infrastructure.md)
 
-That set covers support commitments, deployment model, licensing posture, security reporting, and currently published technical controls without implying unpublished certifications.
+That set covers support commitments, deployment model, licensing posture, security reporting, versioning policy, and currently published technical controls without implying unpublished certifications.
+
+Use the [Enterprise Procurement Checklist](ENTERPRISE_PROCUREMENT_CHECKLIST.md) to verify packet completeness before sending.
