@@ -93,6 +93,43 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_LegacyTypeNameAndMaxFeaturesAliases_ReturnFeatureCollection()
+    {
+        const string outputFormat = "application/geo%2Bjson";
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&OUTPUTFORMAT={outputFormat}&MAXFEATURES=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        document.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
+        document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_ResultTypeHits_ReturnsCountWithoutFeatures()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&RESULTTYPE=hits");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        content.Should().Contain("FeatureCollection");
+        content.Should().Contain("numberReturned=\"0\"");
+        content.Should().Contain("numberMatched=");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
     public async Task Wfs_GetPropertyValue_MissingValueReference_ReturnsExceptionReport()
     {

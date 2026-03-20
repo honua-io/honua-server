@@ -146,6 +146,7 @@ internal sealed class Wfs20Handler
         string? resourceId,
         string? propertyName,
         string? srsName,
+        string? resultType,
         CancellationToken cancellationToken = default)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -159,6 +160,7 @@ internal sealed class Wfs20Handler
         var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
         var maxFeatures = Wfs20Utilities.ParseCount(count);
         var offset = Wfs20Utilities.ParseStartIndex(startIndex);
+        var isHitsRequest = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase);
 
         Wfs20Log.GetFeatureRequested(_logger, typeNames ?? "ALL", normalizedFormat);
 
@@ -176,7 +178,9 @@ internal sealed class Wfs20Handler
             var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (selectedTypes.Length == 0)
             {
-                return CreateEmptyFeatureCollectionResult(normalizedFormat);
+                return isHitsRequest
+                    ? CreateHitsFeatureCollectionResult(0)
+                    : CreateEmptyFeatureCollectionResult(normalizedFormat);
             }
 
             var planSet = await BuildLayerQueryPlansAsync(
@@ -193,7 +197,15 @@ internal sealed class Wfs20Handler
 
             if (planSet.TotalMatched == 0)
             {
-                return CreateEmptyFeatureCollectionResult(normalizedFormat);
+                return isHitsRequest
+                    ? CreateHitsFeatureCollectionResult(0)
+                    : CreateEmptyFeatureCollectionResult(normalizedFormat);
+            }
+
+            if (isHitsRequest)
+            {
+                Wfs20Log.GetFeatureReturned(_logger, 0, planSet.TotalMatched);
+                return CreateHitsFeatureCollectionResult(planSet.TotalMatched);
             }
 
             var (result, returnedCount) = normalizedFormat switch
@@ -1504,6 +1516,16 @@ internal sealed class Wfs20Handler
         var xml = $$"""
             <?xml version="1.0" encoding="UTF-8"?>
             <wfs:FeatureCollection xmlns:wfs="{{Wfs20Utilities.WfsNamespace}}" xmlns:gml="{{Wfs20Utilities.GmlNamespace}}" xmlns:{{FeatureNamespacePrefix}}="{{FeatureNamespaceUri}}" timeStamp="{{DateTimeOffset.UtcNow:O}}" numberMatched="0" numberReturned="0" />
+            """;
+
+        return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
+    }
+
+    private static IResult CreateHitsFeatureCollectionResult(long totalMatched)
+    {
+        var xml = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection xmlns:wfs="{{Wfs20Utilities.WfsNamespace}}" xmlns:gml="{{Wfs20Utilities.GmlNamespace}}" xmlns:{{FeatureNamespacePrefix}}="{{FeatureNamespaceUri}}" timeStamp="{{DateTimeOffset.UtcNow:O}}" numberMatched="{{totalMatched.ToString(CultureInfo.InvariantCulture)}}" numberReturned="0" />
             """;
 
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
