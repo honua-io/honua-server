@@ -6,7 +6,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 
 ## Core Workflows
 
-- `ci.yml`: build, formatting verification, and full test suite.
+- `ci.yml`: build, formatting verification, full test suite, and MCP certification (see [MCP Certification](mcp-certification.md)).
 - `pr-validation.yml`: PR template compliance validation.
 - `performance-benchmarks.yml`: performance benchmarks (`quick` mode on PR, `full` mode on nightly/manual).
 - `load-soak-nightly.yml`: nightly load/soak testing.
@@ -17,6 +17,10 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `control-plane-sdk-governance.yml`: reproducible control-plane SDK generation and release artifact publishing.
 - `proto-wire-governance.yml`: protobuf wire compatibility enforcement via `buf breaking`.
 - `nightly-container-build.yml`: nightly image builds.
+
+## CI Gate (Required Status Check)
+
+The `ci-gate` job in `ci.yml` is a summary job that depends on all merge-blocking CI jobs (`changes`, `build`, `test-all`, `aot-build`, `js-integration-tests`, `mcp-certification`, `core-package-compatibility`, `docker-build`, `llm-architecture-review`, `architecture-gate`). Configure it as a required status check in branch protection to gate PRs on a single job.
 
 ## Quality Gates
 

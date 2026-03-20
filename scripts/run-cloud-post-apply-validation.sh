@@ -15,7 +15,7 @@ Environment variables:
   HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE    Optional expected deployment mode (SingleInstance or MultiNode).
   HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY
                                                Optional expected deploy readiness flag.
-  HONUA_CLOUD_TEST_PLATFORM                    Optional platform hint (kubernetes, aws-lambda, azure-functions).
+  HONUA_CLOUD_TEST_PLATFORM                    Optional platform hint (kubernetes, aws-ecs, aws-lambda, azure-functions, azure-container-apps).
   HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT  Optional true/false override for deploy-plan cloud tests.
   HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT     Optional true/false override for staged-import mutation cloud tests.
   HONUA_CLOUD_TEST_DEPLOY_TARGET_ID            Optional deploy target id for a live deploy-plan check.
@@ -103,6 +103,49 @@ normalize_base_url() {
     printf 'https://%s\n' "$base_url"
 }
 
+platform_capability_default() {
+    local platform="${1:-}"
+    local capability="${2:-}"
+
+    case "${platform}:${capability}" in
+        aws-lambda:deploy-plan|aws-lambda:mutation)
+            printf 'false\n'
+            ;;
+        azure-functions:deploy-plan|azure-functions:mutation)
+            printf 'false\n'
+            ;;
+        azure-container-apps:deploy-plan|azure-container-apps:mutation)
+            printf 'false\n'
+            ;;
+        kubernetes:deploy-plan)
+            printf 'false\n'
+            ;;
+    esac
+}
+
+apply_platform_capability_defaults() {
+    local platform="${HONUA_CLOUD_TEST_PLATFORM:-}"
+    local deploy_plan_support=""
+    local mutation_support=""
+
+    if [[ -z "$platform" ]]; then
+        return 0
+    fi
+
+    if [[ -z "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" ]]; then
+        deploy_plan_support="$(platform_capability_default "$platform" "deploy-plan")"
+        if [[ -n "$deploy_plan_support" ]]; then
+            export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="$deploy_plan_support"
+        fi
+    fi
+
+    if [[ -z "${HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT:-}" ]]; then
+        mutation_support="$(platform_capability_default "$platform" "mutation")"
+        if [[ -n "$mutation_support" ]]; then
+            export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="$mutation_support"
+        fi
+    fi
+}
 resolve_tf_output() {
     local key=$1
     jq -r --arg key "$key" '

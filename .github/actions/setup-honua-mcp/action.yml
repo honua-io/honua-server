@@ -1,0 +1,103 @@
+name: Setup Honua MCP Environment
+description: >
+  Shared setup for MCP CI jobs: checks out honua-sdk-js and inspects
+  which test scripts are available. When at least one script is present,
+  builds and starts the server (via setup-honua-server), seeds MCP data,
+  and installs MCP test dependencies. Skips all heavy setup when no
+  scripts are found.
+
+inputs:
+  dotnet-version:
+    description: .NET SDK version
+    required: true
+  node-version:
+    description: Node.js version
+    required: true
+  python-version:
+    description: Python version
+    required: true
+  sdk-ref:
+    description: honua-sdk-js git ref to checkout
+    required: false
+    default: 'trunk'
+
+outputs:
+  cert-available:
+    description: 'true when test:certification exists in the SDK'
+    value: ${{ steps.check-scripts.outputs.cert }}
+  cert-artifact-available:
+    description: 'true when test:certification:artifact exists in the SDK'
+    value: ${{ steps.check-scripts.outputs.artifact }}
+  smoke-available:
+    description: 'true when test:llm-smoke exists in the SDK'
+    value: ${{ steps.check-scripts.outputs.smoke }}
+
+runs:
+  using: 'composite'
+  steps:
+    # sdk_ref: forward-compatible with a future workflow_dispatch input.
+    # Without that trigger the expression always resolves to 'trunk'.
+    - name: Checkout honua-sdk-js
+      uses: actions/checkout@v5
+      with:
+        repository: honua-io/honua-sdk-js
+        path: honua-sdk-js
+        ref: ${{ inputs.sdk-ref }}
+
+    # Guard: inspect package.json BEFORE heavy setup (server build,
+    # npm ci) so callers can skip cleanly when SDK-side scripts are
+    # not yet landed. This avoids npm ci failures blocking the
+    # intended skip path.
+    - name: Check SDK MCP scripts
+      id: check-scripts
+      shell: bash
+      run: |
+        PKG="honua-sdk-js/mcp/package.json"
+        if [ ! -f "$PKG" ]; then
+          echo "cert=false"    >> "$GITHUB_OUTPUT"
+          echo "artifact=false" >> "$GITHUB_OUTPUT"
+          echo "smoke=false"   >> "$GITHUB_OUTPUT"
+          echo "::warning::honua-sdk-js/mcp/package.json not found — all MCP tests skipped"
+          exit 0
+        fi
+        jq -e '.scripts["test:certification"]' "$PKG" > /dev/null 2>&1 \
+          && echo "cert=true" >> "$GITHUB_OUTPUT" \
+          || echo "cert=false" >> "$GITHUB_OUTPUT"
+        jq -e '.scripts["test:certification:artifact"]' "$PKG" > /dev/null 2>&1 \
+          && echo "artifact=true" >> "$GITHUB_OUTPUT" \
+          || echo "artifact=false" >> "$GITHUB_OUTPUT"
+        jq -e '.scripts["test:llm-smoke"]' "$PKG" > /dev/null 2>&1 \
+          && echo "smoke=true" >> "$GITHUB_OUTPUT" \
+          || echo "smoke=false" >> "$GITHUB_OUTPUT"
+
+    - name: Setup Python
+      if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install pyyaml
+      if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
+      shell: bash
+      run: python -m pip install 'pyyaml>=6,<7'
+
+    - name: Setup Honua Server
+      if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
+      uses: ./.github/actions/setup-honua-server
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+        post-seed-yaml: tests/seed/mcp.yaml
+
+    - name: Setup Node.js
+      if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+        cache-dependency-path: honua-sdk-js/mcp/package-lock.json
+
+    - name: Install MCP test dependencies
+      if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
+      shell: bash
+      run: npm ci
+      working-directory: honua-sdk-js/mcp

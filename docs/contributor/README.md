@@ -38,6 +38,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [OGC API Maps Conformance](ogc-maps-conformance-testing.md) — OGC API Maps conformance gate
 - [CITE WMS 1.3](cite-wms-conformance-testing.md) — OGC WMS conformance
 - [CITE WMTS 1.0](cite-wmts-conformance-testing.md) — OGC WMTS conformance
+- [MCP Certification](mcp-certification.md) — cross-repo MCP certification testing, seed data, and CI jobs
 
 ## CI/CD
 

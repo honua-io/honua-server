@@ -139,6 +139,8 @@ Core deployed-environment checks:
 - `HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE` optional
 - `HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY` optional
 - `HONUA_CLOUD_TEST_PLATFORM` optional (`kubernetes`, `aws-ecs`, `aws-lambda`, `azure-functions`, `azure-container-apps`)
+- `HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT` optional (code default is `true`). When `false`, the deploy-plan test asserts a `405 Method Not Allowed` contract instead of expecting a plan payload. The validation script auto-defaults to `false` for `aws-lambda`, `azure-functions`, `azure-container-apps`, and `kubernetes`; `aws-ecs` defaults to `true` (full support). Set explicitly to override.
+- `HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT` optional (code default is `true`). When `false`, the import mutation test is skipped entirely (the multi-endpoint import flow does not expose a single unsupported-operation contract like deploy-plan does). The validation script auto-defaults to `false` for `aws-lambda`, `azure-functions`, and `azure-container-apps`; `aws-ecs` and `kubernetes` default to `true`. Set explicitly to override.
 - `HONUA_CLOUD_TEST_DEPLOY_TARGET_ID` optional; when set, enables a live `POST /api/v1/admin/deploy/plan` check against a real configured target
 - `HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION` optional
 - `HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION` optional
