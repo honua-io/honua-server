@@ -93,6 +93,39 @@ public sealed class TileOperationsEndpointsTests : IAsyncLifetime
         retryJobId.Should().NotBe(failedJobId);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    public async Task StartJob_WithInvalidOperation_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
+        {
+            operation = "not-a-real-operation",
+            layerId = WebAppFixture.TestLayerId
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]
+    public async Task GetJobStatus_NonexistentId_Returns404()
+    {
+        var response = await _client.GetAsync($"/api/v1/admin/tile-operations/jobs/{Guid.NewGuid():N}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/cancel")]
+    public async Task CancelJob_ActiveJob_ReturnsOk()
+    {
+        var jobId = await StartInvalidateJobAsync();
+        var response = await _client.PostAsJsonAsync($"/api/v1/admin/tile-operations/jobs/{jobId}/cancel", new { });
+
+        // Job may complete before cancel arrives (race), returning 400
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.BadRequest);
+    }
+
     private async Task<string> StartInvalidateJobAsync()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new

@@ -535,6 +535,95 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    public async Task ListLayers_WithInvalidConnectionId_Returns404()
+    {
+        var nonExistentConnectionId = Guid.NewGuid();
+        var response = await _client.GetAsync($"/api/v1/admin/connections/{nonExistentConnectionId}/layers");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_WithMissingRequiredFields_Returns400()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = "", // Missing table
+            LayerName = "",
+            GeometryColumn = "",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = Array.Empty<string>(),
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var response = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_DuplicateLayer_ReturnsConflictOrBadRequest()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish duplicate test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = new[] { "id", "name", "population" },
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var firstResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var firstPayload = await firstResponse.Content.ReadAsStringAsync();
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"first publish response: {firstPayload}");
+        var firstApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(firstPayload, _jsonOptions);
+        _layerId = firstApi?.Data?.LayerId;
+
+        // Second publish of same table should fail
+        var secondResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        secondResponse.StatusCode.Should().BeOneOf(HttpStatusCode.Conflict, HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    public async Task SetLayerEnabled_NonexistentLayer_Returns404()
+    {
+        var toggleRequest = new LayerEnabledRequest { Enabled = false };
+        var nonExistentLayerId = 999999;
+
+        var response = await _client.PutAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/{nonExistentLayerId}/enabled?serviceName={_serviceName}",
+            JsonContent.Create(toggleRequest, options: _jsonOptions));
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.BadRequest);
+    }
+
     private async Task ResetPublishedMetadataAsync()
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();

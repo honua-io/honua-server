@@ -39,18 +39,18 @@ internal static class FeatureChangeEventsEndpoints
     {
         if (limit <= 0 || limit > 1_000)
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Query parameter 'limit' must be between 1 and 1000."));
+                "Query parameter 'limit' must be between 1 and 1000.");
         }
 
         if (from.HasValue && to.HasValue && from > to)
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Query parameter 'from' must be earlier than or equal to 'to'."));
+                "Query parameter 'from' must be earlier than or equal to 'to'.");
         }
 
         var items = await store.QueryAsync(
@@ -89,4 +89,3 @@ internal sealed record FeatureEventReplayResponse
 internal sealed partial class FeatureEventReplayJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }
-

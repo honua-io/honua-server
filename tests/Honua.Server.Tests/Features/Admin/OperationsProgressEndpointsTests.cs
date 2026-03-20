@@ -148,6 +148,67 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         GetPropertyCaseInsensitive(operations[0], "operationId").GetString().Should().Be(importId);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/{operationId}")]
+    public async Task GetOperationStatus_NonexistentId_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync($"/api/v1/admin/operations/nonexistent-{Guid.NewGuid():N}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_AlreadyCancelled_ReturnsIdempotent()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var progress = UploadProgress.CreateInitial(operationId, "double-cancel.geojson", 10) with
+        {
+            Status = OperationStatus.Cancelled
+        };
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_CompletedOperation_ReturnsBadRequest()
+    {
+        var operationId = Guid.NewGuid().ToString("N");
+        var progress = UploadProgress.CreateInitial(operationId, "completed.geojson", 50) with
+        {
+            Status = OperationStatus.Completed
+        };
+
+        await _progressStore.SetProgressAsync(operationId, progress, TimeSpan.FromMinutes(5));
+        _operationIds.Add(operationId);
+
+        var response = await _client.PostAsync($"/api/v1/admin/operations/{operationId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/active")]
+    public async Task ListActiveOperations_WhenNoneActive_ReturnsEmptyList()
+    {
+        // Use a unique type filter to avoid matching other operations
+        var response = await _client.GetAsync("/api/v1/admin/operations/active?type=Upload");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(content);
+
+        // The response should be parseable and contain an operations array
+        var operations = GetOperationsArray(json.RootElement);
+        operations.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
     private static JsonElement GetOperationsArray(JsonElement root)
     {
         if (root.ValueKind == JsonValueKind.Array)

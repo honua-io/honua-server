@@ -31,32 +31,28 @@ internal static class OperationsProgressEndpoints
             .RequireAdminAuthorization();
 
         // Get operation status by ID
-        _ = group.Map("/{operationId}", HandleGetOperationStatus)
+        _ = group.MapGet("/{operationId}", HandleGetOperationStatus)
             .WithName("GetOperationStatus")
             .WithSummary("Get the status of any operation by ID")
-            .WithDescription("Returns progress information for upload, import, ingest, or external import operations")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns progress information for upload, import, ingest, or external import operations");
 
         // Cancel operation
-        _ = group.Map("/{operationId}/cancel", HandleCancelOperation)
+        _ = group.MapPost("/{operationId}/cancel", HandleCancelOperation)
             .WithName("CancelOperation")
             .WithSummary("Cancel a running operation")
-            .WithDescription("Attempts to cancel an operation that is currently queued or processing")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]));
+            .WithDescription("Attempts to cancel an operation that is currently queued or processing");
 
         // List active operations by type
-        _ = group.Map("/active", HandleListActiveOperations)
+        _ = group.MapGet("/active", HandleListActiveOperations)
             .WithName("ListActiveOperations")
             .WithSummary("List all active operations")
-            .WithDescription("Returns all currently active operations, optionally filtered by type")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns all currently active operations, optionally filtered by type");
 
         // Get operations by type
-        _ = group.Map("/type/{operationType}", HandleGetOperationsByType)
+        _ = group.MapGet("/type/{operationType}", HandleGetOperationsByType)
             .WithName("GetOperationsByType")
             .WithSummary("Get all operations of a specific type")
-            .WithDescription("Returns all operations (active and completed) of the specified type")
-            .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]));
+            .WithDescription("Returns all operations (active and completed) of the specified type");
     }
 
     /// <summary>
@@ -69,20 +65,20 @@ internal static class OperationsProgressEndpoints
     {
         if (string.IsNullOrEmpty(operationId))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Operation ID is required"));
+                "Operation ID is required");
         }
 
         var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
 
         if (progress == null)
         {
-            return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                $"Operation '{operationId}' not found"));
+                $"Operation '{operationId}' not found");
         }
 
         return CreateOperationStatusResult(progress);
@@ -111,36 +107,36 @@ internal static class OperationsProgressEndpoints
     {
         if (string.IsNullOrEmpty(operationId))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Operation ID is required"));
+                "Operation ID is required");
         }
 
         var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
 
         if (progress == null)
         {
-            return Results.NotFound(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status404NotFound,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                $"Operation '{operationId}' not found"));
+                $"Operation '{operationId}' not found");
         }
 
         if (progress.Status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled)
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                "Operation is already completed, failed, or cancelled"));
+                "Operation is already completed, failed, or cancelled");
         }
 
         if (progress is not ICancellableOperationProgress cancellableProgress)
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Operation type '{progress.Type}' does not support cancellation"));
+                $"Operation type '{progress.Type}' does not support cancellation");
         }
 
         var cancelledProgress = cancellableProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
@@ -172,10 +168,10 @@ internal static class OperationsProgressEndpoints
         {
             if (!Enum.TryParse<OperationType>(type, true, out var parsedType))
             {
-                return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+                return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status400BadRequest,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    $"Invalid operation type '{type}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}"));
+                    $"Invalid operation type '{type}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}");
             }
             operationType = parsedType;
         }
@@ -213,10 +209,10 @@ internal static class OperationsProgressEndpoints
     {
         if (!Enum.TryParse<OperationType>(operationType, true, out var parsedType))
         {
-            return Results.BadRequest(ProblemDetailsHelpers.CreateAdminProblem(
+            return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Invalid operation type '{operationType}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}"));
+                $"Invalid operation type '{operationType}'. Valid types: {string.Join(", ", Enum.GetNames<OperationType>())}");
         }
 
         var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);

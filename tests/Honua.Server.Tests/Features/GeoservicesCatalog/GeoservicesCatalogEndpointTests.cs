@@ -75,4 +75,27 @@ public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
         payload.RootElement.TryGetProperty("authInfo", out var authInfo).Should().BeTrue();
         authInfo.TryGetProperty("isTokenBasedSecurity", out _).Should().BeTrue();
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_IncludesServicesWithExpectedStructure()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services?f=json");
+
+        response.Be200Ok();
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+
+        root.TryGetProperty("services", out var services).Should().BeTrue();
+        services.ValueKind.Should().Be(JsonValueKind.Array);
+
+        if (services.GetArrayLength() > 0)
+        {
+            var firstService = services[0];
+            firstService.TryGetProperty("name", out _).Should().BeTrue();
+            firstService.TryGetProperty("type", out _).Should().BeTrue();
+        }
+    }
 }

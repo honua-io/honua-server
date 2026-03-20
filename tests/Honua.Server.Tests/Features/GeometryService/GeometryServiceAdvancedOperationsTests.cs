@@ -376,4 +376,351 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/rest/services/geometry/length?sr=4326");
         response.Be400BadRequest();
     }
+
+    // --- Intersect: additional coverage ---
+
+    [IntegrationTest]
+    [Operation(Operations.Intersect)]
+    [Endpoint("GET /rest/services/geometry/intersect")]
+    public async Task Intersect_GetWithValidParameters_ReturnsGeometry()
+    {
+        var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[2,0],[2,2],[0,2],[0,0]]]}]}""");
+        var geometry = Uri.EscapeDataString("""{"rings":[[[1,1],[3,1],[3,3],[1,3],[1,1]]]}""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/geometry/intersect?geometries={geometries}&geometry={geometry}&sr=4326");
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Intersect)]
+    [Endpoint("POST /rest/services/geometry/intersect")]
+    public async Task Intersect_GeometryTypeMismatch_PointVsPolygon_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [
+                    {"x": 5, "y": 5}
+                ]
+            },
+            "geometry": {
+                "rings": [[[10,10],[11,10],[11,11],[10,11],[10,10]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/intersect",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Intersect)]
+    [Endpoint("POST /rest/services/geometry/intersect")]
+    public async Task Intersect_MissingSpatialReference_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[2,0],[2,2],[0,2],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "rings": [[[1,1],[3,1],[3,3],[1,3],[1,1]]]
+            }
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/intersect",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Intersect)]
+    [Endpoint("POST /rest/services/geometry/intersect")]
+    public async Task Intersect_MalformedGeometry_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": "not-an-array"}
+                ]
+            },
+            "geometry": {
+                "rings": [[[1,1],[3,1],[3,3],[1,3],[1,1]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/intersect",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    // --- Union: additional coverage ---
+
+    [IntegrationTest]
+    [Operation(Operations.Union)]
+    [Endpoint("GET /rest/services/geometry/union")]
+    public async Task Union_GetWithValidParameters_ReturnsGeometry()
+    {
+        var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]},{"rings":[[[1,0],[2,0],[2,1],[1,1],[1,0]]]}]}""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/geometry/union?geometries={geometries}&sr=4326");
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Union)]
+    [Endpoint("POST /rest/services/geometry/union")]
+    public async Task Union_SingleGeometry_ReturnsSameGeometry()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+                ]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/union",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Union)]
+    [Endpoint("POST /rest/services/geometry/union")]
+    public async Task Union_MissingSpatialReference_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+                ]
+            }
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/union",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Union)]
+    [Endpoint("POST /rest/services/geometry/union")]
+    public async Task Union_MalformedGeometry_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": "invalid"}
+                ]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/union",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    // --- Difference: additional coverage ---
+
+    [IntegrationTest]
+    [Operation(Operations.Difference)]
+    [Endpoint("GET /rest/services/geometry/difference")]
+    public async Task Difference_GetWithValidParameters_ReturnsGeometry()
+    {
+        var geometries = Uri.EscapeDataString("""{"geometryType":"esriGeometryPolygon","geometries":[{"rings":[[[0,0],[3,0],[3,3],[0,3],[0,0]]]}]}""");
+        var geometry = Uri.EscapeDataString("""{"rings":[[[1,1],[2,1],[2,2],[1,2],[1,1]]]}""");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/geometry/difference?geometries={geometries}&geometry={geometry}&sr=4326");
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Difference)]
+    [Endpoint("POST /rest/services/geometry/difference")]
+    public async Task Difference_NoOverlap_ReturnsOriginal()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[1,0],[1,1],[0,1],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "rings": [[[10,10],[11,10],[11,11],[10,11],[10,10]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/difference",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Difference)]
+    [Endpoint("POST /rest/services/geometry/difference")]
+    public async Task Difference_MissingSpatialReference_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[3,0],[3,3],[0,3],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]
+            }
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/difference",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Difference)]
+    [Endpoint("POST /rest/services/geometry/difference")]
+    public async Task Difference_MalformedGeometry_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": 12345}
+                ]
+            },
+            "geometry": {
+                "rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/difference",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    // --- Area/Length: missing SR coverage ---
+
+    [IntegrationTest]
+    [Operation(Operations.Area)]
+    [Endpoint("POST /rest/services/geometry/area")]
+    public async Task Area_MissingSpatialReference_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[10,0],[10,10],[0,10],[0,0]]]}
+                ]
+            },
+            "areaUnit": "esriSquareMeters"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/area",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Length)]
+    [Endpoint("POST /rest/services/geometry/length")]
+    public async Task Length_MissingSpatialReference_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0,0],[3,4]]]}
+                ]
+            },
+            "lengthUnit": "esriMeters"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/geometry/length",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be400BadRequest();
+    }
 }

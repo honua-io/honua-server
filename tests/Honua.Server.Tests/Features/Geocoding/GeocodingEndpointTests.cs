@@ -33,11 +33,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: false,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+        using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
@@ -64,11 +60,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer")]
     public async Task GeocodeServerMetadata_ExposesProviderCapabilities()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: false,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+        using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
@@ -105,11 +97,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_ReturnsBadRequest_WhenProviderDoesNotSupportBatch()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: false,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+        using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?f=json");
@@ -124,11 +112,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/GeocodeServer/reverseGeocode")]
     public async Task ReverseGeocode_ReturnsGeoServicesPayload()
     {
-        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
-            SupportsSuggest: true,
-            SupportsBatch: false,
-            SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+        using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?location=-77.03655,38.89768&f=json");
@@ -142,6 +126,177 @@ public sealed class GeocodingEndpointTests
         Assert.Equal(-77.03655, root.GetProperty("location").GetProperty("x").GetDouble(), precision: 5);
         Assert.Equal(38.89768, root.GetProperty("location").GetProperty("y").GetDouble(), precision: 5);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
+    public async Task Suggest_WhenProviderSupports_ReturnsSuggestions()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/suggest?text=hon&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.True(root.TryGetProperty("suggestions", out var suggestions));
+        Assert.Equal(JsonValueKind.Array, suggestions.ValueKind);
+        Assert.True(suggestions.GetArrayLength() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_WhenProviderSupports_PassesCapabilityCheck()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?f=json");
+
+        // Batch geocode parsing is not yet available — but the capability check passes
+        // (unlike unsupported case which returns "not supported by the configured geocode provider")
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("not supported by the configured geocode provider", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithInvalidLocatorName_Returns404()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/NonexistentLocator/GeocodeServer/findAddressCandidates?singleLine=test&f=json");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_Post_ReturnsGeoServicesPayload()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["singleLine"] = "1600 Pennsylvania Ave NW",
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/findAddressCandidates", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(payload.RootElement.TryGetProperty("candidates", out var candidates));
+        Assert.True(candidates.GetArrayLength() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_Post_ReturnsGeoServicesPayload()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["location"] = "-77.03655,38.89768",
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/reverseGeocode", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(payload.RootElement.TryGetProperty("address", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_PjsonFormat_ReturnsJson()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=pjson");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_InvalidFormat_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test&f=xml");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_WhenGeocodingDisabled_Returns404()
+    {
+        using var factory = new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Geocoding:Enabled"] = "false"
+                });
+            });
+        });
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_MissingLocation_Returns400()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        // Missing location parameter
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer/reverseGeocode?f=json");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    private static readonly CoreGeocodeProviderCapabilities DefaultCapabilities = new(
+        SupportsSuggest: true,
+        SupportsBatch: false,
+        SupportsStructuredInput: false,
+        SupportsBiasing: true);
+
+    private static WebApplicationFactory<Program> CreateDefaultFactory()
+        => CreateFactory(new FakeGeocodeProvider(DefaultCapabilities));
 
     private static WebApplicationFactory<Program> CreateFactory(FakeGeocodeProvider fakeProvider)
     {

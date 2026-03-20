@@ -218,6 +218,83 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/alerts/zones/{zoneId}")]
+    public async Task UpdateZone_NonexistentZoneId_Returns404()
+    {
+        var updatePayload = new
+        {
+            serviceId = $"zones-{Guid.NewGuid():N}",
+            zoneName = "Ghost Zone",
+            wkt = "POLYGON((-157.88 21.29,-157.88 21.31,-157.85 21.31,-157.85 21.29,-157.88 21.29))",
+            srid = 4326,
+            isActive = true
+        };
+
+        var response = await _client.PutAsJsonAsync("/api/v1/admin/alerts/zones/999999999", updatePayload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/alerts/zones/{zoneId}")]
+    public async Task DeleteZone_NonexistentZoneId_Returns404()
+    {
+        var response = await _client.DeleteAsync("/api/v1/admin/alerts/zones/999999999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/zones")]
+    public async Task CreateZone_InvalidWkt_Returns400()
+    {
+        var payload = new
+        {
+            serviceId = $"zones-{Guid.NewGuid():N}",
+            zoneName = "Bad WKT Zone",
+            wkt = "NOT_A_VALID_WKT_STRING",
+            srid = 4326,
+            isActive = true
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/alerts/zones", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
+    public async Task UpdateRule_NonexistentRuleId_Returns404()
+    {
+        var updatePayload = new
+        {
+            serviceId = $"rules-{Guid.NewGuid():N}",
+            layerId = 1,
+            ruleName = "Ghost Rule",
+            triggerType = "enter",
+            conditionsJson = "{}",
+            cooldownSeconds = 60,
+            severity = "warning",
+            editionRequired = "pro",
+            channels = new[] { "webhook" },
+            isActive = true
+        };
+
+        var response = await _client.PutAsJsonAsync("/api/v1/admin/alerts/rules/999999999", updatePayload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
+    public async Task DeleteRule_NonexistentRuleId_Returns404()
+    {
+        var response = await _client.DeleteAsync("/api/v1/admin/alerts/rules/999999999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private static WebAppFixture CreateFixture(
         IReadOnlyCollection<AlertChannelType> allowedChannels,
         IReadOnlyCollection<AlertChannelType> configuredChannels)
