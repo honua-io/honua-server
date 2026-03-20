@@ -12,6 +12,9 @@
 * [Cross-Client Certification Matrix](user/CROSS_CLIENT_CERTIFICATION_MATRIX.md)
 * [Cross-Client Certification Evidence](user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
 * [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
+* [Benchmark Results](user/BENCHMARK_RESULTS.md)
+* [Benchmark Reproduction](user/BENCHMARK_REPRODUCTION.md)
+* [Benchmark Methodology](user/BENCHMARK_METHODOLOGY.md)
 
 ## Geospatial Data APIs
 
@@ -83,6 +86,7 @@
 * [JavaScript Integration Tests](contributor/testing-javascript.md)
 * [Shared Seed Data](contributor/test-seed-data.md)
 * [Benchmarks](contributor/benchmarks.md)
+* [Benchmark Publication Process](contributor/BENCHMARK_PUBLICATION_PROCESS.md)
 * [OData Test Parity](contributor/ODATA_TEST_PARITY.md)
 * [Protocol Parity Audit (#305-#310)](contributor/PROTOCOL_PARITY_305_310_AUDIT.md)
 * [CITE OGC Features](contributor/cite-conformance-testing.md)

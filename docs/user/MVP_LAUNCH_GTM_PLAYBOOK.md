@@ -39,7 +39,7 @@ Simple SaaS pricing with self-service trials and marketplace distribution.
 - **Free trial**: 30-day trial with full features, deployment support
 - **Monthly subscriptions**: No annual commitments, usage-based scaling
 - **Self-service deployment**: Terraform + docs, minimal sales involvement
-- **Value messaging**: Deploy faster, cost less, avoid vendor lock-in
+- **Value messaging**: Deploy faster, cost less, avoid vendor lock-in — see [Benchmark Results](BENCHMARK_RESULTS.md) for reproducible performance evidence
 
 ## Pilot Timeline and Clock Rules
 - `Day 0-7` (pre-pilot): Stages 1-4 (triage, qualification, technical discovery, proposal)

@@ -1,6 +1,7 @@
 {
   "Version": "1.0",
   "Created": "2026-02-07",
+  "GitSHA": "21cf30e1a87daa1ebccbc133899dac68577811ee",
   "Description": "BenchmarkDotNet baseline for query benchmarks (CI)",
   "Environment": {
     "Runtime": ".NET 10.0.2 (10.0.2, 10.0.225.61305)",
