@@ -374,6 +374,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             {
                 "honua-http" or "kubernetes-honua-http" => CreateHonuaHttpPreset(parameters),
                 "aws-alb-canary" => CreateAwsAlbCanaryPreset(parameters),
+                "azure-aca-canary" => CreateAzureAcaCanaryPreset(parameters),
                 _ => new DeployTelemetryPolicy
                 {
                     ConnectionId = string.Empty,
@@ -387,7 +388,8 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
             {
                 DeployTargetKind.Kubernetes => "kubernetes-honua-http",
                 DeployTargetKind.AwsEcs => HasCanarySignalConfiguration(spec.Parameters) ? "aws-alb-canary" : "honua-http",
-                DeployTargetKind.AzureContainerApps => "honua-http",
+                DeployTargetKind.AzureContainerApps => HasCanarySignalConfiguration(spec.Parameters) ? "azure-aca-canary" : "honua-http",
+                DeployTargetKind.AzureFunctions => "honua-http",
                 _ => null
             };
 
@@ -409,6 +411,12 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
         }
 
         private static DeployTelemetryPolicy CreateAwsAlbCanaryPreset(IReadOnlyDictionary<string, string> parameters)
+            => CreateCanaryPreset(parameters, "aws-alb-canary");
+
+        private static DeployTelemetryPolicy CreateAzureAcaCanaryPreset(IReadOnlyDictionary<string, string> parameters)
+            => CreateCanaryPreset(parameters, "azure-aca-canary");
+
+        private static DeployTelemetryPolicy CreateCanaryPreset(IReadOnlyDictionary<string, string> parameters, string presetName)
         {
             var selector = BuildPrometheusSelector(
                 parameters,
@@ -419,7 +427,7 @@ internal sealed class PrometheusDeployTelemetrySignalEvaluator(
                 fallbackJobKey: "telemetry.prometheus.job");
 
             return string.IsNullOrWhiteSpace(selector)
-                ? InvalidPreset("Deploy telemetry policy 'aws-alb-canary' requires a canary Prometheus selector or canary job.")
+                ? InvalidPreset($"Deploy telemetry policy '{presetName}' requires a canary Prometheus selector or canary job.")
                 : CreateHonuaHttpPolicy(selector, warmupDuration: TimeSpan.FromMinutes(3), minimumSampleCount: 10);
         }
 
