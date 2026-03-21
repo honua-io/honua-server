@@ -5,7 +5,6 @@ This section is for people **using Honua in production** — API consumers, GIS 
 ## Getting Started
 - **[User Journeys](USER_JOURNEYS.md)** - Role-based guides for GIS professionals, developers, data analysts
 - **[Geospatial Data APIs](STANDARDS_APIS.md)** - FeatureServer + MapServer, OGC API Features/Tiles, OData v4, MVT overview
-- **[Enterprise Procurement Readiness](ENTERPRISE_PROCUREMENT_READINESS.md)** - canonical buyer packet for security, support, licensing, and deployment posture
 
 ## Integration & Development
 - **[Integration Patterns](INTEGRATION_PATTERNS.md)** - Common integration approaches with code examples

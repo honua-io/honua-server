@@ -60,6 +60,5 @@ Honua's current operator-facing security guidance lives in:
 
 - `docs/devops/security.md`
 - `docs/devops/infrastructure.md`
-- `docs/user/ENTERPRISE_PROCUREMENT_READINESS.md`
 
 These documents define the shared-responsibility model for TLS termination, WAF/rate limiting, identity configuration, managed database usage, and production deployment expectations.

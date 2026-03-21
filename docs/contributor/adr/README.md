@@ -2,6 +2,8 @@
 
 This folder contains Architecture Decision Records (ADRs) for the Honua greenfield MVP.
 
+ADR `0024` was removed from this index because commercial packaging material is not maintained in this repository.
+
 ## Index
 
 | ADR | Title | Status | Date |
@@ -29,7 +31,6 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0021](0021-redis-usage-and-hybridcache-deferral.md) | Redis Usage and HybridCache Deferral | Accepted | 2025-12 |
 | [0022](0022-no-transform-on-write.md) | No Transform on Write (Except Imports) | Accepted | 2025-12 |
 | [0023](0023-metadata-architecture.md) | Metadata Resource Model and GitOps-Ready Storage | Accepted | 2025-12 |
-| [0024](0024-open-core-edition-model.md) | Open-Core Edition Model | Accepted | 2026-03 |
 | [0025](0025-multi-provider-operation-architecture.md) | Multi-Provider Operation Architecture | Accepted | 2026-03 |
 
 ## Template

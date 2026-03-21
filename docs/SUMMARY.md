@@ -6,8 +6,6 @@
 * [User Journeys](user/USER_JOURNEYS.md)
 * [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md)
 * [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md)
-* [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md)
-* [MVP Sales Playbook + Launch GTM](user/MVP_LAUNCH_GTM_PLAYBOOK.md)
 * [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
 * [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
 
@@ -66,7 +64,6 @@
 * [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md)
 * [Architecture Review Criteria](contributor/architecture-criteria.md)
 * [ADRs](contributor/adr/README.md)
-* [Honua Manifesto](contributor/HONUA_MANIFESTO.md)
 
 ### Design Patterns
 

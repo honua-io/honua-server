@@ -73,7 +73,7 @@ Instead of embedding query logic in client code (`sqlQuery: "SELECT ... FROM sen
 
 - **Read-mostly.** CARTO's editing story is weak. Write operations go through the warehouse directly, not through CARTO. Honua's Feature Server supports full CRUD.
 - **Visualization locked to deck.gl.** CARTO doesn't render — it generates data for deck.gl to render. This limits styling to what deck.gl supports. Honua can serve tiles to any renderer (MapLibre, Leaflet, OpenLayers, deck.gl).
-- **Enterprise pricing and complexity.** CARTO's connection architecture requires a CARTO account, workspace setup, and managed connections. Honua can offer self-hosted simplicity.
+- **Workspace and connection complexity.** CARTO's connection architecture requires a CARTO account, workspace setup, and managed connections. Honua can offer a simpler self-hosted path.
 
 ## Proposed Design Directions
 
