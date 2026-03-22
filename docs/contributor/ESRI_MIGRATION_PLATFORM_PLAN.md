@@ -156,6 +156,13 @@ Reconciliation is an automated validation step, not a manual spot-check. The har
 
 The harness is a deliverable in Epic F (Pilot Delivery) and reusable for all subsequent imports.
 
+### Pilot Evidence Kit
+
+The standardized evidence kit for lighthouse pilots is maintained at
+[`migration/`](migration/README.md). Every pilot must use this kit as the
+required starting point. The kit aligns with the success metrics and pilot
+dependency rules defined in this plan.
+
 ## Authentication and Identity Mapping
 
 ### Import-Time Auth
