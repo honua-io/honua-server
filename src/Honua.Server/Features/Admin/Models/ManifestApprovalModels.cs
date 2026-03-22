@@ -3,6 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Server.Features.Infrastructure.Events;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -256,4 +258,54 @@ public sealed class ManifestApprovalWebhookEvent
     /// </summary>
     [JsonPropertyName("timestamp")]
     public DateTimeOffset Timestamp { get; init; }
+}
+
+/// <summary>
+/// Startup validator for manifest approval webhook configuration.
+/// </summary>
+internal sealed class ManifestApprovalWebhookOptionsValidator : IValidateOptions<ManifestApprovalWebhookOptions>
+{
+    public ValidateOptionsResult Validate(string? name, ManifestApprovalWebhookOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (!options.Enabled)
+        {
+            return ValidateOptionsResult.Success;
+        }
+
+        var failures = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(options.Url))
+        {
+            failures.Add("Manifest approval webhook URL must be configured when webhook delivery is enabled.");
+        }
+        else
+        {
+            var validation = FeatureChangeWebhookUrlValidation.ValidateConfiguration(options.Url);
+            if (!validation.IsValid)
+            {
+                failures.Add(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(options.Secret))
+        {
+            failures.Add("Manifest approval webhook secret must be configured when webhook delivery is enabled.");
+        }
+
+        if (options.MaxAttempts < 1)
+        {
+            failures.Add("Manifest approval webhook MaxAttempts must be at least 1.");
+        }
+
+        if (options.RequestTimeoutSeconds < 1)
+        {
+            failures.Add("Manifest approval webhook RequestTimeoutSeconds must be at least 1 second.");
+        }
+
+        return failures.Count == 0
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(failures);
+    }
 }

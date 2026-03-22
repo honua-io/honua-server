@@ -104,10 +104,10 @@ internal readonly record struct FeatureChangeWebhookUrlValidationResult(bool IsV
 
 internal static class FeatureChangeWebhookUrlValidation
 {
-    internal const string InvalidHttpsUrlMessage = "Feature change webhook URL must be a valid HTTPS URL.";
-    internal const string EmbeddedCredentialsMessage = "Feature change webhook URL must not include embedded credentials.";
+    internal const string InvalidHttpsUrlMessage = "Webhook URL must be a valid HTTPS URL.";
+    internal const string EmbeddedCredentialsMessage = "Webhook URL must not include embedded credentials.";
     internal const string DisallowedAddressMessage =
-        "Feature change webhook URL resolves to a private, loopback, or unresolvable network address, which is not allowed.";
+        "Webhook URL resolves to a private, loopback, or unresolvable network address, which is not allowed.";
 
     public static Task<FeatureChangeWebhookUrlValidationResult> ValidateAsync(
         string webhookUrl,

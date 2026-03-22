@@ -116,12 +116,12 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
         }
     }
 
-    [LoggerMessage(EventId = 9201, Level = LogLevel.Warning, Message = "Manifest approval webhook is enabled but secret is missing; delivery is disabled.")]
+    [LoggerMessage(EventId = 9210, Level = LogLevel.Warning, Message = "Manifest approval webhook is enabled but secret is missing; delivery is disabled.")]
     private static partial void LogWebhookConfigurationInvalid(ILogger logger);
 
-    [LoggerMessage(EventId = 9202, Level = LogLevel.Warning, Message = "Manifest approval webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
+    [LoggerMessage(EventId = 9211, Level = LogLevel.Warning, Message = "Manifest approval webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
     private static partial void LogWebhookUrlRejected(ILogger logger, string reason);
 
-    [LoggerMessage(EventId = 9206, Level = LogLevel.Warning, Message = "Manifest approval webhook dispatch failed for event {EventId}.")]
+    [LoggerMessage(EventId = 9212, Level = LogLevel.Warning, Message = "Manifest approval webhook dispatch failed for event {EventId}.")]
     private static partial void LogDispatcherFailed(ILogger logger, string eventId, Exception exception);
 }

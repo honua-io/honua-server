@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- Migration: 015_AddManifestPendingChanges.sql
+-- Migration: 016_AddManifestPendingChanges.sql
 -- Description: Adds pending approval table for GitOps manifest approval workflows.
 -- Dependencies: Requires honua schema and metadata_resources from 010_AddMetadataResources.sql.
 

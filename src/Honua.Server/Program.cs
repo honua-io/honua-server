@@ -288,6 +288,8 @@ builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalOp
     builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalOptions.SectionName));
 builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions.SectionName));
+builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>,
+    Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptionsValidator>();
 builder.Services.AddHttpClient("manifest-approval-webhook");
 builder.Services.AddSingleton<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(sp =>
     new Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher(
