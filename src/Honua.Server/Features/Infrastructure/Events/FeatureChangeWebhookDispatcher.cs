@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
@@ -228,14 +227,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
     }
 
     private static string ComputeSignature(string secret, string timestamp, string payload)
-    {
-        var message = $"{timestamp}.{payload}";
-        var secretBytes = Encoding.UTF8.GetBytes(secret);
-        var messageBytes = Encoding.UTF8.GetBytes(message);
-        using var hmac = new HMACSHA256(secretBytes);
-        var hash = hmac.ComputeHash(messageBytes);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+        => WebhookSignatureHelper.ComputeSignature(secret, timestamp, payload);
 
     private void LogWebhookConfigurationInvalidOnce()
     {

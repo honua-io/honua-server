@@ -95,6 +95,30 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/manifest/drift")]
+    public async Task GetManifestDrift_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest/drift");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/manifest/versions")]
+    public async Task GetManifestVersions_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest/versions");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/manifest/versions/{versionId}")]
+    public async Task GetManifestVersionById_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest/versions/test-id");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     // --- ServiceSettingsEndpoints ---
 
     [IntegrationTest]

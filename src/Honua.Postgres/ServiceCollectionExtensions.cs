@@ -108,6 +108,12 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetService<Honua.Core.Features.Caching.Abstractions.ICacheService>(),
                 configuration["Database:Schema"]));
 
+        // Register manifest version store for GitOps drift detection (#515)
+        services.AddScoped<IManifestVersionStore>(serviceProvider =>
+            new PostgresManifestVersionStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
 

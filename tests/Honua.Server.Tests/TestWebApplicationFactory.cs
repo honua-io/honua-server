@@ -57,6 +57,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<ILayerPublishingService, NullLayerPublishingService>();
             services.AddSingleton<IDatabaseMigrationRunner, NullDatabaseMigrationRunner>();
             services.AddSingleton<IMetadataResourceStore, InMemoryMetadataResourceStore>();
+            services.AddSingleton<IManifestVersionStore, InMemoryManifestVersionStore>();
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
             services.AddSingleton<ILeaderElectionStrategy, NoOpLeaderElectionStrategy>();
             services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
