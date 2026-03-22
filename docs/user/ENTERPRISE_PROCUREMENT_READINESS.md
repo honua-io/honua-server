@@ -39,6 +39,7 @@ Performance notes:
 - Query latency targets assume selective or indexed spatial/attribute filters and reasonable result windows.
 - Export and tile targets assume default production guidance from [Infrastructure](../devops/infrastructure.md) and [Operations](../devops/operations.md).
 - Community deployments can outperform these numbers, but Honua does not offer a contractual SLA on the free tier.
+- For reproducible benchmark evidence and methodology, see the [Benchmark Results](BENCHMARK_RESULTS.md) proof pack.
 
 ## Reference Architecture Summaries
 

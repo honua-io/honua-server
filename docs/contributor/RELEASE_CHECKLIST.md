@@ -13,6 +13,12 @@ Use this checklist for every MVP release.
 - [ ] OpenAPI contract governance checks pass
 - [ ] Control-plane SDK artifacts generated and attached to release
 
+## Benchmark Proof Pack (Required)
+
+- [ ] Refresh benchmark proof pack if stale (>2 minor releases behind) — see [Benchmark Publication Process](BENCHMARK_PUBLICATION_PROCESS.md)
+- [ ] Verify `performance-baseline.json` matches the current release
+- [ ] Verify `docs/user/BENCHMARK_RESULTS.md` environment disclosure is current
+
 ## Compatibility Contract Updates (Required)
 
 - [ ] Update [MVP Compatibility Contract](../user/MVP_COMPATIBILITY_CONTRACT.md)

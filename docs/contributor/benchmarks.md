@@ -220,3 +220,5 @@ Update targets in:
 - [.NET Performance Guidelines](https://docs.microsoft.com/en-us/dotnet/standard/performance/)
 - [Honua Server Architecture Documentation](ARCHITECTURE.md)
 - [Performance Testing ADR](adr/0011-testing-strategy.md)
+- [Benchmark Publication Process](BENCHMARK_PUBLICATION_PROCESS.md) — how to refresh the public proof pack
+- [Benchmark Results](../user/BENCHMARK_RESULTS.md) — public-facing published results

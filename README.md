@@ -160,6 +160,7 @@ Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuai
 | Deploy to production | [Infrastructure & Deployment](https://honua.gitbook.io/honuaio/devops-guide/infrastructure) |
 | Call the API | [Protocols Overview](https://honua.gitbook.io/honuaio/) |
 | Check MVP compatibility limits | [MVP Compatibility Contract](docs/user/MVP_COMPATIBILITY_CONTRACT.md) |
+| Evaluate performance | [Benchmark Results](docs/user/BENCHMARK_RESULTS.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 | Understand CI gates | [CI Gate Model](docs/ci/gate-model.md) |
 
