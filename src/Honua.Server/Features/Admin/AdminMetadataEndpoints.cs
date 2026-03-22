@@ -268,7 +268,7 @@ internal static class AdminMetadataEndpoints
         [FromServices] IMetadataResourceStore store,
         [FromServices] IMetadataSchemaRegistry schemaRegistry,
         [FromServices] IMetadataCompiler compiler,
-        [FromServices] ManifestApprovalGate approvalGate)
+        [FromServices] ManifestApprovalGate approvalGate,
         [FromServices] IManifestVersionStore versionStore)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
