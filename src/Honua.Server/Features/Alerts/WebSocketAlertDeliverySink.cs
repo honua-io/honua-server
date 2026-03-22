@@ -4,8 +4,14 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Server.Features.Infrastructure.Abstractions;
 
 namespace Honua.Server.Features.Alerts;
+
+/// <summary>
+/// Options for creating a subscription with metadata.
+/// </summary>
+internal sealed record SubscriptionOptions(string? ClientLabel = null);
 
 /// <summary>
 /// In-process broadcaster for pushing alert events to connected subscribers.
@@ -22,27 +28,42 @@ internal interface IAlertNotificationBroadcaster
     /// Registers a subscriber callback. Dispose the returned handle to unsubscribe.
     /// </summary>
     IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler);
+
+    /// <summary>
+    /// Registers a subscriber callback with metadata. Dispose the returned handle to unsubscribe.
+    /// </summary>
+    IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options);
 }
 
 /// <summary>
 /// Default in-memory implementation of the alert notification broadcaster.
 /// Maintains a concurrent set of subscriber callbacks and fans out events.
 /// </summary>
-internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster
+internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster, IStreamingSubscriptionManager
 {
-    private readonly ConcurrentDictionary<Guid, Func<AlertEventEnvelope, CancellationToken, Task>> _subscribers = new();
+    private readonly ConcurrentDictionary<Guid, SubscriptionEntry> _subscribers = new();
 
     public async Task BroadcastAsync(AlertEventEnvelope alertEvent, CancellationToken cancellationToken = default)
     {
-        foreach (var subscriber in _subscribers.Values)
+        foreach (var entry in _subscribers.Values)
         {
+            if (entry.Cts.IsCancellationRequested)
+            {
+                continue;
+            }
+
             try
             {
-                await subscriber(alertEvent, cancellationToken).ConfigureAwait(false);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, entry.Cts.Token);
+                await entry.Handler(alertEvent, linked.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // Individual subscriber was disconnected; skip.
             }
             catch
             {
@@ -52,13 +73,50 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
     }
 
     public IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
+        => Subscribe(handler, null);
+
+    public IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
     {
         ArgumentNullException.ThrowIfNull(handler);
 
         var id = Guid.NewGuid();
-        _subscribers.TryAdd(id, handler);
+        var entry = new SubscriptionEntry(handler, new CancellationTokenSource(), DateTimeOffset.UtcNow, options?.ClientLabel);
+        _subscribers.TryAdd(id, entry);
         return new Subscription(this, id);
     }
+
+    public IReadOnlyList<StreamingSubscriptionInfo> GetSubscriptions()
+    {
+        return _subscribers.Select(kvp =>
+            new StreamingSubscriptionInfo(kvp.Key, kvp.Value.ConnectedAt, kvp.Value.ClientLabel)).ToArray();
+    }
+
+    public bool DisconnectSubscriber(Guid subscriberId)
+    {
+        if (!_subscribers.TryRemove(subscriberId, out var entry))
+        {
+            return false;
+        }
+
+        entry.Cts.Cancel();
+        entry.Cts.Dispose();
+        return true;
+    }
+
+    private void RemoveSubscriber(Guid id)
+    {
+        if (_subscribers.TryRemove(id, out var entry))
+        {
+            entry.Cts.Cancel();
+            entry.Cts.Dispose();
+        }
+    }
+
+    private sealed record SubscriptionEntry(
+        Func<AlertEventEnvelope, CancellationToken, Task> Handler,
+        CancellationTokenSource Cts,
+        DateTimeOffset ConnectedAt,
+        string? ClientLabel);
 
     private sealed class Subscription : IDisposable
     {
@@ -71,7 +129,7 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
             _id = id;
         }
 
-        public void Dispose() => _broadcaster._subscribers.TryRemove(_id, out _);
+        public void Dispose() => _broadcaster.RemoveSubscriber(_id);
     }
 }
 

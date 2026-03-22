@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -37,6 +38,9 @@ internal static class AlertsServiceCollectionExtensions
                 ? new SingleInstanceLeaderElectionStrategy()
                 : ActivatorUtilities.CreateInstance<PostgresAdvisoryLockLeaderElectionStrategy>(serviceProvider, dataSource);
         });
+        services.AddSingleton<InMemoryAlertNotificationBroadcaster>();
+        services.AddSingleton<IAlertNotificationBroadcaster>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
+        services.AddSingleton<IStreamingSubscriptionManager>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
         services.AddAlertDeliveryChannels(configuration);
 
         services.AddHostedService<AlertEvaluationBackgroundService>();

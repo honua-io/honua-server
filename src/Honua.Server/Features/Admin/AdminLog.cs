@@ -160,4 +160,100 @@ internal static partial class AdminLog
         Level = LogLevel.Debug,
         Message = "Cache status queried")]
     public static partial void CacheStatusQueried(ILogger logger);
+
+    // Cache operations (4600-4609)
+
+    /// <summary>
+    /// Log cache health check result
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4600,
+        Level = LogLevel.Information,
+        Message = "Cache health check completed: healthy={IsHealthy}, fallback={IsUsingFallback}")]
+    public static partial void CacheHealthCheckCompleted(ILogger logger, bool isHealthy, bool isUsingFallback);
+
+    /// <summary>
+    /// Log cache invalidation request
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4601,
+        Level = LogLevel.Information,
+        Message = "Cache invalidation requested: scope={Scope}")]
+    public static partial void CacheInvalidationRequested(ILogger logger, string scope);
+
+    /// <summary>
+    /// Log cache operations invalidation failure
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4602,
+        Level = LogLevel.Warning,
+        Message = "Cache invalidation failed: scope={Scope}")]
+    public static partial void CacheOperationInvalidationFailed(ILogger logger, Exception ex, string scope);
+
+    /// <summary>
+    /// Log cache health check failure
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4603,
+        Level = LogLevel.Warning,
+        Message = "Cache health check failed")]
+    public static partial void CacheHealthCheckFailed(ILogger logger, Exception ex);
+
+    /// <summary>
+    /// Log Redis server info retrieval failure
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4604,
+        Level = LogLevel.Warning,
+        Message = "Failed to retrieve Redis server info for cache health response")]
+    public static partial void RedisInfoRetrievalFailed(ILogger logger, Exception ex);
+
+    // Streaming operations (4610-4619)
+
+    /// <summary>
+    /// Log streaming subscriber list request
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4610,
+        Level = LogLevel.Information,
+        Message = "Streaming subscribers listed: count={Count}")]
+    public static partial void StreamingSubscribersListed(ILogger logger, int count);
+
+    /// <summary>
+    /// Log subscriber force-disconnect
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4611,
+        Level = LogLevel.Information,
+        Message = "Subscriber {SubscriberId} force-disconnected")]
+    public static partial void SubscriberDisconnected(ILogger logger, Guid subscriberId);
+
+    /// <summary>
+    /// Log subscriber not found for disconnect
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4612,
+        Level = LogLevel.Warning,
+        Message = "Subscriber {SubscriberId} not found for disconnect")]
+    public static partial void SubscriberNotFound(ILogger logger, Guid subscriberId);
+
+    // Geocoding operations (4620-4629)
+
+    /// <summary>
+    /// Log geocoding provider health check
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4620,
+        Level = LogLevel.Information,
+        Message = "Geocoding provider health checked: {ProviderCount} providers")]
+    public static partial void GeocodingProviderHealthChecked(ILogger logger, int providerCount);
+
+    /// <summary>
+    /// Log geocoding provider health check failure
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4621,
+        Level = LogLevel.Warning,
+        Message = "Geocoding provider health check failed")]
+    public static partial void GeocodingProviderHealthCheckFailed(ILogger logger, Exception ex);
 }
