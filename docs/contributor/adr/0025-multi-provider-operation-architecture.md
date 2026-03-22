@@ -67,6 +67,7 @@ Example backends:
 - Kubernetes
 - AWS Lambda
 - Azure Functions
+- Azure Container Apps
 
 Workflow states are richer than generic queue states. They include:
 
@@ -181,7 +182,8 @@ internals.
 - Introduce dedicated operation store interfaces for workflow operations and
   execution jobs.
 - Implement Redis-backed operation stores with lease semantics.
-- Add deploy backend adapters for Kubernetes, AWS Lambda, and Azure Functions.
+- Add deploy backend adapters for Kubernetes, AWS Lambda, Azure Functions, and
+  Azure Container Apps.
 - Add batch compute backend adapters for AWS Batch and Kubernetes Jobs.
 - Add control-plane endpoints for planning, submission, observation, and
   rollback based on the workflow operation model.

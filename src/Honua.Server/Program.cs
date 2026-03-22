@@ -208,6 +208,7 @@ builder.Services.AddHttpClient("control-plane-telemetry");
 builder.Services.AddHttpClient("control-plane-azure");
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
 builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
+builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
 builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
 builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
 builder.Services.AddSingleton<DeployWorkflowService>();
@@ -215,11 +216,13 @@ builder.Services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployT
 builder.Services.AddSingleton<KubernetesGitOpsDeployBackend>();
 builder.Services.AddSingleton<AwsEcsGitOpsDeployBackend>();
 builder.Services.AddSingleton<AzureContainerAppsGitOpsDeployBackend>();
+builder.Services.AddSingleton<AzureContainerAppsRevisionDeployBackend>();
 builder.Services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
 builder.Services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsGitOpsDeployBackend>());
+builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
 builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
 if (connectedRedis != null)

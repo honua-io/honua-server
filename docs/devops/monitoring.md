@@ -67,18 +67,20 @@ Deploy targets can point at a Prometheus-compatible query backend by setting `te
 
 - Default Kubernetes preset: when a Kubernetes deploy target sets `telemetry.connection`, Honua uses the built-in `kubernetes-honua-http` policy unless you override it.
 - AWS ALB canary preset: set `telemetry.policy=aws-alb-canary` and expose a distinct Prometheus scrape lane for the canary tasks, typically via a separate scrape job such as `honua-canary`.
-- Generic Honua HTTP preset: serverless and Azure Container Apps targets can use `telemetry.policy=honua-http` when they expose the standard Honua HTTP metrics without a distinct canary scrape lane.
+- Azure Container Apps canary preset: auto-selected when a canary Prometheus selector or canary job is configured, or set explicitly with `telemetry.policy=azure-aca-canary`. Uses 3-minute warmup and 10 minimum samples (lower thresholds due to reduced canary traffic volume). Requires a canary Prometheus selector or canary job.
+- Generic Honua HTTP preset: serverless and Azure Container Apps targets can use `telemetry.policy=honua-http` when they expose the standard Honua HTTP metrics without a distinct canary scrape lane. Azure Functions and Azure Container Apps immediate-cutover deploys default to this policy when `telemetry.connection` is set.
 
 Useful target parameters:
 
 - `telemetry.connection`: named telemetry connection from `ControlPlane:TelemetryConnections`
-- `telemetry.policy`: optional preset, currently `kubernetes-honua-http`, `aws-alb-canary`, or `honua-http`
+- `telemetry.policy`: optional preset, currently `kubernetes-honua-http`, `aws-alb-canary`, `azure-aca-canary`, or `honua-http`
 - `telemetry.prometheus.job`: Prometheus `job` label for the stable or aggregated Honua scrape target
 - `telemetry.prometheus.selector`: raw PromQL label selector fragment when `job=...` is not enough
 - `telemetry.prometheus.canary_job`: Prometheus `job` label for the canary scrape target
 - `telemetry.prometheus.canary_selector`: raw PromQL label selector fragment for canary-only metrics
 - `telemetry.prometheus.extra_selector`: additional label matchers appended to the generated selector
 - `lambda.canary_weight_percentage`: optional AWS Lambda alias canary percentage for deploy targets; requires `telemetry.connection` because Honua only promotes or rolls back the alias after telemetry settles
+- `containerapp.canary_weight_percentage`: optional Azure Container Apps canary traffic percentage (1–99) for the `honua-azure-container-apps-revision` backend; requires `telemetry.connection`
 
 Explicit query overrides still win:
 

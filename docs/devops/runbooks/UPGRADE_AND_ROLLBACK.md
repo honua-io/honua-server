@@ -120,6 +120,133 @@ That rehearsal:
 
 ---
 
+## Azure Functions Slot Swap Rollout
+
+Azure Functions deploys use atomic deployment slot swapping managed through the deploy controller backend `honua-gitops-azure-functions`.
+
+### Lifecycle
+
+1. **Preflight**: Terraform provisions the staging slot with the desired image. The deploy controller validates production and slot images match expected topology.
+2. **Swap**: The controller calls the ARM API to swap the staging slot with production. This is an atomic operation — there is no canary traffic splitting.
+3. **Health gate**: After the swap completes, the telemetry evaluator checks error rate and p95 latency against the `honua-http` policy preset. If signals breach thresholds, the reconciler triggers a reverse swap via `RollbackAsync`.
+4. **Rollback**: A reverse slot swap restores the previous production image.
+
+### Configuration
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-functions",
+        "TargetKind": "AzureFunctions",
+        "Backend": "honua-gitops-azure-functions",
+        "Environment": "production",
+        "TargetName": "honua-prod-functions",
+        "Parameters": {
+          "target.resource_id": "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<app>",
+          "functions.current_image": "ghcr.io/honua-io/honua-server:current",
+          "functions.desired_image": "ghcr.io/honua-io/honua-server:next",
+          "telemetry.connection": "prod-prom"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Health-gate behavior
+
+When `telemetry.connection` is set, the deploy controller evaluates the `honua-http` telemetry preset after the swap completes:
+- **Error rate threshold**: 5% (5xx / total requests over 5-minute window)
+- **P95 latency threshold**: 2000ms
+- **Warmup duration**: 2 minutes before evaluation begins
+- **Minimum sample count**: 20 requests
+
+If any threshold is breached, the controller initiates an automatic reverse slot swap.
+
+---
+
+## Azure Container Apps Revision Traffic Rollout
+
+Azure Container Apps deploys use revision-based traffic splitting managed through the deploy controller backend `honua-azure-container-apps-revision`. This backend supports both immediate cutover and canary traffic shifting.
+
+### Lifecycle
+
+1. **Preflight**: CI/CD pipeline creates the new revision in the Container App. The deploy controller validates subscription, resource group, and app name.
+2. **Start (immediate cutover)**: Without canary configuration, the controller sets 100% traffic to the desired revision immediately.
+3. **Start (canary)**: With `canary_weight_percentage` set, the controller activates the desired revision (if inactive), then splits traffic between the current primary revision and the canary revision.
+4. **Observe**: The reconciler polls traffic weights. For canary deploys, it reports `PromotionRecommended` when the canary split matches the target percentage.
+5. **Promote**: After telemetry gates pass, the controller sets 100% traffic to the desired revision.
+6. **Rollback**: The controller sets 100% traffic back to the original primary revision. If no original revision was captured, it reports `ManualInterventionRequired`.
+
+### Configuration (immediate cutover)
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-aca",
+        "TargetKind": "AzureContainerApps",
+        "Backend": "honua-azure-container-apps-revision",
+        "Environment": "production",
+        "TargetName": "honua-prod-aca",
+        "Parameters": {
+          "target.resource_id": "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.App/containerApps/<app>",
+          "telemetry.connection": "prod-prom"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Configuration (canary traffic shifting)
+
+```json
+{
+  "ControlPlane": {
+    "DeployTargets": [
+      {
+        "TargetId": "prod-aca",
+        "TargetKind": "AzureContainerApps",
+        "Backend": "honua-azure-container-apps-revision",
+        "Environment": "production",
+        "TargetName": "honua-prod-aca",
+        "Parameters": {
+          "target.resource_id": "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.App/containerApps/<app>",
+          "containerapp.canary_weight_percentage": "10",
+          "telemetry.connection": "prod-prom",
+          "telemetry.policy": "azure-aca-canary"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Health-gate behavior
+
+**Default (`honua-http` preset):** Used for immediate cutover deploys. Same thresholds as Azure Functions (5% error rate, 2000ms p95 latency, 2-minute warmup, 20 minimum samples).
+
+**Canary (`azure-aca-canary` preset):** Used when `telemetry.policy: "azure-aca-canary"` is set. Evaluates the canary revision's traffic against:
+- **Error rate threshold**: 5%
+- **P95 latency threshold**: 2000ms
+- **Warmup duration**: 3 minutes (longer to allow canary revision to stabilize)
+- **Minimum sample count**: 10 requests (lower due to reduced canary traffic volume)
+
+### Manual intervention scenarios
+
+- **Missing current revision**: If the controller did not capture the original primary revision during `StartAsync`, rollback returns `ManualInterventionRequired`. Operator must manually set traffic weights through the Azure portal or CLI.
+- **Revision not found**: If the desired revision does not exist in the Container App when `StartAsync` runs, the ARM API will return an error. Ensure the CI/CD pipeline has created the revision before submitting the deploy operation.
+
+### GitOps passthrough alternative
+
+Operators who manage ACA through an external GitOps controller (Flux/ArgoCD) can use the `honua-gitops-azure-container-apps` backend instead. This backend delegates all state observation to the external controller and returns `ManualInterventionRequired` for observation.
+
+---
+
 ## Rollback Procedure
 
 ### Application Rollback First
