@@ -722,6 +722,12 @@
           },
           "404": {
             "description": "Feature not found"
+          },
+          "412": {
+            "description": "ETag precondition failed - the feature has been modified since the provided ETag"
+          },
+          "428": {
+            "description": "If-Match header required for conditional update"
           }
         }
       },
