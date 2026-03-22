@@ -33,12 +33,7 @@ MapServer coverage is tracked separately:
 | Extract Changes | `/rest/services/{serviceName}/FeatureServer/extractChanges` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/extractChanges` | Returns changes since last synchronization. First sync reports all features as adds (real DB count); subsequent syncs report zero changes (no change tracking tables). |
 | Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica` | Synchronizes a replica. Supports `download`, `upload`, and `bidirectional` sync directions. Incoming edits on upload/bidirectional syncs are applied via `applyEdits`. |
 | Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica` | Removes a registered replica. |
-
-### Not implemented
-
-| Esri operation | Esri path | Methods | Honua status | Notes |
-| --- | --- | --- | --- | --- |
-| Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Not implemented | |
+| Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/getEstimates` | Returns approximate feature count and spatial extent aggregated across service layers. |
 
 ## Feature Layer (resource + operations)
 
@@ -48,7 +43,7 @@ MapServer coverage is tracked separately:
 | --- | --- | --- | --- | --- | --- |
 | Layer metadata | `/rest/services/{serviceId}/FeatureServer/{layerId}` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}` | Includes `editFieldsInfo`, `editingInfo`, `templates`, `allowGeometryUpdates`, `supportsStatistics`. |
 | Query | `/rest/services/{serviceName}/FeatureServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/query` | Full query support including statistics, distinct, spatial, temporal. See parameter coverage below. |
-| Apply Edits | `/rest/services/{serviceName}/FeatureServer/{layerId}/applyEdits` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits` | Supports adds/updates/deletes, rollbackOnFailure (default `false`), useGlobalIds. |
+| Apply Edits | `/rest/services/{serviceName}/FeatureServer/{layerId}/applyEdits` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits` | Supports adds/updates/deletes, rollbackOnFailure (default `false`). |
 | Add Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/addFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures` | Standalone add endpoint. rollbackOnFailure defaults to `true`. |
 | Update Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/updateFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures` | Standalone update endpoint. rollbackOnFailure defaults to `true`. |
 | Delete Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures` | Supports `objectIds`, `where` clause, and `geometry`/`geometryType`/`spatialRel`/`inSR` for spatial deletes. rollbackOnFailure defaults to `true`. |
@@ -57,6 +52,10 @@ MapServer coverage is tracked separately:
 | Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/append` | Bulk append features. Parses `edits` as a JSON array of GeoServices features; delegates to `applyEdits` internally. Returns `numFeaturesAppended` / `numFeaturesFailed`. |
 | Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate` | Calculates field values using expressions. Supports `where` filter, `calcExpression` as JSON array of `{field, sqlExpression}`. Applies string literals, numeric literals, NULL, and field references. |
 | Validate SQL | `/rest/services/{serviceName}/FeatureServer/{layerId}/validateSQL` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL` | Validates a SQL WHERE clause against the layer schema. Returns `isValidSQL` and `validationError`. |
+| Get Estimates | `/rest/services/{serviceName}/FeatureServer/{layerId}/getEstimates` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates` | Returns approximate feature count and spatial extent for a single layer. |
+| Query Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryBins` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins` | Bins features into value intervals using configurable bin definitions (equal interval, quantile, natural breaks). |
+| Query Date Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryDateBins` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins` | Bins features into time intervals on a date/timestamp field. |
+| Query Top Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryTopFeatures` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures` | Window-function partitioned top-N query using TopFilter (topCount, groupByFields, orderByFields). |
 
 ### Partial
 
@@ -70,13 +69,9 @@ MapServer coverage is tracked separately:
 | --- | --- | --- | --- | --- |
 | Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Not implemented | |
 | Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Not implemented | |
-| Get Estimates | `/rest/services/{serviceName}/FeatureServer/{layerId}/getEstimates` | GET | Not implemented | |
 | Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Not implemented | |
 | Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Not implemented | |
 | Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Not implemented | |
-| Query Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryBins` | GET | Not implemented | |
-| Query Date Bins | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryDateBins` | GET | Not implemented | |
-| Query Top Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryTopFeatures` | GET | Not implemented | |
 | Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Not implemented | |
 | Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Not implemented | |
 
