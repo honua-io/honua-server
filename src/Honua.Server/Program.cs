@@ -259,6 +259,13 @@ builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDepl
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 
+// Register license status provider (reads edition from AlertOptions until #338)
+builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider,
+    Honua.Server.Features.Admin.ConfigurationLicenseStatusProvider>();
+
+// Register named HTTP client for identity provider connectivity tests
+builder.Services.AddHttpClient("IdentityProviderTest");
+
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 
@@ -473,6 +480,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
@@ -724,6 +736,13 @@ app.MapAdminLayerStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();
+
+// Configure platform admin endpoints (license, identity, cache, geocoding, features)
+app.MapLicenseAdminEndpoints();
+app.MapIdentityAdminEndpoints();
+app.MapCacheAdminEndpoints();
+app.MapGeocodingAdminEndpoints();
+app.MapFeatureOverviewEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();

@@ -52,4 +52,112 @@ internal static partial class AdminLog
         Level = LogLevel.Error,
         Message = "Error discovering PostGIS tables")]
     public static partial void PostGisDiscoveryError(ILogger logger, Exception ex);
+
+    /// <summary>
+    /// Log when license status is queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4070,
+        Level = LogLevel.Debug,
+        Message = "License status queried")]
+    public static partial void LicenseStatusQueried(ILogger logger);
+
+    /// <summary>
+    /// Log when a license upload is attempted.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4071,
+        Level = LogLevel.Information,
+        Message = "License upload attempted")]
+    public static partial void LicenseUploadAttempted(ILogger logger);
+
+    /// <summary>
+    /// Log when cache invalidation is requested.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4072,
+        Level = LogLevel.Information,
+        Message = "Cache invalidation requested for scope {Scope} by user {User}")]
+    public static partial void CacheInvalidationRequested(ILogger logger, string scope, string user);
+
+    /// <summary>
+    /// Log when cache invalidation completes.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4073,
+        Level = LogLevel.Information,
+        Message = "Cache invalidation completed for scope {Scope}")]
+    public static partial void CacheInvalidationCompleted(ILogger logger, string scope);
+
+    /// <summary>
+    /// Log when cache invalidation fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4074,
+        Level = LogLevel.Error,
+        Message = "Cache invalidation failed for scope {Scope}")]
+    public static partial void CacheInvalidationFailed(ILogger logger, Exception ex, string scope);
+
+    /// <summary>
+    /// Log when an identity provider connectivity test is started.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4075,
+        Level = LogLevel.Debug,
+        Message = "Identity provider connectivity test started for {ProviderType}")]
+    public static partial void IdentityProviderTestStarted(ILogger logger, string providerType);
+
+    /// <summary>
+    /// Log when an identity provider connectivity test completes.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4076,
+        Level = LogLevel.Information,
+        Message = "Identity provider connectivity test completed for {ProviderType}, reachable: {IsReachable}")]
+    public static partial void IdentityProviderTestCompleted(ILogger logger, string providerType, bool isReachable);
+
+    /// <summary>
+    /// Log when geocoding provider health is queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4077,
+        Level = LogLevel.Debug,
+        Message = "Geocoding provider health queried")]
+    public static partial void GeocodingProviderHealthQueried(ILogger logger);
+
+    /// <summary>
+    /// Log when feature overview is queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4078,
+        Level = LogLevel.Debug,
+        Message = "Feature overview queried")]
+    public static partial void FeatureOverviewQueried(ILogger logger);
+
+    /// <summary>
+    /// Log when license entitlements are queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4079,
+        Level = LogLevel.Debug,
+        Message = "License entitlements queried")]
+    public static partial void LicenseEntitlementsQueried(ILogger logger);
+
+    /// <summary>
+    /// Log when identity providers configuration is queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4080,
+        Level = LogLevel.Debug,
+        Message = "Identity providers queried")]
+    public static partial void IdentityProvidersQueried(ILogger logger);
+
+    /// <summary>
+    /// Log when cache status is queried.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4081,
+        Level = LogLevel.Debug,
+        Message = "Cache status queried")]
+    public static partial void CacheStatusQueried(ILogger logger);
 }
