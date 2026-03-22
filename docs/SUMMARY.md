@@ -71,6 +71,7 @@
 * [Architecture Overview](contributor/ARCHITECTURE.md)
 * [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md)
 * [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md)
+* [Pilot Evidence Kit](contributor/migration/README.md)
 * [Architecture Review Criteria](contributor/architecture-criteria.md)
 * [ADRs](contributor/adr/README.md)
 * [Honua Manifesto](contributor/HONUA_MANIFESTO.md)
