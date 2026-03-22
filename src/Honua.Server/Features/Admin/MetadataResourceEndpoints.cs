@@ -19,7 +19,6 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class MetadataResourceEndpoints
 {
-    private const string DefaultNamespace = "default";
 
     /// <summary>
     /// Maps metadata resource endpoints for admin API.
@@ -317,7 +316,7 @@ internal static class MetadataResourceEndpoints
     {
         var metadata = resource.Metadata ?? new ResourceMetadata();
         var name = identifier?.Name ?? metadata.Name ?? existing?.Metadata?.Name;
-        var @namespace = identifier?.Namespace ?? metadata.Namespace ?? existing?.Metadata?.Namespace ?? DefaultNamespace;
+        var @namespace = identifier?.Namespace ?? metadata.Namespace ?? existing?.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace;
         var kind = identifier?.Kind ?? resource.Kind ?? existing?.Kind;
 
         metadata = metadata with
@@ -339,7 +338,7 @@ internal static class MetadataResourceEndpoints
     }
 
     private static string NormalizeNamespace(string? @namespace)
-        => string.IsNullOrWhiteSpace(@namespace) ? DefaultNamespace : @namespace;
+        => string.IsNullOrWhiteSpace(@namespace) ? ManifestHashHelper.DefaultNamespace : @namespace;
 
     private static bool TryValidateIfMatch(
         HttpContext context,

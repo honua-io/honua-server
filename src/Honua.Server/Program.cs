@@ -354,6 +354,19 @@ builder.Services.AddHostedService(sp =>
         sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>>()));
 
+// Register manifest drift webhook dispatcher (#515)
+builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>, Honua.Server.Features.Admin.ManifestDriftWebhookOptionsValidator>();
+builder.Services.AddOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>()
+    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Admin.ManifestDriftWebhookOptions.SectionName));
+builder.Services.AddHttpClient("manifest-drift-webhook");
+builder.Services.AddHostedService(sp =>
+    new Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetService<IDistributedCache>(),
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher>>()));
+
 builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOperationJobService>(sp =>
     new Honua.Server.Features.Admin.TileOperations.TileOperationJobService(
         sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
@@ -693,6 +706,7 @@ app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();
+app.MapAdminManifestDriftEndpoints();
 app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints

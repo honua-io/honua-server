@@ -250,6 +250,18 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_metadata_indexes_kind_namespace ON honua.metadata_indexes(kind, namespace);"
   - |
+      CREATE TABLE IF NOT EXISTS honua.manifest_versions (
+          version_id TEXT PRIMARY KEY,
+          manifest_hash TEXT NOT NULL,
+          manifest_json JSONB NOT NULL,
+          summary TEXT,
+          actor TEXT,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          resource_count INT NOT NULL DEFAULT 0
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_manifest_versions_applied_at ON honua.manifest_versions(applied_at DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_manifest_versions_manifest_hash ON honua.manifest_versions(manifest_hash);"
+  - |
       CREATE OR REPLACE FUNCTION honua.create_import_table(table_name text)
       RETURNS void
       LANGUAGE plpgsql
@@ -486,6 +498,7 @@ sql:
   - "DELETE FROM honua.replicas;"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
+  - "DELETE FROM honua.manifest_versions;"
   - "DELETE FROM honua.metadata_compiled;"
   - "DELETE FROM honua.metadata_history;"
   - "DELETE FROM honua.metadata_indexes;"

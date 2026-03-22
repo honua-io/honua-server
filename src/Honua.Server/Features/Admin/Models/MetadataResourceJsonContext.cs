@@ -38,6 +38,14 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ApiResponse<AdminCapabilitiesResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(ManifestDriftReport))]
+[JsonSerializable(typeof(ManifestDriftRecord))]
+[JsonSerializable(typeof(ManifestVersionResponse))]
+[JsonSerializable(typeof(ManifestVersionDetailResponse))]
+[JsonSerializable(typeof(ManifestVersionListResponse))]
+[JsonSerializable(typeof(ApiResponse<ManifestDriftReport>))]
+[JsonSerializable(typeof(ApiResponse<ManifestVersionListResponse>))]
+[JsonSerializable(typeof(ApiResponse<ManifestVersionDetailResponse>))]
 public sealed partial class MetadataResourceJsonContext : JsonSerializerContext
 {
 }

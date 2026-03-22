@@ -21,7 +21,6 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminMetadataEndpoints
 {
-    private const string DefaultNamespace = "default";
 
     /// <summary>
     /// Map metadata version and manifest endpoints to the admin API group.
@@ -236,12 +235,12 @@ internal static class AdminMetadataEndpoints
 
             if (!string.IsNullOrWhiteSpace(lastApplied))
             {
-                var currentHash = ComputeSpecHash(resource.Spec);
+                var currentHash = ManifestHashHelper.ComputeSpecHash(resource.Spec);
                 if (!string.Equals(lastApplied, currentHash, StringComparison.Ordinal))
                 {
                     drifted.Add(new MetadataResourceIdentifier(
                         resource.Kind ?? string.Empty,
-                        resource.Metadata?.Namespace ?? DefaultNamespace,
+                        resource.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace,
                         resource.Metadata?.Name ?? string.Empty));
                 }
             }
@@ -265,7 +264,8 @@ internal static class AdminMetadataEndpoints
         ManifestApplyRequest request,
         [FromServices] IMetadataResourceStore store,
         [FromServices] IMetadataSchemaRegistry schemaRegistry,
-        [FromServices] IMetadataCompiler compiler)
+        [FromServices] IMetadataCompiler compiler,
+        [FromServices] IManifestVersionStore versionStore)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
         {
@@ -304,7 +304,7 @@ internal static class AdminMetadataEndpoints
         var identifiers = normalizedResources
             .Select(resource => new MetadataResourceIdentifier(
                 resource.Kind ?? string.Empty,
-                resource.Metadata?.Namespace ?? DefaultNamespace,
+                resource.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace,
                 resource.Metadata?.Name ?? string.Empty))
             .ToHashSet();
 
@@ -312,11 +312,11 @@ internal static class AdminMetadataEndpoints
         {
             var identifier = new MetadataResourceIdentifier(
                 resource.Kind ?? string.Empty,
-                resource.Metadata?.Namespace ?? DefaultNamespace,
+                resource.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace,
                 resource.Metadata?.Name ?? string.Empty);
 
             var existing = await store.GetAsync(identifier, context.RequestAborted);
-            var specHash = ComputeSpecHash(resource.Spec);
+            var specHash = ManifestHashHelper.ComputeSpecHash(resource.Spec);
             var updatedMetadata = ApplyManifestHash(resource.Metadata ?? new ResourceMetadata(), specHash);
 
             if (existing == null)
@@ -369,7 +369,7 @@ internal static class AdminMetadataEndpoints
                 continue;
             }
 
-            var currentHash = ComputeSpecHash(existing.Spec);
+            var currentHash = ManifestHashHelper.ComputeSpecHash(existing.Spec);
             var lastApplied = existing.Metadata?.Annotations != null &&
                               existing.Metadata.Annotations.TryGetValue(MetadataAnnotations.LastAppliedManifestHash, out var storedHash)
                 ? storedHash
@@ -432,7 +432,7 @@ internal static class AdminMetadataEndpoints
         if (request.Prune)
         {
             var namespaces = normalizedResources
-                .Select(resource => resource.Metadata?.Namespace ?? DefaultNamespace)
+                .Select(resource => resource.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             var kinds = normalizedResources
@@ -449,7 +449,7 @@ internal static class AdminMetadataEndpoints
                     {
                         var candidateId = new MetadataResourceIdentifier(
                             candidate.Kind ?? string.Empty,
-                            candidate.Metadata?.Namespace ?? DefaultNamespace,
+                            candidate.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace,
                             candidate.Metadata?.Name ?? string.Empty);
                         if (identifiers.Contains(candidateId))
                         {
@@ -485,6 +485,28 @@ internal static class AdminMetadataEndpoints
             }
         }
 
+        // Store manifest version snapshot for non-dry-run applies
+        if (!request.DryRun)
+        {
+            var manifestResourcesJson = JsonSerializer.SerializeToElement(
+                normalizedResources.ToArray(),
+                MetadataResourceJsonContext.Default.MetadataResourceArray);
+            var manifestHash = ComputeManifestHash(normalizedResources);
+
+            var versionEntry = new ManifestVersionEntry
+            {
+                VersionId = Guid.NewGuid().ToString("N"),
+                ManifestHash = manifestHash,
+                ManifestJson = manifestResourcesJson,
+                Summary = $"Created: {created}, Updated: {updated}, Deleted: {deleted}, Skipped: {skipped}",
+                Actor = context.User.Identity?.Name,
+                AppliedAt = DateTimeOffset.UtcNow,
+                ResourceCount = normalizedResources.Count
+            };
+
+            await versionStore.StoreAsync(versionEntry, context.RequestAborted);
+        }
+
         var result = new ManifestApplyResult
         {
             DryRun = request.DryRun,
@@ -509,7 +531,7 @@ internal static class AdminMetadataEndpoints
     {
         var metadata = resource.Metadata ?? new ResourceMetadata();
         var name = identifier?.Name ?? metadata.Name ?? existing?.Metadata?.Name;
-        var @namespace = identifier?.Namespace ?? metadata.Namespace ?? existing?.Metadata?.Namespace ?? DefaultNamespace;
+        var @namespace = identifier?.Namespace ?? metadata.Namespace ?? existing?.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace;
         var kind = identifier?.Kind ?? resource.Kind ?? existing?.Kind;
 
         metadata = metadata with
@@ -564,13 +586,6 @@ internal static class AdminMetadataEndpoints
         await store.StoreCompiledArtifactAsync(artifact, cancellationToken);
     }
 
-    private static string ComputeSpecHash(JsonElement spec)
-    {
-        var raw = CanonicalizeJson(spec);
-        var bytes = Encoding.UTF8.GetBytes(raw);
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    }
-
     private static string ComputeManifestHash(IReadOnlyList<MetadataResource> resources)
     {
         if (resources.Count == 0)
@@ -588,7 +603,7 @@ internal static class AdminMetadataEndpoints
                 .Append(resource.Metadata?.Namespace).Append('|')
                 .Append(resource.Metadata?.Name).Append('|')
                 .Append(resource.Metadata?.ResourceVersion).Append('|')
-                .Append(CanonicalizeJson(resource.Spec));
+                .Append(ManifestHashHelper.CanonicalizeJson(resource.Spec));
         }
 
         var bytes = Encoding.UTF8.GetBytes(builder.ToString());
@@ -607,56 +622,5 @@ internal static class AdminMetadataEndpoints
 
     private static Task WriteError(HttpContext context, int statusCode, string message)
         => AdminResponseWriter.WriteErrorAsync(context, message, statusCode);
-
-    private static string CanonicalizeJson(JsonElement element)
-    {
-        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
-        using var writer = new Utf8JsonWriter(buffer);
-        WriteCanonicalJson(writer, element);
-        writer.Flush();
-        return Encoding.UTF8.GetString(buffer.WrittenSpan);
-    }
-
-    private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                foreach (var property in element.EnumerateObject()
-                             .OrderBy(p => p.Name, StringComparer.Ordinal))
-                {
-                    writer.WritePropertyName(property.Name);
-                    WriteCanonicalJson(writer, property.Value);
-                }
-                writer.WriteEndObject();
-                break;
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                foreach (var item in element.EnumerateArray())
-                {
-                    WriteCanonicalJson(writer, item);
-                }
-                writer.WriteEndArray();
-                break;
-            case JsonValueKind.String:
-                writer.WriteStringValue(element.GetString());
-                break;
-            case JsonValueKind.Number:
-                writer.WriteRawValue(element.GetRawText(), skipInputValidation: true);
-                break;
-            case JsonValueKind.True:
-            case JsonValueKind.False:
-                writer.WriteBooleanValue(element.GetBoolean());
-                break;
-            case JsonValueKind.Null:
-            case JsonValueKind.Undefined:
-                writer.WriteNullValue();
-                break;
-            default:
-                writer.WriteRawValue(element.GetRawText(), skipInputValidation: true);
-                break;
-        }
-    }
 
 }
