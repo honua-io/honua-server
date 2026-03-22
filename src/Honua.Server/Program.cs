@@ -21,6 +21,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Export;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
@@ -330,6 +331,14 @@ builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobMan
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoServerImportBackgroundService>();
 
+// Register export background service with bounded channel
+builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Honua.Server.Features.Export.ExportJob>(
+    new System.Threading.Channels.BoundedChannelOptions(4)
+    {
+        FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
+    }));
+builder.Services.AddHostedService<Honua.Server.Features.Export.ExportBackgroundService>();
+
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions.SectionName));
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>, Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptionsValidator>();
@@ -468,7 +477,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
-        Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default);
+        Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default,
+        Honua.Server.Features.Export.ExportJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
@@ -755,6 +765,9 @@ app.MapGeoServerImportEndpoints();
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();
+
+// Configure data export endpoints
+app.MapExportEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();

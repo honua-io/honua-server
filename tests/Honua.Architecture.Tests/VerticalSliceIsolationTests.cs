@@ -34,6 +34,7 @@ public sealed class VerticalSliceIsolationTests
         "Wfs20",
         "OData",
         "Grpc",
+        "Export",
         "Import",
         "FileStorage",
         "HealthCheck",

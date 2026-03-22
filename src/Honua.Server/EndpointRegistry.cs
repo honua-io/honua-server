@@ -342,6 +342,9 @@ public static class EndpointRegistry
         // WFS 2.0
         new("GET", "/wfs"),
         new("POST", "/wfs"),
+
+        // Data export
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/export"),
     ];
 }
 
