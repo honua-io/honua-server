@@ -30,8 +30,8 @@ internal static class LicenseAdminEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<LicenseStatusResponse>>();
 
-        group.MapGet("/entitlements", HandleGetEntitlements)
-            .WithDisplayName("Get License Entitlements")
+        group.MapGet("/features", HandleGetEntitlements)
+            .WithDisplayName("Get License Feature Entitlements")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<LicenseEntitlementsResponse>>();
 
@@ -55,6 +55,7 @@ internal static class LicenseAdminEndpoints
             IsValid = status.IsValid,
             ExpiresAt = status.ExpiresAt,
             LicensedTo = status.LicensedTo,
+            ValidationState = status.IsValid ? "valid" : "invalid",
             DaysUntilExpiry = status.DaysUntilExpiry,
             ExpiryWarning = status.DaysUntilExpiry is <= 30
         };

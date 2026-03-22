@@ -4,42 +4,6 @@
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
-/// Response model for license status information.
-/// </summary>
-public sealed class LicenseStatusResponse
-{
-    /// <summary>
-    /// Active platform edition name.
-    /// </summary>
-    public required string Edition { get; init; }
-
-    /// <summary>
-    /// Whether the license is currently valid.
-    /// </summary>
-    public required bool IsValid { get; init; }
-
-    /// <summary>
-    /// License expiry date, null for perpetual/community.
-    /// </summary>
-    public DateTimeOffset? ExpiresAt { get; init; }
-
-    /// <summary>
-    /// Licensee name.
-    /// </summary>
-    public string? LicensedTo { get; init; }
-
-    /// <summary>
-    /// Days until license expiry, null if no expiry.
-    /// </summary>
-    public int? DaysUntilExpiry { get; init; }
-
-    /// <summary>
-    /// Whether the license is within the expiry warning threshold (30 days or less).
-    /// </summary>
-    public bool ExpiryWarning { get; init; }
-}
-
-/// <summary>
 /// Response model for license entitlements.
 /// </summary>
 public sealed class LicenseEntitlementsResponse

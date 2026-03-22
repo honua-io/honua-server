@@ -52,10 +52,10 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.License)]
-    [Endpoint("GET /api/v1/admin/license/entitlements")]
+    [Endpoint("GET /api/v1/admin/license/features")]
     public async Task GetLicenseEntitlements_ReturnsFeatureList()
     {
-        var response = await _client.GetAsync("/api/v1/admin/license/entitlements");
+        var response = await _client.GetAsync("/api/v1/admin/license/features");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

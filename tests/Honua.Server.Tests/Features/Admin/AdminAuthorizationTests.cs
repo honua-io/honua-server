@@ -368,10 +368,10 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/license/entitlements")]
+    [Endpoint("GET /api/v1/admin/license/features")]
     public async Task GetLicenseEntitlements_WithoutAuth_Returns401()
     {
-        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/license/entitlements");
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/license/features");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

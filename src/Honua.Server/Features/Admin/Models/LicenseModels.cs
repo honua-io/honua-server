@@ -24,6 +24,16 @@ public sealed class LicenseStatusResponse
     public required bool IsValid { get; init; }
 
     /// <summary>
+    /// Days until license expiry, null if no expiry.
+    /// </summary>
+    public int? DaysUntilExpiry { get; init; }
+
+    /// <summary>
+    /// Whether the license is within the expiry warning threshold.
+    /// </summary>
+    public bool ExpiryWarning { get; init; }
+
+    /// <summary>
     /// Validation state description.
     /// </summary>
     public required string ValidationState { get; init; }

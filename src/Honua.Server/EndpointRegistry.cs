@@ -65,6 +65,17 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/license"),
         new("GET", "/api/v1/admin/license/entitlements"),
 
+        // v1 platform admin endpoints (#513)
+        new("GET", "/api/v1/admin/license/status"),
+        new("GET", "/api/v1/admin/license/features"),
+        new("POST", "/api/v1/admin/license/upload"),
+        new("GET", "/api/v1/admin/identity/providers"),
+        new("GET", "/api/v1/admin/identity/providers/{providerType}/test"),
+        new("GET", "/api/v1/admin/cache/status"),
+        new("POST", "/api/v1/admin/cache/invalidate"),
+        new("GET", "/api/v1/admin/geocoding/providers"),
+        new("GET", "/api/v1/admin/features"),
+
         // v1 admin OIDC provider endpoints (#511)
         new("GET", "/api/v1/admin/oidc/providers"),
         new("POST", "/api/v1/admin/oidc/providers"),
