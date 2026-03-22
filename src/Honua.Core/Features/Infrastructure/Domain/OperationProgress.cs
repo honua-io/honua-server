@@ -124,5 +124,10 @@ public enum OperationType
     /// <summary>
     /// PMTiles archive generation operation.
     /// </summary>
-    PMTilesArchive
+    PMTilesArchive,
+
+    /// <summary>
+    /// Data export operation (Shapefile, GeoPackage, CSV).
+    /// </summary>
+    Export
 }

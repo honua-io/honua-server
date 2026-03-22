@@ -93,6 +93,7 @@ internal static class OperationsProgressEndpoints
             IngestProgress ingestProgress => Results.Json(ingestProgress, OperationsProgressJsonContext.Default.IngestProgress),
             GeoservicesImportProgress externalImportProgress => Results.Json(externalImportProgress, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
             TileOperationProgress tileOperationProgress => Results.Json(tileOperationProgress, OperationsProgressJsonContext.Default.TileOperationProgress),
+            ExportProgress exportProgress => Results.Json(exportProgress, OperationsProgressJsonContext.Default.ExportProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
     }
@@ -311,6 +312,7 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(IngestProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(GeoservicesImportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(ExportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]

@@ -26,4 +26,10 @@ public enum AxisOrder
 /// <param name="Srid">EPSG SRID.</param>
 /// <param name="AxisOrder">Axis order for coordinates.</param>
 /// <param name="IsGeographic">True when CRS is geographic (lat/lon).</param>
-public readonly record struct CrsDefinition(string Uri, int Srid, AxisOrder AxisOrder, bool IsGeographic);
+public readonly record struct CrsDefinition(string Uri, int Srid, AxisOrder AxisOrder, bool IsGeographic)
+{
+    /// <summary>
+    /// OGC Well-Known Text representation of the CRS, when available from the spatial reference registry.
+    /// </summary>
+    public string? Wkt { get; init; }
+}

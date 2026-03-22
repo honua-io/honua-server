@@ -202,7 +202,10 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             var isGeographic = DetermineIsGeographic(srid, wkt);
             var axisOrder = DetermineAxisOrder(wkt, isGeographic);
             var uri = FormattableString.Invariant($"{EpsgUriPrefix}{srid}");
-            return new CrsDefinition(uri, srid, axisOrder, isGeographic);
+            return new CrsDefinition(uri, srid, axisOrder, isGeographic)
+            {
+                Wkt = srtext
+            };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
