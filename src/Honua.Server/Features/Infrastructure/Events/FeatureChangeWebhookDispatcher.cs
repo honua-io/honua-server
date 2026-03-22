@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
@@ -138,65 +137,24 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
             return false;
         }
 
-        webhookUri = destinationValidation.Uri;
         var payload = JsonSerializer.Serialize(featureEvent, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
-        var timestamp = featureEvent.Timestamp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-        var signature = ComputeSignature(_options.Secret!, timestamp, payload);
-        var maxAttempts = Math.Max(1, _options.MaxAttempts);
-
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
+        return await WebhookDeliveryHelper.DeliverWithRetryAsync(
+            new WebhookDeliveryRequest
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.RequestTimeoutSeconds)));
-
-                using var request = new HttpRequestMessage(HttpMethod.Post, webhookUri)
-                {
-                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
-                };
-                request.Headers.TryAddWithoutValidation("X-Honua-Event-Id", featureEvent.EventId);
-                request.Headers.TryAddWithoutValidation("X-Honua-Event-Timestamp", timestamp);
-                request.Headers.TryAddWithoutValidation("X-Honua-Signature", $"sha256={signature}");
-                request.Headers.TryAddWithoutValidation("Idempotency-Key", featureEvent.EventId);
-
-                var client = _httpClientFactory.CreateClient("feature-change-webhook");
-                using var response = await client.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    LogDeliverySucceeded(_logger, featureEvent.EventId, response.StatusCode);
-                    return true;
-                }
-
-                var isRetryable = (int)response.StatusCode >= 500 || response.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
-                LogDeliveryFailed(_logger, featureEvent.EventId, attempt, (int)response.StatusCode, isRetryable);
-                if (!isRetryable || attempt == maxAttempts)
-                {
-                    return false;
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                LogDeliveryException(_logger, featureEvent.EventId, attempt, ex);
-                if (attempt == maxAttempts)
-                {
-                    return false;
-                }
-            }
-
-            var delayMs = Math.Min(
-                Math.Max(1, _options.InitialBackoffMs) * (1 << (attempt - 1)),
-                Math.Max(1, _options.MaxBackoffMs));
-            await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken).ConfigureAwait(false);
-        }
-
-        return false;
+                Payload = payload,
+                EventId = featureEvent.EventId,
+                Timestamp = featureEvent.Timestamp,
+                WebhookUri = destinationValidation.Uri,
+                Secret = _options.Secret!,
+                HttpClientName = "feature-change-webhook",
+                MaxAttempts = _options.MaxAttempts,
+                InitialBackoffMs = _options.InitialBackoffMs,
+                MaxBackoffMs = _options.MaxBackoffMs,
+                RequestTimeoutSeconds = _options.RequestTimeoutSeconds
+            },
+            _httpClientFactory,
+            _logger,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<long> LoadDeliveredCursorAsync(CancellationToken cancellationToken)
@@ -225,9 +183,6 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 cancellationToken)
             .ConfigureAwait(false);
     }
-
-    private static string ComputeSignature(string secret, string timestamp, string payload)
-        => WebhookSignatureHelper.ComputeSignature(secret, timestamp, payload);
 
     private void LogWebhookConfigurationInvalidOnce()
     {
@@ -259,13 +214,4 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
 
     [LoggerMessage(EventId = 9105, Level = LogLevel.Warning, Message = "Feature change webhook delivery is disabled because the configured URL is unsafe: {Reason}")]
     private static partial void LogWebhookUrlRejected(ILogger logger, string reason);
-
-    [LoggerMessage(EventId = 9102, Level = LogLevel.Debug, Message = "Feature-change webhook delivery succeeded for event {EventId} with status {StatusCode}.")]
-    private static partial void LogDeliverySucceeded(ILogger logger, string eventId, System.Net.HttpStatusCode statusCode);
-
-    [LoggerMessage(EventId = 9103, Level = LogLevel.Warning, Message = "Feature-change webhook delivery failed for event {EventId} on attempt {Attempt} with status {StatusCode}. Retryable={Retryable}.")]
-    private static partial void LogDeliveryFailed(ILogger logger, string eventId, int attempt, int statusCode, bool retryable);
-
-    [LoggerMessage(EventId = 9104, Level = LogLevel.Warning, Message = "Feature-change webhook delivery threw for event {EventId} on attempt {Attempt}.")]
-    private static partial void LogDeliveryException(ILogger logger, string eventId, int attempt, Exception exception);
 }

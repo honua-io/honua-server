@@ -283,6 +283,27 @@ builder.Services.AddSingleton<Honua.Core.Features.RateLimiting.Abstractions.IRat
 builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
 builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
 
+// Register manifest approval workflow services
+builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalOptions.SectionName));
+builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions.SectionName));
+builder.Services.AddHttpClient("manifest-approval-webhook");
+builder.Services.AddSingleton<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(sp =>
+    new Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher(
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>>()));
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>());
+builder.Services.AddHostedService(sp =>
+    new Honua.Server.Features.Admin.ManifestApprovalExpiryService(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.ManifestApprovalOptions>>(),
+        sp.GetService<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalExpiryService>>()));
+builder.Services.AddScoped<Honua.Server.Features.Admin.ManifestApprovalGate>();
+
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
@@ -471,6 +492,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
@@ -732,6 +754,7 @@ app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 app.MapAdminMetadataEndpoints();
+app.MapAdminManifestApprovalEndpoints();
 app.MapAdminManifestDriftEndpoints();
 app.MapDeployControlEndpoints();
 

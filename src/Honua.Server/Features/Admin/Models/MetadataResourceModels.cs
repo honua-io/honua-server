@@ -64,6 +64,25 @@ public sealed class ManifestApplyRequest
     /// </summary>
     [JsonPropertyName("prune")]
     public bool Prune { get; init; }
+
+    /// <summary>
+    /// When true, the manifest is queued for approval instead of being applied immediately.
+    /// Requires the enterprise edition approval workflow feature.
+    /// </summary>
+    [JsonPropertyName("approvalRequired")]
+    public bool ApprovalRequired { get; init; }
+
+    /// <summary>
+    /// Identity of the actor requesting the manifest apply.
+    /// </summary>
+    [JsonPropertyName("requestedBy")]
+    public string? RequestedBy { get; init; }
+
+    /// <summary>
+    /// Free-form reason for the manifest change request.
+    /// </summary>
+    [JsonPropertyName("requestedReason")]
+    public string? RequestedReason { get; init; }
 }
 
 /// <summary>
@@ -322,6 +341,12 @@ public sealed class AdminCompatibilityFeatureFlags
     /// </summary>
     [JsonPropertyName("manifestPrune")]
     public bool ManifestPrune { get; init; }
+
+    /// <summary>
+    /// Indicates support for manifest approval workflows (enterprise feature).
+    /// </summary>
+    [JsonPropertyName("manifestApproval")]
+    public bool ManifestApproval { get; init; }
 }
 
 /// <summary>

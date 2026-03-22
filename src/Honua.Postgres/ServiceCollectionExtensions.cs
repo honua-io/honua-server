@@ -114,6 +114,12 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register manifest pending change store for approval workflows
+        services.AddScoped<IManifestPendingChangeStore>(serviceProvider =>
+            new PostgresManifestPendingChangeStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
 
