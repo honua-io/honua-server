@@ -515,6 +515,21 @@ if (configurationErrors.Count > 0)
 
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 
+// Log OIDC configuration state for observability
+{
+    var oidcOpts = app.Services.GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
+    if (oidcOpts.Enabled)
+    {
+        OidcAuthenticationLog.OidcConfigurationLoaded(
+            app.Logger,
+            oidcOpts.AzureAd?.IsValid == true,
+            oidcOpts.Google?.IsValid == true,
+            oidcOpts.Generic?.IsValid == true,
+            oidcOpts.Okta?.IsValid == true,
+            oidcOpts.Auth0?.IsValid == true);
+    }
+}
+
 // Add security headers middleware (first in pipeline for all requests)
 if (!app.Environment.IsEnvironment("Test"))
 {

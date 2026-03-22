@@ -149,11 +149,15 @@ internal sealed class OidcClaimsTransformation(
         roles.AddRange(identity.FindAll(ClaimTypes.Role).Select(c => c.Value));
         roles.AddRange(identity.FindAll(_options.ClaimsMapping.RoleClaimType).Select(c => c.Value));
 
-        // Check Azure AD specific role claims
+        // Check Azure AD specific role claims (hardcoded for backward compatibility)
         roles.AddRange(identity.FindAll("roles").Select(c => c.Value));
 
-        // Check Google groups claim (if configured)
-        roles.AddRange(identity.FindAll("groups").Select(c => c.Value));
+        // Check provider-configurable additional role claim types
+        // (e.g. Okta "groups", Auth0 "{namespace}/roles", "{namespace}/permissions")
+        foreach (var claimType in _options.ClaimsMapping.AdditionalRoleClaimTypes)
+        {
+            roles.AddRange(identity.FindAll(claimType).Select(c => c.Value));
+        }
 
         return roles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }

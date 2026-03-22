@@ -34,6 +34,16 @@ public sealed class OidcAuthenticationOptions
     public GenericOidcProviderOptions? Generic { get; set; }
 
     /// <summary>
+    /// Gets or sets the Okta provider configuration.
+    /// </summary>
+    public OktaProviderOptions? Okta { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Auth0 provider configuration.
+    /// </summary>
+    public Auth0ProviderOptions? Auth0 { get; set; }
+
+    /// <summary>
     /// Gets or sets the claims mapping configuration.
     /// </summary>
     public ClaimsMappingOptions ClaimsMapping { get; set; } = new();
@@ -252,6 +262,12 @@ public sealed class ClaimsMappingOptions
     /// Gets or sets custom claim mappings (source claim -> target claim).
     /// </summary>
     public Dictionary<string, string> CustomMappings { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets additional claim types to extract roles from.
+    /// Auto-populated from provider config (e.g. Okta "groups", Auth0 namespace-prefixed roles).
+    /// </summary>
+    public string[] AdditionalRoleClaimTypes { get; set; } = [];
 }
 
 /// <summary>
@@ -309,4 +325,135 @@ public sealed class TokenValidationOptions
     /// Gets or sets the maximum replay cache duration (0 uses token expiry).
     /// </summary>
     public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.Zero;
+}
+
+/// <summary>
+/// Okta provider configuration options.
+/// </summary>
+public sealed class OktaProviderOptions
+{
+    /// <summary>
+    /// Gets or sets whether Okta authentication is enabled.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Okta organization URL (domain only, e.g. "dev-12345.okta.com").
+    /// </summary>
+    public string? OrgUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets the authorization server ID. Defaults to "default" (Okta's default authorization server).
+    /// </summary>
+    public string AuthorizationServerId { get; set; } = "default";
+
+    /// <summary>
+    /// Gets or sets the Okta application client ID (string, not GUID).
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the client secret.
+    /// </summary>
+    public string? ClientSecret { get; set; }
+
+    /// <summary>
+    /// Gets or sets the callback path for authentication response.
+    /// </summary>
+    public string CallbackPath { get; set; } = "/signin-oidc-okta";
+
+    /// <summary>
+    /// Gets or sets the signed-out callback path.
+    /// </summary>
+    public string SignedOutCallbackPath { get; set; } = "/signout-callback-oidc-okta";
+
+    /// <summary>
+    /// Gets or sets the scopes to request.
+    /// </summary>
+    public string[] Scopes { get; set; } = ["openid", "profile", "email"];
+
+    /// <summary>
+    /// Gets or sets whether to request the "groups" claim from Okta.
+    /// When true, adds "groups" scope and maps groups to roles.
+    /// </summary>
+    public bool RequestGroupsClaim { get; set; }
+
+    /// <summary>
+    /// Gets whether the provider configuration is valid.
+    /// </summary>
+    public bool IsValid => Enabled &&
+        !string.IsNullOrEmpty(OrgUrl) &&
+        !string.IsNullOrEmpty(ClientId);
+
+    /// <summary>
+    /// Gets the OIDC authority URL derived from OrgUrl and AuthorizationServerId.
+    /// </summary>
+    public string GetAuthority() =>
+        $"https://{OrgUrl}/oauth2/{AuthorizationServerId}";
+}
+
+/// <summary>
+/// Auth0 provider configuration options.
+/// </summary>
+public sealed class Auth0ProviderOptions
+{
+    /// <summary>
+    /// Gets or sets whether Auth0 authentication is enabled.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Auth0 domain (domain only, e.g. "myapp.us.auth0.com").
+    /// </summary>
+    public string? Domain { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Auth0 application client ID.
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the client secret.
+    /// </summary>
+    public string? ClientSecret { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Auth0 API identifier (audience). Distinct from ClientId.
+    /// Required when Auth0 should issue access tokens rather than ID tokens.
+    /// </summary>
+    public string? Audience { get; set; }
+
+    /// <summary>
+    /// Gets or sets the namespace prefix for custom role/permission claims
+    /// (e.g. "https://myapp.example.com"). Auth0 uses namespace-prefixed claims.
+    /// </summary>
+    public string? RoleClaimNamespace { get; set; }
+
+    /// <summary>
+    /// Gets or sets the callback path for authentication response.
+    /// </summary>
+    public string CallbackPath { get; set; } = "/signin-oidc-auth0";
+
+    /// <summary>
+    /// Gets or sets the signed-out callback path.
+    /// </summary>
+    public string SignedOutCallbackPath { get; set; } = "/signout-callback-oidc-auth0";
+
+    /// <summary>
+    /// Gets or sets the scopes to request.
+    /// </summary>
+    public string[] Scopes { get; set; } = ["openid", "profile", "email"];
+
+    /// <summary>
+    /// Gets whether the provider configuration is valid.
+    /// </summary>
+    public bool IsValid => Enabled &&
+        !string.IsNullOrEmpty(Domain) &&
+        !string.IsNullOrEmpty(ClientId);
+
+    /// <summary>
+    /// Gets the OIDC authority URL derived from Domain (trailing slash required for Auth0 issuer validation).
+    /// </summary>
+    public string GetAuthority() =>
+        $"https://{Domain}/";
 }
