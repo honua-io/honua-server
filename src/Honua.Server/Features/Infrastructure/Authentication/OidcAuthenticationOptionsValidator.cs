@@ -39,7 +39,9 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
         {
             var hasEnabledProvider = (options.AzureAd?.Enabled == true) ||
                                     (options.Google?.Enabled == true) ||
-                                    (options.Generic?.Enabled == true);
+                                    (options.Generic?.Enabled == true) ||
+                                    (options.Okta?.Enabled == true) ||
+                                    (options.Auth0?.Enabled == true);
 
             if (!hasEnabledProvider)
             {
@@ -97,6 +99,18 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
         if (options.Generic?.Enabled == true)
         {
             ValidateGenericProvider(options.Generic, failures);
+        }
+
+        // Validate Okta provider
+        if (options.Okta?.Enabled == true)
+        {
+            ValidateOktaProvider(options.Okta, failures);
+        }
+
+        // Validate Auth0 provider
+        if (options.Auth0?.Enabled == true)
+        {
+            ValidateAuth0Provider(options.Auth0, failures);
         }
 
         // Check for conflicting callback paths
@@ -188,6 +202,78 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
     }
 
     /// <summary>
+    /// Validates Okta provider configuration.
+    /// </summary>
+    private static void ValidateOktaProvider(OktaProviderOptions okta, List<string> failures)
+    {
+        ValidateRequiredString(okta.OrgUrl, "Okta.OrgUrl", failures);
+        if (!string.IsNullOrWhiteSpace(okta.OrgUrl))
+        {
+            if (okta.OrgUrl.Contains("://"))
+            {
+                failures.Add("Okta.OrgUrl must be a domain only (e.g. 'dev-12345.okta.com'), not a full URL");
+            }
+            else if (!Uri.TryCreate($"https://{okta.OrgUrl}", UriKind.Absolute, out _))
+            {
+                failures.Add("Okta.OrgUrl must form a valid hostname");
+            }
+        }
+
+        ValidateRequiredString(okta.ClientId, "Okta.ClientId", failures);
+
+        if (!string.IsNullOrEmpty(okta.AuthorizationServerId) && string.IsNullOrWhiteSpace(okta.AuthorizationServerId))
+        {
+            failures.Add("Okta.AuthorizationServerId cannot be whitespace-only");
+        }
+
+        ValidateCallbackPath(okta.CallbackPath, "Okta.CallbackPath", failures);
+        ValidateCallbackPath(okta.SignedOutCallbackPath, "Okta.SignedOutCallbackPath", failures);
+        ValidateScopes(okta.Scopes, "Okta.Scopes", failures);
+    }
+
+    /// <summary>
+    /// Validates Auth0 provider configuration.
+    /// </summary>
+    private static void ValidateAuth0Provider(Auth0ProviderOptions auth0, List<string> failures)
+    {
+        ValidateRequiredString(auth0.Domain, "Auth0.Domain", failures);
+        if (!string.IsNullOrWhiteSpace(auth0.Domain))
+        {
+            if (auth0.Domain.Contains("://"))
+            {
+                failures.Add("Auth0.Domain must be a domain only (e.g. 'myapp.us.auth0.com'), not a full URL");
+            }
+            else if (!Uri.TryCreate($"https://{auth0.Domain}", UriKind.Absolute, out _))
+            {
+                failures.Add("Auth0.Domain must form a valid hostname");
+            }
+        }
+
+        ValidateRequiredString(auth0.ClientId, "Auth0.ClientId", failures);
+
+        if (!string.IsNullOrEmpty(auth0.Audience) && string.IsNullOrWhiteSpace(auth0.Audience))
+        {
+            failures.Add("Auth0.Audience cannot be whitespace-only when set");
+        }
+
+        if (!string.IsNullOrWhiteSpace(auth0.RoleClaimNamespace))
+        {
+            if (!Uri.TryCreate(auth0.RoleClaimNamespace, UriKind.Absolute, out var nsUri))
+            {
+                failures.Add("Auth0.RoleClaimNamespace must be a valid absolute URI when set");
+            }
+            else if (nsUri.Scheme != "https")
+            {
+                failures.Add("Auth0.RoleClaimNamespace must use HTTPS");
+            }
+        }
+
+        ValidateCallbackPath(auth0.CallbackPath, "Auth0.CallbackPath", failures);
+        ValidateCallbackPath(auth0.SignedOutCallbackPath, "Auth0.SignedOutCallbackPath", failures);
+        ValidateScopes(auth0.Scopes, "Auth0.Scopes", failures);
+    }
+
+    /// <summary>
     /// Validates that callback paths are unique across providers.
     /// </summary>
     private static void ValidateCallbackPaths(OidcAuthenticationOptions options, List<string> failures)
@@ -209,6 +295,18 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
         {
             callbackPaths.Add((options.Generic.CallbackPath, "Generic"));
             callbackPaths.Add((options.Generic.SignedOutCallbackPath, "Generic SignedOut"));
+        }
+
+        if (options.Okta?.Enabled == true)
+        {
+            callbackPaths.Add((options.Okta.CallbackPath, "Okta"));
+            callbackPaths.Add((options.Okta.SignedOutCallbackPath, "Okta SignedOut"));
+        }
+
+        if (options.Auth0?.Enabled == true)
+        {
+            callbackPaths.Add((options.Auth0.CallbackPath, "Auth0"));
+            callbackPaths.Add((options.Auth0.SignedOutCallbackPath, "Auth0 SignedOut"));
         }
 
         // Check for duplicates
@@ -247,6 +345,18 @@ internal sealed class OidcAuthenticationOptionsValidator : OptionsValidator<Oidc
                 if (string.IsNullOrWhiteSpace(mapping.Value))
                 {
                     failures.Add($"ClaimsMapping.CustomMappings['{mapping.Key}'] cannot have empty target claim name");
+                }
+            }
+        }
+
+        // Validate AdditionalRoleClaimTypes
+        if (claimsMapping.AdditionalRoleClaimTypes != null)
+        {
+            foreach (var claimType in claimsMapping.AdditionalRoleClaimTypes)
+            {
+                if (string.IsNullOrWhiteSpace(claimType))
+                {
+                    failures.Add("ClaimsMapping.AdditionalRoleClaimTypes cannot contain empty or whitespace-only entries");
                 }
             }
         }

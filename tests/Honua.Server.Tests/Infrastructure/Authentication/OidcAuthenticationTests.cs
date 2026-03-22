@@ -330,6 +330,127 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.False(options.IsValid);
     }
 
+    #region Okta Options Tests
+
+    [UnitTest]
+    public void OktaOptions_ValidConfiguration_IsValidReturnsTrue()
+    {
+        var options = new OktaProviderOptions
+        {
+            Enabled = true,
+            OrgUrl = "dev-12345.okta.com",
+            ClientId = "0oa1b2c3d4e5f6g7h8i9"
+        };
+
+        Assert.True(options.IsValid);
+    }
+
+    [UnitTest]
+    public void OktaOptions_MissingOrgUrl_IsValidReturnsFalse()
+    {
+        var options = new OktaProviderOptions
+        {
+            Enabled = true,
+            OrgUrl = null,
+            ClientId = "0oa1b2c3d4e5f6g7h8i9"
+        };
+
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
+    public void OktaOptions_Disabled_IsValidReturnsFalse()
+    {
+        var options = new OktaProviderOptions
+        {
+            Enabled = false,
+            OrgUrl = "dev-12345.okta.com",
+            ClientId = "0oa1b2c3d4e5f6g7h8i9"
+        };
+
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
+    public void OktaOptions_GetAuthority_DefaultAuthServer_ReturnsCorrectUrl()
+    {
+        var options = new OktaProviderOptions
+        {
+            OrgUrl = "dev-12345.okta.com",
+            AuthorizationServerId = "default"
+        };
+
+        Assert.Equal("https://dev-12345.okta.com/oauth2/default", options.GetAuthority());
+    }
+
+    [UnitTest]
+    public void OktaOptions_GetAuthority_CustomAuthServer_ReturnsCorrectUrl()
+    {
+        var options = new OktaProviderOptions
+        {
+            OrgUrl = "myorg.okta.com",
+            AuthorizationServerId = "aus1b2c3d4e5f6g7h"
+        };
+
+        Assert.Equal("https://myorg.okta.com/oauth2/aus1b2c3d4e5f6g7h", options.GetAuthority());
+    }
+
+    #endregion
+
+    #region Auth0 Options Tests
+
+    [UnitTest]
+    public void Auth0Options_ValidConfiguration_IsValidReturnsTrue()
+    {
+        var options = new Auth0ProviderOptions
+        {
+            Enabled = true,
+            Domain = "myapp.us.auth0.com",
+            ClientId = "abc123def456"
+        };
+
+        Assert.True(options.IsValid);
+    }
+
+    [UnitTest]
+    public void Auth0Options_MissingDomain_IsValidReturnsFalse()
+    {
+        var options = new Auth0ProviderOptions
+        {
+            Enabled = true,
+            Domain = null,
+            ClientId = "abc123def456"
+        };
+
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
+    public void Auth0Options_Disabled_IsValidReturnsFalse()
+    {
+        var options = new Auth0ProviderOptions
+        {
+            Enabled = false,
+            Domain = "myapp.us.auth0.com",
+            ClientId = "abc123def456"
+        };
+
+        Assert.False(options.IsValid);
+    }
+
+    [UnitTest]
+    public void Auth0Options_GetAuthority_ReturnsUrlWithTrailingSlash()
+    {
+        var options = new Auth0ProviderOptions
+        {
+            Domain = "myapp.us.auth0.com"
+        };
+
+        Assert.Equal("https://myapp.us.auth0.com/", options.GetAuthority());
+    }
+
+    #endregion
+
     #endregion
 
     #region OIDC Disabled Tests
@@ -893,6 +1014,143 @@ public class OidcAuthenticationTests : IAsyncLifetime
         Assert.Equal("jdoe", result.FindFirst(ClaimTypes.Name)?.Value);
     }
 
+    [UnitTest]
+    public async Task ClaimsTransformation_OktaGroupsClaim_MappedToRoles_WhenConfigured()
+    {
+        // Arrange - AdditionalRoleClaimTypes includes "groups" (auto-populated when Okta.RequestGroupsClaim=true)
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["admin"],
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = ["groups"]
+            }
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var claims = new List<Claim>
+        {
+            new("sub", "okta-user-1"),
+            new("groups", "engineering"),
+            new("groups", "admin")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert
+        Assert.True(result.IsInRole("engineering"));
+        Assert.True(result.IsInRole("admin"));
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_OktaGroupsClaim_NotMapped_WhenNotConfigured()
+    {
+        // Arrange - AdditionalRoleClaimTypes is empty (RequestGroupsClaim=false)
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["admin"],
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = []
+            }
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var claims = new List<Claim>
+        {
+            new("sub", "okta-user-2"),
+            new("groups", "engineering")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert - groups should NOT be mapped to roles
+        Assert.False(result.IsInRole("engineering"));
+        Assert.True(result.IsInRole("user")); // default role assigned instead
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_Auth0NamespacePrefixedRoles_MappedCorrectly()
+    {
+        // Arrange - Auth0 namespace-prefixed roles
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["admin"],
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = ["https://myapp.example.com/roles", "https://myapp.example.com/permissions"]
+            }
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var claims = new List<Claim>
+        {
+            new("sub", "auth0|user-1"),
+            new("https://myapp.example.com/roles", "admin"),
+            new("https://myapp.example.com/roles", "editor"),
+            new("https://myapp.example.com/permissions", "read:data")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert
+        Assert.True(result.IsInRole("admin"));
+        Assert.True(result.IsInRole("editor"));
+        Assert.True(result.IsInRole("read:data"));
+    }
+
+    [UnitTest]
+    public async Task ClaimsTransformation_Auth0PermissionsClaim_MappedToRoles()
+    {
+        // Arrange
+        var oidcOptions = Options.Create(new OidcAuthenticationOptions
+        {
+            DefaultRole = "user",
+            AdminRoles = ["admin"],
+            ClaimsMapping = new ClaimsMappingOptions
+            {
+                AdditionalRoleClaimTypes = ["https://myapp.example.com/permissions"]
+            }
+        });
+
+        var logger = new TestLogger<OidcClaimsTransformation>();
+        var transformation = new OidcClaimsTransformation(oidcOptions, logger);
+
+        var claims = new List<Claim>
+        {
+            new("sub", "auth0|user-2"),
+            new("https://myapp.example.com/permissions", "write:features"),
+            new("https://myapp.example.com/permissions", "delete:features")
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        // Act
+        var result = await transformation.TransformAsync(principal);
+
+        // Assert
+        Assert.True(result.IsInRole("write:features"));
+        Assert.True(result.IsInRole("delete:features"));
+    }
+
     #endregion
 
     #region Token Validation Options Tests
@@ -972,6 +1230,104 @@ public class OidcAuthenticationTests : IAsyncLifetime
         // Assert - Should require authentication by default
         Assert.Equal(401, (int)response.StatusCode);
         _output.WriteLine($"FeatureServer response requires auth: {response.StatusCode}");
+    }
+
+    #endregion
+
+    #region Okta/Auth0 JWT Bearer Integration Tests
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_OktaShapedToken_CorrectIssuerFormat_AllowsAccess()
+    {
+        // Arrange - Okta issuer format: https://{orgUrl}/oauth2/{authServerId}
+        const string oktaIssuer = "https://dev-12345.okta.com/oauth2/default";
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            // Disable generic provider and use Okta instead
+            ["Oidc:Generic:Enabled"] = "false",
+            ["Oidc:Okta:Enabled"] = "true",
+            ["Oidc:Okta:OrgUrl"] = "dev-12345.okta.com",
+            ["Oidc:Okta:AuthorizationServerId"] = "default",
+            ["Oidc:Okta:ClientId"] = TestAudience
+        });
+        // Override issuer for token validation
+        settings["Oidc:TokenValidation:ValidIssuers:0"] = oktaIssuer;
+
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: oktaIssuer);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_Auth0ShapedToken_IssuerWithTrailingSlash_AllowsAccess()
+    {
+        // Arrange - Auth0 issuer format: https://{domain}/ (trailing slash)
+        const string auth0Issuer = "https://myapp.us.auth0.com/";
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            // Disable generic provider and use Auth0 instead
+            ["Oidc:Generic:Enabled"] = "false",
+            ["Oidc:Auth0:Enabled"] = "true",
+            ["Oidc:Auth0:Domain"] = "myapp.us.auth0.com",
+            ["Oidc:Auth0:ClientId"] = TestAudience
+        });
+        settings["Oidc:TokenValidation:ValidIssuers:0"] = auth0Issuer;
+
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_Auth0TokenWithAudience_DistinctFromClientId_AllowsAccess()
+    {
+        // Arrange - Auth0 uses separate API audience
+        const string auth0Issuer = "https://myapp.us.auth0.com/";
+        const string apiAudience = "https://api.myapp.com";
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["Oidc:Generic:Enabled"] = "false",
+            ["Oidc:Auth0:Enabled"] = "true",
+            ["Oidc:Auth0:Domain"] = "myapp.us.auth0.com",
+            ["Oidc:Auth0:ClientId"] = "auth0-client-id",
+            ["Oidc:Auth0:Audience"] = apiAudience
+        });
+        settings["Oidc:TokenValidation:ValidIssuers:0"] = auth0Issuer;
+
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        // Token uses the API audience (not the ClientId) as the audience claim
+        var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer, audience: apiAudience);
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        // Assert
+        Assert.NotEqual(401, (int)response.StatusCode);
+        Assert.NotEqual(403, (int)response.StatusCode);
     }
 
     #endregion

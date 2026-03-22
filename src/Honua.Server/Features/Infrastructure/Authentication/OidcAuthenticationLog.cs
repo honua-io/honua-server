@@ -95,8 +95,8 @@ internal static partial class OidcAuthenticationLog
     [LoggerMessage(
         EventId = 4209,
         Level = LogLevel.Information,
-        Message = "OIDC configuration loaded: AzureAD={AzureAdEnabled}, Google={GoogleEnabled}, Generic={GenericEnabled}")]
-    public static partial void OidcConfigurationLoaded(ILogger logger, bool azureAdEnabled, bool googleEnabled, bool genericEnabled);
+        Message = "OIDC configuration loaded: AzureAD={AzureAdEnabled}, Google={GoogleEnabled}, Generic={GenericEnabled}, Okta={OktaEnabled}, Auth0={Auth0Enabled}")]
+    public static partial void OidcConfigurationLoaded(ILogger logger, bool azureAdEnabled, bool googleEnabled, bool genericEnabled, bool oktaEnabled, bool auth0Enabled);
 
     /// <summary>
     /// Logs when user is granted admin access via OIDC.
@@ -115,4 +115,5 @@ internal static partial class OidcAuthenticationLog
         Level = LogLevel.Warning,
         Message = "OIDC token replay detected")]
     public static partial void TokenReplayDetected(ILogger logger);
+
 }
