@@ -52,6 +52,10 @@ public static class Operations
     public const string IdentityManagement = "IdentityManagement";
     public const string RoleManagement = "RoleManagement";
     public const string RateLimitManagement = "RateLimitManagement";
+    public const string License = "License";
+    public const string Identity = "Identity";
+    public const string Features = "Features";
+    public const string GeocodingAdmin = "GeocodingAdmin";
 
     // Import Operations
     public const string Import = "Import";

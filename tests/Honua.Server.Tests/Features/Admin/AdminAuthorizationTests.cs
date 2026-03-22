@@ -356,4 +356,86 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         var response = await _unauthenticatedClient.PostAsync("/api/v1/admin/connections/encryption/rotate-key", null);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
+
+    // --- LicenseAdminEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/license/status")]
+    public async Task GetLicenseStatus_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/license/status");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/license/features")]
+    public async Task GetLicenseEntitlements_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/license/features");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/license/upload")]
+    public async Task PostLicenseUpload_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsync("/api/v1/admin/license/upload", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- IdentityAdminEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/identity/providers")]
+    public async Task GetIdentityProviders_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/identity/providers");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/identity/providers/{providerType}/test")]
+    public async Task TestIdentityProvider_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/identity/providers/AzureAd/test");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- CacheAdminEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/cache/status")]
+    public async Task GetCacheStatus_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/cache/status");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cache/invalidate")]
+    public async Task PostCacheInvalidate_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsJsonAsync("/api/v1/admin/cache/invalidate", new { scope = "all" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- GeocodingAdminEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/geocoding/providers")]
+    public async Task GetGeocodingProviders_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/geocoding/providers");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- FeatureOverviewEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/features")]
+    public async Task GetFeatureOverview_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/features");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
