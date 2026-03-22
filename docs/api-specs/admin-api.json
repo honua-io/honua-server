@@ -56,6 +56,10 @@
       "description": "System monitoring and telemetry"
     },
     {
+      "name": "Metadata Resources",
+      "description": "Metadata resource CRUD operations"
+    },
+    {
       "name": "Deploy",
       "description": "Deploy preflight and rollout-readiness surfaces"
     },
@@ -1214,6 +1218,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -1264,6 +1271,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -1326,6 +1336,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -1335,6 +1348,579 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Admin Version Info",
+        "description": "Returns server version, metadata API version, and current server time.",
+        "operationId": "getAdminVersion",
+        "responses": {
+          "200": {
+            "description": "Admin version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminVersionResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/manifest": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Export Metadata Manifest",
+        "description": "Export a metadata manifest containing all resources, with optional namespace filtering and drift detection.",
+        "operationId": "getMetadataManifest",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Filter resources by namespace",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataManifest"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/manifest/apply": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Apply Metadata Manifest",
+        "description": "Apply a metadata manifest with support for dry-run and prune modes.",
+        "operationId": "applyMetadataManifest",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManifestApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Manifest apply result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseManifestApplyResult"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/metadata/resources": {
+      "get": {
+        "tags": ["Metadata Resources"],
+        "summary": "List Metadata Resources",
+        "description": "List metadata resources with optional kind and namespace filtering.",
+        "operationId": "listMetadataResources",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "Filter by resource kind",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Filter by namespace",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata resource list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataResourceArray"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Metadata Resources"],
+        "summary": "Create Metadata Resource",
+        "description": "Create a new metadata resource. Returns the created resource with an ETag header.",
+        "operationId": "createMetadataResource",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataResource"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Resource created",
+            "headers": {
+              "ETag": {
+                "description": "Resource version ETag",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataResource"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/metadata/resources/{kind}/{namespace}/{name}": {
+      "get": {
+        "tags": ["Metadata Resources"],
+        "summary": "Get Metadata Resource",
+        "description": "Get a specific metadata resource by kind, namespace, and name. Returns an ETag header.",
+        "operationId": "getMetadataResource",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "description": "Resource kind",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "description": "Resource namespace",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Resource name",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata resource",
+            "headers": {
+              "ETag": {
+                "description": "Resource version ETag",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataResource"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "put": {
+        "tags": ["Metadata Resources"],
+        "summary": "Update Metadata Resource",
+        "description": "Update a metadata resource. Requires an If-Match header with the current ETag.",
+        "operationId": "updateMetadataResource",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "description": "Resource kind",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "description": "Resource namespace",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Resource name",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "ETag of the current resource version",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataResource"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resource updated",
+            "headers": {
+              "ETag": {
+                "description": "Updated resource version ETag",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataResource"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Metadata Resources"],
+        "summary": "Delete Metadata Resource",
+        "description": "Delete a metadata resource. Requires an If-Match header with the current ETag.",
+        "operationId": "deleteMetadataResource",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "description": "Resource kind",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "description": "Resource namespace",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Resource name",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "ETag of the current resource version",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseObject" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/deploy/plan": {
+      "post": {
+        "tags": ["Deploy"],
+        "summary": "Plan Deploy Operation",
+        "description": "Validate a deploy target and desired revision, returning readiness, capabilities, and blocking reasons.",
+        "operationId": "planDeployOperation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployPlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deploy plan result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployPlanResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/deploy/operations": {
+      "post": {
+        "tags": ["Deploy"],
+        "summary": "Create Deploy Operation",
+        "description": "Create a durable deploy workflow operation for a target and revision.",
+        "operationId": "createDeployOperation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeployOperationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deploy operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployOperationResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/deploy/operations/{operationId}": {
+      "get": {
+        "tags": ["Deploy"],
+        "summary": "Get Deploy Operation",
+        "description": "Get the current state of a deploy operation. May trigger reconciliation for in-progress operations.",
+        "operationId": "getDeployOperation",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "description": "Deploy operation identifier",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deploy operation state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployOperationResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/deploy/operations/{operationId}/submit": {
+      "post": {
+        "tags": ["Deploy"],
+        "summary": "Submit Deploy Operation",
+        "description": "Submit or approve a planned deploy operation for execution.",
+        "operationId": "submitDeployOperation",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "description": "Deploy operation identifier",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitDeployOperationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deploy operation submitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployOperationResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/deploy/operations/{operationId}/rollback": {
+      "post": {
+        "tags": ["Deploy"],
+        "summary": "Rollback Deploy Operation",
+        "description": "Request rollback of a deploy operation.",
+        "operationId": "rollbackDeployOperation",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "description": "Deploy operation identifier",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackDeployOperationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rollback requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployOperationResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/observability/migrations": {
+      "get": {
+        "tags": ["Observability"],
+        "summary": "Get Migration Status",
+        "description": "Returns migration lifecycle status, pending scripts, and plan availability for this instance.",
+        "operationId": "getMigrationStatus",
+        "responses": {
+          "200": {
+            "description": "Migration observability status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationObservabilityResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
     }
@@ -1782,12 +2368,6 @@
           }
         }
       },
-      "ConnectionResponse": {
-        "$ref": "#/components/schemas/SecureConnectionDetail"
-      },
-      "TestConnectionRequest": {
-        "$ref": "#/components/schemas/CreateConnectionRequest"
-      },
       "ConnectionTestResponse": {
         "type": "object",
         "properties": {
@@ -1814,9 +2394,6 @@
             "description": "Human-readable result message"
           }
         }
-      },
-      "TablesResponse": {
-        "$ref": "#/components/schemas/TableDiscoveryResponse"
       },
       "TableInfo": {
         "type": "object",
@@ -1851,27 +2428,6 @@
             "items": {
               "$ref": "#/components/schemas/ColumnInfo"
             }
-          }
-        }
-      },
-      "PublishedLayersResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PublishedLayerSummary"
-            }
-          },
-          "message": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
@@ -2078,23 +2634,6 @@
           }
         }
       },
-      "CachingConfig": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "default": true
-          },
-          "ttlSeconds": {
-            "type": "integer",
-            "minimum": 0,
-            "default": 300
-          }
-        }
-      },
-      "PublishedLayerResponse": {
-        "$ref": "#/components/schemas/PublishedLayerSummary"
-      },
       "SetLayerEnabledRequest": {
         "type": "object",
         "required": [
@@ -2106,32 +2645,6 @@
             "description": "Enable or disable the layer"
           }
         }
-      },
-      "LayerStatusResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "layerId": {
-                "type": "integer"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "updatedAt": {
-                "type": "string",
-                "format": "date-time"
-              }
-            }
-          }
-        }
-      },
-      "LayerStyleResponse": {
-        "$ref": "#/components/schemas/LayerStylePayload"
       },
       "UpdateLayerStyleRequest": {
         "type": "object",
@@ -3022,6 +3535,440 @@
           },
           "timeInfo": {
             "$ref": "#/components/schemas/UpdateTimeInfoRequest"
+          }
+        }
+      },
+      "AdminVersionResponse": {
+        "type": "object",
+        "required": ["version", "metadataApiVersion", "serverTime"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Server version string"
+          },
+          "metadataApiVersion": {
+            "type": "string",
+            "description": "Metadata API version supported by the server"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server time in UTC"
+          }
+        }
+      },
+      "ApiResponseAdminVersionResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/AdminVersionResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataManifest": {
+        "type": "object",
+        "required": ["apiVersion", "generatedAt", "resources"],
+        "properties": {
+          "apiVersion": {
+            "type": "string",
+            "description": "API version of the manifest payload"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the manifest was generated"
+          },
+          "resources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataResource" },
+            "description": "Resources included in the manifest"
+          },
+          "driftedResources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataResourceIdentifier" },
+            "description": "Resource identifiers that have drifted since the last applied manifest"
+          },
+          "manifestHash": {
+            "type": "string",
+            "description": "Hash of the manifest content for change detection"
+          }
+        }
+      },
+      "ApiResponseMetadataManifest": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/MetadataManifest" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ManifestApplyRequest": {
+        "type": "object",
+        "required": ["resources"],
+        "properties": {
+          "resources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataResource" },
+            "description": "Resources to apply"
+          },
+          "dryRun": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, no changes are persisted"
+          },
+          "prune": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, resources not present in the manifest are removed"
+          }
+        }
+      },
+      "ManifestApplyResult": {
+        "type": "object",
+        "required": ["dryRun", "summary", "entries"],
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "description": "Whether the apply was a dry run"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ManifestApplySummary"
+          },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ManifestApplyEntry" },
+            "description": "Per-resource action entries"
+          }
+        }
+      },
+      "ManifestApplySummary": {
+        "type": "object",
+        "required": ["created", "updated", "deleted", "skipped"],
+        "properties": {
+          "created": { "type": "integer", "description": "Number of resources created" },
+          "updated": { "type": "integer", "description": "Number of resources updated" },
+          "deleted": { "type": "integer", "description": "Number of resources deleted" },
+          "skipped": { "type": "integer", "description": "Number of resources skipped" }
+        }
+      },
+      "ManifestApplyEntry": {
+        "type": "object",
+        "required": ["action", "resource"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["create", "update", "delete", "skip"],
+            "description": "Action performed"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/MetadataResourceIdentifier"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional detail message"
+          }
+        }
+      },
+      "ApiResponseManifestApplyResult": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ManifestApplyResult" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataResource": {
+        "type": "object",
+        "properties": {
+          "apiVersion": {
+            "type": "string",
+            "description": "API version of the resource schema"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Resource kind (Service, Layer, Relationship, Style, Connection)"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ResourceMetadata"
+          },
+          "spec": {
+            "type": "object",
+            "description": "Desired state specification (schema varies by kind)",
+            "additionalProperties": true
+          },
+          "status": {
+            "type": "object",
+            "description": "Observed state (populated by the server)",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ResourceMetadata": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Server-assigned unique identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Resource name"
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Resource namespace"
+          },
+          "resourceVersion": {
+            "type": "string",
+            "description": "Server-managed optimistic concurrency version"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          },
+          "annotations": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Arbitrary key-value annotations"
+          }
+        }
+      },
+      "MetadataResourceIdentifier": {
+        "type": "object",
+        "required": ["kind", "namespace", "name"],
+        "properties": {
+          "kind": { "type": "string" },
+          "namespace": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      },
+      "ApiResponseMetadataResource": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/MetadataResource" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseMetadataResourceArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataResource" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "DeployPlanRequest": {
+        "type": "object",
+        "required": ["targetId", "desiredRevision"],
+        "properties": {
+          "targetId": {
+            "type": "string",
+            "description": "Deploy target identifier"
+          },
+          "desiredRevision": {
+            "type": "string",
+            "description": "Target revision to deploy"
+          },
+          "currentRevision": {
+            "type": "string",
+            "description": "Current revision (optional, for diff planning)"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Deploy parameters"
+          }
+        }
+      },
+      "DeployPlanResponse": {
+        "type": "object",
+        "required": ["target", "readyToSubmit", "requiresApproval", "requiresOutOfBandMigrations", "backendRegistered", "generatedAt"],
+        "properties": {
+          "target": { "$ref": "#/components/schemas/DeployPlanTargetResponse" },
+          "readyToSubmit": { "type": "boolean" },
+          "requiresApproval": { "type": "boolean" },
+          "requiresOutOfBandMigrations": { "type": "boolean" },
+          "backendRegistered": { "type": "boolean" },
+          "capabilities": { "$ref": "#/components/schemas/DeployBackendCapabilitiesResponse" },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "blockingReasons": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DeployPlanTargetResponse": {
+        "type": "object",
+        "required": ["targetId", "targetKind", "backend", "environment", "targetName", "desiredRevision"],
+        "properties": {
+          "targetId": { "type": "string" },
+          "targetKind": { "type": "string" },
+          "backend": { "type": "string" },
+          "environment": { "type": "string" },
+          "targetName": { "type": "string" },
+          "artifactReference": { "type": "string" },
+          "runtimeProfile": { "type": "string" },
+          "currentRevision": { "type": "string" },
+          "desiredRevision": { "type": "string" },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "DeployBackendCapabilitiesResponse": {
+        "type": "object",
+        "required": ["supportsRollback", "supportsCancellation", "supportsTrafficShifting", "requiresOutOfBandMigrations", "supportsProgressPolling", "supportsRevisionPinning"],
+        "properties": {
+          "supportsRollback": { "type": "boolean" },
+          "supportsCancellation": { "type": "boolean" },
+          "supportsTrafficShifting": { "type": "boolean" },
+          "requiresOutOfBandMigrations": { "type": "boolean" },
+          "supportsProgressPolling": { "type": "boolean" },
+          "supportsRevisionPinning": { "type": "boolean" }
+        }
+      },
+      "CreateDeployOperationRequest": {
+        "type": "object",
+        "required": ["targetId", "desiredRevision"],
+        "properties": {
+          "targetId": { "type": "string", "description": "Deploy target identifier" },
+          "desiredRevision": { "type": "string", "description": "Target revision to deploy" },
+          "currentRevision": { "type": "string" },
+          "reason": { "type": "string", "description": "Operator-supplied reason" },
+          "idempotencyKey": { "type": "string", "description": "Client-supplied idempotency key to prevent duplicates" },
+          "correlationId": { "type": "string", "description": "Correlation identifier for tracing" },
+          "priority": {
+            "type": "string",
+            "enum": ["Low", "Normal", "High", "Critical"],
+            "description": "Operation priority"
+          },
+          "submitImmediately": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to submit the operation immediately after creation"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "DeployOperationResponse": {
+        "type": "object",
+        "required": ["operationId", "kind", "status", "priority", "createdAt", "updatedAt"],
+        "properties": {
+          "operationId": { "type": "string" },
+          "kind": { "type": "string" },
+          "status": { "type": "string" },
+          "priority": { "type": "string" },
+          "target": { "$ref": "#/components/schemas/DeployPlanTargetResponse" },
+          "providerOperationId": { "type": "string" },
+          "currentPhase": { "type": "string" },
+          "observedState": { "type": "string" },
+          "errorMessage": { "type": "string" },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "blockingReasons": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "requestedBy": { "type": "string" },
+          "reason": { "type": "string" },
+          "correlationId": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SubmitDeployOperationRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Optional reason for submission"
+          }
+        }
+      },
+      "RollbackDeployOperationRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Optional reason for rollback"
+          }
+        }
+      },
+      "MigrationObservabilityResponse": {
+        "type": "object",
+        "required": ["status", "isReady", "isFailed", "generatedAt"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Current migration lifecycle state"
+          },
+          "isReady": {
+            "type": "boolean",
+            "description": "Whether the instance is ready for traffic"
+          },
+          "isFailed": {
+            "type": "boolean",
+            "description": "Whether migration lifecycle state is failed"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional operator-facing detail"
+          },
+          "planAvailable": {
+            "type": "boolean",
+            "description": "Whether a migration plan could be generated"
+          },
+          "upgradeRequired": {
+            "type": "boolean",
+            "description": "Whether pending migrations were detected"
+          },
+          "pendingScripts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Migration scripts that would run if upgrades were applied"
+          },
+          "executedButNotDiscoveredScripts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Scripts previously executed but no longer discovered by current binary"
+          },
+          "planError": {
+            "type": "string",
+            "description": "Error detail when plan generation failed"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Response generation timestamp"
           }
         }
       }

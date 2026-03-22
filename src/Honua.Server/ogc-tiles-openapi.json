@@ -5,8 +5,13 @@
     "description": "OGC API Tiles implementation for vector tiles",
     "version": "1.0.0"
   },
+  "servers": [
+    {
+      "url": "/ogc/tiles"
+    }
+  ],
   "paths": {
-    "/ogc/tiles": {
+    "/": {
       "get": {
         "summary": "Landing page",
         "operationId": "core.getLandingPage",
@@ -37,7 +42,7 @@
         }
       }
     },
-    "/ogc/tiles/conformance": {
+    "/conformance": {
       "get": {
         "summary": "Conformance declaration",
         "operationId": "core.getConformance",
@@ -68,7 +73,7 @@
         }
       }
     },
-    "/ogc/tiles/openapi.json": {
+    "/openapi.json": {
       "get": {
         "summary": "OpenAPI specification",
         "operationId": "core.getApiDefinition",
@@ -96,7 +101,7 @@
         }
       }
     },
-    "/ogc/tiles/collections": {
+    "/collections": {
       "get": {
         "summary": "Collections list",
         "operationId": "collections.getCollections",
@@ -127,7 +132,7 @@
         }
       }
     },
-    "/ogc/tiles/collections/{collectionId}": {
+    "/collections/{collectionId}": {
       "get": {
         "summary": "Collection metadata",
         "operationId": "collections.getCollection",
@@ -165,7 +170,7 @@
         }
       }
     },
-    "/ogc/tiles/tiles": {
+    "/tiles": {
       "get": {
         "summary": "Dataset tilesets list",
         "operationId": "tilesets.getTilesets",
@@ -196,7 +201,7 @@
         }
       }
     },
-    "/ogc/tiles/tiles/{tileMatrixSetId}": {
+    "/tiles/{tileMatrixSetId}": {
       "get": {
         "summary": "Dataset tileset metadata",
         "operationId": "tilesets.getTileset",
@@ -246,7 +251,7 @@
         }
       }
     },
-    "/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
+    "/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
       "get": {
         "summary": "Dataset tile",
         "operationId": "tilesets.getTile",
@@ -336,7 +341,7 @@
         }
       }
     },
-    "/ogc/tiles/collections/{collectionId}/tiles": {
+    "/collections/{collectionId}/tiles": {
       "get": {
         "summary": "Collection tilesets list",
         "operationId": "collections.getTilesets",
@@ -374,7 +379,7 @@
         }
       }
     },
-    "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}": {
+    "/collections/{collectionId}/tiles/{tileMatrixSetId}": {
       "get": {
         "summary": "Collection tileset metadata",
         "operationId": "collections.getTileset",
@@ -418,7 +423,7 @@
         }
       }
     },
-    "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
+    "/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
       "get": {
         "summary": "Collection tile",
         "operationId": "collections.getTile",
@@ -502,7 +507,7 @@
         }
       }
     },
-    "/ogc/tiles/tileMatrixSets": {
+    "/tileMatrixSets": {
       "get": {
         "summary": "Tile matrix sets list",
         "operationId": "tileMatrixSets.getTileMatrixSets",
@@ -533,7 +538,7 @@
         }
       }
     },
-    "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}": {
+    "/tileMatrixSets/{tileMatrixSetId}": {
       "get": {
         "summary": "Tile matrix set definition",
         "operationId": "tileMatrixSets.getTileMatrixSet",
@@ -576,7 +581,7 @@
     "schemas": {
       "Link": {
         "type": "object",
-        "required": ["href"],
+        "required": ["href", "rel"],
         "properties": {
           "href": { "type": "string" },
           "rel": { "type": "string" },
