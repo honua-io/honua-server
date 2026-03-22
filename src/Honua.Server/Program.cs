@@ -260,6 +260,18 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
+
+// Register control plane IAM services (in-memory implementations until #338, #496, #498, #355 land)
+builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseManager,
+    Honua.Server.Features.Admin.Services.InMemoryLicenseManager>();
+builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
+    Honua.Server.Features.Admin.Services.InMemoryOidcProviderStore>();
+builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserStore,
+    Honua.Server.Features.Admin.Services.InMemoryUserStore>();
+builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
+    Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+builder.Services.AddSingleton<Honua.Core.Features.RateLimiting.Abstractions.IRateLimitPolicyStore,
+    Honua.Server.Features.Admin.Services.InMemoryRateLimitPolicyStore>();
 builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
 builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
 
@@ -432,6 +444,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
+        Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
+        Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
+        Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
@@ -686,6 +703,13 @@ app.MapAlertAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+
+// Configure control plane IAM endpoints (#511)
+app.MapLicenseEndpoints();
+app.MapOidcProviderEndpoints();
+app.MapUserManagementEndpoints();
+app.MapRoleEndpoints();
+app.MapRateLimitEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
 app.MapMetadataResourceEndpoints();

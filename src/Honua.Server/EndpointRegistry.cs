@@ -57,6 +57,43 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/connections/encryption/validate"),
         new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
 
+        // v1 admin license management endpoints (#511)
+        new("GET", "/api/v1/admin/license"),
+        new("POST", "/api/v1/admin/license"),
+        new("GET", "/api/v1/admin/license/entitlements"),
+
+        // v1 admin OIDC provider endpoints (#511)
+        new("GET", "/api/v1/admin/oidc/providers"),
+        new("POST", "/api/v1/admin/oidc/providers"),
+        new("GET", "/api/v1/admin/oidc/providers/{id}"),
+        new("PUT", "/api/v1/admin/oidc/providers/{id}"),
+        new("DELETE", "/api/v1/admin/oidc/providers/{id}"),
+        new("POST", "/api/v1/admin/oidc/providers/{id}/test"),
+
+        // v1 admin user management endpoints (#511)
+        new("GET", "/api/v1/admin/users"),
+        new("GET", "/api/v1/admin/users/{id}"),
+        new("PUT", "/api/v1/admin/users/{id}/roles"),
+        new("DELETE", "/api/v1/admin/users/{id}"),
+        new("GET", "/api/v1/admin/users/{id}/effective-permissions"),
+
+        // v1 admin role management endpoints (#511)
+        new("GET", "/api/v1/admin/roles"),
+        new("POST", "/api/v1/admin/roles"),
+        new("GET", "/api/v1/admin/roles/{id}"),
+        new("PUT", "/api/v1/admin/roles/{id}"),
+        new("DELETE", "/api/v1/admin/roles/{id}"),
+        new("GET", "/api/v1/admin/roles/{id}/permissions"),
+        new("PUT", "/api/v1/admin/roles/{id}/permissions"),
+
+        // v1 admin rate limit policy endpoints (#511)
+        new("GET", "/api/v1/admin/rate-limits"),
+        new("POST", "/api/v1/admin/rate-limits"),
+        new("GET", "/api/v1/admin/rate-limits/{id}"),
+        new("PUT", "/api/v1/admin/rate-limits/{id}"),
+        new("DELETE", "/api/v1/admin/rate-limits/{id}"),
+        new("GET", "/api/v1/admin/rate-limits/status"),
+
         // v1 admin metadata resource endpoints
         new("GET", "/api/v1/admin/metadata/resources"),
         new("GET", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),

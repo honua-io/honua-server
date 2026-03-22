@@ -48,6 +48,10 @@ public static class Operations
     public const string Configuration = "Configuration";
     public const string Cache = "Cache";
     public const string OperationsProgress = "OperationsProgress";
+    public const string LicenseManagement = "LicenseManagement";
+    public const string IdentityManagement = "IdentityManagement";
+    public const string RoleManagement = "RoleManagement";
+    public const string RateLimitManagement = "RateLimitManagement";
 
     // Import Operations
     public const string Import = "Import";
