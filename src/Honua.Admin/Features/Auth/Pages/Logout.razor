@@ -1,0 +1,25 @@
+@* Copyright (c) Honua. All rights reserved. *@
+@* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
+
+@page "/admin/auth/logout"
+@layout Honua.Admin.Layout.MainLayout
+
+@inject OidcSessionService Session
+
+<div class="logout-container">
+    <div class="logout-card">
+        <p>Signing out...</p>
+    </div>
+</div>
+
+<style>
+    .logout-container { display: flex; align-items: center; justify-content: center; min-height: 80vh; }
+    .logout-card { background: #fff; border-radius: 8px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 400px; width: 100%; text-align: center; }
+</style>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LogoutAsync();
+    }
+}

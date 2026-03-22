@@ -479,6 +479,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
         Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
+        Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
@@ -715,6 +716,9 @@ await RunDatabaseMigrationsAsync();
 // Configure health endpoints
 app.MapHealthEndpoints();
 app.MapPrometheusEndpoint();
+
+// Configure admin auth bootstrap endpoint (anonymous - must precede admin group)
+app.MapAdminAuthEndpoints();
 
 // Configure admin endpoints
 app.MapAdminEndpoints();

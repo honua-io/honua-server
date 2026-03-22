@@ -1,0 +1,51 @@
+@* Copyright (c) Honua. All rights reserved. *@
+@* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
+
+@* Invisible component that runs a periodic timer to refresh tokens before expiry. *@
+@* Drop this into MainLayout so it runs while the user is active. *@
+
+@implements IDisposable
+
+@inject OidcSessionService Session
+@inject AdminAuthStateProvider AuthState
+@inject NavigationManager Nav
+
+@code {
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        // Check every 60 seconds whether the token needs refreshing
+        _timer = new Timer(async _ => await CheckRefreshAsync(), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+    }
+
+    private async Task CheckRefreshAsync()
+    {
+        try
+        {
+            var valid = await Session.EnsureValidSessionAsync();
+            if (!valid)
+            {
+                // Session could not be refreshed; redirect to re-auth prompt
+                await InvokeAsync(() =>
+                {
+                    Nav.NavigateTo("/admin/auth/login?expired=true", forceLoad: true);
+                });
+            }
+            else
+            {
+                // Token was refreshed; update auth state
+                await InvokeAsync(() => AuthState.NotifyAuthStateChanged());
+            }
+        }
+        catch
+        {
+            // Swallow timer exceptions to avoid crashing the UI
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}
