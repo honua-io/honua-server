@@ -18,6 +18,7 @@ namespace Honua.Server.Features.Admin;
 internal static class AdminManifestApprovalEndpoints
 {
     private const int HistoryPageSize = 200;
+    private const int HistoryMaxRecords = 5000;
 
     /// <summary>
     /// Map manifest approval endpoints to the admin API group.
@@ -360,7 +361,7 @@ internal static class AdminManifestApprovalEndpoints
 
         var all = new List<ManifestPendingChange>();
         var offset = 0;
-        while (true)
+        while (all.Count < HistoryMaxRecords)
         {
             var page = await approvalGate.PendingStore.ListAsync(
                 status: null,

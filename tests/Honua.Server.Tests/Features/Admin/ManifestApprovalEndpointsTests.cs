@@ -85,7 +85,7 @@ public sealed class ManifestApprovalEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/manifest/pending/")]
+    [Endpoint("GET /api/v1/admin/manifest/pending")]
     public async Task ListPending_ReturnsPendingChanges()
     {
         var client = _fixture.CreateAdminClient();
@@ -118,6 +118,52 @@ public sealed class ManifestApprovalEndpointsTests : IAsyncLifetime
         apiResponse!.Success.Should().BeTrue();
         apiResponse.Data.Should().NotBeNull();
         apiResponse.Data!.Should().Contain(p => p.RequestedBy == "list-test-user");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/manifest/pending/{id}")]
+    public async Task GetPending_ReturnsSinglePendingChange()
+    {
+        var client = _fixture.CreateAdminClient();
+        var resource = CreateLayerResource();
+
+        var applyRequest = new ManifestApplyRequest
+        {
+            Resources = new[] { resource },
+            DryRun = false,
+            Prune = false,
+            ApprovalRequired = true,
+            RequestedBy = "get-test-user"
+        };
+
+        var queueResponse = await client.PostAsync(
+            "/api/v1/admin/manifest/apply",
+            JsonContent.Create(applyRequest, MetadataResourceJsonContext.Default.ManifestApplyRequest));
+
+        queueResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var queuePayload = await queueResponse.Content.ReadAsStringAsync();
+        var queueResult = JsonSerializer.Deserialize(
+            queuePayload,
+            ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponse);
+
+        var pendingId = queueResult!.Data!.PendingId;
+
+        var getResponse = await client.GetAsync($"/api/v1/admin/manifest/pending/{pendingId}");
+        getResponse.Be200Ok();
+
+        var getPayload = await getResponse.Content.ReadAsStringAsync();
+        var getResult = JsonSerializer.Deserialize(
+            getPayload,
+            ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponse);
+
+        getResult.Should().NotBeNull();
+        getResult!.Success.Should().BeTrue();
+        getResult.Data.Should().NotBeNull();
+        getResult.Data!.PendingId.Should().Be(pendingId);
+        getResult.Data.RequestedBy.Should().Be("get-test-user");
+        getResult.Data.Status.Should().Be("pending");
     }
 
     [IntegrationTest]

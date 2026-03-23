@@ -49,6 +49,19 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
     {
         await foreach (var webhookEvent in _channel.Reader.ReadAllAsync(stoppingToken))
         {
+            // Skip events when webhooks are permanently unconfigured to avoid
+            // an infinite retry loop that blocks the channel consumer.
+            if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(_options.Secret))
+            {
+                LogWebhookConfigurationInvalidOnce();
+                continue;
+            }
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -75,19 +88,8 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
 
     private async Task<bool> TryDeliverAsync(ManifestApprovalWebhookEvent webhookEvent, CancellationToken stoppingToken)
     {
-        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(_options.Secret))
-        {
-            LogWebhookConfigurationInvalidOnce();
-            return false;
-        }
-
         var validation = await FeatureChangeWebhookUrlValidation
-            .ValidateAsync(_options.Url, stoppingToken)
+            .ValidateAsync(_options.Url!, stoppingToken)
             .ConfigureAwait(false);
         if (!validation.IsValid || validation.Uri == null)
         {
