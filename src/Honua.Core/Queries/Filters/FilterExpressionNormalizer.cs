@@ -13,6 +13,12 @@ namespace Honua.Core.Queries.Filters;
 public static class FilterExpressionNormalizer
 {
     /// <summary>
+    /// Maximum allowed nesting depth for filter expressions.
+    /// Prevents maliciously deep inputs from overflowing recursive normalization/translation paths.
+    /// </summary>
+    public const int MaxExpressionDepth = 50;
+
+    /// <summary>
     /// Normalizes a filter expression for the provided layer definition.
     /// </summary>
     /// <param name="expression">Filter expression to normalize.</param>
@@ -20,38 +26,44 @@ public static class FilterExpressionNormalizer
     /// <returns>Normalized filter expression.</returns>
     public static FilterExpression Normalize(FilterExpression expression, LayerDefinition layer)
     {
+        EnsureWithinMaxDepth(expression);
+        return NormalizeCore(expression, layer);
+    }
+
+    private static FilterExpression NormalizeCore(FilterExpression expression, LayerDefinition layer)
+    {
         return expression switch
         {
             BinaryExpression binary => NormalizeBinaryExpression(binary, layer),
-            UnaryExpression unary => new UnaryExpression(unary.Operator, Normalize(unary.Operand, layer)),
+            UnaryExpression unary => new UnaryExpression(unary.Operator, NormalizeCore(unary.Operand, layer)),
             SpatialPredicate spatial => new SpatialPredicate(spatial.Operator,
-                Normalize(spatial.Left, layer),
-                Normalize(spatial.Right, layer)),
+                NormalizeCore(spatial.Left, layer),
+                NormalizeCore(spatial.Right, layer)),
             SpatialDistancePredicate spatialDistance => new SpatialDistancePredicate(
                 spatialDistance.Operator,
-                Normalize(spatialDistance.Left, layer),
-                Normalize(spatialDistance.Right, layer),
-                Normalize(spatialDistance.Distance, layer)),
+                NormalizeCore(spatialDistance.Left, layer),
+                NormalizeCore(spatialDistance.Right, layer),
+                NormalizeCore(spatialDistance.Distance, layer)),
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
-                Normalize(temporal.Left, layer),
-                Normalize(temporal.Right, layer)),
+                NormalizeCore(temporal.Left, layer),
+                NormalizeCore(temporal.Right, layer)),
             ArrayPredicate array => new ArrayPredicate(
                 array.Operator,
-                Normalize(array.Left, layer),
-                Normalize(array.Right, layer)),
+                NormalizeCore(array.Left, layer),
+                NormalizeCore(array.Right, layer)),
             FunctionCall function => new FunctionCall(function.FunctionName,
-                function.Arguments.Select(arg => Normalize(arg, layer)).ToArray()),
-            ArrayLiteral arrayLiteral => new ArrayLiteral(arrayLiteral.Elements.Select(arg => Normalize(arg, layer)).ToArray()),
-            ValueList valueList => new ValueList(valueList.Values.Select(arg => Normalize(arg, layer)).ToArray()),
+                function.Arguments.Select(arg => NormalizeCore(arg, layer)).ToArray()),
+            ArrayLiteral arrayLiteral => new ArrayLiteral(arrayLiteral.Elements.Select(arg => NormalizeCore(arg, layer)).ToArray()),
+            ValueList valueList => new ValueList(valueList.Values.Select(arg => NormalizeCore(arg, layer)).ToArray()),
             _ => expression
         };
     }
 
     private static BinaryExpression NormalizeBinaryExpression(BinaryExpression binary, LayerDefinition layer)
     {
-        var left = Normalize(binary.Left, layer);
-        var right = Normalize(binary.Right, layer);
+        var left = NormalizeCore(binary.Left, layer);
+        var right = NormalizeCore(binary.Right, layer);
 
         if (binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual or
             BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual or
@@ -68,6 +80,90 @@ public static class FilterExpressionNormalizer
         }
 
         return new BinaryExpression(left, binary.Operator, right);
+    }
+
+    private static void EnsureWithinMaxDepth(FilterExpression expression)
+    {
+        var stack = new Stack<(FilterExpression Expression, int Depth)>();
+        stack.Push((expression, 1));
+
+        while (stack.Count > 0)
+        {
+            var (current, depth) = stack.Pop();
+            if (depth > MaxExpressionDepth)
+            {
+                throw new ArgumentException(
+                    $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
+            }
+
+            foreach (var child in EnumerateChildren(current))
+            {
+                stack.Push((child, depth + 1));
+            }
+        }
+    }
+
+    private static IEnumerable<FilterExpression> EnumerateChildren(FilterExpression expression)
+    {
+        switch (expression)
+        {
+            case BinaryExpression binary:
+                yield return binary.Left;
+                yield return binary.Right;
+                yield break;
+            case UnaryExpression unary:
+                yield return unary.Operand;
+                yield break;
+            case SpatialPredicate spatial:
+                yield return spatial.Left;
+                yield return spatial.Right;
+                yield break;
+            case SpatialDistancePredicate spatialDistance:
+                yield return spatialDistance.Left;
+                yield return spatialDistance.Right;
+                yield return spatialDistance.Distance;
+                yield break;
+            case TemporalPredicate temporal:
+                yield return temporal.Left;
+                yield return temporal.Right;
+                yield break;
+            case ArrayPredicate array:
+                yield return array.Left;
+                yield return array.Right;
+                yield break;
+            case FunctionCall function:
+                foreach (var argument in function.Arguments)
+                {
+                    yield return argument;
+                }
+
+                yield break;
+            case ArrayLiteral arrayLiteral:
+                foreach (var element in arrayLiteral.Elements)
+                {
+                    yield return element;
+                }
+
+                yield break;
+            case ValueList valueList:
+                foreach (var value in valueList.Values)
+                {
+                    yield return value;
+                }
+
+                yield break;
+            case IntervalLiteral interval when interval.Start is not null:
+                yield return interval.Start;
+                if (interval.End is not null)
+                {
+                    yield return interval.End;
+                }
+
+                yield break;
+            case IntervalLiteral interval when interval.End is not null:
+                yield return interval.End;
+                yield break;
+        }
     }
 
     private static Literal CoerceLiteral(PropertyReference property, Literal literal, LayerDefinition layer)

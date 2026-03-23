@@ -20,7 +20,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     /// Maximum allowed nesting depth for filter expressions.
     /// Prevents stack overflow from maliciously crafted deeply-nested filters.
     /// </summary>
-    internal const int MaxExpressionDepth = 50;
+    internal const int MaxExpressionDepth = FilterExpressionNormalizer.MaxExpressionDepth;
 
     private int _paramIndex;
     private int _depth;

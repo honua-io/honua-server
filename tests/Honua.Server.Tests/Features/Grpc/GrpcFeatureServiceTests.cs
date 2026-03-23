@@ -238,6 +238,42 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_AnonymousWritePolicyWithoutAuthentication_ThrowsUnauthenticatedRpcException()
+    {
+        var anonymousWriteService = _testService with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymousWrite = true
+                }
+            }
+        };
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("anonymous-write", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((anonymousWriteService, _testLayer)));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "anonymous-write",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
+        });
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
+    }
+
+    [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithWhereClause_ReturnsFeatures()
     {

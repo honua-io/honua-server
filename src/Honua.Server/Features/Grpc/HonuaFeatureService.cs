@@ -474,16 +474,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                     : AccessPolicyHelpers.AccessForbiddenMessage));
         }
 
-        var rbacResult = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+        var rbacDecision = await ServiceDataEditorAuthorization.EvaluateServiceAccessAsync(
             httpContext,
             service.Name,
             context.CancellationToken).ConfigureAwait(false);
 
-        if (rbacResult != null)
+        if (!rbacDecision.IsAllowed)
         {
             throw new RpcException(new Status(
-                StatusCode.PermissionDenied,
-                "User does not have the required data editor role."));
+                rbacDecision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
+                rbacDecision.RequiresAuthentication
+                    ? AccessPolicyHelpers.AuthRequiredMessage
+                    : AccessPolicyHelpers.AccessForbiddenMessage));
         }
     }
 
