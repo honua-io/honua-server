@@ -114,15 +114,24 @@ internal static class CollectionsEndpoints
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
             var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var protocolLayerIds = services
+            var ogcServices = services
                 .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OgcFeatures))
-                .SelectMany(service => service.Layers.Select(layer => layer.Id))
-                .ToHashSet();
+                .ToList();
+            var layerToService = new Dictionary<int, ServiceDefinition>();
+            foreach (var service in ogcServices)
+            {
+                foreach (var sl in service.Layers)
+                {
+                    layerToService.TryAdd(sl.Id, service);
+                }
+            }
+            var protocolLayerIds = layerToService.Keys.ToHashSet();
             var visibleLayers = layers
                 .Where(layer => protocolLayerIds.Count == 0
                     ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OgcFeatures)
                     : protocolLayerIds.Contains(layer.Id))
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
+                    context, layer, layerToService.GetValueOrDefault(layer.Id)))
                 .ToList();
             var collectionTasks = visibleLayers
                 .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
