@@ -74,6 +74,6 @@ internal static class PostgresDataSourceFactory
         var statementTimeout = (int)limits.StatementTimeout.TotalSeconds;
         var idleTimeout = (int)limits.IdleInTransactionTimeout.TotalSeconds;
         connectionStringBuilder.Options =
-            $"-c lock_timeout={lockTimeout}s -c statement_timeout={statementTimeout}s -c idle_in_transaction_session_timeout={idleTimeout}s";
+            $"-c lock_timeout={lockTimeout}s -c statement_timeout={statementTimeout}s -c idle_in_transaction_session_timeout={idleTimeout}s -c search_path=honua,public";
     }
 }
