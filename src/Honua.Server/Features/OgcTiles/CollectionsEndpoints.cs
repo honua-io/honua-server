@@ -230,21 +230,32 @@ internal static class CollectionsEndpoints
         if (layer.Extent != null)
         {
             var extentSrid = layer.Extent.Value.SpatialReference;
-            var extentCrsIdentifier = extentSrid == 4326
-                ? OgcFeaturesUtilities.Crs84Uri
-                : extentSrid.ToOgcCrs();
-            var extentDefinition = await crsRegistry.ResolveAsync(extentCrsIdentifier, cancellationToken);
-            var extentCrs = extentDefinition?.Uri ?? extentCrsIdentifier;
+            (double Lon, double Lat) min = default;
+            (double Lon, double Lat) max = default;
+            var transformedToCrs84 = false;
 
-            spatialExtent = new SpatialExtent
+            if (extentSrid != 4326)
             {
-                BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
-                    layer.Extent.Value.MinX,
-                    layer.Extent.Value.MinY,
-                    layer.Extent.Value.MaxX,
-                    layer.Extent.Value.MaxY)),
-                Crs = extentCrs
-            };
+                transformedToCrs84 =
+                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, out min) &&
+                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, out max);
+            }
+
+            if (extentSrid == 4326 || transformedToCrs84)
+            {
+                if (extentSrid == 4326)
+                {
+                    min = (layer.Extent.Value.MinX, layer.Extent.Value.MinY);
+                    max = (layer.Extent.Value.MaxX, layer.Extent.Value.MaxY);
+                }
+
+                spatialExtent = new SpatialExtent
+                {
+                    BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                        min.Lon, min.Lat, max.Lon, max.Lat)),
+                    Crs = OgcFeaturesUtilities.Crs84Uri
+                };
+            }
         }
 
         var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);

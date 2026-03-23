@@ -104,6 +104,32 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         problemDetails.GetProperty("instance").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/maps/collections/1/map")]
+    public async Task FormatError_OgcMapsPath_ReturnsProblemDetailsFormat()
+    {
+        // Arrange
+        var context = CreateContext("/ogc/maps/collections/1/map");
+        var errorResponse = StandardErrorResponse.NotFound("Collection '1' not found.");
+
+        // Act
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        await result.ExecuteAsync(context);
+
+        // Assert
+        context.Response.StatusCode.Should().Be(404);
+
+        var responseBody = GetResponseBody(context);
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(responseBody);
+
+        problemDetails.GetProperty("type").GetString().Should().Be("about:blank");
+        problemDetails.GetProperty("title").GetString().Should().Be("Not Found");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(404);
+        problemDetails.GetProperty("detail").GetString().Should().Be("Collection '1' not found.");
+        problemDetails.GetProperty("instance").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
     #endregion
 
     #region GeoServices Error Formatting
