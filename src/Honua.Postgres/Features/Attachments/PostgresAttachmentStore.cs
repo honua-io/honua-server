@@ -35,9 +35,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _tableName = string.IsNullOrEmpty(schemaName)
-            ? "attachments"
-            : Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
+        _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
     }
 
     public async Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
@@ -60,7 +58,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             return null;
         }
 
-        return await ReadAttachmentAsync(reader, cancellationToken);
+        return ReadAttachment(reader);
     }
 
     public async Task<Attachment[]> ListAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -81,7 +79,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         var attachments = new List<Attachment>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            attachments.Add(await ReadAttachmentAsync(reader, cancellationToken));
+            attachments.Add(ReadAttachment(reader));
         }
 
         return attachments.ToArray();
@@ -111,7 +109,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             throw new InvalidOperationException("Failed to create attachment");
         }
 
-        return await ReadAttachmentAsync(reader, cancellationToken);
+        return ReadAttachment(reader);
     }
 
     public async Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
@@ -137,22 +135,15 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             throw new ResourceNotFoundException($"Attachment {attachment.Id} not found for update");
         }
 
-        return await ReadAttachmentAsync(reader, cancellationToken);
+        return ReadAttachment(reader);
     }
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
     {
-        // First get the storage key to delete the stored file
-        var attachment = await GetAsync(layerId, featureId, attachmentId, cancellationToken);
-        if (attachment == null)
-        {
-            return false;
-        }
-
-        // Delete the database record
         var sql = $@"
             DELETE FROM {_tableName}
-            WHERE layer_id = $1 AND feature_id = $2 AND id = $3";
+            WHERE layer_id = $1 AND feature_id = $2 AND id = $3
+            RETURNING storage_path";
 
         await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
@@ -160,35 +151,26 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         command.Parameters.AddWithValue(featureId);
         command.Parameters.AddWithValue(attachmentId);
 
-        var deletedRows = await command.ExecuteNonQueryAsync(cancellationToken);
-
-        // Delete the stored file if database record was deleted
-        if (deletedRows > 0)
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is not string storagePath)
         {
-            try
-            {
-                var deleted = await _fileStorage.DeleteAsync(attachment.Value.StoragePath, cancellationToken);
-                if (!deleted)
-                {
-                    AttachmentLog.AttachmentFileMissing(
-                        _logger,
-                        attachment.Value.StoragePath,
-                        layerId,
-                        featureId);
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                AttachmentLog.AttachmentFileDeleteFailed(
-                    _logger,
-                    ex,
-                    attachment.Value.StoragePath);
-            }
-
-            return true;
+            return false;
         }
 
-        return false;
+        try
+        {
+            var deleted = await _fileStorage.DeleteAsync(storagePath, cancellationToken);
+            if (!deleted)
+            {
+                AttachmentLog.AttachmentFileMissing(_logger, storagePath, layerId, featureId);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, storagePath);
+        }
+
+        return true;
     }
 
     public async Task<Attachment> UploadAsync(int layerId, long featureId, string filename, string contentType, Stream content, string? keywords = null, CancellationToken cancellationToken = default)
@@ -235,7 +217,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             {
                 await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
             }
@@ -312,7 +294,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             featureId.ToString(CultureInfo.InvariantCulture));
     }
 
-    private static async Task<Attachment> ReadAttachmentAsync(NpgsqlDataReader reader, CancellationToken cancellationToken)
+    private static Attachment ReadAttachment(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(0); // id
         var featureId = reader.GetInt64(1); // feature_id
@@ -323,8 +305,6 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         var createdAt = reader.GetDateTime(6); // created_at
         var storagePath = reader.GetString(7); // storage_path
         var keywords = reader.IsDBNull(8) ? null : reader.GetString(8); // keywords
-
-        await Task.CompletedTask; // Satisfy async context
 
         return Attachment.Create(id, featureId, layerId, filename, contentType, size, createdAt, storagePath, keywords);
     }
