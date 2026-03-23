@@ -16,7 +16,14 @@ namespace Honua.Postgres.Queries.Filters;
 /// </summary>
 internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 {
+    /// <summary>
+    /// Maximum allowed nesting depth for filter expressions.
+    /// Prevents stack overflow from maliciously crafted deeply-nested filters.
+    /// </summary>
+    internal const int MaxExpressionDepth = 50;
+
     private int _paramIndex;
+    private int _depth;
     private readonly List<object?> _parameters = [];
     private readonly bool _useJsonAttributes;
     private readonly string _attributesColumn;
@@ -44,6 +51,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
     {
         _paramIndex = 0;
+        _depth = 0;
         _parameters.Clear();
 
         var sql = TranslateExpression(filter, layer);
@@ -52,22 +60,35 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateExpression(FilterExpression filter, LayerDefinition layer)
     {
-        return filter switch
+        if (++_depth > MaxExpressionDepth)
         {
-            BinaryExpression bin => TranslateBinary(bin, layer),
-            UnaryExpression un => TranslateUnary(un, layer),
-            PropertyReference prop => TranslateProperty(prop, layer),
-            Literal lit => TranslateLiteral(lit),
-            SpatialPredicate spatial => TranslateSpatial(spatial, layer),
-            SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, layer),
-            TemporalPredicate temporal => TranslateTemporal(temporal, layer),
-            ArrayPredicate array => TranslateArrayPredicate(array, layer),
-            FunctionCall func => TranslateFunction(func, layer),
-            IntervalLiteral interval => TranslateIntervalLiteral(interval),
-            ArrayLiteral arrayLiteral => TranslateArrayLiteral(arrayLiteral),
-            ValueList list => TranslateValueList(list, layer),
-            _ => throw new NotSupportedException($"Unknown filter type: {filter.GetType()}")
-        };
+            throw new ArgumentException(
+                $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
+        }
+
+        try
+        {
+            return filter switch
+            {
+                BinaryExpression bin => TranslateBinary(bin, layer),
+                UnaryExpression un => TranslateUnary(un, layer),
+                PropertyReference prop => TranslateProperty(prop, layer),
+                Literal lit => TranslateLiteral(lit),
+                SpatialPredicate spatial => TranslateSpatial(spatial, layer),
+                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, layer),
+                TemporalPredicate temporal => TranslateTemporal(temporal, layer),
+                ArrayPredicate array => TranslateArrayPredicate(array, layer),
+                FunctionCall func => TranslateFunction(func, layer),
+                IntervalLiteral interval => TranslateIntervalLiteral(interval),
+                ArrayLiteral arrayLiteral => TranslateArrayLiteral(arrayLiteral),
+                ValueList list => TranslateValueList(list, layer),
+                _ => throw new NotSupportedException($"Unknown filter type: {filter.GetType()}")
+            };
+        }
+        finally
+        {
+            _depth--;
+        }
     }
 
     private string TranslateBinary(BinaryExpression binary, LayerDefinition layer)

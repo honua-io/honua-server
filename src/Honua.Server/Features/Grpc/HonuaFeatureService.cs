@@ -6,8 +6,10 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -238,8 +240,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 validation.ErrorMessage ?? "Resource validation failed"));
         }
 
-        var (service, _) = validation.Resource!;
+        var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
+        await EnsureWriteAccessAsync(context, service, layer).ConfigureAwait(false);
 
         FeatureEditBatch editBatch;
         try
@@ -447,6 +450,41 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         activity.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString());
+    }
+
+    private static async Task EnsureWriteAccessAsync(
+        ServerCallContext context,
+        ServiceDefinition service,
+        LayerDefinition layer)
+    {
+        var httpContext = context.GetHttpContext();
+
+        var decision = AccessPolicyHelpers.EvaluateAccess(
+            httpContext,
+            layer.Metadata?.AccessPolicy,
+            service.Metadata?.AccessPolicy,
+            AccessScope.Write);
+
+        if (!decision.IsAllowed)
+        {
+            throw new RpcException(new Status(
+                decision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
+                decision.RequiresAuthentication
+                    ? AccessPolicyHelpers.AuthRequiredMessage
+                    : AccessPolicyHelpers.AccessForbiddenMessage));
+        }
+
+        var rbacResult = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            httpContext,
+            service.Name,
+            context.CancellationToken).ConfigureAwait(false);
+
+        if (rbacResult != null)
+        {
+            throw new RpcException(new Status(
+                StatusCode.PermissionDenied,
+                "User does not have the required data editor role."));
+        }
     }
 
     private static void EnsureGrpcEnabled(ServiceDefinition service)
