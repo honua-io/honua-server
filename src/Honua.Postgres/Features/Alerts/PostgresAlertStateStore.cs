@@ -4,6 +4,7 @@
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -12,10 +13,14 @@ namespace Honua.Postgres.Features.Alerts;
 internal sealed class PostgresAlertStateStore : IAlertStateStore
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ILogger<PostgresAlertStateStore> _logger;
 
-    public PostgresAlertStateStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertStateStore(
+        IDatabaseConnectionProvider connectionProvider,
+        ILogger<PostgresAlertStateStore> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<AlertStateSnapshot?> GetAsync(
@@ -131,7 +136,7 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
               AND s.entered_at IS NOT NULL
               AND s.entered_at <= @due_before
               AND r.is_active = TRUE
-              AND r.trigger_type = 3
+              AND r.trigger_type = @dwell_trigger_type
             ORDER BY s.entered_at
             LIMIT @max_count
             """;
@@ -143,6 +148,7 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
 
         command.Parameters.AddWithValue("due_before", NpgsqlDbType.TimestampTz, dueBefore);
         command.Parameters.AddWithValue("max_count", NpgsqlDbType.Integer, maxCount);
+        command.Parameters.AddWithValue("dwell_trigger_type", NpgsqlDbType.Smallint, AlertTriggerType.Dwell.ToDbValue());
 
         var rows = new List<AlertStateSnapshot>(Math.Max(1, maxCount));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -151,6 +157,7 @@ internal sealed class PostgresAlertStateStore : IAlertStateStore
             rows.Add(MapState(reader));
         }
 
+        AlertLog.DwellCandidatesFound(_logger, rows.Count, dueBefore);
         return rows;
     }
 

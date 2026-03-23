@@ -40,7 +40,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            results.Add(MapZone(reader));
+            results.Add(AlertStoreConversions.MapZone(reader));
         }
 
         return results;
@@ -68,7 +68,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             return null;
         }
 
-        return MapZone(reader);
+        return AlertStoreConversions.MapZone(reader);
     }
 
     public async Task<AlertZoneDefinition> CreateZoneAsync(
@@ -98,7 +98,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         _ = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-        return MapZone(reader);
+        return AlertStoreConversions.MapZone(reader);
     }
 
     public async Task<AlertZoneDefinition?> UpdateZoneAsync(
@@ -134,7 +134,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             return null;
         }
 
-        return MapZone(reader);
+        return AlertStoreConversions.MapZone(reader);
     }
 
     public async Task<bool> DeleteZoneAsync(long zoneId, CancellationToken cancellationToken = default)
@@ -178,7 +178,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            rules.Add(MapRule(reader));
+            rules.Add(AlertStoreConversions.MapRule(reader));
         }
 
         return rules;
@@ -208,7 +208,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         _ = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-        return MapRule(reader);
+        return AlertStoreConversions.MapRule(reader);
     }
 
     public async Task<AlertRuleDefinition?> UpdateRuleAsync(
@@ -248,7 +248,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             return null;
         }
 
-        return MapRule(reader);
+        return AlertStoreConversions.MapRule(reader);
     }
 
     public async Task<bool> DeleteRuleAsync(long ruleId, CancellationToken cancellationToken = default)
@@ -296,69 +296,8 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
         return command;
     }
 
-    private static AlertZoneDefinition MapZone(NpgsqlDataReader reader)
-    {
-        return new AlertZoneDefinition
-        {
-            ZoneId = reader.GetInt64(0),
-            ServiceId = reader.GetString(1),
-            ZoneName = reader.GetString(2),
-            Geometry = reader.IsDBNull(3) ? null : (byte[])reader[3],
-            GeometrySrid = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-            Metadata = AlertMetadataSerializer.Parse(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
-            IsActive = reader.GetBoolean(6)
-        };
-    }
-
-    private static AlertRuleDefinition MapRule(NpgsqlDataReader reader)
-    {
-        return new AlertRuleDefinition
-        {
-            RuleId = reader.GetInt64(0),
-            ServiceId = reader.GetString(1),
-            LayerId = reader.GetInt32(2),
-            ZoneId = reader.IsDBNull(3) ? null : reader.GetInt64(3),
-            RuleName = reader.GetString(4),
-            TriggerType = AlertStoreConversions.ToTriggerType(reader.GetInt16(5)),
-            ConditionsJson = reader.IsDBNull(6) ? "{}" : reader.GetString(6),
-            CooldownSeconds = reader.GetInt32(7),
-            Severity = AlertStoreConversions.ToSeverity(reader.GetString(8)),
-            EditionRequired = AlertStoreConversions.ToEdition(reader.GetInt16(9)),
-            Channels = ParseChannels(reader.IsDBNull(10) ? Array.Empty<string>() : (string[])reader[10]),
-            IsActive = reader.GetBoolean(11)
-        };
-    }
-
     private static string SerializeMetadata(ImmutableDictionary<string, string?> metadata)
     {
         return AlertMetadataSerializer.Serialize(metadata);
-    }
-
-    private static ImmutableArray<AlertChannelType> ParseChannels(string[] channels)
-    {
-        if (channels.Length == 0)
-        {
-            return ImmutableArray<AlertChannelType>.Empty;
-        }
-
-        var builder = ImmutableArray.CreateBuilder<AlertChannelType>(channels.Length);
-        foreach (var channel in channels)
-        {
-            if (string.IsNullOrWhiteSpace(channel))
-            {
-                continue;
-            }
-
-            try
-            {
-                builder.Add(AlertStoreConversions.ParseChannel(channel));
-            }
-            catch (InvalidOperationException)
-            {
-                // Ignore unsupported channel values persisted by previous versions.
-            }
-        }
-
-        return builder.Distinct().ToImmutableArray();
     }
 }

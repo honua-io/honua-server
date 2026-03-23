@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -13,10 +13,14 @@ namespace Honua.Postgres.Features.Alerts;
 internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ILogger<PostgresAlertRuleRepository> _logger;
 
-    public PostgresAlertRuleRepository(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertRuleRepository(
+        IDatabaseConnectionProvider connectionProvider,
+        ILogger<PostgresAlertRuleRepository> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<IReadOnlyList<AlertRuleDefinition>> GetActiveRulesAsync(
@@ -42,15 +46,6 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
             return new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>();
         }
 
-        const string sql = """
-            SELECT rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
-                   conditions, cooldown_seconds, severity, edition_required, channels, is_active
-            FROM honua.alert_rules
-            WHERE is_active = TRUE
-              AND layer_id = ANY(@layer_ids)
-            ORDER BY layer_id, rule_id
-            """;
-
         var normalizedKeys = lookupKeys
             .Distinct()
             .ToArray();
@@ -59,18 +54,48 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
             .Distinct()
             .ToArray();
 
+        // When all lookup keys carry a non-null service_id, push the filter into SQL
+        // to avoid fetching rows for unrelated services.
+        var allKeysHaveServiceId = normalizedKeys.All(static k => k.ServiceId is not null);
+        var serviceIds = allKeysHaveServiceId
+            ? normalizedKeys.Select(static k => k.ServiceId!).Distinct().ToArray()
+            : null;
+
+        var sql = allKeysHaveServiceId
+            ? """
+              SELECT rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
+                     conditions, cooldown_seconds, severity, edition_required, channels, is_active
+              FROM honua.alert_rules
+              WHERE is_active = TRUE
+                AND layer_id = ANY(@layer_ids)
+                AND service_id = ANY(@service_ids)
+              ORDER BY layer_id, rule_id
+              """
+            : """
+              SELECT rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
+                     conditions, cooldown_seconds, severity, edition_required, channels, is_active
+              FROM honua.alert_rules
+              WHERE is_active = TRUE
+                AND layer_id = ANY(@layer_ids)
+              ORDER BY layer_id, rule_id
+              """;
+
         await using var connection = (NpgsqlConnection)await _connectionProvider
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, layerIds);
+        if (serviceIds is not null)
+        {
+            command.Parameters.AddWithValue("service_ids", NpgsqlDbType.Array | NpgsqlDbType.Text, serviceIds);
+        }
 
         var rulesByLayer = new Dictionary<int, List<AlertRuleDefinition>>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var rule = MapRule(reader);
+            var rule = AlertStoreConversions.MapRule(reader);
             if (!rulesByLayer.TryGetValue(rule.LayerId, out var layerRules))
             {
                 layerRules = new List<AlertRuleDefinition>();
@@ -96,6 +121,8 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
                     .ToArray();
         }
 
+        var totalRules = rulesByLayer.Values.Sum(static r => r.Count);
+        AlertLog.ActiveRulesLoaded(_logger, totalRules, normalizedKeys.Length);
         return results;
     }
 
@@ -133,7 +160,7 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var rule = MapRule(reader);
+            var rule = AlertStoreConversions.MapRule(reader);
             results[rule.RuleId] = rule;
         }
 
@@ -165,71 +192,11 @@ internal sealed class PostgresAlertRuleRepository : IAlertRuleRepository
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var zone = new AlertZoneDefinition
-            {
-                ZoneId = reader.GetInt64(0),
-                ServiceId = reader.GetString(1),
-                ZoneName = reader.GetString(2),
-                Geometry = reader.IsDBNull(3) ? null : (byte[])reader[3],
-                GeometrySrid = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                Metadata = AlertMetadataSerializer.Parse(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
-                IsActive = reader.GetBoolean(6)
-            };
-
+            var zone = AlertStoreConversions.MapZone(reader);
             zones[zone.ZoneId] = zone;
         }
 
         return zones;
     }
 
-    private static AlertRuleDefinition MapRule(NpgsqlDataReader reader)
-    {
-        var channels = reader.IsDBNull(10)
-            ? ImmutableArray<AlertChannelType>.Empty
-            : ParseChannels((string[])reader[10]);
-
-        return new AlertRuleDefinition
-        {
-            RuleId = reader.GetInt64(0),
-            ServiceId = reader.GetString(1),
-            LayerId = reader.GetInt32(2),
-            ZoneId = reader.IsDBNull(3) ? null : reader.GetInt64(3),
-            RuleName = reader.GetString(4),
-            TriggerType = AlertStoreConversions.ToTriggerType(reader.GetInt16(5)),
-            ConditionsJson = reader.IsDBNull(6) ? "{}" : reader.GetString(6),
-            CooldownSeconds = reader.GetInt32(7),
-            Severity = AlertStoreConversions.ToSeverity(reader.GetString(8)),
-            EditionRequired = AlertStoreConversions.ToEdition(reader.GetInt16(9)),
-            Channels = channels,
-            IsActive = reader.GetBoolean(11)
-        };
-    }
-
-    private static ImmutableArray<AlertChannelType> ParseChannels(string[] values)
-    {
-        if (values.Length == 0)
-        {
-            return ImmutableArray<AlertChannelType>.Empty;
-        }
-
-        var builder = ImmutableArray.CreateBuilder<AlertChannelType>(values.Length);
-        foreach (var value in values)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                continue;
-            }
-
-            try
-            {
-                builder.Add(AlertStoreConversions.ParseChannel(value));
-            }
-            catch (InvalidOperationException)
-            {
-                // Skip unsupported channel values to keep rule loading resilient to bad data.
-            }
-        }
-
-        return builder.Distinct().ToImmutableArray();
-    }
 }

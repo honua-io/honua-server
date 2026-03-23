@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -13,10 +14,14 @@ namespace Honua.Postgres.Features.Alerts;
 internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ILogger<PostgresAlertDispatchStore> _logger;
 
-    public PostgresAlertDispatchStore(IDatabaseConnectionProvider connectionProvider)
+    public PostgresAlertDispatchStore(
+        IDatabaseConnectionProvider connectionProvider,
+        ILogger<PostgresAlertDispatchStore> logger)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task EnqueueAsync(
@@ -31,20 +36,21 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
 
         const string sql = """
             INSERT INTO honua.alert_dispatch (event_id, channel_type, status, attempts, max_attempts, next_attempt_at)
-            VALUES (@event_id, @channel_type, 0, 0, 5, now())
+            SELECT @event_id, ct, 0, 0, 5, now()
+            FROM unnest(@channel_types) AS ct
             """;
+
+        var channelTypes = channels.Distinct().Select(static c => c.ToDbValue()).ToArray();
 
         await using var connection = (NpgsqlConnection)await _connectionProvider
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("event_id", NpgsqlDbType.Bigint, eventId);
+        command.Parameters.AddWithValue("channel_types", NpgsqlDbType.Array | NpgsqlDbType.Smallint, channelTypes);
+        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var channel in channels.Distinct())
-        {
-            await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("event_id", NpgsqlDbType.Bigint, eventId);
-            command.Parameters.AddWithValue("channel_type", NpgsqlDbType.Smallint, channel.ToDbValue());
-            _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        AlertLog.DispatchEnqueued(_logger, channelTypes.Length, eventId);
     }
 
     async Task<IReadOnlyList<AlertDispatchItem>> IAlertDispatchStore.ClaimPendingAsync(
@@ -128,6 +134,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        AlertLog.DispatchClaimed(_logger, rows.Count);
         return rows;
     }
 
@@ -159,7 +166,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         DateTimeOffset attemptedAt,
         DateTimeOffset nextAttemptAt,
         bool deadLetter,
-        string? error,
+        string? errorMessage,
         CancellationToken cancellationToken = default)
     {
         const string sql = """
@@ -182,8 +189,17 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         command.Parameters.AddWithValue("status", NpgsqlDbType.Smallint, deadLetter ? AlertDispatchStatus.DeadLetter.ToDbValue() : AlertDispatchStatus.Failed.ToDbValue());
         command.Parameters.AddWithValue("next_attempt_at", NpgsqlDbType.TimestampTz, nextAttemptAt);
         command.Parameters.AddWithValue("attempted_at", NpgsqlDbType.TimestampTz, attemptedAt);
-        command.Parameters.AddWithValue("last_error", NpgsqlDbType.Text, (object?)error ?? DBNull.Value);
+        command.Parameters.AddWithValue("last_error", NpgsqlDbType.Text, (object?)errorMessage ?? DBNull.Value);
 
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        if (deadLetter)
+        {
+            AlertLog.DispatchDeadLettered(_logger, dispatchId);
+        }
+        else
+        {
+            AlertLog.DispatchFailed(_logger, dispatchId, deadLetter);
+        }
     }
 }
