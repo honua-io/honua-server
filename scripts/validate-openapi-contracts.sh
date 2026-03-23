@@ -332,12 +332,11 @@ def compare_admin_contract(base_doc: dict[str, Any], current_doc: dict[str, Any]
     current_schemas = current_components.get("schemas", {})
     if isinstance(base_schemas, dict) and isinstance(current_schemas, dict):
         removed_names = sorted(set(base_schemas) - set(current_schemas))
-        removed_set = set(base_schemas) - set(current_schemas)
         # Build a version of the baseline without schemas that are being removed,
         # so we can check if a removed schema was referenced by surviving content.
         surviving_doc = json.loads(json.dumps(base_doc))
         surviving_schemas = surviving_doc.get("components", {}).get("schemas", {})
-        for rn in removed_set:
+        for rn in removed_names:
             surviving_schemas.pop(rn, None)
         surviving_text = json.dumps(surviving_doc)
         for name in removed_names:
