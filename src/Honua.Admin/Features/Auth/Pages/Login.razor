@@ -1,0 +1,116 @@
+@* Copyright (c) Honua. All rights reserved. *@
+@* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
+
+@page "/admin/auth/login"
+@layout Honua.Admin.Layout.MainLayout
+
+@inject AuthBootstrapService Bootstrap
+@inject OidcSessionService Session
+@inject NavigationManager Nav
+
+<div class="login-container">
+    <div class="login-card">
+        <h1>Honua Admin</h1>
+
+        @if (_loading)
+        {
+            <p>Preparing login...</p>
+        }
+        else if (_sessionExpired)
+        {
+            <div class="session-expired">
+                <h2>Session Expired</h2>
+                <p>Your session has expired. Please sign in again to continue.</p>
+                <button class="btn-primary" @onclick="LoginWithProviderAsync">Sign in again</button>
+            </div>
+        }
+        else if (_error is not null)
+        {
+            <div class="error-message">
+                <p>@_error</p>
+                <button class="btn-primary" @onclick="RetryAsync">Try again</button>
+            </div>
+        }
+        else if (_authMode == AuthMode.ApiKey)
+        {
+            <div class="api-key-mode">
+                <p>OIDC authentication is not configured. Use API key access.</p>
+            </div>
+        }
+        else
+        {
+            <p>Redirecting to identity provider...</p>
+        }
+    </div>
+</div>
+
+<style>
+    .login-container { display: flex; align-items: center; justify-content: center; min-height: 80vh; }
+    .login-card { background: #fff; border-radius: 8px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 400px; width: 100%; text-align: center; }
+    .login-card h1 { margin-bottom: 1.5rem; color: #1a1a2e; }
+    .login-card h2 { margin-bottom: 0.75rem; color: #333; font-size: 1.2rem; }
+    .btn-primary { background: #1a1a2e; color: #fff; border: none; padding: 0.6rem 1.5rem; border-radius: 4px; cursor: pointer; font-size: 1rem; margin-top: 1rem; }
+    .btn-primary:hover { background: #2a2a4e; }
+    .error-message { color: #c62828; }
+    .session-expired { color: #e65100; }
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "expired")]
+    public string? Expired { get; set; }
+
+    private bool _loading = true;
+    private bool _sessionExpired;
+    private string? _error;
+    private AuthMode _authMode;
+    private AuthProviderInfo? _singleProvider;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sessionExpired = !string.IsNullOrEmpty(Expired);
+        _authMode = await Bootstrap.GetAuthModeAsync();
+
+        if (_authMode == AuthMode.OidcMultiProvider)
+        {
+            Nav.NavigateTo("/admin/auth/select-provider");
+            return;
+        }
+
+        if (_authMode == AuthMode.OidcSingleProvider && !_sessionExpired)
+        {
+            _singleProvider = await Bootstrap.GetSingleProviderAsync();
+            if (_singleProvider is not null)
+            {
+                _loading = false;
+                await LoginWithProviderAsync();
+                return;
+            }
+        }
+
+        _loading = false;
+    }
+
+    private async Task LoginWithProviderAsync()
+    {
+        if (_singleProvider is null)
+        {
+            _singleProvider = await Bootstrap.GetSingleProviderAsync();
+        }
+
+        if (_singleProvider is null)
+        {
+            _error = "No OIDC provider configured.";
+            return;
+        }
+
+        await Session.StartLoginAsync(_singleProvider);
+    }
+
+    private async Task RetryAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        await LoginWithProviderAsync();
+    }
+}

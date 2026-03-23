@@ -1,0 +1,40 @@
+@* Copyright (c) Honua. All rights reserved. *@
+@* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
+
+@inherits LayoutComponentBase
+
+<div class="admin-layout">
+    <header class="admin-header">
+        <span class="brand">Honua Admin</span>
+        <AuthorizeView>
+            <Authorized>
+                <span class="user-info">@context.User.Identity?.Name</span>
+                <button class="logout-btn" @onclick="LogoutAsync">Sign out</button>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+    <main class="admin-content">
+        @Body
+    </main>
+</div>
+
+<Honua.Admin.Features.Auth.TokenRefreshTimer />
+
+<style>
+    .admin-layout { min-height: 100vh; display: flex; flex-direction: column; }
+    .admin-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: #1a1a2e; color: #fff; }
+    .brand { font-weight: 600; font-size: 1.1rem; }
+    .user-info { margin-right: 1rem; opacity: 0.8; font-size: 0.9rem; }
+    .logout-btn { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .logout-btn:hover { background: rgba(255,255,255,0.1); }
+    .admin-content { flex: 1; padding: 1.5rem; }
+</style>
+
+@code {
+    [Inject] private OidcSessionService Session { get; set; } = default!;
+
+    private async Task LogoutAsync()
+    {
+        await Session.LogoutAsync();
+    }
+}

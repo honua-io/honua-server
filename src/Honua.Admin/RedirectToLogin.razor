@@ -1,0 +1,22 @@
+@* Copyright (c) Honua. All rights reserved. *@
+@* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
+
+@inject NavigationManager Nav
+@inject AuthBootstrapService Bootstrap
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var mode = await Bootstrap.GetAuthModeAsync();
+
+        switch (mode)
+        {
+            case AuthMode.OidcMultiProvider:
+                Nav.NavigateTo("/admin/auth/select-provider");
+                break;
+            default:
+                Nav.NavigateTo("/admin/auth/login");
+                break;
+        }
+    }
+}
