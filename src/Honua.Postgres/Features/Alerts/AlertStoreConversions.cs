@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Domain;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Alerts;
 
@@ -166,5 +168,79 @@ internal static class AlertStoreConversions
     public static string ToChannelName(this AlertChannelType value)
     {
         return value.ToExternalName();
+    }
+
+    /// <summary>
+    /// Maps a data reader row to an <see cref="AlertRuleDefinition"/>.
+    /// Expects columns: rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
+    /// conditions, cooldown_seconds, severity, edition_required, channels, is_active.
+    /// </summary>
+    public static AlertRuleDefinition MapRule(NpgsqlDataReader reader)
+    {
+        return new AlertRuleDefinition
+        {
+            RuleId = reader.GetInt64(0),
+            ServiceId = reader.GetString(1),
+            LayerId = reader.GetInt32(2),
+            ZoneId = reader.IsDBNull(3) ? null : reader.GetInt64(3),
+            RuleName = reader.GetString(4),
+            TriggerType = ToTriggerType(reader.GetInt16(5)),
+            ConditionsJson = reader.IsDBNull(6) ? "{}" : reader.GetString(6),
+            CooldownSeconds = reader.GetInt32(7),
+            Severity = ToSeverity(reader.GetString(8)),
+            EditionRequired = ToEdition(reader.GetInt16(9)),
+            Channels = ParseChannels(reader.IsDBNull(10) ? [] : (string[])reader[10]),
+            IsActive = reader.GetBoolean(11)
+        };
+    }
+
+    /// <summary>
+    /// Parses an array of channel name strings into an immutable array of <see cref="AlertChannelType"/>.
+    /// Skips unrecognized values to remain resilient to data from previous versions.
+    /// </summary>
+    public static ImmutableArray<AlertChannelType> ParseChannels(string[] values)
+    {
+        if (values.Length == 0)
+        {
+            return ImmutableArray<AlertChannelType>.Empty;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<AlertChannelType>(values.Length);
+        foreach (var value in values)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            try
+            {
+                builder.Add(ParseChannel(value));
+            }
+            catch (InvalidOperationException)
+            {
+                // Skip unsupported channel values persisted by previous versions.
+            }
+        }
+
+        return builder.Distinct().ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Maps a data reader row to an <see cref="AlertZoneDefinition"/>.
+    /// Expects columns: zone_id, service_id, zone_name, ST_AsBinary(geometry), ST_SRID(geometry), metadata, is_active.
+    /// </summary>
+    public static AlertZoneDefinition MapZone(NpgsqlDataReader reader)
+    {
+        return new AlertZoneDefinition
+        {
+            ZoneId = reader.GetInt64(0),
+            ServiceId = reader.GetString(1),
+            ZoneName = reader.GetString(2),
+            Geometry = reader.IsDBNull(3) ? null : (byte[])reader[3],
+            GeometrySrid = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+            Metadata = AlertMetadataSerializer.Parse(reader.IsDBNull(5) ? "{}" : reader.GetString(5)),
+            IsActive = reader.GetBoolean(6)
+        };
     }
 }
