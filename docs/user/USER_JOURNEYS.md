@@ -32,7 +32,9 @@ curl http://localhost:8080/healthz/ready
 - QGIS (OGC API Features): `http://<host>/ogc/features`
 
 **Next Steps:**
+- [QGIS Getting Started Tutorial](tutorials/qgis-getting-started.md)
 - [Geospatial API Examples](API_EXAMPLES.md)
+- [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)*
 - [Client Templates + Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
 - [MapServer Coverage Matrix](map-server-matrix.md)
@@ -102,6 +104,7 @@ new maplibregl.Map({
 ```
 
 **Next Steps:**
+- [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)* — test endpoints in the browser
 - [Vector Tiles API Examples](API_EXAMPLES.md#vector-tiles-mvt)
 - [OGC API Examples](API_EXAMPLES.md#ogc-api-features)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)

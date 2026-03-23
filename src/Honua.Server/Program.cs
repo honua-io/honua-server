@@ -44,6 +44,7 @@ using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
 using StackExchange.Redis;
@@ -64,6 +65,9 @@ var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
+var serveApiDocs = builder.Configuration.GetValue(
+    "ServeApiDocs",
+    builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
 var adminStaticAssetsManifestPath = Path.Combine(
     AppContext.BaseDirectory,
     "Honua.Admin.staticwebassets.endpoints.json");
@@ -672,6 +676,20 @@ if (serveAdminUi)
             }
             endpoints.MapFallbackToFile("index.html");
         });
+    });
+}
+
+// Map interactive API explorer (Scalar) at /docs when enabled
+if (serveApiDocs)
+{
+    app.MapScalarApiReference("/docs", options =>
+    {
+        options
+            .WithTitle("Honua API Explorer")
+            .WithTheme(ScalarTheme.BluePlanet)
+            .AddDocument("features", "OGC API Features", "/openapi.json", isDefault: true)
+            .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
+            .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     });
 }
 

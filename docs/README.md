@@ -6,7 +6,8 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 
 | I want to... | Go to |
 |---|---|
-| **Consume geospatial data** | [Protocols Overview](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) |
+| **Consume geospatial data** | [Protocols Overview](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) / [API Explorer](http://localhost:8080/docs) *(running server)* |
+| **Follow a tutorial** | [QGIS Getting Started](user/tutorials/qgis-getting-started.md) / [GeoServer Migration](user/tutorials/geoserver-migration-guide.md) |
 | **Manage the server** | [Admin API](user/CONTROL_PLANE_API.md) / [Admin UI](user/admin-ui.md) |
 | **Check server/SDK compatibility** | [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md) / [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) |
 | **Standardize SDK release docs** | [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) |
@@ -37,6 +38,8 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 - [Cross-Client Certification Evidence](user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — standardized `.cert.json` evidence format for certification runs
 - [Admin UI](user/admin-ui.md) — browser interface guide
 - [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling
+- [QGIS Getting Started](user/tutorials/qgis-getting-started.md) — zero-to-querying in 5 minutes with QGIS
+- [GeoServer Migration Guide](user/tutorials/geoserver-migration-guide.md) — endpoint mapping, automated import, config differences
 
 ### Coverage Matrices
 

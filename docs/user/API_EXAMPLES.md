@@ -244,3 +244,4 @@ const map = new maplibregl.Map({
 - [Protocols Overview](STANDARDS_APIS.md)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
 - [Admin API Reference](CONTROL_PLANE_API.md)
+- [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)* — try endpoints live with Scalar

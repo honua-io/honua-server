@@ -81,6 +81,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Admin API | `/api/v1/admin` | Admin UI, automation scripts |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
+| API Explorer (Scalar) | `/docs` | Browser *(dev mode or `HONUA_SERVE_API_DOCS=true`)* |
 | Health | `/healthz/live`, `/healthz/ready` | Load balancers, orchestrators |
 
 ## Capabilities
@@ -118,6 +119,7 @@ HONUA_ADMIN_PASSWORD="change-me"
 **Common options:**
 ```bash
 HONUA_SERVE_ADMIN_UI=true                 # Serve admin UI at /admin
+HONUA_SERVE_API_DOCS=true                # Interactive API explorer at /docs (default: on in Development)
 HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
 HONUA_OPENTELEMETRY=true                  # Distributed tracing
 ConnectionStrings__Redis="localhost:6379"  # Redis cache
@@ -158,7 +160,8 @@ Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuai
 | I want to... | Go to |
 |---|---|
 | Deploy to production | [Infrastructure & Deployment](https://honua.gitbook.io/honuaio/devops-guide/infrastructure) |
-| Call the API | [Protocols Overview](https://honua.gitbook.io/honuaio/) |
+| Call the API | [Protocols Overview](https://honua.gitbook.io/honuaio/) / [API Explorer](http://localhost:8080/docs) *(running server)* |
+| Follow a tutorial | [QGIS Getting Started](docs/user/tutorials/qgis-getting-started.md) / [GeoServer Migration](docs/user/tutorials/geoserver-migration-guide.md) |
 | Check MVP compatibility limits | [MVP Compatibility Contract](docs/user/MVP_COMPATIBILITY_CONTRACT.md) |
 | Evaluate performance | [Benchmark Results](docs/user/BENCHMARK_RESULTS.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
