@@ -15,6 +15,18 @@ This page summarizes Honua MVP support for OGC API Tiles.
 | Tile retrieval | Implemented | Vector/raster responses by collection/tileset/tile matrix |
 | OpenAPI (`/ogc/tiles/openapi.json`) | Implemented | OpenAPI description for tiles API |
 
+## Protocol Correctness Notes
+
+### Collection Spatial Extents (CRS84)
+
+The OGC Tiles spec requires collection spatial extents to use CRS84 coordinates. Honua transforms extents from the layer's native CRS to CRS84 using an in-memory transformer that supports WGS 84 (EPSG:4326) and WebMercator variants (EPSG:3857, 900913, 102100, 102113, 3785). This matches the pattern used by OGC API Features and WFS 2.0 collections.
+
+When a layer uses a CRS that cannot be reliably transformed in-memory, the spatial extent is **omitted** rather than emitted with non-CRS84 coordinates. Clients should handle absent spatial extents gracefully.
+
+### WKB Byte Order
+
+The tile renderer reads WKB geometry payloads with endian awareness. Both little-endian (NDR, byte-order flag `0x01`) and big-endian (XDR, byte-order flag `0x00`) WKB payloads are supported. This applies to all geometry types rendered to raster tiles (Point, LineString, Polygon, and their Multi- variants).
+
 ## MVP Limitations
 
 - Coverage depends on available collection metadata and matrix-set configuration.

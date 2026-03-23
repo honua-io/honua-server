@@ -1,7 +1,7 @@
 # GIS Crosscutting Concerns List
 
 This list tracks GIS-specific issues, assumptions, and follow-up priorities for Honua Server.
-Coordinate transformation is currently handled in PostGIS (ST_Transform) rather than in-memory.
+Coordinate transformation is primarily handled in PostGIS (ST_Transform). For collection spatial extents, `OgcExtentTransformer.TryTransformToCrs84()` provides in-memory transforms for WGS 84 and WebMercator variants across OGC Features, OGC Tiles, and WFS 2.0.
 
 ## Findings - High Impact
 - OData geometry uses Edm.Geometry/Edm.Geography with GeoJSON payloads; confirm client compatibility (Excel/Power BI) and document the spatial contract. Evidence: src/Honua.Server/Features/OData/Services/ODataMetadataService.cs:95, src/Honua.Server/Features/OData/Services/ODataGeometryConverter.cs:21.
@@ -15,6 +15,9 @@ Coordinate transformation is currently handled in PostGIS (ST_Transform) rather 
 - FeatureServer service metadata ObjectIdField defaults to FieldNames.ObjectId and is set in the mapper. Status: addressed. Evidence: src/Honua.Server/Features/FeatureServer/Models/FeatureServerModels.cs:96.
 - OData $filter for Layers uses the shared OData expression parser. Status: addressed. Evidence: src/Honua.Server/Features/OData/Services/ODataQueryService.cs:47.
 - OGC temporal extent is computed from SQL min/max when temporal fields exist. Status: addressed. Evidence: src/Honua.Server/Features/OgcFeatures/OgcFeaturesUtilities.cs:239.
+- OGC Tiles collection extents now use `OgcExtentTransformer.TryTransformToCrs84()` consistent with OGC Features and WFS 2.0; unsupported CRS omits spatial extent rather than emitting non-CRS84 coordinates. Status: addressed (#573). Evidence: src/Honua.Server/Features/OgcTiles/CollectionsEndpoints.cs:229-248.
+- OGC Tiles WKB rendering now reads the byte-order flag and uses endian-aware reads (`BinaryPrimitives`) for all geometry types, supporting both little-endian (NDR) and big-endian (XDR) payloads. Status: addressed (#573). Evidence: src/Honua.Server/Features/OgcTiles/TileRenderer.cs:88.
+- OGC Maps requests are now classified as OGC in `ProtocolRequestClassifier.IsOgc()`, ensuring OGC-specific error formatting (RFC 7807 Problem Details with `type: "about:blank"`). Status: addressed (#573). Evidence: src/Honua.Server/Features/Infrastructure/Models/ProtocolRequestClassifier.cs:25-28.
 - Data source abstraction currently binds all feature storage to Postgres; no runtime GeoPackage/cloud-native backends are wired in. Evidence: src/Honua.Postgres/Features/FeatureStore/ServiceCollectionExtensions.cs:23.
 
 ## Open Questions / Assumptions
