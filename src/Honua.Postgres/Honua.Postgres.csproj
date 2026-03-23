@@ -37,7 +37,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.5" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.25" />
-    <PackageReference Include="dbup-postgresql" Version="6.1.5" />
+    <PackageReference Include="dbup-postgresql" Version="7.0.1" />
     <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" Version="1.2.0" />
     <PackageReference Include="NetTopologySuite.IO.GeoPackage" Version="2.0.0" />
     <PackageReference Include="Parquet.Net" Version="5.5.0" />
