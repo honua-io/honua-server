@@ -25,6 +25,12 @@ namespace Honua.Server.Features.ImageServer.Models;
 [JsonSerializable(typeof(RasterTypeInfo))]
 [JsonSerializable(typeof(CatalogItem))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(double[]))]
 internal sealed partial class ImageServerJsonContext : JsonSerializerContext
