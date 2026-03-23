@@ -23,7 +23,11 @@ public interface IManifestPendingChangeStore
     /// <summary>
     /// Lists pending changes filtered by status with a result cap.
     /// </summary>
-    Task<IReadOnlyList<ManifestPendingChange>> ListAsync(ManifestApprovalStatus? status = null, int limit = 200, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ManifestPendingChange>> ListAsync(
+        ManifestApprovalStatus? status = null,
+        int limit = 200,
+        int offset = 0,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates the status and decision fields of a pending change.
@@ -33,6 +37,7 @@ public interface IManifestPendingChangeStore
         ManifestApprovalStatus status,
         string? decisionBy,
         string? decisionReason,
+        ManifestApprovalStatus expectedCurrentStatus = ManifestApprovalStatus.Pending,
         CancellationToken cancellationToken = default);
 
     /// <summary>

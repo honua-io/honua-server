@@ -92,6 +92,12 @@ public enum ManifestApprovalStatus
     Pending = 0,
 
     /// <summary>
+    /// Change has been reserved for application but not finalized yet.
+    /// Internal transition state used to prevent concurrent decisions.
+    /// </summary>
+    Applying = 4,
+
+    /// <summary>
     /// Change was approved and applied.
     /// </summary>
     Approved = 1,

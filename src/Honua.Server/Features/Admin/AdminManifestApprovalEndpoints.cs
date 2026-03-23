@@ -17,6 +17,8 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminManifestApprovalEndpoints
 {
+    private const int HistoryPageSize = 200;
+
     /// <summary>
     /// Map manifest approval endpoints to the admin API group.
     /// </summary>
@@ -188,32 +190,66 @@ internal static class AdminManifestApprovalEndpoints
             return;
         }
 
-        // Apply the manifest first, then mark as approved. If apply throws,
-        // the record stays in 'pending' so the operator can retry.
-        var applyResult = await AdminMetadataEndpoints.ApplyNormalizedResourcesAsync(
-            normalizedResources,
-            applyRequest.DryRun,
-            applyRequest.Prune,
-            resourceStore,
-            compiler,
-            context.RequestAborted,
-            versionStore,
-            request.ApprovedBy);
+        var reserved = await approvalGate.PendingStore.UpdateDecisionAsync(
+            id,
+            ManifestApprovalStatus.Applying,
+            request.ApprovedBy,
+            request.Reason,
+            expectedCurrentStatus: ManifestApprovalStatus.Pending,
+            cancellationToken: context.RequestAborted);
+
+        if (!reserved)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, StatusCodes.Status409Conflict,
+                $"Pending change '{id}' could not be approved. It may have already been decided.");
+            return;
+        }
+
+        ManifestApplyResult applyResult;
+        try
+        {
+            applyResult = await AdminMetadataEndpoints.ApplyNormalizedResourcesAsync(
+                normalizedResources,
+                applyRequest.DryRun,
+                applyRequest.Prune,
+                resourceStore,
+                compiler,
+                context.RequestAborted,
+                versionStore,
+                request.ApprovedBy);
+        }
+        catch (Exception ex)
+        {
+            var reset = await approvalGate.PendingStore.UpdateDecisionAsync(
+                id,
+                ManifestApprovalStatus.Pending,
+                null,
+                null,
+                expectedCurrentStatus: ManifestApprovalStatus.Applying,
+                cancellationToken: CancellationToken.None);
+
+            if (!reset)
+            {
+                throw new InvalidOperationException(
+                    $"Pending change '{id}' could not be returned to pending after an apply failure.",
+                    ex);
+            }
+
+            throw;
+        }
 
         var updated = await approvalGate.PendingStore.UpdateDecisionAsync(
             id,
             ManifestApprovalStatus.Approved,
             request.ApprovedBy,
             request.Reason,
+            expectedCurrentStatus: ManifestApprovalStatus.Applying,
             context.RequestAborted);
 
         if (!updated)
         {
-            // Resources were applied but status update lost the race — the resources
-            // are already live so we report success with a warning rather than 409.
-            var payload409 = ApiResponse<ManifestApplyResult>.CreateSuccess(applyResult,
-                "Resources applied, but the approval record was concurrently decided. Check history.");
-            await AdminResponseWriter.WriteJsonAsync(context, payload409, ManifestApprovalJsonContext.Default.ApiResponseManifestApplyResult);
+            await AdminResponseWriter.WriteErrorAsync(context, StatusCodes.Status500InternalServerError,
+                $"Manifest change '{id}' was applied but the approval record could not be finalized.");
             return;
         }
 
@@ -276,7 +312,8 @@ internal static class AdminManifestApprovalEndpoints
             ManifestApprovalStatus.Rejected,
             request.RejectedBy,
             request.Reason,
-            context.RequestAborted);
+            expectedCurrentStatus: ManifestApprovalStatus.Pending,
+            cancellationToken: context.RequestAborted);
 
         if (!updated)
         {
@@ -321,8 +358,29 @@ internal static class AdminManifestApprovalEndpoints
             return;
         }
 
-        // History returns all changes regardless of status
-        var all = await approvalGate.PendingStore.ListAsync(status: null, cancellationToken: context.RequestAborted);
+        var all = new List<ManifestPendingChange>();
+        var offset = 0;
+        while (true)
+        {
+            var page = await approvalGate.PendingStore.ListAsync(
+                status: null,
+                limit: HistoryPageSize,
+                offset: offset,
+                cancellationToken: context.RequestAborted);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            all.AddRange(page);
+            if (page.Count < HistoryPageSize)
+            {
+                break;
+            }
+
+            offset += page.Count;
+        }
+
         var responses = all.Select(AdminMetadataEndpoints.MapToResponse).ToArray();
         var payload = ApiResponse<ManifestPendingChangeResponse[]>.CreateSuccess(responses);
         await AdminResponseWriter.WriteJsonAsync(context, payload, ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponseArray);
@@ -331,6 +389,7 @@ internal static class AdminManifestApprovalEndpoints
     private static ManifestApprovalStatus? ParseStatus(string status) => status.ToLowerInvariant() switch
     {
         "pending" => ManifestApprovalStatus.Pending,
+        "applying" => ManifestApprovalStatus.Applying,
         "approved" => ManifestApprovalStatus.Approved,
         "rejected" => ManifestApprovalStatus.Rejected,
         "expired" => ManifestApprovalStatus.Expired,

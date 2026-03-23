@@ -87,9 +87,11 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
     public async Task<IReadOnlyList<ManifestPendingChange>> ListAsync(
         ManifestApprovalStatus? status = null,
         int limit = 200,
+        int offset = 0,
         CancellationToken cancellationToken = default)
     {
         var effectiveLimit = Math.Clamp(limit, 1, 1000);
+        var effectiveOffset = Math.Max(0, offset);
         var sql = $"""
             SELECT pending_id, manifest_snapshot, manifest_hash, status,
                    requested_by, requested_reason, decision_by, decision_reason,
@@ -102,13 +104,14 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
             sql += " WHERE status = @status";
         }
 
-        sql += " ORDER BY created_at DESC LIMIT @limit";
+        sql += " ORDER BY created_at DESC LIMIT @limit OFFSET @offset";
 
         await using var connection = (NpgsqlConnection)await _connectionProvider
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@limit", effectiveLimit);
+        command.Parameters.AddWithValue("@offset", effectiveOffset);
         if (status.HasValue)
         {
             command.Parameters.AddWithValue("@status", MapStatusToString(status.Value));
@@ -129,13 +132,14 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
         ManifestApprovalStatus status,
         string? decisionBy,
         string? decisionReason,
+        ManifestApprovalStatus expectedCurrentStatus = ManifestApprovalStatus.Pending,
         CancellationToken cancellationToken = default)
     {
         var sql = $"""
             UPDATE {_table}
             SET status = @status, decision_by = @decisionBy, decision_reason = @decisionReason,
                 decided_at = @decidedAt
-            WHERE pending_id = @pendingId AND status = 'pending'
+            WHERE pending_id = @pendingId AND status = @expectedStatus
             """;
 
         await using var connection = (NpgsqlConnection)await _connectionProvider
@@ -144,9 +148,10 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@pendingId", pendingId);
         command.Parameters.AddWithValue("@status", MapStatusToString(status));
+        command.Parameters.AddWithValue("@expectedStatus", MapStatusToString(expectedCurrentStatus));
         command.Parameters.AddWithValue("@decisionBy", (object?)decisionBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@decisionReason", (object?)decisionReason ?? DBNull.Value);
-        command.Parameters.AddWithValue("@decidedAt", DateTimeOffset.UtcNow);
+        command.Parameters.AddWithValue("@decidedAt", status == ManifestApprovalStatus.Pending ? DBNull.Value : DateTimeOffset.UtcNow);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
@@ -211,6 +216,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
     private static string MapStatusToString(ManifestApprovalStatus status) => status switch
     {
         ManifestApprovalStatus.Pending => "pending",
+        ManifestApprovalStatus.Applying => "applying",
         ManifestApprovalStatus.Approved => "approved",
         ManifestApprovalStatus.Rejected => "rejected",
         ManifestApprovalStatus.Expired => "expired",
@@ -219,6 +225,7 @@ internal sealed class PostgresManifestPendingChangeStore : IManifestPendingChang
 
     private static ManifestApprovalStatus ParseStatus(string status) => status switch
     {
+        "applying" => ManifestApprovalStatus.Applying,
         "approved" => ManifestApprovalStatus.Approved,
         "rejected" => ManifestApprovalStatus.Rejected,
         "expired" => ManifestApprovalStatus.Expired,

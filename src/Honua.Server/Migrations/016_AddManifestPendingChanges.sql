@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS honua.manifest_pending_changes (
     decided_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ,
     CONSTRAINT manifest_pending_changes_valid_status
-        CHECK (status IN ('pending', 'approved', 'rejected', 'expired'))
+        CHECK (status IN ('pending', 'applying', 'approved', 'rejected', 'expired'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_manifest_pending_changes_status

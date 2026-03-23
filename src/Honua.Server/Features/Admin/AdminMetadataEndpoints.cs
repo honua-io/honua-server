@@ -650,7 +650,7 @@ internal static class AdminMetadataEndpoints
     {
         PendingId = change.PendingId,
         ManifestHash = change.ManifestHash,
-        Status = change.Status.ToString().ToLowerInvariant(),
+        Status = MapApprovalStatusForResponse(change.Status),
         RequestedBy = change.RequestedBy,
         RequestedReason = change.RequestedReason,
         DecisionBy = change.DecisionBy,
@@ -662,6 +662,11 @@ internal static class AdminMetadataEndpoints
         DecidedAt = change.DecidedAt,
         ExpiresAt = change.ExpiresAt
     };
+
+    private static string MapApprovalStatusForResponse(ManifestApprovalStatus status)
+        => status == ManifestApprovalStatus.Applying
+            ? "pending"
+            : status.ToString().ToLowerInvariant();
 
     internal static MetadataResource NormalizeResource(
         MetadataResource resource,

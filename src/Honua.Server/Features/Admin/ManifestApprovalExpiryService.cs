@@ -74,7 +74,8 @@ internal sealed partial class ManifestApprovalExpiryService : BackgroundService
                 ManifestApprovalStatus.Expired,
                 "system",
                 "Approval timeout expired.",
-                cancellationToken).ConfigureAwait(false);
+                expectedCurrentStatus: ManifestApprovalStatus.Pending,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
             if (updated)
             {

@@ -278,7 +278,7 @@ sql:
           decided_at TIMESTAMPTZ,
           expires_at TIMESTAMPTZ,
           CONSTRAINT manifest_pending_changes_valid_status
-              CHECK (status IN ('pending', 'approved', 'rejected', 'expired'))
+              CHECK (status IN ('pending', 'applying', 'approved', 'rejected', 'expired'))
       );
   - "CREATE INDEX IF NOT EXISTS idx_manifest_pending_changes_status ON honua.manifest_pending_changes(status);"
   - "CREATE INDEX IF NOT EXISTS idx_manifest_pending_changes_created ON honua.manifest_pending_changes(created_at DESC);"

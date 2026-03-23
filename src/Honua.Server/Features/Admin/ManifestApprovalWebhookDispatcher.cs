@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundService
 {
+    private static readonly TimeSpan DeliveryRetryDelay = TimeSpan.FromSeconds(1);
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ManifestApprovalWebhookOptions _options;
     private readonly ILogger<ManifestApprovalWebhookDispatcher> _logger;
@@ -48,56 +49,70 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
     {
         await foreach (var webhookEvent in _channel.Reader.ReadAllAsync(stoppingToken))
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+                try
                 {
-                    continue;
-                }
-
-                if (string.IsNullOrWhiteSpace(_options.Secret))
-                {
-                    LogWebhookConfigurationInvalidOnce();
-                    continue;
-                }
-
-                var validation = await FeatureChangeWebhookUrlValidation
-                    .ValidateAsync(_options.Url, stoppingToken)
-                    .ConfigureAwait(false);
-                if (!validation.IsValid || validation.Uri == null)
-                {
-                    LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
-                    continue;
-                }
-
-                var payload = JsonSerializer.Serialize(webhookEvent, ManifestApprovalJsonContext.Default.ManifestApprovalWebhookEvent);
-                await WebhookDeliveryHelper.DeliverWithRetryAsync(
-                    new WebhookDeliveryRequest
+                    var delivered = await TryDeliverAsync(webhookEvent, stoppingToken).ConfigureAwait(false);
+                    if (delivered)
                     {
-                        Payload = payload,
-                        EventId = webhookEvent.EventId,
-                        Timestamp = webhookEvent.Timestamp,
-                        WebhookUri = validation.Uri,
-                        Secret = _options.Secret!,
-                        HttpClientName = "manifest-approval-webhook",
-                        MaxAttempts = _options.MaxAttempts,
-                        InitialBackoffMs = _options.InitialBackoffMs,
-                        MaxBackoffMs = _options.MaxBackoffMs,
-                        RequestTimeoutSeconds = _options.RequestTimeoutSeconds
-                    },
-                    _httpClientFactory,
-                    _logger,
-                    stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                LogDispatcherFailed(_logger, webhookEvent.EventId, ex);
+                        break;
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    LogDispatcherFailed(_logger, webhookEvent.EventId, ex);
+                }
+
+                await Task.Delay(DeliveryRetryDelay, stoppingToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private async Task<bool> TryDeliverAsync(ManifestApprovalWebhookEvent webhookEvent, CancellationToken stoppingToken)
+    {
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Url))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.Secret))
+        {
+            LogWebhookConfigurationInvalidOnce();
+            return false;
+        }
+
+        var validation = await FeatureChangeWebhookUrlValidation
+            .ValidateAsync(_options.Url, stoppingToken)
+            .ConfigureAwait(false);
+        if (!validation.IsValid || validation.Uri == null)
+        {
+            LogWebhookUrlRejectedOnce(validation.ErrorMessage ?? FeatureChangeWebhookUrlValidation.InvalidHttpsUrlMessage);
+            return false;
+        }
+
+        var payload = JsonSerializer.Serialize(webhookEvent, ManifestApprovalJsonContext.Default.ManifestApprovalWebhookEvent);
+        return await WebhookDeliveryHelper.DeliverWithRetryAsync(
+            new WebhookDeliveryRequest
+            {
+                Payload = payload,
+                EventId = webhookEvent.EventId,
+                Timestamp = webhookEvent.Timestamp,
+                WebhookUri = validation.Uri,
+                Secret = _options.Secret!,
+                HttpClientName = "manifest-approval-webhook",
+                MaxAttempts = _options.MaxAttempts,
+                InitialBackoffMs = _options.InitialBackoffMs,
+                MaxBackoffMs = _options.MaxBackoffMs,
+                RequestTimeoutSeconds = _options.RequestTimeoutSeconds
+            },
+            _httpClientFactory,
+            _logger,
+            stoppingToken).ConfigureAwait(false);
     }
 
     private void LogWebhookConfigurationInvalidOnce()

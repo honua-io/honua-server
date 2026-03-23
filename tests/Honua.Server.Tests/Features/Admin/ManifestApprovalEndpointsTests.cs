@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain;
 using Honua.Core.Features.Metadata.Schema;
 using Honua.Server.Features.Admin.Models;
@@ -14,6 +15,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -275,6 +277,122 @@ public sealed class ManifestApprovalEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/manifest/pending/history")]
+    public async Task History_ReturnsMoreThanDefaultStoreLimit()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IManifestPendingChangeStore>();
+        var snapshot = JsonSerializer.SerializeToElement(
+            new ManifestApplyRequest
+            {
+                Resources = new[] { CreateLayerResource("history-over-limit") },
+                DryRun = false,
+                Prune = false
+            },
+            MetadataResourceJsonContext.Default.ManifestApplyRequest);
+
+        for (var i = 0; i < 205; i++)
+        {
+            await store.CreateAsync(new ManifestPendingChange
+            {
+                PendingId = Guid.NewGuid(),
+                ManifestSnapshot = snapshot,
+                ManifestHash = $"history-{i:D3}",
+                Status = ManifestApprovalStatus.Pending,
+                RequestedBy = $"history-user-{i:D3}",
+                ResourceCount = 1,
+                CreatedAt = DateTimeOffset.UtcNow.AddSeconds(-i)
+            });
+        }
+
+        var client = _fixture.CreateAdminClient();
+        var historyResponse = await client.GetAsync("/api/v1/admin/manifest/pending/history");
+        historyResponse.Be200Ok();
+
+        var historyPayload = await historyResponse.Content.ReadAsStringAsync();
+        var historyResult = JsonSerializer.Deserialize(
+            historyPayload,
+            ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponseArray);
+
+        historyResult.Should().NotBeNull();
+        historyResult!.Data.Should().NotBeNull();
+        historyResult.Data!.Length.Should().BeGreaterOrEqualTo(205);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/manifest/pending/{id}/approve")]
+    public async Task Approve_WhenApplyFails_RestoresPendingStatus()
+    {
+        var failingFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                {
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ManifestApproval:Enabled"] = "true",
+                        ["ManifestApproval:DefaultTimeoutMinutes"] = "60"
+                    });
+                });
+            })
+            .ReplaceService<IMetadataCompiler>(new ThrowingMetadataCompiler());
+
+        await failingFixture.InitializeAsync();
+        try
+        {
+            var client = failingFixture.CreateAdminClient();
+            var applyRequest = new ManifestApplyRequest
+            {
+                Resources = new[] { CreateLayerResource("approve-failure") },
+                DryRun = false,
+                Prune = false,
+                ApprovalRequired = true,
+                RequestedBy = "approve-failure-test"
+            };
+
+            var queueResponse = await client.PostAsync(
+                "/api/v1/admin/manifest/apply",
+                JsonContent.Create(applyRequest, MetadataResourceJsonContext.Default.ManifestApplyRequest));
+            queueResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+            var queuePayload = await queueResponse.Content.ReadAsStringAsync();
+            var queueResult = JsonSerializer.Deserialize(
+                queuePayload,
+                ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponse);
+            var pendingId = queueResult!.Data!.PendingId;
+
+            var approveResponse = await client.PostAsync(
+                $"/api/v1/admin/manifest/pending/{pendingId}/approve",
+                JsonContent.Create(
+                    new ManifestApproveRequest { ApprovedBy = "admin-reviewer", Reason = "force-failure" },
+                    ManifestApprovalJsonContext.Default.ManifestApproveRequest));
+
+            approveResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+            var pendingResponse = await client.GetAsync($"/api/v1/admin/manifest/pending/{pendingId}");
+            pendingResponse.Be200Ok();
+
+            var pendingPayload = await pendingResponse.Content.ReadAsStringAsync();
+            var pendingResult = JsonSerializer.Deserialize(
+                pendingPayload,
+                ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponse);
+
+            pendingResult.Should().NotBeNull();
+            pendingResult!.Data.Should().NotBeNull();
+            pendingResult.Data!.Status.Should().Be("pending");
+            pendingResult.Data.DecisionBy.Should().BeNull();
+            pendingResult.Data.DecisionReason.Should().BeNull();
+            pendingResult.Data.DecidedAt.Should().BeNull();
+        }
+        finally
+        {
+            await failingFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/manifest/apply")]
     public async Task ManifestApply_WithApprovalRequired_WhenDisabled_Returns403()
     {
@@ -338,5 +456,11 @@ public sealed class ManifestApprovalEndpointsTests : IAsyncLifetime
             },
             Spec = resourceSpec
         };
+    }
+
+    private sealed class ThrowingMetadataCompiler : IMetadataCompiler
+    {
+        public Task<MetadataCompilationResult> CompileAsync(MetadataResource resource, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("compiler boom");
     }
 }
