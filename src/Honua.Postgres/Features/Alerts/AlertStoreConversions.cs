@@ -175,7 +175,7 @@ internal static class AlertStoreConversions
     /// Expects columns: rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
     /// conditions, cooldown_seconds, severity, edition_required, channels, is_active.
     /// </summary>
-    public static AlertRuleDefinition MapRule(NpgsqlDataReader reader)
+    internal static AlertRuleDefinition MapRule(NpgsqlDataReader reader)
     {
         return new AlertRuleDefinition
         {
@@ -198,7 +198,7 @@ internal static class AlertStoreConversions
     /// Parses an array of channel name strings into an immutable array of <see cref="AlertChannelType"/>.
     /// Skips unrecognized values to remain resilient to data from previous versions.
     /// </summary>
-    public static ImmutableArray<AlertChannelType> ParseChannels(string[] values)
+    internal static ImmutableArray<AlertChannelType> ParseChannels(string[] values)
     {
         if (values.Length == 0)
         {
@@ -230,7 +230,7 @@ internal static class AlertStoreConversions
     /// Maps a data reader row to an <see cref="AlertZoneDefinition"/>.
     /// Expects columns: zone_id, service_id, zone_name, ST_AsBinary(geometry), ST_SRID(geometry), metadata, is_active.
     /// </summary>
-    public static AlertZoneDefinition MapZone(NpgsqlDataReader reader)
+    internal static AlertZoneDefinition MapZone(NpgsqlDataReader reader)
     {
         return new AlertZoneDefinition
         {
