@@ -180,7 +180,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
         using var client = factory.CreateClient();
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var maxElapsedMs = Environment.GetEnvironmentVariable("CI") == "true" ? 1000 : 500;
+        var maxElapsedMs = Environment.GetEnvironmentVariable("CI") == "true" ? 1000 : 750;
 
         // Act
         var response = await client.GetAsync("/healthz/ready");

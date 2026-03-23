@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Security.Claims;
 using FluentAssertions;
 using Grpc.Core;
 using Honua.Core.Configuration;
@@ -9,13 +10,18 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Grpc;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
@@ -186,6 +192,85 @@ public sealed class GrpcFeatureServiceTests
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.NotFound);
         ex.Which.Status.Detail.Should().Be("Grpc is not enabled for this service.");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WithoutAuthentication_ThrowsUnauthenticatedRpcException()
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
+        });
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WithoutDataEditorRole_ThrowsPermissionDeniedRpcException()
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
+        });
+
+        // Authenticated user with no matching roles
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext(CreateAuthenticatedUser("viewer")));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_AnonymousWritePolicyWithoutAuthentication_ThrowsUnauthenticatedRpcException()
+    {
+        var anonymousWriteService = _testService with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymousWrite = true
+                }
+            }
+        };
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("anonymous-write", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((anonymousWriteService, _testLayer)));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "anonymous-write",
+            LayerId = 0
+        };
+        request.Adds.Add(new Proto.Feature
+        {
+            Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "test" } }
+        });
+
+        var act = async () => await _sut.ApplyEdits(request, CreateCallContext(CreateAnonymousUser()));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
     }
 
     [UnitTest]
@@ -655,10 +740,44 @@ public sealed class GrpcFeatureServiceTests
         ex.Which.Status.Detail.Should().Contain("QueryFeaturesStream");
     }
 
-    private static TestServerCallContext CreateCallContext()
+    private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
     {
-        return new TestServerCallContext();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.Configure<RbacOptions>(opts =>
+        {
+            opts.DataEditorRoles = ["data-editor"];
+        });
+        var serviceProvider = services.BuildServiceProvider();
+
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = serviceProvider,
+            User = user ?? CreateAuthenticatedUser("admin")
+        };
+
+        var ctx = new TestServerCallContext();
+        ctx.UserState["__HttpContext"] = httpContext;
+        return ctx;
     }
+
+    private static ClaimsPrincipal CreateAuthenticatedUser(params string[] roles)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, "test-user")
+        };
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        var identity = new ClaimsIdentity(claims, "Test");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private static ClaimsPrincipal CreateAnonymousUser()
+        => new(new ClaimsIdentity());
 
     /// <summary>
     /// Minimal ServerCallContext for unit testing gRPC services.

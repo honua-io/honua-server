@@ -32,7 +32,7 @@ internal static class ServiceDataEditorAuthorization
         return CreateDecisionResult(context, decision);
     }
 
-    private static Task<AccessDecision> EvaluateServiceAccessAsync(
+    internal static Task<AccessDecision> EvaluateServiceAccessAsync(
         HttpContext context,
         string serviceId,
         CancellationToken cancellationToken)

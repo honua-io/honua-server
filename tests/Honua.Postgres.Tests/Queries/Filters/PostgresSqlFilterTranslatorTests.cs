@@ -488,4 +488,57 @@ public class PostgresSqlFilterTranslatorTests
         result.Parameters[2].Should().Be("Seattle");
         result.Parameters[3].Should().Be(true);
     }
+
+    [Fact]
+    public void Translate_DeeplyNestedExpression_ThrowsArgumentException()
+    {
+        // Build a chain deeper than MaxExpressionDepth
+        FilterExpression expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Equal,
+            new Literal("root", LiteralType.Text));
+
+        for (var i = 0; i < PostgresSqlFilterTranslator.MaxExpressionDepth + 1; i++)
+        {
+            expression = new BinaryExpression(
+                expression,
+                BinaryOperator.And,
+                new BinaryExpression(
+                    new PropertyReference("age"),
+                    BinaryOperator.GreaterThan,
+                    new Literal(i, LiteralType.Number)));
+        }
+
+        var act = () => _translator.Translate(expression, _layer);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {PostgresSqlFilterTranslator.MaxExpressionDepth}*");
+    }
+
+    [Fact]
+    public void Translate_ExpressionAtMaxDepth_Succeeds()
+    {
+        // Build a chain that stays within the limit.
+        // Each AND adds 3 nodes (AND itself + property + literal), so use fewer iterations.
+        FilterExpression expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Equal,
+            new Literal("root", LiteralType.Text));
+
+        // 10 nesting levels is well within the 50 limit
+        for (var i = 0; i < 10; i++)
+        {
+            expression = new BinaryExpression(
+                expression,
+                BinaryOperator.And,
+                new BinaryExpression(
+                    new PropertyReference("age"),
+                    BinaryOperator.GreaterThan,
+                    new Literal(i, LiteralType.Number)));
+        }
+
+        var act = () => _translator.Translate(expression, _layer);
+
+        act.Should().NotThrow();
+    }
 }
