@@ -14,17 +14,20 @@ internal sealed partial class FeatureQueryBuilder
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported. Use simple comparisons like: name = 'value' or age > 18";
 
-    private static readonly Regex _comparisonRegex = new(
+    [GeneratedRegex(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ComparisonRegex();
 
-    private static readonly Regex _nullCheckRegex = new(
+    [GeneratedRegex(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IS\s+(?<not>NOT\s+)?NULL$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NullCheckRegex();
 
-    private static readonly Regex _trueLiteralRegex = new(
+    [GeneratedRegex(
         @"^(?:1\s*=\s*1|TRUE)$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex TrueLiteralRegex();
 
     private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
     {
@@ -101,13 +104,13 @@ internal sealed partial class FeatureQueryBuilder
                 throw new ArgumentException(UnsupportedWhereClauseMessage);
             }
 
-            if (_trueLiteralRegex.IsMatch(trimmedExpression))
+            if (TrueLiteralRegex().IsMatch(trimmedExpression))
             {
                 parameterizedExpressions.Add("TRUE");
                 continue;
             }
 
-            var nullMatch = _nullCheckRegex.Match(trimmedExpression);
+            var nullMatch = NullCheckRegex().Match(trimmedExpression);
             if (nullMatch.Success)
             {
                 var fieldName = nullMatch.Groups["field"].Value;
@@ -118,7 +121,7 @@ internal sealed partial class FeatureQueryBuilder
                 continue;
             }
 
-            var comparisonMatch = _comparisonRegex.Match(trimmedExpression);
+            var comparisonMatch = ComparisonRegex().Match(trimmedExpression);
             if (comparisonMatch.Success)
             {
                 var fieldName = comparisonMatch.Groups["field"].Value;

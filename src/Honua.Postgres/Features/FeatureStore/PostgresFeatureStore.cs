@@ -84,43 +84,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
 
     #region Query Operations
 
-    public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-    {
-        var isKnnQuery = query.SpatialFilter.HasValue &&
-                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-
-        if (isKnnQuery)
-        {
-            var knnSelectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
-            var knnFeatures = await _dataAccess.ExecuteSelectQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
-            var knnTotalCount = knnFeatures.Length;
-            return knnFeatures.Length == 0
-                ? QueryResult<Feature>.Empty()
-                : QueryResult<Feature>.Create(knnTotalCount, knnFeatures, false);
-        }
-
-        // PERFORMANCE OPTIMIZATION: Use single query with window function instead of separate count + select
-        // This reduces database round trips from 2 to 1, improving performance by 30-50%
-        if (query.Limit.HasValue || query.Offset.HasValue)
-        {
-            return await QueryOptimizedAsync(layerId, query, geometryStorageType, cancellationToken);
-        }
-
-        // Fallback to original pattern for unlimited queries where count optimization isn't beneficial
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
-        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
-
-        if (totalCount == 0)
-        {
-            return QueryResult<Feature>.Empty();
-        }
-
-        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
-        var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken);
-
-        return QueryResult<Feature>.Create(totalCount, features, false);
-    }
+    public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+        => ExecuteFormatQueryAsync(
+            layerId, query,
+            _queryBuilder.BuildSelectQuery,
+            _dataAccess.ExecuteSelectQueryAsync,
+            QueryOptimizedAsync,
+            cancellationToken);
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId,
@@ -152,113 +122,32 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         return await _dataAccess.ExecuteSelectGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
     }
 
-    public async Task<QueryResult<EncodedGeoJsonFeature>> QueryGeoJsonAsync(
+    public Task<QueryResult<EncodedGeoJsonFeature>> QueryGeoJsonAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
-    {
-        var isKnnQuery = query.SpatialFilter.HasValue &&
-                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        => ExecuteFormatQueryAsync(
+            layerId, query,
+            _queryBuilder.BuildSelectGeoJsonQuery,
+            _dataAccess.ExecuteSelectGeoJsonQueryAsync,
+            QueryOptimizedGeoJsonAsync,
+            cancellationToken);
 
-        if (isKnnQuery)
-        {
-            var knnSelectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, query, geometryStorageType);
-            var knnFeatures = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
-            var knnTotalCount = knnFeatures.Length;
-            return knnFeatures.Length == 0
-                ? QueryResult<EncodedGeoJsonFeature>.Empty()
-                : QueryResult<EncodedGeoJsonFeature>.Create(knnTotalCount, knnFeatures, false);
-        }
+    public Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+        => ExecuteFormatQueryAsync(
+            layerId, query,
+            _queryBuilder.BuildSelectGmlQuery,
+            _dataAccess.ExecuteSelectGmlQueryAsync,
+            QueryOptimizedGmlAsync,
+            cancellationToken);
 
-        if (query.Limit.HasValue || query.Offset.HasValue)
-        {
-            return await QueryOptimizedGeoJsonAsync(layerId, query, geometryStorageType, cancellationToken);
-        }
-
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
-        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
-
-        if (totalCount == 0)
-        {
-            return QueryResult<EncodedGeoJsonFeature>.Empty();
-        }
-
-        var selectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, query, geometryStorageType);
-        var features = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(selectQuery, query, layerId, cancellationToken);
-
-        return QueryResult<EncodedGeoJsonFeature>.Create(totalCount, features, false);
-    }
-
-    public async Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-    {
-        var isKnnQuery = query.SpatialFilter.HasValue &&
-                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-
-        if (isKnnQuery)
-        {
-            var knnSelectQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
-            var knnFeatures = await _dataAccess.ExecuteSelectGmlQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
-            var knnTotalCount = knnFeatures.Length;
-            return knnFeatures.Length == 0
-                ? QueryResult<GmlFeature>.Empty()
-                : QueryResult<GmlFeature>.Create(knnTotalCount, knnFeatures, false);
-        }
-
-        if (query.Limit.HasValue || query.Offset.HasValue)
-        {
-            return await QueryOptimizedGmlAsync(layerId, query, geometryStorageType, cancellationToken);
-        }
-
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
-        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
-
-        if (totalCount == 0)
-        {
-            return QueryResult<GmlFeature>.Empty();
-        }
-
-        var selectQuery = _queryBuilder.BuildSelectGmlQuery(layerId, query, geometryStorageType);
-        var features = await _dataAccess.ExecuteSelectGmlQueryAsync(selectQuery, query, layerId, cancellationToken);
-
-        return QueryResult<GmlFeature>.Create(totalCount, features, false);
-    }
-
-    public async Task<QueryResult<KmlFeature>> QueryKmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-    {
-        var isKnnQuery = query.SpatialFilter.HasValue &&
-                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-
-        if (isKnnQuery)
-        {
-            var knnSelectQuery = _queryBuilder.BuildSelectKmlQuery(layerId, query, geometryStorageType);
-            var knnFeatures = await _dataAccess.ExecuteSelectKmlQueryAsync(knnSelectQuery, query, layerId, cancellationToken);
-            var knnTotalCount = knnFeatures.Length;
-            return knnFeatures.Length == 0
-                ? QueryResult<KmlFeature>.Empty()
-                : QueryResult<KmlFeature>.Create(knnTotalCount, knnFeatures, false);
-        }
-
-        if (query.Limit.HasValue || query.Offset.HasValue)
-        {
-            return await QueryOptimizedKmlAsync(layerId, query, geometryStorageType, cancellationToken);
-        }
-
-        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
-        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
-
-        if (totalCount == 0)
-        {
-            return QueryResult<KmlFeature>.Empty();
-        }
-
-        var selectQuery = _queryBuilder.BuildSelectKmlQuery(layerId, query, geometryStorageType);
-        var features = await _dataAccess.ExecuteSelectKmlQueryAsync(selectQuery, query, layerId, cancellationToken);
-
-        return QueryResult<KmlFeature>.Create(totalCount, features, false);
-    }
+    public Task<QueryResult<KmlFeature>> QueryKmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
+        => ExecuteFormatQueryAsync(
+            layerId, query,
+            _queryBuilder.BuildSelectKmlQuery,
+            _dataAccess.ExecuteSelectKmlQueryAsync,
+            QueryOptimizedKmlAsync,
+            cancellationToken);
 
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
@@ -285,8 +174,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
 
         return new EstimateResult
         {
-            EstimatedCount = countTask.Result,
-            Extent = extentTask.Result
+            EstimatedCount = await countTask.ConfigureAwait(false),
+            Extent = await extentTask.ConfigureAwait(false)
         };
     }
 
@@ -438,6 +327,53 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
     #endregion
 
     #region Private Helper Methods
+
+    /// <summary>
+    /// Shared query control flow for all format-specific query methods.
+    /// Handles KNN, paginated-optimized, and unlimited query paths.
+    /// </summary>
+    private async Task<QueryResult<T>> ExecuteFormatQueryAsync<T>(
+        int layerId,
+        FeatureQuery query,
+        Func<int, FeatureQuery, CoreGeometryStorageType, ParameterizedQuery> buildSelect,
+        Func<ParameterizedQuery, FeatureQuery, int, CancellationToken, Task<ImmutableArray<T>>> executeSelect,
+        Func<int, FeatureQuery, CoreGeometryStorageType, CancellationToken, Task<QueryResult<T>>> executeOptimized,
+        CancellationToken cancellationToken)
+    {
+        var isKnnQuery = query.SpatialFilter.HasValue &&
+                         query.SpatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+
+        if (isKnnQuery)
+        {
+            var knnSelectQuery = buildSelect(layerId, query, geometryStorageType);
+            var knnFeatures = await executeSelect(knnSelectQuery, query, layerId, cancellationToken);
+            return knnFeatures.Length == 0
+                ? QueryResult<T>.Empty()
+                : QueryResult<T>.Create(knnFeatures.Length, knnFeatures, false);
+        }
+
+        // PERFORMANCE OPTIMIZATION: Use single query with window function instead of separate count + select
+        // This reduces database round trips from 2 to 1, improving performance by 30-50%
+        if (query.Limit.HasValue || query.Offset.HasValue)
+        {
+            return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);
+        }
+
+        // Fallback to original pattern for unlimited queries where count optimization isn't beneficial
+        var countQuery = _queryBuilder.BuildCountQuery(layerId, query, geometryStorageType);
+        var totalCount = await _dataAccess.ExecuteCountQueryAsync(countQuery, query, layerId, cancellationToken);
+
+        if (totalCount == 0)
+        {
+            return QueryResult<T>.Empty();
+        }
+
+        var selectQuery = buildSelect(layerId, query, geometryStorageType);
+        var features = await executeSelect(selectQuery, query, layerId, cancellationToken);
+
+        return QueryResult<T>.Create(totalCount, features, false);
+    }
 
     private async Task<QueryResult<Feature>> QueryOptimizedAsync(
         int layerId,

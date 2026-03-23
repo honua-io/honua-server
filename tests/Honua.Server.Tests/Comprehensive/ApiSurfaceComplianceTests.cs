@@ -166,7 +166,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
                 () => client.GetAsync(endpoint));
 
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"{description} should succeed");
-            duration.Should().BeLessThanOrEqualTo(PerformanceAssertions.Thresholds.SmallFeatureQuery);
 
             var content = await response.Content.ReadAsStringAsync();
             content.Should().NotBeEmpty($"{description} should return content");

@@ -35,103 +35,38 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         _tableName = DatabaseSchema.GetFeaturesTableName(schemaName);
     }
 
+    private delegate void SelectClauseBuilder(
+        StringBuilder sql, FeatureQuery query, CoreGeometryStorageType geometryStorageType,
+        bool isKnnQuery, SpatialFilter? spatialFilter, ref int paramIndex);
+
     public CoreParameterizedQuery BuildSelectQuery(
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
-    {
-        var spatialFilter = query.SpatialFilter;
-        var isKnnQuery = spatialFilter.HasValue &&
-                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-
-        var sql = _stringBuilderPool.Get();
-        try
-        {
-            var paramIndex = 2;
-            var parameters = new List<object>();
-
-            BuildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-            AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
-
-            return new CoreParameterizedQuery(sql.ToString(), parameters);
-        }
-        finally
-        {
-            _stringBuilderPool.Return(sql);
-        }
-    }
+        => BuildFormatSelectQuery(query, geometryStorageType, BuildSelectClause);
 
     public CoreParameterizedQuery BuildSelectGmlQuery(
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
-    {
-        var spatialFilter = query.SpatialFilter;
-        var isKnnQuery = spatialFilter.HasValue &&
-                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-
-        var sql = _stringBuilderPool.Get();
-        try
-        {
-            var paramIndex = 2;
-            var parameters = new List<object>();
-
-            BuildGmlSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-            AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
-
-            return new CoreParameterizedQuery(sql.ToString(), parameters);
-        }
-        finally
-        {
-            _stringBuilderPool.Return(sql);
-        }
-    }
+        => BuildFormatSelectQuery(query, geometryStorageType, BuildGmlSelectClause);
 
     public CoreParameterizedQuery BuildSelectGeoJsonQuery(
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
-    {
-        var spatialFilter = query.SpatialFilter;
-        var isKnnQuery = spatialFilter.HasValue &&
-                         spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-
-        var sql = _stringBuilderPool.Get();
-        try
-        {
-            var paramIndex = 2;
-            var parameters = new List<object>();
-
-            BuildGeoJsonSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-            AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
-
-            return new CoreParameterizedQuery(sql.ToString(), parameters);
-        }
-        finally
-        {
-            _stringBuilderPool.Return(sql);
-        }
-    }
+        => BuildFormatSelectQuery(query, geometryStorageType, BuildGeoJsonSelectClause);
 
     public CoreParameterizedQuery BuildSelectKmlQuery(
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+        => BuildFormatSelectQuery(query, geometryStorageType, BuildKmlSelectClause);
+
+    private CoreParameterizedQuery BuildFormatSelectQuery(
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType,
+        SelectClauseBuilder buildSelectClause)
     {
         var spatialFilter = query.SpatialFilter;
         var isKnnQuery = spatialFilter.HasValue &&
@@ -143,7 +78,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            BuildKmlSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
+            buildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);

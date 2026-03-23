@@ -24,17 +24,17 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     // Cache state is static so it persists across scoped instances (FeatureCacheManager is registered
     // as scoped because it depends on scoped IDatabaseConnectionProvider, but the cached values are
     // stable for the lifetime of the application).
-    private static readonly ConcurrentDictionary<int, LayerSridCacheEntry> _layerSridCache = new();
+    // All caches are keyed by schema identity to ensure correctness across multi-schema deployments.
+    private static readonly ConcurrentDictionary<(string Identity, int LayerId), LayerSridCacheEntry> _layerSridCache = new();
     private static readonly SemaphoreSlim _geometryStorageInitLock = new(1, 1);
     private static readonly SemaphoreSlim _layerCatalogInitLock = new(1, 1);
-    // Use int sentinels for thread-safe double-checked locking (volatile Nullable<T> is not supported)
-    // -1 = uninitialized, >= 0 = initialized value
-    private static volatile int _geometryStorageTypeValue = -1;
-    private static volatile int _hasLayerCatalogValue = -1;
+    private static readonly ConcurrentDictionary<string, int> _geometryStorageTypeCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, int> _hasLayerCatalogCache = new(StringComparer.Ordinal);
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<FeatureCacheManager> _logger;
     private readonly string? _tableSchema;
+    private readonly string _cacheIdentity;
     private readonly string _layerCatalogSchema;
     private readonly string _layerCatalogTable;
 
@@ -107,6 +107,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tableSchema = string.IsNullOrEmpty(schemaName) ? null : schemaName;
+        _cacheIdentity = _tableSchema ?? string.Empty;
         _layerCatalogSchema = "honua";
         var quotedSchema = global::Honua.Postgres.Features.Infrastructure.SchemaSearchPath.ValidateAndQuote(_layerCatalogSchema);
         _layerCatalogTable = $"{quotedSchema}.\"layers\"";
@@ -115,9 +116,10 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
     public async Task<int?> GetLayerSridAsync(int layerId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+        var cacheKey = (_cacheIdentity, layerId);
 
         // Check cache first
-        if (_layerSridCache.TryGetValue(layerId, out var cachedEntry) &&
+        if (_layerSridCache.TryGetValue(cacheKey, out var cachedEntry) &&
             !IsLayerSridCacheExpired(cachedEntry, now))
         {
             return cachedEntry.Srid;
@@ -129,7 +131,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
         if (!await IsLayerCatalogAvailableAsync(connection, cancellationToken).ConfigureAwait(false))
         {
-            _layerSridCache[layerId] = new LayerSridCacheEntry(null, now);
+            _layerSridCache[cacheKey] = new LayerSridCacheEntry(null, now);
             CleanupCacheIfNeeded();
             return null;
         }
@@ -146,7 +148,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             var srid = result is int sridValue ? sridValue : (int?)null;
 
             // Update cache
-            _layerSridCache[layerId] = new LayerSridCacheEntry(srid, now);
+            _layerSridCache[cacheKey] = new LayerSridCacheEntry(srid, now);
 
             stopwatch.Stop();
             PerformanceMetrics.RecordQueryExecution("srid_lookup", stopwatch.ElapsedMilliseconds);
@@ -167,8 +169,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     public async Task<CoreGeometryStorageType> GetGeometryStorageTypeAsync(CancellationToken cancellationToken)
     {
-        var cached = _geometryStorageTypeValue;
-        if (cached >= 0)
+        if (_geometryStorageTypeCache.TryGetValue(_cacheIdentity, out var cached))
         {
             return (CoreGeometryStorageType)cached;
         }
@@ -176,8 +177,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         await _geometryStorageInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            cached = _geometryStorageTypeValue;
-            if (cached >= 0)
+            if (_geometryStorageTypeCache.TryGetValue(_cacheIdentity, out cached))
             {
                 return (CoreGeometryStorageType)cached;
             }
@@ -215,7 +215,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
                 result = CoreGeometryStorageType.Bytea; // Default fallback
             }
 
-            _geometryStorageTypeValue = (int)result;
+            _geometryStorageTypeCache[_cacheIdentity] = (int)result;
             return result;
         }
         finally
@@ -226,8 +226,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     public async Task<bool> IsLayerCatalogAvailableAsync(CancellationToken cancellationToken)
     {
-        var cached = _hasLayerCatalogValue;
-        if (cached >= 0)
+        if (_hasLayerCatalogCache.TryGetValue(_cacheIdentity, out var cached))
         {
             return cached == 1;
         }
@@ -235,8 +234,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         await _layerCatalogInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            cached = _hasLayerCatalogValue;
-            if (cached >= 0)
+            if (_hasLayerCatalogCache.TryGetValue(_cacheIdentity, out cached))
             {
                 return cached == 1;
             }
@@ -255,8 +253,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     private async Task<bool> IsLayerCatalogAvailableAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        var cached = _hasLayerCatalogValue;
-        if (cached >= 0)
+        if (_hasLayerCatalogCache.TryGetValue(_cacheIdentity, out var cached))
         {
             return cached == 1;
         }
@@ -264,8 +261,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         await _layerCatalogInitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            cached = _hasLayerCatalogValue;
-            if (cached >= 0)
+            if (_hasLayerCatalogCache.TryGetValue(_cacheIdentity, out cached))
             {
                 return cached == 1;
             }
@@ -296,12 +292,17 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
             var result = await command.ExecuteScalarAsync(cancellationToken);
             var available = (bool)result!;
-            _hasLayerCatalogValue = available ? 1 : 0;
+            _hasLayerCatalogCache[_cacheIdentity] = available ? 1 : 0;
 
             return available;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MonitoredFeatureStoreLog.LayerCatalogCheckFailed(_logger, ex);
             return false;
         }
     }
@@ -328,7 +329,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             return;
         }
 
-        _layerSridCache.TryRemove(layerId, out _);
+        _layerSridCache.TryRemove((_cacheIdentity, layerId), out _);
     }
 
     private static bool IsLayerSridCacheExpired(Internal.LayerSridCacheEntry entry, DateTimeOffset now)
@@ -341,11 +342,11 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         var now = DateTimeOffset.UtcNow;
 
         // Remove expired entries
-        foreach (var (layerId, entry) in _layerSridCache.ToArray())
+        foreach (var (key, entry) in _layerSridCache.ToArray())
         {
             if (IsLayerSridCacheExpired(entry, now))
             {
-                _layerSridCache.TryRemove(layerId, out _);
+                _layerSridCache.TryRemove(key, out _);
             }
         }
 
