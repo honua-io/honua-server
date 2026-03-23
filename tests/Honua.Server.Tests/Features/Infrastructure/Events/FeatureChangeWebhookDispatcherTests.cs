@@ -191,7 +191,6 @@ public sealed class FeatureChangeWebhookDispatcherTests
             _readAttempted.TrySetResult();
             throw new InvalidOperationException("boom");
         }
-
         public void Refresh(string key) => throw new InvalidOperationException("boom");
         public Task RefreshAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
         public void Remove(string key) => throw new InvalidOperationException("boom");
