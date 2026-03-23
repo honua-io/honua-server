@@ -32,93 +32,22 @@ internal sealed class PostgreSqlTableDiscoveryService(
     {
         ArgumentNullException.ThrowIfNull(connectionString);
 
-        var tables = new List<TableInfo>();
-
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
 
-            // Query both geometry_columns and geography_columns for spatial tables
-            const string sql = """
-                SELECT DISTINCT
-                    f_table_schema as schema,
-                    f_table_name as table_name,
-                    f_geometry_column as geometry_column,
-                    type as geometry_type,
-                    srid,
-                    'geometry' as column_type
-                FROM geometry_columns
-                WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
-
-                UNION ALL
-
-                SELECT DISTINCT
-                    f_table_schema as schema,
-                    f_table_name as table_name,
-                    f_geography_column as geometry_column,
-                    type as geometry_type,
-                    srid,
-                    'geography' as column_type
-                FROM geography_columns
-                WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
-
-                ORDER BY schema, table_name
-                """;
-
-            var discoveredTables = new Dictionary<string, (string Schema, string Table, string GeometryColumn, string GeometryType, int Srid)>();
-
-            await using (var command = new NpgsqlCommand(sql, connection))
-            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-            {
-                while (await reader.ReadAsync(cancellationToken))
-                {
-                    string schema = reader.GetString(0);
-                    string tableName = reader.GetString(1);
-                    string geometryColumn = reader.GetString(2);
-                    string geometryType = reader.GetString(3);
-                    int srid = reader.GetInt32(4);
-
-                    string qualifiedName = $"{schema}.{tableName}";
-
-                    // If we already processed this table, skip (could happen if table has multiple geometry columns)
-                    if (discoveredTables.ContainsKey(qualifiedName))
-                        continue;
-
-                    discoveredTables[qualifiedName] = (schema, tableName, geometryColumn, geometryType, srid);
-                }
-            }
-
-            foreach (var table in discoveredTables.Values)
-            {
-                // Get estimated row count
-                long? rowCount = await GetEstimatedRowCountAsync(connection, table.Schema, table.Table, cancellationToken);
-
-                // Get all columns
-                List<ColumnInfo> columns = await GetTableColumnsAsync(connection, table.Schema, table.Table, cancellationToken);
-
-                tables.Add(new TableInfo
-                {
-                    Schema = table.Schema,
-                    Table = table.Table,
-                    GeometryColumn = table.GeometryColumn,
-                    GeometryType = table.GeometryType,
-                    Srid = table.Srid,
-                    EstimatedRows = rowCount,
-                    Columns = columns
-                });
-            }
-
-            TableDiscoveryLog.PostGisTablesDiscovered(_logger, tables.Count);
+            return await DiscoverPostGisTablesCoreAsync(connection, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             TableDiscoveryLog.PostGisDiscoveryError(_logger, ex);
             throw;
         }
-
-        return tables;
     }
 
     /// <inheritdoc />
@@ -128,100 +57,105 @@ internal sealed class PostgreSqlTableDiscoveryService(
     {
         ArgumentNullException.ThrowIfNull(connection);
 
-        var tables = new List<TableInfo>();
-
         try
         {
-            // Use the existing connection - no need to open/close it
             NpgsqlConnection npgsqlConnection = connection as NpgsqlConnection
                 ?? throw new ArgumentException("Connection must be an NpgsqlConnection", nameof(connection));
-            await SchemaSearchPath.ApplyAsync(npgsqlConnection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
 
-            // Query both geometry_columns and geography_columns for spatial tables
-            const string sql = """
-                SELECT DISTINCT
-                    f_table_schema as schema,
-                    f_table_name as table_name,
-                    f_geometry_column as geometry_column,
-                    type as geometry_type,
-                    srid,
-                    'geometry' as column_type
-                FROM geometry_columns
-                WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
-
-                UNION ALL
-
-                SELECT DISTINCT
-                    f_table_schema as schema,
-                    f_table_name as table_name,
-                    f_geography_column as geometry_column,
-                    type as geometry_type,
-                    srid,
-                    'geography' as column_type
-                FROM geography_columns
-                WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
-
-                ORDER BY schema, table_name
-                """;
-
-            var discoveredTables = new Dictionary<string, (string Schema, string Table, string GeometryColumn, string GeometryType, int Srid)>();
-
-            await using (var command = new NpgsqlCommand(sql, npgsqlConnection))
-            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-            {
-                while (await reader.ReadAsync(cancellationToken))
-                {
-                    string schema = reader.GetString(0);
-                    string tableName = reader.GetString(1);
-                    string geometryColumn = reader.GetString(2);
-                    string geometryType = reader.GetString(3);
-                    int srid = reader.GetInt32(4);
-
-                    string qualifiedName = $"{schema}.{tableName}";
-
-                    // If we already processed this table, skip (could happen if table has multiple geometry columns)
-                    if (discoveredTables.ContainsKey(qualifiedName))
-                        continue;
-
-                    discoveredTables[qualifiedName] = (schema, tableName, geometryColumn, geometryType, srid);
-                }
-            }
-
-            foreach (var table in discoveredTables.Values)
-            {
-                // Get estimated row count
-                long? rowCount = await GetEstimatedRowCountAsync(npgsqlConnection, table.Schema, table.Table, cancellationToken);
-
-                // Get all columns
-                List<ColumnInfo> columns = await GetTableColumnsAsync(npgsqlConnection, table.Schema, table.Table, cancellationToken);
-
-                tables.Add(new TableInfo
-                {
-                    Schema = table.Schema,
-                    Table = table.Table,
-                    GeometryColumn = table.GeometryColumn,
-                    GeometryType = table.GeometryType,
-                    Srid = table.Srid,
-                    EstimatedRows = rowCount,
-                    Columns = columns
-                });
-            }
-
-            TableDiscoveryLog.PostGisTablesDiscovered(_logger, tables.Count);
+            return await DiscoverPostGisTablesCoreAsync(npgsqlConnection, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             TableDiscoveryLog.PostGisDiscoveryError(_logger, ex);
             throw;
         }
+    }
 
+    private async Task<List<TableInfo>> DiscoverPostGisTablesCoreAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+
+        const string sql = """
+            SELECT DISTINCT
+                f_table_schema as schema,
+                f_table_name as table_name,
+                f_geometry_column as geometry_column,
+                type as geometry_type,
+                srid,
+                'geometry' as column_type
+            FROM geometry_columns
+            WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
+
+            UNION ALL
+
+            SELECT DISTINCT
+                f_table_schema as schema,
+                f_table_name as table_name,
+                f_geography_column as geometry_column,
+                type as geometry_type,
+                srid,
+                'geography' as column_type
+            FROM geography_columns
+            WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema', 'topology')
+
+            ORDER BY schema, table_name
+            """;
+
+        var discoveredTables = new Dictionary<string, (string Schema, string Table, string GeometryColumn, string GeometryType, int Srid)>();
+
+        await using (var command = new NpgsqlCommand(sql, connection))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                string schema = reader.GetString(0);
+                string tableName = reader.GetString(1);
+                string geometryColumn = reader.GetString(2);
+                string geometryType = reader.GetString(3);
+                int srid = reader.GetInt32(4);
+
+                string qualifiedName = $"{schema}.{tableName}";
+
+                if (discoveredTables.ContainsKey(qualifiedName))
+                    continue;
+
+                discoveredTables[qualifiedName] = (schema, tableName, geometryColumn, geometryType, srid);
+            }
+        }
+
+        var tables = new List<TableInfo>();
+
+        foreach (var table in discoveredTables.Values)
+        {
+            long? rowCount = await GetEstimatedRowCountAsync(connection, table.Schema, table.Table, cancellationToken);
+            List<ColumnInfo> columns = await GetTableColumnsAsync(connection, table.Schema, table.Table, cancellationToken);
+
+            tables.Add(new TableInfo
+            {
+                Schema = table.Schema,
+                Table = table.Table,
+                GeometryColumn = table.GeometryColumn,
+                GeometryType = table.GeometryType,
+                Srid = table.Srid,
+                EstimatedRows = rowCount,
+                Columns = columns
+            });
+        }
+
+        TableDiscoveryLog.PostGisTablesDiscovered(_logger, tables.Count);
         return tables;
     }
 
     /// <summary>
     /// Get estimated row count for a table using PostgreSQL statistics.
     /// </summary>
-    private static async Task<long?> GetEstimatedRowCountAsync(
+    private async Task<long?> GetEstimatedRowCountAsync(
         NpgsqlConnection connection,
         string schema,
         string tableName,
@@ -243,8 +177,13 @@ internal sealed class PostgreSqlTableDiscoveryService(
             object? result = await command.ExecuteScalarAsync(cancellationToken);
             return result != DBNull.Value ? Convert.ToInt64(result, CultureInfo.InvariantCulture) : null;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            TableDiscoveryLog.RowCountEstimateFailed(_logger, schema, tableName, ex);
             return null;
         }
     }
@@ -252,7 +191,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
     /// <summary>
     /// Get all non-geometry columns for a table.
     /// </summary>
-    private static async Task<List<ColumnInfo>> GetTableColumnsAsync(
+    private async Task<List<ColumnInfo>> GetTableColumnsAsync(
         NpgsqlConnection connection,
         string schema,
         string tableName,
@@ -306,9 +245,13 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 columns.Add(columnInfo);
             }
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // If we can't get column info, return empty list
+            throw;
+        }
+        catch (Exception ex)
+        {
+            TableDiscoveryLog.ColumnDiscoveryFailed(_logger, schema, tableName, ex);
         }
 
         return columns;

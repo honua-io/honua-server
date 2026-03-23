@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -20,7 +20,6 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     ILogger<PostgreSqlLayerPublishingService> logger) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
-    private static readonly Regex _identifierRegex = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
@@ -51,8 +50,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.srid,
                 l.enabled
             FROM honua.layers l
-            LEFT JOIN honua.service_layers sl
-                ON sl.layer_id = l.layer_id AND sl.service_name = @serviceName
+            INNER JOIN honua.service_layers sl
+                ON sl.layer_id = l.layer_id
+            WHERE sl.service_name = @serviceName
             ORDER BY l.layer_id;
             """;
 
@@ -511,7 +511,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return string.IsNullOrWhiteSpace(serviceName) ? DefaultServiceName : serviceName.Trim();
     }
 
-    private static bool IsSafeIdentifier(string value) => _identifierRegex.IsMatch(value);
+    private static bool IsSafeIdentifier(string value) => SchemaSearchPath.IsValidIdentifier(value);
 
     private static async Task<int?> FindExistingLayerAsync(
         NpgsqlConnection connection,
@@ -789,9 +789,10 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 l.srid,
                 l.enabled
             FROM honua.layers l
-            LEFT JOIN honua.service_layers sl
-                ON sl.layer_id = l.layer_id AND sl.service_name = @serviceName
-            WHERE l.layer_id = @layerId;
+            INNER JOIN honua.service_layers sl
+                ON sl.layer_id = l.layer_id
+            WHERE sl.service_name = @serviceName
+                AND l.layer_id = @layerId;
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);

@@ -66,9 +66,10 @@ public sealed class FeatureChangeWebhookDispatcherTests
         var store = new InMemoryFeatureChangeEventStore(
             Options.Create(new FeatureChangeEventOptions()),
             new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())));
+        var cache = new ThrowingDistributedCache();
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
-            new ThrowingDistributedCache(),
+            cache,
             Substitute.For<IHttpClientFactory>(),
             Options.Create(new FeatureChangeWebhookOptions
             {
@@ -76,9 +77,19 @@ public sealed class FeatureChangeWebhookDispatcherTests
             }),
             NullLogger<FeatureChangeWebhookDispatcher>.Instance);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+        using var cts = new CancellationTokenSource();
+        var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => InvokeExecuteAsync(dispatcher, cts.Token));
+        await cache.WaitForReadAttemptAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.False(executeTask.IsCompleted);
+
+        cts.Cancel();
+
+        var exception = await Record.ExceptionAsync(() => executeTask.WaitAsync(TimeSpan.FromSeconds(1)));
+        if (exception is not null)
+        {
+            Assert.IsAssignableFrom<OperationCanceledException>(exception);
+        }
     }
 
     [UnitTest]
@@ -165,8 +176,22 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
     private sealed class ThrowingDistributedCache : IDistributedCache
     {
-        public byte[]? Get(string key) => throw new InvalidOperationException("boom");
-        public Task<byte[]?> GetAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
+        private readonly TaskCompletionSource _readAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WaitForReadAttemptAsync() => _readAttempted.Task;
+
+        public byte[]? Get(string key)
+        {
+            _readAttempted.TrySetResult();
+            throw new InvalidOperationException("boom");
+        }
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        {
+            _readAttempted.TrySetResult();
+            throw new InvalidOperationException("boom");
+        }
+
         public void Refresh(string key) => throw new InvalidOperationException("boom");
         public Task RefreshAsync(string key, CancellationToken token = default) => throw new InvalidOperationException("boom");
         public void Remove(string key) => throw new InvalidOperationException("boom");
