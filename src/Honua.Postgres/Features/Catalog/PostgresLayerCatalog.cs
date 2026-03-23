@@ -142,7 +142,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.supported_formats,
                 s.capabilities,
                 s.metadata,
-                (to_jsonb(s)->>'connection_id')::uuid as connection_id,
+                s.connection_id,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
@@ -180,7 +180,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 s.supported_formats,
                 s.capabilities,
                 s.metadata,
-                (to_jsonb(s)->>'connection_id')::uuid as connection_id,
+                s.connection_id,
                 ST_XMin(s.service_extent) as xmin,
                 ST_YMin(s.service_extent) as ymin,
                 ST_XMax(s.service_extent) as xmax,
@@ -252,31 +252,12 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             throw new InvalidDataException($"Invalid geometry type: {geometryTypeString}");
 
         int srid = reader.GetInt32(reader.GetOrdinal("srid"));
-        int extentSrid = srid;
-        int extentSridOrdinal = reader.GetOrdinal("extent_srid");
-        if (!reader.IsDBNull(extentSridOrdinal))
-        {
-            extentSrid = reader.GetInt32(extentSridOrdinal);
-            if (extentSrid <= 0)
-            {
-                extentSrid = srid;
-            }
-        }
+        int extentSrid = ReadExtentSrid(reader, srid);
         double? minScale = reader.IsDBNull(reader.GetOrdinal("min_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("min_scale"));
         double? maxScale = reader.IsDBNull(reader.GetOrdinal("max_scale")) ? (double?)null : reader.GetDouble(reader.GetOrdinal("max_scale"));
         bool defaultVisibility = reader.GetBoolean(reader.GetOrdinal("default_visibility"));
 
-        // Build extent if available
-        FeatureExtent? extent = null;
-        int xminOrdinal = reader.GetOrdinal("xmin");
-        if (!reader.IsDBNull(xminOrdinal))
-        {
-            double xmin = reader.GetDouble(xminOrdinal);
-            double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
-            double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
-            double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
-            extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, extentSrid);
-        }
+        FeatureExtent? extent = ReadExtent(reader, extentSrid);
 
         var spatialReference = SpatialReference.Create(srid);
 
@@ -304,30 +285,11 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         Guid? connectionId = reader.IsDBNull(reader.GetOrdinal("connection_id"))
             ? null
             : reader.GetGuid(reader.GetOrdinal("connection_id"));
-        int extentSrid = srid;
-        int extentSridOrdinal = reader.GetOrdinal("extent_srid");
-        if (!reader.IsDBNull(extentSridOrdinal))
-        {
-            extentSrid = reader.GetInt32(extentSridOrdinal);
-            if (extentSrid <= 0)
-            {
-                extentSrid = srid;
-            }
-        }
+        int extentSrid = ReadExtentSrid(reader, srid);
         string[] supportedFormats = reader.GetFieldValue<string[]>(reader.GetOrdinal("supported_formats"));
         string[] capabilities = reader.GetFieldValue<string[]>(reader.GetOrdinal("capabilities"));
 
-        // Build service extent if available
-        FeatureExtent? extent = null;
-        int xminOrdinal = reader.GetOrdinal("xmin");
-        if (!reader.IsDBNull(xminOrdinal))
-        {
-            double xmin = reader.GetDouble(xminOrdinal);
-            double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
-            double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
-            double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
-            extent = FeatureExtent.Create(xmin, ymin, xmax, ymax, extentSrid);
-        }
+        FeatureExtent? extent = ReadExtent(reader, extentSrid);
 
         var spatialReference = SpatialReference.Create(srid);
 
@@ -369,21 +331,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
-
-            string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
-            if (!Enum.TryParse<FieldType>(fieldTypeString, out FieldType fieldType))
-                throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
-
-            int maxLengthOrdinal = reader.GetOrdinal("max_length");
-            int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
-            bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
-            int defaultValueOrdinal = reader.GetOrdinal("default_value");
-            object? defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
-            int descriptionOrdinal = reader.GetOrdinal("description");
-            string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
-
-            fields.Add(new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description));
+            fields.Add(ReadFieldDefinition(reader));
         }
 
         return [.. fields];
@@ -418,19 +366,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         while (await reader.ReadAsync(cancellationToken))
         {
             int layerId = reader.GetInt32(reader.GetOrdinal("layer_id"));
-            string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
-
-            string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
-            if (!Enum.TryParse<FieldType>(fieldTypeString, out FieldType fieldType))
-                throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
-
-            int maxLengthOrdinal = reader.GetOrdinal("max_length");
-            int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
-            bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
-            int defaultValueOrdinal = reader.GetOrdinal("default_value");
-            object? defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
-            int descriptionOrdinal = reader.GetOrdinal("description");
-            string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
 
             if (!fieldsMap.TryGetValue(layerId, out List<FieldDefinition>? fieldsList))
             {
@@ -438,7 +373,7 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
                 fieldsMap[layerId] = fieldsList;
             }
 
-            fieldsList.Add(new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description));
+            fieldsList.Add(ReadFieldDefinition(reader));
         }
 
         return fieldsMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToArray());
@@ -447,10 +382,16 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
     private async Task<LayerDefinition[]> GetServiceLayersAsync(string serviceName, CancellationToken cancellationToken)
     {
         string sql = $"""
-            SELECT l.layer_id
+            SELECT
+                l.layer_id, l.layer_name, l.description, l.geometry_type, l.srid,
+                l.min_scale, l.max_scale, l.default_visibility, l.metadata,
+                ST_XMin(l.extent) as xmin, ST_YMin(l.extent) as ymin,
+                ST_XMax(l.extent) as xmax, ST_YMax(l.extent) as ymax,
+                ST_SRID(l.extent) as extent_srid
             FROM {_serviceLayersTable} sl
             JOIN {_layersTable} l ON sl.layer_id = l.layer_id
             WHERE LOWER(sl.service_name) = LOWER(@serviceName)
+              AND l.enabled = TRUE
             ORDER BY sl.layer_order, l.layer_id
             """;
 
@@ -459,36 +400,89 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
         _ = command.Parameters.AddWithValue("@serviceName", serviceName);
 
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        var layers = new List<LayerDefinition>();
         var layerIds = new List<int>();
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            layerIds.Add(reader.GetInt32(reader.GetOrdinal("layer_id")));
+            LayerDefinition layer = ReadLayerDefinition(reader);
+            layers.Add(layer);
+            layerIds.Add(layer.Id);
         }
+        reader.Close();
 
-        // Get full layer definitions for these IDs
-        var layers = new List<LayerDefinition>();
-        foreach (int layerId in layerIds)
+        if (layerIds.Count == 0)
+            return [];
+
+        Dictionary<int, FieldDefinition[]> fieldsMap = await GetLayerFieldsBatchAsync([.. layerIds], cancellationToken);
+        Dictionary<int, Relationship[]> relationshipsMap = await GetLayerRelationshipsBatchAsync([.. layerIds], cancellationToken);
+
+        return [.. layers.Select(layer => layer with
         {
-            LayerDefinition? layer = await GetLayerAsync(layerId, cancellationToken);
-            if (layer != null)
-                layers.Add(layer);
-        }
-
-        return [.. layers];
+            Fields = fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
+            Relationships = relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []
+        })];
     }
 
     private async Task<Dictionary<string, LayerDefinition[]>> GetServiceLayersBatchAsync(string[] serviceNames, CancellationToken cancellationToken)
     {
-        var result = new Dictionary<string, LayerDefinition[]>();
+        if (serviceNames.Length == 0)
+            return [];
 
-        foreach (string serviceName in serviceNames)
+        string sql = $"""
+            SELECT
+                sl.service_name,
+                l.layer_id, l.layer_name, l.description, l.geometry_type, l.srid,
+                l.min_scale, l.max_scale, l.default_visibility, l.metadata,
+                ST_XMin(l.extent) as xmin, ST_YMin(l.extent) as ymin,
+                ST_XMax(l.extent) as xmax, ST_YMax(l.extent) as ymax,
+                ST_SRID(l.extent) as extent_srid
+            FROM {_serviceLayersTable} sl
+            JOIN {_layersTable} l ON sl.layer_id = l.layer_id
+            WHERE LOWER(sl.service_name) = ANY(@serviceNames)
+              AND l.enabled = TRUE
+            ORDER BY sl.service_name, sl.layer_order, l.layer_id
+            """;
+
+        string[] loweredNames = [.. serviceNames.Select(n => n.ToLowerInvariant())];
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@serviceNames", loweredNames);
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        var layersMap = new Dictionary<string, List<LayerDefinition>>();
+        var allLayerIds = new HashSet<int>();
+
+        while (await reader.ReadAsync(cancellationToken))
         {
-            LayerDefinition[] layers = await GetServiceLayersAsync(serviceName, cancellationToken);
-            result[serviceName] = layers;
-        }
+            string serviceName = reader.GetString(reader.GetOrdinal("service_name"));
+            LayerDefinition layer = ReadLayerDefinition(reader);
 
-        return result;
+            if (!layersMap.TryGetValue(serviceName, out List<LayerDefinition>? layerList))
+            {
+                layerList = [];
+                layersMap[serviceName] = layerList;
+            }
+
+            layerList.Add(layer);
+            allLayerIds.Add(layer.Id);
+        }
+        reader.Close();
+
+        if (allLayerIds.Count == 0)
+            return layersMap.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToArray());
+
+        Dictionary<int, FieldDefinition[]> fieldsMap = await GetLayerFieldsBatchAsync([.. allLayerIds], cancellationToken);
+        Dictionary<int, Relationship[]> relationshipsMap = await GetLayerRelationshipsBatchAsync([.. allLayerIds], cancellationToken);
+
+        return layersMap.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(layer => layer with
+            {
+                Fields = fieldsMap.TryGetValue(layer.Id, out FieldDefinition[]? fields) ? fields : [],
+                Relationships = relationshipsMap.TryGetValue(layer.Id, out Relationship[]? relationships) ? relationships : []
+            }).ToArray());
     }
 
     /// <inheritdoc />
@@ -611,6 +605,50 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             originForeignKey,
             destinationForeignKey,
             description);
+    }
+
+    private static int ReadExtentSrid(NpgsqlDataReader reader, int fallbackSrid)
+    {
+        int extentSridOrdinal = reader.GetOrdinal("extent_srid");
+        if (!reader.IsDBNull(extentSridOrdinal))
+        {
+            int extentSrid = reader.GetInt32(extentSridOrdinal);
+            if (extentSrid > 0)
+                return extentSrid;
+        }
+        return fallbackSrid;
+    }
+
+    private static FeatureExtent? ReadExtent(NpgsqlDataReader reader, int extentSrid)
+    {
+        int xminOrdinal = reader.GetOrdinal("xmin");
+        if (reader.IsDBNull(xminOrdinal))
+            return null;
+
+        double xmin = reader.GetDouble(xminOrdinal);
+        double ymin = reader.GetDouble(reader.GetOrdinal("ymin"));
+        double xmax = reader.GetDouble(reader.GetOrdinal("xmax"));
+        double ymax = reader.GetDouble(reader.GetOrdinal("ymax"));
+        return FeatureExtent.Create(xmin, ymin, xmax, ymax, extentSrid);
+    }
+
+    private static FieldDefinition ReadFieldDefinition(NpgsqlDataReader reader)
+    {
+        string fieldName = reader.GetString(reader.GetOrdinal("field_name"));
+
+        string fieldTypeString = reader.GetString(reader.GetOrdinal("field_type"));
+        if (!Enum.TryParse<FieldType>(fieldTypeString, ignoreCase: true, out FieldType fieldType))
+            throw new InvalidDataException($"Invalid field type: {fieldTypeString}");
+
+        int maxLengthOrdinal = reader.GetOrdinal("max_length");
+        int? maxLength = reader.IsDBNull(maxLengthOrdinal) ? null : (int?)reader.GetInt32(maxLengthOrdinal);
+        bool nullable = reader.GetBoolean(reader.GetOrdinal("nullable"));
+        int defaultValueOrdinal = reader.GetOrdinal("default_value");
+        object? defaultValue = reader.IsDBNull(defaultValueOrdinal) ? null : reader.GetValue(defaultValueOrdinal);
+        int descriptionOrdinal = reader.GetOrdinal("description");
+        string? description = reader.IsDBNull(descriptionOrdinal) ? null : reader.GetString(descriptionOrdinal);
+
+        return new FieldDefinition(fieldName, fieldType, maxLength, nullable, defaultValue, description);
     }
 
     private static CatalogMetadata? ReadMetadata(NpgsqlDataReader reader, string columnName)
