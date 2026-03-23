@@ -434,12 +434,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             _ = added.Add(column.Name);
         }
 
-        fields.Add(new LayerFieldInsert(
-            geometryColumn,
-            FieldType.Geometry,
-            null,
-            true,
-            "Geometry"));
+        if (!added.Contains(geometryColumn))
+        {
+            fields.Add(new LayerFieldInsert(
+                geometryColumn,
+                FieldType.Geometry,
+                null,
+                true,
+                "Geometry"));
+        }
 
         return fields;
     }
