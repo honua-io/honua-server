@@ -41,7 +41,7 @@ internal static class DeployControlEndpoints
         group.MapPost("/operations", HandleCreateDeployOperation)
             .WithDisplayName("Create Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<DeployOperationResponse>();
+            .Produces<DeployOperationResponse>(StatusCodes.Status201Created);
 
         group.MapGet("/operations/{operationId}", HandleGetDeployOperation)
             .WithDisplayName("Get Deploy Operation")
@@ -175,7 +175,7 @@ internal static class DeployControlEndpoints
                     $"Deploy target '{request.TargetId}' was not found.");
             }
 
-            return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+            return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse, statusCode: StatusCodes.Status201Created);
         }
         catch (InvalidOperationException ex)
         {

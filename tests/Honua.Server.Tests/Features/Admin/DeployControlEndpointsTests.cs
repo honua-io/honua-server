@@ -132,7 +132,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             submitImmediately = false
         });
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
         var createRoot = createDocument.RootElement;
@@ -182,7 +182,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             idempotencyKey = " release / 2026#03 ? candidate "
         });
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
         var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
@@ -207,7 +207,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             desiredRevision = "sha256:poll123"
         });
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
         var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
@@ -268,7 +268,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             submitImmediately = false
         });
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
         var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
@@ -314,7 +314,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             submitImmediately = true
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var status = document.RootElement.GetProperty("status").GetString();
