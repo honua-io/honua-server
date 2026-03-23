@@ -158,6 +158,65 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_MissingRequestParam_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"MissingParameterValue\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_UnsupportedOperation_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=ListStoredQueries&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_InvalidServiceParam_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_Transaction_ReturnsNotImplementedExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=Transaction&VERSION=2.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("ExceptionReport");
+        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]

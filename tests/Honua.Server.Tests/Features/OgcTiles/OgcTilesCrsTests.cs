@@ -175,6 +175,32 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_SpatialExtent_UsesCrs84()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/collections/0");
+
+        response.Be200Ok();
+
+        var collection = await response.Content.ReadFromJsonAsync<CollectionInfo>();
+        collection.Should().NotBeNull();
+
+        if (collection!.Extent?.Spatial != null)
+        {
+            collection.Extent.Spatial.Crs.Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+            var bbox = collection.Extent.Spatial.BoundingBox;
+            bbox.Should().NotBeEmpty();
+            // CRS84 lon range: -180..180, lat range: -90..90
+            bbox[0][0].Should().BeInRange(-180, 180); // minLon
+            bbox[0][1].Should().BeInRange(-90, 90);   // minLat
+            bbox[0][2].Should().BeInRange(-180, 180); // maxLon
+            bbox[0][3].Should().BeInRange(-90, 90);   // maxLat
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles")]
     public async Task GetCollectionTilesets_IncludesBothTileMatrixSets()
     {

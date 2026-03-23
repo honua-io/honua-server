@@ -87,3 +87,21 @@ These implemented surfaces do not currently have equivalent OGC CITE automation 
 - OGC API Maps
 
 These rely on integration, architecture, and protocol-specific test suites instead of TeamEngine CITE.
+
+## Protocol Correctness Follow-up (#573)
+
+Audit date: 2026-03-22
+
+A follow-up audit (#571) identified four correctness findings bundled under #573:
+
+| Finding | Surface | Fix Summary | Test Coverage |
+|---|---|---|---|
+| `ProtocolRequestClassifier` missing `/ogc/maps` | OGC Maps | Add path segment to `IsOgc()` | Error format assertion for `/ogc/maps` paths |
+| Collection extent not CRS84-compliant | OGC Tiles | Reuse `OgcExtentTransformer.TryTransformToCrs84()`; omit extent for unsupported CRS | CRS84 extent validation in collection descriptions |
+| WKB byte-order assumption (little-endian only) | OGC Tiles | Endian-aware reads via `BinaryPrimitives` | Big-endian and little-endian WKB rendering tests |
+| WFS 2.0 XML ExceptionReport coverage gap | WFS 2.0 | No production code change needed (infrastructure correct) | Extended error-path integration tests |
+
+**Design decisions**:
+- Unsupported CRS omits spatial extent rather than emitting native-CRS coordinates (matches OGC Features/WFS behavior).
+- WKB fix scoped to endian handling only; EWKB/Z/M support deferred.
+- WFS error formatting confirmed correct; additional tests verify untested dispatcher error paths.
