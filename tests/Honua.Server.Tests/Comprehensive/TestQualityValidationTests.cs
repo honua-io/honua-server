@@ -241,6 +241,7 @@ public class TestQualityValidationTests : IAsyncLifetime
     /// Validates comprehensive performance benchmarking.
     /// </summary>
     [IntegrationTest]
+    [Trait("Category", "Performance")]
     [Operation(Operations.PerformanceTesting)]
     [Endpoint("GET /healthz/live")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]

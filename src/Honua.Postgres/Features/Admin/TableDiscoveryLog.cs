@@ -27,4 +27,22 @@ internal static partial class TableDiscoveryLog
         Level = LogLevel.Error,
         Message = "Error discovering PostGIS tables")]
     public static partial void PostGisDiscoveryError(ILogger logger, Exception ex);
+
+    /// <summary>
+    /// Log failure to estimate row count for a table.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4103,
+        Level = LogLevel.Warning,
+        Message = "Failed to estimate row count for {Schema}.{TableName}")]
+    public static partial void RowCountEstimateFailed(ILogger logger, string schema, string tableName, Exception ex);
+
+    /// <summary>
+    /// Log failure to discover columns for a table.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4104,
+        Level = LogLevel.Warning,
+        Message = "Failed to discover columns for {Schema}.{TableName}")]
+    public static partial void ColumnDiscoveryFailed(ILogger logger, string schema, string tableName, Exception ex);
 }

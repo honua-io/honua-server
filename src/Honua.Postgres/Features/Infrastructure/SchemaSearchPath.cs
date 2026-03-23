@@ -29,6 +29,15 @@ internal static partial class SchemaSearchPath
     }
 
     /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="value"/> is a safe SQL identifier
+    /// (starts with a letter or underscore, followed by letters, digits, or underscores).
+    /// </summary>
+    public static bool IsValidIdentifier(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && _schemaNameRegex.IsMatch(value);
+    }
+
+    /// <summary>
     /// Validates a schema name against the safe identifier pattern.
     /// </summary>
     public static string ValidateAndQuote(string schemaName)

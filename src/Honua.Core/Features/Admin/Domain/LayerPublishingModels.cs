@@ -74,37 +74,59 @@ public sealed class LayerPublishRequest
 /// </summary>
 public sealed class PublishedLayerSummary
 {
-    /// <inheritdoc/>
+    /// <summary>
+    /// Unique layer identifier.
+    /// </summary>
     public required int LayerId { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Display name of the layer.
+    /// </summary>
     public required string LayerName { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Database schema containing the source table.
+    /// </summary>
     public required string Schema { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Source table name.
+    /// </summary>
     public required string Table { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Optional layer description.
+    /// </summary>
     public string? Description { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Geometry type (e.g., "Point", "Polygon").
+    /// </summary>
     public required string GeometryType { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Spatial reference identifier (SRID).
+    /// </summary>
     public int Srid { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Primary key column name.
+    /// </summary>
     public string? PrimaryKey { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Number of published attribute fields.
+    /// </summary>
     public int FieldCount { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Whether the layer is enabled for serving.
+    /// </summary>
     public bool Enabled { get; init; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Name of the service this layer belongs to.
+    /// </summary>
     public required string ServiceName { get; init; }
 }
 
@@ -113,13 +135,24 @@ public sealed class PublishedLayerSummary
 /// </summary>
 public enum LayerPublishingErrorKind
 {
-    /// <inheritdoc/>
+    /// <summary>
+    /// A validation rule was violated.
+    /// </summary>
     Validation,
-    /// <inheritdoc/>
+
+    /// <summary>
+    /// The requested resource was not found.
+    /// </summary>
     NotFound,
-    /// <inheritdoc/>
+
+    /// <summary>
+    /// The operation conflicts with existing state.
+    /// </summary>
     Conflict,
-    /// <inheritdoc/>
+
+    /// <summary>
+    /// An unclassified error occurred.
+    /// </summary>
     Unknown
 }
 
@@ -128,10 +161,16 @@ public enum LayerPublishingErrorKind
 /// </summary>
 public sealed class LayerPublishingException : Exception
 {
-    /// <inheritdoc/>
+    /// <summary>
+    /// Gets the error category for this publishing failure.
+    /// </summary>
     public LayerPublishingErrorKind ErrorKind { get; }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes a new instance of <see cref="LayerPublishingException"/>.
+    /// </summary>
+    /// <param name="errorKind">The error category.</param>
+    /// <param name="message">A message describing the failure.</param>
     public LayerPublishingException(LayerPublishingErrorKind errorKind, string message)
         : base(message)
     {
