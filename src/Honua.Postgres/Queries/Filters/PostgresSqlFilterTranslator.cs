@@ -60,14 +60,14 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private string TranslateExpression(FilterExpression filter, LayerDefinition layer)
     {
-        if (++_depth > MaxExpressionDepth)
-        {
-            throw new ArgumentException(
-                $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
-        }
-
         try
         {
+            if (++_depth > MaxExpressionDepth)
+            {
+                throw new ArgumentException(
+                    $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
+            }
+
             return filter switch
             {
                 BinaryExpression bin => TranslateBinary(bin, layer),
