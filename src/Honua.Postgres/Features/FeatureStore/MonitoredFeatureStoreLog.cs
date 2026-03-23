@@ -275,6 +275,17 @@ internal static partial class MonitoredFeatureStoreLog
         Message = "Failed to lookup SRID for layer {LayerId}")]
     public static partial void SridLookupFailed(ILogger logger, int layerId, Exception exception);
 
+    /// <summary>
+    /// Logs when layer catalog availability check fails.
+    /// </summary>
+    /// <param name="logger">The logger instance</param>
+    /// <param name="exception">Exception that occurred</param>
+    [LoggerMessage(
+        EventId = 7152,
+        Level = LogLevel.Warning,
+        Message = "Failed to check layer catalog availability")]
+    public static partial void LayerCatalogCheckFailed(ILogger logger, Exception exception);
+
     #endregion
 
     #region Performance Monitoring (7200-7299)

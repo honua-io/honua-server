@@ -11,6 +11,9 @@ internal sealed partial class FeatureQueryBuilder
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex ValidFieldNameRegex();
 
+    [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
+    private static partial Regex NamedParameterRegex();
+
     internal static bool IsValidFieldName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
@@ -25,20 +28,23 @@ internal sealed partial class FeatureQueryBuilder
     {
         var startingParamIndex = paramIndex;
 
-        var result = Regex.Replace(
+        var result = NamedParameterRegex().Replace(
             sql,
-            @"@p(\d+)",
             match =>
             {
                 var paramNumber = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
                 return $"${startingParamIndex + paramNumber}";
             });
 
-        var maxParamNumber = Regex.Matches(sql, @"@p(\d+)")
-            .Cast<Match>()
-            .Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture))
-            .DefaultIfEmpty(-1)
-            .Max();
+        var maxParamNumber = -1;
+        foreach (Match match in NamedParameterRegex().Matches(sql))
+        {
+            var paramNumber = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (paramNumber > maxParamNumber)
+            {
+                maxParamNumber = paramNumber;
+            }
+        }
 
         if (maxParamNumber >= 0)
         {

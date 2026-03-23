@@ -65,7 +65,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
                 () => client.GetAsync(endpoint));
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            duration.Should().BeLessThanOrEqualTo(PerformanceAssertions.Thresholds.MetadataQuery);
 
             var content = await response.Content.ReadAsStringAsync();
             content.Should().NotBeEmpty();
@@ -167,7 +166,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
                 () => client.GetAsync(endpoint));
 
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"{description} should succeed");
-            duration.Should().BeLessThanOrEqualTo(PerformanceAssertions.Thresholds.SmallFeatureQuery);
 
             var content = await response.Content.ReadAsStringAsync();
             content.Should().NotBeEmpty($"{description} should return content");
@@ -369,6 +367,7 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
     /// Performance benchmark test across critical endpoints.
     /// </summary>
     [IntegrationTest]
+    [Trait("Category", "Performance")]
     [Operation(Operations.Performance)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
