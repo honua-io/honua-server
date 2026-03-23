@@ -48,11 +48,20 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- services/                 # Service-level protocol and MapServer settings
 |-- metadata/resources/       # Metadata resources
 |-- metadata/layers/{id}/style
-|-- deploy/                   # Instance-local deploy preflight and rollout primitives
+|-- deploy/                   # Deploy preflight, plan, operations, submit, rollback
 |-- import/                   # Import workflows
 |-- operations/               # Long-running operations
 |-- performance/database/     # Query cache statistics
 |-- observability/            # Recent errors and telemetry status
+|-- alerts/                   # Alert zones and rules
+|-- rate-limits/              # Rate limit policies and status
+|-- license/                  # License status, upload, entitlements
+|-- roles/                    # Role CRUD and permissions
+|-- users/                    # User management and effective permissions
+|-- oidc/providers/           # OIDC provider CRUD and testing
+|-- feature-events/           # Feature change event replay
+|-- manifest/drift            # Manifest drift, versions
+|-- tile-operations/          # Tile operation jobs
 ```
 
 Additional metrics endpoints:
@@ -256,7 +265,6 @@ Content-Type: application/json
 | `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities and the SDK compatibility contract |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
-| `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
 | `/api/v1/admin/metadata/resources` | GET | List metadata resources |
 | `/api/v1/admin/metadata/resources` | POST | Create metadata resource |
 | `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` | GET | Get metadata resource |
@@ -288,6 +296,106 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/performance/database/query-cache/statistics` | GET | Query cache performance statistics |
 | `/api/v1/admin/observability/errors` | GET | Recent in-memory error buffer |
 | `/api/v1/admin/observability/telemetry` | GET | Tracing/OTLP telemetry status |
+
+### **Deploy Control Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
+| `/api/v1/admin/deploy/plan` | POST | Plan a deploy operation |
+| `/api/v1/admin/deploy/operations` | POST | Create a deploy operation |
+| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy operation status |
+| `/api/v1/admin/deploy/operations/{operationId}/submit` | POST | Submit a deploy operation for execution |
+| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Rollback a deploy operation |
+
+### **Alert Management Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/alerts/zones` | GET | List alert zones |
+| `/api/v1/admin/alerts/zones` | POST | Create alert zone |
+| `/api/v1/admin/alerts/zones/{zoneId}` | PUT | Update alert zone |
+| `/api/v1/admin/alerts/zones/{zoneId}` | DELETE | Delete alert zone |
+| `/api/v1/admin/alerts/rules` | GET | List alert rules |
+| `/api/v1/admin/alerts/rules` | POST | Create alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}` | PUT | Update alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}` | DELETE | Delete alert rule |
+
+### **Rate Limiting Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/rate-limits` | GET | List rate limit policies |
+| `/api/v1/admin/rate-limits` | POST | Create rate limit policy |
+| `/api/v1/admin/rate-limits/{id}` | GET | Get rate limit policy |
+| `/api/v1/admin/rate-limits/{id}` | PUT | Update rate limit policy |
+| `/api/v1/admin/rate-limits/{id}` | DELETE | Delete rate limit policy |
+| `/api/v1/admin/rate-limits/status` | GET | Get rate limit status |
+
+### **License Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/license` | GET | Get license status |
+| `/api/v1/admin/license` | POST | Upload license |
+| `/api/v1/admin/license/entitlements` | GET | Get entitlements |
+
+### **Role Management Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/roles` | GET | List roles |
+| `/api/v1/admin/roles` | POST | Create role |
+| `/api/v1/admin/roles/{id}` | GET | Get role |
+| `/api/v1/admin/roles/{id}` | PUT | Update role |
+| `/api/v1/admin/roles/{id}` | DELETE | Delete role |
+| `/api/v1/admin/roles/{id}/permissions` | GET | Get role permissions |
+| `/api/v1/admin/roles/{id}/permissions` | PUT | Set role permissions |
+
+### **User Management Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/users` | GET | List users |
+| `/api/v1/admin/users/{id}` | GET | Get user |
+| `/api/v1/admin/users/{id}/roles` | PUT | Update user roles |
+| `/api/v1/admin/users/{id}` | DELETE | Deprovision user |
+| `/api/v1/admin/users/{id}/effective-permissions` | GET | Get user effective permissions |
+
+### **OIDC Provider Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/oidc/providers` | GET | List OIDC providers |
+| `/api/v1/admin/oidc/providers` | POST | Create OIDC provider |
+| `/api/v1/admin/oidc/providers/{id}` | GET | Get OIDC provider |
+| `/api/v1/admin/oidc/providers/{id}` | PUT | Update OIDC provider |
+| `/api/v1/admin/oidc/providers/{id}` | DELETE | Delete OIDC provider |
+| `/api/v1/admin/oidc/providers/{id}/test` | POST | Test OIDC provider connection |
+
+### **Manifest Drift Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/manifest/drift` | GET | Get manifest drift report |
+| `/api/v1/admin/manifest/versions` | GET | List manifest versions |
+| `/api/v1/admin/manifest/versions/{versionId}` | GET | Get manifest version detail |
+
+### **Feature Change Events Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/feature-events/replay` | GET | Replay feature change events |
+
+### **Tile Operations Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/tile-operations/jobs` | POST | Start tile operation job |
+| `/api/v1/admin/tile-operations/jobs` | GET | List tile operation jobs |
+| `/api/v1/admin/tile-operations/jobs/{jobId}` | GET | Get tile operation job status |
+| `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | POST | Cancel tile operation job |
+| `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | POST | Retry tile operation job |
 
 ---
 

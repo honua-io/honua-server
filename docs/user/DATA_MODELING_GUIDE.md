@@ -17,7 +17,7 @@ Honua exposes your data through multiple APIs simultaneously. Your schema must w
 - Composite primary keys (breaks FeatureServer)
 - Field names with spaces or special characters
 - Multiple geometry columns (confuses protocol mapping)
-- Reserved keywords as field names (`id`, `objectid`, `shape`)
+- Reserved keywords as field names (`id` can collide with auto-generated identifiers; `objectid` and `shape` are reserved by FeatureServer — do not use them for business-data columns, but they are valid when used for their standard FeatureServer roles: primary key and geometry column respectively)
 
 ### **2. Honua Protocol Constraints**
 Each protocol has specific requirements that affect your schema design:
@@ -94,8 +94,11 @@ FeatureServer (Esri-compatible) has the strictest requirements:
 
 ```sql
 -- ✅ FeatureServer-optimized table
+-- Note: `objectid` and `shape` are FeatureServer-reserved names. Use them only
+-- for the standard FeatureServer primary key and geometry column roles shown here.
+-- Do not reuse these names for business-data columns.
 CREATE TABLE esri_compatible (
-    objectid SERIAL PRIMARY KEY,        -- Standard Esri field name
+    objectid SERIAL PRIMARY KEY,        -- Standard Esri field name (reserved by FeatureServer)
     globalid UUID DEFAULT gen_random_uuid(),  -- Esri global identifier
 
     -- Business fields
@@ -103,7 +106,7 @@ CREATE TABLE esri_compatible (
     feature_type VARCHAR(100),
     created_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
-    -- Geometry (Esri often uses 'shape')
+    -- Geometry (Esri convention; reserved by FeatureServer)
     shape GEOMETRY(Polygon, 4326) NOT NULL
 );
 ```
