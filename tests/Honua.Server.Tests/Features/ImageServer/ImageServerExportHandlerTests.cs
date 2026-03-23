@@ -128,7 +128,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
     }
 
     [UnitTest]
@@ -141,7 +141,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(bbox: "-180,-90,180,90");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
     }
 
     [UnitTest]
@@ -154,8 +154,8 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(size: 512);
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        var okResult = result as Ok<ExportImageResponse>;
-        okResult.Should().NotBeNull();
+        var jsonResult = result as JsonHttpResult<ExportImageResponse>;
+        jsonResult.Should().NotBeNull();
     }
 
     [UnitTest]
@@ -184,7 +184,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(size: 4096);
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
         capturedQuery.Should().NotBeNull();
         capturedQuery!.Value.OutputWidth.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
         capturedQuery.Value.OutputHeight.Should().BeGreaterThan(0).And.BeLessOrEqualTo(4096);
@@ -200,7 +200,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(format: "jpeg");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
     }
 
     [UnitTest]
@@ -213,7 +213,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(interpolation: "RSP_NearestNeighbor");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
     }
 
     [UnitTest]
@@ -226,7 +226,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(imageSr: "3857");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
     }
 
     [UnitTest]
@@ -248,7 +248,7 @@ public class ImageServerExportHandlerTests
             bboxSr: "3857");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<ExportImageResponse>>();
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
         capturedQuery.Should().NotBeNull();
         var clipRegion = capturedQuery!.Value.ClipRegion;
         clipRegion.HasValue.Should().BeTrue();
@@ -277,13 +277,13 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        var okResult = result as Ok<ExportImageResponse>;
-        okResult.Should().NotBeNull();
+        var jsonResult = result as JsonHttpResult<ExportImageResponse>;
+        jsonResult.Should().NotBeNull();
         // When extent is null, defaults to 0,0,1,1
-        okResult!.Value!.Extent.XMin.Should().Be(0);
-        okResult.Value.Extent.YMin.Should().Be(0);
-        okResult.Value.Extent.XMax.Should().Be(1);
-        okResult.Value.Extent.YMax.Should().Be(1);
+        jsonResult!.Value!.Extent.XMin.Should().Be(0);
+        jsonResult.Value.Extent.YMin.Should().Be(0);
+        jsonResult.Value.Extent.XMax.Should().Be(1);
+        jsonResult.Value.Extent.YMax.Should().Be(1);
     }
 
     [UnitTest]
@@ -296,11 +296,11 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        var okResult = result as Ok<ExportImageResponse>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Href.Should().Be("/temp/test.png");
-        okResult.Value.Width.Should().Be(256);
-        okResult.Value.Height.Should().Be(256);
+        var jsonResult = result as JsonHttpResult<ExportImageResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Href.Should().Be("/temp/test.png");
+        jsonResult.Value.Width.Should().Be(256);
+        jsonResult.Value.Height.Should().Be(256);
     }
 
     [UnitTest]
@@ -329,13 +329,13 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest();
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        var okResult = result as Ok<ExportImageResponse>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Extent.XMin.Should().Be(-1000);
-        okResult.Value.Extent.YMin.Should().Be(-500);
-        okResult.Value.Extent.XMax.Should().Be(1000);
-        okResult.Value.Extent.YMax.Should().Be(500);
-        okResult.Value.Extent.SpatialReference.Wkid.Should().Be(3857);
+        var jsonResult = result as JsonHttpResult<ExportImageResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Extent.XMin.Should().Be(-1000);
+        jsonResult.Value.Extent.YMin.Should().Be(-500);
+        jsonResult.Value.Extent.XMax.Should().Be(1000);
+        jsonResult.Value.Extent.YMax.Should().Be(500);
+        jsonResult.Value.Extent.SpatialReference.Wkid.Should().Be(3857);
 
         await _rasterStore.DidNotReceive()
             .GetExtentAsync(1, 100, Arg.Any<CancellationToken>());

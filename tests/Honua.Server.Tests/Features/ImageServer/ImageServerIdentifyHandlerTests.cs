@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
@@ -168,7 +169,7 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("10.5,20.3");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<IdentifyResponse>>();
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
     }
 
     [UnitTest]
@@ -181,7 +182,7 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("{\"x\":10.5,\"y\":20.3}");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<IdentifyResponse>>();
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
     }
 
     [UnitTest]
@@ -230,10 +231,34 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("10,20");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        var okResult = result as Ok<IdentifyResponse>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Properties.Should().ContainKey("BandCount");
-        okResult.Value.Properties.Should().ContainKey("HasData");
+        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Properties.Should().ContainKey("BandCount");
+        jsonResult.Value.Properties.Should().ContainKey("HasData");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_ValidRequest_ExecuteAsyncSerializesProperties()
+    {
+        SetupSuccessfulIdentify();
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest("10,20");
+        var result = await _handler.IdentifyAsync(context, 1, request);
+
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+
+        using var responseJson = await JsonDocument.ParseAsync(context.Response.Body);
+        var properties = responseJson.RootElement.GetProperty("properties");
+
+        properties.GetProperty("HasData").GetBoolean().Should().BeTrue();
+        properties.GetProperty("BandCount").GetInt32().Should().Be(3);
+        properties.GetProperty("Coordinates").GetString().Should().Be("10.5, 20.3");
+        properties.GetProperty("Band_1").GetDouble().Should().Be(128.0);
     }
 
     private static DefaultHttpContext CreateImageServerContext()

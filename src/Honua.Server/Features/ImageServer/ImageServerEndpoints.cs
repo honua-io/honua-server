@@ -12,7 +12,7 @@ namespace Honua.Server.Features.ImageServer;
 /// Esri Image Server endpoints providing raster imagery capabilities.
 /// Supports the Esri Image Server REST API specification.
 /// </summary>
-public static class ImageServerEndpoints
+internal static class ImageServerEndpoints
 {
     /// <summary>
     /// Maps Image Server endpoints to the application.
