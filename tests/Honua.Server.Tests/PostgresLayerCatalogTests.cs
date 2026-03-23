@@ -318,6 +318,217 @@ public class PostgresLayerCatalogTests : IAsyncLifetime
         Assert.Equal("Test category field", categoryField.Description);
     }
 
+    [IntegrationTest]
+    public async Task GetLayerAsync_CaseInsensitiveFieldType_ReturnsLayerDefinition()
+    {
+        const int layerId = 10;
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO layers (layer_id, layer_name, description, geometry_type, srid, default_visibility)
+            VALUES ({layerId}, 'test_case_field', 'Case insensitive field type', 'Point', 4326, true);
+
+            INSERT INTO layer_fields (layer_id, field_name, field_type, field_order, max_length, nullable, description)
+            VALUES ({layerId}, 'id', 'biginteger', 1, NULL, false, NULL),
+                   ({layerId}, 'name', 'string', 2, 100, true, NULL);
+            """, _schemaName);
+
+        try
+        {
+            var layer = await _layerCatalog.GetLayerAsync(layerId);
+
+            Assert.NotNull(layer);
+            Assert.Equal(2, layer.Fields.Length);
+            Assert.Equal(FieldType.BigInteger, layer.Fields.First(f => f.Name == "id").Type);
+            Assert.Equal(FieldType.String, layer.Fields.First(f => f.Name == "name").Type);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM layer_fields WHERE layer_id = {layerId};
+                DELETE FROM layers WHERE layer_id = {layerId};
+                """, _schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetServiceAsync_DisabledLayerExcluded_ReturnsOnlyEnabledLayers()
+    {
+        const int enabledLayerId = 20;
+        const int disabledLayerId = 21;
+        const string serviceName = "DisabledLayerTest";
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO layers (layer_id, layer_name, geometry_type, srid, default_visibility, enabled, description)
+            VALUES ({enabledLayerId}, 'enabled_layer', 'Point', 4326, true, true, 'Enabled'),
+                   ({disabledLayerId}, 'disabled_layer', 'Point', 4326, true, false, 'Disabled');
+
+            INSERT INTO layer_fields (layer_id, field_name, field_type, field_order, nullable)
+            VALUES ({enabledLayerId}, 'id', 'BigInteger', 1, false);
+
+            INSERT INTO services (service_name, description, srid)
+            VALUES ('{serviceName}', 'Disabled layer exclusion test', 4326);
+
+            INSERT INTO service_layers (service_name, layer_id, layer_order)
+            VALUES ('{serviceName}', {enabledLayerId}, 1),
+                   ('{serviceName}', {disabledLayerId}, 2);
+            """, _schemaName);
+
+        try
+        {
+            var service = await _layerCatalog.GetServiceAsync(serviceName);
+
+            Assert.NotNull(service);
+            Assert.Single(service.Layers);
+            Assert.Equal(enabledLayerId, service.Layers[0].Id);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM service_layers WHERE service_name = '{serviceName}';
+                DELETE FROM services WHERE service_name = '{serviceName}';
+                DELETE FROM layer_fields WHERE layer_id IN ({enabledLayerId}, {disabledLayerId});
+                DELETE FROM layers WHERE layer_id IN ({enabledLayerId}, {disabledLayerId});
+                """, _schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ListServicesAsync_DisabledLayerExcluded_ReturnsOnlyEnabledLayers()
+    {
+        const int enabledLayerId = 40;
+        const int disabledLayerId = 41;
+        const string serviceName = "DisabledBatchTest";
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO layers (layer_id, layer_name, geometry_type, srid, default_visibility, enabled, description)
+            VALUES ({enabledLayerId}, 'batch_enabled', 'Point', 4326, true, true, 'Enabled'),
+                   ({disabledLayerId}, 'batch_disabled', 'Point', 4326, true, false, 'Disabled');
+
+            INSERT INTO layer_fields (layer_id, field_name, field_type, field_order, nullable)
+            VALUES ({enabledLayerId}, 'id', 'BigInteger', 1, false);
+
+            INSERT INTO services (service_name, description, srid)
+            VALUES ('{serviceName}', 'Batch disabled layer test', 4326);
+
+            INSERT INTO service_layers (service_name, layer_id, layer_order)
+            VALUES ('{serviceName}', {enabledLayerId}, 1),
+                   ('{serviceName}', {disabledLayerId}, 2);
+            """, _schemaName);
+
+        try
+        {
+            var services = await _layerCatalog.ListServicesAsync();
+
+            var service = services.First(s => s.Name == serviceName);
+            Assert.Single(service.Layers);
+            Assert.Equal(enabledLayerId, service.Layers[0].Id);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM service_layers WHERE service_name = '{serviceName}';
+                DELETE FROM services WHERE service_name = '{serviceName}';
+                DELETE FROM layer_fields WHERE layer_id IN ({enabledLayerId}, {disabledLayerId});
+                DELETE FROM layers WHERE layer_id IN ({enabledLayerId}, {disabledLayerId});
+                """, _schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetServiceAsync_WithConnectionId_ReturnsConnectionId()
+    {
+        const string serviceName = "ConnIdTest";
+        Guid connectionId = Guid.Parse("12345678-1234-1234-1234-123456789abc");
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO services (service_name, description, srid, connection_id)
+            VALUES ('{serviceName}', 'Connection ID test', 4326, '{connectionId}');
+            """, _schemaName);
+
+        try
+        {
+            var service = await _layerCatalog.GetServiceAsync(serviceName);
+
+            Assert.NotNull(service);
+            Assert.Equal(connectionId, service.ConnectionId);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM services WHERE service_name = '{serviceName}';
+                """, _schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetServiceAsync_MultipleLayersWithFieldsAndRelationships_ReturnsComplete()
+    {
+        const int layer1 = 30, layer2 = 31, layer3 = 32;
+        const string serviceName = "MultiLayerTest";
+
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO layers (layer_id, layer_name, geometry_type, srid, default_visibility, description)
+            VALUES ({layer1}, 'multi_points', 'Point', 4326, true, 'Layer 1'),
+                   ({layer2}, 'multi_lines', 'Point', 4326, true, 'Layer 2'),
+                   ({layer3}, 'multi_polygons', 'Polygon', 4326, true, 'Layer 3');
+
+            INSERT INTO layer_fields (layer_id, field_name, field_type, field_order, nullable)
+            VALUES ({layer1}, 'id', 'BigInteger', 1, false),
+                   ({layer1}, 'name', 'String', 2, true),
+                   ({layer2}, 'id', 'BigInteger', 1, false),
+                   ({layer2}, 'length', 'Double', 2, true),
+                   ({layer3}, 'id', 'BigInteger', 1, false),
+                   ({layer3}, 'area', 'Double', 2, true);
+
+            INSERT INTO relationships (layer_id, relationship_id, name, related_layer_id, relationship_type, origin_foreign_key, destination_foreign_key)
+            VALUES ({layer1}, 1, 'points_to_lines', {layer2}, 'OneToMany', 'id', 'point_id'),
+                   ({layer2}, 1, 'lines_to_polygons', {layer3}, 'OneToMany', 'id', 'line_id');
+
+            INSERT INTO services (service_name, description, srid)
+            VALUES ('{serviceName}', 'Multi-layer test', 4326);
+
+            INSERT INTO service_layers (service_name, layer_id, layer_order)
+            VALUES ('{serviceName}', {layer1}, 1),
+                   ('{serviceName}', {layer2}, 2),
+                   ('{serviceName}', {layer3}, 3);
+            """, _schemaName);
+
+        try
+        {
+            var service = await _layerCatalog.GetServiceAsync(serviceName);
+
+            Assert.NotNull(service);
+            Assert.Equal(3, service.Layers.Length);
+
+            // Verify layers are ordered correctly
+            Assert.Equal(layer1, service.Layers[0].Id);
+            Assert.Equal(layer2, service.Layers[1].Id);
+            Assert.Equal(layer3, service.Layers[2].Id);
+
+            // Verify fields are populated for each layer
+            Assert.Equal(2, service.Layers[0].Fields.Length);
+            Assert.Equal(2, service.Layers[1].Fields.Length);
+            Assert.Equal(2, service.Layers[2].Fields.Length);
+
+            // Verify relationships are populated
+            Assert.Single(service.Layers[0].Relationships!);
+            Assert.Equal("points_to_lines", service.Layers[0].Relationships![0].Name);
+            Assert.Single(service.Layers[1].Relationships!);
+            Assert.Equal("lines_to_polygons", service.Layers[1].Relationships![0].Name);
+            Assert.Empty(service.Layers[2].Relationships!);
+        }
+        finally
+        {
+            await _fixture.ExecuteAsync($"""
+                DELETE FROM service_layers WHERE service_name = '{serviceName}';
+                DELETE FROM services WHERE service_name = '{serviceName}';
+                DELETE FROM relationships WHERE layer_id IN ({layer1}, {layer2}, {layer3});
+                DELETE FROM layer_fields WHERE layer_id IN ({layer1}, {layer2}, {layer3});
+                DELETE FROM layers WHERE layer_id IN ({layer1}, {layer2}, {layer3});
+                """, _schemaName);
+        }
+    }
+
     private async Task CreateTestData()
     {
         // Insert test layers
