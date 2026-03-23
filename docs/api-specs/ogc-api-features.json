@@ -701,7 +701,7 @@
           "content": {
             "application/merge-patch+json": {
               "schema": {
-                "$ref": "#/components/schemas/GeoJsonFeature"
+                "$ref": "#/components/schemas/GeoJsonFeatureMergePatch"
               }
             }
           }
@@ -725,9 +725,6 @@
           },
           "412": {
             "description": "ETag precondition failed - the feature has been modified since the provided ETag"
-          },
-          "428": {
-            "description": "If-Match header required for conditional update"
           }
         }
       },
@@ -1017,6 +1014,32 @@
             }
           }
         }
+      },
+      "GeoJsonFeatureMergePatch": {
+        "type": "object",
+        "description": "Sparse GeoJSON Feature merge patch. Omitted members remain unchanged.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Feature"
+            ]
+          },
+          "id": {
+            "type": "integer"
+          },
+          "geometry": {
+            "nullable": true,
+            "oneOf": [
+              { "$ref": "#/components/schemas/GeoJsonGeometry" }
+            ]
+          },
+          "properties": {
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
       },
       "Link": {
         "type": "object",
