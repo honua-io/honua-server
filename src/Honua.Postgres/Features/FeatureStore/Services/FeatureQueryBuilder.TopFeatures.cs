@@ -66,8 +66,10 @@ internal sealed partial class FeatureQueryBuilder
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
 
             // Close subquery and filter by row number
+            var topCountParameter = paramIndex++;
+            parameters.Add(topFilter.TopCount);
             sql.Append(CultureInfo.InvariantCulture,
-                $") sub WHERE sub.rn <= {topFilter.TopCount}");
+                $") sub WHERE sub.rn <= ${topCountParameter}");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }

@@ -112,8 +112,8 @@ internal sealed partial class FeatureQueryBuilder
         {
             StatisticType.Count => $"COUNT({fieldExpr})",
             StatisticType.Sum => $"SUM({numericExpr})",
-            StatisticType.Min => $"MIN({numericExpr})",
-            StatisticType.Max => $"MAX({numericExpr})",
+            StatisticType.Min => $"MIN({fieldExpr})",
+            StatisticType.Max => $"MAX({fieldExpr})",
             StatisticType.Avg => $"AVG({numericExpr})",
             StatisticType.Stddev => $"STDDEV_SAMP({numericExpr})",
             StatisticType.Var => $"VAR_SAMP({numericExpr})",
