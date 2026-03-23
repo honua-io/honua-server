@@ -736,7 +736,7 @@
           "content": {
             "application/merge-patch+json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/GeoJsonFeatureMergePatch"
               }
             }
           }
@@ -757,6 +757,9 @@
           },
           "404": {
             "description": "Feature not found"
+          },
+          "412": {
+            "description": "ETag precondition failed - the feature has been modified since the provided ETag"
           }
         }
       },
@@ -1024,8 +1027,18 @@
               "Feature"
             ]
           },
-          "id": {},
-          "geometry": {},
+          "id": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "integer" }
+            ]
+          },
+          "geometry": {
+            "nullable": true,
+            "oneOf": [
+              { "$ref": "#/components/schemas/GeoJsonGeometry" }
+            ]
+          },
           "properties": {
             "type": "object"
           },
@@ -1035,6 +1048,63 @@
               "$ref": "#/components/schemas/Link"
             }
           }
+        }
+      },
+      "GeoJsonFeatureMergePatch": {
+        "type": "object",
+        "description": "Sparse GeoJSON Feature merge patch. Omitted members remain unchanged.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Feature"
+            ]
+          },
+          "id": {
+            "type": "integer"
+          },
+          "geometry": {
+            "nullable": true,
+            "oneOf": [
+              { "$ref": "#/components/schemas/GeoJsonGeometry" }
+            ]
+          },
+          "properties": {
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      },
+      "GeoJsonGeometry": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Point",
+              "MultiPoint",
+              "LineString",
+              "MultiLineString",
+              "Polygon",
+              "MultiPolygon",
+              "GeometryCollection"
+            ]
+          },
+          "coordinates": {
+            "description": "Coordinate array whose structure depends on the geometry type (RFC 7946)"
+          },
+          "geometries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoJsonGeometry"
+            },
+            "description": "Child geometries (GeometryCollection only)"
+          }
+        },
+        "discriminator": {
+          "propertyName": "type"
         }
       },
       "Link": {

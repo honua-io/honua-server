@@ -331,8 +331,20 @@ def compare_admin_contract(base_doc: dict[str, Any], current_doc: dict[str, Any]
     base_schemas = base_components.get("schemas", {})
     current_schemas = current_components.get("schemas", {})
     if isinstance(base_schemas, dict) and isinstance(current_schemas, dict):
-        for name in sorted(set(base_schemas) - set(current_schemas)):
-            note_breaking(f"Component schema '{name}' was removed")
+        removed_names = sorted(set(base_schemas) - set(current_schemas))
+        # Build a version of the baseline without schemas that are being removed,
+        # so we can check if a removed schema was referenced by surviving content.
+        surviving_doc = json.loads(json.dumps(base_doc))
+        surviving_schemas = surviving_doc.get("components", {}).get("schemas", {})
+        for rn in removed_names:
+            surviving_schemas.pop(rn, None)
+        surviving_text = json.dumps(surviving_doc)
+        for name in removed_names:
+            ref_pattern = f'"#/components/schemas/{name}"'
+            if surviving_text.count(ref_pattern) > 0:
+                note_breaking(f"Component schema '{name}' was removed")
+            else:
+                warnings.append(f"Unreferenced schema '{name}' was removed (safe cleanup)")
         for name in sorted(set(base_schemas).intersection(current_schemas)):
             compare_schema(
                 normalize_schema(base_schemas.get(name, {})),
@@ -398,7 +410,7 @@ if features_doc is not None:
 
 if tiles_doc is not None:
     validate_common(tiles_path, tiles_doc)
-    required_tile_paths = ["/ogc/tiles", "/ogc/tiles/conformance", "/ogc/tiles/collections"]
+    required_tile_paths = ["/", "/conformance", "/collections"]
     available_tile_paths = tiles_doc.get("paths", {})
     for required_path in required_tile_paths:
         if required_path not in available_tile_paths:
