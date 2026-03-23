@@ -168,7 +168,7 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("10.5,20.3");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<IdentifyResponse>>();
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
     }
 
     [UnitTest]
@@ -181,7 +181,7 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("{\"x\":10.5,\"y\":20.3}");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        result.Should().BeOfType<Ok<IdentifyResponse>>();
+        result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>();
     }
 
     [UnitTest]
@@ -230,10 +230,10 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("10,20");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        var okResult = result as Ok<IdentifyResponse>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Properties.Should().ContainKey("BandCount");
-        okResult.Value.Properties.Should().ContainKey("HasData");
+        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Properties.Should().ContainKey("BandCount");
+        jsonResult.Value.Properties.Should().ContainKey("HasData");
     }
 
     private static DefaultHttpContext CreateImageServerContext()

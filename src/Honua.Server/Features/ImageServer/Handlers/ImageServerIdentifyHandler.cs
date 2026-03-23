@@ -121,7 +121,7 @@ internal sealed class ImageServerIdentifyHandler
             ImageServerLog.IdentifyCompleted(_logger, layerId, pixelResult.HasData, pixelResult.BandValues.Count);
             scope.SetSuccess(1);
 
-            return Results.Ok(response);
+            return Results.Json(response, ImageServerJsonContext.Default.IdentifyResponse);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

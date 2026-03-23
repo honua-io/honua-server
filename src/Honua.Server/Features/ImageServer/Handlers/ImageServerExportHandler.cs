@@ -133,7 +133,7 @@ internal sealed class ImageServerExportHandler
             ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return Results.Ok(exportResponse);
+            return Results.Json(exportResponse, ImageServerJsonContext.Default.ExportImageResponse);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

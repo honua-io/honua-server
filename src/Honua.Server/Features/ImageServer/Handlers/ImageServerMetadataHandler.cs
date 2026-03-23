@@ -139,7 +139,7 @@ internal sealed class ImageServerMetadataHandler
             // Record telemetry success
             HonuaTelemetry.SetSuccess(featureActivity, 1);
 
-            return Results.Ok(serviceInfo);
+            return Results.Json(serviceInfo, ImageServerJsonContext.Default.ImageServerServiceInfo);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
