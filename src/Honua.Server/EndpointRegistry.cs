@@ -20,6 +20,7 @@ public static class EndpointRegistry
         new("GET", "/metrics"),
 
         new("GET", "/api/v1/admin/config"),
+        new("GET", "/api/v1/admin/auth/config"),
         new("GET", "/api/v1/admin/openapi.json"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/tables"),

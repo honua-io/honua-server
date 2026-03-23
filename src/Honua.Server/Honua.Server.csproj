@@ -29,7 +29,10 @@
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\Honua.Admin\Honua.Admin.csproj" />
+    <ProjectReference
+      Include="..\Honua.Admin\Honua.Admin.csproj"
+      Condition="'$(HonuaSkipAdminClientForAotVerification)' != 'true'"
+      GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
   </ItemGroup>
 
 

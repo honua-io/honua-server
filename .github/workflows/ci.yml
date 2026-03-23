@@ -823,11 +823,12 @@ jobs:
 
       - name: Publish AOT
         run: |
-          dotnet publish \
+          dotnet publish Honua.Server.csproj \
             --configuration Release \
             --runtime linux-x64 \
             --self-contained \
             -p:PublishAot=true \
+            -p:HonuaSkipAdminClientForAotVerification=true \
             -p:StripSymbols=true \
             -o ./publish
         working-directory: src/Honua.Server
