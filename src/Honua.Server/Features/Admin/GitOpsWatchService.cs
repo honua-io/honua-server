@@ -599,9 +599,15 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
             process.Start();
 
-            var output = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-            var error = await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            // Read stdout and stderr concurrently to avoid deadlock when
+            // a git command fills one pipe buffer while the other is unread.
+            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            var output = outputTask.Result;
+            var error = errorTask.Result;
 
             return new GitProcessResult
             {

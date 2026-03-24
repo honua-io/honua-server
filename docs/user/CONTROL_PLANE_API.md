@@ -61,6 +61,8 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- oidc/providers/           # OIDC provider CRUD and testing
 |-- feature-events/           # Feature change event replay
 |-- manifest/drift            # Manifest drift, versions
+|-- manifest/pending/         # Manifest approval workflows
+|-- gitops/                   # Git repository watching and change history
 |-- tile-operations/          # Tile operation jobs
 ```
 
@@ -372,6 +374,47 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/oidc/providers/{id}` | PUT | Update OIDC provider |
 | `/api/v1/admin/oidc/providers/{id}` | DELETE | Delete OIDC provider |
 | `/api/v1/admin/oidc/providers/{id}/test` | POST | Test OIDC provider connection |
+
+### **Manifest Approval Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/manifest/pending` | GET | List pending manifest changes awaiting approval |
+| `/api/v1/admin/manifest/pending/{id}` | GET | Get details of a pending manifest change |
+| `/api/v1/admin/manifest/pending/{id}/approve` | POST | Approve a pending manifest change |
+| `/api/v1/admin/manifest/pending/{id}/reject` | POST | Reject a pending manifest change |
+| `/api/v1/admin/manifest/pending/history` | GET | List historical approval decisions |
+
+### **GitOps Watch Endpoints**
+
+Git repository watching is an **enterprise edition** feature. When enabled, the server polls a git repository for manifest changes and applies them automatically or queues them for approval.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/gitops/watch` | POST | Configure a new git repository watch |
+| `/api/v1/admin/gitops/watch` | PUT | Update existing watch configuration |
+| `/api/v1/admin/gitops/watch` | GET | Get current watch configuration |
+| `/api/v1/admin/gitops/watch` | DELETE | Remove watch configuration |
+| `/api/v1/admin/gitops/changes` | GET | List change history from watched repository (`?limit=&offset=`) |
+| `/api/v1/admin/gitops/changes/{id}` | GET | Get details of a specific change record |
+| `/api/v1/admin/gitops/changes/{id}/diff` | GET | Get manifest diff (before/after) for a change |
+
+**Watch configuration fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `repositoryUrl` | string | — | Git repository URL (HTTPS, SSH, or git protocol) |
+| `branch` | string | `"main"` | Branch to watch |
+| `manifestPath` | string | `"manifests/"` | Relative path for manifest files |
+| `pollIntervalSeconds` | int | `60` | Poll interval (floored to server minimum) |
+| `approvalRequired` | bool | `false` | Queue changes for approval instead of auto-applying |
+| `pruneEnabled` | bool | `false` | Delete server resources absent from the repository manifest |
+| `enabled` | bool | `true` | Whether the watch is active |
+| `configuredBy` | string? | — | Identity of the configuring actor |
+
+**Change record statuses:** `applied`, `pending_approval`, `failed`, `skipped`.
+
+When `approvalRequired` is `true`, detected changes create a pending approval record (see Manifest Approval Endpoints) and the change record includes a `pendingApprovalId` reference.
 
 ### **Manifest Drift Endpoints**
 

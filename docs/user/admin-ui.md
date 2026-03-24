@@ -55,6 +55,22 @@ Monitor job status and review errors for failed rows or geometry issues in the i
 
 ---
 
+## GitOps
+
+The GitOps page lets you connect a git repository as the manifest source for the server. This is an **enterprise edition** feature.
+
+1. Open **GitOps** from the sidebar.
+2. Enter the repository URL, branch, and manifest path.
+3. Set the poll interval and choose whether changes require approval.
+4. Enable **Prune** to remove server resources that are absent from the repository manifest.
+5. Save. The server polls the repository and applies (or queues) manifest changes.
+
+The change history table shows each detected commit with its status (`applied`, `pending_approval`, `failed`, `skipped`). Select a change to view the manifest diff (before/after).
+
+For headless automation, use the [GitOps Watch API](CONTROL_PLANE_API.md#gitops-watch-endpoints).
+
+---
+
 ## Related Docs
 
 - [Server Management API](CONTROL_PLANE_API.md)

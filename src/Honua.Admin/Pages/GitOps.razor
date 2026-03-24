@@ -96,6 +96,10 @@
                         <InputCheckbox @bind-Value="_form.ApprovalRequired" />
                         <span>Require approval before apply</span>
                     </label>
+                    <label class="toggle-row">
+                        <InputCheckbox @bind-Value="_form.PruneEnabled" />
+                        <span>Prune resources absent from repository</span>
+                    </label>
                 </div>
 
                 @if (_currentConfig is not null)
@@ -940,6 +944,7 @@
                 ManifestPath = config.ManifestPath,
                 PollIntervalSeconds = config.PollIntervalSeconds,
                 ApprovalRequired = config.ApprovalRequired,
+                PruneEnabled = config.PruneEnabled,
                 Enabled = config.Enabled
             };
     }

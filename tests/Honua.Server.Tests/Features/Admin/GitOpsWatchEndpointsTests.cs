@@ -592,4 +592,88 @@ public sealed class GitOpsWatchEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task ConfigureWatch_PruneEnabledRoundTrips()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var request = new GitOpsWatchConfigRequest
+        {
+            RepositoryUrl = "https://github.com/example/prune-test.git",
+            Branch = "main",
+            PruneEnabled = true,
+            Enabled = true
+        };
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/gitops/watch",
+            JsonContent.Create(request, GitOpsWatchJsonContext.Default.GitOpsWatchConfigRequest));
+
+        var payload = await response.Content.ReadAsStringAsync();
+        var apiResponse = JsonSerializer.Deserialize(
+            payload,
+            GitOpsWatchJsonContext.Default.ApiResponseGitOpsWatchConfigResponse);
+
+        apiResponse!.Data!.PruneEnabled.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/gitops/changes/{id}")]
+    public async Task ApprovalDecision_UpdatesGitOpsChangeRecord()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IGitOpsWatchStore>();
+
+        var config = await store.GetConfigAsync();
+        if (config == null)
+        {
+            config = await store.UpsertConfigAsync(new GitOpsWatchConfig
+            {
+                ConfigId = Guid.NewGuid(),
+                RepositoryUrl = "https://github.com/example/approval-test.git",
+                Branch = "main",
+                ManifestPath = "manifests/",
+                PollIntervalSeconds = 60,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        var pendingId = Guid.NewGuid();
+        var changeId = Guid.NewGuid();
+        var manifestContent = JsonSerializer.SerializeToElement(new[] { new { kind = "Layer", metadata = new { name = "approval-test" } } });
+
+        await store.CreateChangeRecordAsync(new GitOpsChangeRecord
+        {
+            ChangeId = changeId,
+            ConfigId = config.ConfigId,
+            CommitSha = "approval123",
+            CommitMessage = "Approval test",
+            ManifestAfter = manifestContent,
+            Status = GitOpsChangeStatus.PendingApproval,
+            PendingApprovalId = pendingId,
+            DetectedAt = DateTimeOffset.UtcNow
+        });
+
+        // Simulate what the approval handler does: update via PendingApprovalId
+        var updated = await store.UpdateChangeRecordByApprovalIdAsync(
+            pendingId,
+            GitOpsChangeStatus.Applied,
+            "Created: 1, Updated: 0, Deleted: 0, Skipped: 0",
+            errorMessage: null,
+            appliedAt: DateTimeOffset.UtcNow);
+
+        updated.Should().BeTrue();
+
+        // Verify the change record is now Applied
+        var record = await store.GetChangeRecordAsync(changeId);
+        record.Should().NotBeNull();
+        record!.Status.Should().Be(GitOpsChangeStatus.Applied);
+        record.ApplySummary.Should().Contain("Created: 1");
+        record.AppliedAt.Should().NotBeNull();
+    }
 }

@@ -50,3 +50,5 @@ CREATE INDEX IF NOT EXISTS idx_gitops_change_records_detected
     ON honua.gitops_change_records(detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_gitops_change_records_status
     ON honua.gitops_change_records(status);
+CREATE INDEX IF NOT EXISTS idx_gitops_change_records_approval
+    ON honua.gitops_change_records(pending_approval_id) WHERE pending_approval_id IS NOT NULL;
