@@ -254,6 +254,21 @@ internal static class AdminManifestApprovalEndpoints
             return;
         }
 
+        // Finalize any linked GitOps change record so the history reflects the approval.
+        var watchStore = context.RequestServices.GetService<IGitOpsWatchStore>();
+        if (watchStore != null)
+        {
+            var summary = $"Created: {applyResult.Summary.Created}, Updated: {applyResult.Summary.Updated}, " +
+                          $"Deleted: {applyResult.Summary.Deleted}, Skipped: {applyResult.Summary.Skipped}";
+            await watchStore.UpdateChangeRecordByApprovalIdAsync(
+                id,
+                GitOpsChangeStatus.Applied,
+                summary,
+                errorMessage: null,
+                appliedAt: DateTimeOffset.UtcNow,
+                context.RequestAborted).ConfigureAwait(false);
+        }
+
         approvalGate.EnqueueWebhook(new ManifestApprovalWebhookEvent
         {
             EventId = Guid.NewGuid().ToString("N"),
@@ -321,6 +336,19 @@ internal static class AdminManifestApprovalEndpoints
             await AdminResponseWriter.WriteErrorAsync(context, StatusCodes.Status409Conflict,
                 $"Pending change '{id}' could not be rejected. It may have already been decided.");
             return;
+        }
+
+        // Finalize any linked GitOps change record so the history reflects the rejection.
+        var watchStore = context.RequestServices.GetService<IGitOpsWatchStore>();
+        if (watchStore != null)
+        {
+            await watchStore.UpdateChangeRecordByApprovalIdAsync(
+                id,
+                GitOpsChangeStatus.Failed,
+                applySummary: null,
+                errorMessage: $"Rejected by {request.RejectedBy ?? "admin"}: {request.Reason ?? "no reason given"}",
+                appliedAt: null,
+                context.RequestAborted).ConfigureAwait(false);
         }
 
         approvalGate.EnqueueWebhook(new ManifestApprovalWebhookEvent

@@ -63,6 +63,13 @@ public sealed class GitOpsWatchConfigRequest
     public bool ApprovalRequired { get; init; }
 
     /// <summary>
+    /// Whether to delete server resources absent from the repository manifest.
+    /// Defaults to false for safety; enable for full GitOps reconciliation.
+    /// </summary>
+    [JsonPropertyName("pruneEnabled")]
+    public bool PruneEnabled { get; init; }
+
+    /// <summary>
     /// Whether the watch should be active immediately.
     /// </summary>
     [JsonPropertyName("enabled")]
@@ -115,6 +122,12 @@ public sealed class GitOpsWatchConfigResponse
     /// </summary>
     [JsonPropertyName("approvalRequired")]
     public bool ApprovalRequired { get; init; }
+
+    /// <summary>
+    /// Whether to delete server resources absent from the repository manifest.
+    /// </summary>
+    [JsonPropertyName("pruneEnabled")]
+    public bool PruneEnabled { get; init; }
 
     /// <summary>
     /// Whether the watch is currently active.

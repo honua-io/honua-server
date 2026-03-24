@@ -35,6 +35,9 @@ internal sealed class GitOpsWatchConfigSaveRequest
     [JsonPropertyName("approvalRequired")]
     public bool ApprovalRequired { get; set; }
 
+    [JsonPropertyName("pruneEnabled")]
+    public bool PruneEnabled { get; set; }
+
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
 
@@ -61,6 +64,9 @@ internal sealed class GitOpsWatchConfigModel
 
     [JsonPropertyName("approvalRequired")]
     public bool ApprovalRequired { get; init; }
+
+    [JsonPropertyName("pruneEnabled")]
+    public bool PruneEnabled { get; init; }
 
     [JsonPropertyName("enabled")]
     public bool Enabled { get; init; }

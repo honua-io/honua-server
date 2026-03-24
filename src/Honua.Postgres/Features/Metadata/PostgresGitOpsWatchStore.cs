@@ -37,15 +37,16 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         // ensuring only one config row can ever exist regardless of config_id.
         var sql = $"""
             INSERT INTO {_configTable} (config_id, repository_url, branch, manifest_path,
-                poll_interval_seconds, approval_required, enabled, configured_by, created_at, updated_at)
+                poll_interval_seconds, approval_required, prune_enabled, enabled, configured_by, created_at, updated_at)
             VALUES (@configId, @repoUrl, @branch, @manifestPath,
-                @pollInterval, @approvalRequired, @enabled, @configuredBy, @createdAt, @updatedAt)
+                @pollInterval, @approvalRequired, @pruneEnabled, @enabled, @configuredBy, @createdAt, @updatedAt)
             ON CONFLICT ((TRUE)) DO UPDATE SET
                 repository_url = EXCLUDED.repository_url,
                 branch = EXCLUDED.branch,
                 manifest_path = EXCLUDED.manifest_path,
                 poll_interval_seconds = EXCLUDED.poll_interval_seconds,
                 approval_required = EXCLUDED.approval_required,
+                prune_enabled = EXCLUDED.prune_enabled,
                 enabled = EXCLUDED.enabled,
                 configured_by = EXCLUDED.configured_by,
                 updated_at = EXCLUDED.updated_at
@@ -62,6 +63,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         command.Parameters.AddWithValue("@manifestPath", config.ManifestPath);
         command.Parameters.AddWithValue("@pollInterval", config.PollIntervalSeconds);
         command.Parameters.AddWithValue("@approvalRequired", config.ApprovalRequired);
+        command.Parameters.AddWithValue("@pruneEnabled", config.PruneEnabled);
         command.Parameters.AddWithValue("@enabled", config.Enabled);
         command.Parameters.AddWithValue("@configuredBy", (object?)config.ConfiguredBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@createdAt", config.CreatedAt);
@@ -75,7 +77,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
     {
         var sql = $"""
             SELECT config_id, repository_url, branch, manifest_path,
-                   poll_interval_seconds, approval_required, enabled,
+                   poll_interval_seconds, approval_required, prune_enabled, enabled,
                    last_known_commit_sha, last_polled_at, configured_by,
                    created_at, updated_at
             FROM {_configTable}
@@ -224,6 +226,37 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         return results;
     }
 
+    public async Task<bool> UpdateChangeRecordByApprovalIdAsync(
+        Guid pendingApprovalId,
+        GitOpsChangeStatus newStatus,
+        string? applySummary,
+        string? errorMessage,
+        DateTimeOffset? appliedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            UPDATE {_changeTable}
+            SET status = @status,
+                apply_summary = @applySummary,
+                error_message = @errorMessage,
+                applied_at = @appliedAt
+            WHERE pending_approval_id = @pendingApprovalId
+            """;
+
+        await using var connection = (NpgsqlConnection)await _connectionProvider
+            .OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@pendingApprovalId", pendingApprovalId);
+        command.Parameters.AddWithValue("@status", newStatus.ToWireString());
+        command.Parameters.AddWithValue("@applySummary", (object?)applySummary ?? DBNull.Value);
+        command.Parameters.AddWithValue("@errorMessage", (object?)errorMessage ?? DBNull.Value);
+        command.Parameters.AddWithValue("@appliedAt", appliedAt.HasValue ? appliedAt.Value : DBNull.Value);
+
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affected > 0;
+    }
+
     private static GitOpsWatchConfig MapConfig(NpgsqlDataReader reader) => new()
     {
         ConfigId = reader.GetGuid(reader.GetOrdinal("config_id")),
@@ -232,6 +265,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         ManifestPath = reader.GetString(reader.GetOrdinal("manifest_path")),
         PollIntervalSeconds = reader.GetInt32(reader.GetOrdinal("poll_interval_seconds")),
         ApprovalRequired = reader.GetBoolean(reader.GetOrdinal("approval_required")),
+        PruneEnabled = reader.GetBoolean(reader.GetOrdinal("prune_enabled")),
         Enabled = reader.GetBoolean(reader.GetOrdinal("enabled")),
         LastKnownCommitSha = reader.IsDBNull(reader.GetOrdinal("last_known_commit_sha")) ? null : reader.GetString(reader.GetOrdinal("last_known_commit_sha")),
         LastPolledAt = reader.IsDBNull(reader.GetOrdinal("last_polled_at")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_polled_at")),

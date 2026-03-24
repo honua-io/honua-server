@@ -94,16 +94,25 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         LogPollNewCommit(_logger, config.RepositoryUrl, latestCommit.Sha);
 
-        var manifestContent = await FetchManifestContentAsync(config, latestCommit.Sha, cancellationToken)
+        var fetchResult = await FetchManifestContentAsync(config, latestCommit.Sha, cancellationToken)
             .ConfigureAwait(false);
 
-        if (manifestContent == null)
+        if (fetchResult == null)
         {
             LogManifestFetchFailed(_logger, config.RepositoryUrl, config.ManifestPath);
             await watchStore.UpdatePollStateAsync(config.ConfigId, latestCommit.Sha, DateTimeOffset.UtcNow, cancellationToken)
                 .ConfigureAwait(false);
             return pollInterval;
         }
+
+        // Populate commit metadata from the fetched commit
+        latestCommit = new GitCommitInfo
+        {
+            Sha = latestCommit.Sha,
+            Author = fetchResult.CommitAuthor,
+            Message = fetchResult.CommitMessage,
+            Timestamp = fetchResult.CommitTimestamp
+        };
 
         // Get previous manifest for diff
         JsonElement? previousManifest = null;
@@ -118,7 +127,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
         var now = DateTimeOffset.UtcNow;
 
-        var manifest = manifestContent.Value;
+        var manifest = fetchResult.ManifestContent;
 
         if (config.ApprovalRequired)
         {
@@ -184,7 +193,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         {
             Resources = normalizedResources,
             DryRun = false,
-            Prune = false
+            Prune = config.PruneEnabled
         }, MetadataResourceJsonContext.Default.ManifestApplyRequest);
 
         var manifestHash = AdminMetadataEndpoints.ComputeManifestHash(normalizedResources);
@@ -203,7 +212,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             RequestedBy = $"gitops:{commit.Author ?? "unknown"}",
             RequestedReason = $"Git commit {commit.Sha[..Math.Min(8, commit.Sha.Length)]}: {commit.Message ?? "(no message)"}",
             DryRun = false,
-            Prune = false,
+            Prune = config.PruneEnabled,
             ResourceCount = normalizedResources.Count,
             CreatedAt = now,
             ExpiresAt = expiresAt
@@ -280,7 +289,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             applyResult = await AdminMetadataEndpoints.ApplyNormalizedResourcesAsync(
                 normalizedResources,
                 dryRun: false,
-                prune: false,
+                prune: config.PruneEnabled,
                 resourceStore,
                 compiler,
                 cancellationToken,
@@ -374,10 +383,10 @@ internal sealed partial class GitOpsWatchService : BackgroundService
     }
 
     /// <summary>
-    /// Fetches manifest file content from the repository at a specific commit.
-    /// Uses git archive to retrieve files without a full clone.
+    /// Fetches manifest file content and commit metadata from the repository at a specific commit.
+    /// Uses sparse checkout to retrieve only manifest files without a full clone.
     /// </summary>
-    private static async Task<JsonElement?> FetchManifestContentAsync(
+    private static async Task<ManifestFetchResult?> FetchManifestContentAsync(
         GitOpsWatchConfig config,
         string commitSha,
         CancellationToken cancellationToken)
@@ -417,6 +426,34 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
             await RunGitCommandAsync(["-C", tempDir, "checkout", "FETCH_HEAD"], cancellationToken).ConfigureAwait(false);
 
+            // Extract commit metadata from the fetched commit
+            string? commitAuthor = null;
+            string? commitMessage = null;
+            DateTimeOffset? commitTimestamp = null;
+
+            var logResult = await RunGitCommandAsync(
+                ["-C", tempDir, "log", "-1", "--format=%an%n%s%n%aI", "FETCH_HEAD"],
+                cancellationToken).ConfigureAwait(false);
+
+            if (logResult is { ExitCode: 0 } && !string.IsNullOrWhiteSpace(logResult.Output))
+            {
+                var lines = logResult.Output.Split('\n', 3);
+                if (lines.Length >= 1 && !string.IsNullOrWhiteSpace(lines[0]))
+                {
+                    commitAuthor = lines[0].Trim();
+                }
+
+                if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[1]))
+                {
+                    commitMessage = lines[1].Trim();
+                }
+
+                if (lines.Length >= 3 && DateTimeOffset.TryParse(lines[2].Trim(), out var ts))
+                {
+                    commitTimestamp = ts;
+                }
+            }
+
             // Read manifest files and build a combined JSON array.
             // Verify resolved paths stay within tempDir to prevent path traversal.
             var manifestDir = Path.GetFullPath(Path.Combine(tempDir, config.ManifestPath.TrimEnd('/')));
@@ -438,7 +475,13 @@ internal sealed partial class GitOpsWatchService : BackgroundService
                 {
                     var content = await File.ReadAllTextAsync(singleFile, cancellationToken).ConfigureAwait(false);
                     using var doc = JsonDocument.Parse(content);
-                    return doc.RootElement.Clone();
+                    return new ManifestFetchResult
+                    {
+                        ManifestContent = doc.RootElement.Clone(),
+                        CommitAuthor = commitAuthor,
+                        CommitMessage = commitMessage,
+                        CommitTimestamp = commitTimestamp
+                    };
                 }
 
                 return null;
@@ -482,7 +525,13 @@ internal sealed partial class GitOpsWatchService : BackgroundService
                 }
             }
 
-            return JsonSerializer.SerializeToElement(resources);
+            return new ManifestFetchResult
+            {
+                ManifestContent = JsonSerializer.SerializeToElement(resources),
+                CommitAuthor = commitAuthor,
+                CommitMessage = commitMessage,
+                CommitTimestamp = commitTimestamp
+            };
         }
         finally
         {
@@ -595,6 +644,14 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         public string? Author { get; init; }
         public string? Message { get; init; }
         public DateTimeOffset? Timestamp { get; init; }
+    }
+
+    private sealed class ManifestFetchResult
+    {
+        public JsonElement ManifestContent { get; init; }
+        public string? CommitAuthor { get; init; }
+        public string? CommitMessage { get; init; }
+        public DateTimeOffset? CommitTimestamp { get; init; }
     }
 
     private sealed class GitProcessResult

@@ -44,4 +44,16 @@ public interface IGitOpsWatchStore
     /// Lists change records with pagination, ordered by detection time descending.
     /// </summary>
     Task<IReadOnlyList<GitOpsChangeRecord>> ListChangeRecordsAsync(int limit = 100, int offset = 0, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates the status and outcome fields of a change record identified by its pending approval reference.
+    /// Used by the approval workflow to finalize GitOps change records after approve/reject decisions.
+    /// </summary>
+    Task<bool> UpdateChangeRecordByApprovalIdAsync(
+        Guid pendingApprovalId,
+        GitOpsChangeStatus newStatus,
+        string? applySummary,
+        string? errorMessage,
+        DateTimeOffset? appliedAt,
+        CancellationToken cancellationToken = default);
 }

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS honua.gitops_watch_configs (
     manifest_path TEXT NOT NULL DEFAULT 'manifests/',
     poll_interval_seconds INT NOT NULL DEFAULT 60,
     approval_required BOOLEAN NOT NULL DEFAULT FALSE,
+    prune_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_known_commit_sha TEXT,
     last_polled_at TIMESTAMPTZ,
