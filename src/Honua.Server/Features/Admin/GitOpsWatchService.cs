@@ -342,7 +342,7 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         // Use git ls-remote to get the latest commit SHA without cloning.
         // The '--' separator prevents option injection via RepositoryUrl.
         var result = await RunGitCommandAsync(
-            $"ls-remote -- {config.RepositoryUrl} refs/heads/{config.Branch}",
+            ["ls-remote", "--", config.RepositoryUrl, $"refs/heads/{config.Branch}"],
             cancellationToken).ConfigureAwait(false);
 
         if (result == null || string.IsNullOrWhiteSpace(result.Output))
@@ -390,12 +390,12 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
             // Initialize, configure sparse checkout, and fetch only manifest files.
             // The '--' separator prevents option injection via RepositoryUrl.
-            await RunGitCommandAsync($"init -- {tempDir}", cancellationToken).ConfigureAwait(false);
+            await RunGitCommandAsync(["init", "--", tempDir], cancellationToken).ConfigureAwait(false);
             await RunGitCommandAsync(
-                $"-C {tempDir} remote add origin -- {config.RepositoryUrl}",
+                ["-C", tempDir, "remote", "add", "origin", "--", config.RepositoryUrl],
                 cancellationToken).ConfigureAwait(false);
             await RunGitCommandAsync(
-                $"-C {tempDir} config core.sparseCheckout true",
+                ["-C", tempDir, "config", "core.sparseCheckout", "true"],
                 cancellationToken).ConfigureAwait(false);
 
             // Write the manifest path to sparse-checkout config
@@ -408,14 +408,14 @@ internal sealed partial class GitOpsWatchService : BackgroundService
 
             // Fetch only the specific commit
             var fetchResult = await RunGitCommandAsync(
-                $"-C {tempDir} fetch --depth 1 origin {commitSha}",
+                ["-C", tempDir, "fetch", "--depth", "1", "origin", commitSha],
                 cancellationToken).ConfigureAwait(false);
             if (fetchResult == null || fetchResult.ExitCode != 0)
             {
                 return null;
             }
 
-            await RunGitCommandAsync($"-C {tempDir} checkout FETCH_HEAD", cancellationToken).ConfigureAwait(false);
+            await RunGitCommandAsync(["-C", tempDir, "checkout", "FETCH_HEAD"], cancellationToken).ConfigureAwait(false);
 
             // Read manifest files and build a combined JSON array.
             // Verify resolved paths stay within tempDir to prevent path traversal.
@@ -527,7 +527,9 @@ internal sealed partial class GitOpsWatchService : BackgroundService
         }
     }
 
-    private static async Task<GitProcessResult?> RunGitCommandAsync(string arguments, CancellationToken cancellationToken)
+    private static async Task<GitProcessResult?> RunGitCommandAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -535,12 +537,16 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             process.StartInfo = new ProcessStartInfo
             {
                 FileName = "git",
-                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+
+            foreach (var argument in arguments)
+            {
+                process.StartInfo.ArgumentList.Add(argument);
+            }
 
             process.Start();
 
