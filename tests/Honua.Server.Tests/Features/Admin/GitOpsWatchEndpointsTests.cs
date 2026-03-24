@@ -491,6 +491,49 @@ public sealed class GitOpsWatchEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task ConfigureWatch_MalformedRepositoryUrl_Returns400()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var request = new GitOpsWatchConfigRequest
+        {
+            RepositoryUrl = "https://github.com/example/repo.git invalid",
+            Branch = "main"
+        };
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/gitops/watch",
+            JsonContent.Create(request, GitOpsWatchJsonContext.Default.GitOpsWatchConfigRequest));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
+    public async Task ConfigureWatch_ScpStyleSshRepositoryUrl_Returns201()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var request = new GitOpsWatchConfigRequest
+        {
+            RepositoryUrl = "git@github.com:example/repo.git",
+            Branch = "main",
+            ManifestPath = "deploy/",
+            PollIntervalSeconds = 120,
+            Enabled = true
+        };
+
+        var response = await client.PostAsync(
+            "/api/v1/admin/gitops/watch",
+            JsonContent.Create(request, GitOpsWatchJsonContext.Default.GitOpsWatchConfigRequest));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/gitops/watch")]
     public async Task ConfigureWatch_BranchWithInvalidChars_Returns400()
     {
         var client = _fixture.CreateAdminClient();

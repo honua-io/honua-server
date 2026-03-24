@@ -85,11 +85,10 @@ internal static class AdminGitOpsWatchEndpoints
             return;
         }
 
-        // Reject URLs that could be interpreted as git CLI options
-        if (request.RepositoryUrl.StartsWith('-'))
+        if (!IsValidRepositoryUrl(request.RepositoryUrl))
         {
             await AdminResponseWriter.WriteErrorAsync(context, StatusCodes.Status400BadRequest,
-                "Repository URL must not start with '-'.");
+                "Repository URL must be a valid HTTPS, SSH, or git repository reference.");
             return;
         }
 
@@ -333,21 +332,12 @@ internal static class AdminGitOpsWatchEndpoints
         CommitMessage = record.CommitMessage,
         CommitAuthor = record.CommitAuthor,
         CommitTimestamp = record.CommitTimestamp,
-        Status = MapChangeStatusString(record.Status),
+        Status = record.Status.ToWireString(),
         PendingApprovalId = record.PendingApprovalId,
         ApplySummary = record.ApplySummary,
         ErrorMessage = record.ErrorMessage,
         DetectedAt = record.DetectedAt,
         AppliedAt = record.AppliedAt
-    };
-
-    private static string MapChangeStatusString(GitOpsChangeStatus status) => status switch
-    {
-        GitOpsChangeStatus.Applied => "applied",
-        GitOpsChangeStatus.PendingApproval => "pending_approval",
-        GitOpsChangeStatus.Failed => "failed",
-        GitOpsChangeStatus.Skipped => "skipped",
-        _ => "applied"
     };
 
     /// <summary>
@@ -372,6 +362,45 @@ internal static class AdminGitOpsWatchEndpoints
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Validates supported git repository reference formats without allowing embedded whitespace.
+    /// Accepts absolute URLs and scp-style SSH refs such as git@github.com:owner/repo.git.
+    /// </summary>
+    internal static bool IsValidRepositoryUrl(string repositoryUrl)
+    {
+        if (string.IsNullOrWhiteSpace(repositoryUrl))
+        {
+            return false;
+        }
+
+        foreach (var c in repositoryUrl)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                return false;
+            }
+        }
+
+        if (Uri.TryCreate(repositoryUrl, UriKind.Absolute, out var uri))
+        {
+            return uri.Scheme is "http" or "https" or "ssh" or "git";
+        }
+
+        var atIndex = repositoryUrl.IndexOf('@');
+        if (atIndex <= 0)
+        {
+            return false;
+        }
+
+        var colonIndex = repositoryUrl.IndexOf(':', atIndex + 1);
+        if (colonIndex <= atIndex + 1 || colonIndex == repositoryUrl.Length - 1)
+        {
+            return false;
+        }
+
+        return repositoryUrl.IndexOf('/', atIndex + 1, colonIndex - atIndex - 1) < 0;
     }
 
     /// <summary>
