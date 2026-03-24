@@ -625,6 +625,7 @@ if (!app.Environment.IsEnvironment("Test"))
 
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();
+app.UseWebSockets();
 
 if (serveAdminUi)
 {

@@ -448,6 +448,14 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/streaming/alerts")]
+    public async Task GetStreamingOperationsAlerts_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/operations/streaming/alerts");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/operations/streaming/subscribers/{subscriberId}")]
     public async Task DeleteStreamingOperationsSubscriber_WithoutAuth_Returns401()
     {

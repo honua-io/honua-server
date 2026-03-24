@@ -6,12 +6,12 @@ namespace Honua.Server.Features.Admin.Models;
 /// <summary>
 /// Response listing geocoding provider health and capability status.
 /// </summary>
-internal sealed class GeocodingProvidersResponse
+internal sealed class GeocodingOperationsProvidersResponse
 {
     /// <summary>
     /// Per-provider health and capability details.
     /// </summary>
-    public GeocodingProviderStatusResponse[] Providers { get; init; } = [];
+    public GeocodingOperationsProviderStatusResponse[] Providers { get; init; } = [];
 
     /// <summary>
     /// Name of the default geocoding provider.
@@ -32,7 +32,7 @@ internal sealed class GeocodingProvidersResponse
 /// <summary>
 /// Combined health and capability status for a single geocoding provider.
 /// </summary>
-internal sealed class GeocodingProviderStatusResponse
+internal sealed class GeocodingOperationsProviderStatusResponse
 {
     /// <summary>
     /// Name of the geocoding provider.
@@ -62,13 +62,13 @@ internal sealed class GeocodingProviderStatusResponse
     /// <summary>
     /// Capability matrix for this provider.
     /// </summary>
-    public GeocodingCapabilitiesResponse? Capabilities { get; init; }
+    public GeocodingOperationsCapabilitiesResponse? Capabilities { get; init; }
 }
 
 /// <summary>
 /// Capability flags for a geocoding provider.
 /// </summary>
-internal sealed class GeocodingCapabilitiesResponse
+internal sealed class GeocodingOperationsCapabilitiesResponse
 {
     /// <summary>
     /// Whether forward geocoding (address to coordinates) is supported.

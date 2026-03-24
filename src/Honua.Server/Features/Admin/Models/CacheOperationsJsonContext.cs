@@ -14,11 +14,11 @@ namespace Honua.Server.Features.Admin.Models;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(ApiResponse<CacheHealthResponse>))]
-[JsonSerializable(typeof(ApiResponse<CacheInvalidationResponse>))]
+[JsonSerializable(typeof(ApiResponse<CacheOperationsInvalidationResponse>))]
 [JsonSerializable(typeof(CacheHealthResponse))]
 [JsonSerializable(typeof(RedisServerInfoResponse))]
-[JsonSerializable(typeof(CacheInvalidationRequest))]
-[JsonSerializable(typeof(CacheInvalidationResponse))]
+[JsonSerializable(typeof(CacheOperationsInvalidationRequest))]
+[JsonSerializable(typeof(CacheOperationsInvalidationResponse))]
 internal sealed partial class CacheOperationsJsonContext : JsonSerializerContext
 {
 }

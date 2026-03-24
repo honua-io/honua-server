@@ -14,6 +14,16 @@ namespace Honua.Server.Features.Alerts;
 internal sealed record SubscriptionOptions(string? ClientLabel = null);
 
 /// <summary>
+/// Handle for a live alert notification subscription.
+/// </summary>
+internal interface IAlertNotificationSubscription : IDisposable
+{
+    Guid SubscriberId { get; }
+
+    CancellationToken DisconnectToken { get; }
+}
+
+/// <summary>
 /// In-process broadcaster for pushing alert events to connected subscribers.
 /// WebSocket endpoint handlers subscribe to this broadcaster to receive real-time alerts.
 /// </summary>
@@ -27,12 +37,12 @@ internal interface IAlertNotificationBroadcaster
     /// <summary>
     /// Registers a subscriber callback. Dispose the returned handle to unsubscribe.
     /// </summary>
-    IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler);
+    IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler);
 
     /// <summary>
     /// Registers a subscriber callback with metadata. Dispose the returned handle to unsubscribe.
     /// </summary>
-    IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options);
+    IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options);
 }
 
 /// <summary>
@@ -72,17 +82,17 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         }
     }
 
-    public IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
+    public IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler)
         => Subscribe(handler, null);
 
-    public IDisposable Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
+    public IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options)
     {
         ArgumentNullException.ThrowIfNull(handler);
 
         var id = Guid.NewGuid();
         var entry = new SubscriptionEntry(handler, new CancellationTokenSource(), DateTimeOffset.UtcNow, options?.ClientLabel);
         _subscribers.TryAdd(id, entry);
-        return new Subscription(this, id);
+        return new Subscription(this, id, entry.Cts.Token);
     }
 
     public IReadOnlyList<StreamingSubscriptionInfo> GetSubscriptions()
@@ -118,16 +128,22 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         DateTimeOffset ConnectedAt,
         string? ClientLabel);
 
-    private sealed class Subscription : IDisposable
+    private sealed class Subscription : IAlertNotificationSubscription
     {
         private readonly InMemoryAlertNotificationBroadcaster _broadcaster;
         private readonly Guid _id;
+        private readonly CancellationToken _disconnectToken;
 
-        public Subscription(InMemoryAlertNotificationBroadcaster broadcaster, Guid id)
+        public Subscription(InMemoryAlertNotificationBroadcaster broadcaster, Guid id, CancellationToken disconnectToken)
         {
             _broadcaster = broadcaster;
             _id = id;
+            _disconnectToken = disconnectToken;
         }
+
+        public Guid SubscriberId => _id;
+
+        public CancellationToken DisconnectToken => _disconnectToken;
 
         public void Dispose() => _broadcaster.RemoveSubscriber(_id);
     }

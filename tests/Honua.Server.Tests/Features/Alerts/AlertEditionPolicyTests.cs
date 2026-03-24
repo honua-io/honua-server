@@ -84,7 +84,7 @@ public sealed class AlertEditionPolicyTests
             }));
 
         Assert.True(policy.IsChannelConfigured(AlertChannelType.Webhook));
-        Assert.False(policy.IsChannelConfigured(AlertChannelType.WebSocket));
+        Assert.True(policy.IsChannelConfigured(AlertChannelType.WebSocket));
         Assert.True(policy.IsChannelConfigured(AlertChannelType.Email));
         Assert.True(policy.IsChannelConfigured(AlertChannelType.Digest));
         Assert.True(policy.IsChannelConfigured(AlertChannelType.AwsSns));

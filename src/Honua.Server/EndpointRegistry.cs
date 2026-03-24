@@ -166,6 +166,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("POST", "/api/v1/admin/operations/cache/invalidate"),
         new("GET", "/api/v1/admin/operations/streaming/subscribers"),
+        new("GET", "/api/v1/admin/operations/streaming/alerts"),
         new("DELETE", "/api/v1/admin/operations/streaming/subscribers/{subscriberId}"),
         new("GET", "/api/v1/admin/operations/geocoding/providers"),
         new("GET", "/api/v1/admin/operations/geocoding/configuration"),

@@ -27,7 +27,7 @@ internal static class GeocodingOperationsEndpoints
         group.MapGet("/providers", HandleGetProviderStatus)
             .WithDisplayName("Get Geocoding Provider Status")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .Produces<ApiResponse<GeocodingProvidersResponse>>();
+            .Produces<ApiResponse<GeocodingOperationsProvidersResponse>>();
 
         group.MapGet("/configuration", HandleGetGeocodingConfiguration)
             .WithDisplayName("Get Geocoding Configuration")
@@ -52,7 +52,7 @@ internal static class GeocodingOperationsEndpoints
                 var provider = allProviders.FirstOrDefault(p =>
                     string.Equals(p.Name, health.ProviderName, StringComparison.OrdinalIgnoreCase));
 
-                return new GeocodingProviderStatusResponse
+                return new GeocodingOperationsProviderStatusResponse
                 {
                     ProviderName = health.ProviderName,
                     IsHealthy = health.IsHealthy,
@@ -66,7 +66,7 @@ internal static class GeocodingOperationsEndpoints
             AdminLog.GeocodingProviderHealthChecked(logger, providerStatuses.Length);
 
             var config = geocodingConfig.Value;
-            var response = new GeocodingProvidersResponse
+            var response = new GeocodingOperationsProvidersResponse
             {
                 Providers = providerStatuses,
                 DefaultProvider = config.DefaultProvider,
@@ -75,8 +75,8 @@ internal static class GeocodingOperationsEndpoints
             };
 
             return Results.Json(
-                ApiResponse<GeocodingProvidersResponse>.CreateSuccess(response),
-                GeocodingOperationsJsonContext.Default.ApiResponseGeocodingProvidersResponse);
+                ApiResponse<GeocodingOperationsProvidersResponse>.CreateSuccess(response),
+                GeocodingOperationsJsonContext.Default.ApiResponseGeocodingOperationsProvidersResponse);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -111,9 +111,9 @@ internal static class GeocodingOperationsEndpoints
             GeocodingOperationsJsonContext.Default.ApiResponseGeocodingConfigurationResponse);
     }
 
-    private static GeocodingCapabilitiesResponse MapCapabilities(GeocodeProviderCapabilities capabilities)
+    private static GeocodingOperationsCapabilitiesResponse MapCapabilities(GeocodeProviderCapabilities capabilities)
     {
-        return new GeocodingCapabilitiesResponse
+        return new GeocodingOperationsCapabilitiesResponse
         {
             SupportsForwardGeocode = capabilities.SupportsForwardGeocode,
             SupportsReverseGeocode = capabilities.SupportsReverseGeocode,

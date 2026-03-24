@@ -99,7 +99,7 @@ internal sealed class RedisServerInfoResponse
 /// <summary>
 /// Request body for cache invalidation operations.
 /// </summary>
-internal sealed class CacheInvalidationRequest
+internal sealed class CacheOperationsInvalidationRequest
 {
     /// <summary>
     /// Key pattern for pattern-based invalidation (e.g., "layer:*").
@@ -125,7 +125,7 @@ internal sealed class CacheInvalidationRequest
 /// <summary>
 /// Response for a cache invalidation operation.
 /// </summary>
-internal sealed class CacheInvalidationResponse
+internal sealed class CacheOperationsInvalidationResponse
 {
     /// <summary>
     /// Whether the invalidation was performed.

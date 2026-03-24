@@ -46,6 +46,15 @@ public sealed class StreamingOperationsEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/streaming/alerts")]
+    public async Task StreamAlerts_WithoutWebSocketUpgrade_Returns400()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/operations/streaming/alerts");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo()
     {

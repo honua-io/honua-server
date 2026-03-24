@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -34,7 +35,7 @@ internal static class CacheOperationsEndpoints
         group.MapPost("/invalidate", HandleInvalidateCache)
             .WithDisplayName("Invalidate Cache")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .Produces<ApiResponse<CacheInvalidationResponse>>()
+            .Produces<ApiResponse<CacheOperationsInvalidationResponse>>()
             .ProducesProblem(StatusCodes.Status400BadRequest);
     }
 
@@ -87,8 +88,9 @@ internal static class CacheOperationsEndpoints
     }
 
     private static async Task<IResult> HandleInvalidateCache(
-        [FromBody] CacheInvalidationRequest request,
+        [FromBody] CacheOperationsInvalidationRequest request,
         [FromServices] OutputCacheInvalidationService invalidationService,
+        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] ICacheService cacheService,
         HttpContext context,
         ILogger<CacheOperationsEndpointsLog> logger)
@@ -139,7 +141,8 @@ internal static class CacheOperationsEndpoints
                 detail = string.Concat("Service: ", request.ServiceId);
                 var scopeLabel = string.Concat("service:", request.ServiceId);
                 AdminLog.CacheInvalidationRequested(logger, scopeLabel);
-                await invalidationService.InvalidateServiceCatalogAsync(request.ServiceId, null, context.RequestAborted).ConfigureAwait(false);
+                var layerIds = await ResolveServiceLayerIdsAsync(layerCatalog, request.ServiceId!, context.RequestAborted).ConfigureAwait(false);
+                await invalidationService.InvalidateServiceCatalogAsync(request.ServiceId, layerIds, context.RequestAborted).ConfigureAwait(false);
             }
             else
             {
@@ -149,7 +152,7 @@ internal static class CacheOperationsEndpoints
                     "Invalid invalidation request. Provide keyPattern, serviceId, or scope.");
             }
 
-            var response = new CacheInvalidationResponse
+            var response = new CacheOperationsInvalidationResponse
             {
                 Invalidated = true,
                 Scope = scope,
@@ -157,8 +160,8 @@ internal static class CacheOperationsEndpoints
             };
 
             return Results.Json(
-                ApiResponse<CacheInvalidationResponse>.CreateSuccess(response),
-                CacheOperationsJsonContext.Default.ApiResponseCacheInvalidationResponse);
+                ApiResponse<CacheOperationsInvalidationResponse>.CreateSuccess(response),
+                CacheOperationsJsonContext.Default.ApiResponseCacheOperationsInvalidationResponse);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -174,6 +177,15 @@ internal static class CacheOperationsEndpoints
                 StatusCodes.Status500InternalServerError,
                 string.Concat("Cache invalidation failed: ", ex.Message));
         }
+    }
+
+    private static async Task<int[]?> ResolveServiceLayerIdsAsync(
+        ILayerCatalog layerCatalog,
+        string serviceId,
+        CancellationToken cancellationToken)
+    {
+        var service = await layerCatalog.GetServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        return service?.Layers.Select(static layer => layer.Id).ToArray() ?? [];
     }
 
     private static async Task<RedisServerInfoResponse> BuildRedisInfoAsync(IConnectionMultiplexer redis, ILogger logger)

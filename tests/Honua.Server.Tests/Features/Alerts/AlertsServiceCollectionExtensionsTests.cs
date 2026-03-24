@@ -25,7 +25,7 @@ public sealed class AlertsServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var sinks = provider.GetServices<IAlertDeliverySink>().ToDictionary(static sink => sink.ChannelType);
 
-        sinks[AlertChannelType.WebSocket].Should().BeOfType<UnsupportedAlertDeliverySink>();
+        sinks[AlertChannelType.WebSocket].Should().BeOfType<WebSocketAlertDeliverySink>();
         sinks[AlertChannelType.Digest].Should().BeOfType<UnsupportedAlertDeliverySink>();
         provider.GetService<IAlertNotificationBroadcaster>().Should().NotBeNull()
             .And.BeOfType<InMemoryAlertNotificationBroadcaster>();

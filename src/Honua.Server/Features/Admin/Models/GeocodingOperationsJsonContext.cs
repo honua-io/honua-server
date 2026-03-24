@@ -13,12 +13,12 @@ namespace Honua.Server.Features.Admin.Models;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
-[JsonSerializable(typeof(ApiResponse<GeocodingProvidersResponse>))]
+[JsonSerializable(typeof(ApiResponse<GeocodingOperationsProvidersResponse>))]
 [JsonSerializable(typeof(ApiResponse<GeocodingConfigurationResponse>))]
-[JsonSerializable(typeof(GeocodingProvidersResponse))]
-[JsonSerializable(typeof(GeocodingProviderStatusResponse))]
-[JsonSerializable(typeof(GeocodingProviderStatusResponse[]))]
-[JsonSerializable(typeof(GeocodingCapabilitiesResponse))]
+[JsonSerializable(typeof(GeocodingOperationsProvidersResponse))]
+[JsonSerializable(typeof(GeocodingOperationsProviderStatusResponse))]
+[JsonSerializable(typeof(GeocodingOperationsProviderStatusResponse[]))]
+[JsonSerializable(typeof(GeocodingOperationsCapabilitiesResponse))]
 [JsonSerializable(typeof(GeocodingConfigurationResponse))]
 internal sealed partial class GeocodingOperationsJsonContext : JsonSerializerContext
 {
