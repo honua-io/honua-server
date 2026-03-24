@@ -347,6 +347,12 @@ public sealed class AdminCompatibilityFeatureFlags
     /// </summary>
     [JsonPropertyName("manifestApproval")]
     public bool ManifestApproval { get; init; }
+
+    /// <summary>
+    /// Indicates support for GitOps repository watching (enterprise feature).
+    /// </summary>
+    [JsonPropertyName("gitOpsWatch")]
+    public bool GitOpsWatch { get; init; }
 }
 
 /// <summary>
