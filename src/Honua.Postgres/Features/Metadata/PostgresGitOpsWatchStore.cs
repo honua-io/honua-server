@@ -158,7 +158,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         command.Parameters.AddWithValue("@manifestBefore", NpgsqlDbType.Jsonb,
             record.ManifestBefore.HasValue ? record.ManifestBefore.Value.GetRawText() : (object)DBNull.Value);
         command.Parameters.AddWithValue("@manifestAfter", NpgsqlDbType.Jsonb, record.ManifestAfter.GetRawText());
-        command.Parameters.AddWithValue("@status", MapStatusToString(record.Status));
+        command.Parameters.AddWithValue("@status", record.Status.ToWireString());
         command.Parameters.AddWithValue("@pendingApprovalId", record.PendingApprovalId.HasValue ? record.PendingApprovalId.Value : DBNull.Value);
         command.Parameters.AddWithValue("@applySummary", (object?)record.ApplySummary ?? DBNull.Value);
         command.Parameters.AddWithValue("@errorMessage", (object?)record.ErrorMessage ?? DBNull.Value);
@@ -264,7 +264,7 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
             CommitTimestamp = reader.IsDBNull(reader.GetOrdinal("commit_timestamp")) ? null : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("commit_timestamp")),
             ManifestBefore = manifestBefore,
             ManifestAfter = afterDoc.RootElement.Clone(),
-            Status = ParseStatus(reader.GetString(reader.GetOrdinal("status"))),
+            Status = GitOpsChangeStatusExtensions.ParseWireString(reader.GetString(reader.GetOrdinal("status"))),
             PendingApprovalId = reader.IsDBNull(reader.GetOrdinal("pending_approval_id")) ? null : reader.GetGuid(reader.GetOrdinal("pending_approval_id")),
             ApplySummary = reader.IsDBNull(reader.GetOrdinal("apply_summary")) ? null : reader.GetString(reader.GetOrdinal("apply_summary")),
             ErrorMessage = reader.IsDBNull(reader.GetOrdinal("error_message")) ? null : reader.GetString(reader.GetOrdinal("error_message")),
@@ -273,21 +273,4 @@ internal sealed class PostgresGitOpsWatchStore : IGitOpsWatchStore
         };
     }
 
-    private static string MapStatusToString(GitOpsChangeStatus status) => status switch
-    {
-        GitOpsChangeStatus.Applied => "applied",
-        GitOpsChangeStatus.PendingApproval => "pending_approval",
-        GitOpsChangeStatus.Failed => "failed",
-        GitOpsChangeStatus.Skipped => "skipped",
-        _ => "applied"
-    };
-
-    private static GitOpsChangeStatus ParseStatus(string status) => status switch
-    {
-        "applied" => GitOpsChangeStatus.Applied,
-        "pending_approval" => GitOpsChangeStatus.PendingApproval,
-        "failed" => GitOpsChangeStatus.Failed,
-        "skipped" => GitOpsChangeStatus.Skipped,
-        _ => GitOpsChangeStatus.Applied
-    };
 }

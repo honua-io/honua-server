@@ -172,3 +172,33 @@ public enum GitOpsChangeStatus
     /// </summary>
     Skipped = 3
 }
+
+/// <summary>
+/// Wire-format helpers for <see cref="GitOpsChangeStatus"/>.
+/// </summary>
+public static class GitOpsChangeStatusExtensions
+{
+    /// <summary>
+    /// Converts the status to its canonical wire-format string (used in API responses and database storage).
+    /// </summary>
+    public static string ToWireString(this GitOpsChangeStatus status) => status switch
+    {
+        GitOpsChangeStatus.Applied => "applied",
+        GitOpsChangeStatus.PendingApproval => "pending_approval",
+        GitOpsChangeStatus.Failed => "failed",
+        GitOpsChangeStatus.Skipped => "skipped",
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown GitOps change status.")
+    };
+
+    /// <summary>
+    /// Parses a wire-format string back to the enum value.
+    /// </summary>
+    public static GitOpsChangeStatus ParseWireString(string status) => status switch
+    {
+        "applied" => GitOpsChangeStatus.Applied,
+        "pending_approval" => GitOpsChangeStatus.PendingApproval,
+        "failed" => GitOpsChangeStatus.Failed,
+        "skipped" => GitOpsChangeStatus.Skipped,
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unknown GitOps change status string.")
+    };
+}
