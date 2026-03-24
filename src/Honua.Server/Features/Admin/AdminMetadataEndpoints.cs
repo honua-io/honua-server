@@ -13,6 +13,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
@@ -78,7 +79,8 @@ internal static class AdminMetadataEndpoints
 
     private static async Task HandleGetCapabilities(
         HttpContext context,
-        [FromServices] IMetadataSchemaRegistry schemaRegistry)
+        [FromServices] IMetadataSchemaRegistry schemaRegistry,
+        [FromServices] IOptions<ManifestApprovalOptions> approvalOptions)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -86,7 +88,7 @@ internal static class AdminMetadataEndpoints
             return;
         }
 
-        var compatibility = CreateCompatibilityMetadata(schemaRegistry);
+        var compatibility = CreateCompatibilityMetadata(schemaRegistry, approvalOptions.Value.Enabled);
 
         var response = new AdminCapabilitiesResponse
         {
@@ -105,7 +107,7 @@ internal static class AdminMetadataEndpoints
         await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
     }
 
-    private static AdminCompatibilityMetadata CreateCompatibilityMetadata(IMetadataSchemaRegistry schemaRegistry)
+    private static AdminCompatibilityMetadata CreateCompatibilityMetadata(IMetadataSchemaRegistry schemaRegistry, bool approvalEnabled = false)
     {
         var serverVersion = GetServerVersion();
         var schemas = new List<AdminMetadataSchemaCompatibility>
@@ -143,7 +145,8 @@ internal static class AdminMetadataEndpoints
                 ManifestExport = true,
                 ManifestApply = true,
                 ManifestDryRun = true,
-                ManifestPrune = true
+                ManifestPrune = true,
+                ManifestApproval = approvalEnabled
             }
         };
     }
@@ -265,6 +268,7 @@ internal static class AdminMetadataEndpoints
         [FromServices] IMetadataResourceStore store,
         [FromServices] IMetadataSchemaRegistry schemaRegistry,
         [FromServices] IMetadataCompiler compiler,
+        [FromServices] ManifestApprovalGate approvalGate,
         [FromServices] IManifestVersionStore versionStore)
     {
         if (!HttpMethods.IsPost(context.Request.Method))
@@ -280,26 +284,84 @@ internal static class AdminMetadataEndpoints
             return;
         }
 
-        var entries = new List<ManifestApplyEntry>();
-        var created = 0;
-        var updated = 0;
-        var deleted = 0;
-        var skipped = 0;
+        if (request.ApprovalRequired)
+        {
+            if (!approvalGate.Enabled)
+            {
+                await WriteError(context, StatusCodes.Status403Forbidden,
+                    "Manifest approval workflows require the enterprise edition.");
+                return;
+            }
 
+            await HandleQueueForApproval(context, request, requestResources, schemaRegistry, approvalGate);
+            return;
+        }
+
+        var (normalizedResources, validationError) = ValidateAndNormalizeResources(requestResources, schemaRegistry);
+        if (normalizedResources == null)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, validationError!);
+            return;
+        }
+
+        var result = await ApplyNormalizedResourcesAsync(
+            normalizedResources,
+            request.DryRun,
+            request.Prune,
+            store,
+            compiler,
+            context.RequestAborted,
+            versionStore,
+            context.User.Identity?.Name);
+
+        var payload = ApiResponse<ManifestApplyResult>.CreateSuccess(result);
+        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseManifestApplyResult);
+    }
+
+    /// <summary>
+    /// Normalizes and validates a list of resources, returning the validated set or the first error.
+    /// Used by both the direct apply and queue-for-approval paths.
+    /// </summary>
+    internal static (IReadOnlyList<MetadataResource>? Resources, string? Error) ValidateAndNormalizeResources(
+        IReadOnlyList<MetadataResource> resources,
+        IMetadataSchemaRegistry schemaRegistry)
+    {
         var normalizedResources = new List<MetadataResource>();
-        foreach (var resource in requestResources)
+        foreach (var resource in resources)
         {
             var normalized = NormalizeResource(resource, null, null);
             var validation = schemaRegistry.ValidateAndUpgrade(normalized);
             if (!validation.IsValid || validation.Resource == null)
             {
-                await WriteError(context, StatusCodes.Status400BadRequest,
-                    validation.Errors.Count > 0 ? string.Join(" ", validation.Errors) : "Manifest validation failed.");
-                return;
+                var error = validation.Errors.Count > 0 ? string.Join(" ", validation.Errors) : "Manifest validation failed.";
+                return (null, error);
             }
 
             normalizedResources.Add(validation.Resource);
         }
+
+        return (normalizedResources, null);
+    }
+
+    /// <summary>
+    /// Shared apply engine for pre-validated, normalized resources.
+    /// Used by both the direct apply and the approval-based apply flows.
+    /// </summary>
+    internal static async Task<ManifestApplyResult> ApplyNormalizedResourcesAsync(
+        IReadOnlyList<MetadataResource> normalizedResources,
+        bool dryRun,
+        bool prune,
+        IMetadataResourceStore store,
+        IMetadataCompiler compiler,
+        CancellationToken cancellationToken,
+        IManifestVersionStore? versionStore = null,
+        string? actor = null)
+    {
+        var entries = new List<ManifestApplyEntry>();
+        var created = 0;
+        var updated = 0;
+        var deleted = 0;
+        var skipped = 0;
 
         var identifiers = normalizedResources
             .Select(resource => new MetadataResourceIdentifier(
@@ -315,20 +377,20 @@ internal static class AdminMetadataEndpoints
                 resource.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace,
                 resource.Metadata?.Name ?? string.Empty);
 
-            var existing = await store.GetAsync(identifier, context.RequestAborted);
+            var existing = await store.GetAsync(identifier, cancellationToken);
             var specHash = ManifestHashHelper.ComputeSpecHash(resource.Spec);
             var updatedMetadata = ApplyManifestHash(resource.Metadata ?? new ResourceMetadata(), specHash);
 
             if (existing == null)
             {
-                if (request.DryRun)
+                if (dryRun)
                 {
                     created++;
                     entries.Add(new ManifestApplyEntry { Action = "create", Resource = identifier });
                     continue;
                 }
 
-                var compilation = await compiler.CompileAsync(resource, context.RequestAborted);
+                var compilation = await compiler.CompileAsync(resource, cancellationToken);
                 var resourceWithStatus = new MetadataResource
                 {
                     ApiVersion = resource.ApiVersion,
@@ -338,7 +400,7 @@ internal static class AdminMetadataEndpoints
                     Status = compilation.Status
                 };
 
-                var createResult = await store.CreateAsync(resourceWithStatus, context.RequestAborted);
+                var createResult = await store.CreateAsync(resourceWithStatus, cancellationToken);
                 if (createResult.Outcome == MetadataResourceWriteOutcome.Conflict)
                 {
                     skipped++;
@@ -363,7 +425,7 @@ internal static class AdminMetadataEndpoints
                     continue;
                 }
 
-                await StoreArtifactAsync(store, compilation, createResult.Resource, context.RequestAborted);
+                await StoreArtifactAsync(store, compilation, createResult.Resource, cancellationToken);
                 created++;
                 entries.Add(new ManifestApplyEntry { Action = "create", Resource = identifier });
                 continue;
@@ -383,7 +445,7 @@ internal static class AdminMetadataEndpoints
                 continue;
             }
 
-            if (request.DryRun)
+            if (dryRun)
             {
                 updated++;
                 entries.Add(new ManifestApplyEntry { Action = "update", Resource = identifier });
@@ -400,7 +462,7 @@ internal static class AdminMetadataEndpoints
                 Status = normalized.Status
             };
 
-            var compilationResult = await compiler.CompileAsync(merged, context.RequestAborted);
+            var compilationResult = await compiler.CompileAsync(merged, cancellationToken);
             var resourceWithStatusUpdate = new MetadataResource
             {
                 ApiVersion = merged.ApiVersion,
@@ -411,7 +473,7 @@ internal static class AdminMetadataEndpoints
             };
 
             var expectedVersion = ParseResourceVersion(existing.Metadata?.ResourceVersion);
-            var updateResult = await store.UpdateAsync(resourceWithStatusUpdate, expectedVersion, context.RequestAborted);
+            var updateResult = await store.UpdateAsync(resourceWithStatusUpdate, expectedVersion, cancellationToken);
             if (updateResult.Resource == null)
             {
                 skipped++;
@@ -424,12 +486,12 @@ internal static class AdminMetadataEndpoints
                 continue;
             }
 
-            await StoreArtifactAsync(store, compilationResult, updateResult.Resource, context.RequestAborted);
+            await StoreArtifactAsync(store, compilationResult, updateResult.Resource, cancellationToken);
             updated++;
             entries.Add(new ManifestApplyEntry { Action = "update", Resource = identifier });
         }
 
-        if (request.Prune)
+        if (prune)
         {
             var namespaces = normalizedResources
                 .Select(resource => resource.Metadata?.Namespace ?? ManifestHashHelper.DefaultNamespace)
@@ -444,7 +506,7 @@ internal static class AdminMetadataEndpoints
             {
                 foreach (var kind in kinds)
                 {
-                    var existingResources = await store.ListAsync(kind, ns, context.RequestAborted);
+                    var existingResources = await store.ListAsync(kind, ns, cancellationToken);
                     foreach (var candidate in existingResources)
                     {
                         var candidateId = new MetadataResourceIdentifier(
@@ -456,7 +518,7 @@ internal static class AdminMetadataEndpoints
                             continue;
                         }
 
-                        if (request.DryRun)
+                        if (dryRun)
                         {
                             deleted++;
                             entries.Add(new ManifestApplyEntry { Action = "delete", Resource = candidateId });
@@ -464,7 +526,7 @@ internal static class AdminMetadataEndpoints
                         }
 
                         var expectedVersion = ParseResourceVersion(candidate.Metadata?.ResourceVersion);
-                        var deleteResult = await store.DeleteAsync(candidateId, expectedVersion, context.RequestAborted);
+                        var deleteResult = await store.DeleteAsync(candidateId, expectedVersion, cancellationToken);
                         if (deleteResult.Outcome == MetadataResourceWriteOutcome.Deleted)
                         {
                             deleted++;
@@ -485,8 +547,7 @@ internal static class AdminMetadataEndpoints
             }
         }
 
-        // Store manifest version snapshot for non-dry-run applies
-        if (!request.DryRun)
+        if (!dryRun && versionStore != null)
         {
             var manifestResourcesJson = JsonSerializer.SerializeToElement(
                 normalizedResources.ToArray(),
@@ -499,17 +560,17 @@ internal static class AdminMetadataEndpoints
                 ManifestHash = manifestHash,
                 ManifestJson = manifestResourcesJson,
                 Summary = $"Created: {created}, Updated: {updated}, Deleted: {deleted}, Skipped: {skipped}",
-                Actor = context.User.Identity?.Name,
+                Actor = actor,
                 AppliedAt = DateTimeOffset.UtcNow,
                 ResourceCount = normalizedResources.Count
             };
 
-            await versionStore.StoreAsync(versionEntry, context.RequestAborted);
+            await versionStore.StoreAsync(versionEntry, cancellationToken);
         }
 
-        var result = new ManifestApplyResult
+        return new ManifestApplyResult
         {
-            DryRun = request.DryRun,
+            DryRun = dryRun,
             Summary = new ManifestApplySummary
             {
                 Created = created,
@@ -519,12 +580,95 @@ internal static class AdminMetadataEndpoints
             },
             Entries = entries
         };
-
-        var payload = ApiResponse<ManifestApplyResult>.CreateSuccess(result);
-        await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseManifestApplyResult);
     }
 
-    private static MetadataResource NormalizeResource(
+    private static async Task HandleQueueForApproval(
+        HttpContext context,
+        ManifestApplyRequest request,
+        IReadOnlyList<MetadataResource> resources,
+        IMetadataSchemaRegistry schemaRegistry,
+        ManifestApprovalGate approvalGate)
+    {
+        var (normalizedResources, validationError) = ValidateAndNormalizeResources(resources, schemaRegistry);
+        if (normalizedResources == null)
+        {
+            await WriteError(context, StatusCodes.Status400BadRequest, validationError!);
+            return;
+        }
+
+        var snapshotJson = JsonSerializer.SerializeToElement(new ManifestApplyRequest
+        {
+            Resources = normalizedResources,
+            DryRun = request.DryRun,
+            Prune = request.Prune
+        }, MetadataResourceJsonContext.Default.ManifestApplyRequest);
+
+        var manifestHash = ComputeManifestHash(normalizedResources);
+        var now = DateTimeOffset.UtcNow;
+        var options = approvalGate.Options;
+        var expiresAt = options.DefaultTimeoutMinutes.HasValue
+            ? now.AddMinutes(options.DefaultTimeoutMinutes.Value)
+            : (DateTimeOffset?)null;
+
+        var pending = new ManifestPendingChange
+        {
+            PendingId = Guid.NewGuid(),
+            ManifestSnapshot = snapshotJson,
+            ManifestHash = manifestHash,
+            Status = ManifestApprovalStatus.Pending,
+            RequestedBy = request.RequestedBy,
+            RequestedReason = request.RequestedReason,
+            DryRun = request.DryRun,
+            Prune = request.Prune,
+            ResourceCount = normalizedResources.Count,
+            CreatedAt = now,
+            ExpiresAt = expiresAt
+        };
+
+        await approvalGate.PendingStore.CreateAsync(pending, context.RequestAborted);
+
+        approvalGate.EnqueueWebhook(new ManifestApprovalWebhookEvent
+        {
+            EventId = Guid.NewGuid().ToString("N"),
+            EventType = "manifest-approval-requested",
+            PendingId = pending.PendingId,
+            ManifestHash = pending.ManifestHash,
+            Status = "pending",
+            Actor = request.RequestedBy,
+            Reason = request.RequestedReason,
+            ResourceCount = pending.ResourceCount,
+            Timestamp = now
+        });
+
+        var response = MapToResponse(pending);
+        context.Response.StatusCode = StatusCodes.Status202Accepted;
+        var payload = ApiResponse<ManifestPendingChangeResponse>.CreateSuccess(response, "Manifest change queued for approval.");
+        await AdminResponseWriter.WriteJsonAsync(context, payload, ManifestApprovalJsonContext.Default.ApiResponseManifestPendingChangeResponse);
+    }
+
+    internal static ManifestPendingChangeResponse MapToResponse(ManifestPendingChange change) => new()
+    {
+        PendingId = change.PendingId,
+        ManifestHash = change.ManifestHash,
+        Status = MapApprovalStatusForResponse(change.Status),
+        RequestedBy = change.RequestedBy,
+        RequestedReason = change.RequestedReason,
+        DecisionBy = change.DecisionBy,
+        DecisionReason = change.DecisionReason,
+        ResourceCount = change.ResourceCount,
+        DryRun = change.DryRun,
+        Prune = change.Prune,
+        CreatedAt = change.CreatedAt,
+        DecidedAt = change.DecidedAt,
+        ExpiresAt = change.ExpiresAt
+    };
+
+    private static string MapApprovalStatusForResponse(ManifestApprovalStatus status)
+        => status == ManifestApprovalStatus.Applying
+            ? "pending"
+            : status.ToString().ToLowerInvariant();
+
+    internal static MetadataResource NormalizeResource(
         MetadataResource resource,
         MetadataResourceIdentifier? identifier,
         MetadataResource? existing)
@@ -552,7 +696,7 @@ internal static class AdminMetadataEndpoints
         };
     }
 
-    private static ResourceMetadata ApplyManifestHash(ResourceMetadata metadata, string hash)
+    internal static ResourceMetadata ApplyManifestHash(ResourceMetadata metadata, string hash)
     {
         var annotations = metadata.Annotations == null
             ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -566,7 +710,7 @@ internal static class AdminMetadataEndpoints
         };
     }
 
-    private static async Task StoreArtifactAsync(
+    internal static async Task StoreArtifactAsync(
         IMetadataResourceStore store,
         MetadataCompilationResult compilation,
         MetadataResource resource,
@@ -585,7 +729,6 @@ internal static class AdminMetadataEndpoints
 
         await store.StoreCompiledArtifactAsync(artifact, cancellationToken);
     }
-
     private static string ComputeManifestHash(IReadOnlyList<MetadataResource> resources)
     {
         if (resources.Count == 0)
@@ -610,7 +753,7 @@ internal static class AdminMetadataEndpoints
         return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
-    private static long ParseResourceVersion(string? resourceVersion)
+    internal static long ParseResourceVersion(string? resourceVersion)
     {
         if (string.IsNullOrWhiteSpace(resourceVersion))
         {

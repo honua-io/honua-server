@@ -262,6 +262,28 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_manifest_versions_applied_at ON honua.manifest_versions(applied_at DESC);"
   - "CREATE INDEX IF NOT EXISTS idx_manifest_versions_manifest_hash ON honua.manifest_versions(manifest_hash);"
   - |
+      CREATE TABLE IF NOT EXISTS honua.manifest_pending_changes (
+          pending_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          manifest_snapshot JSONB NOT NULL,
+          manifest_hash TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          requested_by TEXT,
+          requested_reason TEXT,
+          decision_by TEXT,
+          decision_reason TEXT,
+          dry_run BOOLEAN NOT NULL DEFAULT FALSE,
+          prune BOOLEAN NOT NULL DEFAULT FALSE,
+          resource_count INT NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          decided_at TIMESTAMPTZ,
+          expires_at TIMESTAMPTZ,
+          CONSTRAINT manifest_pending_changes_valid_status
+              CHECK (status IN ('pending', 'applying', 'approved', 'rejected', 'expired'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_manifest_pending_changes_status ON honua.manifest_pending_changes(status);"
+  - "CREATE INDEX IF NOT EXISTS idx_manifest_pending_changes_created ON honua.manifest_pending_changes(created_at DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_manifest_pending_changes_expires ON honua.manifest_pending_changes(expires_at) WHERE status = 'pending' AND expires_at IS NOT NULL;"
+  - |
       CREATE OR REPLACE FUNCTION honua.create_import_table(table_name text)
       RETURNS void
       LANGUAGE plpgsql
@@ -498,6 +520,8 @@ sql:
   - "DELETE FROM honua.replicas;"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
+  - "DELETE FROM honua.manifest_versions;"
+  - "DELETE FROM honua.manifest_pending_changes;"
   - "DELETE FROM honua.manifest_versions;"
   - "DELETE FROM honua.metadata_compiled;"
   - "DELETE FROM honua.metadata_history;"
