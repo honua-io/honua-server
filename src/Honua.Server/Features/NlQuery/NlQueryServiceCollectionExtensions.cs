@@ -25,6 +25,14 @@ internal static class NlQueryServiceCollectionExtensions
             return services;
         }
 
+        var provider = section.GetValue<string>("Provider");
+        if (!string.IsNullOrWhiteSpace(provider) &&
+            !string.Equals(provider, "openai", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Unsupported NlQuery provider '{provider}'. Only 'openai' is supported.");
+        }
+
         // Resolve API key from environment variable if not set in config
         var apiKey = section.GetValue<string>("ApiKey");
         if (string.IsNullOrWhiteSpace(apiKey))

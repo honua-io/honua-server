@@ -288,6 +288,26 @@ public sealed class FilterPlanCompilerTests
         temporal.Right.Should().BeOfType<IntervalLiteral>();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Compile_TemporalOnNonTemporalField_ReturnsFailure()
+    {
+        var plan = Deserialize("""
+        {
+          "combinator": "and",
+          "clauses": [{
+            "type": "temporal",
+            "temporal": { "property": "name", "operator": "after", "start": "2025-01-01T00:00:00Z" }
+          }]
+        }
+        """);
+
+        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("date or datetime");
+    }
+
     // --- Nested clause tests ---
 
     [UnitTest]

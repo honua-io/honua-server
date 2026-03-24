@@ -162,7 +162,12 @@ public static class FilterPlanCompiler
             throw new FilterPlanCompilationException($"Unsupported temporal operator: '{clause.Operator}'.");
         }
 
-        ValidatePropertyExists(clause.Property, layer);
+        var field = FindField(clause.Property, layer);
+        if (field.Type is not FieldType.Date and not FieldType.DateTime)
+        {
+            throw new FilterPlanCompilationException(
+                $"Temporal property '{clause.Property}' must be a date or datetime field.");
+        }
 
         var property = new PropertyReference(clause.Property);
         var temporalOp = MapTemporalOperator(clause.Operator);
@@ -201,27 +206,25 @@ public static class FilterPlanCompiler
     }
 
     private static void ValidatePropertyExists(string propertyName, LayerDefinition layer)
+        => _ = FindField(propertyName, layer);
+
+    private static FieldDefinition FindField(string propertyName, LayerDefinition layer)
     {
         if (string.IsNullOrWhiteSpace(propertyName))
         {
             throw new FilterPlanCompilationException("Property name cannot be empty.");
         }
 
-        var exists = false;
         foreach (var field in layer.Fields)
         {
             if (string.Equals(field.Name, propertyName, StringComparison.OrdinalIgnoreCase))
             {
-                exists = true;
-                break;
+                return field;
             }
         }
 
-        if (!exists)
-        {
-            throw new FilterPlanCompilationException(
-                $"Property '{propertyName}' does not exist in layer '{layer.Name}'.");
-        }
+        throw new FilterPlanCompilationException(
+            $"Property '{propertyName}' does not exist in layer '{layer.Name}'.");
     }
 
     private static BinaryOperator MapComparisonOperator(string op)

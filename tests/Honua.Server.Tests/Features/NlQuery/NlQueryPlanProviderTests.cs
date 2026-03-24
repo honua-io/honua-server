@@ -203,6 +203,31 @@ public sealed class NlQueryPlanProviderTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void FeatureEnabled_WithUnsupportedProvider_Throws()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["NlQuery:Enabled"] = "true",
+                ["NlQuery:Provider"] = "anthropic",
+                ["NlQuery:Endpoint"] = "https://example.com/v1",
+                ["NlQuery:Model"] = "test-model",
+                ["NlQuery:ApiKey"] = "test-key"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var act = () => services.AddNlQuery(configuration);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Unsupported NlQuery provider 'anthropic'. Only 'openai' is supported.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void FeatureNotConfigured_ProviderNotRegistered()
     {
         // No NlQuery section at all
