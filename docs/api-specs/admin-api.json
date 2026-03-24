@@ -66,6 +66,10 @@
     {
       "name": "Services",
       "description": "Service-level protocol and metadata settings"
+    },
+    {
+      "name": "GitOps Watch",
+      "description": "Git repository watching and change management (enterprise edition)"
     }
   ],
   "paths": {
@@ -1921,6 +1925,213 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/gitops/watch": {
+      "post": {
+        "tags": ["GitOps Watch"],
+        "summary": "Configure Git Repository Watch",
+        "description": "Configure a new git repository watch for manifest changes. Returns 201 on create, 200 on update.",
+        "operationId": "configureGitOpsWatch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitOpsWatchConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Watch configuration updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsWatchConfigResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Watch configuration created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsWatchConfigResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["GitOps Watch"],
+        "summary": "Update Git Repository Watch",
+        "description": "Update the existing git repository watch configuration.",
+        "operationId": "updateGitOpsWatch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitOpsWatchConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Watch configuration updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsWatchConfigResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "get": {
+        "tags": ["GitOps Watch"],
+        "summary": "Get Git Repository Watch",
+        "description": "Get the current git repository watch configuration.",
+        "operationId": "getGitOpsWatch",
+        "responses": {
+          "200": {
+            "description": "Current watch configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsWatchConfigResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["GitOps Watch"],
+        "summary": "Delete Git Repository Watch",
+        "description": "Remove the git repository watch configuration. Returns 204 on success.",
+        "operationId": "deleteGitOpsWatch",
+        "responses": {
+          "204": {
+            "description": "Watch configuration removed"
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/gitops/changes": {
+      "get": {
+        "tags": ["GitOps Watch"],
+        "summary": "List GitOps Changes",
+        "description": "List change history from the watched repository.",
+        "operationId": "listGitOpsChanges",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 100 },
+            "description": "Maximum number of records to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 },
+            "description": "Number of records to skip"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Change history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsChangeRecordResponseArray"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/gitops/changes/{id}": {
+      "get": {
+        "tags": ["GitOps Watch"],
+        "summary": "Get GitOps Change",
+        "description": "Get details of a specific change record.",
+        "operationId": "getGitOpsChange",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Change record details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsChangeRecordResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/gitops/changes/{id}/diff": {
+      "get": {
+        "tags": ["GitOps Watch"],
+        "summary": "Get GitOps Change Diff",
+        "description": "Get the manifest diff (before/after) for a specific change.",
+        "operationId": "getGitOpsChangeDiff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Manifest diff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseGitOpsChangeDiffResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     }
@@ -3889,6 +4100,140 @@
             "format": "date-time",
             "description": "Response generation timestamp"
           }
+        }
+      },
+      "GitOpsWatchConfigRequest": {
+        "type": "object",
+        "required": ["repositoryUrl"],
+        "properties": {
+          "repositoryUrl": {
+            "type": "string",
+            "description": "Git repository URL (HTTPS, SSH, or git protocol)"
+          },
+          "branch": {
+            "type": "string",
+            "default": "main",
+            "description": "Branch to watch for changes"
+          },
+          "manifestPath": {
+            "type": "string",
+            "default": "manifests/",
+            "description": "Relative path for manifest files within the repository"
+          },
+          "pollIntervalSeconds": {
+            "type": "integer",
+            "default": 60,
+            "description": "Poll interval in seconds (floored to server-configured minimum)"
+          },
+          "approvalRequired": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether changes require approval before applying"
+          },
+          "pruneEnabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to delete server resources absent from the repository manifest"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the watch should be active"
+          },
+          "configuredBy": {
+            "type": "string",
+            "description": "Identity of the configuring actor"
+          }
+        }
+      },
+      "GitOpsWatchConfigResponse": {
+        "type": "object",
+        "required": ["configId", "repositoryUrl", "branch", "manifestPath", "pollIntervalSeconds", "approvalRequired", "pruneEnabled", "enabled", "createdAt", "updatedAt"],
+        "properties": {
+          "configId": { "type": "string", "format": "uuid" },
+          "repositoryUrl": { "type": "string" },
+          "branch": { "type": "string" },
+          "manifestPath": { "type": "string" },
+          "pollIntervalSeconds": { "type": "integer" },
+          "approvalRequired": { "type": "boolean" },
+          "pruneEnabled": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "lastKnownCommitSha": { "type": "string" },
+          "lastPolledAt": { "type": "string", "format": "date-time" },
+          "configuredBy": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseGitOpsWatchConfigResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": { "$ref": "#/components/schemas/GitOpsWatchConfigResponse" }
+        }
+      },
+      "GitOpsChangeRecordResponse": {
+        "type": "object",
+        "required": ["changeId", "configId", "commitSha", "status", "detectedAt"],
+        "properties": {
+          "changeId": { "type": "string", "format": "uuid" },
+          "configId": { "type": "string", "format": "uuid" },
+          "commitSha": { "type": "string" },
+          "commitMessage": { "type": "string" },
+          "commitAuthor": { "type": "string" },
+          "commitTimestamp": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["applied", "pending_approval", "failed", "skipped"],
+            "description": "Outcome of the change application"
+          },
+          "pendingApprovalId": { "type": "string", "format": "uuid" },
+          "applySummary": { "type": "string" },
+          "errorMessage": { "type": "string" },
+          "detectedAt": { "type": "string", "format": "date-time" },
+          "appliedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseGitOpsChangeRecordResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": { "$ref": "#/components/schemas/GitOpsChangeRecordResponse" }
+        }
+      },
+      "ApiResponseGitOpsChangeRecordResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GitOpsChangeRecordResponse" }
+          }
+        }
+      },
+      "GitOpsChangeDiffResponse": {
+        "type": "object",
+        "required": ["changeId", "commitSha", "after"],
+        "properties": {
+          "changeId": { "type": "string", "format": "uuid" },
+          "commitSha": { "type": "string" },
+          "before": {
+            "description": "Manifest state before the change (null for first apply)"
+          },
+          "after": {
+            "description": "Manifest state after the change"
+          }
+        }
+      },
+      "ApiResponseGitOpsChangeDiffResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": { "$ref": "#/components/schemas/GitOpsChangeDiffResponse" }
         }
       }
     }

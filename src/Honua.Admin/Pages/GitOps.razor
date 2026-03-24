@@ -1,0 +1,1026 @@
+@* Copyright (c) Honua. All rights reserved. *@
+@* Licensed under the Elastic License 2.0. See LICENSE in the project root. *@
+
+@page "/admin/gitops"
+@attribute [Authorize]
+
+@inject GitOpsAdminClient GitOpsClient
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Honua Admin | GitOps</PageTitle>
+
+<div class="gitops-shell">
+    <section class="hero">
+        <div>
+            <p class="eyebrow">GitOps Console</p>
+            <h1>Track watched commits, compare manifests, and clear approval queues.</h1>
+            <p class="hero-copy">
+                This console surfaces the running GitOps loop from watch configuration through
+                pending approvals and applied manifest history.
+            </p>
+        </div>
+        <div class="hero-actions">
+            <button class="action-button primary" @onclick="RefreshAsync" disabled="@_busy">Refresh</button>
+            <span class="feature-pill @GetFeatureTone()">@GetFeatureLabel()</span>
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="banner error">@_error</div>
+    }
+
+    @if (_notice is not null)
+    {
+        <div class="banner notice">@_notice</div>
+    }
+
+    <section class="stats-grid" aria-label="GitOps summary">
+        <article class="stat-card">
+            <span class="stat-label">Pending approvals</span>
+            <strong>@_pendingApprovals.Count</strong>
+        </article>
+        <article class="stat-card">
+            <span class="stat-label">Detected changes</span>
+            <strong>@_changes.Count</strong>
+        </article>
+        <article class="stat-card">
+            <span class="stat-label">Applied changes</span>
+            <strong>@_changes.Count(change => string.Equals(change.Status, "applied", StringComparison.OrdinalIgnoreCase))</strong>
+        </article>
+        <article class="stat-card">
+            <span class="stat-label">Failed changes</span>
+            <strong>@_changes.Count(change => string.Equals(change.Status, "failed", StringComparison.OrdinalIgnoreCase))</strong>
+        </article>
+    </section>
+
+    <div class="workspace-grid">
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Watch Configuration</h2>
+                    <p>Configure the source repository and how often the watcher polls for manifest changes.</p>
+                </div>
+                @if (_currentConfig?.LastPolledAt is not null)
+                {
+                    <span class="meta-pill">Last poll @_currentConfig.LastPolledAt.Value.ToLocalTime().ToString("g")</span>
+                }
+            </div>
+
+            <EditForm Model="_form" OnValidSubmit="SaveWatchAsync">
+                <div class="form-grid">
+                    <label>
+                        <span>Repository URL</span>
+                        <InputText @bind-Value="_form.RepositoryUrl" class="text-input" />
+                    </label>
+                    <label>
+                        <span>Branch</span>
+                        <InputText @bind-Value="_form.Branch" class="text-input" />
+                    </label>
+                    <label>
+                        <span>Manifest path</span>
+                        <InputText @bind-Value="_form.ManifestPath" class="text-input" />
+                    </label>
+                    <label>
+                        <span>Poll interval (seconds)</span>
+                        <InputNumber @bind-Value="_form.PollIntervalSeconds" class="text-input" />
+                    </label>
+                </div>
+
+                <div class="toggle-grid">
+                    <label class="toggle-row">
+                        <InputCheckbox @bind-Value="_form.Enabled" />
+                        <span>Watcher enabled</span>
+                    </label>
+                    <label class="toggle-row">
+                        <InputCheckbox @bind-Value="_form.ApprovalRequired" />
+                        <span>Require approval before apply</span>
+                    </label>
+                    <label class="toggle-row">
+                        <InputCheckbox @bind-Value="_form.PruneEnabled" />
+                        <span>Prune resources absent from repository</span>
+                    </label>
+                </div>
+
+                @if (_currentConfig is not null)
+                {
+                    <dl class="config-meta">
+                        <div>
+                            <dt>Configured by</dt>
+                            <dd>@(_currentConfig.ConfiguredBy ?? "Unknown")</dd>
+                        </div>
+                        <div>
+                            <dt>Last known commit</dt>
+                            <dd>@(_currentConfig.LastKnownCommitSha ?? "Not polled yet")</dd>
+                        </div>
+                        <div>
+                            <dt>Updated</dt>
+                            <dd>@_currentConfig.UpdatedAt.ToLocalTime().ToString("f")</dd>
+                        </div>
+                    </dl>
+                }
+
+                <div class="form-actions">
+                    <button class="action-button primary" type="submit" disabled="@_busy">
+                        @(_currentConfig is null ? "Create watch" : "Save changes")
+                    </button>
+                    <button class="action-button secondary" type="button" @onclick="ResetForm" disabled="@_busy">Reset</button>
+                    @if (_currentConfig is not null)
+                    {
+                        <button class="action-button ghost" type="button" @onclick="DeleteWatchAsync" disabled="@_busy">Remove watch</button>
+                    }
+                </div>
+            </EditForm>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Approval Queue</h2>
+                    <p>Review queued manifest changes and respond with an attributable reason.</p>
+                </div>
+            </div>
+
+            @if (_pendingApprovals.Count == 0)
+            {
+                <p class="empty-state">No manifest changes are currently waiting for approval.</p>
+            }
+            else
+            {
+                <div class="approval-list">
+                    @foreach (var approval in _pendingApprovals.OrderBy(item => item.CreatedAt))
+                    {
+                        <article class="approval-card">
+                            <div class="approval-header">
+                                <div>
+                                    <span class="status-pill @GetApprovalTone(approval.Status)">@approval.Status</span>
+                                    <h3>@approval.ManifestHash</h3>
+                                </div>
+                                <span class="timestamp">@approval.CreatedAt.ToLocalTime().ToString("g")</span>
+                            </div>
+                            <p class="approval-detail">@approval.RequestedReason</p>
+                            <div class="approval-meta">
+                                <span>@(approval.RequestedBy ?? "Unknown requester")</span>
+                                <span>@approval.ResourceCount resource(s)</span>
+                                <span>@(approval.ExpiresAt?.ToLocalTime().ToString("g") ?? "No expiry")</span>
+                            </div>
+                            <label class="decision-field">
+                                <span>Decision reason</span>
+                                <textarea
+                                    class="text-area"
+                                    value="@GetDecisionReason(approval.PendingId)"
+                                    @oninput="args => SetDecisionReason(approval.PendingId, args.Value?.ToString())"></textarea>
+                            </label>
+                            <div class="decision-actions">
+                                <button class="action-button primary" @onclick="() => ApproveAsync(approval)" disabled="@_busy">Approve</button>
+                                <button class="action-button danger" @onclick="() => RejectAsync(approval)" disabled="@_busy">Reject</button>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Change Timeline</h2>
+                    <p>Inspect recent GitOps detections, apply outcomes, and queued approvals from the watched repository.</p>
+                </div>
+            </div>
+
+            @if (_changes.Count == 0)
+            {
+                <p class="empty-state">No GitOps changes have been recorded yet.</p>
+            }
+            else
+            {
+                <div class="timeline">
+                    @foreach (var change in _changes.OrderByDescending(item => item.DetectedAt))
+                    {
+                        <button
+                            class="timeline-item @(change.ChangeId == _selectedChange?.ChangeId ? "selected" : null)"
+                            @onclick="() => SelectChangeAsync(change)">
+                            <div class="timeline-topline">
+                                <span class="status-pill @GetChangeTone(change.Status)">@change.Status</span>
+                                <span class="timestamp">@change.DetectedAt.ToLocalTime().ToString("g")</span>
+                            </div>
+                            <strong>@ShortCommit(change.CommitSha)</strong>
+                            <p>@(change.CommitMessage ?? "No commit message")</p>
+                            <div class="timeline-meta">
+                                <span>@(change.CommitAuthor ?? "Unknown author")</span>
+                                @if (!string.IsNullOrWhiteSpace(change.ApplySummary))
+                                {
+                                    <span>@change.ApplySummary</span>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(change.ErrorMessage))
+                                {
+                                    <span>@change.ErrorMessage</span>
+                                }
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel diff-panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Manifest Diff Viewer</h2>
+                    <p>Compare the stored manifest snapshot before and after the selected GitOps change.</p>
+                </div>
+                @if (_selectedChange is not null)
+                {
+                    <span class="meta-pill">@ShortCommit(_selectedChange.CommitSha)</span>
+                }
+            </div>
+
+            @if (_selectedDiff is null)
+            {
+                <p class="empty-state">Select a change to inspect its before and after manifest state.</p>
+            }
+            else
+            {
+                <div class="diff-grid">
+                    <section>
+                        <header class="diff-header">Before</header>
+                        <pre class="code-panel">@FormatJson(_selectedDiff.Before)</pre>
+                    </section>
+                    <section>
+                        <header class="diff-header">After</header>
+                        <pre class="code-panel">@FormatJson(_selectedDiff.After)</pre>
+                    </section>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Approval History</h2>
+                    <p>See recent approval decisions with operator attribution and timestamps.</p>
+                </div>
+            </div>
+
+            @if (_approvalHistory.Count == 0)
+            {
+                <p class="empty-state">Approval history will appear here after manifest decisions are recorded.</p>
+            }
+            else
+            {
+                <div class="history-list">
+                    @foreach (var approval in _approvalHistory
+                        .OrderByDescending(item => item.DecidedAt ?? item.CreatedAt)
+                        .Take(20))
+                    {
+                        <article class="history-row">
+                            <div class="history-header">
+                                <span class="status-pill @GetApprovalTone(approval.Status)">@approval.Status</span>
+                                <span class="timestamp">@((approval.DecidedAt ?? approval.CreatedAt).ToLocalTime().ToString("g"))</span>
+                            </div>
+                            <strong>@approval.ManifestHash</strong>
+                            <p>@(approval.DecisionReason ?? approval.RequestedReason ?? "No reason recorded.")</p>
+                            <div class="history-meta">
+                                <span>Requested by @(approval.RequestedBy ?? "Unknown")</span>
+                                <span>Decision by @(approval.DecisionBy ?? "Pending")</span>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+<style>
+    .gitops-shell {
+        display: grid;
+        gap: 1.25rem;
+    }
+
+    .hero,
+    .panel,
+    .stat-card,
+    .banner {
+        border-radius: 1.35rem;
+        border: 1px solid rgba(23, 33, 25, 0.1);
+        box-shadow: 0 18px 38px rgba(23, 33, 25, 0.06);
+    }
+
+    .hero {
+        display: flex;
+        justify-content: space-between;
+        gap: 1.5rem;
+        align-items: flex-start;
+        padding: 1.65rem;
+        background:
+            linear-gradient(140deg, rgba(12, 107, 88, 0.96), rgba(8, 77, 64, 0.96)),
+            #0c6b58;
+        color: #f8f4ec;
+    }
+
+    .eyebrow {
+        margin: 0 0 0.75rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: rgba(248, 244, 236, 0.75);
+    }
+
+    .hero h1 {
+        margin: 0 0 0.7rem;
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 1.02;
+        max-width: 18ch;
+    }
+
+    .hero-copy {
+        margin: 0;
+        max-width: 42rem;
+        color: rgba(248, 244, 236, 0.85);
+    }
+
+    .hero-actions {
+        display: grid;
+        gap: 0.75rem;
+        min-width: 12rem;
+        justify-items: end;
+    }
+
+    .feature-pill,
+    .status-pill,
+    .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 0.3rem 0.7rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+    }
+
+    .feature-pill {
+        background: rgba(248, 244, 236, 0.14);
+        color: #fff;
+    }
+
+    .feature-pill.live,
+    .status-pill.applied,
+    .status-pill.approved {
+        background: rgba(12, 107, 88, 0.12);
+        color: #0c6b58;
+    }
+
+    .feature-pill.idle,
+    .status-pill.pending,
+    .status-pill.pending_approval,
+    .status-pill.applying {
+        background: rgba(214, 109, 59, 0.14);
+        color: #b65424;
+    }
+
+    .feature-pill.paused,
+    .status-pill.rejected,
+    .status-pill.failed,
+    .status-pill.expired {
+        background: rgba(176, 49, 43, 0.14);
+        color: #9e2924;
+    }
+
+    .stats-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    }
+
+    .stat-card {
+        padding: 1rem 1.1rem;
+        background: rgba(255, 252, 247, 0.88);
+    }
+
+    .stat-card strong {
+        display: block;
+        font-size: 2rem;
+        line-height: 1;
+        margin-top: 0.45rem;
+    }
+
+    .stat-label {
+        font-size: 0.86rem;
+        color: #47534d;
+    }
+
+    .workspace-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .panel {
+        padding: 1.35rem;
+        background: rgba(255, 252, 247, 0.88);
+    }
+
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+
+    .panel-header h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.15rem;
+    }
+
+    .panel-header p {
+        margin: 0;
+        color: #47534d;
+        line-height: 1.45;
+    }
+
+    .meta-pill {
+        background: rgba(23, 33, 25, 0.06);
+        color: #47534d;
+    }
+
+    .form-grid,
+    .toggle-grid {
+        display: grid;
+        gap: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    label {
+        display: grid;
+        gap: 0.45rem;
+        font-weight: 600;
+        color: #172119;
+    }
+
+    label span {
+        font-size: 0.9rem;
+    }
+
+    .text-input,
+    .text-area {
+        width: 100%;
+        padding: 0.72rem 0.85rem;
+        border-radius: 0.9rem;
+        border: 1px solid rgba(23, 33, 25, 0.12);
+        background: rgba(255, 255, 255, 0.9);
+        color: #172119;
+        font: inherit;
+        box-sizing: border-box;
+    }
+
+    .text-area {
+        min-height: 5.75rem;
+        resize: vertical;
+    }
+
+    .toggle-row {
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.75rem 0.9rem;
+        border-radius: 0.9rem;
+        background: rgba(23, 33, 25, 0.04);
+    }
+
+    .config-meta {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.8rem;
+        margin: 0 0 1rem;
+        padding: 0;
+    }
+
+    .config-meta div {
+        padding: 0.8rem 0.9rem;
+        border-radius: 0.95rem;
+        background: rgba(23, 33, 25, 0.04);
+    }
+
+    .config-meta dt {
+        font-size: 0.76rem;
+        color: #47534d;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.3rem;
+    }
+
+    .config-meta dd {
+        margin: 0;
+        font-weight: 600;
+        word-break: break-word;
+    }
+
+    .form-actions,
+    .decision-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+    }
+
+    .action-button {
+        border: none;
+        border-radius: 999px;
+        padding: 0.7rem 1rem;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .action-button.primary {
+        background: #0c6b58;
+        color: #fff;
+    }
+
+    .action-button.secondary {
+        background: rgba(23, 33, 25, 0.08);
+        color: #172119;
+    }
+
+    .action-button.ghost {
+        background: transparent;
+        color: #8f3327;
+        border: 1px solid rgba(143, 51, 39, 0.18);
+    }
+
+    .action-button.danger {
+        background: #9e2924;
+        color: #fff;
+    }
+
+    .action-button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    .approval-list,
+    .history-list,
+    .timeline {
+        display: grid;
+        gap: 0.8rem;
+    }
+
+    .approval-card,
+    .history-row {
+        padding: 1rem;
+        border-radius: 1rem;
+        background: rgba(23, 33, 25, 0.04);
+        border: 1px solid rgba(23, 33, 25, 0.06);
+    }
+
+    .approval-header,
+    .history-header,
+    .timeline-topline {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        align-items: flex-start;
+        margin-bottom: 0.55rem;
+    }
+
+    .approval-header h3,
+    .history-row strong {
+        margin: 0.45rem 0 0;
+    }
+
+    .approval-detail,
+    .history-row p,
+    .timeline-item p {
+        margin: 0 0 0.7rem;
+        color: #47534d;
+        line-height: 1.45;
+    }
+
+    .approval-meta,
+    .history-meta,
+    .timeline-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem 0.9rem;
+        color: #47534d;
+        font-size: 0.9rem;
+    }
+
+    .decision-field {
+        margin: 0.85rem 0;
+    }
+
+    .timeline-item {
+        width: 100%;
+        text-align: left;
+        padding: 1rem;
+        border-radius: 1rem;
+        border: 1px solid rgba(23, 33, 25, 0.08);
+        background: rgba(255, 255, 255, 0.7);
+        cursor: pointer;
+        color: inherit;
+    }
+
+    .timeline-item.selected {
+        border-color: rgba(12, 107, 88, 0.35);
+        box-shadow: inset 0 0 0 1px rgba(12, 107, 88, 0.12);
+    }
+
+    .timeline-item strong {
+        display: block;
+        margin-bottom: 0.45rem;
+    }
+
+    .diff-panel {
+        grid-column: span 2;
+    }
+
+    .diff-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .diff-header {
+        margin-bottom: 0.55rem;
+        font-weight: 700;
+        color: #47534d;
+    }
+
+    .code-panel {
+        margin: 0;
+        border-radius: 1rem;
+        padding: 1rem;
+        background: #101715;
+        color: #dce7de;
+        overflow: auto;
+        min-height: 22rem;
+        font: 0.85rem/1.55 "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+    }
+
+    .timestamp {
+        color: #6b756f;
+        font-size: 0.85rem;
+        white-space: nowrap;
+    }
+
+    .banner {
+        padding: 0.9rem 1rem;
+        font-weight: 600;
+    }
+
+    .banner.error {
+        background: rgba(158, 41, 36, 0.12);
+        color: #8f3327;
+    }
+
+    .banner.notice {
+        background: rgba(12, 107, 88, 0.12);
+        color: #0c6b58;
+    }
+
+    .empty-state {
+        margin: 0;
+        color: #47534d;
+    }
+
+    @@media (max-width: 980px) {
+        .workspace-grid,
+        .diff-grid,
+        .form-grid,
+        .config-meta {
+            grid-template-columns: 1fr;
+        }
+
+        .diff-panel {
+            grid-column: span 1;
+        }
+    }
+
+    @@media (max-width: 720px) {
+        .hero,
+        .panel-header,
+        .approval-header,
+        .history-header,
+        .timeline-topline {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .hero-actions {
+            justify-items: stretch;
+            width: 100%;
+        }
+    }
+</style>
+
+@code {
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new() { WriteIndented = true };
+
+    private GitOpsWatchConfigSaveRequest _form = new();
+    private GitOpsWatchConfigModel? _currentConfig;
+    private List<GitOpsChangeRecordModel> _changes = [];
+    private List<ManifestPendingChangeModel> _pendingApprovals = [];
+    private List<ManifestPendingChangeModel> _approvalHistory = [];
+    private GitOpsChangeRecordModel? _selectedChange;
+    private GitOpsChangeDiffModel? _selectedDiff;
+    private readonly Dictionary<Guid, string> _decisionReasons = new();
+    private bool _busy;
+    private string? _error;
+    private string? _notice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync(preserveSelection: false);
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadAsync(preserveSelection: true);
+    }
+
+    private async Task LoadAsync(bool preserveSelection)
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            var watchTask = GitOpsClient.GetWatchAsync();
+            var changesTask = GitOpsClient.GetChangesAsync();
+            var pendingTask = GitOpsClient.GetPendingApprovalsAsync();
+            var historyTask = GitOpsClient.GetApprovalHistoryAsync();
+
+            await Task.WhenAll(watchTask, changesTask, pendingTask, historyTask);
+
+            _currentConfig = await watchTask;
+            _changes = (await changesTask).OrderByDescending(change => change.DetectedAt).ToList();
+            _pendingApprovals = (await pendingTask)
+                .Where(item => string.Equals(item.Status, "pending", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(item => item.CreatedAt)
+                .ToList();
+            _approvalHistory = (await historyTask).OrderByDescending(item => item.DecidedAt ?? item.CreatedAt).ToList();
+
+            PopulateForm(_currentConfig);
+
+            if (!preserveSelection || _selectedChange is null)
+            {
+                _selectedChange = _changes.FirstOrDefault();
+            }
+            else
+            {
+                _selectedChange = _changes.FirstOrDefault(change => change.ChangeId == _selectedChange.ChangeId)
+                    ?? _changes.FirstOrDefault();
+            }
+
+            _selectedDiff = _selectedChange is null
+                ? null
+                : await GitOpsClient.GetDiffAsync(_selectedChange.ChangeId);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveWatchAsync()
+    {
+        _busy = true;
+        _error = null;
+        _notice = null;
+
+        try
+        {
+            var creating = _currentConfig is null;
+            _form.ConfiguredBy = await ResolveActorAsync();
+            _currentConfig = await GitOpsClient.SaveWatchAsync(_form, _currentConfig is not null);
+            _notice = creating ? "GitOps watch created." : "GitOps watch updated.";
+            await LoadAsync(preserveSelection: true);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteWatchAsync()
+    {
+        if (_currentConfig is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _notice = null;
+
+        try
+        {
+            await GitOpsClient.DeleteWatchAsync();
+            _currentConfig = null;
+            _selectedChange = null;
+            _selectedDiff = null;
+            PopulateForm(null);
+            _notice = "GitOps watch removed.";
+            await LoadAsync(preserveSelection: false);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        PopulateForm(_currentConfig);
+        _notice = null;
+        _error = null;
+    }
+
+    private async Task SelectChangeAsync(GitOpsChangeRecordModel change)
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            _selectedChange = change;
+            _selectedDiff = await GitOpsClient.GetDiffAsync(change.ChangeId);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ApproveAsync(ManifestPendingChangeModel approval)
+    {
+        await ApplyDecisionAsync(approval, approve: true);
+    }
+
+    private async Task RejectAsync(ManifestPendingChangeModel approval)
+    {
+        await ApplyDecisionAsync(approval, approve: false);
+    }
+
+    private async Task ApplyDecisionAsync(ManifestPendingChangeModel approval, bool approve)
+    {
+        _busy = true;
+        _error = null;
+        _notice = null;
+
+        try
+        {
+            var actor = await ResolveActorAsync();
+            var reason = GetDecisionReason(approval.PendingId);
+
+            if (approve)
+            {
+                await GitOpsClient.ApproveAsync(approval.PendingId, actor, reason);
+                _notice = $"Approved manifest change {approval.ManifestHash}.";
+            }
+            else
+            {
+                await GitOpsClient.RejectAsync(approval.PendingId, actor, reason);
+                _notice = $"Rejected manifest change {approval.ManifestHash}.";
+            }
+
+            _decisionReasons.Remove(approval.PendingId);
+            await LoadAsync(preserveSelection: true);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task<string?> ResolveActorAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        return user.Identity?.Name
+            ?? user.FindFirst("name")?.Value
+            ?? user.FindFirst("preferred_username")?.Value
+            ?? user.FindFirst("email")?.Value
+            ?? user.FindFirst("sub")?.Value;
+    }
+
+    private void PopulateForm(GitOpsWatchConfigModel? config)
+    {
+        _form = config is null
+            ? new GitOpsWatchConfigSaveRequest()
+            : new GitOpsWatchConfigSaveRequest
+            {
+                RepositoryUrl = config.RepositoryUrl,
+                Branch = config.Branch,
+                ManifestPath = config.ManifestPath,
+                PollIntervalSeconds = config.PollIntervalSeconds,
+                ApprovalRequired = config.ApprovalRequired,
+                PruneEnabled = config.PruneEnabled,
+                Enabled = config.Enabled
+            };
+    }
+
+    private string GetDecisionReason(Guid pendingId)
+    {
+        return _decisionReasons.TryGetValue(pendingId, out var reason)
+            ? reason
+            : string.Empty;
+    }
+
+    private void SetDecisionReason(Guid pendingId, string? reason)
+    {
+        _decisionReasons[pendingId] = reason ?? string.Empty;
+    }
+
+    private string GetFeatureLabel()
+    {
+        return _currentConfig switch
+        {
+            null => "Not configured",
+            { Enabled: false } => "Watcher paused",
+            _ => "Watching branch"
+        };
+    }
+
+    private string GetFeatureTone()
+    {
+        return _currentConfig switch
+        {
+            null => "idle",
+            { Enabled: false } => "paused",
+            _ => "live"
+        };
+    }
+
+    private static string GetApprovalTone(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "approved" => "approved",
+            "pending" => "pending",
+            "applying" => "applying",
+            "rejected" => "rejected",
+            "expired" => "expired",
+            _ => "pending"
+        };
+    }
+
+    private static string GetChangeTone(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "applied" => "applied",
+            "pending_approval" => "pending_approval",
+            "failed" => "failed",
+            _ => "pending"
+        };
+    }
+
+    private static string ShortCommit(string commitSha)
+    {
+        return commitSha.Length <= 8
+            ? commitSha
+            : commitSha[..8];
+    }
+
+    private static string FormatJson(JsonElement? json)
+    {
+        return json.HasValue
+            ? JsonSerializer.Serialize(json.Value, PrettyJsonOptions)
+            : "// no prior manifest recorded";
+    }
+
+    private static string FormatJson(JsonElement json)
+    {
+        return JsonSerializer.Serialize(json, PrettyJsonOptions);
+    }
+}

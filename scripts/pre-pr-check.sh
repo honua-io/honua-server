@@ -34,7 +34,14 @@ dotnet test Honua.sln \
 
 echo "7. Testing AOT build..."
 cd src/Honua.Server
-dotnet publish --configuration Release -p:PublishAot=true -p:StripSymbols=true -o ./publish >/dev/null 2>&1
+dotnet publish \
+    --configuration Release \
+    --runtime linux-x64 \
+    --self-contained \
+    -p:PublishAot=true \
+    -p:HonuaSkipAdminClientForAotVerification=true \
+    -p:StripSymbols=true \
+    -o ./publish
 cd ../..
 
 echo "8. Local Claude architecture review..."

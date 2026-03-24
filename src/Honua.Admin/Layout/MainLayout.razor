@@ -5,11 +5,19 @@
 
 <div class="admin-layout">
     <header class="admin-header">
-        <span class="brand">Honua Admin</span>
+        <div class="brand-cluster">
+            <NavLink class="brand" href="/admin">Honua Admin</NavLink>
+            <nav class="primary-nav" aria-label="Primary">
+                <NavLink class="nav-link" href="/admin" Match="NavLinkMatch.All">Overview</NavLink>
+                <NavLink class="nav-link" href="/admin/gitops">GitOps</NavLink>
+            </nav>
+        </div>
         <AuthorizeView>
             <Authorized>
-                <span class="user-info">@context.User.Identity?.Name</span>
-                <button class="logout-btn" @onclick="LogoutAsync">Sign out</button>
+                <div class="session-actions">
+                    <span class="user-info">@context.User.Identity?.Name</span>
+                    <button class="logout-btn" @onclick="LogoutAsync">Sign out</button>
+                </div>
             </Authorized>
         </AuthorizeView>
     </header>
@@ -21,13 +29,123 @@
 <Honua.Admin.Features.Auth.TokenRefreshTimer />
 
 <style>
-    .admin-layout { min-height: 100vh; display: flex; flex-direction: column; }
-    .admin-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: #1a1a2e; color: #fff; }
-    .brand { font-weight: 600; font-size: 1.1rem; }
-    .user-info { margin-right: 1rem; opacity: 0.8; font-size: 0.9rem; }
-    .logout-btn { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-    .logout-btn:hover { background: rgba(255,255,255,0.1); }
-    .admin-content { flex: 1; padding: 1.5rem; }
+    :root {
+        color-scheme: light;
+        --honua-ink: #172119;
+        --honua-slate: #47534d;
+        --honua-surface: #f4efe4;
+        --honua-card: rgba(255, 252, 247, 0.9);
+        --honua-line: rgba(23, 33, 25, 0.12);
+        --honua-primary: #0c6b58;
+        --honua-primary-deep: #084d40;
+        --honua-accent: #d66d3b;
+    }
+
+    .admin-layout {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background:
+            radial-gradient(circle at top left, rgba(214, 109, 59, 0.14), transparent 28rem),
+            linear-gradient(180deg, #f8f4ec 0%, #efe9dc 100%);
+        color: var(--honua-ink);
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    }
+
+    .admin-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.36);
+        background: rgba(12, 34, 28, 0.92);
+        backdrop-filter: blur(18px);
+        color: #f8f4ec;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .brand-cluster {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+    }
+
+    .brand {
+        color: inherit;
+        text-decoration: none;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-size: 0.88rem;
+    }
+
+    .primary-nav {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .nav-link {
+        color: rgba(248, 244, 236, 0.76);
+        text-decoration: none;
+        padding: 0.45rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .nav-link.active,
+    .nav-link:hover {
+        color: #fff;
+        background: rgba(248, 244, 236, 0.1);
+        border-color: rgba(248, 244, 236, 0.2);
+    }
+
+    .session-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .user-info {
+        opacity: 0.85;
+        font-size: 0.95rem;
+    }
+
+    .logout-btn {
+        background: transparent;
+        border: 1px solid rgba(248, 244, 236, 0.26);
+        color: #fff;
+        padding: 0.45rem 0.85rem;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+
+    .logout-btn:hover {
+        background: rgba(248, 244, 236, 0.08);
+    }
+
+    .admin-content {
+        flex: 1;
+        padding: 1.5rem;
+    }
+
+    @@media (max-width: 760px) {
+        .admin-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .session-actions {
+            width: 100%;
+            justify-content: space-between;
+        }
+    }
 </style>
 
 @code {

@@ -310,6 +310,15 @@ builder.Services.AddHostedService(sp =>
         sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalExpiryService>>()));
 builder.Services.AddScoped<Honua.Server.Features.Admin.ManifestApprovalGate>();
 
+// Register GitOps watch services (#518)
+builder.Services.Configure<Honua.Server.Features.Admin.Models.GitOpsWatchOptions>(
+    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.GitOpsWatchOptions.SectionName));
+builder.Services.AddHostedService(sp =>
+    new Honua.Server.Features.Admin.GitOpsWatchService(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.GitOpsWatchOptions>>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.GitOpsWatchService>>()));
+
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
@@ -499,6 +508,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
         Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
+        Honua.Server.Features.Admin.Models.GitOpsWatchJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
@@ -780,6 +790,7 @@ app.MapServiceSettingsEndpoints();
 app.MapAdminMetadataEndpoints();
 app.MapAdminManifestApprovalEndpoints();
 app.MapAdminManifestDriftEndpoints();
+app.MapAdminGitOpsWatchEndpoints();
 app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints

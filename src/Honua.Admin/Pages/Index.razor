@@ -5,5 +5,124 @@
 @page "/admin/"
 @attribute [Authorize]
 
-<h2>Admin Dashboard</h2>
-<p>Welcome to the Honua Admin console.</p>
+<div class="overview-shell">
+    <section class="overview-hero">
+        <p class="eyebrow">Control Plane</p>
+        <h1>Operate manifest delivery from one place.</h1>
+        <p class="hero-copy">
+            Use Honua Admin to monitor change flow, validate enterprise features, and step into
+            GitOps approvals without leaving the browser.
+        </p>
+        <div class="hero-actions">
+            <NavLink class="hero-link primary" href="/admin/gitops">Open GitOps Console</NavLink>
+            <a class="hero-link secondary" href="/api/v1/admin/metadata/capabilities" target="_blank" rel="noreferrer">View Capabilities API</a>
+        </div>
+    </section>
+
+    <section class="overview-grid">
+        <article class="overview-card">
+            <span class="card-kicker">GitOps</span>
+            <h2>Watch config and manifest changes</h2>
+            <p>Register the watched repository, inspect commit-by-commit history, and compare before/after manifest state.</p>
+        </article>
+        <article class="overview-card">
+            <span class="card-kicker">Approvals</span>
+            <h2>Review queued changes</h2>
+            <p>Approve or reject pending manifest updates with operator attribution and decision reasons.</p>
+        </article>
+        <article class="overview-card">
+            <span class="card-kicker">Observability</span>
+            <h2>See operational readiness</h2>
+            <p>Use the browser console as the front door for enterprise admin workflows and live feature discovery.</p>
+        </article>
+    </section>
+</div>
+
+<style>
+    .overview-shell {
+        display: grid;
+        gap: 1.5rem;
+    }
+
+    .overview-hero,
+    .overview-card {
+        background: rgba(255, 252, 247, 0.88);
+        border: 1px solid rgba(23, 33, 25, 0.1);
+        border-radius: 1.25rem;
+        box-shadow: 0 20px 40px rgba(23, 33, 25, 0.06);
+    }
+
+    .overview-hero {
+        padding: 2rem;
+    }
+
+    .eyebrow,
+    .card-kicker {
+        display: inline-block;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.78rem;
+        color: #0c6b58;
+        margin-bottom: 0.8rem;
+        font-weight: 700;
+    }
+
+    .overview-hero h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 1.02;
+    }
+
+    .hero-copy {
+        max-width: 44rem;
+        margin: 0;
+        color: #47534d;
+        font-size: 1.05rem;
+    }
+
+    .hero-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 1.5rem;
+    }
+
+    .hero-link {
+        text-decoration: none;
+        border-radius: 999px;
+        padding: 0.7rem 1rem;
+        font-weight: 600;
+    }
+
+    .hero-link.primary {
+        background: #0c6b58;
+        color: #fff;
+    }
+
+    .hero-link.secondary {
+        border: 1px solid rgba(23, 33, 25, 0.12);
+        color: #172119;
+        background: rgba(255, 255, 255, 0.7);
+    }
+
+    .overview-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    }
+
+    .overview-card {
+        padding: 1.4rem;
+    }
+
+    .overview-card h2 {
+        margin: 0 0 0.6rem;
+        font-size: 1.15rem;
+    }
+
+    .overview-card p {
+        margin: 0;
+        color: #47534d;
+        line-height: 1.55;
+    }
+</style>

@@ -3,6 +3,7 @@
 
 using Honua.Admin;
 using Honua.Admin.Features.Auth.Services;
+using Honua.Admin.Features.GitOps.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -23,6 +24,7 @@ builder.Services.AddScoped<OidcSessionService>();
 builder.Services.AddScoped<AdminAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp =>
     sp.GetRequiredService<AdminAuthStateProvider>());
+builder.Services.AddScoped<GitOpsAdminClient>();
 
 builder.Services.AddAuthorizationCore();
 

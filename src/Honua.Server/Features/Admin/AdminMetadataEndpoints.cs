@@ -80,7 +80,8 @@ internal static class AdminMetadataEndpoints
     private static async Task HandleGetCapabilities(
         HttpContext context,
         [FromServices] IMetadataSchemaRegistry schemaRegistry,
-        [FromServices] IOptions<ManifestApprovalOptions> approvalOptions)
+        [FromServices] IOptions<ManifestApprovalOptions> approvalOptions,
+        [FromServices] IOptions<GitOpsWatchOptions> gitOpsWatchOptions)
     {
         if (!HttpMethods.IsGet(context.Request.Method))
         {
@@ -88,7 +89,7 @@ internal static class AdminMetadataEndpoints
             return;
         }
 
-        var compatibility = CreateCompatibilityMetadata(schemaRegistry, approvalOptions.Value.Enabled);
+        var compatibility = CreateCompatibilityMetadata(schemaRegistry, approvalOptions.Value.Enabled, gitOpsWatchOptions.Value.Enabled);
 
         var response = new AdminCapabilitiesResponse
         {
@@ -107,7 +108,7 @@ internal static class AdminMetadataEndpoints
         await AdminResponseWriter.WriteJsonAsync(context, payload, MetadataResourceJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
     }
 
-    private static AdminCompatibilityMetadata CreateCompatibilityMetadata(IMetadataSchemaRegistry schemaRegistry, bool approvalEnabled = false)
+    private static AdminCompatibilityMetadata CreateCompatibilityMetadata(IMetadataSchemaRegistry schemaRegistry, bool approvalEnabled = false, bool gitOpsWatchEnabled = false)
     {
         var serverVersion = GetServerVersion();
         var schemas = new List<AdminMetadataSchemaCompatibility>
@@ -146,7 +147,8 @@ internal static class AdminMetadataEndpoints
                 ManifestApply = true,
                 ManifestDryRun = true,
                 ManifestPrune = true,
-                ManifestApproval = approvalEnabled
+                ManifestApproval = approvalEnabled,
+                GitOpsWatch = gitOpsWatchEnabled
             }
         };
     }
@@ -729,7 +731,7 @@ internal static class AdminMetadataEndpoints
 
         await store.StoreCompiledArtifactAsync(artifact, cancellationToken);
     }
-    private static string ComputeManifestHash(IReadOnlyList<MetadataResource> resources)
+    internal static string ComputeManifestHash(IReadOnlyList<MetadataResource> resources)
     {
         if (resources.Count == 0)
         {

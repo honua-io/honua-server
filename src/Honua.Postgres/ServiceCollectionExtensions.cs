@@ -120,6 +120,12 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register GitOps watch store for git repository watching (#518)
+        services.AddScoped<IGitOpsWatchStore>(serviceProvider =>
+            new PostgresGitOpsWatchStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
 
