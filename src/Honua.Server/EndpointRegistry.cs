@@ -19,6 +19,9 @@ public static class EndpointRegistry
         new("GET", "/healthz/metrics"),
         new("GET", "/metrics"),
 
+        // Interactive API explorer (Scalar)
+        new("GET", "/docs"),
+
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/auth/config"),
         new("GET", "/api/v1/admin/openapi.json"),

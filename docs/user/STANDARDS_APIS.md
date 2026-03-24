@@ -292,5 +292,6 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - [MVP Compatibility Contract](MVP_COMPATIBILITY_CONTRACT.md)
 - [Geospatial API Examples](API_EXAMPLES.md)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
+- [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)*
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
 - [MapServer Coverage Matrix](map-server-matrix.md)

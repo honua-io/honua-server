@@ -172,6 +172,7 @@ Once the server is running:
 | `http://localhost:8080/ogc/features/collections` | OGC API collections |
 | `http://localhost:8080/odata` | OData service root |
 | `http://localhost:8080/openapi.json` | OGC API Features OpenAPI spec |
+| `http://localhost:8080/docs` | Interactive API explorer (Scalar; dev mode only, or set `HONUA_SERVE_API_DOCS=true`) |
 | `http://localhost:8080/admin` | Admin UI (requires `HONUA_SERVE_ADMIN_UI=true`, default on) |
 
 ## Debugging

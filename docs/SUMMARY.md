@@ -18,12 +18,18 @@
 * [Benchmark Reproduction](user/BENCHMARK_REPRODUCTION.md)
 * [Benchmark Methodology](user/BENCHMARK_METHODOLOGY.md)
 
+## Tutorials
+
+* [QGIS Getting Started](user/tutorials/qgis-getting-started.md)
+* [GeoServer Migration Guide](user/tutorials/geoserver-migration-guide.md)
+
 ## Geospatial Data APIs
 
 * [Protocols Overview](user/STANDARDS_APIS.md)
 * [API Examples](user/API_EXAMPLES.md)
 * [Integration Patterns](user/INTEGRATION_PATTERNS.md)
 * [Interactive API Specs](api-specs/README.md)
+* [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)*
 
 ### Coverage Matrices
 

@@ -71,6 +71,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Alerts:Enabled"] = "false",
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test",
                 ["HONUA_SKIP_MIGRATIONS"] = "true",
+                ["HONUA_SERVE_API_DOCS"] = "true",
                 ["FileStorage:Provider"] = "Local",
                 ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
                 ["FileStorage:LocalStorage:CreateDirectoryIfNotExists"] = "true"
