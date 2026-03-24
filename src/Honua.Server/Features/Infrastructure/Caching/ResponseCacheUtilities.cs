@@ -56,6 +56,9 @@ internal static class ResponseCacheUtilities
     internal static string BuildFeatureServerLayerPattern(int layerId)
         => $"{FeatureServerPrefix}*:layer:{layerId}:*";
 
+    internal static string BuildFeatureServerServicePattern(string serviceId)
+        => $"{FeatureServerPrefix}{NormalizeKeyPart(serviceId)}:*";
+
     internal static string BuildFeatureServerLayerPattern(string serviceId, int layerId)
         => $"{FeatureServerPrefix}{NormalizeKeyPart(serviceId)}:layer:{layerId}:*";
 
@@ -70,6 +73,15 @@ internal static class ResponseCacheUtilities
 
     internal static string BuildODataLayerPattern(int layerId)
         => $"{ODataPrefix}{layerId}:*";
+
+    internal static string BuildFeatureServerPattern()
+        => $"{FeatureServerPrefix}*";
+
+    internal static string BuildOgcPattern()
+        => $"{OgcPrefix}*";
+
+    internal static string BuildODataPattern()
+        => $"{ODataPrefix}*";
 
     internal static CachedResponse CreateCachedResponse(byte[] payload, string contentType, IETagService etagService)
     {

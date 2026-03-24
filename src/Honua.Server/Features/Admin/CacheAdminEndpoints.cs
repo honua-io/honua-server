@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -60,6 +61,7 @@ internal static class CacheAdminEndpoints
     private static async Task<IResult> HandleInvalidateCache(
         [FromBody] CacheInvalidationRequest request,
         [FromServices] OutputCacheInvalidationService invalidationService,
+        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] ILogger<CacheAdminEndpointsLog> logger,
         HttpContext context,
         CancellationToken cancellationToken)
@@ -98,8 +100,9 @@ internal static class CacheAdminEndpoints
                             CacheAdminJsonContext.Default.ApiResponseObject,
                             statusCode: StatusCodes.Status400BadRequest);
                     }
+                    var layerIds = await ResolveServiceLayerIdsAsync(layerCatalog, request.ServiceId, cancellationToken).ConfigureAwait(false);
                     await invalidationService.InvalidateServiceCatalogAsync(
-                        request.ServiceId, null, cancellationToken).ConfigureAwait(false);
+                        request.ServiceId, layerIds, cancellationToken).ConfigureAwait(false);
                     break;
                 case "collection":
                     if (string.IsNullOrWhiteSpace(request.CollectionId))
@@ -160,5 +163,14 @@ internal static class CacheAdminEndpoints
                 CacheAdminJsonContext.Default.ApiResponseCacheInvalidationResponse,
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static async Task<int[]?> ResolveServiceLayerIdsAsync(
+        ILayerCatalog layerCatalog,
+        string serviceId,
+        CancellationToken cancellationToken)
+    {
+        var service = await layerCatalog.GetServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        return service?.Layers.Select(static layer => layer.Id).ToArray() ?? [];
     }
 }

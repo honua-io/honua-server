@@ -26,7 +26,7 @@ internal static class AlertDeliveryServiceCollectionExtensions
         services.AddHttpClient("alerts-teams");
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
-        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.WebSocket));
+        services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, EmailAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.Digest));
         services.AddHostedService<DigestFlushBackgroundService>();

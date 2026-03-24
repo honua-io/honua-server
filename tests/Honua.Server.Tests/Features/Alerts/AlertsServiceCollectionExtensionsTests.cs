@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Server.Features.Alerts;
+using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,8 +26,9 @@ public sealed class AlertsServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var sinks = provider.GetServices<IAlertDeliverySink>().ToDictionary(static sink => sink.ChannelType);
 
-        sinks[AlertChannelType.WebSocket].Should().BeOfType<UnsupportedAlertDeliverySink>();
+        sinks[AlertChannelType.WebSocket].Should().BeOfType<WebSocketAlertDeliverySink>();
         sinks[AlertChannelType.Digest].Should().BeOfType<UnsupportedAlertDeliverySink>();
-        provider.GetService<IAlertNotificationBroadcaster>().Should().BeNull();
+        provider.GetService<IAlertNotificationBroadcaster>().Should().NotBeNull()
+            .And.BeOfType<InMemoryAlertNotificationBroadcaster>();
     }
 }

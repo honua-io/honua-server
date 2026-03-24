@@ -514,6 +514,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,
+        Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
@@ -622,6 +625,7 @@ if (!app.Environment.IsEnvironment("Test"))
 
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();
+app.UseWebSockets();
 
 if (serveAdminUi)
 {
@@ -803,6 +807,11 @@ app.MapRateLimitEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
 app.MapMetadataResourceEndpoints();
+
+// Configure operational monitoring endpoints (#512)
+app.MapCacheOperationsEndpoints();
+app.MapStreamingOperationsEndpoints();
+app.MapGeocodingOperationsEndpoints();
 
 // Configure security endpoints (CSP violation reporting)
 app.MapCspViolationReportEndpoint();

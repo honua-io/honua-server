@@ -42,7 +42,26 @@ public sealed class OutputCacheInvalidationServiceTests
         await metadataCache.Received().RemoveByPatternAsync("relationship:1:*", Arg.Any<CancellationToken>());
         await metadataCache.Received().RemoveByPatternAsync("relationship:2:*", Arg.Any<CancellationToken>());
 
-        await responseCache.Received().RemoveByPatternAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:1:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:2:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:1:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:1:*", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateServiceCatalogAsync_WithoutLayerIds_RemovesServiceWidePattern()
+    {
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var metadataCache = Substitute.For<ICacheService>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, logger);
+
+        await sut.InvalidateServiceCatalogAsync("TestService", null, CancellationToken.None);
+
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

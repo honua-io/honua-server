@@ -383,6 +383,16 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // --- CacheOperationsEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/cache/health")]
+    public async Task GetCacheOperationsHealth_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/operations/cache/health");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     // --- IdentityAdminEndpoints ---
 
     [IntegrationTest]
@@ -419,6 +429,41 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/cache/invalidate")]
+    public async Task PostCacheOperationsInvalidate_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsJsonAsync("/api/v1/admin/operations/cache/invalidate", new { });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- StreamingOperationsEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
+    public async Task GetStreamingOperationsSubscribers_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/operations/streaming/subscribers");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/streaming/alerts")]
+    public async Task GetStreamingOperationsAlerts_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/operations/streaming/alerts");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/operations/streaming/subscribers/{subscriberId}")]
+    public async Task DeleteStreamingOperationsSubscriber_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.DeleteAsync(
+            $"/api/v1/admin/operations/streaming/subscribers/{Guid.NewGuid()}");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     // --- GeocodingAdminEndpoints ---
 
     [IntegrationTest]
@@ -426,6 +471,24 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     public async Task GetGeocodingProviders_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/geocoding/providers");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- GeocodingOperationsEndpoints ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/geocoding/providers")]
+    public async Task GetGeocodingOperationsProviders_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/operations/geocoding/providers");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/geocoding/configuration")]
+    public async Task GetGeocodingOperationsConfiguration_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/operations/geocoding/configuration");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

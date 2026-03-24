@@ -162,6 +162,15 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoserver/jobs"),
 
+        // v1 admin operational monitoring endpoints (#512)
+        new("GET", "/api/v1/admin/operations/cache/health"),
+        new("POST", "/api/v1/admin/operations/cache/invalidate"),
+        new("GET", "/api/v1/admin/operations/streaming/subscribers"),
+        new("GET", "/api/v1/admin/operations/streaming/alerts"),
+        new("DELETE", "/api/v1/admin/operations/streaming/subscribers/{subscriberId}"),
+        new("GET", "/api/v1/admin/operations/geocoding/providers"),
+        new("GET", "/api/v1/admin/operations/geocoding/configuration"),
+
         // v1 admin operations progress endpoints
         new("GET", "/api/v1/admin/operations/{operationId}"),
         new("POST", "/api/v1/admin/operations/{operationId}/cancel"),

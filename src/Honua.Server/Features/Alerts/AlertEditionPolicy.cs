@@ -59,7 +59,7 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         return channelType switch
         {
             AlertChannelType.Webhook => !string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookUrl),
-            AlertChannelType.WebSocket => false,
+            AlertChannelType.WebSocket => true,
             AlertChannelType.Email => _deliveryOptions.Dispatch.Email is { SmtpHost.Length: > 0, FromAddress.Length: > 0, DefaultRecipient.Length: > 0 },
             AlertChannelType.Digest => !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookUrl),
             AlertChannelType.AwsSns => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AwsSns?.TopicArn),

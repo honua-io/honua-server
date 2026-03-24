@@ -120,6 +120,11 @@ internal sealed partial class OutputCacheInvalidationService
         }
 
         var responsePatterns = new List<string>();
+        if (!string.IsNullOrWhiteSpace(normalizedServiceId))
+        {
+            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerServicePattern(normalizedServiceId));
+        }
+
         foreach (var layerId in layerIdList)
         {
             tags.Add($"layer:{layerId}");
@@ -134,6 +139,13 @@ internal sealed partial class OutputCacheInvalidationService
             {
                 responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, layerId));
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedServiceId) && layerIdList.Length == 0)
+        {
+            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerPattern());
+            responsePatterns.Add(ResponseCacheUtilities.BuildOgcPattern());
+            responsePatterns.Add(ResponseCacheUtilities.BuildODataPattern());
         }
 
         return Task.WhenAll(
