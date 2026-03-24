@@ -144,6 +144,10 @@ internal static class ServiceCollectionExtensions
         // Register topology validator for geometry operations
         services.AddScoped<IGeometryTopologyValidator, PostgresGeometryTopologyValidator>();
 
+        // Register anomaly detection
+        services.AddScoped<Core.Features.AnomalyDetection.Abstractions.IAnomalyAnalyzer,
+            Honua.Postgres.Features.AnomalyDetection.PostgresAnomalyAnalyzer>();
+
         // Register geometry operation service for buffer/simplify/project
         services.AddScoped<IGeometryOperationService, PostgresGeometryOperationService>();
 
@@ -256,6 +260,14 @@ internal static class ServiceCollectionExtensions
 
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
+
+        // Register import schema suggestion service
+        services.AddSingleton<IImportSchemaSuggestionService,
+            Core.Features.Import.Services.ImportSchemaSuggestionService>();
+
+        // Register metadata document generator
+        services.AddSingleton<Core.Features.AutoDocs.Abstractions.IMetadataDocumentGenerator,
+            Core.Features.AutoDocs.Services.MetadataDocumentGenerator>();
 
         // Register GeoServer REST client for GeoServer migration imports
         services.AddHttpClient<GeoServerRestClient>()
