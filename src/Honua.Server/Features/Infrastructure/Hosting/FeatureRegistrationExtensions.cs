@@ -11,6 +11,7 @@ using Honua.Server.Features.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.MapServer;
+using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.OData;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcMaps;
@@ -45,6 +46,7 @@ internal static class FeatureRegistrationExtensions
         services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration);
         services.AddAlerts(configuration);
+        services.AddNlQuery(configuration);
 
         return services;
     }
