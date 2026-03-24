@@ -3,7 +3,6 @@
 
 using System.Net.WebSockets;
 using System.Text.Json;
-using Honua.Server.Features.Alerts;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;

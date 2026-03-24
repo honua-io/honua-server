@@ -9,43 +9,6 @@ using Honua.Server.Features.Infrastructure.Abstractions;
 namespace Honua.Server.Features.Alerts;
 
 /// <summary>
-/// Options for creating a subscription with metadata.
-/// </summary>
-internal sealed record SubscriptionOptions(string? ClientLabel = null);
-
-/// <summary>
-/// Handle for a live alert notification subscription.
-/// </summary>
-internal interface IAlertNotificationSubscription : IDisposable
-{
-    Guid SubscriberId { get; }
-
-    CancellationToken DisconnectToken { get; }
-}
-
-/// <summary>
-/// In-process broadcaster for pushing alert events to connected subscribers.
-/// WebSocket endpoint handlers subscribe to this broadcaster to receive real-time alerts.
-/// </summary>
-internal interface IAlertNotificationBroadcaster
-{
-    /// <summary>
-    /// Broadcasts an alert event to all connected subscribers.
-    /// </summary>
-    Task BroadcastAsync(AlertEventEnvelope alertEvent, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Registers a subscriber callback. Dispose the returned handle to unsubscribe.
-    /// </summary>
-    IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler);
-
-    /// <summary>
-    /// Registers a subscriber callback with metadata. Dispose the returned handle to unsubscribe.
-    /// </summary>
-    IAlertNotificationSubscription Subscribe(Func<AlertEventEnvelope, CancellationToken, Task> handler, SubscriptionOptions? options);
-}
-
-/// <summary>
 /// Default in-memory implementation of the alert notification broadcaster.
 /// Maintains a concurrent set of subscriber callbacks and fans out events.
 /// </summary>
