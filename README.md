@@ -5,7 +5,7 @@
 [![Container Security](https://github.com/honua-io/honua-server/actions/workflows/container-security.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/container-security.yml)
 [![License](https://img.shields.io/badge/License-Elastic_License_2.0-blue.svg)](https://github.com/honua-io/honua-server/blob/trunk/LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
-[![PostGIS](https://img.shields.io/badge/PostGIS-3.6-brightgreen.svg)](https://postgis.net/)
+[![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
 **Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service), OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS.
@@ -141,7 +141,6 @@ src/
 
 infrastructure/
   docker-compose/     Compose reference configs
-  helm/               Helm chart with PostGIS subchart
 ```
 
 ## Control Plane Direction
@@ -157,15 +156,22 @@ Honua's admin UI and admin API are intended to become the foundation of a Honua-
 
 Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
 
+| I am a... | Start here |
+|---|---|
+| **Server Operator** | [Operator Guide](docs/operator/README.md) — deploy, configure, monitor |
+| **GIS Professional** | [GIS User Guide](docs/gis/README.md) — connect desktop apps, consume services |
+| **Developer** | [Developer Guide](docs/developer/README.md) — APIs, SDKs, integrations |
+| **Contributor** | [Contributor Guide](docs/contributor/README.md) — architecture, testing, PRs |
+
 | I want to... | Go to |
 |---|---|
-| Deploy to production | [Infrastructure & Deployment](https://honua.gitbook.io/honuaio/devops-guide/infrastructure) |
-| Call the API | [Protocols Overview](https://honua.gitbook.io/honuaio/) / [API Explorer](http://localhost:8080/docs) *(running server)* |
-| Follow a tutorial | [QGIS Getting Started](docs/user/tutorials/qgis-getting-started.md) / [GeoServer Migration](docs/user/tutorials/geoserver-migration-guide.md) |
-| Check MVP compatibility limits | [MVP Compatibility Contract](docs/user/MVP_COMPATIBILITY_CONTRACT.md) |
-| Evaluate performance | [Benchmark Results](docs/user/BENCHMARK_RESULTS.md) |
+| Deploy to production | [Infrastructure](docs/operator/infrastructure.md) |
+| Connect QGIS | [QGIS Tutorial](docs/gis/tutorials/qgis-getting-started.md) |
+| See protocol coverage | [Protocols Overview](docs/gis/STANDARDS_APIS.md) |
+| Use the admin API | [Control Plane API](docs/operator/CONTROL_PLANE_API.md) |
+| Check compatibility | [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md) |
+| Evaluate performance | [Benchmark Results](docs/operator/BENCHMARK_RESULTS.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
-| Understand CI gates | [CI Gate Model](docs/ci/gate-model.md) |
 
 ## License
 

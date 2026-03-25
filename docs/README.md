@@ -2,6 +2,8 @@
 
 Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
 
+**New here?** Start with the [Platform Overview](PLATFORM.md) for architecture, protocols, and capabilities.
+
 ## By Role
 
 | I am a... | Start here |
