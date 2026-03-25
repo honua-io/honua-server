@@ -2,71 +2,31 @@
 
 Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
 
-## Start here
+## By Role
+
+| I am a... | Start here |
+|---|---|
+| **Server Operator** | [Operator Guide](operator/README.md) — deploy, configure, monitor, manage |
+| **GIS Professional** | [GIS User Guide](gis/README.md) — connect desktop apps, consume services |
+| **Developer** | [Developer Guide](developer/README.md) — APIs, SDKs, integrations |
+| **Contributor** | [Contributor Guide](contributor/README.md) — architecture, testing, PRs |
+
+## Quick Links
 
 | I want to... | Go to |
 |---|---|
-| **Consume geospatial data** | [Protocols Overview](user/STANDARDS_APIS.md) / [API Examples](user/API_EXAMPLES.md) / [API Explorer](http://localhost:8080/docs) *(running server)* |
-| **Follow a tutorial** | [QGIS Getting Started](user/tutorials/qgis-getting-started.md) / [GeoServer Migration](user/tutorials/geoserver-migration-guide.md) |
-| **Manage the server** | [Admin API](user/CONTROL_PLANE_API.md) / [Admin UI](user/admin-ui.md) |
-| **Check server/SDK compatibility** | [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md) / [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) |
-| **Standardize SDK release docs** | [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) |
-| **Integrate AI agents** | [MCP Server](user/MCP_SERVER.md) |
-| **Deploy to production** | [Infrastructure & Deployment](devops/infrastructure.md) |
-| **Review enterprise procurement readiness** | [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md) |
-| **Monitor and troubleshoot** | [Monitoring](devops/monitoring.md) / [Troubleshooting](devops/troubleshooting.md) |
-| **Evaluate protocol coverage** | [Coverage Matrices](#coverage-matrices) |
-| **Check MVP launch limits** | [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) |
-| **Contribute** | [Getting Started](contributor/development/getting-started.md) |
+| Deploy the server | [Infrastructure](operator/infrastructure.md) / [Docker Compose](operator/docker-compose.md) |
+| Connect QGIS | [QGIS Tutorial](gis/tutorials/qgis-getting-started.md) |
+| Connect ArcGIS Pro | [Client Templates](gis/CLIENT_TEMPLATE_RUNBOOK.md) |
+| Manage services via API | [Control Plane API](operator/CONTROL_PLANE_API.md) |
+| See API examples | [API Examples](developer/API_EXAMPLES.md) |
+| Check protocol support | [Protocols Overview](gis/STANDARDS_APIS.md) |
+| Integrate AI agents | [MCP Server](developer/MCP_SERVER.md) |
+| Troubleshoot issues | [Troubleshooting](operator/troubleshooting.md) |
+| Review OpenAPI specs | [API Specs](developer/api-specs/) |
 
-## User Documentation
+## API Specifications
 
-- [User Journeys](user/USER_JOURNEYS.md) — role-based guides
-- [Protocols Overview](user/STANDARDS_APIS.md) — FeatureServer, MapServer, OGC, OData, MVT
-- [API Examples](user/API_EXAMPLES.md) — request/response examples
-- [Integration Patterns](user/INTEGRATION_PATTERNS.md) — common integration approaches
-- [Admin API](user/CONTROL_PLANE_API.md) — server management endpoints
-- [FileGDB Import Workflow](user/FILEGDB_IMPORT_WORKFLOW.md) — Esri File Geodatabase packaging, preview, upload, and limitations
-- [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md) — supported control-plane server/SDK combinations and migration baseline
-- [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md) — required migration/changelog structure for SDK repos
-- [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md) — SDK and upgrade workflow
-- [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md) — deprecation and compatibility guarantees
-- [MCP Server](user/MCP_SERVER.md) — AI/agent integration via Model Context Protocol
-- [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md) — buyer-facing security, support, licensing, and architecture package
-- [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md) — launch-ready protocol and limitation summary
-- [Cross-Client Certification Matrix](user/CROSS_CLIENT_CERTIFICATION_MATRIX.md) — shared certification vocabulary and common-core test cases for client interoperability
-- [Cross-Client Certification Evidence](user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — standardized `.cert.json` evidence format for certification runs
-- [Admin UI](user/admin-ui.md) — browser interface guide
-- [Data Modeling Guide](user/DATA_MODELING_GUIDE.md) — spatial data modeling
-- [QGIS Getting Started](user/tutorials/qgis-getting-started.md) — zero-to-querying in 5 minutes with QGIS
-- [GeoServer Migration Guide](user/tutorials/geoserver-migration-guide.md) — endpoint mapping, automated import, config differences
-
-### Coverage Matrices
-
-- [FeatureServer Coverage](user/feature-server-matrix.md)
-- [MapServer Coverage](user/map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0)
-- [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
-- [OGC API Tiles Coverage](user/specifications/ogc-api-tiles-coverage.md)
-- [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
-- [Geometry Service Coverage](user/specifications/geometry-service-coverage.md)
-
-## DevOps Documentation
-
-- [Infrastructure & Deployment](devops/infrastructure.md) — Docker Compose, Helm, and cloud deployment guidance
-- [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md) — patterns by team size
-- [Security](devops/security.md) — authentication, authorization, rate limiting, CSP
-- [Monitoring & Alerting](devops/monitoring.md) — endpoints, metrics, tracing, cloud alerting
-- [Operations](devops/operations.md) — backups, migrations, pools, query tuning, caching
-- [Troubleshooting](devops/troubleshooting.md) — database, performance, auth, import, spatial
-- [Runbooks](devops/runbooks/README.md) — incident response playbooks
-
-## Contributor Documentation
-
-- [Getting Started](contributor/development/getting-started.md) — development setup
-- [Contributing](contributor/development/contributing.md) — code style, architecture rules, PR process
-- [Architecture](contributor/ARCHITECTURE.md) — system design
-- [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md) — JS-first migration architecture and phased SDK strategy
-- [ADRs](contributor/adr/README.md) — architectural decisions
-- [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md) — triage, scope gate, and done/close hygiene cadence
-- [MCP Certification](contributor/mcp-certification.md) — cross-repo MCP certification testing, seed data, and CI jobs
-- [Release Checklist](contributor/RELEASE_CHECKLIST.md) — required compatibility/certification updates per release
+- [Admin API](developer/api-specs/admin-api.json) — Server management (curated; use `/api/v1/admin/config` for full discovery)
+- [OGC API Features](developer/api-specs/ogc-api-features.json) — Feature query and CRUD
+- [OGC API Tiles](developer/api-specs/ogc-api-tiles.json) — Vector and raster tiles

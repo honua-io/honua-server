@@ -1,123 +1,58 @@
 # Table of Contents
 
-## Getting Started
+## Operator Guide
 
-* [Documentation Overview](README.md)
-* [User Journeys](user/USER_JOURNEYS.md)
-* [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md)
-* [SDK Migration Guide Baseline](user/SDK_MIGRATION_GUIDE_BASELINE.md)
-* [Enterprise Procurement Readiness](user/ENTERPRISE_PROCUREMENT_READINESS.md)
-* [Enterprise Security Questionnaire Starter](user/ENTERPRISE_SECURITY_QUESTIONNAIRE_STARTER.md)
-* [Enterprise Procurement Checklist](user/ENTERPRISE_PROCUREMENT_CHECKLIST.md)
-* [MVP Sales Playbook + Launch GTM](user/MVP_LAUNCH_GTM_PLAYBOOK.md)
-* [MVP Compatibility Contract](user/MVP_COMPATIBILITY_CONTRACT.md)
-* [Cross-Client Certification Matrix](user/CROSS_CLIENT_CERTIFICATION_MATRIX.md)
-* [Cross-Client Certification Evidence](user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
-* [Data Modeling Guide](user/DATA_MODELING_GUIDE.md)
-* [Benchmark Results](user/BENCHMARK_RESULTS.md)
-* [Benchmark Reproduction](user/BENCHMARK_REPRODUCTION.md)
-* [Benchmark Methodology](user/BENCHMARK_METHODOLOGY.md)
+- [Overview](operator/README.md)
+- [Infrastructure & Deployment](operator/infrastructure.md)
+- [Docker Compose](operator/docker-compose.md)
+- [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md)
+- [Security](operator/security.md)
+- [Monitoring & Observability](operator/monitoring.md)
+- [Operations](operator/operations.md)
+- [Control Plane API](operator/CONTROL_PLANE_API.md)
+- [Webhooks](operator/feature-change-webhooks.md)
+- [Tile Operations](operator/tile-operations-runbook.md)
+- [Troubleshooting](operator/troubleshooting.md)
+- [Benchmarks](operator/BENCHMARK_RESULTS.md)
+- [Upgrade & Rollback](operator/runbooks/UPGRADE_AND_ROLLBACK.md)
 
-## Tutorials
+## GIS User Guide
 
-* [QGIS Getting Started](user/tutorials/qgis-getting-started.md)
-* [GeoServer Migration Guide](user/tutorials/geoserver-migration-guide.md)
+- [Overview](gis/README.md)
+- [Protocols Overview](gis/STANDARDS_APIS.md)
+- [Data Modeling Guide](gis/DATA_MODELING_GUIDE.md)
+- [FileGDB Import](gis/FILEGDB_IMPORT_WORKFLOW.md)
+- [Known Limitations](gis/MVP_COMPATIBILITY_CONTRACT.md)
+- Tutorials
+  - [QGIS Getting Started](gis/tutorials/qgis-getting-started.md)
+  - [GeoServer Migration](gis/tutorials/geoserver-migration-guide.md)
+- Protocol Coverage
+  - [FeatureServer](gis/feature-server-matrix.md)
+  - [MapServer / WMS / WMTS](gis/map-server-matrix.md)
+  - [OGC API Features](gis/specifications/ogc-api-features-coverage.md)
+  - [OGC API Tiles](gis/specifications/ogc-api-tiles-coverage.md)
+  - [OData v4](gis/specifications/odata-v4-coverage.md)
+  - [Geometry Service](gis/specifications/geometry-service-coverage.md)
+- Client Templates
+  - [Setup Runbook](gis/CLIENT_TEMPLATE_RUNBOOK.md)
+  - [Version Matrix](gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)
 
-## Geospatial Data APIs
+## Developer Guide
 
-* [Protocols Overview](user/STANDARDS_APIS.md)
-* [API Examples](user/API_EXAMPLES.md)
-* [Integration Patterns](user/INTEGRATION_PATTERNS.md)
-* [Interactive API Specs](api-specs/README.md)
-* [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)*
-
-### Coverage Matrices
-
-* [FeatureServer Coverage](user/feature-server-matrix.md)
-* [MapServer Coverage](user/map-server-matrix.md)
-* [Geometry Service Coverage](user/specifications/geometry-service-coverage.md)
-* [OGC API Features Coverage](user/specifications/ogc-api-features-coverage.md)
-  * [Part 1 — Core](user/specifications/ogc-api-features-part1-core.md)
-  * [Part 2 — CRS](user/specifications/ogc-api-features-part2-crs.md)
-  * [Part 3 — Filtering](user/specifications/ogc-api-features-part3-filtering.md)
-* [OGC API Tiles Coverage](user/specifications/ogc-api-tiles-coverage.md)
-* [OData v4 Coverage](user/specifications/odata-v4-coverage.md)
-
-## Server Management
-
-* [Admin API Reference](user/CONTROL_PLANE_API.md)
-* [FileGDB Import Workflow](user/FILEGDB_IMPORT_WORKFLOW.md)
-* [Admin UI](user/admin-ui.md)
-* [MCP Server](user/MCP_SERVER.md)
-* [Server + SDK Compatibility Matrix](user/SDK_COMPATIBILITY_MATRIX.md)
-* [Control Plane Migration Guide](user/CONTROL_PLANE_MIGRATION_GUIDE.md)
-* [Control Plane Versioning Policy](user/CONTROL_PLANE_VERSIONING_POLICY.md)
-
-## DevOps Guide
-
-* [DevOps Overview](devops/README.md)
-* [Infrastructure & Deployment](devops/infrastructure.md)
-* [Docker Compose Sample](devops/docker-compose.md)
-* [Deployment Scenarios](devops/DEPLOYMENT_SCENARIOS.md)
-* [Security](devops/security.md)
-* [Monitoring & Alerting](devops/monitoring.md)
-* [Operations](devops/operations.md)
-* [Troubleshooting](devops/troubleshooting.md)
-* [Runbooks](devops/runbooks/README.md)
+- [Overview](developer/README.md)
+- [API Examples](developer/API_EXAMPLES.md)
+- [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
+- [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
+- [MCP Server](developer/MCP_SERVER.md)
+- [Versioning Policy](developer/CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Migration Guide](developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 
 ## Contributor Guide
 
-* [Contributor Overview](contributor/README.md)
-* [Development Setup](contributor/development/getting-started.md)
-* [Contributing Guide](contributor/development/contributing.md)
-* [K3d + Helm Development](contributor/development/k3d-helm.md)
-
-### Architecture
-
-* [Architecture Overview](contributor/ARCHITECTURE.md)
-* [Architecture Diagrams](contributor/ARCHITECTURE_DIAGRAMS.md)
-* [Esri Migration Platform Plan](contributor/ESRI_MIGRATION_PLATFORM_PLAN.md)
-* [Pilot Evidence Kit](contributor/migration/README.md)
-* [Architecture Review Criteria](contributor/architecture-criteria.md)
-* [ADRs](contributor/adr/README.md)
-* [Honua Manifesto](contributor/HONUA_MANIFESTO.md)
-
-### Design Patterns
-
-* [Code Model Optimization](contributor/CODE_MODEL_OPTIMIZATION.md)
-* [GIS Crosscutting Concerns](contributor/GIS_CROSSCUTTING_CONCERNS.md)
-* [Adaptive Sampling](contributor/ADAPTIVE_SAMPLING.md)
-
-### Testing
-
-* [TestKit (C#)](contributor/testkit.md)
-* [Python Integration Tests](contributor/testing-python.md)
-* [JavaScript Integration Tests](contributor/testing-javascript.md)
-* [Shared Seed Data](contributor/test-seed-data.md)
-* [Benchmarks](contributor/benchmarks.md)
-* [Benchmark Publication Process](contributor/BENCHMARK_PUBLICATION_PROCESS.md)
-* [OData Test Parity](contributor/ODATA_TEST_PARITY.md)
-* [Protocol Parity Audit (#305-#310)](contributor/PROTOCOL_PARITY_305_310_AUDIT.md)
-* [CITE OGC Features](contributor/cite-conformance-testing.md)
-* [CITE OGC Tiles](contributor/cite-tiles-conformance-testing.md)
-* [CITE OGC Maps](contributor/ogc-maps-conformance-testing.md)
-* [CITE WMS 1.3](contributor/cite-wms-conformance-testing.md)
-* [CITE WMTS 1.0](contributor/cite-wmts-conformance-testing.md)
-* [MCP Certification](contributor/mcp-certification.md)
-
-### CI/CD
-
-* [CI Gate Model](ci/gate-model.md)
-* [CI Workflow Inventory](ci/workflow-inventory.md)
-* [CI Config Conventions](ci/config-conventions.md)
-* [CI Monitoring](contributor/CI_MONITORING.md)
-* [CI Workflows (legacy)](contributor/ci-workflows.md)
-* [CI Quality Gates](contributor/CI_QUALITY_GATES.md)
-* [Release Checklist](contributor/RELEASE_CHECKLIST.md)
-* [Production Audit Playbook](contributor/PRODUCTION_AUDIT_PLAYBOOK.md)
-* [CodeCov Setup](contributor/CODECOV_SETUP.md)
-* [LLM Architecture Review](contributor/development/llm-review-setup.md)
-
-### Project Operations
-
-* [Weekly Backlog Review](contributor/BACKLOG_REVIEW_CADENCE.md)
+- [Overview](contributor/README.md)
+- [Getting Started](contributor/development/getting-started.md)
+- [Contributing](contributor/development/contributing.md)
+- [Architecture](contributor/ARCHITECTURE.md)
+- [ADRs](contributor/adr/README.md)
+- [TestKit](contributor/testkit.md)
+- [Release Checklist](contributor/RELEASE_CHECKLIST.md)
