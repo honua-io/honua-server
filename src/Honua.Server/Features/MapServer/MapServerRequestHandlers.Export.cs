@@ -29,6 +29,8 @@ namespace Honua.Server.Features.MapServer;
 
 internal static partial class MapServerEndpoints
 {
+    private const float PointGeneralizationPixels = 0.8f;
+    private const int PointGeneralizationThreshold = 1024;
     private const int MaxImageDimension = 4096;
     private const int DefaultImageWidth = 400;
     private const int DefaultImageHeight = 400;
@@ -552,6 +554,8 @@ internal static partial class MapServerEndpoints
 
         var rented = ArrayPool<SKPoint>.Shared.Rent(features.Count);
         var count = 0;
+        var generalize = features.Count >= PointGeneralizationThreshold;
+        var seenCells = generalize ? new HashSet<long>() : null;
 
         try
         {
@@ -559,6 +563,11 @@ internal static partial class MapServerEndpoints
             {
                 if (WkbToSkiaConverter.TryConvertPoint(feature.Geometry, transform, out var point))
                 {
+                    if (seenCells is not null && !seenCells.Add(GetPointCellKey(point)))
+                    {
+                        continue;
+                    }
+
                     rented[count++] = point;
                 }
             }
@@ -582,6 +591,13 @@ internal static partial class MapServerEndpoints
         {
             ArrayPool<SKPoint>.Shared.Return(rented);
         }
+    }
+
+    private static long GetPointCellKey(SKPoint point)
+    {
+        var cellX = (int)MathF.Floor(point.X / PointGeneralizationPixels);
+        var cellY = (int)MathF.Floor(point.Y / PointGeneralizationPixels);
+        return ((long)cellX << 32) | (uint)cellY;
     }
 
     private static void RenderStyledFeature(
