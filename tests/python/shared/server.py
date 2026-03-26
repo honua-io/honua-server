@@ -94,11 +94,12 @@ class HonuaServer:
         connection_string = self._normalize_connection_string(self.connection_string)
         env.update({
             "ASPNETCORE_URLS": f"http://localhost:{self.port}",
-            "ASPNETCORE_ENVIRONMENT": "Development",
+            "ASPNETCORE_ENVIRONMENT": "Test",
             "ConnectionStrings__DefaultConnection": connection_string,
             "ConnectionStrings__honua": connection_string,
-            # Use an explicit admin API key so hosted test runs match CI bootstrap rules.
-            "HONUA_ADMIN_PASSWORD": "test-admin-password",
+            # Keep the Python/GDAL harness anonymous so protocol clients can exercise the full surface.
+            "HONUA_DEV_AUTH": "true",
+            "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",

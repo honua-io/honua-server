@@ -18,6 +18,7 @@ export const config = {
   serviceId: process.env.HONUA_SERVICE_ID || 'test_service_gw0',
   layerId: parseInt(process.env.HONUA_LAYER_ID || '1000', 10),
   timeout: parseInt(process.env.HONUA_TEST_TIMEOUT || '30000', 10),
+  apiKey: process.env.HONUA_API_KEY,
 };
 
 // =============================================================================
@@ -138,17 +139,31 @@ export class FeatureServerClient {
   private readonly serviceId: string;
   private readonly layerId: number;
   private readonly timeout: number;
+  private readonly apiKey?: string;
 
   constructor(options?: {
     baseUrl?: string;
     serviceId?: string;
     layerId?: number;
     timeout?: number;
+    apiKey?: string;
   }) {
     this.baseUrl = options?.baseUrl ?? config.baseUrl;
     this.serviceId = options?.serviceId ?? config.serviceId;
     this.layerId = options?.layerId ?? config.layerId;
     this.timeout = options?.timeout ?? config.timeout;
+    this.apiKey = options?.apiKey ?? config.apiKey;
+  }
+
+  private createHeaders(headers: Record<string, string>): Record<string, string> {
+    if (!this.apiKey) {
+      return headers;
+    }
+
+    return {
+      ...headers,
+      'X-API-Key': this.apiKey,
+    };
   }
 
   /**
@@ -185,9 +200,9 @@ export class FeatureServerClient {
     try {
       const response = await fetch(fullUrl, {
         method: 'GET',
-        headers: {
+        headers: this.createHeaders({
           Accept: 'application/json',
-        },
+        }),
         signal: controller.signal,
       });
 
@@ -217,10 +232,10 @@ export class FeatureServerClient {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
+        headers: this.createHeaders({
           'Content-Type': 'application/x-www-form-urlencoded',
           Accept: 'application/json',
-        },
+        }),
         body: body.toString(),
         signal: controller.signal,
       });

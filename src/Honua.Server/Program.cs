@@ -62,6 +62,12 @@ var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHE
 var forwardedHeadersEnabled = ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 ResolveEnvironmentSecretReferences(builder.Configuration);
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
+var registerInfrastructureInTestEnvironment =
+    builder.Configuration.GetValue<bool>("HONUA_REGISTER_TEST_INFRASTRUCTURE") ||
+    string.Equals(
+        Environment.GetEnvironmentVariable("HONUA_REGISTER_TEST_INFRASTRUCTURE"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
@@ -181,8 +187,9 @@ builder.Host.UseSerilog((context, services, config) =>
 // COMPOSITION ROOT: Register Infrastructure implementations for Core abstractions
 // This is the only place where Server directly references Infrastructure
 // Rest of Server code uses only Core abstractions (IFeatureReader/Writer, ITileProvider, IRelationshipStore, IDatabaseHealthChecker)
-// Skip infrastructure registration in test environment - WebAppFixture handles it
-if (!isTestEnvironment)
+// Skip infrastructure registration in test environment by default - WebAppFixture handles it.
+// Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true.
+if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 {
     RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
