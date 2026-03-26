@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Microsoft.AspNetCore.OutputCaching;
@@ -16,28 +17,32 @@ internal sealed partial class OutputCacheInvalidationService
     private readonly IOutputCacheStore? _cacheStore;
     private readonly IResponseCache? _responseCache;
     private readonly ICacheService? _metadataCache;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutputCacheInvalidationService> _logger;
 
     public OutputCacheInvalidationService(
         IOutputCacheStore? cacheStore,
         IResponseCache? responseCache,
         ICacheService? metadataCache,
+        IServiceScopeFactory scopeFactory,
         ILogger<OutputCacheInvalidationService> logger)
     {
         _cacheStore = cacheStore;
         _responseCache = responseCache;
         _metadataCache = metadataCache;
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger;
     }
 
-    public Task InvalidateLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
+    public async Task InvalidateLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
     {
+        var normalizedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
         var tags = new List<string>();
         var responsePatterns = new List<string>();
 
-        if (!string.IsNullOrWhiteSpace(serviceId))
+        foreach (var normalizedServiceId in normalizedServiceIds)
         {
-            tags.Add($"service:{serviceId.Trim().ToLowerInvariant()}");
+            tags.Add($"service:{normalizedServiceId}");
         }
 
         if (layerId.HasValue)
@@ -52,18 +57,21 @@ internal sealed partial class OutputCacheInvalidationService
                 layerId.Value.ToString(CultureInfo.InvariantCulture)));
         }
 
-        if (!string.IsNullOrWhiteSpace(serviceId) && layerId.HasValue)
+        if (layerId.HasValue)
         {
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(serviceId, layerId.Value));
+            foreach (var normalizedServiceId in normalizedServiceIds)
+            {
+                responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, layerId.Value));
+            }
         }
 
         tags.Add("ogc-metadata");
         tags.Add("ogc-tiles");
         tags.Add("mvt-tiles");
 
-        return Task.WhenAll(
+        await Task.WhenAll(
             EvictTagsAsync(tags, cancellationToken),
-            EvictResponseCacheAsync(responsePatterns, cancellationToken));
+            EvictResponseCacheAsync(responsePatterns, cancellationToken)).ConfigureAwait(false);
     }
 
     public Task InvalidateCollectionAsync(string collectionId, CancellationToken cancellationToken)
@@ -239,6 +247,18 @@ internal sealed partial class OutputCacheInvalidationService
             }
         }
 
+        foreach (var pattern in GetScopedMetadataPatterns(keys, layerIds))
+        {
+            try
+            {
+                await _metadataCache.RemoveByPatternAsync(pattern, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogEvictMetadataPatternFailed(_logger, pattern, ex);
+            }
+        }
+
         foreach (var layerId in layerIds)
         {
             var pattern = $"relationship:{layerId}:*";
@@ -252,6 +272,62 @@ internal sealed partial class OutputCacheInvalidationService
             }
         }
     }
+
+    private static IEnumerable<string> GetScopedMetadataPatterns(
+        IEnumerable<string> keys,
+        IReadOnlyCollection<int> layerIds)
+    {
+        foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            yield return $"scope:*:{key}";
+        }
+
+        foreach (var layerId in layerIds.Distinct())
+        {
+            yield return $"scope:*:relationship:{layerId}:*";
+        }
+    }
+
+    private async Task<string[]> ResolveLayerServiceIdsAsync(
+        string? serviceId,
+        int? layerId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(serviceId))
+        {
+            return [NormalizeServiceId(serviceId)];
+        }
+
+        if (!layerId.HasValue)
+        {
+            return [];
+        }
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
+            if (layerCatalog == null)
+            {
+                return [];
+            }
+
+            var services = await layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
+            return services
+                .Where(service => service.Layers.Any(candidate => candidate.Id == layerId.Value))
+                .Select(service => NormalizeServiceId(service.Name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogResolveLayerServicesFailed(_logger, layerId.Value, ex);
+            return [];
+        }
+    }
+
+    private static string NormalizeServiceId(string serviceId)
+        => serviceId.Trim().ToLowerInvariant();
 
     [LoggerMessage(EventId = 4510, Level = LogLevel.Warning,
         Message = "Failed to evict output cache tag {Tag}")]
@@ -268,4 +344,8 @@ internal sealed partial class OutputCacheInvalidationService
     [LoggerMessage(EventId = 4513, Level = LogLevel.Warning,
         Message = "Failed to evict metadata cache pattern {Pattern}")]
     private static partial void LogEvictMetadataPatternFailed(ILogger logger, string pattern, Exception exception);
+
+    [LoggerMessage(EventId = 4515, Level = LogLevel.Warning,
+        Message = "Failed to resolve owning services for layer {LayerId} during cache invalidation")]
+    private static partial void LogResolveLayerServicesFailed(ILogger logger, int layerId, Exception exception);
 }

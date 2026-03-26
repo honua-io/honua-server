@@ -56,6 +56,29 @@ internal static class StyleTranslator
     }
 
     /// <summary>
+    /// Collects attribute names referenced by style filters, paint expressions, and layout expressions.
+    /// </summary>
+    public static string[] CollectReferencedFields(MapLibreStyleLayer[] styleLayers)
+    {
+        if (styleLayers.Length == 0)
+        {
+            return [];
+        }
+
+        var fields = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var styleLayer in styleLayers)
+        {
+            CollectReferencedFields(styleLayer.Filter, fields, seen);
+            CollectReferencedFields(styleLayer.Paint, fields, seen);
+            CollectReferencedFields(styleLayer.Layout, fields, seen);
+        }
+
+        return fields.Count == 0 ? [] : [.. fields];
+    }
+
+    /// <summary>
     /// Resolves a fill style from a MapLibre layer for a specific feature.
     /// </summary>
     public static ResolvedFillStyle ResolveFillStyle(
@@ -253,6 +276,57 @@ internal static class StyleTranslator
             MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties),
             _ => defaultColor
         };
+    }
+
+    private static void CollectReferencedFields(
+        Dictionary<string, MapLibreExpression>? expressions,
+        List<string> fields,
+        HashSet<string> seen)
+    {
+        if (expressions == null || expressions.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var expression in expressions.Values)
+        {
+            CollectReferencedFields(expression, fields, seen);
+        }
+    }
+
+    private static void CollectReferencedFields(
+        MapLibreExpression? expression,
+        List<string> fields,
+        HashSet<string> seen)
+    {
+        if (!expression.HasValue || expression.Value.Kind != MapLibreExpressionKind.Array || expression.Value.Items is not { Length: > 0 } items)
+        {
+            return;
+        }
+
+        if (TryGetString(items[0], out var op) && op != null)
+        {
+            if ((string.Equals(op, "get", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(op, "has", StringComparison.OrdinalIgnoreCase)) &&
+                items.Length > 1 &&
+                TryGetString(items[1], out var fieldName) &&
+                !string.IsNullOrWhiteSpace(fieldName) &&
+                seen.Add(fieldName))
+            {
+                fields.Add(fieldName);
+            }
+        }
+
+        foreach (var item in items)
+        {
+            CollectReferencedFields(item, fields, seen);
+        }
+    }
+
+    private static bool TryGetString(MapLibreExpression expression, out string? value)
+    {
+        value = expression.Kind == MapLibreExpressionKind.String ? expression.StringValue : null;
+        return value != null;
     }
 
     private static SKColor? ResolveOptionalColor(

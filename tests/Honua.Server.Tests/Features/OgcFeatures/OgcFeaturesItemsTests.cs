@@ -66,6 +66,54 @@ public class OgcFeaturesItemsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_ReturnsOnlyPublishedProperties()
+    {
+        var queryablesResponse = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/queryables");
+        queryablesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var queryablesJson = JsonDocument.Parse(await queryablesResponse.Content.ReadAsStringAsync());
+        var publishedProperties = queryablesJson.RootElement
+            .GetProperty("properties")
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?limit=1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var featureProperties = json.RootElement
+            .GetProperty("features")[0]
+            .GetProperty("properties")
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .ToArray();
+
+        featureProperties.Should().OnlyContain(property => publishedProperties.Contains(property));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_DoesNotDuplicateTopLevelIdInProperties()
+    {
+        var featureId = await _fixture.InsertFeatureAsync(TestLayerId, "No Duplicate ID");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?ids={featureId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var feature = json.RootElement.GetProperty("features").EnumerateArray().Single();
+        var properties = feature.GetProperty("properties");
+
+        feature.GetProperty("id").GetInt64().Should().Be(featureId);
+        properties.TryGetProperty("id", out _).Should().BeFalse();
+        properties.TryGetProperty("objectid", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithOffset_ReturnsOffsetFeatures()
     {
         // Act
