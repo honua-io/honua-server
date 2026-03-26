@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Http.Json;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Server.Features.Ogc.Common;
 using Honua.TestKit;
@@ -178,6 +179,43 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         firstCollection.Id.Should().NotBeNullOrEmpty();
         firstCollection.Links.Should().NotBeEmpty();
         firstCollection.ItemType.Should().Be("feature");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/collections")]
+    public async Task GetCollections_UsesServiceAccessPolicyWhenLayerPolicyIsMissing()
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(schema))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE honua.layers
+                SET metadata = NULL
+                WHERE layer_id = @layerId;
+
+                UPDATE honua.services
+                SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+                WHERE service_name IN (
+                    SELECT service_name
+                    FROM honua.service_layers
+                    WHERE layer_id = @layerId
+                );
+                """;
+            command.Parameters.AddWithValue("@layerId", WebAppFixture.TestLayerId);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var response = await _fixture.Client.GetAsync("/ogc/features/collections");
+
+        response.Be200Ok();
+
+        var collections = await response.Content.ReadFromJsonAsync<Collections>();
+        collections.Should().NotBeNull();
+        collections!.CollectionList.Select(collection => collection.Id)
+            .Should()
+            .Contain(WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture));
     }
 
     [IntegrationTest]
