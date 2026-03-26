@@ -222,6 +222,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 WHERE c.table_schema = @schema
                   AND c.table_name = @tableName
                   AND c.data_type NOT IN ('geometry', 'geography')
+                  AND c.udt_name NOT IN ('geometry', 'geography')
                 ORDER BY c.ordinal_position
                 """;
 
