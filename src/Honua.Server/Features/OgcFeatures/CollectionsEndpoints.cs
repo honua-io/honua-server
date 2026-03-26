@@ -116,22 +116,25 @@ internal static class CollectionsEndpoints
             var services = await layerCatalog.ListServicesAsync(cancellationToken);
             var ogcServices = services
                 .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OgcFeatures))
-                .ToList();
+                .ToArray();
             var layerToService = new Dictionary<int, ServiceDefinition>();
             foreach (var service in ogcServices)
             {
-                foreach (var sl in service.Layers)
+                foreach (var serviceLayer in service.Layers)
                 {
-                    layerToService.TryAdd(sl.Id, service);
+                    layerToService.TryAdd(serviceLayer.Id, service);
                 }
             }
+
             var protocolLayerIds = layerToService.Keys.ToHashSet();
             var visibleLayers = layers
                 .Where(layer => protocolLayerIds.Count == 0
                     ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OgcFeatures)
                     : protocolLayerIds.Contains(layer.Id))
                 .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
-                    context, layer, layerToService.GetValueOrDefault(layer.Id)))
+                    context,
+                    layer,
+                    layerToService.GetValueOrDefault(layer.Id)))
                 .ToList();
             var collectionTasks = visibleLayers
                 .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));

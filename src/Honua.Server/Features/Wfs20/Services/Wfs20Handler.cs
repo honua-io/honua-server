@@ -45,6 +45,7 @@ internal sealed class Wfs20Handler
     private readonly IGmlFeatureStore _gmlFeatureStore;
     private readonly IFilterExpressionService _filterExpressionService;
     private readonly OgcFeaturesGeometryServices _geometryServices;
+    private readonly Wfs20Options _wfs20Options;
 
     public Wfs20Handler(
         ILogger<Wfs20Handler> logger,
@@ -56,6 +57,7 @@ internal sealed class Wfs20Handler
         _gmlFeatureStore = queryServices.GmlFeatureStore;
         _filterExpressionService = queryServices.FilterExpressionService;
         _geometryServices = queryServices.GeometryServices;
+        _wfs20Options = queryServices.Wfs20Options;
     }
 
     public async Task<WfsCapabilities> HandleGetCapabilitiesAsync(
@@ -184,6 +186,36 @@ internal sealed class Wfs20Handler
                     : CreateEmptyFeatureCollectionResult(normalizedFormat);
             }
 
+            if (ShouldUsePagedGetFeatureFastPath(selectedTypes, normalizedFormat, isHitsRequest, maxFeatures))
+            {
+                var descriptor = selectedTypes[0];
+                var query = BuildFeatureQuery(
+                    descriptor.Layer,
+                    propertyName,
+                    sortBy,
+                    bbox,
+                    filter,
+                    resourceId,
+                    srsName) with
+                {
+                    Offset = offset,
+                    Limit = maxFeatures
+                };
+
+                var pagedResult = await BuildPagedGetFeatureResultAsync(
+                    descriptor,
+                    query,
+                    normalizedFormat,
+                    cancellationToken);
+
+                Wfs20Log.GetFeatureReturned(
+                    _logger,
+                    pagedResult.ReturnedCount,
+                    pagedResult.NumberMatchedSummary);
+
+                return pagedResult.Result;
+            }
+
             var planSet = await BuildLayerQueryPlansAsync(
                 selectedTypes,
                 propertyName,
@@ -205,7 +237,11 @@ internal sealed class Wfs20Handler
 
             if (isHitsRequest)
             {
-                Wfs20Log.GetFeatureReturned(_logger, 0, planSet.TotalMatched);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    var matchedSummary = planSet.TotalMatched.ToString(CultureInfo.InvariantCulture);
+                    Wfs20Log.GetFeatureReturned(_logger, 0, matchedSummary);
+                }
                 return CreateHitsFeatureCollectionResult(planSet.TotalMatched);
             }
 
@@ -216,10 +252,14 @@ internal sealed class Wfs20Handler
                 _ => await BuildGmlResultAsync(planSet, cancellationToken)
             };
 
-            Wfs20Log.GetFeatureReturned(
-                _logger,
-                returnedCount,
-                planSet.TotalMatched);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                var matchedSummary = planSet.TotalMatched.ToString(CultureInfo.InvariantCulture);
+                Wfs20Log.GetFeatureReturned(
+                    _logger,
+                    returnedCount,
+                    matchedSummary);
+            }
 
             return result;
         }
@@ -1247,6 +1287,124 @@ internal sealed class Wfs20Handler
         return (Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
     }
 
+    private async Task<PagedGetFeatureResult> BuildPagedGetFeatureResultAsync(
+        WfsFeatureTypeDescriptor descriptor,
+        FeatureQuery query,
+        string normalizedFormat,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_featureReader is not IPagedFeatureReader pagedFeatureReader)
+            {
+                throw new InvalidOperationException("Paged feature queries are not supported by the configured feature store.");
+            }
+
+            var result = await pagedFeatureReader.QueryPageAsync(descriptor.Layer.Id, query, cancellationToken);
+            var rows = new List<Dictionary<string, string?>>();
+            var attributeHeaders = GetProjectedAttributeFields(descriptor.Layer, query)
+                .Select(field => field.Name)
+                .ToArray();
+
+            foreach (var feature in result.Items)
+            {
+                var row = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["typeName"] = descriptor.QualifiedName,
+                    ["id"] = BuildFeatureId(descriptor, feature.Id)
+                };
+
+                foreach (var field in GetProjectedAttributeFields(descriptor.Layer, query))
+                {
+                    row[field.Name] = feature.Attributes.TryGetValue(field.Name, out var value)
+                        ? ConvertToInvariantString(value)
+                        : null;
+                }
+
+                if (descriptor.Layer.HasGeometry)
+                {
+                    row["geometry"] = SerializeGeometryAsJson(feature.Geometry);
+                }
+
+                rows.Add(row);
+            }
+
+            var headers = new List<string> { "typeName", "id" };
+            headers.AddRange(attributeHeaders);
+            if (descriptor.Layer.HasGeometry)
+            {
+                headers.Add("geometry");
+            }
+
+            var csv = new StringBuilder();
+            csv.AppendLine(string.Join(",", headers.Select(EscapeCsv)));
+            foreach (var row in rows)
+            {
+                csv.AppendLine(string.Join(",", headers.Select(header =>
+                    EscapeCsv(row.TryGetValue(header, out var value) ? value : null))));
+            }
+
+            return new PagedGetFeatureResult(
+                Results.Content(csv.ToString(), MediaTypes.Csv, Encoding.UTF8),
+                rows.Count,
+                FormatNumberMatched(result.TotalCount));
+        }
+
+        var features = new List<GeoJsonFeature>();
+        long? totalCount = null;
+
+        if (_featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
+        {
+            var result = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(descriptor.Layer.Id, query, cancellationToken);
+            totalCount = result.TotalCount;
+            foreach (var feature in result.Items)
+            {
+                features.Add(new GeoJsonFeature
+                {
+                    Id = BuildFeatureId(descriptor, feature.Id),
+                    Geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, AxisOrder.EastNorth),
+                    Properties = BuildGeoJsonProperties(feature.Attributes, descriptor.Layer, query)
+                });
+            }
+        }
+        else if (_featureReader is IPagedFeatureReader pagedFeatureReader)
+        {
+            var result = await pagedFeatureReader.QueryPageAsync(descriptor.Layer.Id, query, cancellationToken);
+            totalCount = result.TotalCount;
+            foreach (var feature in result.Items)
+            {
+                var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, AxisOrder.EastNorth);
+                features.Add(new GeoJsonFeature
+                {
+                    Id = BuildFeatureId(descriptor, feature.Id),
+                    Geometry = geometry,
+                    Properties = BuildGeoJsonProperties(feature.Attributes, descriptor.Layer, query)
+                });
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException("Paged feature queries are not supported by the configured feature store.");
+        }
+
+        var payload = new FeatureCollection
+        {
+            Features = features.ToArray(),
+            NumberMatched = totalCount,
+            NumberReturned = features.Count,
+            TimeStamp = DateTimeOffset.UtcNow
+        };
+
+        var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
+            ? MediaTypes.Json
+            : MediaTypes.GeoJson;
+
+        return new PagedGetFeatureResult(
+            Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType),
+            features.Count,
+            FormatNumberMatched(totalCount));
+    }
+
     private async Task<(IResult Result, int ReturnedCount)> BuildCsvResultAsync(
         LayerQueryPlanSet planSet,
         CancellationToken cancellationToken)
@@ -1421,8 +1579,14 @@ internal sealed class Wfs20Handler
         FeatureQuery query)
     {
         var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var objectIdFieldName = layer.ObjectIdFieldName;
         foreach (var field in GetProjectedAttributeFields(layer, query))
         {
+            if (field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (attributes.TryGetValue(field.Name, out var value))
             {
                 properties[field.Name] = value;
@@ -1838,6 +2002,42 @@ internal sealed class Wfs20Handler
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 
+    private bool ShouldUsePagedGetFeatureFastPath(
+        IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
+        string normalizedFormat,
+        bool isHitsRequest,
+        int maxFeatures)
+    {
+        if (_wfs20Options.NumberMatchedPolicy != Wfs20NumberMatchedPolicy.UnknownWhenExpensive)
+        {
+            return false;
+        }
+
+        if (isHitsRequest || selectedTypes.Count != 1 || maxFeatures <= 0)
+        {
+            return false;
+        }
+
+        if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase))
+        {
+            return _featureReader is IPagedFeatureReader;
+        }
+
+        var isJsonFormat =
+            string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase);
+
+        if (!isJsonFormat)
+        {
+            return false;
+        }
+
+        return _featureReader is IPagedGeoJsonFeatureStore || _featureReader is IPagedFeatureReader;
+    }
+
+    private static string FormatNumberMatched(long? totalCount)
+        => totalCount?.ToString(CultureInfo.InvariantCulture) ?? "unknown";
+
     private sealed record WfsFeatureTypeDescriptor(
         LayerDefinition Layer,
         string QualifiedName,
@@ -1861,6 +2061,11 @@ internal sealed class Wfs20Handler
     private readonly record struct LayerValuePlanSet(
         ImmutableArray<LayerValuePlan> Plans,
         long TotalMatched);
+
+    private readonly record struct PagedGetFeatureResult(
+        IResult Result,
+        int ReturnedCount,
+        string NumberMatchedSummary);
 
     private readonly record struct ValueReferenceResolution(
         string RequestedName,

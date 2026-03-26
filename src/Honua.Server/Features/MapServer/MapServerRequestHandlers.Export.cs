@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -345,28 +346,25 @@ internal static partial class MapServerEndpoints
                         filterError ?? "Invalid filter parameter.");
                 }
 
-                var featureQuery = new FeatureQuery
-                {
-                    SpatialFilter = spatialFilter,
-                    SpatialReferenceSrid = serviceSrid,
-                    OutputSrid = imageSrid,
-                    Limit = maxFeatures,
-                    SqlFilter = sqlFilter
-                };
+                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
+                var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+                var featureQuery = CreateRasterFeatureQuery(
+                    styleLayers,
+                    spatialFilter,
+                    serviceSrid,
+                    imageSrid,
+                    maxFeatures,
+                    sqlFilter);
 
-                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, context.RequestAborted);
 
-                if (queryResult.Items.Length == 0)
+                if (features.Length == 0)
                 {
                     continue;
                 }
 
-                totalFeatureCount += queryResult.Items.Length;
-
-                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
-                var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
-
-                RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType);
+                totalFeatureCount += features.Length;
+                RenderLayerToCanvas(canvas, features, styleLayers, transform, layer.GeometryType);
             }
 
             stopwatch.Stop();
@@ -467,7 +465,7 @@ internal static partial class MapServerEndpoints
 
     private static void RenderLayerToCanvas(
         SKCanvas canvas,
-        System.Collections.Immutable.ImmutableArray<Feature> features,
+        ImmutableArray<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         Func<double, double, SKPoint> transform,
         GeometryType geometryType)
@@ -649,6 +647,46 @@ internal static partial class MapServerEndpoints
         }
 
         result.Path?.Dispose();
+    }
+
+    private static FeatureQuery CreateRasterFeatureQuery(
+        MapLibreStyleLayer[] styleLayers,
+        SpatialFilter spatialFilter,
+        int spatialReferenceSrid,
+        int? outputSrid,
+        int limit,
+        SqlFragment? sqlFilter = null)
+    {
+        var referencedFields = StyleTranslator.CollectReferencedFields(styleLayers);
+
+        return new FeatureQuery
+        {
+            SpatialFilter = spatialFilter,
+            SpatialReferenceSrid = spatialReferenceSrid,
+            OutputSrid = outputSrid,
+            Limit = limit,
+            SqlFilter = sqlFilter,
+            OutFields = referencedFields.Length > 0 ? ImmutableArray.CreateRange(referencedFields) : null,
+            ExcludeAttributes = referencedFields.Length == 0
+        };
+    }
+
+    private static async Task<ImmutableArray<Feature>> QueryRasterFeaturesAsync(
+        IFeatureReader featureReader,
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (featureReader is IPagedFeatureReader pagedFeatureReader &&
+            query.Limit.HasValue &&
+            query.Limit.Value != int.MaxValue)
+        {
+            var pagedResult = await pagedFeatureReader.QueryPageAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            return pagedResult.Items;
+        }
+
+        var result = await featureReader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        return result.Items;
     }
 
     private static bool TryParseBbox(string? bbox, out SkiaMapRenderer.RenderExtent extent)

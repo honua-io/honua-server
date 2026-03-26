@@ -5,6 +5,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
@@ -22,6 +23,7 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     private readonly ILayerCatalog _innerCatalog;
     private readonly ICacheService _cacheService;
     private readonly CacheOptions _options;
+    private readonly ISchemaContext? _schemaContext;
 
     // Cache key constants
     private const string LayerKeyPrefix = "layer:";
@@ -35,18 +37,20 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public CachingLayerCatalog(
         ILayerCatalog innerCatalog,
         ICacheService cacheService,
-        IOptions<CacheOptions> options)
+        IOptions<CacheOptions> options,
+        ISchemaContext? schemaContext = null)
     {
         _innerCatalog = innerCatalog ?? throw new ArgumentNullException(nameof(innerCatalog));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _schemaContext = schemaContext;
     }
 
     /// <inheritdoc />
     public async Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        string cacheKey = $"{LayerKeyPrefix}{layerId}";
-        string existsKey = $"{LayerExistsKeyPrefix}{layerId}";
+        string cacheKey = ScopeKey($"{LayerKeyPrefix}{layerId}");
+        string existsKey = ScopeKey($"{LayerExistsKeyPrefix}{layerId}");
 
         // Single Redis call optimized: Try to get both layer and existence data
         // Use GetOrSetAsync with a factory that checks for cached existence data first
@@ -97,8 +101,10 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     /// <inheritdoc />
     public async Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
     {
+        var listKey = ScopeKey(LayerListKey);
+
         // Use wrapper type for proper serialization
-        CachedLayerList? cached = await _cacheService.GetAsync<CachedLayerList>(LayerListKey, cancellationToken).ConfigureAwait(false);
+        CachedLayerList? cached = await _cacheService.GetAsync<CachedLayerList>(listKey, cancellationToken).ConfigureAwait(false);
         if (cached != null)
             return cached.Layers;
 
@@ -107,7 +113,7 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
 
         // Cache the result
         var ttl = _options.GetLayerTtlWithJitter();
-        await _cacheService.SetAsync(LayerListKey, new CachedLayerList(layers), ttl, cancellationToken).ConfigureAwait(false);
+        await _cacheService.SetAsync(listKey, new CachedLayerList(layers), ttl, cancellationToken).ConfigureAwait(false);
 
         return layers;
     }
@@ -116,8 +122,8 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
     {
         string normalizedName = serviceName.ToLowerInvariant();
-        string cacheKey = $"{ServiceKeyPrefix}{normalizedName}";
-        string existsKey = $"{ServiceExistsKeyPrefix}{normalizedName}";
+        string cacheKey = ScopeKey($"{ServiceKeyPrefix}{normalizedName}");
+        string existsKey = ScopeKey($"{ServiceExistsKeyPrefix}{normalizedName}");
 
         // Single Redis call optimized: Try to get both service and existence data
         // Use GetOrSetAsync with a factory that checks for cached existence data first
@@ -168,8 +174,10 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     /// <inheritdoc />
     public async Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
     {
+        var listKey = ScopeKey(ServiceListKey);
+
         // Use wrapper type for proper serialization
-        CachedServiceList? cached = await _cacheService.GetAsync<CachedServiceList>(ServiceListKey, cancellationToken).ConfigureAwait(false);
+        CachedServiceList? cached = await _cacheService.GetAsync<CachedServiceList>(listKey, cancellationToken).ConfigureAwait(false);
         if (cached != null)
             return cached.Services;
 
@@ -178,7 +186,7 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
 
         // Cache the result
         var ttl = _options.GetServiceTtlWithJitter();
-        await _cacheService.SetAsync(ServiceListKey, new CachedServiceList(services), ttl, cancellationToken).ConfigureAwait(false);
+        await _cacheService.SetAsync(listKey, new CachedServiceList(services), ttl, cancellationToken).ConfigureAwait(false);
 
         return services;
     }
@@ -186,8 +194,8 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     /// <inheritdoc />
     public async Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        string existsKey = $"{LayerExistsKeyPrefix}{layerId}";
-        string cacheKey = $"{LayerKeyPrefix}{layerId}";
+        string existsKey = ScopeKey($"{LayerExistsKeyPrefix}{layerId}");
+        string cacheKey = ScopeKey($"{LayerKeyPrefix}{layerId}");
 
         // Optimized: Use GetOrSetAsync to avoid double Redis calls while checking both existence and layer cache
         var positiveTtl = _options.GetLayerTtlWithJitter();
@@ -222,8 +230,8 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
     {
         string normalizedName = serviceName.ToLowerInvariant();
-        string existsKey = $"{ServiceExistsKeyPrefix}{normalizedName}";
-        string cacheKey = $"{ServiceKeyPrefix}{normalizedName}";
+        string existsKey = ScopeKey($"{ServiceExistsKeyPrefix}{normalizedName}");
+        string cacheKey = ScopeKey($"{ServiceKeyPrefix}{normalizedName}");
 
         // Optimized: Use GetOrSetAsync to avoid double Redis calls while checking both existence and service cache
         var positiveTtl = _options.GetServiceTtlWithJitter();
@@ -289,14 +297,14 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task InvalidateLayerAsync(int layerId, CancellationToken cancellationToken = default)
     {
         // Remove specific layer cache
-        await _cacheService.RemoveAsync($"{LayerKeyPrefix}{layerId}", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveAsync($"{LayerExistsKeyPrefix}{layerId}", cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey($"{LayerKeyPrefix}{layerId}"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey($"{LayerExistsKeyPrefix}{layerId}"), cancellationToken).ConfigureAwait(false);
 
         // Remove layer list cache (will be rebuilt on next request)
-        await _cacheService.RemoveAsync(LayerListKey, cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey(LayerListKey), cancellationToken).ConfigureAwait(false);
 
         // Remove relationship caches for this layer
-        await _cacheService.RemoveByPatternAsync($"{RelationshipKeyPrefix}{layerId}:*", cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveByPatternAsync(ScopePattern($"{RelationshipKeyPrefix}{layerId}:*"), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -307,11 +315,11 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     public async Task InvalidateServiceAsync(string serviceName, CancellationToken cancellationToken = default)
     {
         // Remove specific service cache
-        await _cacheService.RemoveAsync($"{ServiceKeyPrefix}{serviceName.ToLowerInvariant()}", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveAsync($"{ServiceExistsKeyPrefix}{serviceName.ToLowerInvariant()}", cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey($"{ServiceKeyPrefix}{serviceName.ToLowerInvariant()}"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey($"{ServiceExistsKeyPrefix}{serviceName.ToLowerInvariant()}"), cancellationToken).ConfigureAwait(false);
 
         // Remove service list cache (will be rebuilt on next request)
-        await _cacheService.RemoveAsync(ServiceListKey, cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey(ServiceListKey), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -320,12 +328,24 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task InvalidateAllAsync(CancellationToken cancellationToken = default)
     {
-        await _cacheService.RemoveByPatternAsync($"{LayerKeyPrefix}*", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveByPatternAsync($"{LayerExistsKeyPrefix}*", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveByPatternAsync($"{ServiceKeyPrefix}*", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveByPatternAsync($"{ServiceExistsKeyPrefix}*", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveByPatternAsync($"{RelationshipKeyPrefix}*", cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveAsync(LayerListKey, cancellationToken).ConfigureAwait(false);
-        await _cacheService.RemoveAsync(ServiceListKey, cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveByPatternAsync(ScopePattern($"{LayerKeyPrefix}*"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveByPatternAsync(ScopePattern($"{LayerExistsKeyPrefix}*"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveByPatternAsync(ScopePattern($"{ServiceKeyPrefix}*"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveByPatternAsync(ScopePattern($"{ServiceExistsKeyPrefix}*"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveByPatternAsync(ScopePattern($"{RelationshipKeyPrefix}*"), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey(LayerListKey), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(ScopeKey(ServiceListKey), cancellationToken).ConfigureAwait(false);
+    }
+
+    private string ScopeKey(string key) => $"{GetScopePrefix()}{key}";
+
+    private string ScopePattern(string pattern) => $"{GetScopePrefix()}{pattern}";
+
+    private string GetScopePrefix()
+    {
+        var schema = _schemaContext?.CurrentSchema;
+        return string.IsNullOrWhiteSpace(schema)
+            ? "scope:default:"
+            : $"scope:schema:{schema.Trim().ToLowerInvariant()}:";
     }
 }

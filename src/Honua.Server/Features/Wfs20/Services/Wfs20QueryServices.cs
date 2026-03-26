@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Services;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Wfs20.Services;
 
@@ -18,7 +19,8 @@ internal sealed class Wfs20QueryServices(
     IFeatureReader featureReader,
     IGmlFeatureStore gmlFeatureStore,
     IFilterExpressionService filterExpressionService,
-    OgcFeaturesGeometryServices geometryServices)
+    OgcFeaturesGeometryServices geometryServices,
+    IOptions<Wfs20Options> wfs20Options)
 {
     internal ILayerCatalog LayerCatalog { get; } = layerCatalog;
 
@@ -29,4 +31,6 @@ internal sealed class Wfs20QueryServices(
     internal IFilterExpressionService FilterExpressionService { get; } = filterExpressionService;
 
     internal OgcFeaturesGeometryServices GeometryServices { get; } = geometryServices;
+
+    internal Wfs20Options Wfs20Options { get; } = wfs20Options?.Value ?? throw new ArgumentNullException(nameof(wfs20Options));
 }

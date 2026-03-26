@@ -42,7 +42,7 @@ internal static partial class Wfs20Log
     /// Logs when GetFeature response is returned
     /// </summary>
     [LoggerMessage(Level = LogLevel.Information, Message = "WFS 2.0 GetFeature response returned with {FeatureCount} features, matched: {NumberMatched}")]
-    public static partial void GetFeatureReturned(ILogger logger, int featureCount, long numberMatched);
+    public static partial void GetFeatureReturned(ILogger logger, int featureCount, string numberMatched);
 
     /// <summary>
     /// Logs when a GetPropertyValue request is received
