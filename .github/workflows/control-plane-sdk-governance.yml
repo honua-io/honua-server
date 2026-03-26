@@ -6,7 +6,7 @@ on:
       - trunk
       - main
     paths:
-      - 'docs/api-specs/admin-api.json'
+      - 'docs/developer/api-specs/admin-api.json'
       - 'scripts/generate-control-plane-sdks.sh'
       - '.github/workflows/control-plane-sdk-governance.yml'
   push:
@@ -14,7 +14,7 @@ on:
       - trunk
       - main
     paths:
-      - 'docs/api-specs/admin-api.json'
+      - 'docs/developer/api-specs/admin-api.json'
       - 'scripts/generate-control-plane-sdks.sh'
       - '.github/workflows/control-plane-sdk-governance.yml'
   workflow_dispatch:

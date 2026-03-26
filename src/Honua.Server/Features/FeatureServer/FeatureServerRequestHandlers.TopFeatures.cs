@@ -36,6 +36,11 @@ internal static partial class FeatureServerEndpoints
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid request body",
                 [readError ?? "Invalid request body."]);

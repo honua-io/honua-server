@@ -16,6 +16,10 @@
         {
             <p>Loading providers...</p>
         }
+        else if (_error is not null)
+        {
+            <p>@_error</p>
+        }
         else if (_providers.Count == 0)
         {
             <p>No identity providers are configured.</p>
@@ -48,6 +52,7 @@
 @code {
     private bool _loading = true;
     private List<AuthProviderInfo> _providers = [];
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
@@ -58,6 +63,13 @@
 
     private async Task SelectProviderAsync(AuthProviderInfo provider)
     {
-        await Session.StartLoginAsync(provider);
+        try
+        {
+            await Session.StartLoginAsync(provider);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
     }
 }

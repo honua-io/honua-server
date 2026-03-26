@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-SPEC_PATH="${REPO_ROOT}/docs/api-specs/admin-api.json"
+SPEC_PATH="${REPO_ROOT}/docs/developer/api-specs/admin-api.json"
 OUTPUT_DIR="${1:-${REPO_ROOT}/artifacts/control-plane-sdks}"
 GENERATOR_IMAGE="${OPENAPI_GENERATOR_IMAGE:-openapitools/openapi-generator-cli:v7.12.0}"
 
@@ -47,7 +47,7 @@ run_generator() {
 
   docker run --rm \
     --user "$(id -u):$(id -g)" \
-    -v "${REPO_ROOT}/docs/api-specs:/spec:ro" \
+    -v "${REPO_ROOT}/docs/developer/api-specs:/spec:ro" \
     -v "${TMP_DIR}:/out" \
     "${GENERATOR_IMAGE}" generate \
       -i /spec/admin-api.json \
@@ -86,7 +86,7 @@ tar -C "${TMP_DIR}" -czf "${CS_ARCHIVE}" dotnet
 
 cat > "${OUTPUT_DIR}/manifest.json" <<EOF
 {
-  "spec": "docs/api-specs/admin-api.json",
+  "spec": "docs/developer/api-specs/admin-api.json",
   "generatorImage": "${GENERATOR_IMAGE}",
   "version": "${PACKAGE_VERSION}",
   "generatedAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",

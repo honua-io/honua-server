@@ -60,11 +60,11 @@ public class OgcMapsConformanceHandlerTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task GetConformanceAsync_IncludesBackgroundConformance()
+    public async Task GetConformanceAsync_DoesNotOverclaimBackgroundConformance()
     {
         var result = await _handler.GetConformanceAsync();
 
-        result.ConformsTo.Should().Contain(
+        result.ConformsTo.Should().NotContain(
             "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background");
     }
 
@@ -80,11 +80,11 @@ public class OgcMapsConformanceHandlerTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task GetConformanceAsync_IncludesDatetimeConformance()
+    public async Task GetConformanceAsync_DoesNotOverclaimDatetimeConformance()
     {
         var result = await _handler.GetConformanceAsync();
 
-        result.ConformsTo.Should().Contain(
+        result.ConformsTo.Should().NotContain(
             "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime");
     }
 

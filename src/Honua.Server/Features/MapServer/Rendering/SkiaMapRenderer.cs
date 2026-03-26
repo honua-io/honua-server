@@ -54,8 +54,10 @@ internal sealed class SkiaMapRenderer : IDisposable
         GeometryType geometryType)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ValidatePositiveDimension(imageWidth, nameof(imageWidth));
+        ValidatePositiveDimension(imageHeight, nameof(imageHeight));
 
-        using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
+        using var surface = CreateSurfaceOrThrow(imageWidth, imageHeight, "map render");
         var canvas = surface.Canvas;
 
         // Clear background
@@ -98,7 +100,10 @@ internal sealed class SkiaMapRenderer : IDisposable
         int width = 20,
         int height = 20)
     {
-        using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        ValidatePositiveDimension(width, nameof(width));
+        ValidatePositiveDimension(height, nameof(height));
+
+        using var surface = CreateSurfaceOrThrow(width, height, "legend swatch");
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.Transparent);
 
@@ -458,7 +463,8 @@ internal sealed class SkiaMapRenderer : IDisposable
     {
         using var image = surface.Snapshot();
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        return data.ToArray();
+        return data?.ToArray()
+            ?? throw new InvalidOperationException("Skia failed to encode the rendered PNG image.");
     }
 
     /// <summary>
@@ -477,7 +483,23 @@ internal sealed class SkiaMapRenderer : IDisposable
 
         var quality = imageFormat == SKEncodedImageFormat.Jpeg ? 85 : 100;
         using var data = image.Encode(imageFormat, quality);
-        return data.ToArray();
+        return data?.ToArray()
+            ?? throw new InvalidOperationException($"Skia failed to encode the rendered {imageFormat} image.");
+    }
+
+    private static SKSurface CreateSurfaceOrThrow(int width, int height, string operation)
+    {
+        var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        return surface ?? throw new InvalidOperationException(
+            $"Skia failed to allocate a render surface for {operation} at {width}x{height}.");
+    }
+
+    private static void ValidatePositiveDimension(int value, string paramName)
+    {
+        if (value <= 0)
+        {
+            throw new ArgumentOutOfRangeException(paramName, value, "Render dimensions must be greater than zero.");
+        }
     }
 
     /// <summary>

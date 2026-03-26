@@ -159,10 +159,24 @@ internal static class AdminMetadataEndpoints
         var informationalVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         if (!string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return informationalVersion;
+            return SanitizeServerVersion(informationalVersion);
         }
 
-        return assembly.GetName().Version?.ToString() ?? "unknown";
+        return SanitizeServerVersion(assembly.GetName().Version?.ToString() ?? "unknown");
+    }
+
+    internal static string SanitizeServerVersion(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "unknown";
+        }
+
+        var trimmed = version.Trim();
+        var metadataSeparatorIndex = trimmed.IndexOf('+');
+        return metadataSeparatorIndex >= 0
+            ? trimmed[..metadataSeparatorIndex]
+            : trimmed;
     }
 
     private static string InferReleaseChannel(string serverVersion)

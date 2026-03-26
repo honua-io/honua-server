@@ -6,6 +6,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
@@ -52,7 +53,7 @@ internal static class TileOperationsEndpoints
     private static async Task<Results<JsonHttpResult<TileOperationStartResponse>, JsonHttpResult<ProblemDetailsResponse>>> HandleStartJob(
         TileOperationStartRequest request,
         HttpContext context,
-        ITileOperationJobService jobService,
+        [FromServices] ITileOperationJobService jobService,
         CancellationToken cancellationToken)
     {
         var validationError = ValidateStartRequest(context, request);
@@ -97,7 +98,7 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleGetJobStatus(
         string jobId,
         HttpContext context,
-        ITileOperationJobService jobService,
+        [FromServices] ITileOperationJobService jobService,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(jobId))
@@ -115,7 +116,7 @@ internal static class TileOperationsEndpoints
     }
 
     private static async Task<IResult> HandleListJobs(
-        ITileOperationJobService jobService,
+        [FromServices] ITileOperationJobService jobService,
         bool activeOnly = true,
         CancellationToken cancellationToken = default)
     {
@@ -132,7 +133,7 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleCancelJob(
         string jobId,
         HttpContext context,
-        ITileOperationJobService jobService,
+        [FromServices] ITileOperationJobService jobService,
         CancellationToken cancellationToken)
     {
         var progress = await jobService.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -158,7 +159,7 @@ internal static class TileOperationsEndpoints
     private static async Task<IResult> HandleRetryJob(
         string jobId,
         HttpContext context,
-        ITileOperationJobService jobService,
+        [FromServices] ITileOperationJobService jobService,
         CancellationToken cancellationToken)
     {
         var retryJobId = await jobService.RetryAsync(jobId, cancellationToken).ConfigureAwait(false);

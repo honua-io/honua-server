@@ -57,19 +57,19 @@ internal sealed class FeatureServerQueryExecutor
         }
         catch (ArgumentException ex)
         {
-            throw new InvalidOperationException($"Invalid query: {ex.Message}");
+            throw new InvalidOperationException("Invalid query.", ex);
         }
         catch (FormatException ex)
         {
-            throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+            throw new InvalidOperationException("Invalid query format.", ex);
         }
         catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
-            throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+            throw new InvalidOperationException("Invalid query syntax.", ex);
         }
         catch (NpgsqlException ex)
         {
-            throw new InvalidOperationException($"Query execution failed: {ex.Message}");
+            throw new InvalidOperationException("Query execution failed.", ex);
         }
     }
 
@@ -84,19 +84,19 @@ internal sealed class FeatureServerQueryExecutor
         }
         catch (ArgumentException ex)
         {
-            throw new InvalidOperationException($"Invalid query: {ex.Message}");
+            throw new InvalidOperationException("Invalid query.", ex);
         }
         catch (FormatException ex)
         {
-            throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+            throw new InvalidOperationException("Invalid query format.", ex);
         }
         catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
-            throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+            throw new InvalidOperationException("Invalid query syntax.", ex);
         }
         catch (NpgsqlException ex)
         {
-            throw new InvalidOperationException($"Query execution failed: {ex.Message}");
+            throw new InvalidOperationException("Query execution failed.", ex);
         }
     }
 
@@ -116,19 +116,19 @@ internal sealed class FeatureServerQueryExecutor
         }
         catch (ArgumentException ex)
         {
-            throw new InvalidOperationException($"Invalid query: {ex.Message}");
+            throw new InvalidOperationException("Invalid query.", ex);
         }
         catch (FormatException ex)
         {
-            throw new InvalidOperationException($"Invalid query format: {ex.Message}");
+            throw new InvalidOperationException("Invalid query format.", ex);
         }
         catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
-            throw new InvalidOperationException($"Invalid query syntax: {ex.Message}");
+            throw new InvalidOperationException("Invalid query syntax.", ex);
         }
         catch (NpgsqlException ex)
         {
-            throw new InvalidOperationException($"Query execution failed: {ex.Message}");
+            throw new InvalidOperationException("Query execution failed.", ex);
         }
     }
 

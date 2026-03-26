@@ -778,7 +778,9 @@ internal static partial class ImportEndpoints
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
         {
             TryDeleteFile(stagedFile?.LocalFilePath);
-            return MultipartImportParseResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
+            return MultipartImportParseResult.Failure(
+                "Invalid multipart import request.",
+                StatusCodes.Status400BadRequest);
         }
     }
 
@@ -853,7 +855,9 @@ internal static partial class ImportEndpoints
         }
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
         {
-            return RemoteImportDownloadResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
+            return RemoteImportDownloadResult.Failure(
+                "Invalid remote import source.",
+                StatusCodes.Status400BadRequest);
         }
     }
 

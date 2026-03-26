@@ -57,7 +57,12 @@ public sealed class AlertEditionPolicyTests
                 Dispatch = new AlertDispatchOptions
                 {
                     DefaultWebhookUrl = "https://hooks.example.com/alerts",
-                    Digest = new DigestAlertOptions { WebhookUrl = "https://hooks.example.com/digest" }
+                    DefaultWebhookSecret = "signing-secret",
+                    Digest = new DigestAlertOptions
+                    {
+                        WebhookUrl = "https://hooks.example.com/digest",
+                        WebhookSecret = "digest-secret"
+                    }
                 }
             }),
             Options.Create(new AlertDeliveryOptions

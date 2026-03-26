@@ -79,7 +79,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            if (context is not null && layer.Metadata?.AccessPolicy != null)
+            if (context is not null)
             {
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
                 if (accessError != null)
@@ -164,7 +164,7 @@ internal sealed class OgcMapsRenderingHandler
                 {
                     foreach (var layer in allLayers)
                     {
-                        if (layer.Metadata?.AccessPolicy == null || AccessPolicyHelpers.IsLayerAccessible(context, layer))
+                        if (AccessPolicyHelpers.IsLayerAccessible(context, layer))
                         {
                             layers.Add(layer);
                             if (layers.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
@@ -228,7 +228,7 @@ internal sealed class OgcMapsRenderingHandler
                         return CreateNotFoundResult(context, $"Collection {layerId} not found");
                     }
 
-                    if (context is not null && layer.Metadata?.AccessPolicy != null)
+                    if (context is not null)
                     {
                         var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
                         if (accessError != null)
@@ -309,7 +309,7 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            if (context is not null && layer.Metadata?.AccessPolicy != null)
+            if (context is not null)
             {
                 var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
                 if (accessError != null)

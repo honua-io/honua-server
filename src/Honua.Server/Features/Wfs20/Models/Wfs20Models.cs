@@ -18,20 +18,23 @@ public sealed class WfsCapabilities
     [XmlAttribute("version")]
     public string Version { get; set; } = Wfs20Utilities.Version;
 
+    [XmlAttribute("updateSequence")]
+    public string? UpdateSequence { get; set; }
+
     [XmlElement("ServiceIdentification", Namespace = Wfs20Utilities.OwsNamespace)]
-    public required ServiceIdentification ServiceIdentification { get; set; }
+    public ServiceIdentification? ServiceIdentification { get; set; }
 
     [XmlElement("ServiceProvider", Namespace = Wfs20Utilities.OwsNamespace)]
-    public required ServiceProvider ServiceProvider { get; set; }
+    public ServiceProvider? ServiceProvider { get; set; }
 
     [XmlElement("OperationsMetadata", Namespace = Wfs20Utilities.OwsNamespace)]
-    public required OperationsMetadata OperationsMetadata { get; set; }
+    public OperationsMetadata? OperationsMetadata { get; set; }
 
     [XmlElement("FeatureTypeList")]
-    public required FeatureTypeList FeatureTypeList { get; set; }
+    public FeatureTypeList? FeatureTypeList { get; set; }
 
     [XmlElement("Filter_Capabilities", Namespace = Wfs20Utilities.FesNamespace)]
-    public required FilterCapabilities FilterCapabilities { get; set; }
+    public FilterCapabilities? FilterCapabilities { get; set; }
 }
 
 /// <summary>

@@ -220,29 +220,41 @@ internal sealed partial class TileOperationJobService(
         {
             using var scope = _serviceScopeFactory.CreateScope();
             var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
-            if (!string.IsNullOrWhiteSpace(cachedRequest.Value.SchemaName) && schemaContext != null)
-            {
-                schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
-            }
+            var previousSchema = schemaContext?.CurrentSchema;
 
-            var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
-            var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
-
-            finalProgress = request.Operation switch
+            try
             {
-                "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
-                _ => started with
+                if (!string.IsNullOrWhiteSpace(cachedRequest.Value.SchemaName) && schemaContext != null)
                 {
-                    Status = OperationStatus.Failed,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = $"Unsupported tile operation '{request.Operation}'.",
-                    CurrentPhase = "Failed"
+                    schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
                 }
-            };
+
+                var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
+                var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
+
+                finalProgress = request.Operation switch
+                {
+                    "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                    "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                    "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                    "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
+                    "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                    _ => started with
+                    {
+                        Status = OperationStatus.Failed,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        ErrorMessage = $"Unsupported tile operation '{request.Operation}'.",
+                        CurrentPhase = "Failed"
+                    }
+                };
+            }
+            finally
+            {
+                if (schemaContext != null)
+                {
+                    schemaContext.CurrentSchema = previousSchema;
+                }
+            }
         }
         catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
         {

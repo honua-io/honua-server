@@ -7,7 +7,7 @@ namespace Honua.Server.Features.MapServer.Rendering;
 
 /// <summary>
 /// Handles coordinate transformations between common spatial reference systems.
-/// Supports common geographic CRS identifiers and Web Mercator aliases.
+/// Supports WGS84 (EPSG:4326) and Web Mercator aliases for in-memory transforms.
 /// </summary>
 internal static class CoordinateTransformer
 {
@@ -23,14 +23,13 @@ internal static class CoordinateTransformer
         int toSrid)
     {
         if (fromSrid == toSrid ||
-            (IsGeographicSrid(fromSrid) && IsGeographicSrid(toSrid)) ||
             (IsWebMercatorSrid(fromSrid) && IsWebMercatorSrid(toSrid)))
         {
             return extent;
         }
 
         // geographic -> web mercator
-        if (IsGeographicSrid(fromSrid) && IsWebMercatorSrid(toSrid))
+        if (IsWgs84Srid(fromSrid) && IsWebMercatorSrid(toSrid))
         {
             var (minX, minY) = LonLatToWebMercator(extent.MinX, extent.MinY);
             var (maxX, maxY) = LonLatToWebMercator(extent.MaxX, extent.MaxY);
@@ -38,7 +37,7 @@ internal static class CoordinateTransformer
         }
 
         // web mercator -> geographic
-        if (IsWebMercatorSrid(fromSrid) && IsGeographicSrid(toSrid))
+        if (IsWebMercatorSrid(fromSrid) && IsWgs84Srid(toSrid))
         {
             var (minLon, minLat) = WebMercatorToLonLat(extent.MinX, extent.MinY);
             var (maxLon, maxLat) = WebMercatorToLonLat(extent.MaxX, extent.MaxY);
@@ -55,18 +54,17 @@ internal static class CoordinateTransformer
     public static (double X, double Y) TransformPoint(double x, double y, int fromSrid, int toSrid)
     {
         if (fromSrid == toSrid ||
-            (IsGeographicSrid(fromSrid) && IsGeographicSrid(toSrid)) ||
             (IsWebMercatorSrid(fromSrid) && IsWebMercatorSrid(toSrid)))
         {
             return (x, y);
         }
 
-        if (IsGeographicSrid(fromSrid) && IsWebMercatorSrid(toSrid))
+        if (IsWgs84Srid(fromSrid) && IsWebMercatorSrid(toSrid))
         {
             return LonLatToWebMercator(x, y);
         }
 
-        if (IsWebMercatorSrid(fromSrid) && IsGeographicSrid(toSrid))
+        if (IsWebMercatorSrid(fromSrid) && IsWgs84Srid(toSrid))
         {
             return WebMercatorToLonLat(x, y);
         }
@@ -78,8 +76,8 @@ internal static class CoordinateTransformer
     private static bool IsWebMercatorSrid(int srid)
         => srid is 3857 or 900913 or 102100 or 102113 or 3785;
 
-    private static bool IsGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+    private static bool IsWgs84Srid(int srid)
+        => srid == 4326;
 
     /// <summary>
     /// Converts longitude/latitude (EPSG:4326) to Web Mercator (EPSG:3857).

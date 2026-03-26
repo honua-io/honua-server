@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Globalization;
 using System.Text;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
+using Honua.Server.Features.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -44,6 +46,16 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             };
         }
 
+        if (string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookSecret))
+        {
+            return new AlertDeliveryResult
+            {
+                Succeeded = false,
+                Retryable = false,
+                Error = "Webhook signing secret is not configured."
+            };
+        }
+
         try
         {
             var destinationValidation = await OutboundHttpUrlValidator
@@ -64,9 +76,13 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             {
                 Content = new StringContent(alertEvent.PayloadJson, Encoding.UTF8, "application/json")
             };
-            request.Headers.TryAddWithoutValidation("X-Honua-Alert-Rule", alertEvent.RuleId.ToString());
-            request.Headers.TryAddWithoutValidation("X-Honua-Alert-Event", alertEvent.DedupeKey);
-            request.Headers.TryAddWithoutValidation("Idempotency-Key", alertEvent.DedupeKey);
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+            var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.DefaultWebhookSecret, timestamp, alertEvent.PayloadJson);
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Rule", alertEvent.RuleId.ToString());
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Event", alertEvent.DedupeKey);
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Timestamp", timestamp);
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Signature", $"sha256={signature}");
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "Idempotency-Key", alertEvent.DedupeKey);
 
             var client = _httpClientFactory.CreateClient("alerts-webhook");
             using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -98,7 +114,9 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             {
                 Succeeded = false,
                 Retryable = true,
-                Error = ex.Message
+                Error = ex is HttpRequestException
+                    ? "Webhook delivery failed."
+                    : "Webhook delivery could not be completed."
             };
         }
     }

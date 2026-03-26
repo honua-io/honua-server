@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
-using System.Text.RegularExpressions;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcMaps.Handlers;
 using Honua.Server.Features.OgcMaps.Models;
 using Microsoft.AspNetCore.Http;
@@ -16,6 +18,12 @@ namespace Honua.Server.Features.OgcMaps;
 /// </summary>
 public static partial class OgcMapsEndpoints
 {
+    private static readonly ImmutableHashSet<string> MetadataQueryParameters =
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
+
+    private static readonly ImmutableHashSet<string> OpenApiQueryParameters =
+        ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
+
     /// <summary>
     /// Maps OGC API - Maps endpoints to the application.
     /// </summary>
@@ -23,6 +31,14 @@ public static partial class OgcMapsEndpoints
     {
         var group = app.MapGroup("/ogc/maps")
             .WithTags("OGC API - Maps");
+
+        group.MapGet(string.Empty, GetLandingPage)
+            .WithDisplayName("Maps API Landing Page")
+            .WithName("GetMapsLandingPage")
+            .WithSummary("Get OGC API - Maps landing page")
+            .WithDescription("The landing page provides links to the OGC API - Maps definition and related resources")
+            .Produces<LandingPage>(StatusCodes.Status200OK, MediaTypes.Json)
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
 
         // Core conformance endpoint
         group.MapGet("/conformance", GetConformance)
@@ -32,6 +48,14 @@ public static partial class OgcMapsEndpoints
             .WithDescription("Returns the conformance classes that the server implements from OGC API - Maps standards")
             .Produces<OgcMapsConformance>()
             .CacheOutput("OgcMapsConformance");
+
+        group.MapGet("/openapi.json", GetOpenApiSpec)
+            .WithDisplayName("Maps API OpenAPI Specification")
+            .WithName("GetMapsOpenApiSpec")
+            .WithSummary("Get OpenAPI 3.0 specification for OGC API - Maps")
+            .WithDescription("The OpenAPI specification describes all available OGC API - Maps endpoints")
+            .Produces<object>(StatusCodes.Status200OK, MediaTypes.OpenApi)
+            .Produces(StatusCodes.Status404NotFound);
 
         // Collection maps - single collection rendering
         group.MapGet("/collections/{collectionId}/map", GetCollectionMap)
@@ -66,18 +90,61 @@ public static partial class OgcMapsEndpoints
             .Produces(400)
             .Produces(404);
 
-        // Styled maps - collection with specific style
-        group.MapGet("/collections/{collectionId}/styles/{styleId}/map", GetStyledMap)
-            .WithDisplayName("Get Styled Map")
-            .WithName("GetStyledMap")
-            .WithSummary("Render styled map from a collection")
-            .WithDescription("Returns a rendered map image from the specified collection using a specific style definition")
-            .Produces(StatusCodes.Status200OK, contentType: "image/png")
-            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
-            .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
-            .Produces(400)
-            .Produces(501)
-            .Produces(404);
+    }
+
+    /// <summary>
+    /// Get OGC API - Maps landing page.
+    /// </summary>
+    private static IResult GetLandingPage(HttpContext context, string? f)
+    {
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, MetadataQueryParameters);
+        if (validationError is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
+        if (!OgcCommonUtilities.TryGetOutputFormat(f, context, isFeatureContent: false, out var outputFormat, out var formatError))
+        {
+            return OgcCommonUtilities.CreateFormatError(context, formatError);
+        }
+
+        var request = context.Request;
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        var basePath = $"{baseUrl}/ogc/maps";
+        var links = OgcCommonUtilities.BuildFormatLinks(request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats, "This document")
+            .ToBuilder();
+
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/maps/openapi.json",
+            rel: RelationTypes.ServiceDesc,
+            type: MediaTypes.OpenApi,
+            title: "API definition"));
+
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/maps/conformance",
+            rel: RelationTypes.Conformance,
+            type: MediaTypes.Json,
+            title: "Conformance declaration"));
+
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/maps/map",
+            rel: RelationTypes.Map,
+            type: "image/png",
+            title: "Dataset map"));
+
+        var landingPage = new LandingPage
+        {
+            Title = "Honua OGC API Maps",
+            Description = "OGC API Maps implementation for server-rendered imagery",
+            Supports3d = false,
+            Links = links.ToImmutable()
+        };
+
+        return OgcCommonUtilities.FormatMetadataResponse(
+            landingPage,
+            OgcMapsJsonContext.Default.LandingPage,
+            outputFormat,
+            "Landing page");
     }
 
     /// <summary>
@@ -89,6 +156,32 @@ public static partial class OgcMapsEndpoints
     {
         var result = await handler.GetConformanceAsync(cancellationToken);
         return Results.Ok(result);
+    }
+
+    private static async Task<IResult> GetOpenApiSpec(
+        HttpContext context,
+        string? f,
+        IWebHostEnvironment environment)
+    {
+        const string fallbackSpec = """
+        {
+          "openapi": "3.0.3",
+          "info": {
+            "title": "Honua OGC API Maps",
+            "description": "OGC API Maps implementation for server-rendered imagery",
+            "version": "1.0.0"
+          },
+          "paths": {}
+        }
+        """;
+
+        return await OgcOpenApiSpecUtilities.GetOpenApiSpecAsync(
+            context,
+            f,
+            environment,
+            OpenApiQueryParameters,
+            "ogc-maps-openapi.json",
+            fallbackSpec);
     }
 
     /// <summary>
@@ -176,31 +269,6 @@ public static partial class OgcMapsEndpoints
     }
 
     /// <summary>
-    /// Get rendered map with a specific style applied.
-    /// </summary>
-    private static async Task<IResult> GetStyledMap(
-        string collectionId,
-        string styleId,
-        [AsParameters] OgcMapRequest request,
-        HttpContext context,
-        OgcMapsRenderingHandler handler,
-        CancellationToken cancellationToken = default)
-    {
-        if (!TryParseNonNegativeCollectionId(collectionId, out var layerId))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, "Collection ID must be a valid integer");
-        }
-
-        // Validate styleId from URL path: alphanumeric, dash, underscore only
-        if (string.IsNullOrEmpty(styleId) || !StyleIdPattern().IsMatch(styleId) || styleId.Length > 100)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, "StyleId must contain only alphanumeric characters, dashes, and underscores");
-        }
-
-        return await handler.RenderStyledMapAsync(layerId, styleId, request, context: context, cancellationToken);
-    }
-
-    /// <summary>
     /// Get map tile sets for a collection.
     /// </summary>
     private static async Task<IResult> GetCollectionMapTileSets(
@@ -216,10 +284,6 @@ public static partial class OgcMapsEndpoints
 
         return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);
     }
-
-    [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
-    private static partial Regex StyleIdPattern();
-
     private static bool TryParseNonNegativeCollectionId(string value, out int layerId)
     {
         var parsed = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId);

@@ -398,7 +398,11 @@ public class Cql2ParserTests
         const string cql = "S_INTERSECTS(geom, BBOX(0, 0, 1, 1, 2))";
 
         var action = () => _parser.Parse(cql);
-        action.Should().Throw<ArgumentException>().WithMessage("*4 or 6*");
+        var exception = action.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().StartWith("Failed to parse CQL2 expression.");
+        exception.ParamName.Should().Be("cql2Text");
+        exception.InnerException.Should().BeOfType<ArgumentException>()
+            .Which.Message.Should().Contain("4 or 6");
     }
 
     [Fact]

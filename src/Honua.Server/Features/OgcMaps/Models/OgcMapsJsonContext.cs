@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.OgcMaps.Models;
 
@@ -10,6 +11,10 @@ namespace Honua.Server.Features.OgcMaps.Models;
 /// Enables AOT-compatible JSON serialization for OGC Maps endpoints.
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(LandingPage))]
+[JsonSerializable(typeof(ConformanceDeclaration))]
+[JsonSerializable(typeof(Link))]
+[JsonSerializable(typeof(System.Collections.Immutable.ImmutableArray<Link>))]
 [JsonSerializable(typeof(OgcMapsConformance))]
 [JsonSerializable(typeof(OgcMapRequest))]
 [JsonSerializable(typeof(MapResponse))]

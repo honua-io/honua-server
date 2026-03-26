@@ -55,6 +55,39 @@ public sealed class ManifestApprovalWebhookDispatcherTests
         Assert.Equal(2, handler.SendCount);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Enqueue_WhenQueueCapacityIsReached_ReturnsFalse()
+    {
+        var dispatcher = new ManifestApprovalWebhookDispatcher(
+            Substitute.For<IHttpClientFactory>(),
+            Options.Create(new ManifestApprovalWebhookOptions
+            {
+                Enabled = false
+            }),
+            NullLogger<ManifestApprovalWebhookDispatcher>.Instance);
+
+        for (var i = 0; i < 1000; i++)
+        {
+            Assert.True(dispatcher.Enqueue(CreateEvent(i.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+        }
+
+        Assert.False(dispatcher.Enqueue(CreateEvent("overflow")));
+    }
+
+    private static ManifestApprovalWebhookEvent CreateEvent(string suffix)
+        => new()
+        {
+            EventId = $"evt-{suffix}",
+            EventType = "manifest-approved",
+            PendingId = Guid.NewGuid(),
+            ManifestHash = $"hash-{suffix}",
+            Status = "approved",
+            Actor = "reviewer",
+            ResourceCount = 1,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
     private static async Task InvokeExecuteAsync(
         ManifestApprovalWebhookDispatcher dispatcher,
         CancellationToken cancellationToken)

@@ -3,11 +3,15 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -23,8 +27,9 @@ public sealed class OutputCacheInvalidationServiceTests
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
         var metadataCache = Substitute.For<ICacheService>();
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, logger);
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, logger);
 
         await sut.InvalidateServiceCatalogAsync("TestService", [1, 2, 2], CancellationToken.None);
 
@@ -56,8 +61,9 @@ public sealed class OutputCacheInvalidationServiceTests
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
         var metadataCache = Substitute.For<ICacheService>();
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, logger);
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, logger);
 
         await sut.InvalidateServiceCatalogAsync("TestService", null, CancellationToken.None);
 
@@ -68,11 +74,54 @@ public sealed class OutputCacheInvalidationServiceTests
     [Operation(Operations.Cache)]
     public async Task InvalidateServiceCatalogAsync_WithNullCaches_DoesNotThrow()
     {
+        var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(null, null, null, logger);
+        var sut = new OutputCacheInvalidationService(null, null, null, scopeFactory, logger);
 
         var act = async () => await sut.InvalidateServiceCatalogAsync("svc", [3], CancellationToken.None);
 
         await act.Should().NotThrowAsync();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_WithoutServiceId_ResolvesOwningServices()
+    {
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var metadataCache = Substitute.For<ICacheService>();
+        var layerCatalog = Substitute.For<ILayerCatalog>();
+        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                CreateService("alpha", 7),
+                CreateService("beta", 7, 9),
+                CreateService("gamma", 9)
+            ]);
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => layerCatalog);
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var logger = NullLogger<OutputCacheInvalidationService>.Instance;
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, logger);
+
+        await sut.InvalidateLayerAsync(null, 7, CancellationToken.None);
+
+        await outputCacheStore.Received().EvictByTagAsync("service:alpha", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("service:beta", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:layer:7:*", Arg.Any<CancellationToken>());
+    }
+
+    private static ServiceDefinition CreateService(string name, params int[] layerIds)
+    {
+        var layers = layerIds
+            .Select(layerId => LayerDefinition.CreateBasic(layerId, $"Layer {layerId}", GeometryType.Point))
+            .ToArray();
+
+        return new ServiceDefinition(
+            name,
+            $"Service {name}",
+            layers,
+            SpatialReference.Create(4326));
     }
 }

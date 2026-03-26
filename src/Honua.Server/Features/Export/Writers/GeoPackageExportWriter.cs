@@ -4,9 +4,10 @@
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
+using InfrastructureGeometryService = Honua.Server.Features.Infrastructure.Services.GeometryService;
+using WkbReader = NetTopologySuite.IO.WKBReader;
 
 namespace Honua.Server.Features.Export.Writers;
 
@@ -55,12 +56,12 @@ internal static class GeoPackageExportWriter
         await InsertSpatialRefAsync(connection, srid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
         await CreateFeatureTableAsync(connection, fields, cancellationToken).ConfigureAwait(false);
         await RegisterContentsAsync(connection, srid, cancellationToken).ConfigureAwait(false);
-        await RegisterGeometryColumnAsync(connection, geometryType, srid, cancellationToken).ConfigureAwait(false);
 
-        var totalInserted = await InsertFeaturesAsync(connection, features, fields, srid, cancellationToken)
+        var insertSummary = await InsertFeaturesAsync(connection, features, fields, srid, cancellationToken)
             .ConfigureAwait(false);
+        await RegisterGeometryColumnAsync(connection, geometryType, srid, insertSummary.Dimensions, cancellationToken).ConfigureAwait(false);
 
-        return totalInserted;
+        return insertSummary.TotalInserted;
     }
 
     private static async Task CreateMetadataTablesAsync(SqliteConnection connection, CancellationToken ct)
@@ -155,20 +156,22 @@ internal static class GeoPackageExportWriter
     }
 
     private static async Task RegisterGeometryColumnAsync(
-        SqliteConnection connection, GeometryType geometryType, int srid, CancellationToken ct)
+        SqliteConnection connection, GeometryType geometryType, int srid, GeometryDimensionMetadata dimensions, CancellationToken ct)
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO gpkg_geometry_columns (table_name, column_name, geometry_type_name, srs_id, z, m)
-            VALUES ($table, 'geom', $geomType, $srid, 0, 0);
+            VALUES ($table, 'geom', $geomType, $srid, $z, $m);
             """;
         cmd.Parameters.AddWithValue("$table", TableName);
         cmd.Parameters.AddWithValue("$geomType", MapGpkgGeometryType(geometryType));
         cmd.Parameters.AddWithValue("$srid", srid);
+        cmd.Parameters.AddWithValue("$z", dimensions.Z);
+        cmd.Parameters.AddWithValue("$m", dimensions.M);
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    private static async Task<int> InsertFeaturesAsync(
+    private static async Task<FeatureInsertSummary> InsertFeaturesAsync(
         SqliteConnection connection,
         IAsyncEnumerable<Feature> features,
         FieldDefinition[] fields,
@@ -177,6 +180,12 @@ internal static class GeoPackageExportWriter
     {
         var totalInserted = 0;
         var batchCount = 0;
+        var anyGeometry = false;
+        var anyGeometryHasZ = false;
+        var anyGeometryHasM = false;
+        var anyGeometryWithoutZ = false;
+        var anyGeometryWithoutM = false;
+        var wkbReader = new WkbReader();
 
         // Build parameterized INSERT statement
         var fieldNames = new List<string> { "geom" };
@@ -213,6 +222,16 @@ internal static class GeoPackageExportWriter
                     ? ToGpkgBinary(feature.Geometry, srid)
                     : DBNull.Value;
 
+                if (feature.Geometry is { Length: > 0 } geometryWkb &&
+                    TryDetectGeometryDimensions(wkbReader, geometryWkb, out var hasZ, out var hasM))
+                {
+                    anyGeometry = true;
+                    anyGeometryHasZ |= hasZ;
+                    anyGeometryHasM |= hasM;
+                    anyGeometryWithoutZ |= !hasZ;
+                    anyGeometryWithoutM |= !hasM;
+                }
+
                 for (var i = 0; i < fields.Length; i++)
                 {
                     feature.Attributes.TryGetValue(fields[i].Name, out var value);
@@ -243,7 +262,11 @@ internal static class GeoPackageExportWriter
             transaction?.Dispose();
         }
 
-        return totalInserted;
+        return new FeatureInsertSummary(
+            totalInserted,
+            new GeometryDimensionMetadata(
+                DetermineDimensionRequirement(anyGeometry, anyGeometryHasZ, anyGeometryWithoutZ),
+                DetermineDimensionRequirement(anyGeometry, anyGeometryHasM, anyGeometryWithoutM)));
     }
 
     private static SqliteType MapSqliteParamType(FieldType fieldType) => fieldType switch
@@ -317,4 +340,34 @@ internal static class GeoPackageExportWriter
             _ => value
         };
     }
+
+    private static bool TryDetectGeometryDimensions(WkbReader reader, byte[] wkb, out bool hasZ, out bool hasM)
+    {
+        try
+        {
+            var geometry = reader.Read(wkb);
+            (hasZ, hasM) = InfrastructureGeometryService.DetectZMFromGeometry(geometry);
+            return true;
+        }
+        catch
+        {
+            hasZ = false;
+            hasM = false;
+            return false;
+        }
+    }
+
+    private static byte DetermineDimensionRequirement(bool anyGeometry, bool anyHasDimension, bool anyWithoutDimension)
+    {
+        if (!anyGeometry || !anyHasDimension)
+        {
+            return 0;
+        }
+
+        return anyWithoutDimension ? (byte)2 : (byte)1;
+    }
+
+    private readonly record struct FeatureInsertSummary(int TotalInserted, GeometryDimensionMetadata Dimensions);
+
+    private readonly record struct GeometryDimensionMetadata(byte Z, byte M);
 }

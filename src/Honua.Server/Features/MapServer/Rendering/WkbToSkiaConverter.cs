@@ -59,8 +59,15 @@ internal static class WkbToSkiaConverter
             return default;
         }
 
-        var reader = new WkbReader(wkb);
-        return ReadGeometry(reader, transform);
+        try
+        {
+            var reader = new WkbReader(wkb);
+            return ReadGeometry(reader, transform);
+        }
+        catch (InvalidDataException)
+        {
+            return default;
+        }
     }
 
     private static GeometryConversionResult ReadGeometry(WkbReader reader, Func<double, double, SKPoint> transform)
@@ -249,10 +256,17 @@ internal static class WkbToSkiaConverter
             for (int i = 0; i < numGeometries; i++)
             {
                 var result = ReadGeometry(reader, transform);
-                if (result.Path != null)
+                var resultPath = result.Path;
+                if (resultPath != null)
                 {
-                    combinedPath.AddPath(result.Path);
-                    result.Path.Dispose();
+                    try
+                    {
+                        combinedPath.AddPath(resultPath);
+                    }
+                    finally
+                    {
+                        resultPath.Dispose();
+                    }
                 }
             }
 
@@ -274,10 +288,17 @@ internal static class WkbToSkiaConverter
             for (int i = 0; i < numGeometries; i++)
             {
                 var result = ReadGeometry(reader, transform);
-                if (result.Path != null)
+                var resultPath = result.Path;
+                if (resultPath != null)
                 {
-                    combinedPath.AddPath(result.Path);
-                    result.Path.Dispose();
+                    try
+                    {
+                        combinedPath.AddPath(resultPath);
+                    }
+                    finally
+                    {
+                        resultPath.Dispose();
+                    }
                 }
             }
 
@@ -303,10 +324,18 @@ internal static class WkbToSkiaConverter
             for (int i = 0; i < numGeometries; i++)
             {
                 var result = ReadGeometry(reader, transform);
-                if (result.Path != null)
+                var resultPath = result.Path;
+                if (resultPath != null)
                 {
-                    combinedPath.AddPath(result.Path);
-                    result.Path.Dispose();
+                    try
+                    {
+                        combinedPath.AddPath(resultPath);
+                    }
+                    finally
+                    {
+                        resultPath.Dispose();
+                    }
+
                     isPoint = false;
                 }
 
@@ -373,11 +402,13 @@ internal static class WkbToSkiaConverter
 
         public byte ReadByte()
         {
+            EnsureCanRead(sizeof(byte));
             return _data[_position++];
         }
 
         public int ReadInt32()
         {
+            EnsureCanRead(sizeof(int));
             var value = IsLittleEndian
                 ? BitConverter.ToInt32(_data, _position)
                 : BinaryPrimitives_ReadInt32BigEndian(_data.AsSpan(_position));
@@ -387,11 +418,20 @@ internal static class WkbToSkiaConverter
 
         public double ReadDouble()
         {
+            EnsureCanRead(sizeof(double));
             var value = IsLittleEndian
                 ? BitConverter.ToDouble(_data, _position)
                 : BinaryPrimitives_ReadDoubleBigEndian(_data.AsSpan(_position));
             _position += 8;
             return value;
+        }
+
+        private void EnsureCanRead(int byteCount)
+        {
+            if (_position > _data.Length - byteCount)
+            {
+                throw new InvalidDataException("WKB payload ended unexpectedly.");
+            }
         }
 
         private static int BinaryPrimitives_ReadInt32BigEndian(ReadOnlySpan<byte> source)

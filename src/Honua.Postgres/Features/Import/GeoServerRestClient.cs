@@ -113,12 +113,12 @@ internal sealed partial class GeoServerRestClient
         catch (HttpRequestException ex)
         {
             Log.ServiceDiscoveryHttpFailed(_logger, geoServerRestUrl, ex);
-            throw new InvalidOperationException($"Failed to connect to GeoServer at {geoServerRestUrl}: {ex.Message}", ex);
+            throw new InvalidOperationException("Failed to connect to GeoServer.", ex);
         }
         catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
         {
             Log.ServiceDiscoveryTimedOut(_logger, geoServerRestUrl, ex);
-            throw new InvalidOperationException($"Timeout discovering GeoServer service at {geoServerRestUrl}", ex);
+            throw new InvalidOperationException("Timeout discovering GeoServer service.", ex);
         }
         catch (Exception ex)
         {

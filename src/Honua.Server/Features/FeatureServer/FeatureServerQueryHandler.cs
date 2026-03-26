@@ -292,19 +292,28 @@ internal sealed class FeatureServerQueryHandler(
             // regardless of f=, and returnGeometry=false omits the geometry column entirely.
             var isCloudNativeFormat = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
-            var requiresCloudNativeCrs = isCloudNativeFormat
+            var requiresCloudNativeGeometry = isCloudNativeFormat
                 && !validatedParams.ReturnCountOnly
                 && !validatedParams.ReturnExtentOnly
                 && !validatedParams.ReturnIdsOnly
                 && validatedParams.ReturnGeometry
                 && layer.HasGeometry
                 && string.IsNullOrWhiteSpace(validatedParams.OutStatistics);
-            if (requiresCloudNativeCrs)
+            if (requiresCloudNativeGeometry)
             {
+                var formatLabel = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
+                    ? "GeoParquet"
+                    : "GeoArrow";
+
+                if (validatedParams.ReturnM)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"{formatLabel} output does not support returnM=true. GeoParquet 1.1.0 only supports XY and XYZ geometries.");
+                }
+
                 if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
                 {
-                    var formatLabel = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase)
-                        ? "GeoParquet" : "GeoArrow";
                     return StandardErrorHelpers.CreateBadRequest(context,
                         $"{formatLabel} output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference.");
                 }

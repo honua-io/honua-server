@@ -15,6 +15,8 @@ using Npgsql;
 using NSubstitute;
 using System.Collections.Immutable;
 using System.Text.Json;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.FeatureServer.Services;
 
@@ -32,7 +34,7 @@ public sealed class FeatureServerQueryExecutorTests
         Func<Task> act = () => sut.QueryWithValidationAsync(1, default, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Invalid query:*");
+            .WithMessage("Invalid query.");
     }
 
     [Fact]
@@ -63,7 +65,7 @@ public sealed class FeatureServerQueryExecutorTests
         Func<Task> act = () => sut.QueryFlatGeobufWithValidationAsync(1, default, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Invalid query:*");
+            .WithMessage("Invalid query.");
     }
 
     [Fact]
@@ -94,7 +96,7 @@ public sealed class FeatureServerQueryExecutorTests
         Func<Task> act = () => sut.QueryFlatGeobufWithValidationAsync(1, default, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Query execution failed:*");
+            .WithMessage("Query execution failed.");
     }
 
     [Fact]
@@ -109,7 +111,7 @@ public sealed class FeatureServerQueryExecutorTests
         Func<Task> act = () => sut.QueryGeobufWithValidationAsync(1, default, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Invalid query:*");
+            .WithMessage("Invalid query.");
     }
 
     [Fact]
@@ -136,7 +138,7 @@ public sealed class FeatureServerQueryExecutorTests
         Func<Task> act = () => sut.QueryGeobufWithValidationAsync(1, default, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Query execution failed:*");
+            .WithMessage("Query execution failed.");
     }
 
     [Fact]
@@ -151,7 +153,7 @@ public sealed class FeatureServerQueryExecutorTests
         Func<Task> act = () => sut.QueryWithValidationAsync(1, default, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Query execution failed:*");
+            .WithMessage("Query execution failed.");
     }
 
     [Fact]
@@ -232,6 +234,37 @@ public sealed class FeatureServerQueryExecutorTests
         document.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task StreamQueryAsync_WithOutputSrid_SetsFeatureGeometrySpatialReference()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => (IAsyncEnumerable<Feature>)StreamFeatures(
+            [
+                CreateFeature(1, "alpha", CreatePointGeometry(1, 2, 4326))
+            ]));
+
+        var sut = CreateSut(featureReader, streamingStore);
+        var context = CreateHttpContext();
+
+        await sut.StreamQueryAsync(
+            7,
+            new FeatureQuery { Limit = 1 },
+            CreatePointLayer(),
+            new QueryParameters { F = "json", ReturnGeometry = true },
+            outputSrid: 3857,
+            context,
+            CancellationToken.None);
+
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
+        var geometry = document.RootElement
+            .GetProperty("features")[0]
+            .GetProperty("geometry");
+        geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+    }
+
     private static FeatureServerQueryExecutor CreateSut(
         IFeatureReader featureReader,
         IStreamingFeatureStore? streamingStore = null)
@@ -247,18 +280,37 @@ public sealed class FeatureServerQueryExecutorTests
             7,
             "test-layer",
             null,
-            GeometryType.None,
+            Honua.Core.Features.Catalog.Domain.GeometryType.None,
             SpatialReference.WGS84,
             [
                 new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 128)
             ]);
 
-    private static Feature CreateFeature(long id, string name)
+    private static LayerDefinition CreatePointLayer()
+        => new(
+            7,
+            "test-layer",
+            null,
+            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+            SpatialReference.WGS84,
+            [
+                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
+                new FieldDefinition("name", FieldType.String, Length: 128)
+            ]);
+
+    private static Feature CreateFeature(long id, string name, byte[]? geometry = null)
         => Feature.Create(
             id,
-            geometry: null,
+            geometry,
             ImmutableDictionary<string, object?>.Empty.Add("name", name));
+
+    private static byte[] CreatePointGeometry(double x, double y, int srid)
+    {
+        var writer = new WKBWriter();
+        var point = new Point(x, y) { SRID = srid };
+        return writer.Write(point);
+    }
 
     private static DefaultHttpContext CreateHttpContext()
     {

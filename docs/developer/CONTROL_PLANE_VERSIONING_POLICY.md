@@ -48,7 +48,7 @@ When a major version is designated as LTS:
 ## Deprecation Lifecycle
 
 ### 1. Announce deprecation
-- Mark deprecated operations in `docs/api-specs/admin-api.json` (`deprecated: true`).
+- Mark deprecated operations in `docs/developer/api-specs/admin-api.json` (`deprecated: true`).
 - Document in release notes and migration guide.
 - Add a replacement endpoint/pattern.
 
@@ -66,7 +66,7 @@ When a major version is designated as LTS:
 
 ### Baseline contract
 
-The authoritative OpenAPI specification is maintained at `docs/api-specs/admin-api.json` and served at runtime at `/api/v1/admin/openapi.json`.
+The authoritative OpenAPI specification is maintained at `docs/developer/api-specs/admin-api.json` and served at runtime at `/api/v1/admin/openapi.json`.
 
 ### CI enforcement
 

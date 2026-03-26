@@ -33,19 +33,19 @@ internal static class NlQueryServiceCollectionExtensions
                 $"Unsupported NlQuery provider '{provider}'. Only 'openai' is supported.");
         }
 
-        // Resolve API key from environment variable if not set in config
-        var apiKey = section.GetValue<string>("ApiKey");
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            var envKey = Environment.GetEnvironmentVariable("HONUA_NLQUERY_API_KEY");
-            if (!string.IsNullOrWhiteSpace(envKey))
-            {
-                section["ApiKey"] = envKey;
-            }
-        }
-
         services.AddOptions<NlQueryConfiguration>()
             .Bind(section)
+            .PostConfigure(options =>
+            {
+                if (string.IsNullOrWhiteSpace(options.ApiKey))
+                {
+                    var envKey = Environment.GetEnvironmentVariable("HONUA_NLQUERY_API_KEY");
+                    if (!string.IsNullOrWhiteSpace(envKey))
+                    {
+                        options.ApiKey = envKey;
+                    }
+                }
+            })
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<NlQueryConfiguration>, NlQueryConfigurationValidator>();
 

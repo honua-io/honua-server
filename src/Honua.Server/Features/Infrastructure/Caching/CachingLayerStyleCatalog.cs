@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Options;
@@ -20,15 +21,18 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
     private readonly ILayerStyleCatalog _innerCatalog;
     private readonly ICacheService _cacheService;
     private readonly CacheOptions _options;
+    private readonly ISchemaContext? _schemaContext;
 
     public CachingLayerStyleCatalog(
         ILayerStyleCatalog innerCatalog,
         ICacheService cacheService,
-        IOptions<CacheOptions> options)
+        IOptions<CacheOptions> options,
+        ISchemaContext? schemaContext = null)
     {
         _innerCatalog = innerCatalog ?? throw new ArgumentNullException(nameof(innerCatalog));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _schemaContext = schemaContext;
     }
 
     public async Task<LayerStyleDefinition?> GetLayerStyleAsync(
@@ -138,7 +142,17 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static string GetStyleKey(int layerId) => $"{StyleKeyPrefix}{layerId}";
+    private string GetStyleKey(int layerId) => ScopeKey($"{StyleKeyPrefix}{layerId}");
 
-    private static string GetStyleExistsKey(int layerId) => $"{StyleExistsKeyPrefix}{layerId}";
+    private string GetStyleExistsKey(int layerId) => ScopeKey($"{StyleExistsKeyPrefix}{layerId}");
+
+    private string ScopeKey(string key) => $"{GetScopePrefix()}{key}";
+
+    private string GetScopePrefix()
+    {
+        var schema = _schemaContext?.CurrentSchema;
+        return string.IsNullOrWhiteSpace(schema)
+            ? "scope:default:"
+            : $"scope:schema:{schema.Trim().ToLowerInvariant()}:";
+    }
 }

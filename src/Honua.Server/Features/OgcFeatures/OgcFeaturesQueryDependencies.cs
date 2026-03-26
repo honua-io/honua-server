@@ -24,7 +24,8 @@ internal sealed class OgcFeaturesQueryDependencies
         OgcFeaturesGeometryServices geometryServices,
         IResponseCache responseCache,
         IETagService etagService,
-        IOptions<CacheOptions> cacheOptions)
+        IOptions<CacheOptions> cacheOptions,
+        IOptions<OgcFeaturesOptions> ogcFeaturesOptions)
     {
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         StreamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
@@ -36,6 +37,7 @@ internal sealed class OgcFeaturesQueryDependencies
         ResponseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
         ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
+        OgcFeaturesOptions = ogcFeaturesOptions?.Value ?? throw new ArgumentNullException(nameof(ogcFeaturesOptions));
     }
 
     public IFeatureReader FeatureReader { get; }
@@ -48,4 +50,5 @@ internal sealed class OgcFeaturesQueryDependencies
     public IResponseCache ResponseCache { get; }
     public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }
+    public OgcFeaturesOptions OgcFeaturesOptions { get; }
 }

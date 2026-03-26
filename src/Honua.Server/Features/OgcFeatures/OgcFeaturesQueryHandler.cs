@@ -46,6 +46,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly IResponseCache _responseCache = dependencies.ResponseCache;
     private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
+    private readonly OgcFeaturesOptions _ogcFeaturesOptions = dependencies.OgcFeaturesOptions;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
     private const int StreamingFlushInterval = 32;
@@ -180,7 +181,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var allowStreaming = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase);
+            var omitExactNumberMatched = _ogcFeaturesOptions.NumberMatchedPolicy == OgcFeaturesNumberMatchedPolicy.OmitWhenExpensive;
             var useStreaming = allowStreaming &&
+                               !omitExactNumberMatched &&
                                projectedProperties == null &&
                                effectiveLimit > StreamingThreshold &&
                                !string.Equals(outputFormat, MediaTypes.Html, StringComparison.OrdinalIgnoreCase);
@@ -257,6 +260,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         projectedProperties,
                         outputFormat,
                         streamLinks,
+                        _ogcFeaturesOptions.IncludeFeatureLinks,
                         totalCount,
                         filterResult.CrsDefinition.Uri,
                         cancellationToken);
@@ -265,23 +269,75 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             var useNativeGeoJson = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                    string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase);
+            var includeFeatureLinks = _ogcFeaturesOptions.IncludeFeatureLinks;
             QueryResult<Feature>? featureResult = null;
             QueryResult<EncodedGeoJsonFeature>? encodedResult = null;
+            PagedQueryResult<Feature>? pagedFeatureResult = null;
+            PagedQueryResult<EncodedGeoJsonFeature>? pagedEncodedResult = null;
             GeoJsonFeature[] features;
 
-            if (useNativeGeoJson && _featureReader is IGeoJsonFeatureStore geoJsonFeatureStore)
+            if (omitExactNumberMatched && useNativeGeoJson && _featureReader is IPagedGeoJsonFeatureStore pagedGeoJsonFeatureStore)
+            {
+                pagedEncodedResult = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(layerId, query, cancellationToken);
+                features = pagedEncodedResult.Value.Items
+                    .Select(feature =>
+                    {
+                        ImmutableArray<Link>? links = includeFeatureLinks
+                            ? OgcFeaturesUtilities.BuildFeatureLinks(
+                                request,
+                                collectionId,
+                                FormattableString.Invariant($"{feature.Id}"),
+                                outputFormat)
+                            : null;
+                        return ToOgcFeature(
+                            feature,
+                            layer,
+                            filterResult.CrsDefinition.AxisOrder,
+                            _geometryServices,
+                            projectedProperties,
+                            links);
+                    })
+                    .ToArray();
+            }
+            else if (omitExactNumberMatched && _featureReader is IPagedFeatureReader pagedFeatureReader)
+            {
+                pagedFeatureResult = await pagedFeatureReader.QueryPageAsync(layerId, query, cancellationToken);
+                features = pagedFeatureResult.Value.Items
+                    .Select(feature =>
+                    {
+                        ImmutableArray<Link>? links = includeFeatureLinks
+                            ? OgcFeaturesUtilities.BuildFeatureLinks(
+                                request,
+                                collectionId,
+                                FormattableString.Invariant($"{feature.Id}"),
+                                outputFormat)
+                            : null;
+                        return ToOgcFeature(
+                            feature,
+                            layer,
+                            filterResult.CrsDefinition.AxisOrder,
+                            _geometryServices,
+                            projectedProperties,
+                            links);
+                    })
+                    .ToArray();
+            }
+            else if (useNativeGeoJson && _featureReader is IGeoJsonFeatureStore geoJsonFeatureStore)
             {
                 encodedResult = await geoJsonFeatureStore.QueryGeoJsonAsync(layerId, query, cancellationToken);
                 features = encodedResult.Value.Items
                     .Select(feature =>
                     {
-                        var links = OgcFeaturesUtilities.BuildFeatureLinks(
-                            request,
-                            collectionId,
-                            FormattableString.Invariant($"{feature.Id}"),
-                            outputFormat);
+                        ImmutableArray<Link>? links = includeFeatureLinks
+                            ? OgcFeaturesUtilities.BuildFeatureLinks(
+                                request,
+                                collectionId,
+                                FormattableString.Invariant($"{feature.Id}"),
+                                outputFormat)
+                            : null;
                         return ToOgcFeature(
                             feature,
+                            layer,
                             filterResult.CrsDefinition.AxisOrder,
                             _geometryServices,
                             projectedProperties,
@@ -295,13 +351,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = featureResult.Value.Items
                     .Select(feature =>
                     {
-                        var links = OgcFeaturesUtilities.BuildFeatureLinks(
-                            request,
-                            collectionId,
-                            FormattableString.Invariant($"{feature.Id}"),
-                            outputFormat);
+                        ImmutableArray<Link>? links = includeFeatureLinks
+                            ? OgcFeaturesUtilities.BuildFeatureLinks(
+                                request,
+                                collectionId,
+                                FormattableString.Invariant($"{feature.Id}"),
+                                outputFormat)
+                            : null;
                         return ToOgcFeature(
                             feature,
+                            layer,
                             filterResult.CrsDefinition.AxisOrder,
                             _geometryServices,
                             projectedProperties,
@@ -310,8 +369,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     .ToArray();
             }
             stopwatch.Stop();
-            var queryTotalCount = encodedResult?.TotalCount ?? featureResult?.TotalCount ?? 0;
-            var queryHasMoreResults = encodedResult?.HasMoreResults ?? featureResult?.HasMoreResults ?? false;
+            var queryTotalCount = pagedEncodedResult?.TotalCount
+                                  ?? pagedFeatureResult?.TotalCount
+                                  ?? encodedResult?.TotalCount
+                                  ?? featureResult?.TotalCount;
+            var queryHasMoreResults = pagedEncodedResult?.HasMoreResults
+                                      ?? pagedFeatureResult?.HasMoreResults
+                                      ?? encodedResult?.HasMoreResults
+                                      ?? featureResult?.HasMoreResults
+                                      ?? false;
             OgcFeaturesLog.ItemsQueryCompleted(_logger, collectionId, features.Length, queryTotalCount, stopwatch.Elapsed.TotalMilliseconds);
             HonuaTelemetry.SetSuccess(featureActivity, features.Length);
 
@@ -507,8 +573,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 }
 
                 var feature = queryResult.Items[0];
-                var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat);
-                ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+                ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
+                    ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat)
+                    : null;
+                ogcFeature = ToOgcFeature(feature, layer, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
             }
             else
             {
@@ -521,8 +589,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 }
 
                 var feature = queryResult.Items[0];
-                var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat);
-                ogcFeature = ToOgcFeature(feature, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+                ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
+                    ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, featureId, outputFormat)
+                    : null;
+                ogcFeature = ToOgcFeature(feature, layer, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
             }
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(crsDefinition.Uri);
@@ -577,29 +647,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         Feature feature,
+        LayerDefinition layer,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null)
     {
         var geometry = geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        Dictionary<string, object?> properties;
-        if (projectedProperties == null)
-        {
-            properties = feature.Attributes.ToDictionary(
-                static kvp => kvp.Key,
-                static kvp => kvp.Value,
-                StringComparer.OrdinalIgnoreCase);
-        }
-        else
-        {
-            properties = feature.Attributes
-                .Where(kvp => projectedProperties.Contains(kvp.Key))
-                .ToDictionary(
-                    static kvp => kvp.Key,
-                    static kvp => kvp.Value,
-                    StringComparer.OrdinalIgnoreCase);
-        }
+        var properties = BuildOgcProperties(feature.Attributes, layer, projectedProperties);
 
         return new GeoJsonFeature
         {
@@ -613,28 +668,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
+        LayerDefinition layer,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null)
     {
-        Dictionary<string, object?> properties;
-        if (projectedProperties == null)
-        {
-            properties = feature.Attributes.ToDictionary(
-                static kvp => kvp.Key,
-                static kvp => kvp.Value,
-                StringComparer.OrdinalIgnoreCase);
-        }
-        else
-        {
-            properties = feature.Attributes
-                .Where(kvp => projectedProperties.Contains(kvp.Key))
-                .ToDictionary(
-                    static kvp => kvp.Key,
-                    static kvp => kvp.Value,
-                    StringComparer.OrdinalIgnoreCase);
-        }
+        var properties = BuildOgcProperties(feature.Attributes, layer, projectedProperties);
 
         return new GeoJsonFeature
         {
@@ -644,6 +684,29 @@ internal sealed partial class OgcFeaturesQueryHandler(
             Properties = properties,
             Links = links
         };
+    }
+
+    private static Dictionary<string, object?> BuildOgcProperties(
+        ImmutableDictionary<string, object?> attributes,
+        LayerDefinition layer,
+        ImmutableHashSet<string>? projectedProperties)
+    {
+        var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in layer.AttributeFields)
+        {
+            if (projectedProperties != null && !projectedProperties.Contains(field.Name))
+            {
+                continue;
+            }
+
+            if (attributes.TryGetValue(field.Name, out var value))
+            {
+                properties[field.Name] = value;
+            }
+        }
+
+        return properties;
     }
 
     private static string[] ResolveCsvFieldNames(
@@ -1025,12 +1088,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private static async Task StreamFeatureCollectionAsync(
         HttpContext context,
         IAsyncEnumerable<Feature> features,
+        LayerDefinition layer,
         string collectionId,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties,
         string outputFormat,
         ImmutableArray<Link> links,
+        bool includeFeatureLinks,
         long numberMatched,
         CancellationToken cancellationToken)
     {
@@ -1048,12 +1113,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var featuresSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            var featureLinks = OgcFeaturesUtilities.BuildFeatureLinks(
-                context.Request,
-                collectionId,
-                FormattableString.Invariant($"{feature.Id}"),
-                outputFormat);
-            var ogcFeature = ToOgcFeature(feature, axisOrder, geometryServices, projectedProperties, featureLinks);
+            ImmutableArray<Link>? featureLinks = includeFeatureLinks
+                ? OgcFeaturesUtilities.BuildFeatureLinks(
+                    context.Request,
+                    collectionId,
+                    FormattableString.Invariant($"{feature.Id}"),
+                    outputFormat)
+                : null;
+            var ogcFeature = ToOgcFeature(feature, layer, axisOrder, geometryServices, projectedProperties, featureLinks);
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;
@@ -1095,6 +1162,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly AxisOrder _axisOrder;
         private readonly string _outputFormat;
         private readonly ImmutableArray<Link> _links;
+        private readonly bool _includeFeatureLinks;
         private readonly ImmutableHashSet<string>? _projectedProperties;
         private readonly long _numberMatched;
         private readonly string _crsUri;
@@ -1111,6 +1179,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             ImmutableHashSet<string>? projectedProperties,
             string outputFormat,
             ImmutableArray<Link> links,
+            bool includeFeatureLinks,
             long numberMatched,
             string crsUri,
             CancellationToken requestCancellationToken)
@@ -1124,6 +1193,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _projectedProperties = projectedProperties;
             _outputFormat = outputFormat;
             _links = links;
+            _includeFeatureLinks = includeFeatureLinks;
             _numberMatched = numberMatched;
             _crsUri = crsUri;
             _requestCancellationToken = requestCancellationToken;
@@ -1149,12 +1219,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
             await StreamFeatureCollectionAsync(
                 httpContext,
                 stream,
+                _layer,
                 _collectionId,
                 _axisOrder,
                 _geometryServices,
                 _projectedProperties,
                 _outputFormat,
                 _links,
+                _includeFeatureLinks,
                 _numberMatched,
                 cancellationToken);
         }

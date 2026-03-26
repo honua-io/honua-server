@@ -7,6 +7,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -65,7 +66,7 @@ internal static class AlertAdminEndpoints
 
     private static async Task<IResult> HandleListZones(
         string? serviceId,
-        IAlertAdminStore store,
+        [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
         var zones = await store.ListZonesAsync(serviceId, cancellationToken).ConfigureAwait(false);
@@ -75,7 +76,7 @@ internal static class AlertAdminEndpoints
 
     private static async Task<IResult> HandleCreateZone(
         AlertZoneRequest request,
-        IAlertAdminStore store,
+        [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
         if (!TryCreateZoneDefinition(0, request, out var zone, out var error))
@@ -90,7 +91,7 @@ internal static class AlertAdminEndpoints
     private static async Task<IResult> HandleUpdateZone(
         long zoneId,
         AlertZoneRequest request,
-        IAlertAdminStore store,
+        [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
         if (!TryCreateZoneDefinition(zoneId, request, out var zone, out var error))
@@ -109,7 +110,7 @@ internal static class AlertAdminEndpoints
 
     private static async Task<IResult> HandleDeleteZone(
         long zoneId,
-        IAlertAdminStore store,
+        [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
         var deleted = await store.DeleteZoneAsync(zoneId, cancellationToken).ConfigureAwait(false);
@@ -124,7 +125,7 @@ internal static class AlertAdminEndpoints
     private static async Task<IResult> HandleListRules(
         string? serviceId,
         int? layerId,
-        IAlertAdminStore store,
+        [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
         var rules = await store.ListRulesAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
@@ -134,8 +135,8 @@ internal static class AlertAdminEndpoints
 
     private static async Task<IResult> HandleCreateRule(
         AlertRuleRequest request,
-        IAlertAdminStore store,
-        IAlertEditionPolicy editionPolicy,
+        [FromServices] IAlertAdminStore store,
+        [FromServices] IAlertEditionPolicy editionPolicy,
         CancellationToken cancellationToken)
     {
         if (!TryCreateRuleDefinition(0, request, out var rule, out var error))
@@ -155,8 +156,8 @@ internal static class AlertAdminEndpoints
     private static async Task<IResult> HandleUpdateRule(
         long ruleId,
         AlertRuleRequest request,
-        IAlertAdminStore store,
-        IAlertEditionPolicy editionPolicy,
+        [FromServices] IAlertAdminStore store,
+        [FromServices] IAlertEditionPolicy editionPolicy,
         CancellationToken cancellationToken)
     {
         if (!TryCreateRuleDefinition(ruleId, request, out var rule, out var error))
@@ -180,7 +181,7 @@ internal static class AlertAdminEndpoints
 
     private static async Task<IResult> HandleDeleteRule(
         long ruleId,
-        IAlertAdminStore store,
+        [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
         var deleted = await store.DeleteRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);

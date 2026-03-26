@@ -90,7 +90,7 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
         var definition = await response.Content.ReadFromJsonAsync<TileMatrixSetDefinition>();
         definition.Should().NotBeNull();
         definition!.Id.Should().Be("WorldCRS84Quad");
-        definition.Crs.Should().Be("http://www.opengis.net/def/crs/EPSG/0/4326");
+        definition.Crs.Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
         definition.TileMatrices.Should().NotBeEmpty();
 
         // At zoom 0, WorldCRS84Quad has 2 columns x 1 row
@@ -113,7 +113,7 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
         var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
         tileset.Should().NotBeNull();
         tileset!.TileMatrixSetId.Should().Be("WorldCRS84Quad");
-        tileset.Crs.Should().Be("http://www.opengis.net/def/crs/EPSG/0/4326");
+        tileset.Crs.Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
         tileset.MediaTypes.Should().NotBeNull();
         tileset.MediaTypes!.Value.Should().Contain(MediaTypes.Mvt);
         tileset.MediaTypes!.Value.Should().Contain(MediaTypes.Png);
@@ -133,6 +133,7 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
         var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
         tileset.Should().NotBeNull();
         tileset!.TileMatrixSetId.Should().Be("WorldCRS84Quad");
+        tileset.Crs.Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
     }
 
     [IntegrationTest]

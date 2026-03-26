@@ -12,6 +12,8 @@ using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -25,13 +27,18 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] FeatureServerEditsHandler editsHandler,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var (request, readError) = await TryReadApplyEditsRequestAsync(context.Request, cancellationToken);
+        var (request, readError, errorResult) = await TryReadApplyEditsRequestAsync(context.Request, cancellationToken);
         if (request == null)
         {
+            if (errorResult != null)
+            {
+                return errorResult;
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid applyEdits request",
                 [readError ?? "Invalid request body."]);
@@ -51,11 +58,11 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] FeatureServerEditsHandler editsHandler,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var (request, readError) = await TryReadFeatureArrayRequestAsync(
+        var (request, readError, errorResult) = await TryReadFeatureArrayRequestAsync(
             context.Request,
             primaryKey: "features",
             fallbackKey: "adds",
@@ -63,6 +70,11 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
         if (request == null)
         {
+            if (errorResult != null)
+            {
+                return errorResult;
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid addFeatures request",
                 [readError ?? "Invalid request body."]);
@@ -92,11 +104,11 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] FeatureServerEditsHandler editsHandler,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var (request, readError) = await TryReadFeatureArrayRequestAsync(
+        var (request, readError, errorResult) = await TryReadFeatureArrayRequestAsync(
             context.Request,
             primaryKey: "features",
             fallbackKey: "updates",
@@ -104,6 +116,11 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
         if (request == null)
         {
+            if (errorResult != null)
+            {
+                return errorResult;
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid updateFeatures request",
                 [readError ?? "Invalid request body."]);
@@ -133,13 +150,18 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] FeatureServerEditsHandler editsHandler,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var (request, readError) = await TryReadDeleteFeaturesRequestAsync(context.Request, cancellationToken);
+        var (request, readError, errorResult) = await TryReadDeleteFeaturesRequestAsync(context.Request, cancellationToken);
         if (request == null)
         {
+            if (errorResult != null)
+            {
+                return errorResult;
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid deleteFeatures request",
                 [readError ?? "Invalid request body."]);
@@ -349,8 +371,8 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> HandleServiceApplyEdits(
         string serviceId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
-        IOptions<LimitsOptions> limitsOptions)
+        [FromServices] FeatureServerEditsHandler editsHandler,
+        [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
 
@@ -365,7 +387,20 @@ internal static partial class FeatureServerEndpoints
         ServiceLayerEdits[]? layerEdits;
         try
         {
-            layerEdits = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
+            var (request, readError, errorResult) = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
+            if (errorResult != null)
+            {
+                return errorResult;
+            }
+
+            if (request == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid service applyEdits request",
+                    [readError ?? "Request body must be a non-empty JSON array of layer edits."]);
+            }
+
+            layerEdits = request;
         }
         catch (JsonException)
         {
@@ -374,7 +409,7 @@ internal static partial class FeatureServerEndpoints
                 [InvalidServiceApplyEditsJsonMessage]);
         }
 
-        if (layerEdits == null || layerEdits.Length == 0)
+        if (layerEdits.Length == 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid service applyEdits request",
@@ -424,7 +459,7 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(serviceResponse, FeatureServerJsonContext.Default.ServiceApplyEditsResponse, contentType: "application/json");
     }
 
-    private static async Task<ServiceLayerEdits[]?> TryReadServiceApplyEditsRequestAsync(
+    private static async Task<(ServiceLayerEdits[]? Request, string? Error, IResult? ErrorResult)> TryReadServiceApplyEditsRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -434,16 +469,26 @@ internal static partial class FeatureServerEndpoints
             var editsJson = form["edits"].ToString();
             if (string.IsNullOrWhiteSpace(editsJson))
             {
-                return null;
+                return (null, null, null);
             }
 
-            return JsonSerializer.Deserialize(editsJson, FeatureServerJsonContext.Default.ServiceLayerEditsArray);
+            return (JsonSerializer.Deserialize(editsJson, FeatureServerJsonContext.Default.ServiceLayerEditsArray), null, null);
         }
 
-        return await JsonSerializer.DeserializeAsync(
+        if (request.ContentLength is 0)
+        {
+            return (null, null, null);
+        }
+
+        if (!TryValidateRequestContentType(request, out var receivedContentType))
+        {
+            return (null, null, CreateUnsupportedRequestContentTypeResult(receivedContentType));
+        }
+
+        return (await JsonSerializer.DeserializeAsync(
             request.Body,
             FeatureServerJsonContext.Default.ServiceLayerEditsArray,
-            cancellationToken);
+            cancellationToken), null, null);
     }
 
     /// <summary>
@@ -578,7 +623,7 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    private static async Task<(ApplyEditsRequest? Request, string? Error)> TryReadApplyEditsRequestAsync(
+    private static async Task<(ApplyEditsRequest? Request, string? Error, IResult? ErrorResult)> TryReadApplyEditsRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -586,12 +631,26 @@ internal static partial class FeatureServerEndpoints
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var values = form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-            return TryParseApplyEditsRequest(values);
+            var parsed = TryParseApplyEditsRequest(values);
+            return (parsed.Request, parsed.Error, null);
         }
 
         if (request.ContentLength is 0)
         {
-            return (new ApplyEditsRequest(), null);
+            return (new ApplyEditsRequest(), null, null);
+        }
+
+        if (!TryValidateRequestContentType(request, out var receivedContentType))
+        {
+            return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+                receivedContentType ?? "(missing)",
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "application/json",
+                    "application/*+json",
+                    "application/x-www-form-urlencoded",
+                    "multipart/form-data"
+                }));
         }
 
         try
@@ -602,18 +661,18 @@ internal static partial class FeatureServerEndpoints
                 cancellationToken);
             if (parsed == null)
             {
-                return (null, "Invalid JSON payload.");
+                return (null, "Invalid JSON payload.", null);
             }
 
-            return (parsed, null);
+            return (parsed, null, null);
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.");
+            return (null, "Invalid JSON payload.", null);
         }
     }
 
-    private static async Task<(ApplyEditsRequest? Request, string? Error)> TryReadFeatureArrayRequestAsync(
+    private static async Task<(ApplyEditsRequest? Request, string? Error, IResult? ErrorResult)> TryReadFeatureArrayRequestAsync(
         HttpRequest request,
         string primaryKey,
         string fallbackKey,
@@ -624,12 +683,26 @@ internal static partial class FeatureServerEndpoints
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var values = form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-            return TryParseFeatureArrayRequestFromValues(values, primaryKey, fallbackKey, assignToAdds);
+            var parsed = TryParseFeatureArrayRequestFromValues(values, primaryKey, fallbackKey, assignToAdds);
+            return (parsed.Request, parsed.Error, null);
         }
 
         if (request.ContentLength is 0)
         {
-            return (new ApplyEditsRequest(), null);
+            return (new ApplyEditsRequest(), null, null);
+        }
+
+        if (!TryValidateRequestContentType(request, out var receivedContentType))
+        {
+            return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+                receivedContentType ?? "(missing)",
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "application/json",
+                    "application/*+json",
+                    "application/x-www-form-urlencoded",
+                    "multipart/form-data"
+                }));
         }
 
         try
@@ -637,18 +710,19 @@ internal static partial class FeatureServerEndpoints
             using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return (null, "Invalid JSON payload.");
+                return (null, "Invalid JSON payload.", null);
             }
 
-            return TryParseFeatureArrayRequestFromJson(document.RootElement, primaryKey, fallbackKey, assignToAdds);
+            var parsed = TryParseFeatureArrayRequestFromJson(document.RootElement, primaryKey, fallbackKey, assignToAdds);
+            return (parsed.Request, parsed.Error, null);
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.");
+            return (null, "Invalid JSON payload.", null);
         }
     }
 
-    private static async Task<(ApplyEditsRequest? Request, string? Error)> TryReadDeleteFeaturesRequestAsync(
+    private static async Task<(ApplyEditsRequest? Request, string? Error, IResult? ErrorResult)> TryReadDeleteFeaturesRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -656,12 +730,26 @@ internal static partial class FeatureServerEndpoints
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var values = form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-            return TryParseDeleteFeaturesRequestFromValues(values);
+            var parsed = TryParseDeleteFeaturesRequestFromValues(values);
+            return (parsed.Request, parsed.Error, null);
         }
 
         if (request.ContentLength is 0)
         {
-            return (new ApplyEditsRequest(), null);
+            return (new ApplyEditsRequest(), null, null);
+        }
+
+        if (!TryValidateRequestContentType(request, out var receivedContentType))
+        {
+            return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+                receivedContentType ?? "(missing)",
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "application/json",
+                    "application/*+json",
+                    "application/x-www-form-urlencoded",
+                    "multipart/form-data"
+                }));
         }
 
         try
@@ -669,14 +757,15 @@ internal static partial class FeatureServerEndpoints
             using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return (null, "Invalid JSON payload.");
+                return (null, "Invalid JSON payload.", null);
             }
 
-            return TryParseDeleteFeaturesRequestFromJson(document.RootElement);
+            var parsed = TryParseDeleteFeaturesRequestFromJson(document.RootElement);
+            return (parsed.Request, parsed.Error, null);
         }
         catch (JsonException)
         {
-            return (null, "Invalid JSON payload.");
+            return (null, "Invalid JSON payload.", null);
         }
     }
 

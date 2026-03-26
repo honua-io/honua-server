@@ -15,6 +15,12 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(AdminAuthConfigResponse))]
 [JsonSerializable(typeof(AdminAuthProviderInfo))]
 [JsonSerializable(typeof(List<AdminAuthProviderInfo>))]
+[JsonSerializable(typeof(AdminAuthAuthorizeUrlRequest))]
+[JsonSerializable(typeof(AdminAuthAuthorizeUrlResponse))]
+[JsonSerializable(typeof(AdminAuthTokenRequest))]
+[JsonSerializable(typeof(AdminAuthTokenResponse))]
+[JsonSerializable(typeof(AdminAuthLogoutUrlResponse))]
+[JsonSerializable(typeof(AdminAuthOidcDiscoveryDocument))]
 internal sealed partial class AdminAuthJsonContext : JsonSerializerContext
 {
 }

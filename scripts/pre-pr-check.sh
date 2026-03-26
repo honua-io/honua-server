@@ -25,12 +25,74 @@ docker pull postgis/postgis:16-3.4-alpine > /dev/null 2>&1 || echo "   ⚠️ Co
 
 echo "6. Running all .NET tests..."
 mkdir -p ./tests/TestResults
-dotnet test Honua.sln \
+
+dotnet test tests/Honua.Core.Tests/Honua.Core.Tests.csproj \
+    --no-build \
     --no-restore \
     --configuration Release \
     --logger "console;verbosity=minimal" \
     --results-directory ./tests/TestResults \
-    -- RunConfiguration.MaxCpuCount=0
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.LoadTests/Honua.LoadTests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName!~Honua.Server.Tests.Features." \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Features.FeatureServer|FullyQualifiedName~Honua.Server.Tests.Features.OData|FullyQualifiedName~Honua.Server.Tests.Features.OgcFeatures|FullyQualifiedName~Honua.Server.Tests.Features.API" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Features.OgcMaps|FullyQualifiedName~Honua.Server.Tests.Features.OgcTiles|FullyQualifiedName~Honua.Server.Tests.Features.MapServer|FullyQualifiedName~Honua.Server.Tests.Features.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.GeometryService" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --filter "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.GeoservicesCatalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling" \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
+
+dotnet test tests/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+    --no-build \
+    --no-restore \
+    --configuration Release \
+    --logger "console;verbosity=minimal" \
+    --results-directory ./tests/TestResults \
+    -- RunConfiguration.MaxCpuCount=1
 
 echo "7. Testing AOT build..."
 cd src/Honua.Server

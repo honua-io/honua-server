@@ -103,7 +103,15 @@
             return;
         }
 
-        await Session.StartLoginAsync(_singleProvider);
+        try
+        {
+            await Session.StartLoginAsync(_singleProvider);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+            _loading = false;
+        }
     }
 
     private async Task RetryAsync()

@@ -2,12 +2,22 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const string UnsupportedMediaTypeErrorPrefix = "__unsupported_media_type__:";
+    private static readonly ISet<string> SupportedRequestContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/json",
+        "application/*+json",
+        "application/x-www-form-urlencoded",
+        "multipart/form-data"
+    };
+
     internal static async Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> TryReadRequestValuesAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
@@ -22,6 +32,11 @@ internal static partial class FeatureServerEndpoints
         if (request.ContentLength is 0)
         {
             return (null, "Request body is required.");
+        }
+
+        if (!TryValidateRequestContentType(request, out var receivedContentType))
+        {
+            return (null, UnsupportedMediaTypeErrorPrefix + (receivedContentType ?? "(missing)"));
         }
 
         try
@@ -48,6 +63,52 @@ internal static partial class FeatureServerEndpoints
         {
             return (null, "Invalid JSON payload.");
         }
+    }
+
+    internal static bool TryValidateRequestContentType(HttpRequest request, out string? receivedContentType)
+    {
+        receivedContentType = null;
+
+        if (request.HasFormContentType)
+        {
+            return true;
+        }
+
+        if (request.ContentLength is 0)
+        {
+            return true;
+        }
+
+        if (IsSupportedJsonContentType(request.ContentType))
+        {
+            return true;
+        }
+
+        receivedContentType = string.IsNullOrWhiteSpace(request.ContentType)
+            ? "(missing)"
+            : request.ContentType.Split(';', 2)[0].Trim();
+        return false;
+    }
+
+    internal static bool TryGetUnsupportedMediaType(string? error, out string? receivedContentType)
+    {
+        receivedContentType = null;
+
+        if (string.IsNullOrWhiteSpace(error) ||
+            !error.StartsWith(UnsupportedMediaTypeErrorPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        receivedContentType = error[UnsupportedMediaTypeErrorPrefix.Length..];
+        return true;
+    }
+
+    internal static IResult CreateUnsupportedRequestContentTypeResult(string? receivedContentType)
+    {
+        return ValidationErrorHelpers.CreateUnsupportedMediaType(
+            receivedContentType ?? "(missing)",
+            SupportedRequestContentTypes);
     }
 
     private static StringValues ConvertJsonValue(JsonElement element)
@@ -81,4 +142,16 @@ internal static partial class FeatureServerEndpoints
 
     private static bool TryGetValue(IReadOnlyDictionary<string, StringValues> values, string key, out StringValues value)
         => values.TryGetValue(key, out value);
+
+    private static bool IsSupportedJsonContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return false;
+        }
+
+        var mediaType = contentType.Split(';', 2)[0].Trim();
+        return string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase) ||
+            mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase);
+    }
 }

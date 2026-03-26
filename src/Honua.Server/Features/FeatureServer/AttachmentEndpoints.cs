@@ -31,6 +31,12 @@ internal sealed class AttachmentOperations
 /// </summary>
 internal static class AttachmentEndpoints
 {
+    private static readonly ISet<string> SupportedAttachmentContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/x-www-form-urlencoded",
+        "multipart/form-data"
+    };
+
     /// <summary>
     /// Maps FeatureServer attachment REST API endpoints using AOT-compatible routing
     /// </summary>
@@ -133,6 +139,12 @@ internal static class AttachmentEndpoints
 
             if (bodyValues == null)
             {
+                if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+                {
+                    await FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(receivedContentType).ExecuteAsync(context);
+                    return;
+                }
+
                 if (!string.Equals(readError, "Request body is required.", StringComparison.OrdinalIgnoreCase))
                 {
                     await RouteValidationHelpers.WriteValidationErrorAsync(context, readError ?? "Invalid request body.");
@@ -193,7 +205,12 @@ internal static class AttachmentEndpoints
             return;
 
         var layerId = resource.Value.Layer.Id;
-        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var form = await TryReadAttachmentFormAsync(context);
+        if (form == null)
+        {
+            return;
+        }
+
         var objectIdValue = context.Request.Query.TryGetValue("objectId", out var queryObjectId)
             ? queryObjectId.ToString()
             : null;
@@ -277,7 +294,12 @@ internal static class AttachmentEndpoints
             return;
 
         var layerId = resource.Value.Layer.Id;
-        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var form = await TryReadAttachmentFormAsync(context);
+        if (form == null)
+        {
+            return;
+        }
+
         var routeFeatureId = TryGetRouteLongValue(context, "featureId", out var routeFeatureIdError);
         if (routeFeatureIdError != null)
         {
@@ -357,7 +379,12 @@ internal static class AttachmentEndpoints
             return;
         }
 
-        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var form = await TryReadAttachmentFormAsync(context);
+        if (form == null)
+        {
+            return;
+        }
+
         var objectIdValue = form.TryGetValue("objectId", out var formObjectId)
             ? formObjectId.ToString()
             : context.Request.Query.TryGetValue("objectId", out var queryObjectId)
@@ -470,6 +497,23 @@ internal static class AttachmentEndpoints
             context.RequestAborted);
 
         await result.ExecuteAsync(context);
+    }
+
+    private static async Task<IFormCollection?> TryReadAttachmentFormAsync(HttpContext context)
+    {
+        if (context.Request.HasFormContentType)
+        {
+            return await context.Request.ReadFormAsync(context.RequestAborted);
+        }
+
+        var receivedContentType = string.IsNullOrWhiteSpace(context.Request.ContentType)
+            ? "(missing)"
+            : context.Request.ContentType.Split(';', 2)[0].Trim();
+
+        await ValidationErrorHelpers.CreateUnsupportedMediaType(
+            receivedContentType,
+            SupportedAttachmentContentTypes).ExecuteAsync(context);
+        return null;
     }
 
     private static async Task<(ServiceDefinition Service, LayerDefinition Layer)?> TryValidateLayerAccessAsync(

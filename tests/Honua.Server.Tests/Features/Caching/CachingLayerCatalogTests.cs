@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -311,6 +312,40 @@ public sealed class CachingLayerCatalogTests : IDisposable
         _innerCatalog.ListLayersCallCount.Should().Be(1);
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetLayerAsync_DifferentSchemaContexts_DoNotShareCacheEntries()
+    {
+        using var sharedCache = new RedisCacheService(
+            null,
+            Options.Create(_options),
+            new MockLogger<RedisCacheService>(),
+            _performanceMonitor);
+
+        var innerCatalogA = new MockLayerCatalog("A");
+        var innerCatalogB = new MockLayerCatalog("B");
+        var catalogA = new CachingLayerCatalog(
+            innerCatalogA,
+            sharedCache,
+            Options.Create(_options),
+            new TestSchemaContext("schema_a"));
+        var catalogB = new CachingLayerCatalog(
+            innerCatalogB,
+            sharedCache,
+            Options.Create(_options),
+            new TestSchemaContext("schema_b"));
+
+        var layerA = await catalogA.GetLayerAsync(1);
+        var layerB = await catalogB.GetLayerAsync(1);
+
+        layerA.Should().NotBeNull();
+        layerB.Should().NotBeNull();
+        layerA!.Name.Should().Be("ALayer1");
+        layerB!.Name.Should().Be("BLayer1");
+        innerCatalogA.GetLayerCallCount.Should().Be(1);
+        innerCatalogB.GetLayerCallCount.Should().Be(1);
+    }
+
     internal sealed class MockLayerCatalog : ILayerCatalog
     {
         private static readonly string[] _defaultFormats = ["json", "geojson"];
@@ -329,6 +364,12 @@ public sealed class CachingLayerCatalogTests : IDisposable
         public int ServiceExistsCallCount { get; set; }
         public int GetRelationshipCallCount { get; set; }
         public int ListRelationshipsCallCount { get; set; }
+        private readonly string _namePrefix;
+
+        public MockLayerCatalog(string namePrefix = "")
+        {
+            _namePrefix = namePrefix;
+        }
 
         public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
         {
@@ -337,13 +378,13 @@ public sealed class CachingLayerCatalogTests : IDisposable
             {
                 return Task.FromResult<LayerDefinition?>(null);
             }
-            return Task.FromResult<LayerDefinition?>(CreateTestLayer(layerId));
+            return Task.FromResult<LayerDefinition?>(CreateTestLayer(layerId, _namePrefix));
         }
 
         public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
         {
             ListLayersCallCount++;
-            return Task.FromResult(new[] { CreateTestLayer(1), CreateTestLayer(2) });
+            return Task.FromResult(new[] { CreateTestLayer(1, _namePrefix), CreateTestLayer(2, _namePrefix) });
         }
 
         public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
@@ -353,13 +394,13 @@ public sealed class CachingLayerCatalogTests : IDisposable
             {
                 return Task.FromResult<ServiceDefinition?>(null);
             }
-            return Task.FromResult<ServiceDefinition?>(CreateTestService(serviceName));
+            return Task.FromResult<ServiceDefinition?>(CreateTestService(serviceName, _namePrefix));
         }
 
         public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
         {
             ListServicesCallCount++;
-            return Task.FromResult(new[] { CreateTestService("Service1"), CreateTestService("Service2") });
+            return Task.FromResult(new[] { CreateTestService("Service1", _namePrefix), CreateTestService("Service2", _namePrefix) });
         }
 
         public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
@@ -394,11 +435,11 @@ public sealed class CachingLayerCatalogTests : IDisposable
             return Task.FromResult(Array.Empty<Relationship>());
         }
 
-        private static LayerDefinition CreateTestLayer(int id)
+        private static LayerDefinition CreateTestLayer(int id, string namePrefix)
         {
             return new LayerDefinition(
                 id,
-                $"Layer{id}",
+                $"{namePrefix}Layer{id}",
                 $"Test layer {id}",
                 GeometryType.Point,
                 SpatialReference.WGS84,
@@ -410,16 +451,21 @@ public sealed class CachingLayerCatalogTests : IDisposable
                 Relationships: _defaultRelationships);
         }
 
-        private static ServiceDefinition CreateTestService(string name)
+        private static ServiceDefinition CreateTestService(string name, string namePrefix)
         {
             return new ServiceDefinition(
-                name,
+                $"{namePrefix}{name}",
                 $"Test service {name}",
-                new[] { CreateTestLayer(1) },
+                new[] { CreateTestLayer(1, namePrefix) },
                 SpatialReference.WGS84,
                 _defaultFormats,
                 _defaultCapabilities);
         }
+    }
+
+    private sealed class TestSchemaContext(string currentSchema) : ISchemaContext
+    {
+        public string? CurrentSchema { get; } = currentSchema;
     }
 
     internal sealed class MockLogger<T> : ILogger<T>

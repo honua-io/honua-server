@@ -66,37 +66,49 @@ internal static class DeployControlEndpoints
         HttpContext context)
     {
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
+        var includeDiagnostics = ShouldIncludeDiagnostics(context);
 
         var response = new DeployPreflightResponse
         {
             Status = snapshot.Status,
             ReadyForCoordinatedDeploy = snapshot.ReadyForCoordinatedDeploy,
-            Message = snapshot.Message,
-            ServerVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
-            Environment = hostEnvironment.EnvironmentName,
-            DeploymentMode = deploymentOptions.Value.Mode.ToString(),
-            InstanceName = Environment.MachineName,
+            Message = snapshot.ReadyForCoordinatedDeploy
+                ? "Instance is ready for coordinated deployment."
+                : "Instance is not ready for coordinated deployment.",
+            ServerVersion = includeDiagnostics ? typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown" : null,
+            Environment = includeDiagnostics ? hostEnvironment.EnvironmentName : null,
+            DeploymentMode = includeDiagnostics ? deploymentOptions.Value.Mode.ToString() : null,
+            InstanceName = includeDiagnostics ? Environment.MachineName : null,
             GeneratedAt = DateTimeOffset.UtcNow,
-            Readiness = new DeployPreflightReadiness
-            {
-                IsReady = snapshot.Readiness.IsReady,
-                StatusCode = snapshot.Readiness.StatusCode,
-                Message = snapshot.Readiness.Message
-            },
-            Migration = new DeployPreflightMigration
-            {
-                LifecycleStatus = snapshot.Migration.LifecycleStatus,
-                Message = snapshot.Migration.Message,
-                PlanAvailable = snapshot.Migration.PlanAvailable,
-                UpgradeRequired = snapshot.Migration.UpgradeRequired,
-                PendingScripts = snapshot.Migration.PendingScripts,
-                ExecutedButNotDiscoveredScripts = snapshot.Migration.ExecutedButNotDiscoveredScripts,
-                PlanError = snapshot.Migration.PlanError
-            }
+            Readiness = includeDiagnostics
+                ? new DeployPreflightReadiness
+                {
+                    IsReady = snapshot.Readiness.IsReady,
+                    StatusCode = snapshot.Readiness.StatusCode,
+                    Message = snapshot.Readiness.Message
+                }
+                : null,
+            Migration = includeDiagnostics
+                ? new DeployPreflightMigration
+                {
+                    LifecycleStatus = snapshot.Migration.LifecycleStatus,
+                    Message = snapshot.Migration.Message,
+                    PlanAvailable = snapshot.Migration.PlanAvailable,
+                    UpgradeRequired = snapshot.Migration.UpgradeRequired,
+                    PendingScripts = snapshot.Migration.PendingScripts,
+                    ExecutedButNotDiscoveredScripts = snapshot.Migration.ExecutedButNotDiscoveredScripts,
+                    PlanError = snapshot.Migration.PlanError
+                }
+                : null
         };
 
         return Results.Json(response, DeployControlJsonContext.Default.DeployPreflightResponse);
     }
+
+    private static bool ShouldIncludeDiagnostics(HttpContext context)
+        => context.Request.Query.TryGetValue("includeDiagnostics", out var values) &&
+            bool.TryParse(values.ToString(), out var includeDiagnostics) &&
+            includeDiagnostics;
 
     private static async Task<IResult> HandlePlanDeployOperation(
         [FromBody] DeployPlanRequest request,

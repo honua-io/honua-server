@@ -240,6 +240,20 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment")]
+    public async Task AddAttachment_WithUnsupportedContentType_Returns415()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addAttachment",
+            new StringContent("objectId=1", Encoding.UTF8, "text/plain"));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Unsupported Media Type");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.UpdateAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment")]
     public async Task UpdateAttachment_WithValidData_ReturnsSuccess()
@@ -313,6 +327,20 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         // Assert
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.UpdateAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment")]
+    public async Task UpdateAttachment_WithUnsupportedContentType_Returns415()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateAttachment",
+            new StringContent("objectId=1&attachmentId=1", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Unsupported Media Type");
     }
 
     [IntegrationTest]
@@ -419,6 +447,20 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments", form);
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments")]
+    public async Task DeleteAttachments_WithUnsupportedContentType_Returns415()
+    {
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteAttachments",
+            new StringContent("objectId=1&attachmentIds=1", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Unsupported Media Type");
     }
 
     [IntegrationTest]

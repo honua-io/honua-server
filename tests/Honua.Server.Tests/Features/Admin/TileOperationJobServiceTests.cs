@@ -141,6 +141,7 @@ public sealed class TileOperationJobServiceTests
             cacheStore: null,
             responseCache: null,
             metadataCache: null,
+            serviceScopeFactory,
             NullLogger<OutputCacheInvalidationService>.Instance);
 
         return new TileOperationJobService(

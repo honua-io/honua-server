@@ -61,7 +61,7 @@ internal sealed class Wfs20Handler
     public async Task<WfsCapabilities> HandleGetCapabilitiesAsync(
         HttpContext context,
         string? acceptVersions,
-        string? sections,
+        IReadOnlySet<string>? requestedSections,
         string baseUrl,
         CancellationToken cancellationToken = default)
     {
@@ -79,14 +79,25 @@ internal sealed class Wfs20Handler
 
             var capabilities = new WfsCapabilities
             {
-                ServiceIdentification = new ServiceIdentification(),
-                ServiceProvider = new Models.ServiceProvider(),
-                OperationsMetadata = BuildOperationsMetadata(wfsUrl),
-                FeatureTypeList = new FeatureTypeList
-                {
-                    FeatureTypes = featureTypes.Select(BuildFeatureType).ToArray()
-                },
-                FilterCapabilities = BuildFilterCapabilities()
+                UpdateSequence = Wfs20Utilities.CurrentUpdateSequence,
+                ServiceIdentification = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceIdentification")
+                    ? new ServiceIdentification()
+                    : null,
+                ServiceProvider = ShouldIncludeCapabilitiesSection(requestedSections, "ServiceProvider")
+                    ? new Models.ServiceProvider()
+                    : null,
+                OperationsMetadata = ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")
+                    ? BuildOperationsMetadata(wfsUrl)
+                    : null,
+                FeatureTypeList = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
+                    ? new FeatureTypeList
+                    {
+                        FeatureTypes = featureTypes.Select(BuildFeatureType).ToArray()
+                    }
+                    : null,
+                FilterCapabilities = ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")
+                    ? BuildFilterCapabilities()
+                    : null
             };
 
             Wfs20Log.GetCapabilitiesReturned(_logger);
@@ -158,10 +169,35 @@ internal sealed class Wfs20Handler
         activity?.SetTag("wfs.output_format", outputFormat ?? Wfs20Utilities.OutputFormats.Default);
 
         var normalizedFormat = Wfs20Utilities.OutputFormats.NormalizeOutputFormat(outputFormat);
+        if (!Wfs20Utilities.TryNormalizeResultType(resultType, out var normalizedResultType))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Invalid RESULTTYPE parameter '{resultType}'. Supported values are 'results' and 'hits'.",
+                "resultType");
+        }
+
+        if (!Wfs20Utilities.TryParseCount(count, out var maxFeatures))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Invalid COUNT parameter '{count}'. COUNT must be a non-negative integer.",
+                "count");
+        }
+
+        if (!Wfs20Utilities.TryParseStartIndex(startIndex, out var offset))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Invalid STARTINDEX parameter '{startIndex}'. STARTINDEX must be a non-negative integer.",
+                "startIndex");
+        }
+
         var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
-        var maxFeatures = Wfs20Utilities.ParseCount(count);
-        var offset = Wfs20Utilities.ParseStartIndex(startIndex);
-        var isHitsRequest = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase);
+        var isHitsRequest = string.Equals(normalizedResultType, "hits", StringComparison.OrdinalIgnoreCase);
 
         Wfs20Log.GetFeatureRequested(_logger, typeNames ?? "ALL", normalizedFormat);
 
@@ -170,9 +206,11 @@ internal sealed class Wfs20Handler
             if (!IsSupportedFeatureOutputFormat(normalizedFormat))
             {
                 Wfs20Log.UnsupportedOutputFormatRequested(_logger, outputFormat ?? normalizedFormat);
-                return StandardErrorHelpers.CreateBadRequest(
+                return Wfs20ErrorResults.CreateBadRequest(
                     context,
-                    $"Unsupported output format '{outputFormat}'. Supported formats: {string.Join(", ", Wfs20Utilities.OutputFormats.All)}");
+                    "InvalidParameterValue",
+                    $"Unsupported output format '{outputFormat}'. Supported formats: {string.Join(", ", Wfs20Utilities.OutputFormats.All)}",
+                    "outputFormat");
             }
 
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
@@ -226,7 +264,7 @@ internal sealed class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
         }
         catch (Exception ex)
         {
@@ -257,22 +295,41 @@ internal sealed class Wfs20Handler
 
         if (string.IsNullOrWhiteSpace(valueReference))
         {
-            return StandardErrorHelpers.CreateBadRequest(
+            return Wfs20ErrorResults.CreateBadRequest(
                 context,
-                "Missing required 'valueReference' parameter for GetPropertyValue.");
+                "MissingParameterValue",
+                "Missing required 'valueReference' parameter for GetPropertyValue.",
+                "valueReference");
         }
 
         var normalizedOutputFormat = Wfs20Utilities.OutputFormats.NormalizeOutputFormat(outputFormat);
-        if (!string.Equals(normalizedOutputFormat, Wfs20Utilities.OutputFormats.Gml32, StringComparison.OrdinalIgnoreCase))
+        if (!IsSupportedValueOutputFormat(normalizedOutputFormat))
         {
-            return StandardErrorHelpers.CreateBadRequest(
+            return Wfs20ErrorResults.CreateBadRequest(
                 context,
-                $"Unsupported output format '{outputFormat}'. GetPropertyValue only supports GML/XML responses.");
+                "InvalidParameterValue",
+                $"Unsupported output format '{outputFormat}'. GetPropertyValue supports application/gml+xml, application/json, and application/geo+json.",
+                "outputFormat");
         }
 
         var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
-        var maxFeatures = Wfs20Utilities.ParseCount(count);
-        var offset = Wfs20Utilities.ParseStartIndex(startIndex);
+        if (!Wfs20Utilities.TryParseCount(count, out var maxFeatures))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Invalid COUNT parameter '{count}'. COUNT must be a non-negative integer.",
+                "count");
+        }
+
+        if (!Wfs20Utilities.TryParseStartIndex(startIndex, out var offset))
+        {
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Invalid STARTINDEX parameter '{startIndex}'. STARTINDEX must be a non-negative integer.",
+                "startIndex");
+        }
 
         Wfs20Log.GetPropertyValueRequested(_logger, valueReference, typeNames ?? "ALL");
 
@@ -282,7 +339,7 @@ internal sealed class Wfs20Handler
             var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (selectedTypes.Length == 0)
             {
-                return CreateEmptyValueCollectionResult();
+                return CreateEmptyValueCollectionResult(normalizedOutputFormat);
             }
 
             var planSet = await BuildLayerValuePlansAsync(
@@ -298,17 +355,19 @@ internal sealed class Wfs20Handler
 
             if (planSet.TotalMatched == 0)
             {
-                return CreateEmptyValueCollectionResult();
+                return CreateEmptyValueCollectionResult(normalizedOutputFormat);
             }
 
-            var (result, returnedCount) = await BuildValueCollectionResultAsync(planSet, cancellationToken);
+            var (result, returnedCount) = string.Equals(normalizedOutputFormat, Wfs20Utilities.OutputFormats.Gml32, StringComparison.OrdinalIgnoreCase)
+                ? await BuildValueCollectionResultAsync(planSet, cancellationToken)
+                : await BuildValueJsonResultAsync(planSet, normalizedOutputFormat, cancellationToken);
             Wfs20Log.GetPropertyValueReturned(_logger, returnedCount);
             return result;
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
         }
         catch (Exception ex)
         {
@@ -932,7 +991,11 @@ internal sealed class Wfs20Handler
                 ]),
                 CreateOperation(Wfs20Utilities.Operations.GetPropertyValue, wfsUrl,
                 [
-                    CreateParameter("outputFormat", Wfs20Utilities.OutputFormats.Gml32),
+                    CreateParameter(
+                        "outputFormat",
+                        Wfs20Utilities.OutputFormats.Gml32,
+                        Wfs20Utilities.OutputFormats.GeoJson,
+                        Wfs20Utilities.OutputFormats.Json),
                     CreateParameter("typeNames", allowAnyValue: true),
                     CreateParameter("valueReference", allowAnyValue: true),
                     CreateParameter("count", allowAnyValue: true),
@@ -950,6 +1013,41 @@ internal sealed class Wfs20Handler
             ],
             Constraints =
             [
+                new Constraint
+                {
+                    Name = "ImplementsBasicWFS",
+                    DefaultValue = "TRUE"
+                },
+                new Constraint
+                {
+                    Name = "ImplementsTransactionalWFS",
+                    DefaultValue = "FALSE"
+                },
+                new Constraint
+                {
+                    Name = "ImplementsLockingWFS",
+                    DefaultValue = "FALSE"
+                },
+                new Constraint
+                {
+                    Name = "KVPEncoding",
+                    DefaultValue = "TRUE"
+                },
+                new Constraint
+                {
+                    Name = "XMLEncoding",
+                    DefaultValue = "TRUE"
+                },
+                new Constraint
+                {
+                    Name = "SOAPEncoding",
+                    DefaultValue = "FALSE"
+                },
+                new Constraint
+                {
+                    Name = "ImplementsResultPaging",
+                    DefaultValue = "TRUE"
+                },
                 new Constraint
                 {
                     Name = "DefaultMaxFeatures",
@@ -1017,7 +1115,7 @@ internal sealed class Wfs20Handler
                     new FesConstraint { Name = "ImplementsMinStandardFilter", DefaultValue = "TRUE" },
                     new FesConstraint { Name = "ImplementsStandardFilter", DefaultValue = "TRUE" },
                     new FesConstraint { Name = "ImplementsMinSpatialFilter", DefaultValue = "TRUE" },
-                    new FesConstraint { Name = "ImplementsSpatialFilter", DefaultValue = "FALSE" },
+                    new FesConstraint { Name = "ImplementsSpatialFilter", DefaultValue = "TRUE" },
                     new FesConstraint { Name = "ImplementsMinTemporalFilter", DefaultValue = "FALSE" },
                     new FesConstraint { Name = "ImplementsTemporalFilter", DefaultValue = "FALSE" },
                     new FesConstraint { Name = "ImplementsVersionNav", DefaultValue = "FALSE" },
@@ -1066,11 +1164,30 @@ internal sealed class Wfs20Handler
                 {
                     Operators =
                     [
-                        new Models.SpatialOperator { Name = "BBOX" }
+                        new Models.SpatialOperator { Name = "BBOX" },
+                        new Models.SpatialOperator { Name = "Intersects" },
+                        new Models.SpatialOperator { Name = "Contains" },
+                        new Models.SpatialOperator { Name = "Within" },
+                        new Models.SpatialOperator { Name = "Crosses" },
+                        new Models.SpatialOperator { Name = "Touches" },
+                        new Models.SpatialOperator { Name = "Overlaps" },
+                        new Models.SpatialOperator { Name = "Disjoint" },
+                        new Models.SpatialOperator { Name = "Equals" },
+                        new Models.SpatialOperator { Name = "DWithin" },
+                        new Models.SpatialOperator { Name = "Beyond" }
                     ]
                 }
             }
         };
+    }
+
+    private static bool ShouldIncludeCapabilitiesSection(
+        IReadOnlySet<string>? requestedSections,
+        string sectionName)
+    {
+        return requestedSections is null ||
+               requestedSections.Count == 0 ||
+               requestedSections.Contains(sectionName);
     }
 
     private static string GenerateSchemaForTypes(IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes)
@@ -1376,6 +1493,60 @@ internal sealed class Wfs20Handler
         return (Results.Content(xml, MediaTypes.Gml, Encoding.UTF8), returnedCount);
     }
 
+    private async Task<(IResult Result, int ReturnedCount)> BuildValueJsonResultAsync(
+        LayerValuePlanSet planSet,
+        string normalizedFormat,
+        CancellationToken cancellationToken)
+    {
+        var features = new List<GeoJsonFeature>();
+
+        foreach (var plan in planSet.Plans)
+        {
+            var featureResult = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
+            foreach (var feature in featureResult.Items)
+            {
+                var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+                SimpleGeoJsonGeometry? geometry = null;
+
+                if (plan.ValueReference.IsGeometry)
+                {
+                    geometry = feature.Geometry is null
+                        ? null
+                        : _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, AxisOrder.EastNorth);
+                }
+                else if (plan.ValueReference.IsFeatureId)
+                {
+                    properties["id"] = BuildFeatureId(plan.Descriptor, feature.Id);
+                }
+                else
+                {
+                    properties[plan.ValueReference.CanonicalName] = ExtractValue(feature, plan.ValueReference);
+                }
+
+                features.Add(new GeoJsonFeature
+                {
+                    Id = BuildFeatureId(plan.Descriptor, feature.Id),
+                    Geometry = geometry,
+                    Properties = properties
+                });
+            }
+        }
+
+        var payload = new FeatureCollection
+        {
+            Features = features.ToArray(),
+            NumberMatched = planSet.TotalMatched,
+            NumberReturned = features.Count,
+            TimeStamp = DateTimeOffset.UtcNow
+        };
+
+        var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
+            ? MediaTypes.Json
+            : MediaTypes.GeoJson;
+
+        return (Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
+    }
+
     private static void WriteFeatureMember(XmlWriter writer, LayerQueryPlan plan, GmlFeature feature)
     {
         writer.WriteStartElement("wfs", "member", Wfs20Utilities.WfsNamespace);
@@ -1489,6 +1660,14 @@ internal sealed class Wfs20Handler
                string.Equals(format, Wfs20Utilities.OutputFormats.Csv, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsSupportedValueOutputFormat(string format)
+    {
+        return string.Equals(format, Wfs20Utilities.OutputFormats.Gml32, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(format, Wfs20Utilities.OutputFormats.Gml32Simplified, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(format, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(format, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static IResult CreateEmptyFeatureCollectionResult(string normalizedFormat)
     {
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
@@ -1532,7 +1711,30 @@ internal sealed class Wfs20Handler
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
     }
 
-    private static IResult CreateEmptyValueCollectionResult()
+    private static IResult CreateEmptyValueCollectionResult(string normalizedFormat)
+    {
+        if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase))
+        {
+            var payload = new FeatureCollection
+            {
+                Features = [],
+                NumberMatched = 0,
+                NumberReturned = 0,
+                TimeStamp = DateTimeOffset.UtcNow
+            };
+
+            var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
+                ? MediaTypes.Json
+                : MediaTypes.GeoJson;
+
+            return Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType);
+        }
+
+        return CreateEmptyValueCollectionXmlResult();
+    }
+
+    private static IResult CreateEmptyValueCollectionXmlResult()
     {
         var xml = $$"""
             <?xml version="1.0" encoding="UTF-8"?>

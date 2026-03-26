@@ -86,9 +86,9 @@ internal static class OgcTilesUtilities
     public const string WorldCrs84QuadUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WorldCRS84Quad";
 
     /// <summary>
-    /// EPSG:4326 CRS URI.
+    /// OGC CRS84 URI.
     /// </summary>
-    public const string Crs84 = "http://www.opengis.net/def/crs/EPSG/0/4326";
+    public const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
     /// <summary>
     /// WorldCRS84Quad well-known scale set URI.

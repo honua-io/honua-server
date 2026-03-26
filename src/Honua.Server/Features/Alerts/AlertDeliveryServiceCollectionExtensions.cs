@@ -20,10 +20,14 @@ internal static class AlertDeliveryServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddHttpClient("alerts-webhook");
-        services.AddHttpClient("alerts-digest");
-        services.AddHttpClient("alerts-slack");
-        services.AddHttpClient("alerts-teams");
+        services.AddHttpClient("alerts-webhook")
+            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddHttpClient("alerts-digest")
+            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddHttpClient("alerts-slack")
+            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+        services.AddHttpClient("alerts-teams")
+            .ConfigurePrimaryHttpMessageHandler(static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();

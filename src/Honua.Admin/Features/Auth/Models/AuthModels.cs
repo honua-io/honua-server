@@ -15,9 +15,6 @@ public sealed class AdminAuthConfig
 
     [JsonPropertyName("providers")]
     public List<AuthProviderInfo> Providers { get; set; } = [];
-
-    [JsonPropertyName("apiKeyFallbackEnabled")]
-    public bool ApiKeyFallbackEnabled { get; set; }
 }
 
 /// <summary>
@@ -30,42 +27,54 @@ public sealed class AuthProviderInfo
 
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = "";
-
-    [JsonPropertyName("authority")]
-    public string Authority { get; set; } = "";
-
-    [JsonPropertyName("clientId")]
-    public string ClientId { get; set; } = "";
-
-    [JsonPropertyName("scopes")]
-    public string[] Scopes { get; set; } = ["openid", "profile", "email"];
-
-    [JsonPropertyName("redirectPath")]
-    public string RedirectPath { get; set; } = "/admin/auth/callback";
-
-    [JsonPropertyName("supportsLogout")]
-    public bool SupportsLogout { get; set; }
-
-    [JsonPropertyName("postLogoutRedirectPath")]
-    public string? PostLogoutRedirectPath { get; set; }
 }
 
 /// <summary>
-/// OIDC discovery document (subset of fields used for PKCE flow).
+/// Request model for server-side authorize URL generation.
 /// </summary>
-public sealed class OidcDiscoveryDocument
+public sealed class AdminAuthAuthorizeUrlRequest
 {
-    [JsonPropertyName("authorization_endpoint")]
-    public string AuthorizationEndpoint { get; set; } = "";
+    [JsonPropertyName("state")]
+    public string State { get; set; } = "";
 
-    [JsonPropertyName("token_endpoint")]
-    public string TokenEndpoint { get; set; } = "";
+    [JsonPropertyName("codeChallenge")]
+    public string CodeChallenge { get; set; } = "";
+}
 
-    [JsonPropertyName("end_session_endpoint")]
-    public string? EndSessionEndpoint { get; set; }
+/// <summary>
+/// Response model for server-side authorize URL generation.
+/// </summary>
+public sealed class AdminAuthAuthorizeUrlResponse
+{
+    [JsonPropertyName("authorizeUrl")]
+    public string AuthorizeUrl { get; set; } = "";
+}
 
-    [JsonPropertyName("userinfo_endpoint")]
-    public string? UserinfoEndpoint { get; set; }
+/// <summary>
+/// Request model for server-side token exchange and refresh.
+/// </summary>
+public sealed class AdminAuthTokenRequest
+{
+    [JsonPropertyName("grantType")]
+    public string GrantType { get; set; } = "";
+
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
+
+    [JsonPropertyName("codeVerifier")]
+    public string? CodeVerifier { get; set; }
+
+    [JsonPropertyName("refreshToken")]
+    public string? RefreshToken { get; set; }
+}
+
+/// <summary>
+/// Response model for server-side logout URL discovery.
+/// </summary>
+public sealed class AdminAuthLogoutUrlResponse
+{
+    [JsonPropertyName("logoutUrl")]
+    public string? LogoutUrl { get; set; }
 }
 
 /// <summary>
@@ -99,7 +108,10 @@ public sealed class TokenResponse
 [JsonSerializable(typeof(AdminAuthConfig))]
 [JsonSerializable(typeof(AuthProviderInfo))]
 [JsonSerializable(typeof(List<AuthProviderInfo>))]
-[JsonSerializable(typeof(OidcDiscoveryDocument))]
+[JsonSerializable(typeof(AdminAuthAuthorizeUrlRequest))]
+[JsonSerializable(typeof(AdminAuthAuthorizeUrlResponse))]
+[JsonSerializable(typeof(AdminAuthTokenRequest))]
+[JsonSerializable(typeof(AdminAuthLogoutUrlResponse))]
 [JsonSerializable(typeof(TokenResponse))]
 internal sealed partial class AuthJsonContext : JsonSerializerContext
 {

@@ -171,7 +171,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     {
         var objectIdFieldName = layer.ObjectIdFieldName;
         GeoServicesFeature[] features = result.Items
-            .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
+            .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
             .ToArray();
         var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName);
         var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
@@ -243,6 +243,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
         bool returnGeometry,
+        int? outputSrid,
         string[]? outFields,
         string objectIdFieldName,
         bool returnZ,
@@ -258,7 +259,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             Geometry = returnGeometry
                 ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     feature.Geometry,
-                    null,
+                    outputSrid,
                     geometryLimits,
                     returnZ,
                     returnM)
@@ -732,6 +733,7 @@ internal sealed class StreamingQueryFormatter
                 writer,
                 feature,
                 returnGeometry,
+                outputSrid,
                 outFieldLookup,
                 objectIdFieldName,
                 returnZ,
@@ -844,6 +846,7 @@ internal sealed class StreamingQueryFormatter
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
+        int? outputSrid,
         HashSet<string>? outFieldLookup,
         string objectIdFieldName,
         bool returnZ,
@@ -898,7 +901,7 @@ internal sealed class StreamingQueryFormatter
             {
                 var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     feature.Geometry,
-                    null,
+                    outputSrid,
                     geometryLimits,
                     returnZ,
                     returnM);

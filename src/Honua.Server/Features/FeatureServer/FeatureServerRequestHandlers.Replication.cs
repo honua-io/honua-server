@@ -61,6 +61,11 @@ internal static partial class FeatureServerEndpoints
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid createReplica request",
                 [readError ?? "Invalid request body."]);
@@ -149,6 +154,11 @@ internal static partial class FeatureServerEndpoints
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid extractChanges request",
                 [readError ?? "Invalid request body."]);
@@ -347,6 +357,11 @@ internal static partial class FeatureServerEndpoints
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid synchronizeReplica request",
                 [readError ?? "Invalid request body."]);
@@ -483,6 +498,11 @@ internal static partial class FeatureServerEndpoints
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid unRegisterReplica request",
                 [readError ?? "Invalid request body."]);

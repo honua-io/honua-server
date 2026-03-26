@@ -144,10 +144,8 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatAsGeoParquet_WithZmGeometryAndReturnMTrue_StripsMPerGeoParquetSpec()
+    public void FormatAsGeoParquet_WithZmGeometryAndReturnMTrue_ThrowsInvalidOperation()
     {
-        // GeoParquet 1.1.0 only supports XY and XYZ — M values must be stripped
-        // even when the caller requests returnM=true.
         var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
         var feature = Feature.Create(
             1,
@@ -157,7 +155,7 @@ public sealed class GeoParquetQueryFormatterTests
                 ["objectid"] = 1L
             }.ToImmutableDictionary());
 
-        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(1, [feature]),
             layer,
             returnGeometry: true,
@@ -166,22 +164,8 @@ public sealed class GeoParquetQueryFormatterTests
             returnM: true,
             new GeometryLimits());
 
-        using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
-        using var batchReader = reader.GetRecordBatchReader();
-        var batch = await batchReader.ReadNextRecordBatchAsync();
-
-        batch.Should().NotBeNull();
-        var geometryColumn = (BinaryArray)batch!.Column("geometry");
-        geometryColumn.IsNull(0).Should().BeFalse();
-
-        var geometry = new WKBReader().Read(geometryColumn.GetBytes(0).ToArray());
-        var point = geometry.Should().BeOfType<Point>().Subject;
-
-        point.X.Should().Be(1.0);
-        point.Y.Should().Be(2.0);
-        point.Coordinate.Z.Should().Be(3.0);
-        double.IsNaN(point.Coordinate.M).Should().BeTrue("GeoParquet 1.1.0 does not support M values");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*GeoParquet*returnM=true*XY and XYZ geometries*");
     }
 
     [Fact]
@@ -415,12 +399,12 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
-    public void FormatAsGeoParquet_EmptyResultWithNon4326Srid_WritesCrsNull()
+    public void FormatAsGeoParquet_EmptyResultWithNon4326Srid_ThrowsInvalidOperation()
     {
         var layer = CreateLayer(
             new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
 
-        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Empty(),
             layer,
             returnGeometry: true,
@@ -429,19 +413,8 @@ public sealed class GeoParquetQueryFormatterTests
             returnM: false,
             new GeometryLimits());
 
-        using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
-
-        reader.Schema.Metadata.Should().ContainKey("geo");
-        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
-        var geomCol = geoDoc.RootElement.GetProperty("columns")
-            .GetProperty("geometry");
-        // Non-4326 SRIDs write crs:null (full PROJJSON requires a projection library)
-        geomCol.GetProperty("crs").ValueKind.Should().Be(JsonValueKind.Null);
-        // bbox is omitted — layer extent is not the same as the exported result extent
-        geomCol.TryGetProperty("bbox", out _).Should().BeFalse();
-        // Empty file must also have geometry_types:[]
-        geomCol.GetProperty("geometry_types").EnumerateArray().Should().BeEmpty();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*GeoParquet*EPSG:4326*3857*");
     }
 
     [Fact]

@@ -106,6 +106,11 @@ public sealed class AlertDispatchOptions
     public string? DefaultWebhookUrl { get; init; }
 
     /// <summary>
+    /// Shared HMAC secret used to sign webhook alert deliveries.
+    /// </summary>
+    public string? DefaultWebhookSecret { get; init; }
+
+    /// <summary>
     /// Delay when no dispatch work is available.
     /// </summary>
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
@@ -125,6 +130,11 @@ public sealed class DigestAlertOptions
     /// Webhook URL for digest delivery. If null, digest items are dead-lettered.
     /// </summary>
     public string? WebhookUrl { get; init; }
+
+    /// <summary>
+    /// Shared HMAC secret used to sign digest webhook deliveries.
+    /// </summary>
+    public string? WebhookSecret { get; init; }
 
     /// <summary>
     /// Interval between digest flushes.

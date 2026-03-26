@@ -269,6 +269,11 @@ builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicens
 
 // Register named HTTP client for identity provider connectivity tests
 builder.Services.AddHttpClient("IdentityProviderTest");
+builder.Services.AddHttpClient("AdminAuthOidc")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    });
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
@@ -294,7 +299,8 @@ builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalWe
     builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions.SectionName));
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>,
     Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptionsValidator>();
-builder.Services.AddHttpClient("manifest-approval-webhook");
+builder.Services.AddHttpClient("manifest-approval-webhook")
+    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddSingleton<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(sp =>
     new Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher(
         sp.GetRequiredService<IHttpClientFactory>(),
@@ -397,7 +403,8 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatu
     new Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher(
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher>>()));
-builder.Services.AddHttpClient("feature-change-webhook");
+builder.Services.AddHttpClient("feature-change-webhook")
+    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHostedService(sp =>
     new Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
@@ -410,7 +417,8 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>, Honua.Server.Features.Admin.ManifestDriftWebhookOptionsValidator>();
 builder.Services.AddOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>()
     .Bind(builder.Configuration.GetSection(Honua.Server.Features.Admin.ManifestDriftWebhookOptions.SectionName));
-builder.Services.AddHttpClient("manifest-drift-webhook");
+builder.Services.AddHttpClient("manifest-drift-webhook")
+    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHostedService(sp =>
     new Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher(
         sp.GetRequiredService<IServiceScopeFactory>(),
@@ -600,8 +608,8 @@ app.Use(async (context, next) =>
 var configurationErrors = ConfigurationValidationService.ValidateConfiguration(
     app.Configuration,
     app.Logger,
-    app.Environment.IsDevelopment() ||
-    app.Environment.IsEnvironment("Test"));
+    isDevelopment: app.Environment.IsDevelopment(),
+    isTest: app.Environment.IsEnvironment("Test"));
 
 if (configurationErrors.Count > 0)
 {
@@ -628,10 +636,7 @@ ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 }
 
 // Add security headers middleware (first in pipeline for all requests)
-if (!app.Environment.IsEnvironment("Test"))
-{
-    app.UseSecurityHeaders();
-}
+app.UseSecurityHeaders();
 
 // Add response compression middleware (early in pipeline)
 app.UseResponseCompression();
@@ -703,6 +708,7 @@ if (serveApiDocs)
             .WithTheme(ScalarTheme.BluePlanet)
             .AddDocument("features", "OGC API Features", "/openapi.json", isDefault: true)
             .AddDocument("tiles", "OGC API Tiles", "/ogc/tiles/openapi.json")
+            .AddDocument("maps", "OGC API Maps", "/ogc/maps/openapi.json")
             .AddDocument("admin", "Admin API", "/api/v1/admin/openapi.json");
     });
 }
@@ -921,7 +927,8 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
             {
                 var cacheService = sp.GetRequiredService<ICacheService>();
                 var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-                catalog = new CachingLayerCatalog(catalog, cacheService, options);
+                var schemaContext = sp.GetService<ISchemaContext>();
+                catalog = new CachingLayerCatalog(catalog, cacheService, options, schemaContext);
             }
 
             // Always wrap with monitoring for catalog metadata queries
@@ -961,7 +968,8 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
 
             var cacheService = sp.GetRequiredService<ICacheService>();
             var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-            return new CachingLayerStyleCatalog(innerStyleCatalog, cacheService, options);
+            var schemaContext = sp.GetService<ISchemaContext>();
+            return new CachingLayerStyleCatalog(innerStyleCatalog, cacheService, options, schemaContext);
         });
     }
 }

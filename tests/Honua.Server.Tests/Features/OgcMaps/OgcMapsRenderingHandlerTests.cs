@@ -307,6 +307,25 @@ public class OgcMapsRenderingHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_LayerWithoutExplicitPolicy_ReturnsUnauthorized()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent());
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.RenderCollectionMapAsync(1, CreateDefaultRequest(), context: context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await _mapRenderer.DidNotReceive().RenderCollectionMapAsync(
+            Arg.Any<int>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // =========================================================================
     // RenderDatasetMapAsync
     // =========================================================================
@@ -400,6 +419,44 @@ public class OgcMapsRenderingHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_ExplicitLayersWithoutExplicitPolicy_ReturnsUnauthorized()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(1));
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.RenderDatasetMapAsync([1], CreateDefaultRequest(), context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await _mapRenderer.DidNotReceive().RenderDatasetMapAsync(
+            Arg.Any<int[]>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_ImplicitAllLayersWithoutExplicitPolicy_ReturnsUnauthorized()
+    {
+        _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
+            .Returns([CreateTestLayerWithExtent(1), CreateTestLayerWithExtent(2)]);
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.RenderDatasetMapAsync([], CreateDefaultRequest(), context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await _mapRenderer.DidNotReceive().RenderDatasetMapAsync(
+            Arg.Any<int[]>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // =========================================================================
     // RenderStyledMapAsync
     // =========================================================================
@@ -467,9 +524,29 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderStyledMapAsync_LayerWithoutExplicitPolicy_ReturnsUnauthorized()
+    {
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent());
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.RenderStyledMapAsync(1, "default", CreateDefaultRequest(), context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await _mapRenderer.DidNotReceive().RenderStyledMapAsync(
+            Arg.Any<int>(),
+            Arg.Any<string>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_WithHttpContext_AddsContentHeaders()
     {
-        var context = CreateAnonymousOgcMapsContext();
+        var context = CreateAuthenticatedOgcMapsContext();
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayerWithExtent());
         _mapRenderer.RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
@@ -576,6 +653,16 @@ public class OgcMapsRenderingHandlerTests
             User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity())
         };
         context.Request.Path = "/ogc/maps/collections/1/map";
+        return context;
+    }
+
+    private static DefaultHttpContext CreateAuthenticatedOgcMapsContext()
+    {
+        var context = CreateAnonymousOgcMapsContext();
+        context.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "test-user")],
+                authenticationType: "Test"));
         return context;
     }
 }

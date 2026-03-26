@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using Honua.Server.Features.Ogc.Common;
 
 namespace Honua.Server.Features.Wfs20;
@@ -20,6 +21,11 @@ internal static class Wfs20Utilities
     /// WFS service type identifier
     /// </summary>
     public const string ServiceType = "WFS";
+
+    /// <summary>
+    /// Current capabilities update sequence.
+    /// </summary>
+    public const string CurrentUpdateSequence = "20260325";
 
     /// <summary>
     /// Default namespace for WFS 2.0
@@ -228,6 +234,18 @@ internal static class Wfs20Utilities
     }
 
     /// <summary>
+    /// Supported GetCapabilities section names.
+    /// </summary>
+    public static readonly ImmutableHashSet<string> GetCapabilitiesSections = ImmutableHashSet.Create(
+        StringComparer.OrdinalIgnoreCase,
+        "All",
+        "ServiceIdentification",
+        "ServiceProvider",
+        "OperationsMetadata",
+        "FeatureTypeList",
+        "Filter_Capabilities");
+
+    /// <summary>
     /// WFS 2.0 conformance classes
     /// </summary>
     public static class ConformanceClasses
@@ -319,6 +337,63 @@ internal static class Wfs20Utilities
         return null;
     }
 
+    public static bool TryParseSections(
+        string? sections,
+        out ImmutableHashSet<string>? requestedSections,
+        out string? errorMessage)
+    {
+        requestedSections = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(sections))
+        {
+            return true;
+        }
+
+        var parts = sections.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Any(string.IsNullOrWhiteSpace))
+        {
+            errorMessage = "SECTIONS contains an empty section name.";
+            return false;
+        }
+
+        var parsedSections = ImmutableHashSet.CreateBuilder<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var section in parts)
+        {
+            if (!GetCapabilitiesSections.Contains(section))
+            {
+                errorMessage = $"Unsupported SECTIONS value '{section}'.";
+                return false;
+            }
+
+            parsedSections.Add(section);
+        }
+
+        if (parsedSections.Count == 0 || parsedSections.Contains("All"))
+        {
+            return true;
+        }
+
+        requestedSections = parsedSections.ToImmutable();
+        return true;
+    }
+
+    public static int CompareUpdateSequence(string? requestedUpdateSequence, string currentUpdateSequence)
+    {
+        if (string.IsNullOrWhiteSpace(requestedUpdateSequence))
+        {
+            return -1;
+        }
+
+        if (long.TryParse(requestedUpdateSequence, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requestedLong) &&
+            long.TryParse(currentUpdateSequence, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentLong))
+        {
+            return requestedLong.CompareTo(currentLong);
+        }
+
+        return string.Compare(requestedUpdateSequence, currentUpdateSequence, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// Parses type names parameter (comma-separated list)
     /// </summary>
@@ -335,15 +410,9 @@ internal static class Wfs20Utilities
     /// </summary>
     public static int ParseCount(string? count, int defaultValue = DefaultMaxFeatures)
     {
-        if (string.IsNullOrEmpty(count))
-            return defaultValue;
-
-        if (int.TryParse(count, out var value))
-        {
-            return Math.Min(value, MaxFeaturesPerRequest);
-        }
-
-        return defaultValue;
+        return TryParseCount(count, out var value, defaultValue)
+            ? value
+            : defaultValue;
     }
 
     /// <summary>
@@ -351,14 +420,68 @@ internal static class Wfs20Utilities
     /// </summary>
     public static int ParseStartIndex(string? startIndex)
     {
-        if (string.IsNullOrEmpty(startIndex))
-            return 0;
+        return TryParseStartIndex(startIndex, out var value)
+            ? value
+            : 0;
+    }
 
-        if (int.TryParse(startIndex, out var value))
+    public static bool TryParseCount(string? count, out int value, int defaultValue = DefaultMaxFeatures)
+    {
+        if (string.IsNullOrWhiteSpace(count))
         {
-            return Math.Max(0, value);
+            value = defaultValue;
+            return true;
         }
 
-        return 0;
+        if (!int.TryParse(count, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue) || parsedValue < 0)
+        {
+            value = defaultValue;
+            return false;
+        }
+
+        value = Math.Min(parsedValue, MaxFeaturesPerRequest);
+        return true;
+    }
+
+    public static bool TryParseStartIndex(string? startIndex, out int value)
+    {
+        if (string.IsNullOrWhiteSpace(startIndex))
+        {
+            value = 0;
+            return true;
+        }
+
+        if (!int.TryParse(startIndex, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue) || parsedValue < 0)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = parsedValue;
+        return true;
+    }
+
+    public static bool TryNormalizeResultType(string? resultType, out string normalizedResultType)
+    {
+        normalizedResultType = "results";
+
+        if (string.IsNullOrWhiteSpace(resultType))
+        {
+            return true;
+        }
+
+        if (string.Equals(resultType, "results", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedResultType = "hits";
+            return true;
+        }
+
+        normalizedResultType = resultType;
+        return false;
     }
 }

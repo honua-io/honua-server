@@ -7,9 +7,13 @@ namespace Honua.Server.Features.OgcFeatures;
 
 internal static class OgcFeaturesServiceCollectionExtensions
 {
-    public static IServiceCollection AddOgcFeatures(this IServiceCollection services)
+    public static IServiceCollection AddOgcFeatures(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.Configure<OgcFeaturesOptions>(
+            configuration.GetSection(OgcFeaturesOptions.SectionName));
 
         services.AddScoped<OgcFeaturesGeometryServices>();
         services.AddScoped<OgcFilterProcessor>();

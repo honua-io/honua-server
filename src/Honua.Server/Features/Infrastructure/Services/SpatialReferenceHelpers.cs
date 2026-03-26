@@ -90,6 +90,7 @@ internal static class SpatialReferenceHelpers
     private static bool IsCrs84Identifier(string value)
     {
         return value.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("CRS:84", StringComparison.OrdinalIgnoreCase) ||
                value.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase) ||
                _crs84UriPattern.IsMatch(value) ||
                _crs84UrnPattern.IsMatch(value);

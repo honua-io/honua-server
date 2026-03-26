@@ -203,7 +203,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? devAuthBypass = _authOptions.DevAuthBypass;
         if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
-            return _authOptions.IsDevelopmentMode || _authOptions.IsTestMode;
+            return _authOptions.IsTestMode;
         }
 
         return false;

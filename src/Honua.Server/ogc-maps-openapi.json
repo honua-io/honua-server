@@ -1,0 +1,163 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Honua OGC API Maps",
+    "description": "OGC API Maps implementation for server-rendered imagery",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/ogc/maps": {
+      "get": {
+        "summary": "Get OGC API Maps landing page",
+        "responses": {
+          "200": {
+            "description": "Landing page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LandingPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/maps/conformance": {
+      "get": {
+        "summary": "Get OGC API Maps conformance declaration",
+        "responses": {
+          "200": {
+            "description": "Conformance declaration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OgcMapsConformance"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ogc/maps/openapi.json": {
+      "get": {
+        "summary": "Get OGC API Maps OpenAPI document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document"
+          }
+        }
+      }
+    },
+    "/ogc/maps/map": {
+      "get": {
+        "summary": "Render a dataset map",
+        "responses": {
+          "200": {
+            "description": "Rendered map image"
+          }
+        }
+      }
+    },
+    "/ogc/maps/collections/{collectionId}/map": {
+      "get": {
+        "summary": "Render a collection map",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rendered map image"
+          }
+        }
+      }
+    },
+    "/ogc/maps/collections/{collectionId}/map/tiles": {
+      "get": {
+        "summary": "Get collection map tilesets",
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tileset metadata"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LandingPage": {
+        "type": "object",
+        "required": [
+          "title",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
+          }
+        }
+      },
+      "Link": {
+        "type": "object",
+        "required": [
+          "href"
+        ],
+        "properties": {
+          "href": {
+            "type": "string"
+          },
+          "rel": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "OgcMapsConformance": {
+        "type": "object",
+        "required": [
+          "conformsTo"
+        ],
+        "properties": {
+          "conformsTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

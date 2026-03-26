@@ -322,35 +322,131 @@ public class TestQualityValidationTests : IAsyncLifetime
     [Endpoint("GET /healthz/live")]
     public void TestQualityMetrics_AllCriteria_AchievesPerfectScore()
     {
-        var qualityChecklist = new Dictionary<string, bool>
+        var repositoryRoot = FindRepositoryRoot();
+        var testRoot = Path.Combine(repositoryRoot, "tests");
+        var allTestFiles = Directory.GetFiles(testRoot, "*.cs", SearchOption.AllDirectories);
+
+        var unitTestCount = CountTokenOccurrences(allTestFiles, "[UnitTest]");
+        var edgeCaseCoverageCount = CountAnyTokenOccurrences(
+            allTestFiles,
+            ["Invalid", "Malformed", "Empty", "Boundary", "TooLarge", "Unsupported", "Rejects"]);
+        var errorPathCoverageCount = CountAnyTokenOccurrences(
+            allTestFiles,
+            ["Returns400", "Returns401", "Returns403", "Returns404", "Returns500", "Throws", "Fails", "Denied", "Rejected"]);
+        var securityScenarioUsageCount = CountTokenOccurrences(allTestFiles, "SecurityTestScenarios.");
+        var performanceTestCount = CountTokenOccurrences(allTestFiles, "[Trait(\"Category\", \"Performance\")]");
+        var contractScenarioUsageCount = CountTokenOccurrences(allTestFiles, "ContractTestScenarios.");
+        var fuzzScenarioUsageCount = CountTokenOccurrences(allTestFiles, "FuzzTestScenarios.");
+        var isolatedSchemaUsageCount = CountTokenOccurrences(allTestFiles, "CreateIsolatedSchemaAsync");
+
+        var qualityChecklist = new Dictionary<string, (bool Met, string Detail)>
         {
-            ["100% API Surface Coverage"] = true, // Enforced by architecture tests
-            ["Comprehensive Unit Tests"] = true,  // Property-based + unit tests
-            ["Edge Case Coverage"] = true,        // Property-based testing
-            ["Error Path Testing"] = true,        // Error handling tests
-            ["Security Testing"] = true,          // SQL injection, XSS, etc.
-            ["Performance Benchmarking"] = true,  // Performance thresholds
-            ["Contract Testing"] = true,          // API compliance
-            ["Fuzzing Coverage"] = true,          // Robustness testing
-            ["Infrastructure Quality"] = true,   // Test infrastructure validation
+            ["100% API Surface Coverage"] = (
+                File.Exists(Path.Combine(testRoot, "Honua.Architecture.Tests", "ApiSurfaceCoverageTests.cs")),
+                "Architecture coverage gate is present."),
+            ["Comprehensive Unit Tests"] = (
+                unitTestCount >= 100,
+                $"Found {unitTestCount} unit tests."),
+            ["Edge Case Coverage"] = (
+                edgeCaseCoverageCount >= 250,
+                $"Found {edgeCaseCoverageCount} edge-case indicators."),
+            ["Error Path Testing"] = (
+                errorPathCoverageCount >= 150,
+                $"Found {errorPathCoverageCount} error-path indicators."),
+            ["Security Testing"] = (
+                securityScenarioUsageCount >= 3 &&
+                Directory.Exists(Path.Combine(testRoot, "Honua.Server.Tests", "Features", "Security")),
+                $"Found {securityScenarioUsageCount} shared security scenario usages."),
+            ["Performance Benchmarking"] = (
+                performanceTestCount >= 5,
+                $"Found {performanceTestCount} performance-tagged tests."),
+            ["Contract Testing"] = (
+                contractScenarioUsageCount >= 4 &&
+                File.Exists(Path.Combine(testRoot, "Honua.TestKit", "Contract", "ContractTestScenarios.cs")),
+                $"Found {contractScenarioUsageCount} contract scenario usages."),
+            ["Fuzzing Coverage"] = (
+                fuzzScenarioUsageCount >= 2 &&
+                Directory.Exists(Path.Combine(testRoot, "Honua.TestKit", "Fuzzing")),
+                $"Found {fuzzScenarioUsageCount} shared fuzz scenario usages."),
+            ["Infrastructure Quality"] = (
+                isolatedSchemaUsageCount >= 1 &&
+                Directory.Exists(Path.Combine(testRoot, "Honua.TestKit", "Infrastructure")),
+                $"Found {isolatedSchemaUsageCount} isolated-schema infrastructure usages."),
         };
 
-        foreach (var (criterion, met) in qualityChecklist)
+        foreach (var (criterion, result) in qualityChecklist)
         {
-            met.Should().BeTrue($"Quality criterion '{criterion}' must be met for perfect score");
-            _output.WriteLine($"✓ {criterion}: {(met ? "PASS" : "FAIL")}");
+            result.Met.Should().BeTrue($"Quality criterion '{criterion}' must be met for perfect score. {result.Detail}");
+            _output.WriteLine($"✓ {criterion}: {(result.Met ? "PASS" : "FAIL")} ({result.Detail})");
         }
 
         var totalCriteria = qualityChecklist.Count;
-        var metCriteria = qualityChecklist.Count(kvp => kvp.Value);
+        var metCriteria = qualityChecklist.Count(kvp => kvp.Value.Met);
         var score = (double)metCriteria / totalCriteria * 100;
 
-        _output.WriteLine($"");
-        _output.WriteLine($"=== FINAL TEST QUALITY SCORE ===");
+        _output.WriteLine(string.Empty);
+        _output.WriteLine("=== FINAL TEST QUALITY SCORE ===");
         _output.WriteLine($"Score: {score:F0}/100");
         _output.WriteLine($"Criteria Met: {metCriteria}/{totalCriteria}");
-        _output.WriteLine($"Status: {(score >= 100 ? "PERFECT" : "NEEDS IMPROVEMENT")} 🎯");
+        _output.WriteLine($"Status: {(score >= 100 ? "PERFECT" : "NEEDS IMPROVEMENT")}");
 
         score.Should().Be(100, "All quality criteria must be met for perfect testing score");
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate the repository root from the test execution directory.");
+    }
+
+    private static int CountTokenOccurrences(IEnumerable<string> files, string token)
+    {
+        var count = 0;
+        foreach (var file in files)
+        {
+            count += CountOccurrences(File.ReadAllText(file), token);
+        }
+
+        return count;
+    }
+
+    private static int CountAnyTokenOccurrences(IEnumerable<string> files, IReadOnlyCollection<string> tokens)
+    {
+        var count = 0;
+        foreach (var file in files)
+        {
+            var content = File.ReadAllText(file);
+            foreach (var token in tokens)
+            {
+                count += CountOccurrences(content, token);
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountOccurrences(string content, string token)
+    {
+        var count = 0;
+        var index = 0;
+
+        while ((index = content.IndexOf(token, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += token.Length;
+        }
+
+        return count;
     }
 }

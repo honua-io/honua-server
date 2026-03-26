@@ -7,6 +7,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Server.Features.Infrastructure.Middleware;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using Polly;
@@ -44,6 +45,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private volatile bool _isUsingFallback;
     private volatile bool _disposed;
     private long _lastRedisFailureTicks = DateTime.MinValue.Ticks;
+    private int _isPruningKeyLocks;
 
     public RedisCacheService(
         IDistributedCache? distributedCache,
@@ -627,12 +629,29 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         if (_keyLocks.Count > MaxKeyLocks)
         {
-            PruneKeyLocks();
+            TryPruneKeyLocks();
         }
 
         var semaphore = _keyLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
         await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         return new KeyLock(key, semaphore, _keyLocks);
+    }
+
+    private void TryPruneKeyLocks()
+    {
+        if (Interlocked.CompareExchange(ref _isPruningKeyLocks, 1, 0) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            PruneKeyLocks();
+        }
+        finally
+        {
+            Volatile.Write(ref _isPruningKeyLocks, 0);
+        }
     }
 
     private void PruneKeyLocks()
@@ -654,7 +673,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     private string GetPrefixedKey(string key)
     {
-        return $"{_options.KeyPrefix}{key}";
+        var scopedKey = CacheScopeKeys.EnsureScoped(key, SchemaContext.AmbientCurrentSchema);
+        return $"{_options.KeyPrefix}{scopedKey}";
     }
 
     private void HandleRedisFailure(Exception ex)

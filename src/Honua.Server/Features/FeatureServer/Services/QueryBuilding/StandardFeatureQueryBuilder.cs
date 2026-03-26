@@ -91,11 +91,11 @@ internal sealed class StandardFeatureQueryBuilder : IFeatureQueryBuilder
         }
         catch (ArgumentException ex)
         {
-            throw new InvalidOperationException($"Invalid spatial parameters: {ex.Message}");
+            throw new InvalidOperationException("Invalid spatial parameters.", ex);
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
-            throw new InvalidOperationException($"Invalid geometry: {ex.Message}");
+            throw new InvalidOperationException("Invalid geometry.", ex);
         }
     }
 
