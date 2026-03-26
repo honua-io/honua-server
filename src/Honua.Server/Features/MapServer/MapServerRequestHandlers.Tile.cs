@@ -161,26 +161,23 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                var featureQuery = new FeatureQuery
-                {
-                    SpatialFilter = spatialFilter,
-                    SpatialReferenceSrid = service.SpatialReference.Srid,
-                    OutputSrid = TileSrid,
-                    Limit = maxFeatures
-                };
+                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
+                var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+                var featureQuery = CreateRasterFeatureQuery(
+                    styleLayers,
+                    spatialFilter,
+                    service.SpatialReference.Srid,
+                    TileSrid,
+                    maxFeatures);
 
-                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
-                if (queryResult.Items.Length == 0)
+                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, context.RequestAborted);
+                if (features.Length == 0)
                 {
                     continue;
                 }
 
-                totalFeatureCount += queryResult.Items.Length;
-
-                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
-                var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
-
-                RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType);
+                totalFeatureCount += features.Length;
+                RenderLayerToCanvas(canvas, features, styleLayers, transform, layer.GeometryType);
             }
 
             var imageBytes = SkiaMapRenderer.EncodeSurface(surface, "png");

@@ -247,6 +247,18 @@ internal sealed partial class OutputCacheInvalidationService
             }
         }
 
+        foreach (var pattern in GetScopedMetadataPatterns(keys, layerIds))
+        {
+            try
+            {
+                await _metadataCache.RemoveByPatternAsync(pattern, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                LogEvictMetadataPatternFailed(_logger, pattern, ex);
+            }
+        }
+
         foreach (var layerId in layerIds)
         {
             var pattern = $"relationship:{layerId}:*";
@@ -261,6 +273,20 @@ internal sealed partial class OutputCacheInvalidationService
         }
     }
 
+    private static IEnumerable<string> GetScopedMetadataPatterns(
+        IEnumerable<string> keys,
+        IReadOnlyCollection<int> layerIds)
+    {
+        foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            yield return $"scope:*:{key}";
+        }
+
+        foreach (var layerId in layerIds.Distinct())
+        {
+            yield return $"scope:*:relationship:{layerId}:*";
+        }
+    }
     private async Task<string[]> ResolveLayerServiceIdsAsync(
         string? serviceId,
         int? layerId,

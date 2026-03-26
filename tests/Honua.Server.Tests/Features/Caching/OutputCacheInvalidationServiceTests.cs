@@ -46,6 +46,14 @@ public sealed class OutputCacheInvalidationServiceTests
         await metadataCache.Received().RemoveAsync("layer:2", Arg.Any<CancellationToken>());
         await metadataCache.Received().RemoveByPatternAsync("relationship:1:*", Arg.Any<CancellationToken>());
         await metadataCache.Received().RemoveByPatternAsync("relationship:2:*", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:services:all", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:layers:all", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:service:testservice", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:service:exists:testservice", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:layer:1", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:layer:2", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:relationship:1:*", Arg.Any<CancellationToken>());
+        await metadataCache.Received().RemoveByPatternAsync("scope:*:relationship:2:*", Arg.Any<CancellationToken>());
 
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:testservice:layer:1:*", Arg.Any<CancellationToken>());

@@ -183,9 +183,10 @@ internal sealed partial class FeatureQueryBuilder
             var geometryProjection = aliasGeometry
                 ? $"{geometrySelect} AS {FeatureQueryEncoding.GeometryColumn}"
                 : geometrySelect;
+            var attributesSelect = BuildAttributesSelectExpression(query, ref paramIndex, parameters);
 
             sql.Append(CultureInfo.InvariantCulture, $@"
-                SELECT {DatabaseSchema.ObjectIdColumn}, {geometryProjection}, {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as {FeatureQueryEncoding.InternalTotalCountColumn}
+                SELECT {DatabaseSchema.ObjectIdColumn}, {geometryProjection}, {attributesSelect} AS {DatabaseSchema.AttributesColumn}, COUNT(*) OVER() as {FeatureQueryEncoding.InternalTotalCountColumn}
                 FROM {_tableName}
                 WHERE {DatabaseSchema.LayerIdColumn} = $1");
 

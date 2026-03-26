@@ -692,9 +692,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
         ImmutableHashSet<string>? projectedProperties)
     {
         var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var objectIdFieldName = layer.ObjectIdFieldName;
 
         foreach (var field in layer.AttributeFields)
         {
+            if (field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             if (projectedProperties != null && !projectedProperties.Contains(field.Name))
             {
                 continue;

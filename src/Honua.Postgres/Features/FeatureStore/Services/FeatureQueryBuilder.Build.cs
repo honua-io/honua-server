@@ -37,7 +37,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
     private delegate void SelectClauseBuilder(
         StringBuilder sql, FeatureQuery query, CoreGeometryStorageType geometryStorageType,
-        bool isKnnQuery, SpatialFilter? spatialFilter, ref int paramIndex);
+        bool isKnnQuery, SpatialFilter? spatialFilter, ref int paramIndex, List<object> parameters);
 
     public CoreParameterizedQuery BuildSelectQuery(
         int layerId,
@@ -78,7 +78,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            buildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex);
+            buildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex, parameters);
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);

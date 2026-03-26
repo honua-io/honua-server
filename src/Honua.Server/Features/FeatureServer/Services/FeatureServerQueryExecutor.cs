@@ -53,6 +53,15 @@ internal sealed class FeatureServerQueryExecutor
     {
         try
         {
+            if (ShouldUsePagedQuery(query) && _featureReader is IPagedFeatureReader pagedFeatureReader)
+            {
+                var pagedResult = await pagedFeatureReader.QueryPageAsync(layerId, query, cancellationToken);
+                return QueryResult<Feature>.Create(
+                    totalCount: pagedResult.TotalCount ?? GetLowerBoundTotalCount(pagedResult.Items.Length, pagedResult.HasMoreResults),
+                    items: pagedResult.Items,
+                    hasMoreResults: pagedResult.HasMoreResults);
+            }
+
             return await _featureReader.QueryAsync(layerId, query, cancellationToken);
         }
         catch (ArgumentException ex)
@@ -290,4 +299,10 @@ internal sealed class FeatureServerQueryExecutor
             context.Response.Headers.TransferEncoding = "chunked";
         }
     }
+
+    private static bool ShouldUsePagedQuery(FeatureQuery query)
+        => query.Limit is > 0 and < int.MaxValue;
+
+    private static long GetLowerBoundTotalCount(int itemCount, bool hasMoreResults)
+        => hasMoreResults ? itemCount + 1L : itemCount;
 }

@@ -157,6 +157,46 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
+    public async Task QueryWithValidationAsync_WhenPagedQuerySupported_UsesPagedFastPath()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedFeatureReader>();
+        var expectedItems = ImmutableArray.Create(CreateFeature(1, "alpha"), CreateFeature(2, "beta"));
+        ((IPagedFeatureReader)featureReader)
+            .QueryPageAsync(5, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<Feature>.Create(expectedItems, hasMoreResults: true)));
+
+        var sut = CreateSut(featureReader);
+        var query = new FeatureQuery { Limit = 2 };
+
+        var result = await sut.QueryWithValidationAsync(5, query, CancellationToken.None);
+
+        result.Items.Should().BeEquivalentTo(expectedItems);
+        result.HasMoreResults.Should().BeTrue();
+        result.TotalCount.Should().Be(3);
+        await ((IPagedFeatureReader)featureReader).Received(1).QueryPageAsync(5, query, Arg.Any<CancellationToken>());
+        await featureReader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task QueryWithValidationAsync_WhenPagedQueryNotSupported_FallsBackToRegularQuery()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var expected = QueryResult<Feature>.Create(
+            totalCount: 2,
+            items: ImmutableArray.Create(CreateFeature(1, "alpha"), CreateFeature(2, "beta")));
+        featureReader.QueryAsync(5, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(expected));
+
+        var sut = CreateSut(featureReader);
+        var query = new FeatureQuery { Limit = 2 };
+
+        var result = await sut.QueryWithValidationAsync(5, query, CancellationToken.None);
+
+        result.Should().Be(expected);
+        await featureReader.Received(1).QueryAsync(5, query, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task StreamQueryAsync_WithPagedQuery_UsesLimitProbeInsteadOfCount()
     {
         var featureReader = Substitute.For<IFeatureReader>();
