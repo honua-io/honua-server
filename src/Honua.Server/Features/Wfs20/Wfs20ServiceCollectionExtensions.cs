@@ -13,9 +13,13 @@ internal static class Wfs20ServiceCollectionExtensions
     /// <summary>
     /// Registers WFS 2.0 services
     /// </summary>
-    internal static IServiceCollection AddWfs20(this IServiceCollection services)
+    internal static IServiceCollection AddWfs20(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.Configure<Wfs20Options>(
+            configuration.GetSection(Wfs20Options.SectionName));
 
         // Register WFS 2.0 core services following established patterns
         services.AddScoped<Wfs20QueryServices>();
