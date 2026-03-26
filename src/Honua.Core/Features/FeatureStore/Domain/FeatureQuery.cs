@@ -34,6 +34,11 @@ public readonly record struct FeatureQuery
     public ImmutableArray<string>? OutFields { get; init; }
 
     /// <summary>
+    /// Excludes the JSON attribute payload entirely when the caller only needs geometry/system columns.
+    /// </summary>
+    public bool ExcludeAttributes { get; init; }
+
+    /// <summary>
     /// Spatial filter for geometry-based queries
     /// </summary>
     public SpatialFilter? SpatialFilter { get; init; }

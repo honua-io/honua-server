@@ -93,6 +93,32 @@ public class StyleTranslatorTests
     }
 
     [UnitTest]
+    public void CollectReferencedFields_ReturnsDistinctFieldsFromFilterPaintAndLayout()
+    {
+        const string json = """
+        [
+            {
+                "id": "layer1",
+                "type": "circle",
+                "filter": ["all", ["has", "category"], [">", ["get", "temperature"], 20]],
+                "paint": {
+                    "circle-color": ["case", ["==", ["get", "category"], "hot"], "#ff0000", "#0000ff"],
+                    "circle-radius": ["get", "size"]
+                },
+                "layout": {
+                    "visibility": ["case", ["has", "rank"], "visible", "none"]
+                }
+            }
+        ]
+        """;
+
+        var layers = StyleTranslator.ParseStyleLayers(json);
+        var fields = StyleTranslator.CollectReferencedFields(layers);
+
+        fields.Should().Equal("category", "temperature", "size", "rank");
+    }
+
+    [UnitTest]
     public void ResolveFillStyle_NoPaint_ReturnsDefault()
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
