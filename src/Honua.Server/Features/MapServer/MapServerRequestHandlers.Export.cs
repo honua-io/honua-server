@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Collections.Immutable;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -512,6 +514,12 @@ internal static partial class MapServerEndpoints
             var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
             try
             {
+                if (geometryType == GeometryType.Point)
+                {
+                    RenderDefaultPoints(canvas, features, transform, fill);
+                    return;
+                }
+
                 foreach (var feature in features)
                 {
                     if (feature.Geometry == null || feature.Geometry.Length < 5)
@@ -528,6 +536,51 @@ internal static partial class MapServerEndpoints
                 fill.Dispose();
                 stroke?.Dispose();
             }
+        }
+    }
+
+    private static void RenderDefaultPoints(
+        SKCanvas canvas,
+        IReadOnlyList<Feature> features,
+        Func<double, double, SKPoint> transform,
+        SKPaint fill)
+    {
+        if (features.Count == 0)
+        {
+            return;
+        }
+
+        var rented = ArrayPool<SKPoint>.Shared.Rent(features.Count);
+        var count = 0;
+
+        try
+        {
+            foreach (var feature in features)
+            {
+                if (WkbToSkiaConverter.TryConvertPoint(feature.Geometry, transform, out var point))
+                {
+                    rented[count++] = point;
+                }
+            }
+
+            if (count == 0)
+            {
+                return;
+            }
+
+            if (count == rented.Length)
+            {
+                canvas.DrawPoints(SKPointMode.Points, rented, fill);
+                return;
+            }
+
+            var points = new SKPoint[count];
+            Array.Copy(rented, points, count);
+            canvas.DrawPoints(SKPointMode.Points, points, fill);
+        }
+        finally
+        {
+            ArrayPool<SKPoint>.Shared.Return(rented);
         }
     }
 
