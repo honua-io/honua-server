@@ -435,10 +435,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         {
             if (result.IsPoint && result.Points != null)
             {
-                foreach (var point in result.Points)
-                {
-                    canvas.DrawCircle(point, 4f, fill);
-                }
+                canvas.DrawPoints(SKPointMode.Points, result.Points, fill);
             }
             else if (result.Path != null)
             {
