@@ -529,6 +529,7 @@ jobs:
           HONUA_LAYER_ID: '0'
           HONUA_MCP_LAYER_ID: '10'
           HONUA_DEV_AUTH: "true"
+          HONUA_API_KEY: "ci-admin-password"
 
       - name: Warn if certification ran without artifact support
         if: steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available != 'true'
@@ -610,6 +611,7 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
           HONUA_DEV_AUTH: "true"
+          HONUA_API_KEY: "ci-admin-password"
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Upload LLM smoke transcripts
@@ -890,7 +892,7 @@ jobs:
             --network host \
             -e ConnectionStrings__DefaultConnection="Host=localhost;Database=honua_test;Username=honua;Password=honua" \
             -e ASPNETCORE_ENVIRONMENT=Development \
-            -e HONUA_DEV_AUTH=true \
+            -e HONUA_ADMIN_PASSWORD=ci-docker-admin-password \
             -e Security__ConnectionEncryption__MasterKey="0123456789abcdef0123456789abcdef" \
             -p 8080:8080 \
             honua-server:test

@@ -6,7 +6,7 @@ Honua server process management for integration tests.
 
 Provides:
 - Starting/stopping the Honua server as a subprocess
-- Configuration for test environment (connection string, auth bypass)
+- Configuration for test environment (connection string, auth key)
 - Health check waiting
 """
 
@@ -97,8 +97,8 @@ class HonuaServer:
             "ASPNETCORE_ENVIRONMENT": "Development",
             "ConnectionStrings__DefaultConnection": connection_string,
             "ConnectionStrings__honua": connection_string,
-            # Enable dev auth bypass for tests
-            "HONUA_DEV_AUTH": "true",
+            # Use an explicit admin API key so hosted test runs match CI bootstrap rules.
+            "HONUA_ADMIN_PASSWORD": "test-admin-password",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",
