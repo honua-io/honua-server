@@ -225,8 +225,10 @@ internal static class StyleTranslator
             Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint =>
                 (new SKPaint
                 {
-                    Style = SKPaintStyle.Fill,
+                    Style = SKPaintStyle.Stroke,
                     Color = strokeColor,
+                    StrokeWidth = 8f,
+                    StrokeCap = SKStrokeCap.Round,
                     IsAntialias = true
                 }, null),
 
