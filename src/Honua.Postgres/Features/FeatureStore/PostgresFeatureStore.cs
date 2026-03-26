@@ -31,7 +31,7 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -106,6 +106,35 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<PagedQueryResult<Feature>> QueryPageAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
+        {
+            var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            return PagedQueryResult<Feature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
+        }
+
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var pageQuery = query with { Limit = query.Limit.Value + 1 };
+        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, pageQuery, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, pageQuery, layerId, cancellationToken).ConfigureAwait(false);
+
+        if (features.Length == 0)
+        {
+            return PagedQueryResult<Feature>.Empty();
+        }
+
+        var hasMoreResults = features.Length > query.Limit.Value;
+        var items = hasMoreResults
+            ? features.Take(query.Limit.Value).ToImmutableArray()
+            : features;
+
+        return PagedQueryResult<Feature>.Create(items, hasMoreResults);
+    }
+
     public async Task<byte[]?> QueryFlatGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
@@ -132,6 +161,35 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
             _dataAccess.ExecuteSelectGeoJsonQueryAsync,
             QueryOptimizedGeoJsonAsync,
             cancellationToken);
+
+    public async Task<PagedQueryResult<EncodedGeoJsonFeature>> QueryGeoJsonPageAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
+        {
+            var result = await QueryGeoJsonAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            return PagedQueryResult<EncodedGeoJsonFeature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
+        }
+
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var pageQuery = query with { Limit = query.Limit.Value + 1 };
+        var selectQuery = _queryBuilder.BuildSelectGeoJsonQuery(layerId, pageQuery, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectGeoJsonQueryAsync(selectQuery, pageQuery, layerId, cancellationToken).ConfigureAwait(false);
+
+        if (features.Length == 0)
+        {
+            return PagedQueryResult<EncodedGeoJsonFeature>.Empty();
+        }
+
+        var hasMoreResults = features.Length > query.Limit.Value;
+        var items = hasMoreResults
+            ? features.Take(query.Limit.Value).ToImmutableArray()
+            : features;
+
+        return PagedQueryResult<EncodedGeoJsonFeature>.Create(items, hasMoreResults);
+    }
 
     public Task<QueryResult<GmlFeature>> QueryGmlAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         => ExecuteFormatQueryAsync(

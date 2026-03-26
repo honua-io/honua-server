@@ -38,7 +38,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeocoding(configuration);
         services.AddImageServer();
         services.AddMapServer();
-        services.AddOgcFeatures();
+        services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
         services.AddWfs20();
         services.AddOData();
