@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -514,7 +515,7 @@ internal static class AdminAuthEndpoints
 
     private static string BuildAbsoluteUri(HttpContext context, string path)
     {
-        return $"{context.Request.Scheme}://{context.Request.Host}{path}";
+        return $"{BaseUrlResolver.GetBaseUrl(context)}{path}";
     }
 
     private sealed record AdminAuthProviderDefinition(

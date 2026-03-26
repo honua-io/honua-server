@@ -139,7 +139,7 @@ internal static partial class MapServerEndpoints
             {
                 MapServerLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var xml = BuildWmsCapabilities(context, svcDef, serviceId, baseUrl);
+                var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl).ConfigureAwait(false);
                 return Results.Content(xml, WmsCapabilitiesMimeType, Encoding.UTF8, StatusCodes.Status200OK);
             }
 
@@ -1808,7 +1808,7 @@ internal static partial class MapServerEndpoints
         return fullName;
     }
 
-    private static string BuildWmsCapabilities(HttpContext context, ServiceDefinition service, string serviceId, string baseUrl)
+    private static async Task<string> BuildWmsCapabilities(HttpContext context, ServiceDefinition service, string serviceId, string baseUrl)
     {
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var wmsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS";
@@ -1901,29 +1901,7 @@ internal static partial class MapServerEndpoints
         if (service.EffectiveExtent.HasValue)
         {
             var rootExtent = service.EffectiveExtent.Value;
-            AppendWmsGeographicBoundingBox(
-                sb,
-                rootExtent.MinX,
-                rootExtent.MinY,
-                rootExtent.MaxX,
-                rootExtent.MaxY,
-                "      ");
-            AppendWmsBoundingBox(
-                sb,
-                "CRS:84",
-                rootExtent.MinX,
-                rootExtent.MinY,
-                rootExtent.MaxX,
-                rootExtent.MaxY,
-                "      ");
-            AppendWmsBoundingBox(
-                sb,
-                "EPSG:4326",
-                rootExtent.MinX,
-                rootExtent.MinY,
-                rootExtent.MaxX,
-                rootExtent.MaxY,
-                "      ");
+            await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ").ConfigureAwait(false);
         }
 
         var visibleLayers = service.Layers
@@ -1953,30 +1931,7 @@ internal static partial class MapServerEndpoints
             var extent = layer.Extent ?? service.EffectiveExtent;
             if (extent.HasValue)
             {
-                var value = extent.Value;
-                AppendWmsGeographicBoundingBox(
-                    sb,
-                    value.MinX,
-                    value.MinY,
-                    value.MaxX,
-                    value.MaxY,
-                    "        ");
-                AppendWmsBoundingBox(
-                    sb,
-                    "CRS:84",
-                    value.MinX,
-                    value.MinY,
-                    value.MaxX,
-                    value.MaxY,
-                    "        ");
-                AppendWmsBoundingBox(
-                    sb,
-                    "EPSG:4326",
-                    value.MinX,
-                    value.MinY,
-                    value.MaxX,
-                    value.MaxY,
-                    "        ");
+                await AppendWmsGeographicBoundsAsync(context, sb, extent.Value, "        ").ConfigureAwait(false);
             }
 
             AppendWmsCiteDimensions(sb, layer, "        ");
@@ -1992,6 +1947,60 @@ internal static partial class MapServerEndpoints
         sb.AppendLine("  </Capability>");
         sb.AppendLine("</WMS_Capabilities>");
         return sb.ToString();
+    }
+
+    private static async Task AppendWmsGeographicBoundsAsync(
+        HttpContext context,
+        StringBuilder sb,
+        FeatureExtent extent,
+        string indent)
+    {
+        var geographicExtent = extent;
+        if (extent.SpatialReference != 4326)
+        {
+            var transformResult = await TryTransformExtentAsync(
+                context,
+                new SkiaMapRenderer.RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY),
+                extent.SpatialReference,
+                4326,
+                context.RequestAborted).ConfigureAwait(false);
+
+            if (!transformResult.IsSuccess)
+            {
+                return;
+            }
+
+            geographicExtent = FeatureExtent.Create(
+                transformResult.Extent.MinX,
+                transformResult.Extent.MinY,
+                transformResult.Extent.MaxX,
+                transformResult.Extent.MaxY,
+                4326);
+        }
+
+        AppendWmsGeographicBoundingBox(
+            sb,
+            geographicExtent.MinX,
+            geographicExtent.MinY,
+            geographicExtent.MaxX,
+            geographicExtent.MaxY,
+            indent);
+        AppendWmsBoundingBox(
+            sb,
+            "CRS:84",
+            geographicExtent.MinX,
+            geographicExtent.MinY,
+            geographicExtent.MaxX,
+            geographicExtent.MaxY,
+            indent);
+        AppendWmsBoundingBox(
+            sb,
+            "EPSG:4326",
+            geographicExtent.MinX,
+            geographicExtent.MinY,
+            geographicExtent.MaxX,
+            geographicExtent.MaxY,
+            indent);
     }
 
     private static void AppendWmsGeographicBoundingBox(
