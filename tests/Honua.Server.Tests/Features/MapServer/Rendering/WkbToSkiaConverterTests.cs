@@ -33,6 +33,28 @@ public class WkbToSkiaConverterTests
     }
 
     [UnitTest]
+    public void TryConvertPoint_Point_ReturnsPoint()
+    {
+        var wkb = CreateWkbPoint(10.0, 20.0);
+
+        var success = WkbToSkiaConverter.TryConvertPoint(wkb, _identityTransform, out var point);
+
+        success.Should().BeTrue();
+        point.X.Should().BeApproximately(10f, 0.001f);
+        point.Y.Should().BeApproximately(20f, 0.001f);
+    }
+
+    [UnitTest]
+    public void TryConvertPoint_NonPoint_ReturnsFalse()
+    {
+        var wkb = CreateWkbLineString([(0, 0), (10, 10)]);
+
+        var success = WkbToSkiaConverter.TryConvertPoint(wkb, _identityTransform, out _);
+
+        success.Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Convert_LineString_ReturnsPathResult()
     {
         var wkb = CreateWkbLineString([(0, 0), (10, 10), (20, 0)]);
