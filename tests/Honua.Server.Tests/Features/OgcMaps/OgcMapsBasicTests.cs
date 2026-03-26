@@ -25,6 +25,43 @@ public class OgcMapsBasicTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_BasicRequest_ReturnsLandingPage()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("title").GetString().Should().Be("Honua OGC API Maps");
+        json.RootElement.GetProperty("links").EnumerateArray()
+            .Select(link => link.GetProperty("href").GetString())
+            .Should()
+            .Contain(href => href != null && href.EndsWith("/ogc/maps/openapi.json", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/openapi.json")]
+    [Operation(Operations.Metadata)]
+    public async Task GetOpenApiSpec_BasicRequest_ReturnsOpenApiDocument()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps/openapi.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.oai.openapi+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("openapi").GetString().Should().NotBeNullOrWhiteSpace();
+        json.RootElement.GetProperty("paths").TryGetProperty("/ogc/maps", out _).Should().BeTrue();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/maps/conformance")]
     [Operation(Operations.Metadata)]
     public async Task GetConformance_BasicRequest_ReturnsConformanceClasses()
@@ -153,7 +190,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
     [Operation(Operations.Render)]
-    public async Task GetStyledMap_WithValidStyle_ReturnsNotImplemented()
+    public async Task GetStyledMap_WithValidStyle_ReturnsNotFound()
     {
         // Arrange
         var styleId = "default";
@@ -163,7 +200,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/styles/{styleId}/map{queryParams}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

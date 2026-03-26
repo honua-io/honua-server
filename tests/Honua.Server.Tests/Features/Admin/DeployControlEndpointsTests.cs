@@ -13,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -67,10 +68,13 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         var root = document.RootElement;
         root.GetProperty("status").GetString().Should().Be("ready");
         root.GetProperty("readyForCoordinatedDeploy").GetBoolean().Should().BeTrue();
-        root.GetProperty("deploymentMode").GetString().Should().Be("SingleInstance");
-        root.GetProperty("migration").GetProperty("planAvailable").GetBoolean().Should().BeTrue();
-        root.GetProperty("migration").GetProperty("upgradeRequired").GetBoolean().Should().BeFalse();
-        root.GetProperty("readiness").GetProperty("isReady").GetBoolean().Should().BeTrue();
+        root.GetProperty("message").GetString().Should().Be("Instance is ready for coordinated deployment.");
+        root.TryGetProperty("serverVersion", out _).Should().BeFalse();
+        root.TryGetProperty("environment", out _).Should().BeFalse();
+        root.TryGetProperty("deploymentMode", out _).Should().BeFalse();
+        root.TryGetProperty("instanceName", out _).Should().BeFalse();
+        root.TryGetProperty("migration", out _).Should().BeFalse();
+        root.TryGetProperty("readiness", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -91,9 +95,41 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         var root = document.RootElement;
         root.GetProperty("status").GetString().Should().Be("blocked");
         root.GetProperty("readyForCoordinatedDeploy").GetBoolean().Should().BeFalse();
-        root.GetProperty("message").GetString().Should().Be("Pending migrations must be reconciled before coordinated deployment.");
-        root.GetProperty("migration").GetProperty("upgradeRequired").GetBoolean().Should().BeTrue();
-        root.GetProperty("migration").GetProperty("pendingScripts").GetArrayLength().Should().Be(1);
+        root.GetProperty("message").GetString().Should().Be("Instance is not ready for coordinated deployment.");
+        root.TryGetProperty("migration", out _).Should().BeFalse();
+        root.TryGetProperty("readiness", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/preflight")]
+    public async Task GetDeployPreflight_WithIncludeDiagnosticsTrue_ReturnsDiagnostics()
+    {
+        _migrationRunner.Plan = DatabaseMigrationPlan.Succeeded(
+            pendingScripts:
+            [
+                "0003_add_service_metadata.sql"
+            ]);
+
+        var response = await _client.GetAsync("/api/v1/admin/deploy/preflight?includeDiagnostics=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("status").GetString().Should().Be("blocked");
+        root.GetProperty("message").GetString().Should().Be("Instance is not ready for coordinated deployment.");
+        root.GetProperty("serverVersion").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("environment").GetString().Should().Be("Test");
+        root.GetProperty("deploymentMode").GetString().Should().Be("SingleInstance");
+        root.GetProperty("instanceName").GetString().Should().NotBeNullOrWhiteSpace();
+
+        var readiness = root.GetProperty("readiness");
+        readiness.GetProperty("isReady").GetBoolean().Should().BeTrue();
+        readiness.GetProperty("statusCode").GetInt32().Should().Be(StatusCodes.Status200OK);
+
+        var migration = root.GetProperty("migration");
+        migration.GetProperty("upgradeRequired").GetBoolean().Should().BeTrue();
+        migration.GetProperty("pendingScripts").GetArrayLength().Should().Be(1);
     }
 
     [IntegrationTest]

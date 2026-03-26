@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -136,6 +137,55 @@ public sealed class RedisCacheServiceTests : IDisposable
         result.Should().NotBeNull();
         result!.Name.Should().Be("objectid");
         result.Type.Should().Be(FieldType.Integer);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task SetAsync_WithAmbientSchemaScope_IsolatesEntriesBySchema()
+    {
+        var schemaContext = new SchemaContext();
+
+        try
+        {
+            schemaContext.CurrentSchema = "alpha";
+            await _cacheService.SetAsync("layer:1", new FieldDefinition("Alpha", FieldType.String, Length: 10));
+
+            schemaContext.CurrentSchema = "beta";
+            var betaResult = await _cacheService.GetAsync<FieldDefinition>("layer:1");
+
+            schemaContext.CurrentSchema = "alpha";
+            var alphaResult = await _cacheService.GetAsync<FieldDefinition>("layer:1");
+
+            betaResult.Should().BeNull();
+            alphaResult.Should().NotBeNull();
+            alphaResult!.Name.Should().Be("Alpha");
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = null;
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task SetAsync_WithAlreadyScopedKey_DoesNotApplyAmbientScopeTwice()
+    {
+        var schemaContext = new SchemaContext();
+
+        try
+        {
+            schemaContext.CurrentSchema = "alpha";
+            await _cacheService.SetAsync(
+                "scope:schema:alpha:layer:1",
+                new FieldDefinition("Scoped", FieldType.String, Length: 10));
+
+            GetFallbackCacheKeys().Should().ContainSingle()
+                .Which.Should().Be("test:scope:schema:alpha:layer:1");
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = null;
+        }
     }
 
     [UnitTest]
@@ -356,6 +406,20 @@ public sealed class RedisCacheServiceTests : IDisposable
             semaphore.Release();
         }
         semaphore.Dispose();
+    }
+
+    private string[] GetFallbackCacheKeys()
+    {
+        var fallbackCacheField = typeof(RedisCacheService).GetField("_fallbackCache", BindingFlags.NonPublic | BindingFlags.Instance);
+        fallbackCacheField.Should().NotBeNull();
+
+        var fallbackCache = fallbackCacheField!.GetValue(_cacheService) as System.Collections.IEnumerable;
+        fallbackCache.Should().NotBeNull();
+
+        return fallbackCache!
+            .Cast<object>()
+            .Select(entry => (string)entry.GetType().GetProperty("Key")!.GetValue(entry)!)
+            .ToArray();
     }
 
     internal sealed class MockLogger<T> : ILogger<T>

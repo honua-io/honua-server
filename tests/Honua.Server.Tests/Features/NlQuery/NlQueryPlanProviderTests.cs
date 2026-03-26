@@ -228,6 +228,65 @@ public sealed class NlQueryPlanProviderTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void ConfigurationValidator_WithHttpEndpoint_FailsValidation()
+    {
+        var validator = new NlQueryConfigurationValidator();
+        var options = new NlQueryConfiguration
+        {
+            Enabled = true,
+            Provider = "openai",
+            Endpoint = "http://example.com/v1",
+            Model = "gpt-4o",
+            ApiKey = "test-key",
+            TimeoutSeconds = 30,
+            MaxTokens = 1024
+        };
+
+        var result = validator.Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().Contain(failure => failure.Contains("must use HTTPS", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void FeatureEnabled_WithEnvironmentApiKey_BindsOptionsWithoutMutatingConfiguration()
+    {
+        const string envVariableName = "HONUA_NLQUERY_API_KEY";
+        var previousValue = Environment.GetEnvironmentVariable(envVariableName);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(envVariableName, "env-key");
+
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["NlQuery:Enabled"] = "true",
+                    ["NlQuery:Provider"] = "openai",
+                    ["NlQuery:Endpoint"] = "https://api.openai.com/v1",
+                    ["NlQuery:Model"] = "gpt-4o"
+                })
+                .Build();
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddNlQuery(configuration);
+
+            using var provider = services.BuildServiceProvider();
+            var options = provider.GetRequiredService<IOptions<NlQueryConfiguration>>().Value;
+
+            options.ApiKey.Should().Be("env-key");
+            configuration["NlQuery:ApiKey"].Should().BeNull();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envVariableName, previousValue);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void FeatureNotConfigured_ProviderNotRegistered()
     {
         // No NlQuery section at all

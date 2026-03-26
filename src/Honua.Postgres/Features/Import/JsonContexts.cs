@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Postgres.Features.Import;
@@ -27,6 +28,7 @@ namespace Honua.Postgres.Features.Import;
 [JsonSerializable(typeof(TimeOnly))]
 [JsonSerializable(typeof(DateOnly))]
 [JsonSerializable(typeof(TimeSpan))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
 internal sealed partial class ImportJsonContext : JsonSerializerContext
 {

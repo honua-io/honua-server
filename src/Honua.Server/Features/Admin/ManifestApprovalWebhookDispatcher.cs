@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundService
 {
+    private const int ChannelCapacity = 1000;
     private static readonly TimeSpan DeliveryRetryDelay = TimeSpan.FromSeconds(1);
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ManifestApprovalWebhookOptions _options;
@@ -31,9 +32,9 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _channel = System.Threading.Channels.Channel.CreateBounded<ManifestApprovalWebhookEvent>(
-            new System.Threading.Channels.BoundedChannelOptions(1000)
+            new System.Threading.Channels.BoundedChannelOptions(ChannelCapacity)
             {
-                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
             });
     }
 
@@ -42,7 +43,13 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
     /// </summary>
     public bool Enqueue(ManifestApprovalWebhookEvent webhookEvent)
     {
-        return _channel.Writer.TryWrite(webhookEvent);
+        var written = _channel.Writer.TryWrite(webhookEvent);
+        if (!written)
+        {
+            LogWebhookQueueFull(_logger, webhookEvent.EventId, ChannelCapacity);
+        }
+
+        return written;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -141,4 +148,7 @@ internal sealed partial class ManifestApprovalWebhookDispatcher : BackgroundServ
 
     [LoggerMessage(EventId = 9212, Level = LogLevel.Warning, Message = "Manifest approval webhook dispatch failed for event {EventId}.")]
     private static partial void LogDispatcherFailed(ILogger logger, string eventId, Exception exception);
+
+    [LoggerMessage(EventId = 9213, Level = LogLevel.Warning, Message = "Manifest approval webhook queue is full; event {EventId} was rejected. Capacity: {Capacity}.")]
+    private static partial void LogWebhookQueueFull(ILogger logger, string eventId, int capacity);
 }

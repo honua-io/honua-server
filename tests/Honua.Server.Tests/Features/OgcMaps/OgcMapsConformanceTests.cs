@@ -96,12 +96,12 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_IncludesBackgroundConformance()
+    public async Task GetConformance_DoesNotOverclaimBackgroundConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background",
-            "must declare Background conformance for bgcolor/transparent params");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/background",
+            "background parameters are parsed but not applied by the raster renderer");
     }
 
     [IntegrationTest]
@@ -118,12 +118,12 @@ public class OgcMapsConformanceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/maps/conformance")]
-    public async Task GetConformance_IncludesDatetimeConformance()
+    public async Task GetConformance_DoesNotOverclaimDatetimeConformance()
     {
         var classes = await GetConformanceClassesAsync();
 
-        classes.Should().Contain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
-            "must declare Date & Time conformance for the datetime param");
+        classes.Should().NotContain("https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/datetime",
+            "datetime is parsed but not currently enforced by the raster renderer");
     }
 
     [IntegrationTest]

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -33,9 +34,17 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("WFS_Capabilities");
+        content.Should().Contain("updateSequence=\"20260325\"");
         content.Should().Contain("<Operation name=\"GetFeature\">");
         content.Should().Contain("<Operation name=\"GetPropertyValue\">");
         content.Should().NotContain("<Operation name=\"Transaction\">");
+        content.Should().Contain("name=\"ImplementsBasicWFS\"");
+        content.Should().Contain("name=\"KVPEncoding\"");
+        content.Should().Contain("name=\"XMLEncoding\"");
+        content.Should().Contain("ImplementsSpatialFilter");
+        content.Should().Contain(">TRUE<");
+        content.Should().Contain("SpatialOperator name=\"Intersects\"");
+        content.Should().Contain("SpatialOperator name=\"DWithin\"");
     }
 
     [IntegrationTest]
@@ -54,6 +63,38 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_GetCapabilities_SectionsFeatureTypeList_ReturnsRequestedSectionOnly()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&SECTIONS=FeatureTypeList");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<FeatureTypeList>");
+        content.Should().NotContain("<ows:ServiceIdentification>");
+        content.Should().NotContain("<ows:ServiceProvider>");
+        content.Should().NotContain("<ows:OperationsMetadata>");
+        content.Should().NotContain("Filter_Capabilities");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    public async Task Wfs_GetCapabilities_UpdateSequenceHigher_ReturnsInvalidUpdateSequence()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=999999999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidUpdateSequence\"");
+        content.Should().Contain("locator=\"updateSequence\"");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "DescribeFeatureType")]
@@ -67,6 +108,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("ExceptionReport");
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"outputFormat\"");
         content.Should().Contain("DescribeFeatureType requires XML-based formats");
     }
 
@@ -144,6 +186,51 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_InvalidCount_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&COUNT=abc");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"count\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_InvalidStartIndex_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&STARTINDEX=-1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"startIndex\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_InvalidResultType_ReturnsExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAME=test_layer&RESULTTYPE=summary");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("locator=\"resultType\"");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
@@ -154,7 +241,9 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("valueReference");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("exceptionCode=\"MissingParameterValue\"");
+        content.Should().Contain("locator=\"valueReference\"");
     }
 
     [IntegrationTest]
@@ -229,5 +318,65 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("WFS_Capabilities");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetCapabilities")]
+    public async Task Wfs_Post_GetCapabilities_XmlBody_ReturnsXml()
+    {
+        const string requestBody = """
+            <wfs:GetCapabilities service="WFS" version="2.0.0"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0" />
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        responseBody.Should().Contain("WFS_Capabilities");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_GetPropertyValue_WithGeoJsonOutput_ReturnsFeatureCollection()
+    {
+        const string outputFormat = "application/geo%2Bjson";
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&OUTPUTFORMAT={outputFormat}&COUNT=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/geo+json");
+
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        document.RootElement.GetProperty("features").GetArrayLength().Should().BeLessOrEqualTo(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_Post_GetPropertyValue_XmlBody_ReturnsValueCollection()
+    {
+        const string requestBody = """
+            <wfs:GetPropertyValue service="WFS" version="2.0.0" valueReference="name"
+                xmlns:wfs="http://www.opengis.net/wfs/2.0">
+              <wfs:Query typeNames="test_layer" />
+            </wfs:GetPropertyValue>
+            """;
+
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/xml");
+        var response = await _fixture.Client.PostAsync("/wfs", content);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseBody);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/gml+xml");
+        responseBody.Should().Contain("ValueCollection");
     }
 }

@@ -6,7 +6,7 @@ Honua server process management for integration tests.
 
 Provides:
 - Starting/stopping the Honua server as a subprocess
-- Configuration for test environment (connection string, auth bypass)
+- Configuration for test environment (connection string, auth key)
 - Health check waiting
 """
 
@@ -94,11 +94,12 @@ class HonuaServer:
         connection_string = self._normalize_connection_string(self.connection_string)
         env.update({
             "ASPNETCORE_URLS": f"http://localhost:{self.port}",
-            "ASPNETCORE_ENVIRONMENT": "Development",
+            "ASPNETCORE_ENVIRONMENT": "Test",
             "ConnectionStrings__DefaultConnection": connection_string,
             "ConnectionStrings__honua": connection_string,
-            # Enable dev auth bypass for tests
+            # Keep the Python/GDAL harness anonymous so protocol clients can exercise the full surface.
             "HONUA_DEV_AUTH": "true",
+            "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
             "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "false",

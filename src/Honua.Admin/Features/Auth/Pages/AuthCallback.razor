@@ -53,7 +53,7 @@
         // Handle IdP error responses
         if (!string.IsNullOrEmpty(ErrorParam))
         {
-            _error = ErrorDescription ?? ErrorParam;
+            _error = DescribeProviderError(ErrorParam);
             return;
         }
 
@@ -101,5 +101,14 @@
     private void RetryLogin()
     {
         Nav.NavigateTo("/admin/auth/login");
+    }
+
+    private static string DescribeProviderError(string errorCode)
+    {
+        return errorCode switch
+        {
+            "access_denied" => "Sign-in was cancelled or denied by the identity provider.",
+            _ => "The identity provider returned an authentication error. Please try again."
+        };
     }
 }

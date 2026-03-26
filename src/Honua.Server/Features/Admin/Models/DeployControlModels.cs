@@ -32,25 +32,25 @@ public sealed class DeployPreflightResponse
     /// Honua server version currently running on this instance.
     /// </summary>
     [JsonPropertyName("serverVersion")]
-    public string ServerVersion { get; init; } = string.Empty;
+    public string? ServerVersion { get; init; }
 
     /// <summary>
     /// ASP.NET host environment for this instance.
     /// </summary>
     [JsonPropertyName("environment")]
-    public string Environment { get; init; } = string.Empty;
+    public string? Environment { get; init; }
 
     /// <summary>
     /// Deployment mode configured for this instance.
     /// </summary>
     [JsonPropertyName("deploymentMode")]
-    public string DeploymentMode { get; init; } = string.Empty;
+    public string? DeploymentMode { get; init; }
 
     /// <summary>
     /// Machine or instance name serving the request.
     /// </summary>
     [JsonPropertyName("instanceName")]
-    public string InstanceName { get; init; } = string.Empty;
+    public string? InstanceName { get; init; }
 
     /// <summary>
     /// Timestamp when the preflight payload was generated.
@@ -62,13 +62,13 @@ public sealed class DeployPreflightResponse
     /// Current readiness state for this instance.
     /// </summary>
     [JsonPropertyName("readiness")]
-    public required DeployPreflightReadiness Readiness { get; init; }
+    public DeployPreflightReadiness? Readiness { get; init; }
 
     /// <summary>
     /// Current migration and schema alignment state for this instance.
     /// </summary>
     [JsonPropertyName("migration")]
-    public required DeployPreflightMigration Migration { get; init; }
+    public DeployPreflightMigration? Migration { get; init; }
 }
 
 /// <summary>

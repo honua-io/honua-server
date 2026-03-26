@@ -287,7 +287,6 @@ internal sealed partial class OutputCacheInvalidationService
             yield return $"scope:*:relationship:{layerId}:*";
         }
     }
-
     private async Task<string[]> ResolveLayerServiceIdsAsync(
         string? serviceId,
         int? layerId,

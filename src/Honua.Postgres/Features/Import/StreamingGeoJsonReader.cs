@@ -508,8 +508,8 @@ internal sealed class StreamingGeoJsonReader
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.Null => null,
-            JsonValueKind.Array => element.ToString(),
-            JsonValueKind.Object => element.ToString(),
+            JsonValueKind.Array => element.Clone(),
+            JsonValueKind.Object => element.Clone(),
             _ => null
         };
     }

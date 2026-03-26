@@ -179,4 +179,14 @@ internal sealed class ErrorResponseFormatterOptions
     /// Additional headers to include in the response.
     /// </summary>
     public IReadOnlyDictionary<string, string>? AdditionalHeaders { get; init; }
+
+    /// <summary>
+    /// Explicit WFS exception code to emit instead of inferring one heuristically.
+    /// </summary>
+    public string? WfsExceptionCode { get; init; }
+
+    /// <summary>
+    /// Optional WFS exception locator attribute.
+    /// </summary>
+    public string? WfsExceptionLocator { get; init; }
 }

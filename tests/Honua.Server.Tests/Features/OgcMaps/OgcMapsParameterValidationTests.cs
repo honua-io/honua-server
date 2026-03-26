@@ -245,25 +245,25 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
-    public async Task GetStyledMap_ValidStyleId_ReturnsNotImplemented()
+    public async Task GetStyledMap_ValidStyleId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/styles/default/map" +
             "?bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
-    public async Task GetStyledMap_AlphanumericStyleId_ReturnsNotImplemented()
+    public async Task GetStyledMap_AlphanumericStyleId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/styles/my-custom_style123/map" +
             "?bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     #endregion

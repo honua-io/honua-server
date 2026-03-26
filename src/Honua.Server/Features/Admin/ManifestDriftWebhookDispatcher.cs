@@ -185,11 +185,11 @@ internal sealed partial class ManifestDriftWebhookDispatcher(
                 {
                     Content = new StringContent(payload, Encoding.UTF8, "application/json")
                 };
-                request.Headers.TryAddWithoutValidation("X-Honua-Event-Id", eventId);
-                request.Headers.TryAddWithoutValidation("X-Honua-Event-Type", "manifest.drift");
-                request.Headers.TryAddWithoutValidation("X-Honua-Event-Timestamp", timestamp);
-                request.Headers.TryAddWithoutValidation("X-Honua-Signature", $"sha256={signature}");
-                request.Headers.TryAddWithoutValidation("Idempotency-Key", eventId);
+                Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Id", eventId);
+                Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Type", "manifest.drift");
+                Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Timestamp", timestamp);
+                Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Signature", $"sha256={signature}");
+                Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "Idempotency-Key", eventId);
 
                 var client = _httpClientFactory.CreateClient("manifest-drift-webhook");
                 using var response = await client.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);

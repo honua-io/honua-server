@@ -60,8 +60,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
         Assert.Equal("strict-origin-when-cross-origin", referrerValues.First());
 
         // Content-Security-Policy
-        Assert.True(response.Headers.TryGetValues("Content-Security-Policy", out var cspValues));
-        var cspHeader = cspValues.First();
+        var cspHeader = GetContentSecurityPolicyHeader(response);
         Assert.Contains("frame-ancestors 'none'", cspHeader);
         Assert.Contains("default-src 'self'", cspHeader);
         Assert.Contains("object-src 'none'", cspHeader);
@@ -72,7 +71,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
 
         // Cross-Origin-Embedder-Policy
         Assert.True(response.Headers.TryGetValues("Cross-Origin-Embedder-Policy", out var coepValues));
-        Assert.Equal("require-corp", coepValues.First());
+        Assert.Equal("unsafe-none", coepValues.First());
 
         // Note: Server header may still be present from Kestrel in test environment
         // In production with reverse proxy, this would typically be removed
@@ -92,8 +91,8 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
         Assert.True(response.Headers.TryGetValues("X-Frame-Options", out var frameValues));
         Assert.Equal("DENY", frameValues.First());
 
-        Assert.True(response.Headers.TryGetValues("Content-Security-Policy", out var cspValues));
-        Assert.Contains("frame-ancestors 'none'", cspValues.First());
+        var cspHeader = GetContentSecurityPolicyHeader(response);
+        Assert.Contains("frame-ancestors 'none'", cspHeader);
     }
 
     [IntegrationTest]
@@ -151,8 +150,7 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
         // Assert
         response.EnsureSuccessStatusCode();
 
-        Assert.True(response.Headers.TryGetValues("Content-Security-Policy", out var cspValues));
-        var cspHeader = cspValues.First();
+        var cspHeader = GetContentSecurityPolicyHeader(response);
 
         _output.WriteLine($"CSP Header: {cspHeader}");
 
@@ -214,5 +212,19 @@ public class SecurityHeadersMiddlewareTests : IAsyncLifetime
         // In production with reverse proxy, this would typically be handled there
 
         _output.WriteLine($"Security headers verified for {endpoint}");
+    }
+
+    private static string GetContentSecurityPolicyHeader(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("Content-Security-Policy", out var enforcingValues))
+        {
+            return enforcingValues.First();
+        }
+
+        Assert.True(
+            response.Headers.TryGetValues("Content-Security-Policy-Report-Only", out var reportOnlyValues),
+            "Content-Security-Policy or Content-Security-Policy-Report-Only header missing");
+
+        return reportOnlyValues.First();
     }
 }

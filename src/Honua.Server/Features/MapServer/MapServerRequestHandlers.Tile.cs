@@ -24,6 +24,7 @@ internal static partial class MapServerEndpoints
 {
     private const int TileSize = 256;
     private const int TileSrid = 3857;
+    private const string RequestedTileLayerIdContextItemKey = "__HonuaRequestedTileLayerId";
 
     /// <summary>
     /// Handle MapServer tile requests for cached raster PNG tiles.
@@ -100,8 +101,19 @@ internal static partial class MapServerEndpoints
             var tileBounds = TileMath.GetTileBounds(x, y, z);
             var renderExtent = new SkiaMapRenderer.RenderExtent(
                 tileBounds.XMin, tileBounds.YMin, tileBounds.XMax, tileBounds.YMax);
+            await using var renderLease = await context.RequestServices
+                .GetRequiredService<RasterRenderCapacityLimiter>()
+                .TryAcquireAsync(TileSize, TileSize, context.RequestAborted)
+                .ConfigureAwait(false);
+            if (renderLease is null)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    RasterRenderCapacityLimiter.CapacityExceededMessage,
+                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+            }
 
-            var renderLayers = ResolveVisibleLayers(service, null, context);
+            var renderLayers = ResolveTileLayers(service, context);
             if (renderLayers.Length == 0)
             {
                 using var renderer = new SkiaMapRenderer();
@@ -204,5 +216,24 @@ internal static partial class MapServerEndpoints
                int.TryParse(yValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out y) &&
                !string.IsNullOrWhiteSpace(xValue) &&
                int.TryParse(xValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out x);
+    }
+
+    private static LayerDefinition[] ResolveTileLayers(ServiceDefinition service, HttpContext context)
+    {
+        if (context.Items.TryGetValue(RequestedTileLayerIdContextItemKey, out var requestedLayerIdValue) &&
+            requestedLayerIdValue is int requestedLayerId)
+        {
+            var requestedLayer = service.Layers.FirstOrDefault(layer => layer.Id == requestedLayerId);
+            if (requestedLayer is null || !requestedLayer.HasGeometry)
+            {
+                return [];
+            }
+
+            return AccessPolicyHelpers.IsLayerAccessible(context, requestedLayer, service)
+                ? [requestedLayer]
+                : [];
+        }
+
+        return ResolveVisibleLayers(service, null, context);
     }
 }

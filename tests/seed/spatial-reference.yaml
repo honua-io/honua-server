@@ -10,6 +10,7 @@ sql:
           capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
           service_extent GEOMETRY,
           metadata JSONB,
+          connection_id UUID,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
       );

@@ -183,6 +183,6 @@ internal static class HealthEndpoints
     {
         context.Response.StatusCode = result.StatusCode;
         context.Response.ContentType = "text/plain; charset=utf-8";
-        await context.Response.WriteAsync(result.Message);
+        await context.Response.WriteAsync(result.IsReady ? "Ready" : "Not Ready");
     }
 }

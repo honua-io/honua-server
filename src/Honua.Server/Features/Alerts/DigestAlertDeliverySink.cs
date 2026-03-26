@@ -3,9 +3,11 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
+using Honua.Server.Features.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Alerts;
@@ -115,6 +117,18 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookSecret))
+        {
+            await MarkBatchFailedAsync(
+                batchItems,
+                dispatchStore,
+                now,
+                retryable: false,
+                "Digest webhook signing secret is not configured.",
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         var payload = JsonSerializer.Serialize(batchItems.Select(static item => new
         {
             item.Event.DedupeKey,
@@ -137,7 +151,11 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
-            request.Headers.TryAddWithoutValidation("X-Honua-Digest-Count", batchItems.Count.ToString());
+            var timestamp = now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+            var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.Digest.WebhookSecret, timestamp, payload);
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Digest-Count", batchItems.Count.ToString(CultureInfo.InvariantCulture));
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Timestamp", timestamp);
+            WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Signature", $"sha256={signature}");
 
             var client = _httpClientFactory.CreateClient("alerts-digest");
             using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);

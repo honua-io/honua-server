@@ -19,6 +19,8 @@ namespace Honua.Server.Tests;
 [Protocol(Protocols.Health)]
 public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFactory>
 {
+    private const string AdminPassword = "health-metrics-admin-key";
+
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
@@ -97,7 +99,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         response.Content.Headers.ContentType?.ToString().Should().Be("text/plain; charset=utf-8");
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Be("Not Ready - Database unavailable");
+        content.Should().Be("Not Ready");
     }
 
     [Theory]
@@ -232,7 +234,8 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     {
         var factory = _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureServices(services =>
             {
                 services.AddScoped<IDatabaseHealthChecker>(_ => new MockHealthyDatabaseChecker());
@@ -240,7 +243,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         });
 
         using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Admin-Test", "true");
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
 
         var response = await client.GetAsync("/healthz/metrics");
 
@@ -257,7 +260,8 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     {
         var factory = _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             builder.ConfigureServices(services =>
             {
                 services.AddScoped<IDatabaseHealthChecker>(_ => new MockUnhealthyDatabaseChecker());
@@ -265,7 +269,7 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         });
 
         using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Admin-Test", "true");
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
 
         var response = await client.GetAsync("/healthz/metrics");
 

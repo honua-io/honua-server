@@ -2187,6 +2187,23 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var request = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]}]""";
+        var content = new StringContent(request, Encoding.UTF8, "text/plain");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Unsupported Media Type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithAddOperation_ReturnsNewObjectId()
     {

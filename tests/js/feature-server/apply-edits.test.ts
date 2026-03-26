@@ -519,7 +519,10 @@ describe('ApplyEdits - Error Handling', () => {
 
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          ...(process.env.HONUA_API_KEY ? { 'X-API-Key': process.env.HONUA_API_KEY } : {}),
+        },
         body: new URLSearchParams({ adds: 'not valid json', f: 'json' }),
       });
 

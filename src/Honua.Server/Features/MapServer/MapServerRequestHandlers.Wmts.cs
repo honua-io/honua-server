@@ -15,6 +15,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.MapServer.Rendering;
+using Honua.Server.Features.OgcFeatures;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
@@ -270,7 +271,10 @@ internal static partial class MapServerEndpoints
 
             MapServerLog.WmtsRequested(logger, serviceId, "GetCapabilities");
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var xml = BuildWmtsCapabilities(svcDef, serviceId, baseUrl, sections, wmtsMaxZoom);
+            var visibleLayers = svcDef.Layers
+                .Where(layer => layer.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, layer, svcDef))
+                .ToArray();
+            var xml = BuildWmtsCapabilities(svcDef, visibleLayers, serviceId, baseUrl, sections, wmtsMaxZoom);
             return Results.Content(xml, responseMimeType);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -448,6 +452,12 @@ internal static partial class MapServerEndpoints
             return CreateWmtsExceptionReport("InvalidParameterValue", "layer", "Invalid LAYER parameter.");
         }
 
+        var layerAccessError = AccessPolicyHelpers.RequireLayerAccess(context, layer!, service);
+        if (layerAccessError is not null)
+        {
+            return layerAccessError;
+        }
+
         if (!TryGetRequiredQueryValue(query, "STYLE", out var styleValue))
         {
             return CreateWmtsExceptionReport("MissingParameterValue", "style", "STYLE parameter is required.");
@@ -541,6 +551,7 @@ internal static partial class MapServerEndpoints
         context.Request.RouteValues["z"] = tileMatrixValue;
         context.Request.RouteValues["y"] = tileRowValue;
         context.Request.RouteValues["x"] = tileColValue;
+        context.Items[RequestedTileLayerIdContextItemKey] = layer!.Id;
 
         return await HandleTile(context);
     }
@@ -585,6 +596,12 @@ internal static partial class MapServerEndpoints
         if (!TryResolveWmtsLayer(service, layerValue, out var layer))
         {
             return CreateWmtsExceptionReport("InvalidParameterValue", "layer", "Invalid LAYER parameter.");
+        }
+
+        var layerAccessError = AccessPolicyHelpers.RequireLayerAccess(context, layer!, service);
+        if (layerAccessError is not null)
+        {
+            return layerAccessError;
         }
 
         if (!TryGetRequiredQueryValue(query, "STYLE", out var styleValue))
@@ -992,6 +1009,7 @@ internal static partial class MapServerEndpoints
 
     private static string BuildWmtsCapabilities(
         ServiceDefinition service,
+        LayerDefinition[] visibleLayers,
         string serviceId,
         string baseUrl,
         WmtsCapabilitiesSections sections,
@@ -1010,8 +1028,6 @@ internal static partial class MapServerEndpoints
         var wmtsKvpUrlPrefix = $"{wmtsEndpoint}?";
         var wmtsRestUrlPrefix = $"{wmtsEndpoint}/";
         var serviceMetadataUrl = $"{wmtsEndpoint}/{WmtsVersion}/WMTSCapabilities.xml";
-        var visibleLayers = service.Layers.Where(l => l.HasGeometry).ToArray();
-
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.AppendLine("<Capabilities xmlns=\"http://www.opengis.net/wmts/1.0\"");
         sb.AppendLine("  xmlns:ows=\"http://www.opengis.net/ows/1.1\"");
@@ -1146,10 +1162,7 @@ internal static partial class MapServerEndpoints
                 sb.AppendLine("    <Layer>");
                 sb.Append("      <ows:Title>").Append(EscapeXml(layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture))).AppendLine("</ows:Title>");
                 sb.Append("      <ows:Identifier>").Append(layerId).AppendLine("</ows:Identifier>");
-                sb.AppendLine("      <ows:WGS84BoundingBox>");
-                sb.AppendLine("        <ows:LowerCorner>-180 -90</ows:LowerCorner>");
-                sb.AppendLine("        <ows:UpperCorner>180 90</ows:UpperCorner>");
-                sb.AppendLine("      </ows:WGS84BoundingBox>");
+                AppendWmtsWgs84BoundingBox(sb, layer);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
                 sb.Append("        <LegendURL format=\"image/png\" xlink:href=\"")
@@ -1202,7 +1215,7 @@ internal static partial class MapServerEndpoints
 
             sb.AppendLine("    <TileMatrixSet>");
             sb.AppendLine("      <ows:Identifier>WebMercatorQuad</ows:Identifier>");
-            sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
+            sb.AppendLine("      <ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
             sb.AppendLine("      <WellKnownScaleSet>urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible</WellKnownScaleSet>");
 
             for (var z = 0; z <= wmtsMaxZoom; z++)
@@ -1582,7 +1595,8 @@ internal static partial class MapServerEndpoints
             .Append("updateSequence=\"").Append(WmtsUpdateSequence).Append("\" ")
             .Append("xsi:schemaLocation=\"")
             .Append(WmtsCapabilitiesSchemaLocation)
-            .AppendLine("\" />");
+            .AppendLine("\">");
+        sb.AppendLine("</Capabilities>");
         return sb.ToString();
     }
 
@@ -1634,13 +1648,56 @@ internal static partial class MapServerEndpoints
 
     private static int GetWmtsTileMatrixLimitMax(int tileMatrix)
     {
-        if (tileMatrix <= 1)
+        return tileMatrix < 0
+            ? 0
+            : (int)((1L << tileMatrix) - 1);
+    }
+
+    private static void AppendWmtsWgs84BoundingBox(StringBuilder sb, LayerDefinition layer)
+    {
+        if (!TryGetWmtsWgs84BoundingBox(layer, out var lowerCorner, out var upperCorner))
         {
-            return 0;
+            return;
         }
 
-        return (int)((1L << (tileMatrix - 1)) - 1);
+        sb.AppendLine("      <ows:WGS84BoundingBox>");
+        sb.Append("        <ows:LowerCorner>").Append(lowerCorner).AppendLine("</ows:LowerCorner>");
+        sb.Append("        <ows:UpperCorner>").Append(upperCorner).AppendLine("</ows:UpperCorner>");
+        sb.AppendLine("      </ows:WGS84BoundingBox>");
     }
+
+    private static bool TryGetWmtsWgs84BoundingBox(
+        LayerDefinition layer,
+        out string lowerCorner,
+        out string upperCorner)
+    {
+        lowerCorner = string.Empty;
+        upperCorner = string.Empty;
+
+        if (layer.Extent is null)
+        {
+            return false;
+        }
+
+        var extent = layer.Extent.Value;
+        if (!OgcExtentTransformer.TryTransformToCrs84(extent.MinX, extent.MinY, extent.SpatialReference, out var min) ||
+            !OgcExtentTransformer.TryTransformToCrs84(extent.MaxX, extent.MaxY, extent.SpatialReference, out var max))
+        {
+            return false;
+        }
+
+        var minLon = Math.Min(min.Lon, max.Lon);
+        var minLat = Math.Min(min.Lat, max.Lat);
+        var maxLon = Math.Max(min.Lon, max.Lon);
+        var maxLat = Math.Max(min.Lat, max.Lat);
+
+        lowerCorner = $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}";
+        upperCorner = $"{FormatWmtsCoordinate(maxLon)} {FormatWmtsCoordinate(maxLat)}";
+        return true;
+    }
+
+    private static string FormatWmtsCoordinate(double value)
+        => value.ToString("0.###############", CultureInfo.InvariantCulture);
 
     private static int ResolveWmtsMaxZoom(HttpContext context)
     {

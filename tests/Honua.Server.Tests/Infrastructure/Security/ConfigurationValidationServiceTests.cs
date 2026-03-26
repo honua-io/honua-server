@@ -65,6 +65,25 @@ public sealed class ConfigurationValidationServiceTests
             error.Contains("Host validation is enabled", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void ValidateConfiguration_Development_WithDevAuthEnabled_ReturnsError()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["HONUA_DEV_AUTH"] = "true"
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration,
+            NullLogger.Instance,
+            isDevelopment: true,
+            isTest: false);
+
+        errors.Should().Contain(error =>
+            error.Contains("HONUA_DEV_AUTH", StringComparison.OrdinalIgnoreCase) &&
+            error.Contains("test environment", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static IConfiguration BuildConfiguration(IDictionary<string, string?>? overrides = null)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)

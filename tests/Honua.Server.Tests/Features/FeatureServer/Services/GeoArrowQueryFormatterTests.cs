@@ -401,6 +401,52 @@ public sealed class GeoArrowQueryFormatterTests
             .GetProperty("geometry_types").GetArrayLength().Should().Be(0);
     }
 
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WithNon4326GeometrySrid_ThrowsInvalidOperation()
+    {
+        var layer = CreateLayer(
+            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+
+        var act = async () => await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Empty(),
+            layer,
+            returnGeometry: true,
+            outputSrid: 3857,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*GeoArrow*EPSG:4326*3857*");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WithReturnMTrue_ThrowsInvalidOperation()
+    {
+        var layer = CreateLayer(
+            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+
+        var feature = Feature.Create(
+            1,
+            CreatePointWkbWithZm(1.0, 2.0, 3.0, 4.0),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L
+            }.ToImmutableDictionary());
+
+        var act = async () => await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: true,
+            returnM: true,
+            geometryLimits: new GeometryLimits());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*GeoArrow*returnM=true*XY and XYZ geometries*");
+    }
+
     private static LayerDefinition CreateLayer(params FieldDefinition[] fields)
         => new(
             Id: 1,

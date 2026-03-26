@@ -700,7 +700,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
             {
                 continue;
             }
-
             if (projectedProperties != null && !projectedProperties.Contains(field.Name))
             {
                 continue;

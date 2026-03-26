@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Honua.Server.Features.Infrastructure.Events;
@@ -12,6 +16,19 @@ namespace Honua.Server.Features.Infrastructure.Events;
 /// </summary>
 internal static partial class WebhookDeliveryHelper
 {
+    internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
+    {
+        var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
+
+        return new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectCallback = (context, cancellationToken) =>
+                ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
+        };
+    }
+
     /// <summary>
     /// Computes an HMAC-SHA256 signature for webhook payloads using the <c>timestamp.payload</c> message format.
     /// Delegates to <see cref="WebhookSignatureHelper"/> to avoid duplication.
@@ -44,10 +61,10 @@ internal static partial class WebhookDeliveryHelper
                 {
                     Content = new StringContent(request.Payload, Encoding.UTF8, "application/json")
                 };
-                httpRequest.Headers.TryAddWithoutValidation("X-Honua-Event-Id", request.EventId);
-                httpRequest.Headers.TryAddWithoutValidation("X-Honua-Event-Timestamp", timestamp);
-                httpRequest.Headers.TryAddWithoutValidation("X-Honua-Signature", $"sha256={signature}");
-                httpRequest.Headers.TryAddWithoutValidation("Idempotency-Key", request.EventId);
+                AddValidatedHeader(httpRequest.Headers, "X-Honua-Event-Id", request.EventId);
+                AddValidatedHeader(httpRequest.Headers, "X-Honua-Event-Timestamp", timestamp);
+                AddValidatedHeader(httpRequest.Headers, "X-Honua-Signature", $"sha256={signature}");
+                AddValidatedHeader(httpRequest.Headers, "Idempotency-Key", request.EventId);
 
                 var client = httpClientFactory.CreateClient(request.HttpClientName);
                 using var response = await client.SendAsync(httpRequest, timeoutCts.Token).ConfigureAwait(false);
@@ -78,10 +95,221 @@ internal static partial class WebhookDeliveryHelper
                 }
             }
 
-            var delayMs = Math.Min(
-                Math.Max(1, request.InitialBackoffMs) * (1 << (attempt - 1)),
-                Math.Max(1, request.MaxBackoffMs));
+            var delayMs = ComputeBackoffDelayMilliseconds(request, attempt);
             await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    internal static int ComputeBackoffDelayMilliseconds(WebhookDeliveryRequest request, int attempt)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(attempt, 1);
+
+        var initialBackoff = Math.Max(1, request.InitialBackoffMs);
+        var maxBackoff = Math.Max(1, request.MaxBackoffMs);
+        var exponentialDelay = Math.Min((long)initialBackoff << (attempt - 1), maxBackoff);
+
+        if (exponentialDelay <= 1)
+        {
+            return 1;
+        }
+
+        // Apply deterministic per-event jitter so concurrent retries do not herd while
+        // preserving reproducible behavior in tests and diagnostics.
+        var hash = ComputeDeterministicHash(request.EventId);
+        hash = unchecked((hash * 16777619u) ^ (uint)attempt);
+        var jitterPercent = (int)(hash % 21u) - 10; // [-10%, +10%]
+        var jitteredDelay = exponentialDelay + ((exponentialDelay * jitterPercent) / 100L);
+
+        return (int)Math.Clamp(jitteredDelay, 1L, maxBackoff);
+    }
+
+    internal static void AddValidatedHeader(HttpHeaders headers, string name, string value)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(value);
+
+        var sanitizedValue = SanitizeHeaderValue(value);
+
+        try
+        {
+            headers.Add(name, sanitizedValue);
+        }
+        catch (FormatException)
+        {
+            headers.Add(name, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))));
+        }
+    }
+
+    internal static string SanitizeHeaderValue(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        var sanitized = new StringBuilder(value.Length);
+        foreach (var character in value)
+        {
+            if ((character >= 0x20 && character != 0x7f) || character == '\t')
+            {
+                sanitized.Append(character);
+            }
+        }
+
+        return sanitized.Length > 0
+            ? sanitized.ToString()
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    }
+
+    private static uint ComputeDeterministicHash(string value)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var character in value)
+            {
+                hash ^= character;
+                hash *= 16777619u;
+            }
+
+            return hash;
+        }
+    }
+
+    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
+        SocketsHttpConnectionContext context,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        var addresses = await ResolveAllowedAddressesAsync(
+                context.DnsEndPoint.Host,
+                hostAddressResolver,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        Exception? lastException = null;
+        foreach (var address in addresses)
+        {
+            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            var connected = false;
+
+            try
+            {
+                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
+                connected = true;
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+            {
+                lastException = ex;
+            }
+            finally
+            {
+                if (!connected)
+                {
+                    socket.Dispose();
+                }
+            }
+        }
+
+        throw new HttpRequestException("Unable to establish a secure connection to the webhook host.", lastException);
+    }
+
+    private static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
+        string host,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(host, out var literalAddress))
+        {
+            if (IsPrivateOrReservedAddress(literalAddress))
+            {
+                throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
+            }
+
+            return [literalAddress];
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SocketException)
+        {
+            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
+        }
+        catch (ArgumentException)
+        {
+            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
+        }
+
+        if (addresses.Length == 0)
+        {
+            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
+        }
+
+        foreach (var address in addresses)
+        {
+            if (IsPrivateOrReservedAddress(address))
+            {
+                throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
+            }
+        }
+
+        return addresses;
+    }
+
+    private static bool IsPrivateOrReservedAddress(IPAddress address)
+    {
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+
+            if (bytes[0] == 0 ||
+                bytes[0] == 10 ||
+                (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
+                bytes[0] == 127 ||
+                (bytes[0] == 169 && bytes[1] == 254) ||
+                (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
+                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
+                (bytes[0] == 192 && bytes[1] == 168) ||
+                (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
+                (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
+                (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
+                bytes[0] >= 224)
+            {
+                return true;
+            }
+        }
+        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var bytes = address.GetAddressBytes();
+
+            if (address.Equals(IPAddress.IPv6None) ||
+                address.Equals(IPAddress.IPv6Loopback) ||
+                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
+                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
+                (bytes[0] & 0xfe) == 0xfc ||
+                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
+            {
+                return true;
+            }
         }
 
         return false;

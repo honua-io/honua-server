@@ -10,59 +10,64 @@ using Microsoft.AspNetCore.Components;
 namespace Honua.Admin.Features.Auth.Services;
 
 /// <summary>
-/// Manages the OIDC authorization-code-with-PKCE flow, token exchange, refresh, and logout.
+/// Manages the backend-assisted OIDC authorization-code-with-PKCE flow, refresh, and logout.
 /// </summary>
 public sealed class OidcSessionService
 {
     private static readonly TimeSpan RefreshBuffer = TimeSpan.FromMinutes(2);
+    private const string AuthorizationCodeGrantType = "authorization_code";
+    private const string RefreshTokenGrantType = "refresh_token";
+    private const string TokenExchangeFailureMessage = "Authentication failed with the identity provider. Please try again.";
+    private const string TokenExchangeUnavailableMessage = "Could not reach the identity provider. Please try again.";
+    private const string AuthorizeUrlFailureMessage = "Unable to start sign-in. Please try again.";
 
     private readonly HttpClient _http;
     private readonly AuthStateStore _store;
-    private readonly AuthBootstrapService _bootstrap;
     private readonly NavigationManager _nav;
-
-    // Cache discovery documents per authority to avoid repeated fetches.
-    private readonly Dictionary<string, OidcDiscoveryDocument> _discoveryCache = new(StringComparer.OrdinalIgnoreCase);
 
     public OidcSessionService(
         HttpClient http,
         AuthStateStore store,
-        AuthBootstrapService bootstrap,
         NavigationManager nav)
     {
         _http = http;
         _store = store;
-        _bootstrap = bootstrap;
         _nav = nav;
     }
 
     /// <summary>
-    /// Initiates the authorization code + PKCE flow by redirecting to the provider's authorization endpoint.
+    /// Initiates the authorization code + PKCE flow by requesting an authorize URL from the server.
     /// </summary>
     public async Task StartLoginAsync(AuthProviderInfo provider)
     {
-        var discovery = await GetDiscoveryDocumentAsync(provider.Authority);
-
         var (verifier, challenge) = GeneratePkceParams();
         var state = GenerateRandomString(32);
 
-        await _store.ClearTokensAsync(); // Clear stale tokens but preserve nothing else
+        await _store.ClearTokensAsync();
         await _store.StorePkceStateAsync(verifier, state);
         await _store.StoreSelectedProviderKeyAsync(provider.Key);
 
-        var redirectUri = BuildAbsoluteUri(provider.RedirectPath);
-        var scope = string.Join(" ", provider.Scopes);
+        var response = await _http.PostAsJsonAsync(
+            $"api/v1/admin/auth/providers/{Uri.EscapeDataString(provider.Key)}/authorize-url",
+            new AdminAuthAuthorizeUrlRequest
+            {
+                State = state,
+                CodeChallenge = challenge
+            },
+            AuthJsonContext.Default.AdminAuthAuthorizeUrlRequest);
 
-        var authUrl = $"{discovery.AuthorizationEndpoint}" +
-            $"?response_type=code" +
-            $"&client_id={Uri.EscapeDataString(provider.ClientId)}" +
-            $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
-            $"&scope={Uri.EscapeDataString(scope)}" +
-            $"&state={Uri.EscapeDataString(state)}" +
-            $"&code_challenge={Uri.EscapeDataString(challenge)}" +
-            $"&code_challenge_method=S256";
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(AuthorizeUrlFailureMessage);
+        }
 
-        _nav.NavigateTo(authUrl, forceLoad: true);
+        var authorize = await response.Content.ReadFromJsonAsync(AuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+        if (authorize is null || string.IsNullOrWhiteSpace(authorize.AuthorizeUrl))
+        {
+            throw new InvalidOperationException(AuthorizeUrlFailureMessage);
+        }
+
+        _nav.NavigateTo(authorize.AuthorizeUrl, forceLoad: true);
     }
 
     /// <summary>
@@ -85,33 +90,28 @@ public sealed class OidcSessionService
 
         await _store.ClearPkceStateAsync();
 
-        var discovery = await GetDiscoveryDocumentAsync(provider.Authority);
-        var redirectUri = BuildAbsoluteUri(provider.RedirectPath);
-
-        var tokenRequest = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["grant_type"] = "authorization_code",
-            ["code"] = code,
-            ["redirect_uri"] = redirectUri,
-            ["client_id"] = provider.ClientId,
-            ["code_verifier"] = storedVerifier,
-        });
-
         try
         {
-            var response = await _http.PostAsync(discovery.TokenEndpoint, tokenRequest);
+            var response = await _http.PostAsJsonAsync(
+                $"api/v1/admin/auth/providers/{Uri.EscapeDataString(provider.Key)}/token",
+                new AdminAuthTokenRequest
+                {
+                    GrantType = AuthorizationCodeGrantType,
+                    Code = code,
+                    CodeVerifier = storedVerifier
+                },
+                AuthJsonContext.Default.AdminAuthTokenRequest);
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorBody = await response.Content.ReadAsStringAsync();
-                return (false, $"Token exchange failed: {response.StatusCode} - {errorBody}");
+                return (false, TokenExchangeFailureMessage);
             }
 
             var tokens = await response.Content.ReadFromJsonAsync(AuthJsonContext.Default.TokenResponse);
 
             if (tokens is null || string.IsNullOrEmpty(tokens.AccessToken))
             {
-                return (false, "Empty token response from provider.");
+                return (false, TokenExchangeFailureMessage);
             }
 
             await _store.StoreTokensAsync(
@@ -123,9 +123,9 @@ public sealed class OidcSessionService
 
             return (true, null);
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            return (false, $"Token exchange request failed: {ex.Message}");
+            return (false, TokenExchangeUnavailableMessage);
         }
     }
 
@@ -137,40 +137,39 @@ public sealed class OidcSessionService
     {
         var refreshToken = await _store.GetRefreshTokenAsync();
         var providerKey = await _store.GetProviderKeyAsync();
-
         if (refreshToken is null || providerKey is null)
-            return false;
-
-        var config = await _bootstrap.GetConfigAsync();
-        var provider = config.Providers.Find(p => p.Key == providerKey);
-        if (provider is null)
-            return false;
-
-        var discovery = await GetDiscoveryDocumentAsync(provider.Authority);
-
-        var tokenRequest = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["grant_type"] = "refresh_token",
-            ["refresh_token"] = refreshToken,
-            ["client_id"] = provider.ClientId,
-        });
+            return false;
+        }
 
         try
         {
-            var response = await _http.PostAsync(discovery.TokenEndpoint, tokenRequest);
+            var response = await _http.PostAsJsonAsync(
+                $"api/v1/admin/auth/providers/{Uri.EscapeDataString(providerKey)}/token",
+                new AdminAuthTokenRequest
+                {
+                    GrantType = RefreshTokenGrantType,
+                    RefreshToken = refreshToken
+                },
+                AuthJsonContext.Default.AdminAuthTokenRequest);
+
             if (!response.IsSuccessStatusCode)
+            {
                 return false;
+            }
 
             var tokens = await response.Content.ReadFromJsonAsync(AuthJsonContext.Default.TokenResponse);
             if (tokens is null || string.IsNullOrEmpty(tokens.AccessToken))
+            {
                 return false;
+            }
 
             await _store.StoreTokensAsync(
                 tokens.AccessToken,
                 tokens.IdToken,
-                tokens.RefreshToken ?? refreshToken, // Keep old refresh token if new one not issued
+                tokens.RefreshToken ?? refreshToken,
                 tokens.ExpiresIn,
-                provider.Key);
+                providerKey);
 
             return true;
         }
@@ -193,7 +192,7 @@ public sealed class OidcSessionService
     }
 
     /// <summary>
-    /// Clears local session and redirects to IdP logout endpoint when available.
+    /// Clears local session and redirects to a provider logout URL when available.
     /// </summary>
     public async Task LogoutAsync()
     {
@@ -204,47 +203,39 @@ public sealed class OidcSessionService
 
         if (providerKey is null)
         {
-            _nav.NavigateTo("/admin/auth/login", forceLoad: true);
+            NavigateToLocalLogin();
             return;
         }
 
-        var config = await _bootstrap.GetConfigAsync();
-        var provider = config.Providers.Find(p => p.Key == providerKey);
-
-        if (provider?.SupportsLogout == true)
+        try
         {
-            var discovery = await GetDiscoveryDocumentAsync(provider.Authority);
-            if (!string.IsNullOrEmpty(discovery.EndSessionEndpoint))
+            var requestUri = $"api/v1/admin/auth/providers/{Uri.EscapeDataString(providerKey)}/logout-url";
+            if (!string.IsNullOrWhiteSpace(idToken))
             {
-                var logoutUrl = discovery.EndSessionEndpoint +
-                    $"?post_logout_redirect_uri={Uri.EscapeDataString(BuildAbsoluteUri(provider.PostLogoutRedirectPath ?? "/admin"))}" +
-                    (idToken is not null ? $"&id_token_hint={Uri.EscapeDataString(idToken)}" : "");
+                requestUri += $"?idTokenHint={Uri.EscapeDataString(idToken)}";
+            }
 
-                _nav.NavigateTo(logoutUrl, forceLoad: true);
-                return;
+            var response = await _http.GetAsync(requestUri);
+            if (response.IsSuccessStatusCode)
+            {
+                var logout = await response.Content.ReadFromJsonAsync(AuthJsonContext.Default.AdminAuthLogoutUrlResponse);
+                if (!string.IsNullOrWhiteSpace(logout?.LogoutUrl))
+                {
+                    _nav.NavigateTo(logout.LogoutUrl, forceLoad: true);
+                    return;
+                }
             }
         }
+        catch (HttpRequestException)
+        {
+        }
 
-        // Fallback: local-only logout
+        NavigateToLocalLogin();
+    }
+
+    private void NavigateToLocalLogin()
+    {
         _nav.NavigateTo("/admin/auth/login", forceLoad: true);
-    }
-
-    private async Task<OidcDiscoveryDocument> GetDiscoveryDocumentAsync(string authority)
-    {
-        if (_discoveryCache.TryGetValue(authority, out var cached))
-            return cached;
-
-        var discoveryUrl = authority.TrimEnd('/') + "/.well-known/openid-configuration";
-        var doc = await _http.GetFromJsonAsync(discoveryUrl, AuthJsonContext.Default.OidcDiscoveryDocument)
-            ?? throw new InvalidOperationException($"Failed to fetch OIDC discovery document from {discoveryUrl}");
-
-        _discoveryCache[authority] = doc;
-        return doc;
-    }
-
-    private string BuildAbsoluteUri(string path)
-    {
-        return new Uri(_nav.BaseUri).GetLeftPart(UriPartial.Authority) + path;
     }
 
     private static (string Verifier, string Challenge) GeneratePkceParams()

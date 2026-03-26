@@ -18,25 +18,46 @@ internal sealed class ResponseDisposingStream : DelegatingStream
 
     protected override void Dispose(bool disposing)
     {
-        if (!_disposed && disposing)
+        if (!disposing || _disposed)
         {
-            Inner.Dispose();
-            _response.Dispose();
-            _disposed = true;
+            return;
         }
 
-        base.Dispose(disposing);
+        _disposed = true;
+
+        try
+        {
+            base.Dispose(disposing);
+        }
+        finally
+        {
+            _response.Dispose();
+        }
     }
 
     public override async ValueTask DisposeAsync()
     {
-        if (!_disposed)
+        if (_disposed)
         {
-            await Inner.DisposeAsync();
-            _response.Dispose();
-            _disposed = true;
+            return;
         }
 
-        await base.DisposeAsync();
+        _disposed = true;
+
+        try
+        {
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (_response is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                _response.Dispose();
+            }
+        }
     }
 }

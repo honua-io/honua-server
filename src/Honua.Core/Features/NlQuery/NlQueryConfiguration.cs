@@ -69,7 +69,7 @@ public sealed class NlQueryConfigurationValidator : OptionsValidator<NlQueryConf
         }
         else
         {
-            ValidateUrl(options.Endpoint, "NlQuery:Endpoint", failures, requireHttps: false);
+            ValidateUrl(options.Endpoint, "NlQuery:Endpoint", failures, requireHttps: true);
         }
 
         ValidateRequiredString(options.Model, "NlQuery:Model", failures);

@@ -78,28 +78,7 @@ public sealed class GeoJsonGeometry
     public required object? Coordinates { get; init; }
 
     /// <summary>
-    /// Coordinate Reference System (optional)
-    /// </summary>
-    public GeoJsonCrs? Crs { get; init; }
-
-    /// <summary>
     /// Geometry collection members (only when Type=GeometryCollection)
     /// </summary>
     public GeoJsonGeometry[]? Geometries { get; init; }
-}
-
-/// <summary>
-/// GeoJSON Coordinate Reference System
-/// </summary>
-public sealed class GeoJsonCrs
-{
-    /// <summary>
-    /// CRS type - typically "name"
-    /// </summary>
-    public string Type { get; init; } = "name";
-
-    /// <summary>
-    /// CRS properties
-    /// </summary>
-    public required Dictionary<string, object> Properties { get; init; }
 }

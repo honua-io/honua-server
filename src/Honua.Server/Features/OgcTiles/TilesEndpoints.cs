@@ -971,6 +971,7 @@ internal static class TilesEndpoints
         if (OgcTilesUtilities.IsWorldCrs84Quad(tileMatrixSetId))
         {
             return string.Equals(normalized, OgcTilesUtilities.Crs84, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(normalized, "http://www.opengis.net/def/crs/EPSG/0/4326", StringComparison.OrdinalIgnoreCase)
                    || string.Equals(normalized, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase);
         }
 

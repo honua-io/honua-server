@@ -99,12 +99,52 @@ public class CoordinateTransformerTests
     }
 
     [UnitTest]
-    public void TransformPoint_GeographicSridAliasTo4326_ReturnsOriginalCoordinates()
+    public void TransformPoint_GeographicSridAliasTo4326_ThrowsNotSupportedException()
     {
-        var (x, y) = CoordinateTransformer.TransformPoint(-122.5, 37.5, 4269, 4326);
+        var act = () => CoordinateTransformer.TransformPoint(-122.5, 37.5, 4269, 4326);
 
-        x.Should().Be(-122.5);
-        y.Should().Be(37.5);
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*SRID 4269 to 4326*");
+    }
+
+    [UnitTest]
+    public void TransformExtent_GeographicSridAliasTo4326_ThrowsNotSupportedException()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(-123, 37, -122, 38);
+
+        var act = () => CoordinateTransformer.TransformExtent(extent, 4269, 4326);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*SRID 4269 to 4326*");
+    }
+
+    [UnitTest]
+    public void TransformPoint_GeographicSridAliasTo3857_ThrowsNotSupportedException()
+    {
+        var act = () => CoordinateTransformer.TransformPoint(-122.5, 37.5, 4269, 3857);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*SRID 4269 to 3857*");
+    }
+
+    [UnitTest]
+    public void TransformPoint_3857ToGeographicSridAlias_ThrowsNotSupportedException()
+    {
+        var act = () => CoordinateTransformer.TransformPoint(-13636637, 4509031, 3857, 4269);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*SRID 3857 to 4269*");
+    }
+
+    [UnitTest]
+    public void TransformExtent_GeographicSridAliasTo3857_ThrowsNotSupportedException()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(-123, 37, -122, 38);
+
+        var act = () => CoordinateTransformer.TransformExtent(extent, 4269, 3857);
+
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*SRID 4269 to 3857*");
     }
 
     [UnitTest]

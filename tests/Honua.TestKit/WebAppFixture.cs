@@ -67,6 +67,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
     private const string TestSecureConnectionName = "test";
     private const string TestSecureConnectionCreatedBy = "test-fixture";
+    private const string SharedAdminPassword = "test-admin-password";
     private static readonly TimeSpan _defaultTestClientTimeout = TimeSpan.FromMinutes(5);
 
     public WebAppFixture()
@@ -300,8 +301,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                 _sharedFactory = new WebApplicationFactory<Program>()
                     .WithWebHostBuilder(builder =>
                     {
-                        builder.UseEnvironment("Development");
+                        builder.UseEnvironment("Test");
                         builder.UseSetting("HONUA_DEV_AUTH", "true");
+                        builder.UseSetting("HONUA_ADMIN_PASSWORD", SharedAdminPassword);
                         builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
 
                         builder.ConfigureAppConfiguration((context, configBuilder) =>
@@ -311,6 +313,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 ["ConnectionStrings:honua"] = _sharedPostgres.ConnectionString,
                                 ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
                                 ["HONUA_DEV_AUTH"] = "true",
+                                ["HONUA_ADMIN_PASSWORD"] = SharedAdminPassword,
                                 ["HONUA_SKIP_MIGRATIONS"] = "true",
                                 ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
                                 ["Limits:Connections:RequestTimeout"] = "00:05:00",
@@ -321,6 +324,49 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
                                 ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
                             });
+                        });
+
+                        builder.ConfigureTestServices(services =>
+                        {
+                            services.RemoveAll<NpgsqlDataSource>();
+                            services.RemoveAll<IFeatureReader>();
+                            services.RemoveAll<IFeatureWriter>();
+                            services.RemoveAll<ITileProvider>();
+                            services.RemoveAll<IRelationshipStore>();
+                            services.RemoveAll<IStreamingFeatureStore>();
+                            services.RemoveAll<IAttachmentStore>();
+                            services.RemoveAll<ILayerCatalog>();
+                            services.RemoveAll<ITableDiscoveryService>();
+                            services.RemoveAll<IDatabaseHealthChecker>();
+                            services.RemoveAll<IDatabaseConnectionProvider>();
+                            services.RemoveAll<ICrsDetectionService>();
+                            services.RemoveAll<IFileImportService>();
+                            services.RemoveAll<ISqlFilterTranslator>();
+
+                            var testConfiguration = new ConfigurationBuilder()
+                                .AddInMemoryCollection(new Dictionary<string, string?>
+                                {
+                                    ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
+                                    ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
+                                    ["Limits:Connections:RequestTimeout"] = "00:05:00",
+                                    ["Limits:Query:QueryTimeout"] = "00:02:00",
+                                    ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
+                                    ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
+                                })
+                                .Build();
+
+                            Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+
+                            services.RemoveAll<NpgsqlDataSource>();
+                            services.AddSingleton<NpgsqlDataSource>(_ =>
+                            {
+                                var dataSourceBuilder = new NpgsqlDataSourceBuilder(_sharedPostgres.ConnectionString);
+                                dataSourceBuilder.ConnectionStringBuilder.Multiplexing = false;
+                                return dataSourceBuilder.Build();
+                            });
+
+                            services.RemoveAll<ILayerCatalog>();
+                            services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
                         });
                     });
 
@@ -341,7 +387,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         await SeedSchemaAsync(_currentSchema);
 
-        Client = CreateClient(_currentSchema);
+        Client = CreateAdminClient();
         _serviceScope = _sharedFactory?.Services.CreateScope();
 
         await EnsureTestSecureConnectionAsync();
@@ -726,9 +772,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     {
         return CreateClient(client =>
         {
-            // Admin clients should have appropriate authorization headers set
-            // In test environment with HONUA_DEV_AUTH=true, this bypasses actual auth
-            client.DefaultRequestHeaders.Add("X-Admin-Test", "true");
+            client.DefaultRequestHeaders.Add("X-API-Key", SharedAdminPassword);
         });
     }
 

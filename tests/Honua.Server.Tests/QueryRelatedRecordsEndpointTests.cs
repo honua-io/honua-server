@@ -242,6 +242,31 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse!.RelatedRecordGroups.Should().HaveCount(2);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
+    {
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            objectIds = "1,2",
+            relationshipId = TestRelationshipId,
+            returnGeometry = true,
+            f = "json"
+        });
+
+        using var client = _fixture.CreateClient(c => c.Timeout = _requestTimeout);
+        using var content = new StringContent(requestBody, Encoding.UTF8, "text/plain");
+
+        var response = await client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords",
+            content);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.UnsupportedMediaType);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        responseContent.Should().Contain("Unsupported Media Type");
+    }
+
     private async Task<HttpResponseMessage> GetWithRetryAsync(
         string requestUri,
         int maxAttempts = MaxRequestAttempts)

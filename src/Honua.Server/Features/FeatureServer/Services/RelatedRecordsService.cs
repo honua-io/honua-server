@@ -144,15 +144,15 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         }
         catch (ArgumentException ex)
         {
-            throw new InvalidOperationException($"Invalid related query: {ex.Message}");
+            throw new InvalidOperationException("Invalid related query.", ex);
         }
         catch (FormatException ex)
         {
-            throw new InvalidOperationException($"Invalid related query format: {ex.Message}");
+            throw new InvalidOperationException("Invalid related query format.", ex);
         }
         catch (PostgresException ex) when (QueryExceptionClassifier.IsInvalidQuerySyntax(ex))
         {
-            throw new InvalidOperationException($"Invalid related query syntax: {ex.Message}");
+            throw new InvalidOperationException("Invalid related query syntax.", ex);
         }
     }
 

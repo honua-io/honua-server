@@ -9,8 +9,8 @@
 -- several migrations (001, 002, 003, 005, 007, 009, 011) and adds seed data
 -- that migrations do not provide. It intentionally excludes migrations that
 -- are not exercised by CI integration tests:
---   004 (import functions), 006 (secure connections), 008 (service connections),
---   010 (metadata resources), 012 (replication), 013/014 (alerts).
+--   004 (import functions), 006 (secure connections), 010 (metadata resources),
+--   012 (replication), 013/014 (alerts).
 -- When adding columns from new migrations, update this file and check that
 -- existing CI seed data remains compatible.
 
@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS honua.layers (
 
 ALTER TABLE IF EXISTS honua.services
     ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+ALTER TABLE IF EXISTS honua.services
+    ADD COLUMN IF NOT EXISTS connection_id UUID;
 
 -- Columns from migrations 005, 007, 009, 011 — keep in sync.
 ALTER TABLE IF EXISTS honua.layers

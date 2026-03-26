@@ -169,6 +169,23 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetCapabilities_AdvertisesCorrectTileMatrixLimitsAndSupportedCrs()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG::3857</ows:SupportedCRS>");
+        content.Should().NotContain("urn:ogc:def:crs:EPSG:6.18:3:3857");
+        content.Should().Contain("<TileMatrix>1</TileMatrix>");
+        content.Should().Contain("<MaxTileRow>1</MaxTileRow>");
+        content.Should().Contain("<MaxTileCol>1</MaxTileCol>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_AcceptFormatsTextXml_ReturnsTextXml()
     {
         var response = await _fixture.Client.GetAsync(
@@ -295,15 +312,48 @@ public sealed class MapServerWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
-    public async Task Wmts_GetTile_OutsideTileMatrixSetLimits_ReturnsTileOutOfRange()
+    public async Task Wmts_GetCapabilities_UpdateSequenceCurrent_ReturnsWellFormedMinimalCapabilities()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=1&TILECOL=0");
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&UPDATESEQUENCE=20260223");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"TileOutOfRange\"");
-        content.Should().Contain("locator=\"TileRow\"");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("<Capabilities");
+        content.Should().Contain("</Capabilities>");
+        content.Should().NotContain("<Contents>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_UpperBoundTileMatrixSetLimit_ReturnsPng()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=1&TILECOL=1");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    public async Task Wmts_GetTile_DifferentLayers_ReturnDifferentImages()
+    {
+        var layer0Response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=0&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+        var layer2Response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=2&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+
+        var layer0Content = await layer0Response.Content.ReadAsByteArrayAsync();
+        var layer2Content = await layer2Response.Content.ReadAsByteArrayAsync();
+
+        layer0Response.StatusCode.Should().Be(HttpStatusCode.OK, $"Layer 0: {System.Text.Encoding.UTF8.GetString(layer0Content)}");
+        layer2Response.StatusCode.Should().Be(HttpStatusCode.OK, $"Layer 2: {System.Text.Encoding.UTF8.GetString(layer2Content)}");
+        layer0Content.Should().NotEqual(layer2Content);
     }
 
     [IntegrationTest]

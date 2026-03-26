@@ -42,6 +42,8 @@ internal sealed class GeoArrowQueryFormatter
         var objectIdFieldName = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
         var includeGeometry = returnGeometry && layer.HasGeometry;
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");
+        GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
         var isEmpty = features.Length == 0;
 
@@ -522,24 +524,17 @@ internal sealed class GeoArrowQueryFormatter
 
     private static string BuildExtensionMetadata(LayerDefinition layer, int srid, bool returnZ, bool isEmpty)
     {
+        GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
+
         // Build JSON manually to avoid AOT issues (no source-generated context for
-        // Dictionary<string, object?>). Follows GeoParquet 1.1.0 CRS rules:
-        //   - Omitting `crs` implies OGC:CRS84 (WGS84 lon/lat).
-        //   - `"crs": null` means undefined/unknown CRS.
-        //   - Any present `crs` value must be a full PROJJSON object.
-        // For EPSG:4326 we omit the key; for other SRIDs we write null.
-        //
+        // Dictionary<string, object?>). For EPSG:4326 the `crs` key is omitted,
+        // which implies OGC:CRS84 per GeoParquet 1.1.0.
         // GeoParquet 1.1.0 §4.1: geometry_types lists types actually present —
         // an empty result must use [].
         var geometryTypesPart = isEmpty
             ? "[]"
             : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ)}""]";
-
-        var crsPart = srid == 4326
-            ? ""
-            : @",""crs"":null";
-
-        return $@"{{""geometry_types"":{geometryTypesPart},""edges"":""planar""{crsPart}}}";
+        return $@"{{""geometry_types"":{geometryTypesPart},""edges"":""planar""}}";
     }
 
     private static Dictionary<string, string> BuildSchemaMetadata(
@@ -555,19 +550,16 @@ internal sealed class GeoArrowQueryFormatter
             return metadata;
         }
 
+        GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
+
         // Build JSON manually to avoid AOT issues (matches GeoParquet pattern).
-        // CRS rules: omit for 4326 (implies OGC:CRS84), null for others.
+        // For EPSG:4326 the `crs` key is omitted, which implies OGC:CRS84.
         // GeoParquet 1.1.0 §4.1: geometry_types lists types actually present —
         // an empty result must use [].
         var geometryTypesPart = isEmpty
             ? "[]"
             : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ)}""]";
-
-        var crsPart = srid == 4326
-            ? ""
-            : @",""crs"":null";
-
-        var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}{crsPart}}}}}}}";
+        var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
         return metadata;

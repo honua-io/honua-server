@@ -17,21 +17,24 @@ internal static class ConfigurationValidationService
     /// </summary>
     /// <param name="configuration">The configuration to validate.</param>
     /// <param name="logger">Logger for validation messages.</param>
-    /// <param name="isDevelopment">Whether running in development or test mode (relaxes security checks).</param>
+    /// <param name="isDevelopment">Whether running in the development environment.</param>
+    /// <param name="isTest">Whether running in the test environment.</param>
     /// <param name="allowMissingDatabase">Whether to allow a missing database connection string (e.g. when migrations are skipped).</param>
     /// <returns>List of validation errors, empty if configuration is valid.</returns>
     public static List<string> ValidateConfiguration(
         IConfiguration configuration,
         ILogger logger,
         bool isDevelopment,
+        bool isTest = false,
         bool allowMissingDatabase = false)
     {
         var errors = new List<string>();
         var warnings = new List<string>();
+        var isRelaxedEnvironment = isDevelopment || isTest;
 
         // Check database connection (required in production unless explicitly allowed)
         var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrEmpty(connectionString) && !isDevelopment && !allowMissingDatabase)
+        if (string.IsNullOrEmpty(connectionString) && !isRelaxedEnvironment && !allowMissingDatabase)
         {
             errors.Add("ConnectionStrings__DefaultConnection is required. Set this environment variable to your PostgreSQL connection string.");
         }
@@ -53,7 +56,7 @@ internal static class ConfigurationValidationService
             "Authentication:BasicCompatibility:RequireHttps",
             configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
 
-        if (!isDevelopment)
+        if (!isRelaxedEnvironment)
         {
             if (configuration.IsFeatureEnabled("DEV_AUTH"))
             {
@@ -82,12 +85,17 @@ internal static class ConfigurationValidationService
         }
         else
         {
+            if (isDevelopment && configuration.IsFeatureEnabled("DEV_AUTH"))
+            {
+                errors.Add("HONUA_DEV_AUTH is no longer permitted outside the test environment. Configure HONUA_ADMIN_PASSWORD for development access instead.");
+            }
+
             var adminPassword = configuration["HONUA_ADMIN_PASSWORD"];
             if (string.IsNullOrEmpty(adminPassword))
             {
-                warnings.Add("SECURITY WARNING: Development mode with no HONUA_ADMIN_PASSWORD configured. " +
-                    "Authentication bypass is active and all admin endpoints are accessible without credentials. " +
-                    "Set HONUA_ADMIN_PASSWORD to require API key authentication even in development.");
+                warnings.Add(isTest
+                    ? "Test mode with no HONUA_ADMIN_PASSWORD configured. Explicit HONUA_DEV_AUTH=true is required to bypass admin authentication during tests."
+                    : "Development mode with no HONUA_ADMIN_PASSWORD configured. Admin endpoints require explicit credentials and will remain inaccessible until HONUA_ADMIN_PASSWORD is set.");
             }
 
             if (basicAuthCompatibilityEnabled && !basicAuthRequireHttps)
@@ -96,14 +104,14 @@ internal static class ConfigurationValidationService
             }
         }
 
-        ValidateHostValidationConfiguration(configuration, errors, warnings, isDevelopment);
+        ValidateHostValidationConfiguration(configuration, errors, warnings, isRelaxedEnvironment);
 
-        ValidateConnectionEncryptionConfiguration(configuration, errors, warnings, isDevelopment);
+        ValidateConnectionEncryptionConfiguration(configuration, errors, warnings, isRelaxedEnvironment);
 
         // Log configuration summary
         LogConfigurationSummary(configuration, logger);
 
-        ValidateSecretReferences(configuration, errors, warnings, isDevelopment);
+        ValidateSecretReferences(configuration, errors, warnings, isRelaxedEnvironment);
 
         // Log warnings
         foreach (var warning in warnings)

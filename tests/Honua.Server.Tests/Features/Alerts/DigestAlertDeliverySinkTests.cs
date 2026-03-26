@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Server.Features.Alerts;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -52,6 +54,10 @@ public sealed class DigestAlertDeliverySinkTests
         await dispatchStore.DidNotReceiveWithAnyArgs().MarkFailedAsync(default, default, default, default, default, default);
         handler.RequestBody.Should().Contain("evt-101");
         handler.RequestBody.Should().Contain("evt-102");
+        handler.EventTimestampHeader.Should().NotBeNullOrWhiteSpace();
+        var expectedSignature = "sha256=" + WebhookDeliveryHelper.ComputeSignature("digest-secret", handler.EventTimestampHeader!, handler.RequestBody);
+        handler.SignatureHeader.Should().Be(expectedSignature);
+        handler.DigestCountHeader.Should().Be(2.ToString(CultureInfo.InvariantCulture));
     }
 
     [UnitTest]
@@ -102,6 +108,7 @@ public sealed class DigestAlertDeliverySinkTests
                 Digest = new DigestAlertOptions
                 {
                     WebhookUrl = "https://example.com/digest",
+                    WebhookSecret = "digest-secret",
                     MaxBatchSize = 2
                 }
             }
@@ -128,11 +135,20 @@ public sealed class DigestAlertDeliverySinkTests
 
         public string RequestBody { get; private set; } = string.Empty;
 
+        public string? EventTimestampHeader { get; private set; }
+
+        public string? SignatureHeader { get; private set; }
+
+        public string? DigestCountHeader { get; private set; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestBody = request.Content is null
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
+            EventTimestampHeader = Assert.Single(request.Headers.GetValues("X-Honua-Event-Timestamp"));
+            SignatureHeader = Assert.Single(request.Headers.GetValues("X-Honua-Signature"));
+            DigestCountHeader = Assert.Single(request.Headers.GetValues("X-Honua-Digest-Count"));
 
             return new HttpResponseMessage(_statusCode);
         }

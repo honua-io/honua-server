@@ -6,7 +6,7 @@ on:
       - trunk
       - main
     paths:
-      - 'docs/api-specs/**'
+      - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/Features/Admin/**'
       - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
       - 'scripts/validate-openapi-contracts.sh'
@@ -16,7 +16,7 @@ on:
       - trunk
       - main
     paths:
-      - 'docs/api-specs/**'
+      - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/Features/Admin/**'
       - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
       - 'scripts/validate-openapi-contracts.sh'

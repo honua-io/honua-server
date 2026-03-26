@@ -24,6 +24,9 @@ public static class EndpointRegistry
 
         new("GET", "/api/v1/admin/config"),
         new("GET", "/api/v1/admin/auth/config"),
+        new("POST", "/api/v1/admin/auth/providers/{providerKey}/authorize-url"),
+        new("POST", "/api/v1/admin/auth/providers/{providerKey}/token"),
+        new("GET", "/api/v1/admin/auth/providers/{providerKey}/logout-url"),
         new("GET", "/api/v1/admin/openapi.json"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("GET", "/api/v1/admin/connections/tables"),
@@ -369,10 +372,11 @@ public static class EndpointRegistry
         new("GET", "/rest/services/geometry/length"),
         new("POST", "/rest/services/geometry/length"),
 
+        new("GET", "/ogc/maps"),
         new("GET", "/ogc/maps/conformance"),
+        new("GET", "/ogc/maps/openapi.json"),
         new("GET", "/ogc/maps/collections/{collectionId}/map"),
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),
-        new("GET", "/ogc/maps/collections/{collectionId}/styles/{styleId}/map"),
         new("GET", "/ogc/maps/map"),
 
         // WFS 2.0

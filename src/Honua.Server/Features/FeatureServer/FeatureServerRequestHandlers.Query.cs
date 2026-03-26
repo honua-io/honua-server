@@ -4,6 +4,7 @@
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.FeatureServer;
@@ -14,8 +15,8 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler,
-        ICommonQueryValidator queryValidator)
+        [FromServices] FeatureServerQueryHandler queryHandler,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
         {
@@ -45,8 +46,8 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler,
-        ICommonQueryValidator queryValidator)
+        [FromServices] FeatureServerQueryHandler queryHandler,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.Query, out var error))
         {
@@ -59,6 +60,11 @@ internal static partial class FeatureServerEndpoints
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (values == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [readError ?? "Invalid request body."]);
@@ -90,8 +96,8 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> HandleServiceQueryFeaturesGet(
         string serviceId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler,
-        ICommonQueryValidator queryValidator)
+        [FromServices] FeatureServerQueryHandler queryHandler,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
         if (!TryValidateAllowedParameters(
                 context.Request.Query,
@@ -132,8 +138,8 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> HandleServiceQueryFeaturesPost(
         string serviceId,
         HttpContext context,
-        FeatureServerQueryHandler queryHandler,
-        ICommonQueryValidator queryValidator)
+        [FromServices] FeatureServerQueryHandler queryHandler,
+        [FromServices] ICommonQueryValidator queryValidator)
     {
         if (!TryValidateAllowedParameters(
                 context.Request.Query,
@@ -150,6 +156,11 @@ internal static partial class FeatureServerEndpoints
         var (bodyValues, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
         if (bodyValues == null)
         {
+            if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+            }
+
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [readError ?? "Invalid request body."]);

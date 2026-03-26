@@ -42,9 +42,18 @@ public sealed class Cql2Parser
 
             return result;
         }
+        catch (ArgumentException ex) when (ex.ParamName == nameof(cql2Text) &&
+                                             ex.Message == "CQL2 expression cannot be null or empty")
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException("Failed to parse CQL2 expression.", nameof(cql2Text), ex);
+        }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            throw new ArgumentException($"Failed to parse CQL2 expression: {ex.Message}", nameof(cql2Text), ex);
+            throw new ArgumentException("Failed to parse CQL2 expression.", nameof(cql2Text), ex);
         }
     }
 

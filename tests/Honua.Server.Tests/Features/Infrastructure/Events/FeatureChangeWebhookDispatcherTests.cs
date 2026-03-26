@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Reflection;
+using System.Net.Http;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -112,6 +113,28 @@ public sealed class FeatureChangeWebhookDispatcherTests
         Assert.True(result.Failed);
         Assert.Contains(result.Failures, failure => failure.Contains("unsafe", StringComparison.OrdinalIgnoreCase) ||
                                                    failure.Contains("private", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void AddValidatedHeader_WithControlCharacters_SanitizesHeaderValue()
+    {
+        using var request = new HttpRequestMessage();
+
+        WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Event-Id", "evt-\r\n1");
+
+        Assert.Equal("evt-1", Assert.Single(request.Headers.GetValues("X-Honua-Event-Id")));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void CreatePinnedDnsHttpMessageHandler_UsesSocketsHandlerWithPinnedConnectCallback()
+    {
+        var handler = WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler();
+
+        var socketsHandler = Assert.IsType<SocketsHttpHandler>(handler);
+        Assert.False(socketsHandler.AllowAutoRedirect);
+        Assert.NotNull(socketsHandler.ConnectCallback);
     }
 
     private static FeatureChangeEvent CreateEvent()

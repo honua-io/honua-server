@@ -254,14 +254,12 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
-    public async Task GetStyledMap_NonIntegerCollectionId_ReturnsBadRequest()
+    public async Task GetStyledMap_NonIntegerCollectionId_ReturnsNotFound()
     {
         var response = await _fixture.Client.GetAsync(
             "/ogc/maps/collections/abc/styles/default/map?f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Collection ID must be a valid integer");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

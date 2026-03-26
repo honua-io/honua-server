@@ -26,7 +26,7 @@ public sealed class RelatedRecordsServiceTests
         Func<Task> act = () => sut.ExecuteRelatedQueryAsync(1, CreateRelatedQuery(), CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Invalid related query:*");
+            .WithMessage("Invalid related query.");
     }
 
     [Fact]

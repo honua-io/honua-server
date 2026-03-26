@@ -99,6 +99,15 @@ public class WkbToSkiaConverterTests
     }
 
     [UnitTest]
+    public void Convert_TruncatedPointGeometry_ReturnsEmptyResult()
+    {
+        var result = WkbToSkiaConverter.Convert([1, 1, 0, 0, 0, 0, 0, 0], _identityTransform);
+
+        result.Path.Should().BeNull();
+        result.Points.Should().BeNull();
+    }
+
+    [UnitTest]
     public void Convert_WithTransform_AppliesTransformation()
     {
         var wkb = CreateWkbPoint(100.0, 200.0);

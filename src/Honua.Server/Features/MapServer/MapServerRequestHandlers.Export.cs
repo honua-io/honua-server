@@ -242,6 +242,18 @@ internal static partial class MapServerEndpoints
                 BackgroundColor = backgroundColorValue
             };
 
+            await using var renderLease = await context.RequestServices
+                .GetRequiredService<RasterRenderCapacityLimiter>()
+                .TryAcquireAsync(imageWidth, imageHeight, context.RequestAborted)
+                .ConfigureAwait(false);
+            if (renderLease is null)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    RasterRenderCapacityLimiter.CapacityExceededMessage,
+                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+            }
+
             var renderLayers = ResolveRenderLayers(service, parameters.Layers, dynamicLayers, context);
             if (renderLayers.Length == 0)
             {

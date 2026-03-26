@@ -19,7 +19,7 @@ using ParquetSharp.Arrow;
 namespace Honua.Server.Features.FeatureServer.Services;
 
 /// <summary>
-/// Service for formatting query results as GeoParquet
+/// Service for formatting query results as GeoParquet.
 /// </summary>
 internal sealed class GeoParquetQueryFormatter
 {
@@ -44,8 +44,8 @@ internal sealed class GeoParquetQueryFormatter
     /// <param name="returnGeometry">Whether to include geometry</param>
     /// <param name="outputSrid">Output SRID for geometry</param>
     /// <param name="returnZ">Whether to include Z values</param>
-    /// <param name="returnM">Accepted for API symmetry but M values are always stripped.
-    /// GeoParquet 1.1.0 only supports XY and XYZ geometries.</param>
+    /// <param name="returnM">Whether to include M values.
+    /// Cloud-native geometry outputs reject this because GeoParquet 1.1.0 only supports XY and XYZ geometries.</param>
     /// <param name="geometryLimits">Pre-computed effective geometry limits (precision, simplification).</param>
     /// <param name="outFields">Fields to include in output</param>
     /// <param name="logger">Optional logger for conversion diagnostics</param>
@@ -62,6 +62,11 @@ internal sealed class GeoParquetQueryFormatter
         ILogger? logger = null)
     {
         var features = result.Items;
+        var includeGeometry = returnGeometry && layer.HasGeometry;
+        var srid = outputSrid ?? layer.SpatialReference.Wkid;
+
+        EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoParquet");
+        EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
         if (features.Length == 0)
         {
@@ -265,18 +270,7 @@ internal sealed class GeoParquetQueryFormatter
         }
 
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
-
-        // Build JSON manually to avoid AOT issues.
-        // GeoParquet 1.1.0 spec CRS rules:
-        //   - Omitting the `crs` key implies OGC:CRS84 (WGS84 lon/lat).
-        //   - `"crs": null` means the CRS is undefined/unknown.
-        //   - Any present `crs` value must be a full PROJJSON CRS object.
-        // For EPSG:4326 we omit the key (spec-compliant OGC:CRS84 default).
-        // For other SRIDs we write null because generating valid PROJJSON requires
-        // a CRS lookup table or projection library; tracked as follow-up.
-        var crsPart = srid == 4326
-            ? ""
-            : ",\"crs\":null";
+        EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoParquet");
 
         // bbox is omitted: GeoParquet 1.1.0 defines bbox as the bounding box of the
         // geometries *in the file*, but we only have the full layer extent which would
@@ -288,11 +282,33 @@ internal sealed class GeoParquetQueryFormatter
         var geometryTypesPart = isEmpty
             ? "[]"
             : $"[\"{MapGeometryTypeToGeoParquet(layer.GeometryType, advertiseZ)}\"]";
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}}}}}}}";
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 
         return metadata;
+    }
+
+    internal static void EnsureSupportedCloudNativeGeometrySrid(bool includeGeometry, int srid, string formatLabel)
+    {
+        if (!includeGeometry || srid == 4326)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"{formatLabel} geometry output only supports EPSG:4326. Requested SRID {srid} cannot be encoded with spec-compliant CRS metadata.");
+    }
+
+    internal static void EnsureSupportedCloudNativeGeometryMeasures(bool includeGeometry, bool returnM, string formatLabel)
+    {
+        if (!includeGeometry || !returnM)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"{formatLabel} geometry output does not support returnM=true. GeoParquet 1.1.0 only supports XY and XYZ geometries.");
     }
 
 
