@@ -76,7 +76,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/api-specs/admin-api.json` contract snapshot used for SDK generation.
+**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation.
 
 ## **SDKs and Contract Governance**
 

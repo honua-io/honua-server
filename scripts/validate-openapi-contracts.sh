@@ -353,9 +353,9 @@ def compare_admin_contract(base_doc: dict[str, Any], current_doc: dict[str, Any]
             )
 
 
-admin_path = Path("docs/api-specs/admin-api.json")
-features_path = Path("docs/api-specs/ogc-api-features.json")
-tiles_path = Path("docs/api-specs/ogc-api-tiles.json")
+admin_path = Path("docs/developer/api-specs/admin-api.json")
+features_path = Path("docs/developer/api-specs/ogc-api-features.json")
+tiles_path = Path("docs/developer/api-specs/ogc-api-tiles.json")
 
 admin_doc = load_json(admin_path)
 features_doc = load_json(features_path)
@@ -421,7 +421,7 @@ allow_breaking_raw = os.environ.get("OPENAPI_ALLOW_BREAKING_CHANGES", "false").s
 allow_breaking = allow_breaking_raw in {"1", "true", "yes", "on"}
 
 if base_ref and admin_doc is not None:
-    baseline_admin_doc = load_json_from_git(base_ref, "docs/api-specs/admin-api.json")
+    baseline_admin_doc = load_json_from_git(base_ref, "docs/developer/api-specs/admin-api.json")
     if baseline_admin_doc is not None:
         compare_admin_contract(baseline_admin_doc, admin_doc)
 

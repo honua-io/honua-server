@@ -79,7 +79,7 @@ Python, and .NET SDK artifacts.
 
 ## Changelog Expectations
 
-Any release that changes `docs/api-specs/admin-api.json` or the generated
+Any release that changes `docs/developer/api-specs/admin-api.json` or the generated
 control-plane SDK artifacts should call out:
 - the server release channel and admin API major affected
 - whether JavaScript/TypeScript, Python, and .NET artifacts all need to move
