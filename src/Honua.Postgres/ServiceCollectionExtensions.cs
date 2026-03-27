@@ -4,6 +4,8 @@
 using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.AutoDocs;
+using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -261,13 +263,9 @@ internal static class ServiceCollectionExtensions
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
 
-        // Register import schema suggestion service
-        services.AddSingleton<IImportSchemaSuggestionService,
-            Core.Features.Import.Services.ImportSchemaSuggestionService>();
-
-        // Register metadata document generator
-        services.AddSingleton<Core.Features.AutoDocs.Abstractions.IMetadataDocumentGenerator,
-            Core.Features.AutoDocs.Services.MetadataDocumentGenerator>();
+        // Register Core-level services via their own extensions
+        services.AddImportSuggestionsCore();
+        services.AddAutoDocsCore();
 
         // Register GeoServer REST client for GeoServer migration imports
         services.AddHttpClient<GeoServerRestClient>()

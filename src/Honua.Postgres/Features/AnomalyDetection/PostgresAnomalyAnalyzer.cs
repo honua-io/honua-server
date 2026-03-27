@@ -3,6 +3,7 @@
 
 using System.Data.Common;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.AnomalyDetection.Abstractions;
 using Honua.Core.Features.AnomalyDetection.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -15,11 +16,12 @@ namespace Honua.Postgres.Features.AnomalyDetection;
 /// Deterministic anomaly analyzer backed by PostGIS aggregate queries.
 /// Detects geometry and attribute anomalies using SQL-based statistical analysis.
 /// </summary>
-internal sealed class PostgresAnomalyAnalyzer(
+internal sealed partial class PostgresAnomalyAnalyzer(
     IDatabaseConnectionProvider connectionProvider,
     ILogger<PostgresAnomalyAnalyzer> logger) : IAnomalyAnalyzer
 {
-    private static readonly ActivitySource AnomalyActivitySource = new("Honua.AnomalyDetection", "1.0.0");
+    // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
+    private static readonly ActivitySource AnomalyActivitySource = new("Honua", "1.0.0");
 
     private const int NullClusterThresholdPercent = 50;
     private const double HighCardinalityRatio = 0.95;
@@ -41,7 +43,7 @@ internal sealed class PostgresAnomalyAnalyzer(
         var totalCount = await GetFeatureCountAsync(connection, request, cancellationToken);
 
         var geometryAnomalies = request.GeometryColumn is not null
-            ? await DetectGeometryAnomaliesAsync(connection, request, totalCount, cancellationToken)
+            ? await DetectGeometryAnomaliesAsync(connection, request, cancellationToken)
             : [];
 
         var attributeAnomalies = await DetectAttributeAnomaliesAsync(
@@ -58,9 +60,8 @@ internal sealed class PostgresAnomalyAnalyzer(
         activity?.SetTag("anomaly.geometry_count", geometryAnomalies.Count);
         activity?.SetTag("anomaly.attribute_count", attributeAnomalies.Count);
 
-        logger.LogInformation(
-            "Anomaly analysis for {Layer}: {GeomCount} geometry, {AttrCount} attribute anomalies in {Count} features",
-            request.LayerName, geometryAnomalies.Count, attributeAnomalies.Count, totalCount);
+        AnomalyLog.AnalysisCompleted(
+            logger, request.LayerName, geometryAnomalies.Count, attributeAnomalies.Count, totalCount);
 
         return report;
     }
@@ -69,118 +70,123 @@ internal sealed class PostgresAnomalyAnalyzer(
         DbConnection connection, AnomalyAnalysisRequest request,
         CancellationToken cancellationToken)
     {
+        var table = QuoteIdentifier(request.TableName);
+        var oidCol = QuoteIdentifier(request.ObjectIdColumn);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = request.ScanLimit > 0
-            ? $"SELECT LEAST(COUNT(*), {request.ScanLimit}) FROM honua.{SanitizeIdentifier(request.TableName)}"
-            : $"SELECT COUNT(*) FROM honua.{SanitizeIdentifier(request.TableName)}";
+            ? $"SELECT COUNT(*) FROM (SELECT 1 FROM {table} ORDER BY {oidCol} LIMIT {request.ScanLimit}) t"
+            : $"SELECT COUNT(*) FROM {table}";
         var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt64(result);
     }
 
     private static async Task<List<GeometryAnomaly>> DetectGeometryAnomaliesAsync(
         DbConnection connection, AnomalyAnalysisRequest request,
-        long totalCount, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         var anomalies = new List<GeometryAnomaly>();
-        var table = SanitizeIdentifier(request.TableName);
-        var geomCol = SanitizeIdentifier(request.GeometryColumn!);
-        var oidCol = SanitizeIdentifier(request.ObjectIdColumn);
-        var scanLimitClause = request.ScanLimit > 0 ? $" LIMIT {request.ScanLimit}" : "";
+        var table = QuoteIdentifier(request.TableName);
+        var geomCol = QuoteIdentifier(request.GeometryColumn!);
+        var oidCol = QuoteIdentifier(request.ObjectIdColumn);
+        var scanLimit = request.ScanLimit;
 
         // 1. Invalid geometries
         await DetectInvalidGeometriesAsync(
-            connection, table, geomCol, oidCol, scanLimitClause,
+            connection, table, geomCol, oidCol, scanLimit,
             request.MaxSampleFeatures, anomalies, cancellationToken);
 
         // 2. Empty/null geometries
         await DetectEmptyGeometriesAsync(
-            connection, table, geomCol, oidCol, scanLimitClause,
+            connection, table, geomCol, oidCol, scanLimit,
             request.MaxSampleFeatures, anomalies, cancellationToken);
 
         // 3. SRID mismatches
         await DetectSridMismatchesAsync(
-            connection, table, geomCol, oidCol, scanLimitClause,
+            connection, table, geomCol, oidCol, scanLimit,
             request.DeclaredSrid, request.MaxSampleFeatures, anomalies, cancellationToken);
 
         // 4. Suspicious area/perimeter ratios (polygons only)
         await DetectSuspiciousAreaPerimeterAsync(
-            connection, table, geomCol, oidCol, scanLimitClause,
-            request.MaxSampleFeatures, anomalies, cancellationToken);
+            connection, table, geomCol, oidCol, scanLimit,
+            request.DeclaredSrid, request.MaxSampleFeatures, anomalies, cancellationToken);
 
         // 5. Duplicate vertices
         await DetectDuplicateVerticesAsync(
-            connection, table, geomCol, oidCol, scanLimitClause,
+            connection, table, geomCol, oidCol, scanLimit,
             request.MaxSampleFeatures, anomalies, cancellationToken);
 
         return anomalies;
     }
 
-    private static async Task DetectInvalidGeometriesAsync(
-        DbConnection connection, string table, string geomCol, string oidCol,
-        string scanLimitClause, int maxSamples, List<GeometryAnomaly> anomalies,
-        CancellationToken cancellationToken)
+    private static string BuildScanCte(string table, string columns, int scanLimit, string oidCol)
     {
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            WITH scanned AS (
-                SELECT {oidCol}, {geomCol}
-                FROM honua.{table}
-                WHERE {geomCol} IS NOT NULL
-                {scanLimitClause}
-            )
-            SELECT COUNT(*) AS cnt,
-                   ARRAY_AGG({oidCol} ORDER BY {oidCol}) FILTER (WHERE NOT ST_IsValid({geomCol})) AS sample_ids
-            FROM (
-                SELECT {oidCol}, {geomCol}, ROW_NUMBER() OVER (ORDER BY {oidCol}) AS rn
-                FROM scanned
-                WHERE NOT ST_IsValid({geomCol})
-            ) invalid
-            WHERE rn <= {maxSamples + 1}
-            """;
-
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
-        {
-            var count = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
-            if (count > 0)
-            {
-                var sampleIds = ReadSampleIds(reader, 1, maxSamples);
-                anomalies.Add(new GeometryAnomaly
-                {
-                    Type = GeometryAnomalyType.InvalidGeometry,
-                    Reason = $"{count} feature(s) have topologically invalid geometry (self-intersection, unclosed rings, etc.)",
-                    Severity = AnomalySeverity.Error,
-                    AffectedCount = count,
-                    SampleFeatureIds = sampleIds,
-                });
-            }
-        }
+        // Relies on connection search_path (set by PostgresDatabaseConnectionProvider)
+        // rather than hardcoding a schema prefix.
+        // ORDER BY oidCol ensures a deterministic row set when LIMIT is active.
+        return scanLimit > 0
+            ? $"WITH scanned AS (SELECT {columns} FROM {table} ORDER BY {oidCol} LIMIT {scanLimit})"
+            : $"WITH scanned AS (SELECT {columns} FROM {table})";
     }
 
-    private static async Task DetectEmptyGeometriesAsync(
+    private static async Task DetectInvalidGeometriesAsync(
         DbConnection connection, string table, string geomCol, string oidCol,
-        string scanLimitClause, int maxSamples, List<GeometryAnomaly> anomalies,
+        int scanLimit, int maxSamples, List<GeometryAnomaly> anomalies,
         CancellationToken cancellationToken)
     {
+        var cte = BuildScanCte(table, $"{oidCol}, {geomCol}", scanLimit, oidCol);
+
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT COUNT(*) AS cnt
-            FROM (
-                SELECT {oidCol}
-                FROM honua.{table}
-                WHERE {geomCol} IS NULL OR ST_IsEmpty({geomCol})
-                {scanLimitClause}
-            ) empty_geom
+            {cte}
+            SELECT COUNT(*) FROM scanned
+            WHERE {geomCol} IS NOT NULL AND NOT ST_IsValid({geomCol})
             """;
 
         var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
         if (count > 0)
         {
-            // Get sample IDs
             await using var sampleCmd = connection.CreateCommand();
             sampleCmd.CommandText = $"""
-                SELECT {oidCol}
-                FROM honua.{table}
+                {cte}
+                SELECT {oidCol} FROM scanned
+                WHERE {geomCol} IS NOT NULL AND NOT ST_IsValid({geomCol})
+                ORDER BY {oidCol}
+                LIMIT {maxSamples}
+                """;
+            var sampleIds = await ReadSampleIdsDirectAsync(sampleCmd, cancellationToken);
+
+            anomalies.Add(new GeometryAnomaly
+            {
+                Type = GeometryAnomalyType.InvalidGeometry,
+                Reason = $"{count} feature(s) have topologically invalid geometry (self-intersection, unclosed rings, etc.)",
+                Severity = AnomalySeverity.Error,
+                AffectedCount = count,
+                SampleFeatureIds = sampleIds,
+            });
+        }
+    }
+
+    private static async Task DetectEmptyGeometriesAsync(
+        DbConnection connection, string table, string geomCol, string oidCol,
+        int scanLimit, int maxSamples, List<GeometryAnomaly> anomalies,
+        CancellationToken cancellationToken)
+    {
+        var cte = BuildScanCte(table, $"{oidCol}, {geomCol}", scanLimit, oidCol);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"""
+            {cte}
+            SELECT COUNT(*) FROM scanned
+            WHERE {geomCol} IS NULL OR ST_IsEmpty({geomCol})
+            """;
+
+        var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+        if (count > 0)
+        {
+            await using var sampleCmd = connection.CreateCommand();
+            sampleCmd.CommandText = $"""
+                {cte}
+                SELECT {oidCol} FROM scanned
                 WHERE {geomCol} IS NULL OR ST_IsEmpty({geomCol})
                 ORDER BY {oidCol}
                 LIMIT {maxSamples}
@@ -200,18 +206,16 @@ internal sealed class PostgresAnomalyAnalyzer(
 
     private static async Task DetectSridMismatchesAsync(
         DbConnection connection, string table, string geomCol, string oidCol,
-        string scanLimitClause, int declaredSrid, int maxSamples,
+        int scanLimit, int declaredSrid, int maxSamples,
         List<GeometryAnomaly> anomalies, CancellationToken cancellationToken)
     {
+        var cte = BuildScanCte(table, $"{oidCol}, {geomCol}", scanLimit, oidCol);
+
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT COUNT(*) AS cnt
-            FROM (
-                SELECT {oidCol}
-                FROM honua.{table}
-                WHERE {geomCol} IS NOT NULL AND ST_SRID({geomCol}) != @srid
-                {scanLimitClause}
-            ) srid_mismatch
+            {cte}
+            SELECT COUNT(*) FROM scanned
+            WHERE {geomCol} IS NOT NULL AND ST_SRID({geomCol}) != @srid
             """;
         cmd.Parameters.Add(new NpgsqlParameter("@srid", declaredSrid));
 
@@ -220,8 +224,8 @@ internal sealed class PostgresAnomalyAnalyzer(
         {
             await using var sampleCmd = connection.CreateCommand();
             sampleCmd.CommandText = $"""
-                SELECT {oidCol}
-                FROM honua.{table}
+                {cte}
+                SELECT {oidCol} FROM scanned
                 WHERE {geomCol} IS NOT NULL AND ST_SRID({geomCol}) != @srid
                 ORDER BY {oidCol}
                 LIMIT {maxSamples}
@@ -242,22 +246,31 @@ internal sealed class PostgresAnomalyAnalyzer(
 
     private static async Task DetectSuspiciousAreaPerimeterAsync(
         DbConnection connection, string table, string geomCol, string oidCol,
-        string scanLimitClause, int maxSamples, List<GeometryAnomaly> anomalies,
+        int scanLimit, int declaredSrid, int maxSamples, List<GeometryAnomaly> anomalies,
         CancellationToken cancellationToken)
     {
+        var cte = BuildScanCte(table, $"{oidCol}, {geomCol}", scanLimit, oidCol);
+
+        // Geography cast requires WGS84 — transform projected CRS first,
+        // matching the pattern in GeometryProcessor.GetGeographyOperand.
+        var geogExpr = declaredSrid != 4326
+            ? $"ST_Transform({geomCol}, 4326)::geography"
+            : $"{geomCol}::geography";
+
+        // Exclude rows whose stored SRID differs from the declared SRID;
+        // ST_Transform uses the stored SRID as source, so mismatched or zero SRIDs
+        // would produce incorrect results or abort the query entirely.
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT COUNT(*) AS cnt
-            FROM (
-                SELECT {oidCol}
-                FROM honua.{table}
-                WHERE {geomCol} IS NOT NULL
-                  AND ST_GeometryType({geomCol}) IN ('ST_Polygon', 'ST_MultiPolygon')
-                  AND ST_Perimeter({geomCol}::geography) > 0
-                  AND ST_Area({geomCol}::geography) / ST_Perimeter({geomCol}::geography) < @ratio
-                {scanLimitClause}
-            ) suspicious
+            {cte}
+            SELECT COUNT(*) FROM scanned
+            WHERE {geomCol} IS NOT NULL
+              AND ST_SRID({geomCol}) = @srid
+              AND ST_GeometryType({geomCol}) IN ('ST_Polygon', 'ST_MultiPolygon')
+              AND ST_Perimeter({geogExpr}) > 0
+              AND ST_Area({geogExpr}) / ST_Perimeter({geogExpr}) < @ratio
             """;
+        cmd.Parameters.Add(new NpgsqlParameter("@srid", declaredSrid));
         cmd.Parameters.Add(new NpgsqlParameter("@ratio", SuspiciousAreaPerimeterRatio));
 
         var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
@@ -265,15 +278,17 @@ internal sealed class PostgresAnomalyAnalyzer(
         {
             await using var sampleCmd = connection.CreateCommand();
             sampleCmd.CommandText = $"""
-                SELECT {oidCol}
-                FROM honua.{table}
+                {cte}
+                SELECT {oidCol} FROM scanned
                 WHERE {geomCol} IS NOT NULL
+                  AND ST_SRID({geomCol}) = @srid
                   AND ST_GeometryType({geomCol}) IN ('ST_Polygon', 'ST_MultiPolygon')
-                  AND ST_Perimeter({geomCol}::geography) > 0
-                  AND ST_Area({geomCol}::geography) / ST_Perimeter({geomCol}::geography) < @ratio
+                  AND ST_Perimeter({geogExpr}) > 0
+                  AND ST_Area({geogExpr}) / ST_Perimeter({geogExpr}) < @ratio
                 ORDER BY {oidCol}
                 LIMIT {maxSamples}
                 """;
+            sampleCmd.Parameters.Add(new NpgsqlParameter("@srid", declaredSrid));
             sampleCmd.Parameters.Add(new NpgsqlParameter("@ratio", SuspiciousAreaPerimeterRatio));
             var sampleIds = await ReadSampleIdsDirectAsync(sampleCmd, cancellationToken);
 
@@ -290,19 +305,17 @@ internal sealed class PostgresAnomalyAnalyzer(
 
     private static async Task DetectDuplicateVerticesAsync(
         DbConnection connection, string table, string geomCol, string oidCol,
-        string scanLimitClause, int maxSamples, List<GeometryAnomaly> anomalies,
+        int scanLimit, int maxSamples, List<GeometryAnomaly> anomalies,
         CancellationToken cancellationToken)
     {
+        var cte = BuildScanCte(table, $"{oidCol}, {geomCol}", scanLimit, oidCol);
+
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT COUNT(*) AS cnt
-            FROM (
-                SELECT {oidCol}
-                FROM honua.{table}
-                WHERE {geomCol} IS NOT NULL
-                  AND ST_NPoints({geomCol}) != ST_NPoints(ST_RemoveRepeatedPoints({geomCol}))
-                {scanLimitClause}
-            ) dups
+            {cte}
+            SELECT COUNT(*) FROM scanned
+            WHERE {geomCol} IS NOT NULL
+              AND ST_NPoints({geomCol}) != ST_NPoints(ST_RemoveRepeatedPoints({geomCol}))
             """;
 
         var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
@@ -310,8 +323,8 @@ internal sealed class PostgresAnomalyAnalyzer(
         {
             await using var sampleCmd = connection.CreateCommand();
             sampleCmd.CommandText = $"""
-                SELECT {oidCol}
-                FROM honua.{table}
+                {cte}
+                SELECT {oidCol} FROM scanned
                 WHERE {geomCol} IS NOT NULL
                   AND ST_NPoints({geomCol}) != ST_NPoints(ST_RemoveRepeatedPoints({geomCol}))
                 ORDER BY {oidCol}
@@ -337,32 +350,32 @@ internal sealed class PostgresAnomalyAnalyzer(
         var anomalies = new List<AttributeAnomaly>();
         if (totalCount == 0) return anomalies;
 
-        var table = SanitizeIdentifier(request.TableName);
-        var oidCol = SanitizeIdentifier(request.ObjectIdColumn);
-        var scanLimitClause = request.ScanLimit > 0 ? $" LIMIT {request.ScanLimit}" : "";
+        var table = QuoteIdentifier(request.TableName);
+        var oidCol = QuoteIdentifier(request.ObjectIdColumn);
+        var scanLimit = request.ScanLimit;
 
         foreach (var field in request.AttributeColumns)
         {
-            var col = SanitizeIdentifier(field.Name);
+            var col = QuoteIdentifier(field.Name);
 
             // 1. Null cluster detection
             await DetectNullClustersAsync(
-                connection, table, col, oidCol, scanLimitClause,
+                connection, table, col, oidCol, scanLimit,
                 totalCount, field, request.MaxSampleFeatures, anomalies, cancellationToken);
 
             // 2. High cardinality for text fields
             if (field.DataType == AnomalyFieldDataType.Text)
             {
                 await DetectHighCardinalityAsync(
-                    connection, table, col, scanLimitClause,
-                    totalCount, field, anomalies, cancellationToken);
+                    connection, table, col, oidCol, scanLimit,
+                    field, anomalies, cancellationToken);
             }
 
             // 3. Numeric outliers
             if (field.DataType == AnomalyFieldDataType.Numeric)
             {
                 await DetectNumericOutliersAsync(
-                    connection, table, col, oidCol, scanLimitClause,
+                    connection, table, col, oidCol, scanLimit,
                     field, request.MaxSampleFeatures, anomalies, cancellationToken);
             }
         }
@@ -372,19 +385,16 @@ internal sealed class PostgresAnomalyAnalyzer(
 
     private static async Task DetectNullClustersAsync(
         DbConnection connection, string table, string col, string oidCol,
-        string scanLimitClause, long totalCount, AnomalyFieldDescriptor field,
+        int scanLimit, long totalCount, AnomalyFieldDescriptor field,
         int maxSamples, List<AttributeAnomaly> anomalies,
         CancellationToken cancellationToken)
     {
+        var cte = BuildScanCte(table, $"{oidCol}, {col}", scanLimit, oidCol);
+
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT COUNT(*) AS null_count
-            FROM (
-                SELECT {oidCol}
-                FROM honua.{table}
-                WHERE {col} IS NULL
-                {scanLimitClause}
-            ) nulls
+            {cte}
+            SELECT COUNT(*) FROM scanned WHERE {col} IS NULL
             """;
 
         var nullCount = Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken));
@@ -395,8 +405,8 @@ internal sealed class PostgresAnomalyAnalyzer(
         {
             await using var sampleCmd = connection.CreateCommand();
             sampleCmd.CommandText = $"""
-                SELECT {oidCol}
-                FROM honua.{table}
+                {cte}
+                SELECT {oidCol} FROM scanned
                 WHERE {col} IS NULL
                 ORDER BY {oidCol}
                 LIMIT {maxSamples}
@@ -416,23 +426,28 @@ internal sealed class PostgresAnomalyAnalyzer(
     }
 
     private static async Task DetectHighCardinalityAsync(
-        DbConnection connection, string table, string col,
-        string scanLimitClause, long totalCount, AnomalyFieldDescriptor field,
+        DbConnection connection, string table, string col, string oidCol,
+        int scanLimit, AnomalyFieldDescriptor field,
         List<AttributeAnomaly> anomalies, CancellationToken cancellationToken)
     {
+        var cte = BuildScanCte(table, col, scanLimit, oidCol);
+
+        // Compute both distinct and non-null counts in a single scan.
+        // COUNT({col}) excludes nulls, giving the correct denominator.
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
-            SELECT COUNT(DISTINCT {col}) AS distinct_count
-            FROM (
-                SELECT {col}
-                FROM honua.{table}
-                WHERE {col} IS NOT NULL
-                {scanLimitClause}
-            ) vals
+            {cte}
+            SELECT COUNT(DISTINCT {col}), COUNT({col})
+            FROM scanned
             """;
 
-        var distinctCount = Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken));
-        var nonNullCount = totalCount; // Approximation; actual non-null may differ
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return;
+
+        var distinctCount = reader.GetInt64(0);
+        var nonNullCount = reader.GetInt64(1);
+        await reader.CloseAsync();
+
         if (nonNullCount > 10 && distinctCount > 0)
         {
             var ratio = (double)distinctCount / nonNullCount;
@@ -442,7 +457,7 @@ internal sealed class PostgresAnomalyAnalyzer(
                 {
                     Type = AttributeAnomalyType.HighCardinality,
                     FieldName = field.Name,
-                    Reason = $"High cardinality: {distinctCount} distinct values out of ~{nonNullCount} records ({ratio:P0}). May be a unique identifier rather than a categorical field.",
+                    Reason = $"High cardinality: {distinctCount} distinct values out of {nonNullCount} non-null records ({ratio:P0}). May be a unique identifier rather than a categorical field.",
                     Severity = AnomalySeverity.Info,
                     AffectedCount = (int)Math.Min(distinctCount, int.MaxValue),
                 });
@@ -452,22 +467,21 @@ internal sealed class PostgresAnomalyAnalyzer(
 
     private static async Task DetectNumericOutliersAsync(
         DbConnection connection, string table, string col, string oidCol,
-        string scanLimitClause, AnomalyFieldDescriptor field,
+        int scanLimit, AnomalyFieldDescriptor field,
         int maxSamples, List<AttributeAnomaly> anomalies,
         CancellationToken cancellationToken)
     {
-        // First compute mean and stddev
+        var cte = BuildScanCte(table, $"{oidCol}, {col}", scanLimit, oidCol);
+
+        // First compute mean and stddev within the scan window
         await using var statsCmd = connection.CreateCommand();
         statsCmd.CommandText = $"""
+            {cte}
             SELECT AVG({col}::double precision) AS mean,
                    STDDEV_POP({col}::double precision) AS stddev,
                    COUNT(*) AS cnt
-            FROM (
-                SELECT {col}
-                FROM honua.{table}
-                WHERE {col} IS NOT NULL
-                {scanLimitClause}
-            ) vals
+            FROM scanned
+            WHERE {col} IS NOT NULL
             """;
 
         await using var statsReader = await statsCmd.ExecuteReaderAsync(cancellationToken);
@@ -484,17 +498,13 @@ internal sealed class PostgresAnomalyAnalyzer(
         var lowerBound = mean - OutlierStdDevMultiplier * stddev;
         var upperBound = mean + OutlierStdDevMultiplier * stddev;
 
-        // Count outliers
+        // Count outliers within the scan window
         await using var outlierCmd = connection.CreateCommand();
         outlierCmd.CommandText = $"""
-            SELECT COUNT(*) AS cnt
-            FROM (
-                SELECT {oidCol}
-                FROM honua.{table}
-                WHERE {col} IS NOT NULL
-                  AND ({col}::double precision < @lower OR {col}::double precision > @upper)
-                {scanLimitClause}
-            ) outliers
+            {cte}
+            SELECT COUNT(*) FROM scanned
+            WHERE {col} IS NOT NULL
+              AND ({col}::double precision < @lower OR {col}::double precision > @upper)
             """;
         outlierCmd.Parameters.Add(new NpgsqlParameter("@lower", lowerBound));
         outlierCmd.Parameters.Add(new NpgsqlParameter("@upper", upperBound));
@@ -504,8 +514,8 @@ internal sealed class PostgresAnomalyAnalyzer(
         {
             await using var sampleCmd = connection.CreateCommand();
             sampleCmd.CommandText = $"""
-                SELECT {oidCol}
-                FROM honua.{table}
+                {cte}
+                SELECT {oidCol} FROM scanned
                 WHERE {col} IS NOT NULL
                   AND ({col}::double precision < @lower OR {col}::double precision > @upper)
                 ORDER BY {oidCol}
@@ -527,20 +537,6 @@ internal sealed class PostgresAnomalyAnalyzer(
         }
     }
 
-    private static List<long> ReadSampleIds(DbDataReader reader, int columnIndex, int maxSamples)
-    {
-        if (reader.IsDBNull(columnIndex)) return [];
-        if (reader.GetValue(columnIndex) is long[] ids)
-        {
-            return ids.Take(maxSamples).ToList();
-        }
-        if (reader.GetValue(columnIndex) is int[] intIds)
-        {
-            return intIds.Take(maxSamples).Select(i => (long)i).ToList();
-        }
-        return [];
-    }
-
     private static async Task<List<long>> ReadSampleIdsDirectAsync(
         DbCommand cmd, CancellationToken cancellationToken)
     {
@@ -554,19 +550,19 @@ internal sealed class PostgresAnomalyAnalyzer(
     }
 
     /// <summary>
-    /// Sanitizes a SQL identifier to prevent injection.
-    /// Only allows alphanumeric characters and underscores.
+    /// Validates and quotes a SQL identifier for safe interpolation.
+    /// Matches the project-wide QuoteIdentifier pattern.
     /// </summary>
-    private static string SanitizeIdentifier(string identifier)
+    private static string QuoteIdentifier(string identifier)
     {
-        foreach (var c in identifier)
+        if (string.IsNullOrWhiteSpace(identifier) || !ValidIdentifierRegex().IsMatch(identifier))
         {
-            if (!char.IsLetterOrDigit(c) && c != '_')
-            {
-                throw new ArgumentException(
-                    $"Invalid identifier character '{c}' in '{identifier}'.");
-            }
+            throw new ArgumentException($"Invalid SQL identifier: '{identifier}'.");
         }
-        return identifier;
+
+        return $"\"{identifier.Replace("\"", "\"\"")}\"";
     }
+
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex ValidIdentifierRegex();
 }

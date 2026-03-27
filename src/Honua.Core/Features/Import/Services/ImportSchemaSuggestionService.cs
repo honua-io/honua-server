@@ -12,10 +12,8 @@ namespace Honua.Core.Features.Import.Services;
 /// Computes advisory schema suggestions from file preview data.
 /// All suggestions are deterministic and heuristic-based.
 /// </summary>
-public sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggestionService
+internal sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggestionService
 {
-    private const int WellKnownGeographicThreshold = 180;
-
     /// <inheritdoc />
     public Task<SchemaSuggestion> SuggestAsync(
         FilePreview preview, string fileName,
@@ -44,14 +42,18 @@ public sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggest
 
     private static SridSuggestion ComputeSridSuggestion(int detectedSrid, FilePreview preview)
     {
-        // If no SRID detected, recommend WGS 84 as the safest default
+        // If no SRID detected, recommend WGS 84 as the safest default.
+        // Only cite RFC 7946 for GeoJSON — it mandates WGS 84 for that format specifically.
         if (preview.DetectedSrid is null)
         {
+            var reason = preview.Format == SupportedFileFormat.GeoJson
+                ? "No CRS detected in source data; defaulting to WGS 84 (EPSG:4326) per RFC 7946."
+                : "No CRS detected in source data; defaulting to WGS 84 (EPSG:4326) as a safe interoperable default.";
             return new SridSuggestion
             {
                 RecommendedSrid = 4326,
                 DetectedSrid = 4326,
-                Reason = "No CRS detected in source data; defaulting to WGS 84 (EPSG:4326) per RFC 7946.",
+                Reason = reason,
             };
         }
 
@@ -160,7 +162,7 @@ public sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggest
                 suggestions.Add(new FieldTypeSuggestion
                 {
                     FieldName = name,
-                    DetectedType = "text",
+                    DetectedType = detectedType,
                     RecommendedType = "TIMESTAMP WITH TIME ZONE",
                     Reason = $"Value '{TruncateForDisplay(valueStr)}' appears to be a date/time — consider TIMESTAMPTZ for temporal queries.",
                 });
@@ -172,7 +174,7 @@ public sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggest
                 suggestions.Add(new FieldTypeSuggestion
                 {
                     FieldName = name,
-                    DetectedType = "text",
+                    DetectedType = detectedType,
                     RecommendedType = "UUID",
                     Reason = "Value looks like a UUID — consider UUID type for storage efficiency.",
                 });
@@ -185,7 +187,7 @@ public sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggest
                 suggestions.Add(new FieldTypeSuggestion
                 {
                     FieldName = name,
-                    DetectedType = "text",
+                    DetectedType = detectedType,
                     RecommendedType = "DOUBLE PRECISION",
                     Reason = $"Value '{TruncateForDisplay(numStr)}' is numeric but stored as text — consider numeric type.",
                 });
@@ -199,6 +201,7 @@ public sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggest
     {
         var observations = new List<string>();
 
+        observations.Add($"Source file: {fileName}");
         observations.Add($"Detected format: {preview.Format}");
         observations.Add($"Feature count: {preview.TotalFeatureCount}");
         observations.Add($"Fields detected: {preview.SampleProperties.Count}");

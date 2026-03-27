@@ -15,7 +15,7 @@ namespace Honua.Core.Features.AutoDocs.Services;
 /// Produces ISO 19115 XML, FGDC XML, and Markdown data dictionaries
 /// from layer schema and metadata without LLM dependency.
 /// </summary>
-public sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
+internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 {
     private const string Iso19115Namespace = "http://www.isotc211.org/2005/gmd";
     private const string GcoNamespace = "http://www.isotc211.org/2005/gco";
@@ -193,8 +193,9 @@ public sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         // Language
         WriteCharacterString(writer, "gmd", "language", Iso19115Namespace, "eng");
 
-        // Extent
-        if (request.Layer.Extent is not null)
+        // Extent — EX_GeographicBoundingBox requires decimal degrees per ISO 19115 B.3.1.2.
+        // Only emit when the layer CRS is geographic; projected extents would be invalid.
+        if (request.Layer.Extent is not null && request.Layer.SpatialReference.IsGeographic)
         {
             writer.WriteStartElement("gmd", "extent", Iso19115Namespace);
             writer.WriteStartElement("gmd", "EX_Extent", Iso19115Namespace);
@@ -259,8 +260,9 @@ public sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         writer.WriteElementString("update", request.UpdateFrequency ?? "As needed");
         writer.WriteEndElement(); // status
 
-        // Spatial domain
-        if (request.Layer.Extent is not null)
+        // Spatial domain — FGDC bounding coordinates must be decimal degrees per FGDC-STD-001-1998 §1.5.1.2.
+        // Only emit when the layer CRS is geographic; projected extents would be invalid.
+        if (request.Layer.Extent is not null && request.Layer.SpatialReference.IsGeographic)
         {
             writer.WriteStartElement("spdom");
             writer.WriteStartElement("bounding");

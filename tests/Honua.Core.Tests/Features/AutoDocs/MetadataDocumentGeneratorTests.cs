@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.AutoDocs.Domain;
 using Honua.Core.Features.AutoDocs.Services;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -191,5 +192,96 @@ public sealed class MetadataDocumentGeneratorTests
 
         result.GeneratedAt.Should().BeOnOrAfter(before);
         result.GeneratedAt.Should().BeOnOrBefore(after);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Generate_ProjectedCrs_OmitsGeographicBoundingBox()
+    {
+        var projectedLayer = new LayerDefinition(
+            Id: 1,
+            Name: "buildings_3857",
+            Description: "Buildings in Web Mercator",
+            GeometryType: GeometryType.Polygon,
+            SpatialReference: SpatialReference.WebMercator,
+            Fields:
+            [
+                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                new FieldDefinition("shape", FieldType.Geometry),
+            ],
+            Extent: new FeatureExtent
+            {
+                MinX = -13656000,
+                MinY = 5700000,
+                MaxX = -13654000,
+                MaxY = 5702000,
+                SpatialReference = 3857,
+            });
+
+        var request = new MetadataDocumentRequest(
+            Layer: projectedLayer,
+            ServiceName: "TestService");
+
+        var result = _generator.Generate(request);
+
+        // ISO 19115: EX_GeographicBoundingBox must not appear for non-WGS84 extents
+        XNamespace gmd = "http://www.isotc211.org/2005/gmd";
+        var isoDoc = XDocument.Parse(result.Iso19115Xml);
+        isoDoc.Descendants(gmd + "EX_GeographicBoundingBox").Should().BeEmpty(
+            "projected coordinates must not be emitted as EX_GeographicBoundingBox per ISO 19115 B.3.1.2");
+
+        // Reference system should still be present
+        isoDoc.Descendants(gmd + "referenceSystemInfo").Should().NotBeEmpty();
+        isoDoc.ToString().Should().Contain("EPSG:3857");
+
+        // FGDC: <bounding> must not appear for non-WGS84 extents per FGDC-STD-001-1998 §1.5.1.2
+        var fgdcDoc = XDocument.Parse(result.FgdcXml);
+        fgdcDoc.Descendants("bounding").Should().BeEmpty(
+            "projected coordinates must not be emitted as FGDC bounding per FGDC-STD-001-1998 §1.5.1.2");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void Generate_GeographicNad83_EmitsBoundingBox()
+    {
+        var nad83Layer = new LayerDefinition(
+            Id: 1,
+            Name: "parcels_nad83",
+            Description: "Parcels in NAD83",
+            GeometryType: GeometryType.Polygon,
+            SpatialReference: SpatialReference.Create(4269),
+            Fields:
+            [
+                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
+                new FieldDefinition("shape", FieldType.Geometry),
+            ],
+            Extent: new FeatureExtent
+            {
+                MinX = -122.7,
+                MinY = 45.4,
+                MaxX = -122.5,
+                MaxY = 45.6,
+                SpatialReference = 4269,
+            });
+
+        var request = new MetadataDocumentRequest(
+            Layer: nad83Layer,
+            ServiceName: "TestService");
+
+        var result = _generator.Generate(request);
+
+        // ISO 19115: geographic CRS extents must be emitted
+        XNamespace gmd = "http://www.isotc211.org/2005/gmd";
+        var isoDoc = XDocument.Parse(result.Iso19115Xml);
+        isoDoc.Descendants(gmd + "EX_GeographicBoundingBox").Should().NotBeEmpty(
+            "NAD83 (EPSG:4269) is a geographic CRS — bounding box should be emitted");
+
+        // FGDC: geographic CRS extents must be emitted
+        var fgdcDoc = XDocument.Parse(result.FgdcXml);
+        fgdcDoc.Descendants("bounding").Should().NotBeEmpty(
+            "NAD83 (EPSG:4269) is a geographic CRS — FGDC bounding should be emitted");
+
+        // Reference system should reflect NAD83
+        isoDoc.ToString().Should().Contain("EPSG:4269");
     }
 }

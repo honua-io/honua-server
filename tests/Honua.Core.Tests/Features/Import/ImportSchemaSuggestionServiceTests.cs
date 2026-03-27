@@ -64,6 +64,26 @@ public sealed class ImportSchemaSuggestionServiceTests
 
         result.Srid.RecommendedSrid.Should().Be(4326);
         result.Srid.Reason.Should().Contain("WGS 84");
+        result.Srid.Reason.Should().Contain("RFC 7946");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Import)]
+    public async Task Suggest_NoDetectedSrid_NonGeoJson_OmitsRfc7946Reference()
+    {
+        var preview = new FilePreview
+        {
+            Format = SupportedFileFormat.Shapefile,
+            TotalFeatureCount = 10,
+            DetectedSrid = null,
+            SampleProperties = new Dictionary<string, object?> { ["name"] = "test" },
+        };
+
+        var result = await _service.SuggestAsync(preview, "data.zip");
+
+        result.Srid.RecommendedSrid.Should().Be(4326);
+        result.Srid.Reason.Should().Contain("WGS 84");
+        result.Srid.Reason.Should().NotContain("RFC 7946");
     }
 
     [UnitTest]
@@ -189,6 +209,7 @@ public sealed class ImportSchemaSuggestionServiceTests
 
         var result = await _service.SuggestAsync(preview, "city.gpkg");
 
+        result.Observations.Should().Contain(o => o.Contains("city.gpkg"));
         result.Observations.Should().Contain(o => o.Contains("GeoPackage"));
         result.Observations.Should().Contain(o => o.Contains("1500"));
         result.Observations.Should().Contain(o => o.Contains("Multi-layer"));
