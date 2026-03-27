@@ -34,7 +34,7 @@ Applies to `GET /ogc/features/collections/{collectionId}/items` unless noted.
 
 | Parameter | Status | Notes |
 | --- | --- | --- |
-| `f` | Implemented | `geojson`, `json`, `gml`, `html` for feature content. GML output is supported but not claimed as a conformance class. |
+| `f` | Implemented | `geojson`, `json`, `gml`, `html` for feature content. GML SF0 is advertised as a conformance class and CITE-validated at format level. |
 | `limit` | Implemented | Validated and normalized by server limits. |
 | `offset` | Implemented | Standard offset paging. |
 | `ids` | Implemented | Comma-separated feature IDs. |

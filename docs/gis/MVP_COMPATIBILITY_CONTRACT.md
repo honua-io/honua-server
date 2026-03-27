@@ -19,6 +19,9 @@ Use this page first, then drill into the linked protocol matrices/spec docs.
 | OData v4 | Supported with partial parity | Core entities/metadata/query, `$batch`, `$apply`, `$search`, `$skiptoken`, `$deltatoken`, spatial functions | Delta change-tracking is timestamp-based (MVP-level); PUT not supported | [OData v4 Coverage](specifications/odata-v4-coverage.md) |
 | Vector Tiles (MVT) | Supported | PostGIS-native `ST_AsMVT` generation, TileJSON metadata, auto-generated MapLibre styles | — | — |
 | GDAL/OGR (ogrinfo / ogr2ogr) | Supported | OAPIF: discovery, read, query, export; WFS 2.0: discovery, read, query, export | Tested with GDAL 3.4+ against OGC API Features and WFS 2.0 endpoints | — |
+| KML 2.2 (format) | CITE validated | `MapServer/generateKml` output validated against OGC KML 2.2 schema | Format-level conformance; always EPSG:4326 | [KML 2.2 CITE Guide](../contributor/cite-kml22-conformance-testing.md) |
+| GML 3.2 (format) | CITE validated | OGC API Features GML content negotiation validated against OGC GML 3.2 schema | Format-level conformance via `Accept: application/gml+xml; version=3.2` | [GML 3.2 CITE Guide](../contributor/cite-gml32-conformance-testing.md) |
+| GeoPackage 1.2 (format) | CITE validated | Admin layer export GeoPackage validated against OGC GeoPackage 1.2 spec | Format-level conformance; requires admin auth for export | [GeoPackage 1.2 CITE Guide](../contributor/cite-gpkg12-conformance-testing.md) |
 
 ## FeatureServer Replication Limitations (MVP)
 

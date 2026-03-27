@@ -80,7 +80,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 
 **Output formats:**
 - Metadata: `json` or `html`
-- Features: `geojson` (default), `json`, `html` (GML output available but not claimed as a conformance class)
+- Features: `geojson` (default), `json`, `html`, `gml` (GML 3.2 via content negotiation; advertised as the `gml-sf0` conformance class and independently CITE-validated at format level)
 
 **Typical use cases:**
 - QGIS and open-source GIS tooling
@@ -284,6 +284,9 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 - WMS 1.3: 227/227 tests
 - WMTS 1.0: 118/118 tests
 - OGC API Maps: 32/32 tests
+- KML 2.2: format-level validation (schema conformance)
+- GML 3.2: format-level validation (schema conformance)
+- GeoPackage 1.2: format-level validation (file structure conformance)
 
 ---
 

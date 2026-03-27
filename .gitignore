@@ -236,7 +236,11 @@ docs/temp/
 appsettings.Development.json
 !appsettings.Development.json.template
 cite-results/
+cite-gml32-results/
+cite-gpkg12-results/
+cite-kml22-results/
 cite-tiles-results/
+cite-wfs20-results/
 cite-wms-results/
 cite-wmts-results/
 ogc-maps-results/

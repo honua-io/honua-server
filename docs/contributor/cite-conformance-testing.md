@@ -256,10 +256,10 @@ For detailed investigation:
 
 ### CI Integration
 
-1. **Pull Request Validation**: All PRs must pass core conformance tests
-2. **Weekly Monitoring**: Scheduled tests catch conformance regressions
-3. **Artifact Preservation**: Test results are preserved for 30 days
-4. **Failure Notifications**: Failed tests block merge until fixed
+1. **Nightly / Weekly Monitoring**: Conformance suites run on schedule (not PR-blocking). See `docs/ci/gate-model.md` for the tier rationale.
+2. **Artifact Preservation**: Test results are preserved for 30 days
+3. **Manual Dispatch**: Any conformance workflow can be triggered manually via `workflow_dispatch`
+4. **Failure Investigation**: Failed nightly runs should be investigated and fixed before the next release cut
 
 ### Performance Optimization
 
@@ -340,6 +340,14 @@ Before releases, run comprehensive testing:
 - [CITE Team Engine Documentation](https://cite.opengeospatial.org/)
 - [OGC API Features Test Suite](https://github.com/opengeospatial/ets-ogcapi-features10)
 - [Docker Compose Reference](https://docs.docker.com/compose/)
+
+### Format-Level Conformance Guides
+
+In addition to service-level CITE suites, Honua validates output format conformance:
+
+- [KML 2.2 CITE Conformance Testing](cite-kml22-conformance-testing.md) — validates `MapServer/generateKml` output
+- [GML 3.2 CITE Conformance Testing](cite-gml32-conformance-testing.md) — validates OGC API Features GML content negotiation output
+- [GeoPackage 1.2 CITE Conformance Testing](cite-gpkg12-conformance-testing.md) — validates admin layer export GeoPackage files
 
 ## Support
 
