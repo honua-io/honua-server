@@ -9,7 +9,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.MapServer.Models;
-using Honua.Server.Features.MapServer.Rendering;
+using Honua.Server.Features.Infrastructure.Rendering;
 
 namespace Honua.Server.Features.MapServer;
 

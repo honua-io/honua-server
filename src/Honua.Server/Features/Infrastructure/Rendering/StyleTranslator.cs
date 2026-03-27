@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using SkiaSharp;
 
-namespace Honua.Server.Features.MapServer.Rendering;
+namespace Honua.Server.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Translates MapLibre style JSON into resolved SkiaSharp styles for rendering.

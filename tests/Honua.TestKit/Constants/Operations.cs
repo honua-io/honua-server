@@ -86,6 +86,7 @@ public static class Operations
 
     // Image / Map Operations
     public const string Export = "Export";
+    public const string Print = "Print";
     public const string Identify = "Identify";
     public const string Render = "Render";
     public const string Tile = "Tile";

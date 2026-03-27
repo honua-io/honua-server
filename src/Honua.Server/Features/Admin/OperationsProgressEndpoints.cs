@@ -95,6 +95,7 @@ internal static class OperationsProgressEndpoints
             GeoservicesImportProgress externalImportProgress => Results.Json(externalImportProgress, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
             TileOperationProgress tileOperationProgress => Results.Json(tileOperationProgress, OperationsProgressJsonContext.Default.TileOperationProgress),
             ExportProgress exportProgress => Results.Json(exportProgress, OperationsProgressJsonContext.Default.ExportProgress),
+            PrintProgress printProgress => Results.Json(printProgress, OperationsProgressJsonContext.Default.PrintProgress),
             RasterImportProgress rasterImportProgress => Results.Json(rasterImportProgress, OperationsProgressJsonContext.Default.RasterImportProgress),
             _ => Results.Json(progress, OperationsProgressJsonContext.Default.IOperationProgress)
         };
@@ -106,6 +107,7 @@ internal static class OperationsProgressEndpoints
     private static async Task<IResult> HandleCancelOperation(
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
+        [FromServices] IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(operationId))
@@ -142,8 +144,70 @@ internal static class OperationsProgressEndpoints
                 $"Operation type '{progress.Type}' does not support cancellation");
         }
 
-        var cancelledProgress = cancellableProgress.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
+        // Signal in-flight job processors first so they can begin aborting work.
+        // This is done BEFORE writing the terminal state to avoid the background
+        // service completing and persisting Completed between our initial read
+        // and the write below.
+        foreach (var notifier in cancellationNotifiers)
+        {
+            notifier.Cancel(operationId);
+        }
 
+        // Re-read to narrow the TOCTOU window: if the job completed or failed
+        // between our initial check and now, honour that rather than blindly
+        // overwriting it.  If the status is already Cancelled, the background
+        // service processed our signal — the user's intent was honoured, so
+        // fall through to the success response.
+        var latestProgress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        if (latestProgress is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status404NotFound,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
+                $"Operation '{operationId}' was not found on re-read (it may have expired)");
+        }
+
+        if (latestProgress.Status is OperationStatus.Completed or OperationStatus.Failed)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Operation '{operationId}' reached terminal state '{latestProgress.Status}' before cancellation could be applied");
+        }
+
+        if (latestProgress.Status is OperationStatus.Cancelled)
+        {
+            // Background service already persisted the cancelled state in
+            // response to the signal we sent above — return success.
+            var alreadyCancelled = new CancelOperationResponse
+            {
+                OperationId = operationId,
+                Message = "Operation cancellation requested",
+                Type = progress.Type
+            };
+            return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
+        }
+
+        // Use the freshest progress state for the cancellation write.
+        // The original `cancellableProgress` may be stale if the background
+        // service updated progress (e.g. Queued → Processing) between reads.
+        if (latestProgress is not ICancellableOperationProgress latestCancellable)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                $"Operation type '{latestProgress.Type}' does not support cancellation");
+        }
+
+        var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
+
+        // Note: a sub-millisecond race remains between our re-read above and this
+        // write — a background worker could persist Completed in that window,
+        // causing this Cancelled write to overwrite it (or vice-versa).  Both
+        // outcomes are acceptable: Cancelled means the user's request was honoured;
+        // Completed means the job finished before cancellation took effect.
+        // Eliminating this entirely requires compare-and-set semantics in the
+        // progress store, tracked as a follow-on.
         await progressStore.SetProgressAsync(operationId, cancelledProgress,
             TimeSpan.FromHours(24), cancellationToken);
 
@@ -315,11 +379,12 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(GeoservicesImportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ExportProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportProgress))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportPhase))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
+ [System.Text.Json.Serialization.JsonSerializable(typeof(PrintProgress))]
+ [System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportProgress))]
+ [System.Text.Json.Serialization.JsonSerializable(typeof(RasterImportPhase))]
+ [System.Text.Json.Serialization.JsonSerializable(typeof(CancelOperationResponse))]
+ [System.Text.Json.Serialization.JsonSerializable(typeof(ActiveOperationsResponse))]
+ [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationType))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationStatus))]
 internal sealed partial class OperationsProgressJsonContext : System.Text.Json.Serialization.JsonSerializerContext

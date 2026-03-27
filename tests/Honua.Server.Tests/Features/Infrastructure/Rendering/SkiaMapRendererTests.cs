@@ -5,11 +5,11 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.MapServer.Rendering;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.TestKit.Attributes;
 using SkiaSharp;
 
-namespace Honua.Server.Tests.Features.MapServer.Rendering;
+namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Tests for SkiaSharp-based map image rendering.

@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.MapServer.Rendering;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Server.Tests.Features.MapServer.Rendering;
+namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Tests for coordinate transformation between geographic and pixel space.
@@ -168,6 +168,37 @@ public class CoordinateTransformerTests
     }
 
     [UnitTest]
+    public void CalculateScaleDenominator_FootBasedSrid_ScalesCorrectly()
+    {
+        // EPSG 2229 = NAD83 / California zone 5 (ftUS).
+        // Same extent in feet vs meters should produce a ~3.28x smaller scale denominator
+        // because feet are smaller units, so the extent covers fewer meters.
+        var extentFeet = new SkiaMapRenderer.RenderExtent(0, 0, 10_000, 10_000);
+
+        var scaleFeet = CoordinateTransformer.CalculateScaleDenominator(extentFeet, 256, 96, 2229);
+        var scaleMeters = CoordinateTransformer.CalculateScaleDenominator(extentFeet, 256, 96, 3857);
+
+        // The foot-based scale should be roughly 0.3048x the meter-based scale
+        var ratio = scaleFeet / scaleMeters;
+        ratio.Should().BeApproximately(1200.0 / 3937.0, 0.001);
+    }
+
+    [UnitTest]
+    public void LinearUnitToMeters_MeterSrid_ReturnsOne()
+    {
+        CoordinateTransformer.LinearUnitToMeters(3857).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(32617).Should().Be(1.0);
+    }
+
+    [UnitTest]
+    public void LinearUnitToMeters_UsSurveyFootSrid_ReturnsConversionFactor()
+    {
+        var expected = 1200.0 / 3937.0;
+        CoordinateTransformer.LinearUnitToMeters(2229).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(2965).Should().Be(expected);
+    }
+
+    [UnitTest]
     public void PixelToMapUnits_ValidInput_ReturnsCorrectUnits()
     {
         var extent = new SkiaMapRenderer.RenderExtent(0, 0, 100, 100);
@@ -195,5 +226,71 @@ public class CoordinateTransformerTests
         var (_, y2) = CoordinateTransformer.LonLatToWebMercator(0, 85.06);
 
         y1.Should().Be(y2);
+    }
+
+    [UnitTest]
+    public void AdjustExtentForScale_RoundTripsWidth_Geographic()
+    {
+        // For geographic CRS, scale is derived from width; X coordinates should round-trip
+        var original = new SkiaMapRenderer.RenderExtent(-122.5, 37.0, -122.0, 37.5);
+        int imageWidth = 800, imageHeight = 600, dpi = 96, srid = 4326;
+
+        var scale = CoordinateTransformer.CalculateScaleDenominator(original, imageWidth, dpi, srid);
+        var adjusted = CoordinateTransformer.AdjustExtentForScale(original, scale, imageWidth, imageHeight, dpi, srid);
+
+        adjusted.MinX.Should().BeApproximately(original.MinX, 1e-6);
+        adjusted.MaxX.Should().BeApproximately(original.MaxX, 1e-6);
+    }
+
+    [UnitTest]
+    public void AdjustExtentForScale_RoundTrips_Projected()
+    {
+        // For projected CRS with matching aspect ratios, full round-trip works
+        var original = new SkiaMapRenderer.RenderExtent(0, 0, 800, 600);
+        int imageWidth = 800, imageHeight = 600, dpi = 96, srid = 3857;
+
+        var scale = CoordinateTransformer.CalculateScaleDenominator(original, imageWidth, dpi, srid);
+        var adjusted = CoordinateTransformer.AdjustExtentForScale(original, scale, imageWidth, imageHeight, dpi, srid);
+
+        adjusted.MinX.Should().BeApproximately(original.MinX, 1e-4);
+        adjusted.MaxX.Should().BeApproximately(original.MaxX, 1e-4);
+        adjusted.MinY.Should().BeApproximately(original.MinY, 1e-4);
+        adjusted.MaxY.Should().BeApproximately(original.MaxY, 1e-4);
+    }
+
+    [UnitTest]
+    public void AdjustExtentForScale_LargerScale_ExpandsExtent()
+    {
+        var original = new SkiaMapRenderer.RenderExtent(-1, -1, 1, 1);
+        int imageWidth = 256, imageHeight = 256, dpi = 96, srid = 3857;
+
+        var originalScale = CoordinateTransformer.CalculateScaleDenominator(original, imageWidth, dpi, srid);
+        var adjusted = CoordinateTransformer.AdjustExtentForScale(original, originalScale * 2, imageWidth, imageHeight, dpi, srid);
+
+        adjusted.Width.Should().BeApproximately(original.Width * 2, 0.01);
+    }
+
+    [UnitTest]
+    public void AdjustExtentForScale_PreservesCenter()
+    {
+        var original = new SkiaMapRenderer.RenderExtent(100, 200, 300, 500);
+        var adjusted = CoordinateTransformer.AdjustExtentForScale(original, 50000, 800, 600, 96, 3857);
+
+        var originalCenterX = (original.MinX + original.MaxX) / 2.0;
+        var originalCenterY = (original.MinY + original.MaxY) / 2.0;
+        var adjustedCenterX = (adjusted.MinX + adjusted.MaxX) / 2.0;
+        var adjustedCenterY = (adjusted.MinY + adjusted.MaxY) / 2.0;
+
+        adjustedCenterX.Should().BeApproximately(originalCenterX, 1e-6);
+        adjustedCenterY.Should().BeApproximately(originalCenterY, 1e-6);
+    }
+
+    [UnitTest]
+    public void AdjustExtentForScale_ZeroScale_ReturnsOriginal()
+    {
+        var original = new SkiaMapRenderer.RenderExtent(-1, -1, 1, 1);
+        var adjusted = CoordinateTransformer.AdjustExtentForScale(original, 0, 256, 256, 96, 4326);
+
+        adjusted.Should().Be(original);
     }
 }

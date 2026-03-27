@@ -3,7 +3,7 @@
 
 using SkiaSharp;
 
-namespace Honua.Server.Features.MapServer.Rendering;
+namespace Honua.Server.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Converts WKB (Well-Known Binary) geometry to SkiaSharp paths in pixel coordinates.

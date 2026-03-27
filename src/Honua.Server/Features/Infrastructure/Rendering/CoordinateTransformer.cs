@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.MapServer.Rendering;
+namespace Honua.Server.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Handles coordinate transformations between common spatial reference systems.
@@ -79,6 +79,13 @@ internal static class CoordinateTransformer
     private static bool IsWgs84Srid(int srid)
         => srid == 4326;
 
+    // Approximation: all geographic CRSs in the 4000-4999 range are treated
+    // as WGS 84 (R = 6 378 137 m) for scale and extent calculations.  SRIDs that
+    // use other ellipsoids (e.g. EPSG:4267 / NAD 27 on Clarke 1866) introduce a
+    // sub-metre-per-degree error that is negligible for print-service rendering.
+    private static bool IsGeographicSrid(int srid)
+        => srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999);
+
     /// <summary>
     /// Converts longitude/latitude (EPSG:4326) to Web Mercator (EPSG:3857).
     /// </summary>
@@ -101,6 +108,52 @@ internal static class CoordinateTransformer
     }
 
     /// <summary>
+    /// Adjusts an extent to match a requested scale denominator, keeping the center point fixed.
+    /// This is the inverse of <see cref="CalculateScaleDenominator"/>: given a target scale,
+    /// it computes the extent width/height in map units that corresponds to that scale
+    /// at the given output dimensions and DPI.
+    /// </summary>
+    public static SkiaMapRenderer.RenderExtent AdjustExtentForScale(
+        SkiaMapRenderer.RenderExtent extent,
+        double scaleDenominator,
+        int imageWidth,
+        int imageHeight,
+        int dpi,
+        int srid)
+    {
+        if (scaleDenominator <= 0 || imageWidth <= 0 || imageHeight <= 0 || dpi <= 0)
+            return extent;
+
+        var centerX = (extent.MinX + extent.MaxX) / 2.0;
+        var centerY = (extent.MinY + extent.MaxY) / 2.0;
+
+        // Inverse of: scaleDenom = (extentWidthMeters / imageWidth) * (dpi / 0.0254)
+        var widthMeters = scaleDenominator * imageWidth * 0.0254 / dpi;
+        var heightMeters = scaleDenominator * imageHeight * 0.0254 / dpi;
+
+        double halfWidth, halfHeight;
+
+        if (IsGeographicSrid(srid))
+        {
+            var cosLat = Math.Cos(centerY * Math.PI / 180.0);
+            var metersPerDegreeX = Math.PI / 180.0 * EarthRadius * Math.Max(cosLat, 1e-10);
+            var metersPerDegreeY = Math.PI / 180.0 * EarthRadius;
+            halfWidth = widthMeters / metersPerDegreeX / 2.0;
+            halfHeight = heightMeters / metersPerDegreeY / 2.0;
+        }
+        else
+        {
+            var unitFactor = LinearUnitToMeters(srid);
+            halfWidth = widthMeters / unitFactor / 2.0;
+            halfHeight = heightMeters / unitFactor / 2.0;
+        }
+
+        return new SkiaMapRenderer.RenderExtent(
+            centerX - halfWidth, centerY - halfHeight,
+            centerX + halfWidth, centerY + halfHeight);
+    }
+
+    /// <summary>
     /// Calculates the approximate scale denominator for a given extent and image size.
     /// </summary>
     public static double CalculateScaleDenominator(
@@ -114,19 +167,23 @@ internal static class CoordinateTransformer
             return 0;
         }
 
-        var extentWidth = extent.Width;
+        var extentWidthMeters = extent.Width;
 
         // If geographic coordinates, convert width to meters at center latitude.
-        // Most EPSG codes in 4000-4999 are geographic CRSs (lat/lon in degrees).
-        if (srid is 4326 or 4269 or 4267 or (>= 4000 and <= 4999))
+        if (IsGeographicSrid(srid))
         {
             var centerLat = (extent.MinY + extent.MaxY) / 2.0;
-            extentWidth = extentWidth * Math.PI / 180.0 * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
+            extentWidthMeters = extent.Width * Math.PI / 180.0 * EarthRadius * Math.Cos(centerLat * Math.PI / 180.0);
+        }
+        else
+        {
+            // Convert projected units to meters (handles foot-based CRSs)
+            extentWidthMeters = extent.Width * LinearUnitToMeters(srid);
         }
 
         // pixels per meter at the given DPI (1 inch = 0.0254 meters)
         var pixelsPerMeter = dpi / 0.0254;
-        var metersPerPixel = extentWidth / imageWidth;
+        var metersPerPixel = extentWidthMeters / imageWidth;
 
         return metersPerPixel * pixelsPerMeter;
     }
@@ -145,5 +202,29 @@ internal static class CoordinateTransformer
         }
 
         return pixelTolerance * mapExtent.Width / imageWidth;
+    }
+
+    /// <summary>
+    /// Returns the meters-per-linear-unit factor for common projected CRS codes.
+    /// Falls back to 1.0 (meters) for unrecognized SRIDs.
+    /// </summary>
+    internal static double LinearUnitToMeters(int srid)
+    {
+        // US Survey Foot = 1200/3937 meters (used by NAD83 State Plane zones)
+        const double usSurveyFoot = 1200.0 / 3937.0;
+
+        return srid switch
+        {
+            // NAD83 US State Plane zones in US survey feet (EPSG 2222-2281)
+            >= 2222 and <= 2281 => usSurveyFoot,
+            // NAD83(HARN) US State Plane in US survey feet (EPSG 2867-2885)
+            >= 2867 and <= 2885 => usSurveyFoot,
+            // NAD83 / Indiana East & West (ftUS)
+            2965 or 2966 => usSurveyFoot,
+            // NAD83 / Louisiana, Maine, South Dakota (ftUS)
+            >= 3433 and <= 3438 => usSurveyFoot,
+            // All other projected CRSs assumed meters (UTM, Web Mercator, etc.)
+            _ => 1.0
+        };
     }
 }

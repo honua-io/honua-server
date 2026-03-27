@@ -400,6 +400,16 @@ public static class EndpointRegistry
 
         // Data export
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/export"),
+
+        // Print service (Utilities/PrintingTools)
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task"),
+        new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
+        new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute"),
     ];
 }
 

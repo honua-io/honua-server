@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.MapServer.Rendering;
+namespace Honua.Server.Features.Infrastructure.Rendering;
 
 internal sealed class MapLibreExpressionConverter : JsonConverter<MapLibreExpression>
 {
