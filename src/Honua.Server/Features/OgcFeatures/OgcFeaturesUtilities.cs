@@ -63,6 +63,12 @@ internal static class OgcFeaturesUtilities
 
         public static readonly FrozenSet<string> Transactions =
             Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> H3 = new[]
+            {
+                "resolution"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

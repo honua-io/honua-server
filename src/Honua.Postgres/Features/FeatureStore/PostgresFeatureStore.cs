@@ -273,6 +273,17 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
         return await _dataAccess.ExecuteStatisticsQueryAsync(binsQuery, query, layerId, cancellationToken);
     }
 
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
+        int layerId,
+        FeatureQuery query,
+        H3AggregationQuery h3Query,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var h3SqlQuery = _queryBuilder.BuildH3AggregationQuery(layerId, query, h3Query, geometryStorageType);
+        return await _dataAccess.ExecuteStatisticsQueryAsync(h3SqlQuery, query, layerId, cancellationToken);
+    }
+
     #endregion
 
     #region Spatial Operations
@@ -307,6 +318,22 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
     {
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType);
+        return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
+    }
+
+    public async Task<byte[]?> GetH3MvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        int resolution,
+        FeatureQuery? query,
+        Core.Features.Tiles.TileOptions tileOptions,
+        Core.Configuration.TileLimits tileLimits,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var tileQuery = _queryBuilder.BuildH3TileQuery(layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
     }
 

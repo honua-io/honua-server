@@ -304,6 +304,30 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Validates a SQL expression against a layer schema and returns whether it is syntactically valid")
             .WithTags("FeatureServer");
 
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryH3", HandleQueryH3Get)
+            .WithDisplayName("Query H3 (GET)")
+            .WithName("QueryH3Get")
+            .WithSummary("Query features aggregated by H3 hexagonal grid cells using GET")
+            .WithDescription("Groups features into H3 cells at a configurable resolution and returns aggregate statistics per cell")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryH3", HandleQueryH3Post)
+            .WithDisplayName("Query H3 (POST)")
+            .WithName("QueryH3Post")
+            .WithSummary("Query features aggregated by H3 hexagonal grid cells using POST")
+            .WithDescription("Groups features into H3 cells at a configurable resolution and returns aggregate statistics per cell")
+            .WithTags("FeatureServer")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        endpoints.MapGet("/tiles/{layerId:int}/h3/{z:int}/{x:int}/{y:int}.mvt", HandleH3Tile)
+            .WithDisplayName("Get H3 MVT Tile")
+            .WithName("GetH3MvtTile")
+            .WithSummary("Get MVT tile containing H3 hexagonal cell boundaries")
+            .WithDescription("Generates vector tiles with H3 cell boundaries and feature counts, with resolution from zoom or query parameter")
+            .WithTags("Tiles")
+            .CacheOutput("H3MvtTile");
+
         return endpoints;
     }
 }

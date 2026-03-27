@@ -1191,4 +1191,35 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         };
         return Task.FromResult(ImmutableArray.Create<IReadOnlyDictionary<string, object?>>(row));
     }
+
+    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
+        int layerId,
+        FeatureQuery query,
+        H3AggregationQuery h3Query,
+        CancellationToken cancellationToken = default)
+    {
+        // Return a simple test H3 cell result
+        var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["cellIndex"] = "8928308280fffff",
+            ["cellGeometry"] = "{\"type\":\"Polygon\",\"coordinates\":[[[-122.5,37.5],[-122.4,37.5],[-122.4,37.6],[-122.5,37.6],[-122.5,37.5]]]}",
+            ["count"] = 3L
+        };
+        return Task.FromResult(ImmutableArray.Create<IReadOnlyDictionary<string, object?>>(row));
+    }
+
+    public Task<byte[]?> GetH3MvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        int resolution,
+        FeatureQuery? query,
+        Core.Features.Tiles.TileOptions tileOptions,
+        Core.Configuration.TileLimits tileLimits,
+        CancellationToken cancellationToken = default)
+    {
+        // Return empty tile for test
+        return Task.FromResult<byte[]?>(null);
+    }
 }

@@ -94,6 +94,13 @@ public sealed class QueryLimits
     public double? MaxBboxAreaSqKm { get; init; } = 100000000d;
 
     /// <summary>
+    /// Maximum number of H3 cells returned by an H3 aggregation query.
+    /// Prevents unbounded result sets at high resolutions. Range: 100-1,000,000.
+    /// </summary>
+    [Range(100, 1000000, ErrorMessage = ErrorMessages.RangeValidation.MaxH3CellsPerQuery)]
+    public int MaxH3CellsPerQuery { get; init; } = 10000;
+
+    /// <summary>
     /// Maximum time allowed for a single query operation.
     /// Range: 5 seconds to 2 minutes.
     /// </summary>

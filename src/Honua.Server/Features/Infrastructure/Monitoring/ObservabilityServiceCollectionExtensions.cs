@@ -273,6 +273,16 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("mvt-tiles", "tiles");
             });
 
+            // H3 MVT tile caching policy — same TTL as standard tiles but also
+            // varies by resolution since different resolutions produce different cells
+            options.AddPolicy("H3MvtTile", policy =>
+            {
+                policy.Expire(ttl.MvtTile);
+                policy.SetVaryByRouteValue("layerId", "z", "x", "y");
+                policy.SetVaryByQuery("where", "resolution");
+                policy.Tag("mvt-tiles", "tiles", "h3");
+            });
+
             // TileJSON metadata caching policy
             options.AddPolicy("TileJson", policy =>
             {

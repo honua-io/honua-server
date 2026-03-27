@@ -802,6 +802,61 @@
           }
         }
       }
+    },
+    "/collections/{collectionId}/h3": {
+      "get": {
+        "summary": "H3 hexagonal grid aggregation for a collection",
+        "description": "Groups collection features into H3 cells at a configurable resolution and returns GeoJSON features with aggregate statistics per cell",
+        "tags": [
+          "OGC API Features"
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "description": "Collection identifier",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "required": true,
+            "description": "H3 resolution level (0-15)",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "H3 aggregation as GeoJSON FeatureCollection",
+            "content": {
+              "application/geo+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters"
+          },
+          "404": {
+            "description": "Collection not found"
+          },
+          "501": {
+            "description": "H3 extension not available — the h3-pg PostgreSQL extension is not installed"
+          },
+          "503": {
+            "description": "H3 capability check failed — the database may be temporarily unreachable"
+          }
+        }
+      }
     }
   },
   "components": {

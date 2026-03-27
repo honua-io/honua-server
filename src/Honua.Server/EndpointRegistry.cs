@@ -266,7 +266,10 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBins"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBins"),
+        new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryH3"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryH3"),
         new("GET", "/tiles/{layerId}/{z}/{x}/{y}.mvt"),
+        new("GET", "/tiles/{layerId}/h3/{z}/{x}/{y}.mvt"),
         new("GET", "/tiles/{layerId}/tile.json"),
         new("GET", "/api/styles/{layerId}.json"),
 
@@ -349,6 +352,7 @@ public static class EndpointRegistry
         new("PUT", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("PATCH", "/ogc/features/collections/{collectionId}/items/{featureId}"),
         new("DELETE", "/ogc/features/collections/{collectionId}/items/{featureId}"),
+        new("GET", "/ogc/features/collections/{collectionId}/h3"),
 
         new("GET", "/ogc/tiles"),
         new("GET", "/ogc/tiles/conformance"),

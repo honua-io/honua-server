@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
@@ -36,6 +37,7 @@ using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Styling;
 using Honua.Postgres.Features.Metadata;
+using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
@@ -87,6 +89,10 @@ internal static class ServiceCollectionExtensions
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
+
+        // Register H3 capability checker (scoped to access scoped IDatabaseConnectionProvider;
+        // the result is cached statically after the first successful check, assuming single-database deployment)
+        services.AddScoped<IH3CapabilityChecker, PostgresH3CapabilityChecker>();
 
         // Register attachment store implementation (metadata tables live in the honua schema)
         services.AddScoped<IAttachmentStore>(serviceProvider =>
