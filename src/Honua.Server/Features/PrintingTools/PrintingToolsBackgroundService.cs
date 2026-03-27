@@ -196,6 +196,18 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 CurrentPhase = "Print completed"
             };
             await progressStore.SetProgressAsync(job.JobId, completed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+
+            // Guard: a racing admin-cancel fallback can overwrite Completed
+            // with Cancelled when the cancel request arrives in the narrow
+            // window between channel dequeue and CTS registration (before
+            // Cancel() can return true).  Since the output file is already
+            // stored, Completed is the authoritative terminal state.
+            var postWrite = await progressStore.GetProgressAsync(job.JobId, CancellationToken.None);
+            if (postWrite is PrintProgress { Status: not OperationStatus.Completed })
+            {
+                await progressStore.SetProgressAsync(job.JobId, completed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+            }
+
             activity?.SetTag("print.output_bytes", outputBytes.LongLength);
             activity?.SetStatus(ActivityStatusCode.Ok);
             PrintingToolsLog.JobCompleted(_logger, job.JobId, outputBytes.LongLength);

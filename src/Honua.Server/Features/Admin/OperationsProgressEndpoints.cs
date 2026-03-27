@@ -213,6 +213,11 @@ internal static class OperationsProgressEndpoints
                 $"Operation type '{latestProgress.Type}' does not support cancellation");
         }
 
+        // TOCTOU note: a worker-backed job could complete between our re-read
+        // and this write, causing Cancelled to overwrite Completed.  Worker-backed
+        // operations (e.g. print jobs) mitigate this by re-asserting Completed
+        // after their initial write.  A proper fix is compare-and-set semantics
+        // in IUniversalProgressStore (tracked as follow-on).
         var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
         await progressStore.SetProgressAsync(operationId, cancelledProgress,
             TimeSpan.FromHours(24), cancellationToken);
