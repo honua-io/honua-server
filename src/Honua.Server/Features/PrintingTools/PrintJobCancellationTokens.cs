@@ -27,20 +27,24 @@ internal sealed class PrintJobCancellationTokens : IJobCancellationNotifier
     }
 
     /// <inheritdoc />
-    public void Cancel(string jobId)
+    public bool Cancel(string jobId)
     {
         if (_tokens.TryGetValue(jobId, out var cts))
         {
             try
             {
                 cts.Cancel();
+                return true;
             }
             catch (ObjectDisposedException)
             {
                 // The background service disposed the CTS between our TryGetValue
                 // and this Cancel call — the job already completed, so this is a no-op.
+                return false;
             }
         }
+
+        return false;
     }
 
     /// <summary>

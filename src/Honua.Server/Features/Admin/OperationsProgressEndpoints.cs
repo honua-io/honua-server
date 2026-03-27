@@ -14,7 +14,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Honua.Server.Features.Admin;
 
 /// <summary>
-/// Unified operation progress endpoints for tracking any type of operation (upload, import, ingest, external import).
+/// Unified operation progress endpoints for tracking any operation type
+/// (upload, import, ingest, external import, tile cache, export, print).
 /// Replaces legacy progress endpoints with a single, consistent API.
 /// </summary>
 internal static class OperationsProgressEndpoints
@@ -35,7 +36,7 @@ internal static class OperationsProgressEndpoints
         _ = group.MapGet("/{operationId}", HandleGetOperationStatus)
             .WithName("GetOperationStatus")
             .WithSummary("Get the status of any operation by ID")
-            .WithDescription("Returns progress information for upload, import, ingest, or external import operations");
+            .WithDescription("Returns progress information for any tracked operation (upload, import, ingest, external import, tile cache, export, print)");
 
         // Cancel operation
         _ = group.MapPost("/{operationId}/cancel", HandleCancelOperation)
@@ -144,20 +145,38 @@ internal static class OperationsProgressEndpoints
                 $"Operation type '{progress.Type}' does not support cancellation");
         }
 
-        // Signal in-flight job processors first so they can begin aborting work.
-        // This is done BEFORE writing the terminal state to avoid the background
-        // service completing and persisting Completed between our initial read
-        // and the write below.
+        // Signal in-flight job processors so they can begin aborting work.
+        // When a notifier confirms the job is in-flight (returns true), the
+        // background worker owns the terminal state transition — it will persist
+        // Cancelled (if interrupted) or Completed (if rendering already finished).
+        // Writing Cancelled here would race with the worker's Completed write and
+        // could hide a successfully rendered result.
+        var workerOwnsTerminalState = false;
         foreach (var notifier in cancellationNotifiers)
         {
-            notifier.Cancel(operationId);
+            if (notifier.Cancel(operationId))
+            {
+                workerOwnsTerminalState = true;
+            }
         }
 
-        // Re-read to narrow the TOCTOU window: if the job completed or failed
-        // between our initial check and now, honour that rather than blindly
-        // overwriting it.  If the status is already Cancelled, the background
-        // service processed our signal — the user's intent was honoured, so
-        // fall through to the success response.
+        if (workerOwnsTerminalState)
+        {
+            // The worker received the signal and will persist the final state.
+            // Return success immediately — the caller should poll for the
+            // terminal state via the job-status endpoint.
+            var delegated = new CancelOperationResponse
+            {
+                OperationId = operationId,
+                Message = "Operation cancellation requested",
+                Type = progress.Type
+            };
+            return Results.Json(delegated, OperationsProgressJsonContext.Default.CancelOperationResponse);
+        }
+
+        // No worker claimed the job (not yet dequeued, already finished, or
+        // an operation type without a background worker).  Write Cancelled
+        // directly after a re-read to narrow the TOCTOU window.
         var latestProgress = await progressStore.GetProgressAsync(operationId, cancellationToken);
         if (latestProgress is null)
         {
@@ -177,8 +196,6 @@ internal static class OperationsProgressEndpoints
 
         if (latestProgress.Status is OperationStatus.Cancelled)
         {
-            // Background service already persisted the cancelled state in
-            // response to the signal we sent above — return success.
             var alreadyCancelled = new CancelOperationResponse
             {
                 OperationId = operationId,
@@ -188,9 +205,6 @@ internal static class OperationsProgressEndpoints
             return Results.Json(alreadyCancelled, OperationsProgressJsonContext.Default.CancelOperationResponse);
         }
 
-        // Use the freshest progress state for the cancellation write.
-        // The original `cancellableProgress` may be stale if the background
-        // service updated progress (e.g. Queued → Processing) between reads.
         if (latestProgress is not ICancellableOperationProgress latestCancellable)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -200,14 +214,6 @@ internal static class OperationsProgressEndpoints
         }
 
         var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
-
-        // Note: a sub-millisecond race remains between our re-read above and this
-        // write — a background worker could persist Completed in that window,
-        // causing this Cancelled write to overwrite it (or vice-versa).  Both
-        // outcomes are acceptable: Cancelled means the user's request was honoured;
-        // Completed means the job finished before cancellation took effect.
-        // Eliminating this entirely requires compare-and-set semantics in the
-        // progress store, tracked as a follow-on.
         await progressStore.SetProgressAsync(operationId, cancelledProgress,
             TimeSpan.FromHours(24), cancellationToken);
 

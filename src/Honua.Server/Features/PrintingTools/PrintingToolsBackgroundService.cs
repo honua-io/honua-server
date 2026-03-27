@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.PrintingTools.Models;
+using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.PrintingTools;
 
@@ -76,6 +78,14 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
 
     private async Task ProcessJobCoreAsync(PrintJob job, CancellationToken cancellationToken)
     {
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity("print.job", ActivityKind.Internal);
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "PrintingTools");
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "job");
+        activity?.SetTag("print.job_id", job.JobId);
+        activity?.SetTag("print.template", job.TemplateName);
+        activity?.SetTag("print.format", job.Format);
+        activity?.SetTag("print.dpi", job.Dpi);
+
         await using var scope = _scopeFactory.CreateAsyncScope();
         var progressStore = scope.ServiceProvider.GetRequiredService<IUniversalProgressStore>();
         var resourceValidator = scope.ServiceProvider.GetRequiredService<IResourceValidator>();
@@ -148,6 +158,11 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             // ensures that a cancel request racing with job completion cannot disrupt
             // the temp-file store or the Completed state write, which would leave
             // a finished job without a downloadable result.
+            //
+            // The admin cancel endpoint delegates terminal-state ownership to this
+            // worker (via IJobCancellationNotifier) rather than writing Cancelled
+            // directly, so there is no need to re-check for a Cancelled state after
+            // the file is stored — the result is authoritative.
             string downloadUrl;
             try
             {
@@ -168,14 +183,6 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 return;
             }
 
-            // Re-check cancellation before persisting completion to avoid overwriting a cancelled state.
-            // Uses CancellationToken.None so the check itself cannot be interrupted.
-            var latestProgress = await progressStore.GetProgressAsync(job.JobId, CancellationToken.None);
-            if (latestProgress is PrintProgress { Status: OperationStatus.Cancelled })
-            {
-                return;
-            }
-
             // Warnings were already collected and persisted at submit time (SubmitJobInternalAsync).
             // The `progress` record carries them through via the `queued with {...}` expression,
             // so we propagate rather than re-collecting from the same WebMap input.
@@ -189,10 +196,13 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 CurrentPhase = "Print completed"
             };
             await progressStore.SetProgressAsync(job.JobId, completed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+            activity?.SetTag("print.output_bytes", outputBytes.LongLength);
+            activity?.SetStatus(ActivityStatusCode.Ok);
             PrintingToolsLog.JobCompleted(_logger, job.JobId, outputBytes.LongLength);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             PrintingToolsLog.JobFailed(_logger, job.JobId, ex.Message, ex);
 
             try

@@ -11,6 +11,9 @@ public interface IJobCancellationNotifier
 {
     /// <summary>
     /// Signals cancellation for the specified job if it is currently tracked.
+    /// Returns <c>true</c> when the job was found and signalled, indicating a
+    /// background worker owns the terminal state transition; <c>false</c> when
+    /// the job was not tracked (already finished, not yet dequeued, or unknown).
     /// </summary>
-    void Cancel(string jobId);
+    bool Cancel(string jobId);
 }
