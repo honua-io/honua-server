@@ -396,7 +396,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 features,
                 transform,
                 rented,
-                Math.Max(PointGeneralizationPixels, circleStyle.Radius * 0.5f));
+                Math.Max(PointGeneralizationPixels, circleStyle.Radius));
             if (count == 0)
             {
                 return;

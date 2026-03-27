@@ -45,6 +45,70 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
         => BuildFormatSelectQuery(query, geometryStorageType, BuildSelectClause);
 
+    public CoreParameterizedQuery BuildProjectedPointQuery(
+        int layerId,
+        FeatureQuery query,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var pointGeometry = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
+
+            if (query.OutputSrid.HasValue &&
+                (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
+            {
+                pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
+            }
+
+            if (query.RasterPointGrid is { } pointGrid)
+            {
+                var originXParam = paramIndex++;
+                parameters.Add(pointGrid.OriginX);
+                var cellWidthParam = paramIndex++;
+                parameters.Add(pointGrid.CellWidth);
+                var originYParam = paramIndex++;
+                parameters.Add(pointGrid.OriginY);
+                var cellHeightParam = paramIndex++;
+                parameters.Add(pointGrid.CellHeight);
+
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"WITH point_source AS (SELECT {DatabaseSchema.ObjectIdColumn}, {pointGeometry} AS point_geom FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                sql.Append("), snapped_points AS (SELECT ")
+                    .Append(DatabaseSchema.ObjectIdColumn)
+                    .Append(", ST_X(point_geom) AS x, ST_Y(point_geom) AS y, ");
+                sql.Append(CultureInfo.InvariantCulture, $"FLOOR((ST_X(point_geom) - ${originXParam}) / ${cellWidthParam})::bigint AS cell_x, ");
+                sql.Append(CultureInfo.InvariantCulture, $"FLOOR((${originYParam} - ST_Y(point_geom)) / ${cellHeightParam})::bigint AS cell_y ");
+                sql.Append("FROM point_source) SELECT DISTINCT ON (cell_x, cell_y) x, y FROM snapped_points ORDER BY cell_x, cell_y, objectid");
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"WITH point_source AS (SELECT {DatabaseSchema.ObjectIdColumn}, {pointGeometry} AS point_geom FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                sql.Append(") SELECT ST_X(point_geom) AS x, ST_Y(point_geom) AS y FROM point_source ORDER BY objectid");
+            }
+
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex}");
+            }
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildSelectGmlQuery(
         int layerId,
         FeatureQuery query,

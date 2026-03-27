@@ -54,6 +54,12 @@ public readonly record struct FeatureQuery
     public int? OutputSrid { get; init; }
 
     /// <summary>
+    /// Optional projected point grid used by raster rendering fast paths to thin
+    /// point results before they are materialized by the application.
+    /// </summary>
+    public RasterPointGrid? RasterPointGrid { get; init; }
+
+    /// <summary>
     /// Temporal filter for time-based queries
     /// </summary>
     public TemporalFilter? TemporalFilter { get; init; }

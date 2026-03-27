@@ -22,6 +22,15 @@ internal interface IFeatureDataAccess
     Task<ImmutableArray<Feature>> ExecuteSelectQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Executes a projected-point query and returns point coordinates.
+    /// </summary>
+    Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
+        ParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Executes a select query and returns GML features
     /// </summary>
     Task<ImmutableArray<GmlFeature>> ExecuteSelectGmlQueryAsync(ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken);

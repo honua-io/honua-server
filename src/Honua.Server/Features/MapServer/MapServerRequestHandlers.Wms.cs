@@ -380,6 +380,24 @@ internal static partial class MapServerEndpoints
                 requestSrid,
                 maxFeatures);
 
+            var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+                canvas,
+                featureReader,
+                layer.Id,
+                layer.GeometryType,
+                styleLayers,
+                featureQuery,
+                requestedExtent,
+                imageWidth,
+                imageHeight,
+                transformFn,
+                context.RequestAborted).ConfigureAwait(false);
+            if (renderedPointCount >= 0)
+            {
+                totalFeatureCount += renderedPointCount;
+                continue;
+            }
+
             var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, context.RequestAborted);
             if (features.Length == 0)
             {
