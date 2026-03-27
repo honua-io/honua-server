@@ -98,4 +98,9 @@ public static class Protocols
     /// OGC WFS 2.0 protocol.
     /// </summary>
     public const string Wfs20 = "WFS-2.0";
+
+    /// <summary>
+    /// Real-time feature-change streaming protocol (WebSocket/SSE).
+    /// </summary>
+    public const string Streaming = "Streaming";
 }

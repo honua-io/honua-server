@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Streaming;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -53,6 +54,11 @@ public static class MetricsEndpoints
             .WithName("GetMemoryMetrics")
             .WithSummary("Get memory usage metrics")
             .Produces<MemoryUsage>();
+
+        group.MapGet("/streaming", GetStreamingMetrics)
+            .WithName("GetStreamingMetrics")
+            .WithSummary("Get streaming connection metrics")
+            .Produces<StreamingMetrics>();
 
         return app;
     }
@@ -271,6 +277,36 @@ public static class MetricsEndpoints
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Failed to retrieve memory metrics. See server logs for details.");
+        }
+    }
+
+    /// <summary>
+    /// Gets streaming connection metrics including active sessions and slow-consumer drops.
+    /// </summary>
+    private static IResult GetStreamingMetrics(
+        HttpContext context,
+        [FromServices] FeatureStreamSessionManager sessionManager)
+    {
+        try
+        {
+            var sessions = sessionManager.GetSessions();
+            var metrics = new StreamingMetrics
+            {
+                Timestamp = DateTimeOffset.UtcNow,
+                ActiveConnections = sessions.Count,
+                WebSocketConnections = sessions.Count(s => s.Transport == "WebSocket"),
+                SseConnections = sessions.Count(s => s.Transport == "SSE"),
+                SlowConsumerDrops = sessionManager.SlowConsumerDrops,
+                HeartbeatsSent = sessionManager.HeartbeatsSent
+            };
+            return Results.Ok(metrics);
+        }
+        catch (Exception ex)
+        {
+            MonitoringLog.StreamingMetricsFailed(GetLogger(context), ex);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "Failed to retrieve streaming metrics. See server logs for details.");
         }
     }
 }

@@ -239,4 +239,35 @@ public class MetricsEndpointsTests : IClassFixture<WebAppFixture>
         Assert.Equal(0.0, metrics.HitRatio);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("GET /api/v1/metrics/streaming")]
+    public async Task GetStreamingMetrics_ShouldReturnStreamingCounters()
+    {
+        // Act
+        var response = await _fixture.Client.GetAsync("/api/v1/metrics/streaming");
+        var content = await response.Content.ReadAsStringAsync();
+        var allowHeader = response.Headers.TryGetValues("Allow", out var allowValues)
+            ? string.Join(", ", allowValues)
+            : "none";
+
+        // Assert - admin endpoint may require auth in some environments
+        if (response.StatusCode != HttpStatusCode.OK && response.StatusCode != HttpStatusCode.Unauthorized)
+        {
+            Assert.Fail($"Expected OK or Unauthorized, got {response.StatusCode}. Allow: {allowHeader}. Body: {content}");
+        }
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            var metrics = JsonSerializer.Deserialize<StreamingMetrics>(content, _jsonOptions);
+
+            Assert.NotNull(metrics);
+            Assert.True(metrics.Timestamp != default, "Timestamp should be set");
+            Assert.True(metrics.ActiveConnections >= 0, "Active connections should be non-negative");
+            Assert.True(metrics.WebSocketConnections >= 0, "WebSocket connections should be non-negative");
+            Assert.True(metrics.SseConnections >= 0, "SSE connections should be non-negative");
+            Assert.True(metrics.SlowConsumerDrops >= 0, "Slow consumer drops should be non-negative");
+            Assert.True(metrics.HeartbeatsSent >= 0, "Heartbeats sent should be non-negative");
+        }
+    }
 }

@@ -189,6 +189,11 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
             return HonuaTelemetry.Protocols.Monitoring;
         }
 
+        if (value.Contains("/streaming", StringComparison.OrdinalIgnoreCase))
+        {
+            return HonuaTelemetry.Protocols.Streaming;
+        }
+
         return null;
     }
 
@@ -331,6 +336,17 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         if (path.StartsWith("/ogc/tiles", StringComparison.OrdinalIgnoreCase))
         {
             return "tiles";
+        }
+
+        if (path.Contains("/streaming", StringComparison.OrdinalIgnoreCase) &&
+            !path.Contains("/metrics", StringComparison.OrdinalIgnoreCase))
+        {
+            if (path.Contains("/sessions", StringComparison.OrdinalIgnoreCase))
+            {
+                return "sessions";
+            }
+
+            return "stream";
         }
 
         return null;

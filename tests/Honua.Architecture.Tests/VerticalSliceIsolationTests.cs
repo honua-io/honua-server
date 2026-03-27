@@ -39,6 +39,7 @@ public sealed class VerticalSliceIsolationTests
         "Import",
         "FileStorage",
         "HealthCheck",
+        "Streaming",
         "Infrastructure" // Infrastructure is allowed to be referenced by others
     };
 

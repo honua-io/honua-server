@@ -748,6 +748,18 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Creates a <see cref="Microsoft.AspNetCore.TestHost.WebSocketClient"/> for testing
+    /// WebSocket endpoints through the in-memory test server.
+    /// </summary>
+    public Microsoft.AspNetCore.TestHost.WebSocketClient CreateWebSocketClient()
+    {
+        var factory = (_useSharedServer ? _sharedFactory : _factory)
+            ?? throw new InvalidOperationException("Web application factory not initialized.");
+
+        return factory.Server.CreateWebSocketClient();
+    }
+
+    /// <summary>
     /// Create a new HTTP client with custom configuration.
     /// </summary>
     public HttpClient CreateClient(Action<HttpClient>? configure = null)
