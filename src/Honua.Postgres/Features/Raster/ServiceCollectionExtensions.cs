@@ -35,6 +35,14 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<ILogger<PostgresRasterMapRenderer>>(),
                 schemaName));
 
+        // Register raster import service
+        services.AddScoped<IRasterImportService>(provider =>
+            new PostgresRasterImportService(
+                provider.GetRequiredService<IDatabaseConnectionProvider>(),
+                provider.GetRequiredService<ICrsDetectionService>(),
+                provider.GetRequiredService<ILogger<PostgresRasterImportService>>(),
+                schemaName));
+
         return services;
     }
 }

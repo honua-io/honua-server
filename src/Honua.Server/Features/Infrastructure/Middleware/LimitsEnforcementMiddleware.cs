@@ -142,6 +142,11 @@ internal sealed class LimitsEnforcementMiddleware(
             return _limits.Imports.MaxPreviewSize;
         }
 
+        if (IsRasterImportUpload(path))
+        {
+            return _limits.Imports.MaxSyncImportSize;
+        }
+
         if (IsImportUpload(path))
         {
             return _limits.Imports.MaxImportSize;
@@ -171,6 +176,10 @@ internal sealed class LimitsEnforcementMiddleware(
 
     private static bool IsImportUpload(string path)
         => path.Contains("/admin/import/upload", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRasterImportUpload(string path)
+        => path.Contains("/admin/import/raster", StringComparison.OrdinalIgnoreCase) &&
+           !path.EndsWith("/formats", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsAttachmentUpload(string path)
         => path.EndsWith("/addAttachment", StringComparison.OrdinalIgnoreCase) ||

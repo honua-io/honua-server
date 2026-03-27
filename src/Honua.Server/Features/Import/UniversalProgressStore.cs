@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
@@ -549,6 +550,8 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(UploadProgress))]
 [JsonSerializable(typeof(IngestProgress))]
 [JsonSerializable(typeof(TileOperationProgress))]
+[JsonSerializable(typeof(RasterImportProgress))]
+[JsonSerializable(typeof(RasterImportPhase))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 [JsonSerializable(typeof(ImportStatus))]

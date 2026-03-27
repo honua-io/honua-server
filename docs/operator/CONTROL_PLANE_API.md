@@ -246,6 +246,15 @@ For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The se
 | `/api/v1/admin/import/geoservices/jobs/{jobId}` | GET | Get GeoServices import job status |
 | `/api/v1/admin/import/geoservices/jobs/{jobId}/cancel` | POST | Cancel GeoServices import job |
 
+### **Raster Import Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/import/raster` | POST | Import a raster file (GeoTIFF, PNG world-file, JPEG world-file) into PostGIS |
+| `/api/v1/admin/import/raster/formats` | GET | List supported raster file formats and extensions |
+
+Raster import accepts multipart form-data with a primary raster file and optional sidecar files (`.pgw`/`.jgw`/`.tfw`/`.wld` for georeferencing, `.prj` for CRS). GeoTIFF files contain embedded georeferencing; PNG and JPEG formats require a world file. An explicit `srid` field can override CRS detection.
+
 ---
 
 ## **Layer Style (Minimal Example)**

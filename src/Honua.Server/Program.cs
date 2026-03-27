@@ -517,6 +517,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
+        Honua.Server.Features.Import.RasterImportJsonContext.Default,
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
@@ -855,6 +856,7 @@ if (app.Environment.IsDevelopment())
 
 // Configure file import endpoints
 app.MapImportEndpoints();
+app.MapRasterImportEndpoints();
 
 // Configure Geoservices service import endpoints
 app.MapGeoservicesImportEndpoints();
