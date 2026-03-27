@@ -4,7 +4,7 @@ This document explains how to run OGC CITE KML 2.2 tests against Honua Server.
 
 ## Scope
 
-Honua Server produces KML output via `MapServer/generateKml`. The KML 2.2 CITE suite validates the output document against the OGC KML 2.2 specification schema. This is a **format-level** validator — it checks the document structure, not a running service endpoint.
+Honua Server produces KML output via `MapServer/generateKml`. The KML 2.2 CITE suite validates the output document against the OGC KML 2.2 specification schema. This is a **format-level** validator — it validates the fetched document against the specification schema rather than exercising a service API directly.
 
 KML output is always EPSG:4326.
 

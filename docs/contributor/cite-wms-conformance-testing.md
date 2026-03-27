@@ -31,8 +31,6 @@ The CITE suite is executed with a profile-oriented parameter set (`minimal`, `de
 Workflow: `.github/workflows/cite-wms-conformance.yml`
 
 Triggered by:
-- Pull requests to `trunk`/`main` that touch WMS/CITE files
-- Pushes to `trunk`/`main` that touch WMS/CITE files
 - Weekly schedule (Wednesday 06:00 UTC)
 - Manual workflow dispatch
 

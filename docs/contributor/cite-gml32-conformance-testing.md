@@ -4,7 +4,7 @@ This document explains how to run OGC CITE GML 3.2 tests against Honua Server.
 
 ## Scope
 
-Honua Server emits GML 3.2 via OGC API Features content negotiation. The GML 3.2 CITE suite validates the output document against the OGC GML 3.2 specification schema. This is a **format-level** validator — it checks the document structure, not a running service endpoint.
+Honua Server emits GML 3.2 via OGC API Features content negotiation. The GML 3.2 CITE suite validates the output document against the OGC GML 3.2 specification schema. This is a **format-level** validator — it validates the fetched document against the specification schema rather than exercising a service API directly.
 
 The GML document is fetched from the `cite:BasicPolygons` collection using `Accept: application/gml+xml; version=3.2` content negotiation.
 

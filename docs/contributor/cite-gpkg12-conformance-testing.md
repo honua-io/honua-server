@@ -4,7 +4,7 @@ This document explains how to run OGC CITE GeoPackage 1.2 tests against Honua Se
 
 ## Scope
 
-Honua Server exports data as GeoPackage via the admin layer export endpoint. The GeoPackage 1.2 CITE suite validates the output file against the OGC GeoPackage 1.2 specification. This is a **format-level** validator — it checks the file structure, not a running service endpoint.
+Honua Server exports data as GeoPackage via the admin layer export endpoint. The GeoPackage 1.2 CITE suite validates the output file against the OGC GeoPackage 1.2 specification. This is a **format-level** validator — it validates the exported file against the specification schema rather than exercising a service API directly.
 
 The GeoPackage is exported from layer 0 (`BasicPolygons`) of the cite service. The export endpoint requires admin authentication (`X-API-Key` header).
 
