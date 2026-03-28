@@ -27,7 +27,6 @@ internal sealed partial class OutputCacheInvalidationService
         ICacheService? metadataCache,
         IServiceScopeFactory scopeFactory,
         ICacheRefreshCoordinator? refreshCoordinator,
-        ICacheRefreshCoordinator? refreshCoordinator,
         ILogger<OutputCacheInvalidationService> logger)
     {
         _cacheStore = cacheStore;

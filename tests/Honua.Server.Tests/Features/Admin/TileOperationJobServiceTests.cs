@@ -143,9 +143,7 @@ public sealed class TileOperationJobServiceTests
             metadataCache: null,
             scopeFactory: serviceScopeFactory,
             refreshCoordinator: null,
-            scopeFactory: serviceScopeFactory,
-            refreshCoordinator: null,
-            NullLogger<OutputCacheInvalidationService>.Instance);
+            logger: NullLogger<OutputCacheInvalidationService>.Instance);
 
         return new TileOperationJobService(
             progressStore,
