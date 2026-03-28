@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Authentication;
 
@@ -78,6 +79,7 @@ internal static class HealthEndpoints
         IDatabasePerformanceMetricsProvider databaseMetricsProvider,
         IReadinessCheckService readinessCheckService,
         ILoggerFactory loggerFactory,
+        ICacheRefreshCoordinator? refreshCoordinator,
         CancellationToken cancellationToken)
     {
         try
@@ -109,7 +111,16 @@ internal static class HealthEndpoints
                         Gen0Collections = GC.CollectionCount(0),
                         Gen1Collections = GC.CollectionCount(1),
                         Gen2Collections = GC.CollectionCount(2)
-                    }
+                    },
+                    CacheRefresh = refreshCoordinator is not null
+                        ? new HealthCacheRefreshMetrics
+                        {
+                            QueueDepth = refreshCoordinator.QueueDepth,
+                            SuccessCount = refreshCoordinator.SuccessCount,
+                            FailureCount = refreshCoordinator.FailureCount,
+                            SkippedCount = refreshCoordinator.SkippedCount
+                        }
+                        : null
                 }
             };
 

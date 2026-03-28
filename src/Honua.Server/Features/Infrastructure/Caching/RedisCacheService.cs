@@ -41,7 +41,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly IAsyncPolicy<byte[]?> _redisGetPolicy;
     private readonly ConcurrentDictionary<string, CacheEntry> _fallbackCache = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
     private readonly Timer _cleanupTimer;
+    private readonly string _distributedCacheKeyPrefix;
     private volatile bool _isUsingFallback;
     private volatile bool _disposed;
     private long _lastRedisFailureTicks = DateTime.MinValue.Ticks;
@@ -52,11 +54,13 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         IOptions<CacheOptions> options,
         ILogger<RedisCacheService> logger,
         IPerformanceMonitor performanceMonitor,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        string? distributedCacheKeyPrefix = null)
     {
         _distributedCache = distributedCache;
         _redis = redis;
         _options = options.Value;
+        _distributedCacheKeyPrefix = distributedCacheKeyPrefix ?? string.Empty;
         _logger = logger;
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
         var policyOptions = ResiliencePolicyOptions.Default;
@@ -159,10 +163,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 }
 
                 _fallbackCache.TryRemove(prefixedKey, out _);
+                _writeMetadata.TryRemove(prefixedKey, out _);
             }
             else
             {
                 _fallbackCache.TryRemove(prefixedKey, out _);
+                _writeMetadata.TryRemove(prefixedKey, out _);
             }
         }
 
@@ -209,6 +215,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     await _redisPolicy.ExecuteAsync(
                         ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
                         cancellationToken).ConfigureAwait(false);
+                    _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
                     return;
                 }
                 catch (Exception ex)
@@ -224,6 +231,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             // Efficient cache eviction to prevent memory leaks under pressure
             EvictEntriesIfNeeded();
             _fallbackCache[prefixedKey] = new CacheEntry(data, DateTime.UtcNow.Add(ttl));
+            _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
         }
     }
 
@@ -255,8 +263,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             }
         }
 
-        // Always remove from fallback cache
+        // Always remove from fallback cache and write metadata
         _fallbackCache.TryRemove(prefixedKey, out _);
+        _writeMetadata.TryRemove(prefixedKey, out _);
 
         RecordCacheEviction();
     }
@@ -280,6 +289,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 const int scanPageSize = 250;
                 var db = _redis.GetDatabase();
                 var database = db.Database;
+                // StackExchangeRedisCache prepends its InstanceName to all keys. Raw
+                // multiplexer operations must include that prefix to match actual Redis keys.
+                var redisScanPattern = $"{_distributedCacheKeyPrefix}{prefixedPattern}";
                 foreach (var endpoint in _redis.GetEndPoints())
                 {
                     var server = _redis.GetServer(endpoint);
@@ -289,7 +301,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     }
 
                     var deleteBatch = new List<RedisKey>(scanPageSize);
-                    foreach (var key in server.Keys(database, pattern: prefixedPattern, pageSize: scanPageSize))
+                    foreach (var key in server.Keys(database, pattern: redisScanPattern, pageSize: scanPageSize))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         deleteBatch.Add(key);
@@ -329,7 +341,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         foreach (string key in keysToRemove)
         {
             _fallbackCache.TryRemove(key, out _);
+            _writeMetadata.TryRemove(key, out _);
             RecordCacheEviction();
+        }
+
+        // Prune write metadata for keys not in the fallback cache (entries written
+        // while Redis was healthy exist only in _writeMetadata, not _fallbackCache).
+        var metadataKeysToRemove = _writeMetadata.Keys
+            .Where(k => MatchesPattern(k, prefixedPattern))
+            .ToList();
+
+        foreach (string key in metadataKeysToRemove)
+        {
+            _writeMetadata.TryRemove(key, out _);
         }
 
         // Note: Redis pattern deletion relies on server key scans when a connection is available.
@@ -405,6 +429,101 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     }
 
     /// <inheritdoc />
+    public async Task<CacheEntryMetadata<T>> GetWithMetadataAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
+    {
+        if (!_options.Enabled)
+            return CacheEntryMetadata<T>.Miss();
+
+        string prefixedKey = GetPrefixedKey(key);
+        using var operationScope = _performanceMonitor.StartOperation("cache_get_metadata")
+            .WithTag("cache_type", CacheType)
+            .WithTag("key_family", GetCacheKeyFamily(key));
+
+        // Try Redis first if available
+        if (_distributedCache != null)
+        {
+            if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
+            {
+                await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!_isUsingFallback)
+            {
+                try
+                {
+                    byte[]? data = await _redisGetPolicy.ExecuteAsync(
+                        ct => _distributedCache.GetAsync(prefixedKey, ct),
+                        cancellationToken).ConfigureAwait(false);
+
+                    if (data != null && TryDeserialize(data, prefixedKey, out T? value))
+                    {
+                        // Resolve remaining TTL from in-memory write metadata (no extra Redis command).
+                        // Falls back to a multiplexer TTL query only for entries written by another
+                        // node in multi-node deployments (where the multiplexer is always available).
+                        var resolvedTtl = await ResolveRemainingTtlAsync(prefixedKey).ConfigureAwait(false);
+
+                        RecordCacheHit();
+                        operationScope.WithTag("result", "hit").WithTag("source", "redis");
+                        return new CacheEntryMetadata<T>(value, resolvedTtl);
+                    }
+
+                    if (data != null)
+                    {
+                        await RemoveCorruptRedisEntryAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                        RecordCacheMiss();
+                        operationScope.WithTag("result", "miss").WithTag("source", "redis").WithTag("reason", "corrupt");
+                        return CacheEntryMetadata<T>.Miss();
+                    }
+
+                    RecordCacheMiss();
+                    operationScope.WithTag("result", "miss").WithTag("source", "redis");
+                    return CacheEntryMetadata<T>.Miss();
+                }
+                catch (Exception ex)
+                {
+                    HandleRedisFailure(ex);
+                    operationScope.WithTag("result", "error").WithTag("source", "redis");
+                    _performanceMonitor.RecordErrorWithContext("cache_error", "redis_get_metadata",
+                        new Dictionary<string, object>
+                        {
+                            ["cache_type"] = CacheType,
+                            ["key_family"] = GetCacheKeyFamily(key),
+                            ["source"] = "redis"
+                        },
+                        ex);
+                }
+            }
+        }
+
+        // Fallback to in-memory
+        if (_options.EnableFallback && _fallbackCache.TryGetValue(prefixedKey, out CacheEntry? entry))
+        {
+            if (entry.ExpiresAt > DateTime.UtcNow)
+            {
+                if (TryDeserialize(entry.Data, prefixedKey, out T? value))
+                {
+                    RecordCacheHit();
+                    operationScope.WithTag("result", "hit").WithTag("source", "fallback");
+                    var remaining = entry.ExpiresAt - DateTime.UtcNow;
+                    return new CacheEntryMetadata<T>(value, remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+                }
+
+                _fallbackCache.TryRemove(prefixedKey, out _);
+                _writeMetadata.TryRemove(prefixedKey, out _);
+            }
+            else
+            {
+                _fallbackCache.TryRemove(prefixedKey, out _);
+                _writeMetadata.TryRemove(prefixedKey, out _);
+            }
+        }
+
+        RecordCacheMiss();
+        operationScope.WithTag("result", "miss").WithTag("source", "fallback");
+        return CacheEntryMetadata<T>.Miss();
+    }
+
+    /// <inheritdoc />
     public async Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
     {
         if (_distributedCache == null)
@@ -466,6 +585,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         foreach (var key in expiredKeys)
         {
             _fallbackCache.TryRemove(key, out _);
+            _writeMetadata.TryRemove(key, out _);
         }
 
         // If still over capacity after removing expired entries, remove oldest
@@ -492,6 +612,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 if (_fallbackCache.TryRemove(key, out _))
                 {
+                    _writeMetadata.TryRemove(key, out _);
                     evicted++;
                     if (evicted >= evictCount)
                         break;
@@ -699,27 +820,60 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return key.Equals(pattern, StringComparison.Ordinal);
     }
 
-    private static string GetCacheKeyFamily(string key)
+    internal static string GetCacheKeyFamily(string key) => CacheKeyUtilities.GetCacheKeyFamily(key);
+
+    /// <summary>
+    /// Resolves the remaining TTL for a cached entry, preferring the lightweight in-memory
+    /// write metadata over a Redis multiplexer TTL command. This avoids an extra Redis round
+    /// trip on the hot path and works even when <see cref="_redis"/> is null (e.g., startup
+    /// connection failure where <see cref="IDistributedCache"/> recovered independently).
+    /// Falls back to <c>KeyTimeToLiveAsync</c> only for entries written by another node in
+    /// multi-node deployments; the resolved TTL is then cached locally so the next read
+    /// for the same key uses the fast path without another multiplexer round trip.
+    /// When neither write metadata nor a multiplexer is available, returns
+    /// <see cref="TimeSpan.Zero"/> so the entry is treated as near-expiry and a single
+    /// background refresh populates write metadata for subsequent reads.
+    /// </summary>
+    private async Task<TimeSpan> ResolveRemainingTtlAsync(string prefixedKey)
     {
-        if (string.IsNullOrWhiteSpace(key))
+        // Fast path: entry was written (or TTL previously resolved) by this node.
+        if (_writeMetadata.TryGetValue(prefixedKey, out var writeInfo))
         {
-            return "empty";
+            long elapsedTicks = DateTime.UtcNow.Ticks - writeInfo.WrittenAtTicks;
+            long remainingTicks = writeInfo.TtlTicks - elapsedTicks;
+            return remainingTicks > 0 ? TimeSpan.FromTicks(remainingTicks) : TimeSpan.Zero;
         }
 
-        var lowerKey = key.ToLowerInvariant();
-
-        return lowerKey switch
+        // Slow path: entry written by another node — query Redis TTL via multiplexer.
+        if (_redis != null)
         {
-            _ when lowerKey.Contains("layer", StringComparison.Ordinal) => "layer",
-            _ when lowerKey.Contains("service", StringComparison.Ordinal) => "service",
-            _ when lowerKey.Contains("query", StringComparison.Ordinal) => "query",
-            _ when lowerKey.Contains("tile", StringComparison.Ordinal) || lowerKey.Contains("mvt", StringComparison.Ordinal) => "tile",
-            _ when lowerKey.Contains("catalog", StringComparison.Ordinal) => "catalog",
-            _ when lowerKey.Contains("replica", StringComparison.Ordinal) => "replica",
-            _ when lowerKey.Contains("schema", StringComparison.Ordinal) => "schema",
-            _ when lowerKey.Contains("auth", StringComparison.Ordinal) => "auth",
-            _ => "general"
-        };
+            try
+            {
+                var db = _redis.GetDatabase();
+                var actualRedisKey = $"{_distributedCacheKeyPrefix}{prefixedKey}";
+                TimeSpan? ttl = await db.KeyTimeToLiveAsync(actualRedisKey).ConfigureAwait(false);
+                var resolved = ttl ?? TimeSpan.Zero;
+
+                // Cache the resolved TTL locally so subsequent reads for the same key
+                // skip the multiplexer round trip (self-corrects after one lookup).
+                if (resolved > TimeSpan.Zero)
+                {
+                    _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, resolved.Ticks);
+                }
+
+                return resolved;
+            }
+            catch
+            {
+                // TTL lookup failed — disable near-expiry detection for this entry.
+                return TimeSpan.MaxValue;
+            }
+        }
+
+        // No write metadata and no multiplexer — treat as near-expiry so the background
+        // refresh coordinator enqueues one refresh, which populates write metadata for
+        // subsequent reads. Worst case is a single unnecessary proactive refresh per key.
+        return TimeSpan.Zero;
     }
 
     private void CleanupExpiredEntries(object? state)
@@ -728,6 +882,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             return;
 
         var now = DateTime.UtcNow;
+        var nowTicks = now.Ticks;
+
         var expiredKeys = _fallbackCache
             .Where(kvp => kvp.Value.ExpiresAt <= now)
             .Select(kvp => kvp.Key)
@@ -738,9 +894,21 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             _fallbackCache.TryRemove(key, out _);
         }
 
-        if (expiredKeys.Count > 0)
+        // Prune write metadata whose TTL has elapsed
+        var expiredMetadataKeys = _writeMetadata
+            .Where(kvp => (nowTicks - kvp.Value.WrittenAtTicks) >= kvp.Value.TtlTicks)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (string key in expiredMetadataKeys)
         {
-            RedisCacheServiceLog.CleanupExpiredCacheEntries(_logger, expiredKeys.Count);
+            _writeMetadata.TryRemove(key, out _);
+        }
+
+        int totalCleaned = expiredKeys.Count + expiredMetadataKeys.Count;
+        if (totalCleaned > 0)
+        {
+            RedisCacheServiceLog.CleanupExpiredCacheEntries(_logger, totalCleaned);
         }
     }
 
@@ -772,6 +940,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         _disposed = true;
         _cleanupTimer.Dispose();
         _fallbackCache.Clear();
+        _writeMetadata.Clear();
         foreach (var semaphore in _keyLocks.Values)
         {
             semaphore.Dispose();
@@ -884,6 +1053,13 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     }
 
     private sealed record CacheEntry(byte[] Data, DateTime ExpiresAt);
+
+    /// <summary>
+    /// Lightweight record tracking when a cache entry was written and its original TTL.
+    /// Used by <see cref="GetWithMetadataAsync{T}"/> to compute remaining TTL without
+    /// a separate Redis TTL command, and without requiring an <see cref="IConnectionMultiplexer"/>.
+    /// </summary>
+    private readonly record struct CacheWriteInfo(long WrittenAtTicks, long TtlTicks);
 
     private static partial class RedisCacheServiceLog
     {

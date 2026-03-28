@@ -912,22 +912,34 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
     {
         services.Remove(innerCatalogDescriptor);
 
+        // Shared resolver for the data-source catalog (PostgresLayerCatalog) — avoids
+        // duplicating the resolution logic across the main and keyed registrations.
+        ILayerCatalog ResolveDataSourceCatalog(IServiceProvider sp)
+        {
+            if (innerCatalogDescriptor.ImplementationFactory != null)
+                return (ILayerCatalog)innerCatalogDescriptor.ImplementationFactory(sp);
+            if (innerCatalogDescriptor.ImplementationType != null)
+                return (ILayerCatalog)ActivatorUtilities.CreateInstance(sp, innerCatalogDescriptor.ImplementationType);
+            throw new InvalidOperationException("Unable to resolve inner ILayerCatalog implementation");
+        }
+
+        // Register the data-source catalog as a keyed service so the background refresh
+        // decorator can fetch fresh data without going through the caching layer.
+        // Wrapped with the monitoring decorator so background refresh reads remain
+        // observable in catalog telemetry while still bypassing the cache.
+        services.AddKeyedScoped<ILayerCatalog>(
+            BackgroundRefreshCacheDecorator.UncachedCatalogServiceKey,
+            (sp, _) =>
+            {
+                var catalog = ResolveDataSourceCatalog(sp);
+                var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
+                var monitorLogger = sp.GetRequiredService<ILogger<MonitoredLayerCatalogDecorator>>();
+                return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, monitorLogger);
+            });
+
         services.AddScoped<ILayerCatalog>(sp =>
         {
-            // Resolve the inner catalog (PostgresLayerCatalog)
-            ILayerCatalog innerCatalog;
-            if (innerCatalogDescriptor.ImplementationFactory != null)
-            {
-                innerCatalog = (ILayerCatalog)innerCatalogDescriptor.ImplementationFactory(sp);
-            }
-            else if (innerCatalogDescriptor.ImplementationType != null)
-            {
-                innerCatalog = (ILayerCatalog)ActivatorUtilities.CreateInstance(sp, innerCatalogDescriptor.ImplementationType);
-            }
-            else
-            {
-                throw new InvalidOperationException("Unable to resolve inner ILayerCatalog implementation");
-            }
+            ILayerCatalog innerCatalog = ResolveDataSourceCatalog(sp);
 
             // Apply caching decorator if enabled
             var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
@@ -938,6 +950,15 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
                 var options = sp.GetRequiredService<IOptions<CacheOptions>>();
                 var schemaContext = sp.GetService<ISchemaContext>();
                 catalog = new CachingLayerCatalog(catalog, cacheService, options, schemaContext);
+
+                // Wrap with background refresh decorator for stale-while-revalidate
+                if (cacheOptions.BackgroundRefreshEnabled)
+                {
+                    var refreshCoordinator = sp.GetRequiredService<ICacheRefreshCoordinator>();
+                    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+                    var refreshLogger = sp.GetRequiredService<ILogger<BackgroundRefreshCacheDecorator>>();
+                    catalog = new BackgroundRefreshCacheDecorator(catalog, cacheService, refreshCoordinator, scopeFactory, options, refreshLogger, schemaContext);
+                }
             }
 
             // Always wrap with monitoring for catalog metadata queries
@@ -1166,7 +1187,13 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
         var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
         var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
         var redis = sp.GetService<IConnectionMultiplexer>();
-        return new RedisCacheService(distributedCache, options, logger, performanceMonitor, redis);
+
+        // StackExchangeRedisCache prepends its InstanceName to all keys internally.
+        // Raw multiplexer operations (e.g., TTL lookup) must use the same prefix.
+        var redisCacheOpts = sp.GetService<IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>();
+        var instanceName = redisCacheOpts?.Value?.InstanceName;
+
+        return new RedisCacheService(distributedCache, options, logger, performanceMonitor, redis, instanceName);
     });
 
     // Register interfaces pointing to the singleton
@@ -1182,6 +1209,11 @@ static void ConfigureCaching(IServiceCollection services, IConfiguration configu
             sp.GetRequiredService<IPerformanceMonitor>(),
             sp.GetRequiredService<ILogger<MonitoredResponseCacheDecorator>>());
     });
+
+    // Register background cache refresh coordinator
+    services.AddSingleton<CacheRefreshCoordinator>();
+    services.AddSingleton<ICacheRefreshCoordinator>(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
+    services.AddHostedService(sp => sp.GetRequiredService<CacheRefreshCoordinator>());
 
     // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
 }
