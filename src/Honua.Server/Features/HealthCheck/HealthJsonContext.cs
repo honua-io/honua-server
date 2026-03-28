@@ -17,6 +17,7 @@ namespace Honua.Server.Features.HealthCheck;
 [JsonSerializable(typeof(HealthMemoryMetrics))]
 [JsonSerializable(typeof(HealthGcMetrics))]
 [JsonSerializable(typeof(HealthPerformanceErrorResponse))]
+[JsonSerializable(typeof(HealthCacheRefreshMetrics))]
 [JsonSerializable(typeof(DatabasePerformanceMetricsSnapshot))]
 [JsonSerializable(typeof(DatabaseOperationMetricsSnapshot))]
 [JsonSerializable(typeof(Dictionary<string, DatabaseOperationMetricsSnapshot>))]

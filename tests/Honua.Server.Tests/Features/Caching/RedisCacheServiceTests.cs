@@ -13,6 +13,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
@@ -44,7 +45,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         _cacheService = new RedisCacheService(
             null, // No Redis - tests fallback mode
             Options.Create(_options),
-            new MockLogger<RedisCacheService>(),
+            NullLogger<RedisCacheService>.Instance,
             _performanceMonitor);
     }
 
@@ -76,7 +77,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         using var cache = new RedisCacheService(
             null,
             Options.Create(_options),
-            new MockLogger<RedisCacheService>(),
+            NullLogger<RedisCacheService>.Instance,
             performanceMonitor);
 
         _ = await cache.GetAsync<FieldDefinition>("layer:42:token=secret");
@@ -110,7 +111,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         using var cache = new RedisCacheService(
             distributedCache,
             Options.Create(options),
-            new MockLogger<RedisCacheService>(),
+            NullLogger<RedisCacheService>.Instance,
             performanceMonitor);
 
         _ = await cache.GetAsync<FieldDefinition>("layer:42:token=secret");
@@ -332,7 +333,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         using var cache = new RedisCacheService(
             null,
             Options.Create(options),
-            new MockLogger<RedisCacheService>(),
+            NullLogger<RedisCacheService>.Instance,
             _performanceMonitor);
 
         // Act - Add more entries than limit
@@ -357,6 +358,45 @@ public sealed class RedisCacheServiceTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task SetAsync_EnforcesMaxEntries_AlsoCleansWriteMetadata()
+    {
+        // Regression test for finding: _writeMetadata must be trimmed alongside
+        // _fallbackCache during capacity eviction to prevent unbounded memory growth.
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            EnableFallback = true,
+            FallbackMaxEntries = 3,
+            KeyPrefix = "evict:"
+        };
+
+        using var cache = new RedisCacheService(
+            null,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+
+        // Fill to capacity and trigger eviction
+        await cache.SetAsync("a", new FieldDefinition("A", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
+        await cache.SetAsync("b", new FieldDefinition("B", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
+        await cache.SetAsync("c", new FieldDefinition("C", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
+        await cache.SetAsync("d", new FieldDefinition("D", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
+        await cache.SetAsync("e", new FieldDefinition("E", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
+
+        // Verify write metadata dictionary is bounded alongside fallback cache
+        var writeMetadataField = typeof(RedisCacheService)
+            .GetField("_writeMetadata", BindingFlags.NonPublic | BindingFlags.Instance);
+        writeMetadataField.Should().NotBeNull();
+
+        var writeMetadata = writeMetadataField!.GetValue(cache) as System.Collections.IDictionary;
+        writeMetadata.Should().NotBeNull();
+
+        // Write metadata count should not exceed fallback max entries
+        writeMetadata!.Count.Should().BeLessOrEqualTo(options.FallbackMaxEntries);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task CacheDisabled_ReturnsNullAndDoesNotStore()
     {
         // Arrange
@@ -364,7 +404,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         using var disabledCache = new RedisCacheService(
             null,
             Options.Create(options),
-            new MockLogger<RedisCacheService>(),
+            NullLogger<RedisCacheService>.Instance,
             _performanceMonitor);
 
         // Act
@@ -443,4 +483,152 @@ public sealed class RedisCacheServiceTests : IDisposable
             public void Dispose() { }
         }
     }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_WhenKeyExists_ReturnsValueWithPositiveRemainingTtl()
+    {
+        // Arrange
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var ttl = TimeSpan.FromSeconds(60);
+        await _cacheService.SetAsync("meta:1", item, ttl);
+
+        // Act
+        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:1");
+
+        // Assert
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value!.Name.Should().Be("objectid");
+        result.RemainingTtl.Should().BeGreaterThan(TimeSpan.Zero);
+        result.RemainingTtl.Should().BeLessOrEqualTo(ttl);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_WhenKeyNotFound_ReturnsMiss()
+    {
+        // Act
+        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:nonexistent");
+
+        // Assert
+        result.HasValue.Should().BeFalse();
+        result.Value.Should().BeNull();
+        result.RemainingTtl.Should().Be(TimeSpan.Zero);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_WhenExpired_ReturnsMiss()
+    {
+        // Arrange
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        await _cacheService.SetAsync("meta:short", item, TimeSpan.FromMilliseconds(50));
+
+        // Wait for expiration
+        await Task.Delay(100);
+
+        // Act
+        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:short");
+
+        // Assert
+        result.HasValue.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_CacheDisabled_ReturnsMiss()
+    {
+        // Arrange
+        var options = new CacheOptions { Enabled = false };
+        using var disabledCache = new RedisCacheService(
+            null,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+
+        // Act
+        var result = await disabledCache.GetWithMetadataAsync<FieldDefinition>("meta:1");
+
+        // Assert
+        result.HasValue.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_NoMultiplexer_ComputesTtlFromWriteMetadata()
+    {
+        // Arrange: cache service with no IConnectionMultiplexer (simulates startup Redis failure)
+        // — write metadata is the only TTL source, verifying Finding 1 fix.
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var ttl = TimeSpan.FromSeconds(60);
+        await _cacheService.SetAsync("meta:nomux", item, ttl);
+
+        // Act
+        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:nomux");
+
+        // Assert: remaining TTL is derived from write metadata, not MaxValue
+        result.HasValue.Should().BeTrue();
+        result.RemainingTtl.Should().BeGreaterThan(TimeSpan.Zero);
+        result.RemainingTtl.Should().BeLessOrEqualTo(ttl);
+        // Crucially, TTL must NOT be MaxValue (which would disable near-expiry detection)
+        result.RemainingTtl.Should().BeLessThan(TimeSpan.MaxValue);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_AfterRemove_ReturnsMiss()
+    {
+        // Arrange: set and then remove to verify write metadata is cleaned up
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        await _cacheService.SetAsync("meta:removed", item, TimeSpan.FromSeconds(60));
+        await _cacheService.RemoveAsync("meta:removed");
+
+        // Act
+        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:removed");
+
+        // Assert
+        result.HasValue.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetWithMetadataAsync_WarmRedisEntry_NoMultiplexer_ReturnsTtlZeroForRefresh()
+    {
+        // Arrange: simulate a warm Redis entry written by another node. This node has
+        // no IConnectionMultiplexer (startup failure) and no _writeMetadata for the key.
+        // ResolveRemainingTtlAsync should return Zero so background refresh self-corrects.
+        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var serialized = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            item, CacheJsonContext.Default.FieldDefinition);
+
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache
+            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(serialized);
+
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            EnableFallback = false, // force Redis-only path
+            KeyPrefix = "test:"
+        };
+
+        using var cache = new RedisCacheService(
+            distributedCache,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor,
+            redis: null, // no multiplexer
+            distributedCacheKeyPrefix: null);
+
+        // Act
+        var result = await cache.GetWithMetadataAsync<FieldDefinition>("meta:warm");
+
+        // Assert: entry found, TTL is zero (triggers near-expiry / background refresh)
+        result.HasValue.Should().BeTrue();
+        result.Value!.Name.Should().Be("objectid");
+        result.RemainingTtl.Should().Be(TimeSpan.Zero);
+    }
+
 }

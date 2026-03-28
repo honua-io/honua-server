@@ -25,14 +25,14 @@ internal sealed class CachingLayerCatalog : ILayerCatalog
     private readonly CacheOptions _options;
     private readonly ISchemaContext? _schemaContext;
 
-    // Cache key constants
-    private const string LayerKeyPrefix = "layer:";
-    private const string LayerExistsKeyPrefix = "layer:exists:";
-    private const string LayerListKey = "layers:all";
-    private const string ServiceKeyPrefix = "service:";
-    private const string ServiceExistsKeyPrefix = "service:exists:";
-    private const string ServiceListKey = "services:all";
-    private const string RelationshipKeyPrefix = "relationship:";
+    // Cache key constants — shared keys are internal so BackgroundRefreshCacheDecorator uses the same values
+    internal const string LayerKeyPrefix = "layer:";
+    internal const string LayerListKey = "layers:all";
+    internal const string ServiceKeyPrefix = "service:";
+    internal const string ServiceListKey = "services:all";
+    internal const string LayerExistsKeyPrefix = "layer:exists:";
+    internal const string ServiceExistsKeyPrefix = "service:exists:";
+    internal const string RelationshipKeyPrefix = "relationship:";
 
     public CachingLayerCatalog(
         ILayerCatalog innerCatalog,

@@ -22,6 +22,7 @@ public sealed class CacheOptionsValidator : OptionsValidator<CacheOptions>
         ValidateTtlLogic(options, failures);
         ValidateFallbackConfiguration(options, failures);
         ValidateKeyPrefix(options, failures);
+        ValidateBackgroundRefresh(options, failures);
     }
 
 
@@ -68,6 +69,19 @@ public sealed class CacheOptionsValidator : OptionsValidator<CacheOptions>
         }
 
         ValidateRange(options.ResponseCacheMaxEntries, 100, 500000, "ResponseCacheMaxEntries", failures);
+    }
+
+    /// <summary>
+    /// Validates background refresh configuration.
+    /// </summary>
+    private static void ValidateBackgroundRefresh(CacheOptions options, List<string> failures)
+    {
+        if (!options.BackgroundRefreshEnabled)
+            return;
+
+        ValidateRange(options.BackgroundRefreshThreshold, 0.05, 0.75, "BackgroundRefreshThreshold", failures);
+        ValidateRange(options.MaxConcurrentRefreshes, 1, 100, "MaxConcurrentRefreshes", failures);
+        ValidateRange(options.RefreshTimeoutSeconds, 5, 120, "RefreshTimeoutSeconds", failures);
     }
 
     /// <summary>

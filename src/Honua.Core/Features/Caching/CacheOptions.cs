@@ -98,6 +98,40 @@ public sealed class CacheOptions
     public string KeyPrefix { get; set; } = "honua:";
 
     /// <summary>
+    /// Whether background cache refresh (stale-while-revalidate) is enabled.
+    /// When enabled, near-expiry cache entries are served stale while a background task refreshes them.
+    /// Default is true.
+    /// </summary>
+    public bool BackgroundRefreshEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Percentage of TTL remaining that triggers a background refresh (0.0-1.0).
+    /// For example, 0.25 means refresh when 25% or less of the TTL remains.
+    /// Default is 0.25 (25%).
+    /// </summary>
+    [Range(0.05, 0.75, ErrorMessage = ErrorMessages.RangeValidation.BackgroundRefreshThreshold)]
+    public double BackgroundRefreshThreshold { get; set; } = 0.25;
+
+    /// <summary>
+    /// Maximum number of concurrent background refresh operations.
+    /// Default is 10.
+    /// </summary>
+    [Range(1, 100, ErrorMessage = ErrorMessages.RangeValidation.MaxConcurrentRefreshes)]
+    public int MaxConcurrentRefreshes { get; set; } = 10;
+
+    /// <summary>
+    /// Timeout in seconds for each background refresh operation.
+    /// Default is 30 seconds.
+    /// </summary>
+    [Range(TimeConstants.FiveSeconds, TimeConstants.TwoMinutes, ErrorMessage = ErrorMessages.RangeValidation.RefreshTimeoutSeconds)]
+    public int RefreshTimeoutSeconds { get; set; } = TimeConstants.ThirtySeconds;
+
+    /// <summary>
+    /// Gets the refresh timeout as a TimeSpan.
+    /// </summary>
+    public TimeSpan RefreshTimeout => TimeSpan.FromSeconds(RefreshTimeoutSeconds);
+
+    /// <summary>
     /// Gets the default TTL as a TimeSpan.
     /// </summary>
     public TimeSpan DefaultTtl => TimeSpan.FromSeconds(DefaultTtlSeconds);

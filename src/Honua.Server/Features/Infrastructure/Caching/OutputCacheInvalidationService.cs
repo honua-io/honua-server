@@ -18,6 +18,7 @@ internal sealed partial class OutputCacheInvalidationService
     private readonly IResponseCache? _responseCache;
     private readonly ICacheService? _metadataCache;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ICacheRefreshCoordinator? _refreshCoordinator;
     private readonly ILogger<OutputCacheInvalidationService> _logger;
 
     public OutputCacheInvalidationService(
@@ -25,12 +26,15 @@ internal sealed partial class OutputCacheInvalidationService
         IResponseCache? responseCache,
         ICacheService? metadataCache,
         IServiceScopeFactory scopeFactory,
+        ICacheRefreshCoordinator? refreshCoordinator,
+        ICacheRefreshCoordinator? refreshCoordinator,
         ILogger<OutputCacheInvalidationService> logger)
     {
         _cacheStore = cacheStore;
         _responseCache = responseCache;
         _metadataCache = metadataCache;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _refreshCoordinator = refreshCoordinator;
         _logger = logger;
     }
 
@@ -219,24 +223,28 @@ internal sealed partial class OutputCacheInvalidationService
 
         var keys = new List<string>
         {
-            "services:all",
-            "layers:all"
+            CachingLayerCatalog.ServiceListKey,
+            CachingLayerCatalog.LayerListKey
         };
 
         if (!string.IsNullOrWhiteSpace(serviceId))
         {
-            keys.Add($"service:{serviceId}");
-            keys.Add($"service:exists:{serviceId}");
+            keys.Add($"{CachingLayerCatalog.ServiceKeyPrefix}{serviceId}");
+            keys.Add($"{CachingLayerCatalog.ServiceExistsKeyPrefix}{serviceId}");
         }
 
         foreach (var layerId in layerIds)
         {
-            keys.Add($"layer:{layerId}");
-            keys.Add($"layer:exists:{layerId}");
+            keys.Add($"{CachingLayerCatalog.LayerKeyPrefix}{layerId}");
+            keys.Add($"{CachingLayerCatalog.LayerExistsKeyPrefix}{layerId}");
         }
 
         foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            // Notify the refresh coordinator so any pending background refresh
+            // for this key skips stale-value restoration on failure.
+            _refreshCoordinator?.NotifyInvalidation(key);
+
             try
             {
                 await _metadataCache.RemoveAsync(key, cancellationToken);
@@ -261,7 +269,7 @@ internal sealed partial class OutputCacheInvalidationService
 
         foreach (var layerId in layerIds)
         {
-            var pattern = $"relationship:{layerId}:*";
+            var pattern = $"{CachingLayerCatalog.RelationshipKeyPrefix}{layerId}:*";
             try
             {
                 await _metadataCache.RemoveByPatternAsync(pattern, cancellationToken);

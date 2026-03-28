@@ -23,6 +23,19 @@ internal sealed class HealthPerformanceMetrics
     public required HealthMemoryMetrics Memory { get; init; }
 
     public required HealthGcMetrics GcInfo { get; init; }
+
+    public HealthCacheRefreshMetrics? CacheRefresh { get; init; }
+}
+
+internal sealed class HealthCacheRefreshMetrics
+{
+    public required int QueueDepth { get; init; }
+
+    public required long SuccessCount { get; init; }
+
+    public required long FailureCount { get; init; }
+
+    public required long SkippedCount { get; init; }
 }
 
 internal sealed class HealthMemoryMetrics

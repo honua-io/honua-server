@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Caching;
+
 namespace Honua.Core.Features.Caching.Abstractions;
 
 /// <summary>
@@ -74,4 +76,14 @@ public interface ICacheService
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The cached or newly created value</returns>
     Task<T?> GetOrSetAsync<T>(string key, Func<CancellationToken, Task<T?>> factory, TimeSpan ttl, CancellationToken cancellationToken = default) where T : class;
+
+    /// <summary>
+    /// Gets a cached value along with its remaining TTL metadata.
+    /// Used by background refresh to determine whether a near-expiry entry should be proactively refreshed.
+    /// </summary>
+    /// <typeparam name="T">The type of the cached value</typeparam>
+    /// <param name="key">Cache key</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Cache entry metadata including value and remaining TTL, or a miss result</returns>
+    Task<CacheEntryMetadata<T>> GetWithMetadataAsync<T>(string key, CancellationToken cancellationToken = default) where T : class;
 }

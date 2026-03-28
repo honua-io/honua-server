@@ -12,6 +12,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -49,7 +50,7 @@ public sealed class CachingLayerCatalogTests : IDisposable
         _cacheService = new RedisCacheService(
             null, // No Redis - tests fallback mode
             Options.Create(_options),
-            new MockLogger<RedisCacheService>(),
+            NullLogger<RedisCacheService>.Instance,
             _performanceMonitor);
 
         _cachingCatalog = new CachingLayerCatalog(

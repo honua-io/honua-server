@@ -29,7 +29,7 @@ public sealed class OutputCacheInvalidationServiceTests
         var metadataCache = Substitute.For<ICacheService>();
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, logger);
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, null, logger);
 
         await sut.InvalidateServiceCatalogAsync("TestService", [1, 2, 2], CancellationToken.None);
 
@@ -71,7 +71,7 @@ public sealed class OutputCacheInvalidationServiceTests
         var metadataCache = Substitute.For<ICacheService>();
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, logger);
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, null, logger);
 
         await sut.InvalidateServiceCatalogAsync("TestService", null, CancellationToken.None);
 
@@ -84,7 +84,7 @@ public sealed class OutputCacheInvalidationServiceTests
     {
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(null, null, null, scopeFactory, logger);
+        var sut = new OutputCacheInvalidationService(null, null, null, scopeFactory, null, logger);
 
         var act = async () => await sut.InvalidateServiceCatalogAsync("svc", [3], CancellationToken.None);
 
@@ -110,7 +110,7 @@ public sealed class OutputCacheInvalidationServiceTests
         services.AddScoped(_ => layerCatalog);
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
-        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, logger);
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, null, logger);
 
         await sut.InvalidateLayerAsync(null, 7, CancellationToken.None);
 

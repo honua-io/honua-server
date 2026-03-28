@@ -236,6 +236,12 @@ JitterPercentage = "JitterPercentage must be between 0 and 0.5 (50%)";
 FallbackMaxEntries = "FallbackMaxEntries must be between 10 and 100000";
         public const string         /// <inheritdoc/>
 RetryIntervalSeconds = "RetryIntervalSeconds must be between 5 and 300";
+        public const string         /// <inheritdoc/>
+BackgroundRefreshThreshold = "BackgroundRefreshThreshold must be between 0.05 and 0.75";
+        public const string         /// <inheritdoc/>
+MaxConcurrentRefreshes = "MaxConcurrentRefreshes must be between 1 and 100";
+        public const string         /// <inheritdoc/>
+RefreshTimeoutSeconds = "RefreshTimeoutSeconds must be between 5 and 120";
 
         // Adaptive sampling options validation messages
         public const string         /// <inheritdoc/>

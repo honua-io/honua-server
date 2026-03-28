@@ -149,15 +149,15 @@ internal sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Cache:Enabled", "Cache__Enabled", "boolean",
                     "Whether caching is enabled", true, opts.Enabled),
                 BuildPropertyWithCurrent("Cache:DefaultTtlSeconds", "Cache__DefaultTtlSeconds", "integer",
-                    "Default cache TTL in seconds", 300, opts.DefaultTtlSeconds, "Range: 1-86400"),
+                    "Default cache TTL in seconds", 1800, opts.DefaultTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:ServiceTtlSeconds", "Cache__ServiceTtlSeconds", "integer",
-                    "Service metadata cache TTL in seconds", 300, opts.ServiceTtlSeconds, "Range: 1-86400"),
+                    "Service metadata cache TTL in seconds", 3600, opts.ServiceTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:LayerTtlSeconds", "Cache__LayerTtlSeconds", "integer",
-                    "Layer metadata cache TTL in seconds", 300, opts.LayerTtlSeconds, "Range: 1-86400"),
+                    "Layer metadata cache TTL in seconds", 1800, opts.LayerTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:QueryTtlSeconds", "Cache__QueryTtlSeconds", "integer",
                     "Query response cache TTL in seconds", 30, opts.QueryTtlSeconds, "Range: 1-3600"),
                 BuildPropertyWithCurrent("Cache:NegativeTtlSeconds", "Cache__NegativeTtlSeconds", "integer",
-                    "Negative cache TTL in seconds for missing layers/services", 30, opts.NegativeTtlSeconds, "Range: 1-3600"),
+                    "Negative cache TTL in seconds for missing layers/services", 60, opts.NegativeTtlSeconds, "Range: 1-3600"),
                 BuildPropertyWithCurrent("Cache:JitterPercentage", "Cache__JitterPercentage", "number",
                     "TTL jitter percentage to prevent stampedes", 0.2, opts.JitterPercentage, "Range: 0-0.5"),
                 BuildPropertyWithCurrent("Cache:EnableFallback", "Cache__EnableFallback", "boolean",
@@ -167,7 +167,15 @@ internal sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Cache:RetryIntervalSeconds", "Cache__RetryIntervalSeconds", "integer",
                     "Retry interval after Redis failure", 30, opts.RetryIntervalSeconds, "Range: 5-300"),
                 BuildPropertyWithCurrent("Cache:KeyPrefix", "Cache__KeyPrefix", "string",
-                    "Prefix for cache keys", "honua:", opts.KeyPrefix)
+                    "Prefix for cache keys", "honua:", opts.KeyPrefix),
+                BuildPropertyWithCurrent("Cache:BackgroundRefreshEnabled", "Cache__BackgroundRefreshEnabled", "boolean",
+                    "Enable stale-while-revalidate background refresh for near-expiry entries", true, opts.BackgroundRefreshEnabled),
+                BuildPropertyWithCurrent("Cache:BackgroundRefreshThreshold", "Cache__BackgroundRefreshThreshold", "number",
+                    "Fraction of TTL remaining that triggers background refresh", 0.25, opts.BackgroundRefreshThreshold, "Range: 0.05-0.75"),
+                BuildPropertyWithCurrent("Cache:MaxConcurrentRefreshes", "Cache__MaxConcurrentRefreshes", "integer",
+                    "Maximum concurrent background refresh operations", 10, opts.MaxConcurrentRefreshes, "Range: 1-100"),
+                BuildPropertyWithCurrent("Cache:RefreshTimeoutSeconds", "Cache__RefreshTimeoutSeconds", "integer",
+                    "Timeout per background refresh operation in seconds", 30, opts.RefreshTimeoutSeconds, "Range: 5-120")
             ]
         };
     }
@@ -636,11 +644,17 @@ internal sealed class ConfigurationDocumentationService
             // Cache
             new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
-            new() { Name = "Cache__DefaultTtlSeconds", ConfigPath = "Cache", Description = "Default cache TTL", Default = "300", Example = "600" },
+            new() { Name = "Cache__DefaultTtlSeconds", ConfigPath = "Cache", Description = "Default cache TTL", Default = "1800", Example = "600" },
+            new() { Name = "Cache__ServiceTtlSeconds", ConfigPath = "Cache", Description = "Service metadata cache TTL", Default = "3600", Example = "1800" },
+            new() { Name = "Cache__LayerTtlSeconds", ConfigPath = "Cache", Description = "Layer metadata cache TTL", Default = "1800", Example = "900" },
             new() { Name = "Cache__QueryTtlSeconds", ConfigPath = "Cache", Description = "Query response cache TTL", Default = "30", Example = "60" },
-            new() { Name = "Cache__NegativeTtlSeconds", ConfigPath = "Cache", Description = "Negative cache TTL for missing resources", Default = "30", Example = "30" },
+            new() { Name = "Cache__NegativeTtlSeconds", ConfigPath = "Cache", Description = "Negative cache TTL for missing resources", Default = "60", Example = "30" },
             new() { Name = "Cache__JitterPercentage", ConfigPath = "Cache", Description = "TTL jitter percentage", Default = "0.2", Example = "0.1" },
             new() { Name = "Cache__EnableFallback", ConfigPath = "Cache", Description = "Use in-memory fallback", Default = "true", Example = "false" },
+            new() { Name = "Cache__BackgroundRefreshEnabled", ConfigPath = "Cache", Description = "Enable stale-while-revalidate background refresh", Default = "true", Example = "false" },
+            new() { Name = "Cache__BackgroundRefreshThreshold", ConfigPath = "Cache", Description = "TTL fraction triggering background refresh", Default = "0.25", Example = "0.3" },
+            new() { Name = "Cache__MaxConcurrentRefreshes", ConfigPath = "Cache", Description = "Max concurrent background refreshes", Default = "10", Example = "20" },
+            new() { Name = "Cache__RefreshTimeoutSeconds", ConfigPath = "Cache", Description = "Background refresh timeout", Default = "30", Example = "60" },
 
             // Deployment
             new() { Name = "Deployment__Mode", ConfigPath = "Deployment", Description = "Deployment mode (SingleInstance or MultiNode)", Default = "SingleInstance", Example = "MultiNode" },
