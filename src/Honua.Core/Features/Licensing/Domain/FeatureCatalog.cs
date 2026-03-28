@@ -45,6 +45,9 @@ public static class FeatureCatalog
 
         /// <summary>Caching and performance features.</summary>
         public const string Caching = "Caching";
+
+        /// <summary>Static map image rendering features.</summary>
+        public const string StaticMap = "StaticMap";
     }
 
     /// <summary>
@@ -117,5 +120,13 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Import layers from ArcGIS REST services."),
         new("import.geoserver", "GeoServer Import", Categories.Import,
             HonuaEdition.Enterprise, "Import layers from GeoServer REST API."),
+
+        // Static Map — Pro
+        new("staticmap.high-dpi", "High-DPI Static Maps", Categories.StaticMap,
+            HonuaEdition.Pro, "Render static map images at 150 and 300 DPI."),
+        new("staticmap.large-dimensions", "Large Static Maps", Categories.StaticMap,
+            HonuaEdition.Pro, "Render static map images up to 4096x4096 pixels."),
+        new("staticmap.rich-overlays", "Rich Static Map Overlays", Categories.StaticMap,
+            HonuaEdition.Pro, "Render up to 100 markers and 500 path vertices on static maps."),
     ];
 }

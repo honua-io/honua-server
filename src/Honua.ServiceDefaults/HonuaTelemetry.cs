@@ -101,6 +101,9 @@ public static class HonuaTelemetry
         /// <summary>MapServer identify (spatial query) activity.</summary>
         public const string MapServerIdentify = "honua.mapserver.identify";
 
+        /// <summary>Static map image rendering activity.</summary>
+        public const string StaticMapRender = "honua.staticmap.render";
+
         /// <summary>Business intelligence calculation activity.</summary>
         public const string BusinessIntelligence = "honua.bi.calculation";
 
@@ -235,6 +238,12 @@ public static class HonuaTelemetry
 
         /// <summary>Geometry service operations (buffer, simplify, project).</summary>
         public const string GeometryService = "GeometryService";
+
+        /// <summary>Static map image API.</summary>
+        public const string StaticMap = "StaticMap";
+
+        /// <summary>GeoServices Print / Export Web Map Task.</summary>
+        public const string PrintingTools = "PrintingTools";
 
         /// <summary>OGC Web Feature Service 2.0.</summary>
         public const string Wfs20 = "WFS-2.0";

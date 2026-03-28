@@ -16,6 +16,7 @@ internal static class ResponseCacheUtilities
     private const string FeatureServerPrefix = "response:query:featureserver:service:";
     private const string OgcPrefix = "response:query:ogc:collection:";
     private const string ODataPrefix = "response:query:odata:layer:";
+    private const string StaticMapPrefix = "response:render:staticmap:service:";
 
     internal static bool ShouldCache(HttpContext context, CacheOptions options)
     {
@@ -73,6 +74,15 @@ internal static class ResponseCacheUtilities
 
     internal static string BuildODataLayerPattern(int layerId)
         => $"{ODataPrefix}{layerId}:*";
+
+    internal static string BuildStaticMapKey(string serviceId, HttpRequest request)
+        => BuildKey($"{StaticMapPrefix}{NormalizeKeyPart(serviceId)}:", request);
+
+    internal static string BuildStaticMapServicePattern(string serviceId)
+        => $"{StaticMapPrefix}{NormalizeKeyPart(serviceId)}:*";
+
+    internal static string BuildStaticMapPattern()
+        => $"{StaticMapPrefix}*";
 
     internal static string BuildFeatureServerPattern()
         => $"{FeatureServerPrefix}*";

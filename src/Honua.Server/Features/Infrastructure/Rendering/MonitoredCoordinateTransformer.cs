@@ -19,8 +19,8 @@ internal static class MonitoredCoordinateTransformer
     /// <summary>
     /// Converts a bounding box from one SRID to another with performance monitoring.
     /// </summary>
-    public static SkiaMapRenderer.RenderExtent TransformExtent(
-        SkiaMapRenderer.RenderExtent extent,
+    public static RenderExtent TransformExtent(
+        RenderExtent extent,
         int fromSrid,
         int toSrid,
         IPerformanceMonitor? performanceMonitor = null)
@@ -196,7 +196,7 @@ internal static class MonitoredCoordinateTransformer
     /// Calculates scale denominator with monitoring.
     /// </summary>
     public static double CalculateScaleDenominator(
-        SkiaMapRenderer.RenderExtent extent,
+        RenderExtent extent,
         int imageWidth,
         int dpi,
         int srid,
@@ -240,7 +240,7 @@ internal static class MonitoredCoordinateTransformer
     /// </summary>
     public static double PixelToMapUnits(
         int pixelTolerance,
-        SkiaMapRenderer.RenderExtent mapExtent,
+        RenderExtent mapExtent,
         int imageWidth,
         IPerformanceMonitor? performanceMonitor = null)
     {

@@ -395,6 +395,22 @@ public static class EndpointRegistry
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),
         new("GET", "/ogc/maps/map"),
 
+        // Static Map
+        new("GET", "/static/{serviceId}/{center}/{dimensions}.{format}"),
+        new("GET", "/static/{serviceId}/bbox/{bbox}/{dimensions}.{format}"),
+
+        // PrintingTools (Export Web Map Task)
+        // Note: task metadata (service info) is served via GET /execute?f=json
+        // matching ArcGIS Server behavior. A standalone base URL endpoint cannot be
+        // registered due to ASP.NET Core treating decoded %20 as segment separators.
+        new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
+        new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File"),
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute"),
+
         // WFS 2.0
         new("GET", "/wfs"),
         new("POST", "/wfs"),
