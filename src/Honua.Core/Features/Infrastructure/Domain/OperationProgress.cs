@@ -141,4 +141,4 @@ public enum OperationType
     /// Raster file import operation (GeoTIFF/world-file to PostGIS raster).
     /// </summary>
     RasterImport
- }
+}

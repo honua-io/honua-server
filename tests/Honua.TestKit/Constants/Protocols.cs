@@ -104,6 +104,7 @@ public static class Protocols
     /// </summary>
     public const string Streaming = "Streaming";
 
+    /// <summary>
     /// GeoServices PrintingTools (GP Server) endpoints.
     /// </summary>
     public const string PrintingTools = "PrintingTools";

@@ -188,6 +188,9 @@ public class CoordinateTransformerTests
     {
         CoordinateTransformer.LinearUnitToMeters(3857).Should().Be(1.0);
         CoordinateTransformer.LinearUnitToMeters(32617).Should().Be(1.0);
+        // EPSG 3743-3752 are NAD83(HARN) UTM zones in meters, NOT Alaska ftUS
+        CoordinateTransformer.LinearUnitToMeters(3743).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3752).Should().Be(1.0);
     }
 
     [UnitTest]
@@ -203,15 +206,12 @@ public class CoordinateTransformerTests
         CoordinateTransformer.LinearUnitToMeters(2885).Should().Be(expected);
         // NAD83 / Indiana
         CoordinateTransformer.LinearUnitToMeters(2965).Should().Be(expected);
-        // NAD83 / Louisiana, Illinois, NH, Maine
+        // NAD83 / Arkansas, Illinois, NH, Rhode Island
         CoordinateTransformer.LinearUnitToMeters(3433).Should().Be(expected);
         CoordinateTransformer.LinearUnitToMeters(3438).Should().Be(expected);
         // NAD83(NSRS2007) foot zone
         CoordinateTransformer.LinearUnitToMeters(3451).Should().Be(expected);
         CoordinateTransformer.LinearUnitToMeters(3466).Should().Be(expected);
-        // NAD83(NSRS2007) / Alaska foot zones
-        CoordinateTransformer.LinearUnitToMeters(3743).Should().Be(expected);
-        CoordinateTransformer.LinearUnitToMeters(3752).Should().Be(expected);
         // NAD83(2011) foot zone — range boundaries
         CoordinateTransformer.LinearUnitToMeters(6425).Should().Be(expected);
         CoordinateTransformer.LinearUnitToMeters(6449).Should().Be(expected);
@@ -231,8 +231,6 @@ public class CoordinateTransformerTests
         CoordinateTransformer.LinearUnitToMeters(3439).Should().Be(1.0);
         CoordinateTransformer.LinearUnitToMeters(3450).Should().Be(1.0);
         CoordinateTransformer.LinearUnitToMeters(3467).Should().Be(1.0);
-        CoordinateTransformer.LinearUnitToMeters(3742).Should().Be(1.0);
-        CoordinateTransformer.LinearUnitToMeters(3753).Should().Be(1.0);
         CoordinateTransformer.LinearUnitToMeters(6424).Should().Be(1.0);
         CoordinateTransformer.LinearUnitToMeters(6507).Should().Be(1.0);
     }

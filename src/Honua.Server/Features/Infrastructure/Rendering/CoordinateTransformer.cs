@@ -229,12 +229,10 @@ internal static class CoordinateTransformer
             >= 2867 and <= 2885 => usSurveyFoot,
             // NAD83 / Indiana East & West (ftUS)
             2965 or 2966 => usSurveyFoot,
-            // NAD83 / Louisiana, Illinois, New Hampshire, Maine (ftUS)
+            // NAD83 / Arkansas, Illinois, New Hampshire, Rhode Island (ftUS)
             >= 3433 and <= 3438 => usSurveyFoot,
             // NAD83(NSRS2007) State Plane in US survey feet (EPSG 3451-3466)
             >= 3451 and <= 3466 => usSurveyFoot,
-            // NAD83(NSRS2007) / Alaska zones in US survey feet
-            >= 3743 and <= 3752 => usSurveyFoot,
             // NAD83(2011) State Plane in US survey feet (EPSG 6425-6506)
             >= 6425 and <= 6506 => usSurveyFoot,
             // All other projected CRSs assumed meters (UTM, Web Mercator, etc.)
