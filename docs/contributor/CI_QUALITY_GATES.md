@@ -12,7 +12,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `load-soak-nightly.yml`: nightly load/soak testing.
 - `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
 - `container-security.yml`: container security scanning (nightly).
-- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
+- `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `cite-kml22-conformance.yml`, `cite-gml32-conformance.yml`, `cite-gpkg12-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
 - `openapi-contract-governance.yml`: Admin/control-plane OpenAPI contract validation and breaking-change checks.
 - `control-plane-sdk-governance.yml`: reproducible control-plane SDK generation and release artifact publishing.
 - `proto-wire-governance.yml`: protobuf wire compatibility enforcement via `buf breaking`.
@@ -42,10 +42,17 @@ The CITE regression gates for implemented map/tile standards run on:
 
 | Workflow | Scope | Required baseline |
 |---|---|---|
-| `cite-wms-conformance.yml` | WMS 1.3 (`ets-wms13`) | `failed_tests == 0` and `total_tests > 0` |
-| `cite-wmts-conformance.yml` | WMTS 1.0 (`ets-wmts10`) | `failed_tests == 0` and `total_tests > 0` |
-| `cite-tiles-conformance.yml` | OGC API Tiles 1.0 (`ets-ogcapi-tiles10`) | `failed_tests == 0` and `total_tests > 0` |
-| `ogc-maps-conformance.yml` | OGC API Maps 1.0 (integration conformance suite) | `failed_tests == 0` and `total_tests > 0` |
+| `cite-conformance.yml` | OGC API Features 1.0 (`ets-ogcapi-features10`) | `failed_tests == 0` |
+| `cite-wfs20-conformance.yml` | WFS 2.0 (`ets-wfs20`) | COMPLIANT or PARTIAL with `passed_tests > 0` ¹ |
+| `cite-wms-conformance.yml` | WMS 1.3 (`ets-wms13`) | `results_available` and `failed_tests == 0` |
+| `cite-wmts-conformance.yml` | WMTS 1.0 (`ets-wmts10`) | `results_available` and `failed_tests == 0` |
+| `cite-tiles-conformance.yml` | OGC API Tiles 1.0 (`ets-ogcapi-tiles10`) | `results_available` and `failed_tests == 0` |
+| `ogc-maps-conformance.yml` | OGC API Maps 1.0 (integration conformance suite) | `results_available`, `total_tests > 0`, and `failed_tests == 0` |
+| `cite-kml22-conformance.yml` | KML 2.2 (`ets-kml22`) | `results_available` and `failed_tests == 0` |
+| `cite-gml32-conformance.yml` | GML 3.2 (`ets-gml32`) | `results_available` and `failed_tests == 0` |
+| `cite-gpkg12-conformance.yml` | GeoPackage 1.2 (`ets-gpkg12`) | `results_available` and `failed_tests == 0` |
+
+¹ WFS 2.0 accepts partial compliance during development — the workflow passes when at least one test succeeds, even if some tests fail. NON_COMPLIANT status (zero passed tests) fails the workflow.
 
 ### Temporary failures
 
@@ -64,16 +71,26 @@ Each conformance workflow must publish:
 
 ## Local Conformance Runs
 
+- OGC API Features: `./scripts/run-cite-tests.sh`
+- WFS 2.0: `./scripts/run-cite-wfs20-tests.sh`
 - OGC API Tiles: `./scripts/run-cite-tiles-tests.sh`
 - OGC API Maps: `./scripts/run-ogc-maps-conformance-tests.sh`
 - WMS 1.3: `./scripts/run-cite-wms-tests.sh`
 - WMTS 1.0: `./scripts/run-cite-wmts-tests.sh`
+- KML 2.2: `./scripts/run-cite-kml22-tests.sh`
+- GML 3.2: `./scripts/run-cite-gml32-tests.sh`
+- GeoPackage 1.2: `./scripts/run-cite-gpkg12-tests.sh`
 
 Detailed setup and troubleshooting:
+- `docs/contributor/cite-conformance-testing.md`
+- `docs/contributor/cite-wfs20-conformance-testing.md`
 - `docs/contributor/cite-tiles-conformance-testing.md`
 - `docs/contributor/ogc-maps-conformance-testing.md`
 - `docs/contributor/cite-wms-conformance-testing.md`
 - `docs/contributor/cite-wmts-conformance-testing.md`
+- `docs/contributor/cite-kml22-conformance-testing.md`
+- `docs/contributor/cite-gml32-conformance-testing.md`
+- `docs/contributor/cite-gpkg12-conformance-testing.md`
 
 ## Contract Governance vs Standards Compatibility
 
@@ -98,13 +115,17 @@ These workflows enforce conformance to external geospatial standards. They are n
 | Workflow | What it checks |
 |---|---|
 | `cite-conformance.yml` | OGC API Features CITE conformance |
+| `cite-wfs20-conformance.yml` | WFS 2.0 CITE conformance |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE conformance |
 | `ogc-maps-conformance.yml` | OGC API Maps conformance |
 | `cite-wms-conformance.yml` | WMS 1.3 CITE conformance |
 | `cite-wmts-conformance.yml` | WMTS 1.0 CITE conformance |
+| `cite-kml22-conformance.yml` | KML 2.2 CITE conformance |
+| `cite-gml32-conformance.yml` | GML 3.2 CITE conformance |
+| `cite-gpkg12-conformance.yml` | GeoPackage 1.2 CITE conformance |
 | `geoservices-parity-nightly.yml` | GeoServices REST parity checks (nightly) |
 
-Standards compatibility policy is documented in `docs/user/STANDARDS_APIS.md`.
+Standards compatibility policy is documented in `docs/gis/STANDARDS_APIS.md`.
 
 ## Notes
 

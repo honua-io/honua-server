@@ -28,8 +28,6 @@ Test parameters are configured in `docker/cite-wmts-config/test-params.xml`.
 Workflow: `.github/workflows/cite-wmts-conformance.yml`
 
 Triggered by:
-- Pull requests to `trunk`/`main` that touch WMTS/CITE files
-- Pushes to `trunk`/`main` that touch WMTS/CITE files
 - Weekly schedule (Thursday 06:00 UTC)
 - Manual workflow dispatch
 

@@ -8,11 +8,11 @@ This is the official OGC standard (version 1.0.1) that defines a web API for acc
 1. **Core** - Mandatory base requirements (implemented)
 2. **HTML** - Web browsing and indexing (implemented)
 3. **GeoJSON** - JSON-based feature encoding (implemented)
-4. **GML Simple Features Level 0** - XML-based simple geometry (not claimed)
+4. **GML Simple Features Level 0** - XML-based simple geometry (implemented; CITE-validated at format level)
 5. **GML Simple Features Level 2** - XML with complex properties (not claimed)
 6. **OpenAPI 3.0** - API definition specification (implemented)
 
-Note: GML output for feature responses is supported, but Honua does not claim the GML conformance classes.
+Note: GML SF0 output is advertised via the `gml-sf0` conformance class on `/conformance` and independently CITE-validated at format level. GML SF Level 2 is not claimed.
 
 ## Core API Endpoints
 

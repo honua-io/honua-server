@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-03-18 (ticket #485)
+> Last updated: 2026-03-27 (ticket #625)
 
 ## Tier Definitions
 
@@ -50,6 +50,9 @@ These workflows run on schedule and can be dispatched manually:
 | `cite-wms-conformance.yml` | Wed 6am UTC | OGC WMS CITE conformance |
 | `cite-wmts-conformance.yml` | Thu 6am UTC | OGC WMTS CITE conformance |
 | `ogc-maps-conformance.yml` | Fri 6am UTC | OGC API Maps conformance |
+| `cite-kml22-conformance.yml` | Fri 3am UTC | OGC KML 2.2 CITE conformance |
+| `cite-gml32-conformance.yml` | Sat 6am UTC | OGC GML 3.2 CITE conformance |
+| `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
 | `performance-benchmarks.yml` (full) | Daily 6am UTC | Full benchmark suite + cross-platform |
 | `geoservices-parity-nightly.yml` | Scheduled | GeoServices parity check |
 | `load-soak-nightly.yml` | Scheduled | Load and soak testing |
