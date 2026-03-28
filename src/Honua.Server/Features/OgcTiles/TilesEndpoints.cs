@@ -16,6 +16,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
+using Honua.Server.Features.Tiles;
 using Honua.Server.Features.OgcTiles.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
@@ -231,7 +232,7 @@ internal static class TilesEndpoints
             crs,
             subsetCrs,
             OgcTilesUtilities.AllowedQueryParameters.DatasetTiles,
-            cancellationToken => ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken),
+            cancellationToken => ResolveDatasetLayerAsync(collections, layerCatalog, context, cancellationToken, requireCollection: true),
             layer => layer.SpatialReference.Wkid,
             tileProvider,
             tileOptions,
@@ -518,23 +519,22 @@ internal static class TilesEndpoints
         }
 
         // Vector (MVT) tile path
-        var query = new FeatureQuery
-        {
-            SpatialReferenceSrid = getSpatialReferenceSrid(layer),
-            TemporalFilter = temporalFilter
-        };
+        var query = VectorTileExecution.CreateQuery(
+            getSpatialReferenceSrid(layer),
+            temporalFilter: temporalFilter);
 
-        var tileData = await tileProvider.GetMvtTileAsync(layer.Id, tileCol, tileRow, zoomLevel, query, tileOptionsValue, tileLimits, cancellationToken);
-        if (tileData == null || tileData.Length == 0)
-        {
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            return Results.NoContent();
-        }
-
-        activity?.SetStatus(ActivityStatusCode.Ok);
-        activity?.SetTag("honua.tile.bytes", tileData.Length);
-        return CreateTileResult(tileData, tileOptionsValue.CacheMaxAge);
+        return await VectorTileExecution.ExecuteAsync(
+            context,
+            tileProvider,
+            layer,
+            tileCol,
+            tileRow,
+            zoomLevel,
+            query,
+            tileOptionsValue,
+            tileLimits,
+            cancellationToken,
+            activity);
     }
 
     private static async Task<IResult> HandleRasterTileAsync(
@@ -800,7 +800,7 @@ internal static class TilesEndpoints
             {
                 return (null, StandardErrorHelpers.CreateBadRequest(
                     context,
-                    "The collections parameter is required for dataset tiles."));
+                    "The collections parameter is required for dataset tile resources."));
             }
 
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);

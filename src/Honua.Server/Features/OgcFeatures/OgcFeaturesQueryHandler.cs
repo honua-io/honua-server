@@ -393,14 +393,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 effectiveOffset,
                 queryHasMoreResults);
 
-            var response = new FeatureCollection
-            {
-                Features = features,
-                NumberMatched = queryTotalCount,
-                NumberReturned = features.Length,
-                Links = links,
-                TimeStamp = DateTimeOffset.UtcNow
-            };
+            var response = OgcGeoJsonFeatureBuilder.CreateCollection(features, queryTotalCount, links);
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(filterResult.CrsDefinition.Uri);
 
@@ -652,19 +645,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null)
-    {
-        var geometry = geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        var properties = BuildOgcProperties(feature.Attributes, layer, projectedProperties);
-
-        return new GeoJsonFeature
-        {
-            Type = "Feature",
-            Id = feature.Id,
-            Geometry = geometry,
-            Properties = properties,
-            Links = links
-        };
-    }
+        => OgcGeoJsonFeatureBuilder.Create(
+            feature,
+            layer,
+            axisOrder,
+            geometryServices,
+            projectedProperties,
+            links: links);
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
@@ -673,46 +660,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null)
-    {
-        var properties = BuildOgcProperties(feature.Attributes, layer, projectedProperties);
-
-        return new GeoJsonFeature
-        {
-            Type = "Feature",
-            Id = feature.Id,
-            Geometry = geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder),
-            Properties = properties,
-            Links = links
-        };
-    }
-
-    private static Dictionary<string, object?> BuildOgcProperties(
-        ImmutableDictionary<string, object?> attributes,
-        LayerDefinition layer,
-        ImmutableHashSet<string>? projectedProperties)
-    {
-        var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        var objectIdFieldName = layer.ObjectIdFieldName;
-
-        foreach (var field in layer.AttributeFields)
-        {
-            if (field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-            if (projectedProperties != null && !projectedProperties.Contains(field.Name))
-            {
-                continue;
-            }
-
-            if (attributes.TryGetValue(field.Name, out var value))
-            {
-                properties[field.Name] = value;
-            }
-        }
-
-        return properties;
-    }
+        => OgcGeoJsonFeatureBuilder.Create(
+            feature,
+            layer,
+            axisOrder,
+            geometryServices,
+            projectedProperties,
+            links: links);
 
     private static string[] ResolveCsvFieldNames(
         LayerDefinition layer,

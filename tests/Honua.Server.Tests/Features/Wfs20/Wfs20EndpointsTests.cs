@@ -128,8 +128,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        document.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
+        var features = document.RootElement.GetProperty("features");
+        features.ValueKind.Should().Be(JsonValueKind.Array);
         document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
+
+        var feature = features.EnumerateArray().Single();
+        feature.GetProperty("id").GetString().Should().StartWith("test_layer.");
+        feature.GetProperty("properties").TryGetProperty("id", out _).Should().BeFalse();
+        feature.GetProperty("properties").TryGetProperty("objectid", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -355,7 +361,18 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        document.RootElement.GetProperty("features").GetArrayLength().Should().BeLessOrEqualTo(1);
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().BeLessOrEqualTo(1);
+
+        if (features.GetArrayLength() > 0)
+        {
+            var feature = features[0];
+            feature.GetProperty("id").GetString().Should().StartWith("test_layer.");
+            var properties = feature.GetProperty("properties");
+            properties.GetProperty("name").GetString().Should().NotBeNullOrWhiteSpace();
+            properties.TryGetProperty("id", out _).Should().BeFalse();
+            properties.TryGetProperty("objectid", out _).Should().BeFalse();
+        }
     }
 
     [IntegrationTest]
