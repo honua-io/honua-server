@@ -129,5 +129,10 @@ public enum OperationType
     /// <summary>
     /// Data export operation (Shapefile, GeoPackage, CSV).
     /// </summary>
-    Export
+    Export,
+
+    /// <summary>
+    /// Raster file import operation (GeoTIFF/world-file to PostGIS raster).
+    /// </summary>
+    RasterImport
 }

@@ -70,6 +70,11 @@ internal static class FileUploadSecurity
             "application/vnd.flatgeobuf",
             "application/x-flatgeobuf",
             "application/flatgeobuf",
+            // Raster formats
+            "image/tiff",
+            "image/geotiff",
+            "image/png",
+            "image/jpeg",
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -92,6 +97,9 @@ internal static class FileUploadSecurity
             ".gdb", // File geodatabase (folder)
             ".parquet", ".geoparquet", // GeoParquet
             ".fgb", // FlatGeobuf
+            ".tif", ".tiff", // GeoTIFF raster
+            ".png", ".jpg", ".jpeg", // Raster images (world-file georeferenced)
+            ".pgw", ".jgw", ".tfw", ".wld", // Raster sidecar files (georeferencing); .prj already listed with shapefile components
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

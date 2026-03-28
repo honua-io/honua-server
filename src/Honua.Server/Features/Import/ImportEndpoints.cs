@@ -386,7 +386,7 @@ internal static partial class ImportEndpoints
         }
         finally
         {
-            TryDeleteFile(staged.File?.LocalFilePath);
+            MultipartParsingHelpers.TryDeleteFile(staged.File?.LocalFilePath);
         }
     }
 
@@ -588,7 +588,7 @@ internal static partial class ImportEndpoints
         {
             if (deleteLocalFile)
             {
-                TryDeleteFile(request.File.LocalFilePath);
+                MultipartParsingHelpers.TryDeleteFile(request.File.LocalFilePath);
             }
         }
     }
@@ -709,14 +709,14 @@ internal static partial class ImportEndpoints
                     continue;
                 }
 
-                if (HasFileContentDisposition(contentDisposition))
+                if (MultipartParsingHelpers.HasFileContentDisposition(contentDisposition))
                 {
                     if (stagedFile != null)
                     {
                         return MultipartImportParseResult.Failure("Only one file upload is supported per request.", StatusCodes.Status400BadRequest);
                     }
 
-                    var fileName = ResolveMultipartFileName(contentDisposition);
+                    var fileName = MultipartParsingHelpers.ResolveFileName(contentDisposition);
                     if (string.IsNullOrWhiteSpace(fileName))
                     {
                         return MultipartImportParseResult.Failure("File name is required", StatusCodes.Status400BadRequest);
@@ -733,12 +733,12 @@ internal static partial class ImportEndpoints
                     continue;
                 }
 
-                if (HasFormDataContentDisposition(contentDisposition))
+                if (MultipartParsingHelpers.HasFormDataContentDisposition(contentDisposition))
                 {
                     var fieldName = HeaderUtilities.RemoveQuotes(contentDisposition.Name).Value;
                     if (!string.IsNullOrWhiteSpace(fieldName))
                     {
-                        fields[fieldName] = await ReadMultipartFieldValueAsync(section, cancellationToken);
+                        fields[fieldName] = await MultipartParsingHelpers.ReadSectionStringAsync(section, cancellationToken);
                     }
                 }
             }
@@ -750,13 +750,13 @@ internal static partial class ImportEndpoints
 
             if (!fields.TryGetValue("TableName", out var tableName) || string.IsNullOrWhiteSpace(tableName))
             {
-                TryDeleteFile(stagedFile.LocalFilePath);
+                MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
                 return MultipartImportParseResult.Failure("Table name is required", StatusCodes.Status400BadRequest);
             }
 
             if (!ImportValidationHelpers.IsValidTableName(tableName))
             {
-                TryDeleteFile(stagedFile.LocalFilePath);
+                MultipartParsingHelpers.TryDeleteFile(stagedFile.LocalFilePath);
                 return MultipartImportParseResult.Failure(
                     "Invalid table name. Use only letters, numbers, and underscores.",
                     StatusCodes.Status400BadRequest);
@@ -777,10 +777,8 @@ internal static partial class ImportEndpoints
         }
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
         {
-            TryDeleteFile(stagedFile?.LocalFilePath);
-            return MultipartImportParseResult.Failure(
-                "Invalid multipart import request.",
-                StatusCodes.Status400BadRequest);
+            MultipartParsingHelpers.TryDeleteFile(stagedFile?.LocalFilePath);
+            return MultipartImportParseResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
         }
     }
 
@@ -880,7 +878,7 @@ internal static partial class ImportEndpoints
         var tempFilePath = CreateStagedImportFilePath(safeFileName);
         try
         {
-            var sizeBytes = await CopySourceToTempFileAsync(sourceStream, tempFilePath, maxFileSizeBytes, cancellationToken);
+            var sizeBytes = await MultipartParsingHelpers.CopyStreamToTempFileAsync(sourceStream, tempFilePath, maxFileSizeBytes, cancellationToken);
             var validation = await FileUploadSecurity.ValidateFileAsync(
                 safeFileName,
                 string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
@@ -910,64 +908,9 @@ internal static partial class ImportEndpoints
         }
         catch
         {
-            TryDeleteFile(tempFilePath);
+            MultipartParsingHelpers.TryDeleteFile(tempFilePath);
             throw;
         }
-    }
-
-    private static async Task<long> CopySourceToTempFileAsync(
-        Stream sourceStream,
-        string tempFilePath,
-        long maxFileSizeBytes,
-        CancellationToken cancellationToken)
-    {
-        var totalBytes = 0L;
-        Directory.CreateDirectory(Path.GetDirectoryName(tempFilePath)!);
-        await using var targetStream = new FileStream(tempFilePath, new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-            BufferSize = 64 * 1024,
-            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
-        });
-
-        var buffer = new byte[64 * 1024];
-        while (true)
-        {
-            var bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (bytesRead == 0)
-            {
-                break;
-            }
-
-            totalBytes += bytesRead;
-            if (totalBytes > maxFileSizeBytes)
-            {
-                throw new InvalidDataException($"File size exceeds maximum allowed size of {maxFileSizeBytes:N0} bytes.");
-            }
-
-            await targetStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-        }
-
-        return totalBytes;
-    }
-
-    private static async Task<string> ReadMultipartFieldValueAsync(MultipartSection section, CancellationToken cancellationToken)
-    {
-        using var reader = new StreamReader(section.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        return await reader.ReadToEndAsync(cancellationToken);
-    }
-
-    private static string? ResolveMultipartFileName(ContentDispositionHeaderValue contentDisposition)
-    {
-        var fileNameStar = HeaderUtilities.RemoveQuotes(contentDisposition.FileNameStar).Value;
-        if (!string.IsNullOrWhiteSpace(fileNameStar))
-        {
-            return fileNameStar;
-        }
-
-        return HeaderUtilities.RemoveQuotes(contentDisposition.FileName).Value;
     }
 
     private static string? ResolveRemoteFileName(
@@ -994,16 +937,6 @@ internal static partial class ImportEndpoints
         var fileName = Path.GetFileName(sourceUri.AbsolutePath);
         return string.IsNullOrWhiteSpace(fileName) ? null : WebUtility.UrlDecode(fileName);
     }
-
-    private static bool HasFileContentDisposition(ContentDispositionHeaderValue contentDisposition)
-        => contentDisposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase) &&
-           (!StringSegment.IsNullOrEmpty(contentDisposition.FileName) ||
-            !StringSegment.IsNullOrEmpty(contentDisposition.FileNameStar));
-
-    private static bool HasFormDataContentDisposition(ContentDispositionHeaderValue contentDisposition)
-        => contentDisposition.DispositionType.Equals("form-data", StringComparison.OrdinalIgnoreCase) &&
-           StringSegment.IsNullOrEmpty(contentDisposition.FileName) &&
-           StringSegment.IsNullOrEmpty(contentDisposition.FileNameStar);
 
     private static int? TryParseNullableInt(Dictionary<string, string> fields, string fieldName)
         => fields.TryGetValue(fieldName, out var value) &&
@@ -1034,26 +967,6 @@ internal static partial class ImportEndpoints
             BufferSize = bufferSize,
             Options = FileOptions.Asynchronous | FileOptions.SequentialScan
         });
-
-    private static void TryDeleteFile(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch
-        {
-            // Best-effort cleanup.
-        }
-    }
 
 
     /// <summary>
