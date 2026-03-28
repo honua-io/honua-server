@@ -4,6 +4,8 @@
 using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.AutoDocs;
+using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -144,6 +146,10 @@ internal static class ServiceCollectionExtensions
         // Register topology validator for geometry operations
         services.AddScoped<IGeometryTopologyValidator, PostgresGeometryTopologyValidator>();
 
+        // Register anomaly detection
+        services.AddScoped<Core.Features.AnomalyDetection.Abstractions.IAnomalyAnalyzer,
+            Honua.Postgres.Features.AnomalyDetection.PostgresAnomalyAnalyzer>();
+
         // Register geometry operation service for buffer/simplify/project
         services.AddScoped<IGeometryOperationService, PostgresGeometryOperationService>();
 
@@ -256,6 +262,10 @@ internal static class ServiceCollectionExtensions
 
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
+
+        // Register Core-level services via their own extensions
+        services.AddImportSuggestionsCore();
+        services.AddAutoDocsCore();
 
         // Register GeoServer REST client for GeoServer migration imports
         services.AddHttpClient<GeoServerRestClient>()
