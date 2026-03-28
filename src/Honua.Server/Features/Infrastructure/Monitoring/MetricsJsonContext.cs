@@ -31,6 +31,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 [JsonSerializable(typeof(RecentErrorsResponse))]
 [JsonSerializable(typeof(ObservabilityStatusResponse))]
 [JsonSerializable(typeof(MigrationObservabilityResponse))]
+[JsonSerializable(typeof(StreamingMetrics))]
 internal sealed partial class MetricsJsonContext : JsonSerializerContext
 {
 }

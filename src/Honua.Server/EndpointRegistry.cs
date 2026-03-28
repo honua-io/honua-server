@@ -182,6 +182,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/streaming/subscribers"),
         new("GET", "/api/v1/admin/operations/streaming/alerts"),
         new("DELETE", "/api/v1/admin/operations/streaming/subscribers/{subscriberId}"),
+
+        // v1 feature-change streaming endpoints (#501)
+        new("GET", "/api/v1/streaming/features"),
+        new("GET", "/api/v1/admin/streaming/features/sessions"),
+        new("DELETE", "/api/v1/admin/streaming/features/sessions/{sessionId}"),
+
         new("GET", "/api/v1/admin/operations/geocoding/providers"),
         new("GET", "/api/v1/admin/operations/geocoding/configuration"),
 
@@ -208,6 +214,7 @@ public static class EndpointRegistry
         new("GET", "/api/v1/metrics/database"),
         new("GET", "/api/v1/metrics/cache"),
         new("GET", "/api/v1/metrics/memory"),
+        new("GET", "/api/v1/metrics/streaming"),
 
         new("POST", "/csp-violation-report"),
 

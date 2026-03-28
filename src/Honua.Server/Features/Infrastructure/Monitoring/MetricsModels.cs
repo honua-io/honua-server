@@ -259,6 +259,42 @@ public sealed class CacheMetrics
 }
 
 /// <summary>
+/// Streaming connection metrics for monitoring active WebSocket and SSE sessions.
+/// </summary>
+public sealed class StreamingMetrics
+{
+    /// <summary>
+    /// Timestamp when metrics were collected.
+    /// </summary>
+    public required DateTimeOffset Timestamp { get; init; }
+
+    /// <summary>
+    /// Total number of active streaming connections.
+    /// </summary>
+    public required int ActiveConnections { get; init; }
+
+    /// <summary>
+    /// Number of active WebSocket connections.
+    /// </summary>
+    public required int WebSocketConnections { get; init; }
+
+    /// <summary>
+    /// Number of active SSE connections.
+    /// </summary>
+    public required int SseConnections { get; init; }
+
+    /// <summary>
+    /// Total slow-consumer disconnections since server startup.
+    /// </summary>
+    public required long SlowConsumerDrops { get; init; }
+
+    /// <summary>
+    /// Total heartbeat frames sent since server startup.
+    /// </summary>
+    public required long HeartbeatsSent { get; init; }
+}
+
+/// <summary>
 /// Performance metrics for a specific cache type.
 /// </summary>
 public sealed class CacheTypeMetrics

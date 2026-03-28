@@ -36,6 +36,7 @@ using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Caching.Distributed;
@@ -406,10 +407,19 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatu
         sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>>(),
         sp.GetService<IDistributedCache>(),
         sp.GetService<IConnectionMultiplexer>()));
+// Register feature-stream session manager and streaming publisher (#501)
+builder.Services.AddOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>()
+    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Streaming.FeatureStreamOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>,
+    Honua.Server.Features.Streaming.FeatureStreamOptionsValidator>();
+builder.Services.AddSingleton<Honua.Server.Features.Streaming.FeatureStreamSessionManager>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventPublisher>(sp =>
-    new Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher(
+    new Honua.Server.Features.Streaming.FeatureStreamPublisher(
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventPublisher>>()));
+        sp.GetRequiredService<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamPublisher>>()));
+builder.Services.AddHostedService<Honua.Server.Features.Streaming.FeatureStreamHeartbeatService>();
 builder.Services.AddHttpClient("feature-change-webhook")
     .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHostedService(sp =>
@@ -837,6 +847,9 @@ app.MapMetadataResourceEndpoints();
 app.MapCacheOperationsEndpoints();
 app.MapStreamingOperationsEndpoints();
 app.MapGeocodingOperationsEndpoints();
+
+// Configure feature-change streaming transport (#501)
+app.MapFeatureStreamEndpoints();
 
 // Configure security endpoints (CSP violation reporting)
 app.MapCspViolationReportEndpoint();

@@ -127,6 +127,9 @@ public static class Operations
     public const string QueryDateBins = "QueryDateBins";
     public const string QueryBins = "QueryBins";
 
+    // Streaming Operations
+    public const string Streaming = "Streaming";
+
     // Test Quality Operations
     public const string TestQuality = "TestQuality";
     public const string FuzzTesting = "FuzzTesting";

@@ -61,4 +61,13 @@ internal static partial class MonitoringLog
         Level = LogLevel.Error,
         Message = "Failed to retrieve query cache statistics")]
     public static partial void QueryCacheStatisticsFailed(ILogger logger, Exception exception);
+
+    /// <summary>
+    /// Logs when streaming metrics retrieval fails.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4306,
+        Level = LogLevel.Error,
+        Message = "Failed to retrieve streaming metrics")]
+    public static partial void StreamingMetricsFailed(ILogger logger, Exception exception);
 }

@@ -238,6 +238,9 @@ public static class HonuaTelemetry
 
         /// <summary>OGC Web Feature Service 2.0.</summary>
         public const string Wfs20 = "WFS-2.0";
+
+        /// <summary>Real-time feature-change streaming (WebSocket/SSE).</summary>
+        public const string Streaming = "Streaming";
     }
 
     /// <summary>
