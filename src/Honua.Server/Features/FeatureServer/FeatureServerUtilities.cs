@@ -193,6 +193,19 @@ internal static partial class FeatureServerEndpoints
 
         public static readonly FrozenSet<string> Tiles =
             new[] { "where" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> H3Tiles =
+            new[] { "where", "resolution" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        public static readonly FrozenSet<string> QueryH3 = new[]
+            {
+                "resolution",
+                "where",
+                "kRingDistance",
+                "outStatistics",
+                "f"
+            }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     internal static FrozenSet<string> FeatureServerQueryAllowedParameters => AllowedQueryParameters.Query;

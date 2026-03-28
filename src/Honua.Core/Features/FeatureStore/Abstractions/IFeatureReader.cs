@@ -142,4 +142,19 @@ public interface IFeatureReader
         FeatureQuery query,
         BinDefinition binDefinition,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries features aggregated by H3 hexagonal grid cells at a given resolution.
+    /// Returns one row per occupied cell with cell index, boundary geometry, and statistics.
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="query">Query specification including filters</param>
+    /// <param name="h3Query">H3 aggregation parameters (resolution, polyfill, k-ring, statistics)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Rows containing H3 cell index, boundary geometry as GeoJSON, and aggregate values</returns>
+    Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
+        int layerId,
+        FeatureQuery query,
+        H3AggregationQuery h3Query,
+        CancellationToken cancellationToken = default);
 }

@@ -126,6 +126,7 @@ public static class Operations
     public const string QueryTopFeatures = "QueryTopFeatures";
     public const string QueryDateBins = "QueryDateBins";
     public const string QueryBins = "QueryBins";
+    public const string QueryH3 = "QueryH3";
 
     // Streaming Operations
     public const string Streaming = "Streaming";

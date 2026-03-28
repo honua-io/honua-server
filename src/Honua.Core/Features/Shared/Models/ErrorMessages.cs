@@ -161,6 +161,8 @@ MaxOffset = "MaxOffset must be between 1,000 and 1,000,000";
         public const string         /// <inheritdoc/>
 QueryTimeout = "Query.QueryTimeout must be between 5 seconds and 2 minutes";
         public const string         /// <inheritdoc/>
+MaxH3CellsPerQuery = "MaxH3CellsPerQuery must be between 100 and 1,000,000";
+        public const string         /// <inheritdoc/>
 MaxVerticesPerGeometry = "MaxVerticesPerGeometry must be between 1,000 and 1,000,000";
         public const string         /// <inheritdoc/>
 MaxGeometrySize = "MaxGeometrySize must be between 1MB and 100MB";

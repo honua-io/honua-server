@@ -29,6 +29,9 @@ internal static partial class OgcFeaturesEndpoints
         // Register features/items CRUD endpoints
         endpoints.MapFeaturesEndpoints();
 
+        // Register H3 hexagonal grid aggregation endpoints
+        endpoints.MapH3Endpoints();
+
         return endpoints;
     }
 

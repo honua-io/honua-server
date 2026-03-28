@@ -173,4 +173,28 @@ internal interface IFeatureQueryBuilder
         TileOptions tileOptions,
         TileLimits tileLimits,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds an H3 hexagonal grid aggregation query that groups features into
+    /// H3 cells and computes statistics per cell.
+    /// </summary>
+    ParameterizedQuery BuildH3AggregationQuery(
+        int layerId,
+        FeatureQuery query,
+        H3AggregationQuery h3Query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
+    /// Builds an MVT tile query that renders H3 cell boundaries as vector tile features.
+    /// </summary>
+    ParameterizedQuery BuildH3TileQuery(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        int resolution,
+        FeatureQuery? query,
+        TileOptions tileOptions,
+        TileLimits tileLimits,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 }

@@ -33,4 +33,28 @@ public interface ITileProvider
         Honua.Core.Features.Tiles.TileOptions tileOptions,
         TileLimits tileLimits,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates an MVT tile containing H3 hexagonal cell boundaries with aggregated feature counts.
+    /// </summary>
+    /// <param name="layerId">Layer identifier</param>
+    /// <param name="x">Tile X coordinate</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="z">Zoom level</param>
+    /// <param name="resolution">H3 resolution level (0–15)</param>
+    /// <param name="query">Optional query specification for filtering</param>
+    /// <param name="tileOptions">Tile rendering options</param>
+    /// <param name="tileLimits">Tile generation limits</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>MVT tile data as byte array, null if no features in tile</returns>
+    Task<byte[]?> GetH3MvtTileAsync(
+        int layerId,
+        int x,
+        int y,
+        int z,
+        int resolution,
+        FeatureQuery? query,
+        Honua.Core.Features.Tiles.TileOptions tileOptions,
+        TileLimits tileLimits,
+        CancellationToken cancellationToken = default);
 }
