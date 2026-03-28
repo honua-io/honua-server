@@ -62,7 +62,7 @@ internal static class GeoJsonFeatureBaseBuilder
         LayerDefinition layer,
         GeoJsonFeatureBuildOptions options)
     {
-        var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
         var objectIdFieldName = layer.ObjectIdFieldName;
         var projectedProperties = options.ProjectedProperties;
         var shouldProjectAll = projectedProperties is null;
@@ -97,18 +97,18 @@ internal static class GeoJsonFeatureBaseBuilder
         {
             foreach (var (fieldName, value) in attributes)
             {
-                if (properties.ContainsKey(fieldName))
-                {
-                    continue;
-                }
-
                 if (fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (shouldIncludeObjectId)
+                    if (shouldIncludeObjectId && !properties.ContainsKey(fieldName))
                     {
                         properties[fieldName] = value ?? featureId;
                     }
 
+                    continue;
+                }
+
+                if (ContainsKeyIgnoreCase(properties, fieldName))
+                {
                     continue;
                 }
 
@@ -129,7 +129,7 @@ internal static class GeoJsonFeatureBaseBuilder
         if (options.IncludeObjectIdAlias &&
             objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
             !properties.ContainsKey("OBJECTID") &&
-            properties.TryGetValue(objectIdFieldName, out var objectIdValue))
+            TryGetValueIgnoreCase(properties, objectIdFieldName, out var objectIdValue))
         {
             properties["OBJECTID"] = objectIdValue;
         }
@@ -142,17 +142,40 @@ internal static class GeoJsonFeatureBaseBuilder
         string objectIdFieldName,
         long featureId)
     {
-        if (properties.TryGetValue(objectIdFieldName, out var objectId))
+        if (TryGetValueIgnoreCase(properties, objectIdFieldName, out var objectId))
         {
             return NormalizeIdValue(objectId) ?? featureId;
         }
 
-        if (properties.TryGetValue("id", out var idValue))
+        if (TryGetValueIgnoreCase(properties, "id", out var idValue))
         {
             return NormalizeIdValue(idValue) ?? featureId;
         }
 
         return featureId;
+    }
+
+    private static bool ContainsKeyIgnoreCase(
+        IReadOnlyDictionary<string, object?> properties,
+        string key)
+        => TryGetValueIgnoreCase(properties, key, out _);
+
+    private static bool TryGetValueIgnoreCase(
+        IReadOnlyDictionary<string, object?> properties,
+        string key,
+        out object? value)
+    {
+        foreach (var (candidateKey, candidateValue) in properties)
+        {
+            if (candidateKey.Equals(key, StringComparison.OrdinalIgnoreCase))
+            {
+                value = candidateValue;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
     }
 
     private static object? NormalizeIdValue(object? value)
