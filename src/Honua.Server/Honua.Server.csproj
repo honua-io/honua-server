@@ -31,7 +31,7 @@
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference
       Include="..\Honua.Admin\Honua.Admin.csproj"
-      Condition="'$(HonuaSkipAdminClientForAotVerification)' != 'true'"
+      Condition="'$(HonuaSkipAdminClientForAotVerification)' != 'true' and '$(HonuaIncludeAdminUi)' != 'false'"
       GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
   </ItemGroup>
 
