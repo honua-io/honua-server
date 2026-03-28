@@ -218,6 +218,19 @@ internal static class OperationsProgressEndpoints
         // operations (e.g. print jobs) mitigate this by re-asserting Completed
         // after their initial write.  A proper fix is compare-and-set semantics
         // in IUniversalProgressStore (tracked as follow-on).
+        //
+        // Narrow the TOCTOU window: re-read one final time immediately before
+        // writing so a worker Completed write that landed between our earlier
+        // re-read and this point is detected.
+        var preWriteProgress = await progressStore.GetProgressAsync(operationId, cancellationToken);
+        if (preWriteProgress?.Status is OperationStatus.Completed or OperationStatus.Failed)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                "Conflict",
+                $"Operation '{operationId}' reached terminal state '{preWriteProgress.Status}' before cancellation could be applied");
+        }
+
         var cancelledProgress = latestCancellable.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user");
         await progressStore.SetProgressAsync(operationId, cancelledProgress,
             TimeSpan.FromHours(24), cancellationToken);

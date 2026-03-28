@@ -208,6 +208,12 @@ internal static class CoordinateTransformer
     /// Returns the meters-per-linear-unit factor for common projected CRS codes.
     /// Falls back to 1.0 (meters) for unrecognized SRIDs.
     /// </summary>
+    /// <remarks>
+    /// This is a best-effort static lookup covering common US State Plane foot zones.
+    /// The canonical source is the EPSG registry (<c>spatial_ref_sys</c> in PostGIS).
+    /// A future enhancement could resolve the unit from the database when available;
+    /// this static fallback keeps the rendering path free of I/O.
+    /// </remarks>
     internal static double LinearUnitToMeters(int srid)
     {
         // US Survey Foot = 1200/3937 meters (used by NAD83 State Plane zones)
@@ -218,11 +224,19 @@ internal static class CoordinateTransformer
             // NAD83 US State Plane zones in US survey feet (EPSG 2222-2281)
             >= 2222 and <= 2281 => usSurveyFoot,
             // NAD83(HARN) US State Plane in US survey feet (EPSG 2867-2885)
+            // Note: HARN foot zones extend beyond this sub-range within 2759-2983;
+            // additional HARN foot codes outside this window fall back to 1.0 (meters).
             >= 2867 and <= 2885 => usSurveyFoot,
             // NAD83 / Indiana East & West (ftUS)
             2965 or 2966 => usSurveyFoot,
-            // NAD83 / Louisiana, Maine, South Dakota (ftUS)
+            // NAD83 / Louisiana, Illinois, New Hampshire, Maine (ftUS)
             >= 3433 and <= 3438 => usSurveyFoot,
+            // NAD83(NSRS2007) State Plane in US survey feet (EPSG 3451-3466)
+            >= 3451 and <= 3466 => usSurveyFoot,
+            // NAD83(NSRS2007) / Alaska zones in US survey feet
+            >= 3743 and <= 3752 => usSurveyFoot,
+            // NAD83(2011) State Plane in US survey feet (EPSG 6425-6506)
+            >= 6425 and <= 6506 => usSurveyFoot,
             // All other projected CRSs assumed meters (UTM, Web Mercator, etc.)
             _ => 1.0
         };

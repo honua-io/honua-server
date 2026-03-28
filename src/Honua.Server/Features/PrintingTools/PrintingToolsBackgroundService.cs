@@ -159,10 +159,12 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             // the temp-file store or the Completed state write, which would leave
             // a finished job without a downloadable result.
             //
-            // The admin cancel endpoint delegates terminal-state ownership to this
-            // worker (via IJobCancellationNotifier) rather than writing Cancelled
-            // directly, so there is no need to re-check for a Cancelled state after
-            // the file is stored — the result is authoritative.
+            // When the admin cancel endpoint's Cancel() call reaches the CTS
+            // (workerOwnsTerminalState = true), terminal-state ownership is
+            // delegated to this worker.  However, when Cancel() returns false
+            // (job not yet dequeued, or CTS registration gap), the admin
+            // endpoint's fallback path may write Cancelled directly.  The
+            // post-write guard below re-asserts Completed if that race occurs.
             string downloadUrl;
             try
             {
@@ -204,6 +206,18 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             // stored, Completed is the authoritative terminal state.
             var postWrite = await progressStore.GetProgressAsync(job.JobId, CancellationToken.None);
             if (postWrite is PrintProgress { Status: not OperationStatus.Completed })
+            {
+                await progressStore.SetProgressAsync(job.JobId, completed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+            }
+
+            // Second guard: yield to let any in-flight admin-cancel write settle,
+            // then re-assert Completed if it was overwritten.  Together with the
+            // pre-write check added to the admin cancel endpoint, this makes the
+            // race window vanishingly small (formal closure requires CAS semantics
+            // in IUniversalProgressStore, tracked as follow-on).
+            await Task.Yield();
+            var finalGuard = await progressStore.GetProgressAsync(job.JobId, CancellationToken.None);
+            if (finalGuard is PrintProgress { Status: not OperationStatus.Completed })
             {
                 await progressStore.SetProgressAsync(job.JobId, completed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
             }

@@ -194,8 +194,47 @@ public class CoordinateTransformerTests
     public void LinearUnitToMeters_UsSurveyFootSrid_ReturnsConversionFactor()
     {
         var expected = 1200.0 / 3937.0;
+        // NAD83 State Plane (ftUS) range boundaries
+        CoordinateTransformer.LinearUnitToMeters(2222).Should().Be(expected);
         CoordinateTransformer.LinearUnitToMeters(2229).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(2281).Should().Be(expected);
+        // NAD83(HARN) foot zone
+        CoordinateTransformer.LinearUnitToMeters(2867).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(2885).Should().Be(expected);
+        // NAD83 / Indiana
         CoordinateTransformer.LinearUnitToMeters(2965).Should().Be(expected);
+        // NAD83 / Louisiana, Illinois, NH, Maine
+        CoordinateTransformer.LinearUnitToMeters(3433).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(3438).Should().Be(expected);
+        // NAD83(NSRS2007) foot zone
+        CoordinateTransformer.LinearUnitToMeters(3451).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(3466).Should().Be(expected);
+        // NAD83(NSRS2007) / Alaska foot zones
+        CoordinateTransformer.LinearUnitToMeters(3743).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(3752).Should().Be(expected);
+        // NAD83(2011) foot zone — range boundaries
+        CoordinateTransformer.LinearUnitToMeters(6425).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(6449).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(6480).Should().Be(expected);
+        CoordinateTransformer.LinearUnitToMeters(6506).Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void LinearUnitToMeters_BoundaryExclusions_ReturnMeters()
+    {
+        // Codes just outside foot ranges should fall back to 1.0 (meters)
+        CoordinateTransformer.LinearUnitToMeters(2221).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(2282).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(2866).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(2886).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3432).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3439).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3450).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3467).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3742).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(3753).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(6424).Should().Be(1.0);
+        CoordinateTransformer.LinearUnitToMeters(6507).Should().Be(1.0);
     }
 
     [UnitTest]
