@@ -403,6 +403,7 @@ builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Ho
     {
         FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
     }));
+builder.Services.AddSingleton<Honua.Server.Features.PrintingTools.PrintRenderConcurrencyGate>();
 builder.Services.AddSingleton<Honua.Server.Features.PrintingTools.PrintJobCancellationTokens>();
 builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IJobCancellationNotifier>(
     sp => sp.GetRequiredService<Honua.Server.Features.PrintingTools.PrintJobCancellationTokens>());

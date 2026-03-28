@@ -132,12 +132,12 @@ public enum OperationType
     Export,
 
     /// <summary>
-    /// Print/map composition operation (PDF, PNG, JPG).
-    /// </summary>
-    Print,
-
-    /// <summary>
     /// Raster file import operation (GeoTIFF/world-file to PostGIS raster).
     /// </summary>
-    RasterImport
+    RasterImport,
+
+    /// <summary>
+    /// Print/map composition operation (PDF, PNG, JPG).
+    /// </summary>
+    Print
 }

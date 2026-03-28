@@ -285,6 +285,18 @@ internal static class PrintingToolsEndpoints
         if (error is not null) return error;
         var req = validated!.Value;
 
+        // Acquire a concurrency lease to bound Skia surface memory (parity with
+        // RasterRenderCapacityLimiter on the MapServer export/tile paths).
+        var concurrencyGate = context.RequestServices.GetRequiredService<PrintRenderConcurrencyGate>();
+        await using var renderLease = await concurrencyGate.TryAcquireAsync(cancellationToken);
+        if (renderLease is null)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                PrintRenderConcurrencyGate.CapacityExceededMessage,
+                PrintRenderConcurrencyGate.RetryAfterSeconds);
+        }
+
         PrintingToolsLog.ExecuteRequested(req.Logger, req.TemplateName, req.Format, req.Dpi);
         var sw = Stopwatch.StartNew();
 
