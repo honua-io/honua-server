@@ -134,8 +134,7 @@ public enum OperationType
     /// <summary>
     /// Print/map composition operation (PDF, PNG, JPG).
     /// </summary>
-    Print
-,
+    Print,
 
     /// <summary>
     /// Raster file import operation (GeoTIFF/world-file to PostGIS raster).
