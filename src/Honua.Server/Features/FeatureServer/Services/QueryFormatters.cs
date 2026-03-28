@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.FeatureServer.Models;
+using Honua.Server.Features.Infrastructure.GeoJson;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
@@ -216,9 +217,10 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = layer.ObjectIdFieldName;
+        var projectedProperties = CreateProjectedProperties(outFields);
+        var buildOptions = CreateFeatureServerGeoJsonBuildOptions(layer, projectedProperties);
         GeoJsonFeature[] features = result.Items
-            .Select(f => ConvertToGeoJsonFeature(f, returnGeometry, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
+            .Select(f => ConvertToGeoJsonFeature(f, layer, returnGeometry, buildOptions, returnZ, returnM, geometryLimits))
             .ToArray();
 
         var exceededTransferLimit = result.HasMoreResults;
@@ -272,49 +274,16 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// </summary>
     private static GeoJsonFeature ConvertToGeoJsonFeature(
         Feature feature,
+        LayerDefinition layer,
         bool returnGeometry,
-        string[]? outFields,
-        string objectIdFieldName,
+        GeoJsonFeatureBuildOptions buildOptions,
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits)
     {
-        Dictionary<string, object?> properties = FilterAttributes(feature.Attributes, outFields, objectIdFieldName, feature.Id);
-
-        // Extract the ID from attributes if available
-        // Normalize numeric values to ensure type consistency
-        object? id = null;
-        if (properties.TryGetValue(FieldNames.ObjectId, out object? objectId))
-        {
-            // Normalize numeric types to avoid JsonElement vs primitive mismatches
-            id = objectId switch
-            {
-                System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.Number =>
-                    jsonElement.TryGetInt64(out long longVal) ? longVal : (object)jsonElement.GetDouble(),
-                _ => objectId
-            };
-        }
-        else if (properties.TryGetValue("id", out object? idValue))
-        {
-            id = idValue switch
-            {
-                System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.Number =>
-                    jsonElement.TryGetInt64(out long longVal) ? longVal : (object)jsonElement.GetDouble(),
-                _ => idValue
-            };
-        }
-
-        if (id == null)
-        {
-            id = feature.Id;
-        }
-
-        return new GeoJsonFeature
-        {
-            Properties = properties,
-            Geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry, geometryLimits, returnZ, returnM) : null,
-            Id = id
-        };
+        var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, layer, buildOptions);
+        var geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry, geometryLimits, returnZ, returnM) : null;
+        return featureBase.ToGeoJsonFeature(geometry);
     }
 
     /// <summary>
@@ -375,6 +344,29 @@ internal sealed class QueryFormatter : IQueryFormatter
             target["OBJECTID"] = objectIdValue;
         }
     }
+
+    internal static IReadOnlySet<string>? CreateProjectedProperties(string[]? outFields)
+    {
+        if (outFields == null || outFields.Length == 0)
+        {
+            return null;
+        }
+
+        return outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal)
+            ? null
+            : outFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static GeoJsonFeatureBuildOptions CreateFeatureServerGeoJsonBuildOptions(
+        LayerDefinition layer,
+        IReadOnlySet<string>? projectedProperties)
+        => new(
+            ProjectedProperties: projectedProperties,
+            IncludeObjectIdProperty: true,
+            IncludeObjectIdAlias: projectedProperties is null &&
+                                  layer.ObjectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase),
+            IncludeAdditionalAttributes: true,
+            ResolveIdFromProperties: true);
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         LayerDefinition layer,
@@ -785,8 +777,8 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = layer.ObjectIdFieldName;
-        var outFieldLookup = CreateFieldLookup(outFields);
+        var projectedProperties = QueryFormatter.CreateProjectedProperties(outFields);
+        var buildOptions = QueryFormatter.CreateFeatureServerGeoJsonBuildOptions(layer, projectedProperties);
 
         // Start GeoJSON FeatureCollection
         writer.WriteStartObject();
@@ -807,9 +799,9 @@ internal sealed class StreamingQueryFormatter
             await WriteGeoJsonFeatureAsync(
                 writer,
                 feature,
+                layer,
                 returnGeometry,
-                outFieldLookup,
-                objectIdFieldName,
+                buildOptions,
                 returnZ,
                 returnM,
                 effectiveLimits,
@@ -918,16 +910,20 @@ internal sealed class StreamingQueryFormatter
     private static async Task WriteGeoJsonFeatureAsync(
         Utf8JsonWriter writer,
         Feature feature,
+        LayerDefinition layer,
         bool returnGeometry,
-        HashSet<string>? outFieldLookup,
-        string objectIdFieldName,
+        GeoJsonFeatureBuildOptions buildOptions,
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits,
         CancellationToken cancellationToken)
     {
+        var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, layer, buildOptions);
+
         writer.WriteStartObject();
         writer.WriteString("type", "Feature");
+        writer.WritePropertyName("id");
+        JsonSerializer.Serialize(writer, featureBase.Id);
 
         // Write geometry if requested and available
         if (returnGeometry && feature.Geometry != null)
@@ -954,21 +950,9 @@ internal sealed class StreamingQueryFormatter
 
         // Write properties
         writer.WriteStartObject("properties");
-
-        if (feature.Attributes != null)
+        foreach (var kvp in featureBase.Properties)
         {
-            foreach (var kvp in feature.Attributes)
-            {
-                var fieldName = kvp.Key;
-
-                // Skip fields not in outFields if specified
-                if (outFieldLookup != null && !outFieldLookup.Contains(fieldName))
-                {
-                    continue;
-                }
-
-                await WriteJsonValueAsync(writer, fieldName, kvp.Value, cancellationToken);
-            }
+            await WriteJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
         }
 
         writer.WriteEndObject(); // End properties

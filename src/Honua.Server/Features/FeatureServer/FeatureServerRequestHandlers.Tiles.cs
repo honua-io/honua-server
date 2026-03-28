@@ -10,6 +10,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
@@ -86,16 +87,16 @@ internal static partial class FeatureServerEndpoints
                 sqlFilter = translationResult.SqlFilter;
             }
         }
-        var query = new FeatureQuery
-        {
-            Where = where,
-            SqlFilter = sqlFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
-        };
+        var query = VectorTileExecution.CreateQuery(
+            layer.SpatialReference.ToSrid(),
+            where,
+            sqlFilter);
 
         var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
-        var tileData = await tileProvider.GetMvtTileAsync(
-            layerId,
+        return await VectorTileExecution.ExecuteAsync(
+            context,
+            tileProvider,
+            layer,
             x,
             y,
             z,
@@ -103,13 +104,5 @@ internal static partial class FeatureServerEndpoints
             tileOptions,
             tileLimits,
             cancellationToken);
-
-        if (tileData == null || tileData.Length == 0)
-        {
-            return Results.NoContent();
-        }
-
-        context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptions.CacheMaxAge}";
-        return Results.Bytes(tileData, "application/vnd.mapbox-vector-tile");
     }
 }

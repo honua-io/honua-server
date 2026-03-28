@@ -1360,17 +1360,20 @@ internal sealed class Wfs20Handler
 
         foreach (var plan in planSet.Plans)
         {
+            var projectedProperties = GetProjectedProperties(plan.Query);
+
             if (geoJsonFeatureStore is not null)
             {
                 var result = await geoJsonFeatureStore.QueryGeoJsonAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
                 foreach (var feature in result.Items)
                 {
-                    features.Add(new GeoJsonFeature
-                    {
-                        Id = BuildFeatureId(plan.Descriptor, feature.Id),
-                        Geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, AxisOrder.EastNorth),
-                        Properties = BuildGeoJsonProperties(feature.Attributes, plan.Descriptor.Layer, plan.Query)
-                    });
+                    features.Add(OgcGeoJsonFeatureBuilder.Create(
+                        feature,
+                        plan.Descriptor.Layer,
+                        AxisOrder.EastNorth,
+                        _geometryServices,
+                        projectedProperties,
+                        featureId => BuildFeatureId(plan.Descriptor, featureId)));
                 }
 
                 continue;
@@ -1379,23 +1382,17 @@ internal sealed class Wfs20Handler
             var fallbackResult = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
             foreach (var feature in fallbackResult.Items)
             {
-                var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, AxisOrder.EastNorth);
-                features.Add(new GeoJsonFeature
-                {
-                    Id = BuildFeatureId(plan.Descriptor, feature.Id),
-                    Geometry = geometry,
-                    Properties = BuildGeoJsonProperties(feature.Attributes, plan.Descriptor.Layer, plan.Query)
-                });
+                features.Add(OgcGeoJsonFeatureBuilder.Create(
+                    feature,
+                    plan.Descriptor.Layer,
+                    AxisOrder.EastNorth,
+                    _geometryServices,
+                    projectedProperties,
+                    featureId => BuildFeatureId(plan.Descriptor, featureId)));
             }
         }
 
-        var payload = new FeatureCollection
-        {
-            Features = features.ToArray(),
-            NumberMatched = planSet.TotalMatched,
-            NumberReturned = features.Count,
-            TimeStamp = DateTimeOffset.UtcNow
-        };
+        var payload = OgcGeoJsonFeatureBuilder.CreateCollection(features, planSet.TotalMatched);
 
         var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
             ? MediaTypes.Json
@@ -1474,29 +1471,32 @@ internal sealed class Wfs20Handler
         {
             var result = await pagedGeoJsonFeatureStore.QueryGeoJsonPageAsync(descriptor.Layer.Id, query, cancellationToken);
             totalCount = result.TotalCount;
+            var projectedProperties = GetProjectedProperties(query);
             foreach (var feature in result.Items)
             {
-                features.Add(new GeoJsonFeature
-                {
-                    Id = BuildFeatureId(descriptor, feature.Id),
-                    Geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, AxisOrder.EastNorth),
-                    Properties = BuildGeoJsonProperties(feature.Attributes, descriptor.Layer, query)
-                });
+                features.Add(OgcGeoJsonFeatureBuilder.Create(
+                    feature,
+                    descriptor.Layer,
+                    AxisOrder.EastNorth,
+                    _geometryServices,
+                    projectedProperties,
+                    featureId => BuildFeatureId(descriptor, featureId)));
             }
         }
         else if (_featureReader is IPagedFeatureReader pagedFeatureReader)
         {
             var result = await pagedFeatureReader.QueryPageAsync(descriptor.Layer.Id, query, cancellationToken);
             totalCount = result.TotalCount;
+            var projectedProperties = GetProjectedProperties(query);
             foreach (var feature in result.Items)
             {
-                var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, AxisOrder.EastNorth);
-                features.Add(new GeoJsonFeature
-                {
-                    Id = BuildFeatureId(descriptor, feature.Id),
-                    Geometry = geometry,
-                    Properties = BuildGeoJsonProperties(feature.Attributes, descriptor.Layer, query)
-                });
+                features.Add(OgcGeoJsonFeatureBuilder.Create(
+                    feature,
+                    descriptor.Layer,
+                    AxisOrder.EastNorth,
+                    _geometryServices,
+                    projectedProperties,
+                    featureId => BuildFeatureId(descriptor, featureId)));
             }
         }
         else
@@ -1504,13 +1504,7 @@ internal sealed class Wfs20Handler
             throw new InvalidOperationException("Paged feature queries are not supported by the configured feature store.");
         }
 
-        var payload = new FeatureCollection
-        {
-            Features = features.ToArray(),
-            NumberMatched = totalCount,
-            NumberReturned = features.Count,
-            TimeStamp = DateTimeOffset.UtcNow
-        };
+        var payload = OgcGeoJsonFeatureBuilder.CreateCollection(features, totalCount);
 
         var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
             ? MediaTypes.Json
@@ -1663,6 +1657,7 @@ internal sealed class Wfs20Handler
             var featureResult = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
             foreach (var feature in featureResult.Items)
             {
+                var featureId = BuildFeatureId(plan.Descriptor, feature.Id);
                 var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
                 SimpleGeoJsonGeometry? geometry = null;
 
@@ -1674,29 +1669,18 @@ internal sealed class Wfs20Handler
                 }
                 else if (plan.ValueReference.IsFeatureId)
                 {
-                    properties["id"] = BuildFeatureId(plan.Descriptor, feature.Id);
+                    properties["id"] = featureId;
                 }
                 else
                 {
                     properties[plan.ValueReference.CanonicalName] = ExtractValue(feature, plan.ValueReference);
                 }
 
-                features.Add(new GeoJsonFeature
-                {
-                    Id = BuildFeatureId(plan.Descriptor, feature.Id),
-                    Geometry = geometry,
-                    Properties = properties
-                });
+                features.Add(OgcGeoJsonFeatureBuilder.Create(featureId, properties, geometry));
             }
         }
 
-        var payload = new FeatureCollection
-        {
-            Features = features.ToArray(),
-            NumberMatched = planSet.TotalMatched,
-            NumberReturned = features.Count,
-            TimeStamp = DateTimeOffset.UtcNow
-        };
+        var payload = OgcGeoJsonFeatureBuilder.CreateCollection(features, planSet.TotalMatched);
 
         var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
             ? MediaTypes.Json
@@ -1744,27 +1728,16 @@ internal sealed class Wfs20Handler
     private static string BuildFeatureId(WfsFeatureTypeDescriptor descriptor, long featureId)
         => $"{descriptor.LocalName}.{featureId.ToString(CultureInfo.InvariantCulture)}";
 
-    private static Dictionary<string, object?> BuildGeoJsonProperties(
-        ImmutableDictionary<string, object?> attributes,
-        LayerDefinition layer,
-        FeatureQuery query)
+    private static ImmutableHashSet<string>? GetProjectedProperties(FeatureQuery query)
     {
-        var properties = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        var objectIdFieldName = layer.ObjectIdFieldName;
-        foreach (var field in GetProjectedAttributeFields(layer, query))
+        if (query.OutFields is not { } outFields)
         {
-            if (field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (attributes.TryGetValue(field.Name, out var value))
-            {
-                properties[field.Name] = value;
-            }
+            return null;
         }
 
-        return properties;
+        return outFields.IsDefaultOrEmpty
+            ? ImmutableHashSet<string>.Empty.WithComparer(StringComparer.OrdinalIgnoreCase)
+            : outFields.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private string? SerializeGeometryAsJson(byte[]? geometry)
@@ -1837,13 +1810,7 @@ internal sealed class Wfs20Handler
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase))
         {
-            var payload = new FeatureCollection
-            {
-                Features = [],
-                NumberMatched = 0,
-                NumberReturned = 0,
-                TimeStamp = DateTimeOffset.UtcNow
-            };
+            var payload = OgcGeoJsonFeatureBuilder.CreateCollection(Array.Empty<GeoJsonFeature>(), 0);
 
             var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
                 ? MediaTypes.Json
@@ -1880,13 +1847,7 @@ internal sealed class Wfs20Handler
         if (string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.GeoJson, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase))
         {
-            var payload = new FeatureCollection
-            {
-                Features = [],
-                NumberMatched = 0,
-                NumberReturned = 0,
-                TimeStamp = DateTimeOffset.UtcNow
-            };
+            var payload = OgcGeoJsonFeatureBuilder.CreateCollection(Array.Empty<GeoJsonFeature>(), 0);
 
             var contentType = string.Equals(normalizedFormat, Wfs20Utilities.OutputFormats.Json, StringComparison.OrdinalIgnoreCase)
                 ? MediaTypes.Json

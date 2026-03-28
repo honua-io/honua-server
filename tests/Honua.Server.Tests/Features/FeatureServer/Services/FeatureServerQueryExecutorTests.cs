@@ -305,6 +305,39 @@ public sealed class FeatureServerQueryExecutorTests
         geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
     }
 
+    [Fact]
+    public async Task StreamQueryAsync_WithGeoJson_UsesSharedIdAndObjectIdProperties()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => (IAsyncEnumerable<Feature>)StreamFeatures(
+            [
+                CreateFeature(42, "alpha")
+            ]));
+
+        var sut = CreateSut(featureReader, streamingStore);
+        var context = CreateHttpContext();
+
+        await sut.StreamQueryAsync(
+            7,
+            new FeatureQuery { Limit = 1 },
+            CreateLayer(),
+            new QueryParameters { F = "geojson", ReturnGeometry = false, OutFields = "name" },
+            outputSrid: null,
+            context,
+            CancellationToken.None);
+
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
+        var feature = document.RootElement.GetProperty("features")[0];
+        feature.GetProperty("id").GetInt64().Should().Be(42);
+        var properties = feature.GetProperty("properties");
+        properties.GetProperty("objectid").GetInt64().Should().Be(42);
+        properties.GetProperty("name").GetString().Should().Be("alpha");
+        properties.TryGetProperty("OBJECTID", out _).Should().BeFalse();
+    }
+
     private static FeatureServerQueryExecutor CreateSut(
         IFeatureReader featureReader,
         IStreamingFeatureStore? streamingStore = null)

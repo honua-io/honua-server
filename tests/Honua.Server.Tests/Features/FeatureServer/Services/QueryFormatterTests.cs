@@ -54,6 +54,46 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Geometry?.SpatialReference?.Wkid.Should().Be(3857);
     }
 
+    [Fact]
+    public async Task FormatQueryResultAsync_WithGeoJson_UsesSharedIdAndPropertyProjection()
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(
+            limitsOptions,
+            new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+
+        var feature = Feature.Create(
+            42,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["name"] = "alpha",
+                ["distance"] = 12.5
+            }.ToImmutableDictionary());
+
+        var (response, contentType) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            CreatePointLayer(),
+            format: "geojson",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: ["distance"]);
+
+        contentType.Should().Be("application/geo+json");
+        var geoJson = response.Should().BeOfType<GeoJsonFeatureSet>().Subject;
+        geoJson.Features.Should().HaveCount(1);
+        geoJson.Features[0].Id.Should().Be(42L);
+        geoJson.Features[0].Properties.Should().Contain("objectid", 42L);
+        geoJson.Features[0].Properties.Should().Contain("distance", 12.5);
+        geoJson.Features[0].Properties.Should().NotContainKey("name");
+        geoJson.Features[0].Properties.Should().NotContainKey("OBJECTID");
+    }
+
     private static LayerDefinition CreatePointLayer()
         => new(
             7,
