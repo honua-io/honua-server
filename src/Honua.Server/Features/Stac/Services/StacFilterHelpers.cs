@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Infrastructure.Authentication;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -14,6 +16,47 @@ namespace Honua.Server.Features.Stac.Services;
 /// </summary>
 internal static class StacFilterHelpers
 {
+    private static readonly GeometryFactory Wgs84Factory = new(new PrecisionModel(), 4326);
+
+    [ThreadStatic]
+    private static WKBWriter? _wkbWriter;
+
+    private static WKBWriter GetWkbWriter() => _wkbWriter ??= new WKBWriter();
+    /// <summary>
+    /// Resolves layers that are visible through the STAC protocol, applying both
+    /// protocol gating and access-policy filtering.
+    /// </summary>
+    public static async Task<LayerDefinition[]> ResolveStacVisibleLayersAsync(
+        HttpContext context,
+        ILayerCatalog layerCatalog,
+        CancellationToken cancellationToken)
+    {
+        var allLayers = await layerCatalog.ListLayersAsync(cancellationToken);
+        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+
+        var stacServices = services
+            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Stac))
+            .ToArray();
+
+        var layerToService = new Dictionary<int, ServiceDefinition>();
+        foreach (var service in stacServices)
+        {
+            foreach (var serviceLayer in service.Layers)
+            {
+                layerToService.TryAdd(serviceLayer.Id, service);
+            }
+        }
+
+        var protocolLayerIds = layerToService.Keys.ToHashSet();
+        return allLayers
+            .Where(layer => protocolLayerIds.Count == 0
+                ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Stac)
+                : protocolLayerIds.Contains(layer.Id))
+            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
+                context, layer, layerToService.GetValueOrDefault(layer.Id)))
+            .ToArray();
+    }
+
     /// <summary>
     /// Parses a STAC bbox parameter (comma-separated: west,south,east,north) into a <see cref="SpatialFilter"/>.
     /// </summary>
@@ -33,11 +76,18 @@ internal static class StacFilterHelpers
             return null;
         }
 
+        return CreateBboxSpatialFilter(west, south, east, north);
+    }
+
+    /// <summary>
+    /// Creates a <see cref="SpatialFilter"/> from pre-parsed bbox coordinates.
+    /// Avoids the string round-trip when the caller already has numeric values.
+    /// </summary>
+    public static SpatialFilter CreateBboxSpatialFilter(double west, double south, double east, double north)
+    {
         var envelope = new Envelope(west, east, south, north);
-        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-        var geometry = geometryFactory.ToGeometry(envelope);
-        var wkbWriter = new WKBWriter();
-        var wkb = wkbWriter.Write(geometry);
+        var geometry = Wgs84Factory.ToGeometry(envelope);
+        var wkb = GetWkbWriter().Write(geometry);
 
         return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: 4326);
     }

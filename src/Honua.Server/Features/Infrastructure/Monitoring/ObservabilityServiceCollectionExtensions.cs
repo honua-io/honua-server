@@ -318,6 +318,34 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("ogc-metadata", "metadata");
             });
 
+            // STAC catalog (root landing page) caching policy
+            options.AddPolicy("StacCatalog", policy =>
+            {
+                policy.Expire(ttl.StacCatalog);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("stac-metadata", "metadata");
+            });
+
+            // STAC collections list caching policy
+            options.AddPolicy("StacCollections", policy =>
+            {
+                policy.Expire(ttl.StacCollections);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("stac-metadata", "metadata");
+            });
+
+            // STAC single collection caching policy
+            options.AddPolicy("StacCollection", policy =>
+            {
+                policy.Expire(ttl.StacCollection);
+                policy.SetVaryByRouteValue("collectionId");
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("stac-metadata", "metadata");
+            });
+
             // Note: No default base policy - endpoints must explicitly opt into caching for security
         });
 

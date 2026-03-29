@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.Stac.Models;
@@ -19,6 +20,10 @@ namespace Honua.Server.Features.Stac.Services;
 /// </summary>
 internal sealed class StacMappingService
 {
+    [ThreadStatic]
+    private static GeoJsonWriter? _geoJsonWriter;
+
+    private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
     /// <summary>
     /// Builds a STAC Collection from a layer definition.
     /// </summary>
@@ -216,10 +221,8 @@ internal sealed class StacMappingService
     {
         try
         {
-            var reader = new WKBReader();
-            var geom = reader.Read(wkb);
-            var writer = new GeoJsonWriter();
-            var json = writer.Write(geom);
+            var geom = WkbReaderCache.Get().Read(wkb);
+            var json = GetGeoJsonWriter().Write(geom);
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.Clone();
         }

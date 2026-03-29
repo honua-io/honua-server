@@ -4,10 +4,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
@@ -52,6 +50,7 @@ internal static class SearchEndpoints
     private static async Task<IResult> HandleSearchGet(
         HttpContext context,
         [FromQuery] int? limit,
+        [FromQuery] int? offset,
         [FromQuery] string? bbox,
         [FromQuery] string? datetime,
         [FromQuery] string? collections,
@@ -73,24 +72,27 @@ internal static class SearchEndpoints
             Limit = limit,
             Datetime = datetime
         };
+        var effectiveOffset = Math.Max(offset ?? 0, 0);
 
         if (!string.IsNullOrWhiteSpace(bbox))
         {
             var parts = bbox.Split(',');
-            if (parts.Length >= 4)
+            if (parts.Length is 4 or 6)
             {
-                var bboxValues = new List<double>();
-                foreach (var part in parts)
+                var bboxValues = new double[parts.Length];
+                var allValid = true;
+                for (var i = 0; i < parts.Length; i++)
                 {
-                    if (double.TryParse(part, NumberStyles.Float, CultureInfo.InvariantCulture, out var val))
+                    if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out bboxValues[i]))
                     {
-                        bboxValues.Add(val);
+                        allValid = false;
+                        break;
                     }
                 }
 
-                if (bboxValues.Count >= 4)
+                if (allValid)
                 {
-                    request = request with { Bbox = bboxValues.ToImmutableArray() };
+                    request = request with { Bbox = ImmutableArray.Create(bboxValues) };
                 }
             }
         }
@@ -105,7 +107,7 @@ internal static class SearchEndpoints
             request = request with { Ids = ids.Split(',').ToImmutableArray() };
         }
 
-        return await ExecuteSearchAsync(request, context, layerCatalog, featureReader, logger);
+        return await ExecuteSearchAsync(request, effectiveOffset, context, layerCatalog, featureReader, logger);
     }
 
     private static async Task<IResult> HandleSearchPost(
@@ -115,11 +117,12 @@ internal static class SearchEndpoints
         [FromServices] IFeatureReader featureReader,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
-        return await ExecuteSearchAsync(request, context, layerCatalog, featureReader, logger);
+        return await ExecuteSearchAsync(request, 0, context, layerCatalog, featureReader, logger);
     }
 
     private static async Task<IResult> ExecuteSearchAsync(
         StacSearchRequest request,
+        int offset,
         HttpContext context,
         ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
@@ -138,21 +141,11 @@ internal static class SearchEndpoints
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
-            // Resolve target layers
-            var allLayers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var layerToService = new Dictionary<int, ServiceDefinition>();
-            foreach (var service in services)
-            {
-                foreach (var serviceLayer in service.Layers)
-                {
-                    layerToService.TryAdd(serviceLayer.Id, service);
-                }
-            }
+            // Resolve target layers with STAC protocol gating + access policy
+            var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
+                context, layerCatalog, cancellationToken);
 
-            var targetLayers = allLayers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
-                    context, layer, layerToService.GetValueOrDefault(layer.Id)));
+            IEnumerable<Core.Features.Catalog.Domain.LayerDefinition> targetLayers = visibleLayers;
 
             // Filter by collection IDs if specified
             if (request.Collections is { IsDefault: false } requestedCollections && requestedCollections.Length > 0)
@@ -164,100 +157,110 @@ internal static class SearchEndpoints
                 targetLayers = targetLayers.Where(l => collectionIds.Contains(l.Id));
             }
 
+            // Pre-parse IDs filter; if provided but none are valid, return empty results
+            ImmutableArray<long>? parsedObjectIds = null;
+            if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
+            {
+                var objectIds = requestedIds
+                    .Where(id => long.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                    .Select(id => long.Parse(id, CultureInfo.InvariantCulture))
+                    .ToImmutableArray();
+                if (objectIds.Length == 0)
+                {
+                    // IDs were provided but none could be parsed — zero results
+                    parsedObjectIds = ImmutableArray<long>.Empty;
+                }
+                else
+                {
+                    parsedObjectIds = objectIds;
+                }
+            }
+
             var layerList = targetLayers.ToArray();
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
             long totalMatched = 0;
 
-            // Query each target layer
+            // Short-circuit: if IDs filter resolved to empty, skip all queries
+            var hasEmptyIdFilter = parsedObjectIds is { Length: 0 };
+            var remainingSkip = offset;
+
+            // Query each target layer — continue for all layers to accumulate totalMatched
             foreach (var layer in layerList)
             {
-                if (allItems.Count >= effectiveLimit)
+                if (hasEmptyIdFilter)
                 {
                     break;
                 }
 
-                var remaining = effectiveLimit - allItems.Count;
-                var query = new FeatureQuery
-                {
-                    Limit = remaining
-                };
+                var query = BuildLayerQuery(request, layer, parsedObjectIds);
 
-                // Apply bbox filter
-                if (request.Bbox is { IsDefault: false } bboxArr && bboxArr.Length >= 4)
+                if (remainingSkip > 0)
                 {
-                    var bboxStr = string.Join(",", bboxArr.Select(v => v.ToString(CultureInfo.InvariantCulture)));
-                    var spatialFilter = StacFilterHelpers.ParseBbox(bboxStr);
-                    if (spatialFilter is not null)
+                    // Count this layer to decide how much to skip
+                    var layerCount = await featureReader.CountAsync(layer.Id, query, cancellationToken);
+                    totalMatched += layerCount;
+
+                    if (remainingSkip >= layerCount)
                     {
-                        query = query with { SpatialFilter = spatialFilter };
+                        remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
+                        continue;
                     }
-                }
 
-                // Apply datetime filter
-                if (!string.IsNullOrWhiteSpace(request.Datetime))
+                    // Partial skip: fetch from offset within this layer
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Offset = remainingSkip, Limit = remaining };
+                    remainingSkip = 0;
+
+                    var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                    allItems.AddRange(result.Features
+                        .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl)));
+                }
+                else if (allItems.Count < effectiveLimit)
                 {
-                    var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, layer);
-                    if (temporalFilter is not null)
-                    {
-                        query = query with { TemporalFilter = temporalFilter };
-                    }
-                }
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Limit = remaining };
 
-                // Apply ID filter
-                if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
+                    var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                    totalMatched += result.TotalCount;
+
+                    allItems.AddRange(result.Features
+                        .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl)));
+                }
+                else
                 {
-                    var objectIds = requestedIds
-                        .Where(id => long.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-                        .Select(id => long.Parse(id, CultureInfo.InvariantCulture))
-                        .ToImmutableArray();
-                    if (objectIds.Length > 0)
-                    {
-                        query = query with { ObjectIds = objectIds };
-                    }
+                    // Page is full — count only to get accurate totalMatched
+                    totalMatched += await featureReader.CountAsync(layer.Id, query, cancellationToken);
                 }
-
-                // Apply sort
-                if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
-                {
-                    var orderBy = sortby.Select(s =>
-                        string.Equals(s.Direction, "desc", StringComparison.OrdinalIgnoreCase)
-                            ? OrderByClause.Desc(s.Field)
-                            : OrderByClause.Asc(s.Field))
-                        .ToImmutableArray();
-                    query = query with { OrderBy = orderBy };
-                }
-
-                // Apply field selection
-                if (request.Fields is { Includes: { IsDefault: false } includes } && includes.Length > 0)
-                {
-                    query = query with { OutFields = includes };
-                }
-
-                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
-                totalMatched += result.TotalCount;
-
-                var items = result.Features
-                    .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl));
-                allItems.AddRange(items);
             }
 
             var stacBase = $"{baseUrl}/stac";
-            var links = ImmutableArray.Create(
-                Link.Create(
-                    href: $"{stacBase}/search",
-                    rel: RelationTypes.Self,
+            var linksBuilder = ImmutableArray.CreateBuilder<Link>();
+            linksBuilder.Add(Link.Create(
+                href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, offset, request)}",
+                rel: RelationTypes.Self,
+                type: MediaTypes.GeoJson,
+                title: "Search results"));
+            linksBuilder.Add(Link.Create(
+                href: stacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
+
+            // Add next link when more items exist beyond the current page
+            var nextOffset = offset + allItems.Count;
+            if (totalMatched > nextOffset)
+            {
+                linksBuilder.Add(Link.Create(
+                    href: $"{stacBase}/search?{BuildSearchQuery(effectiveLimit, nextOffset, request)}",
+                    rel: "next",
                     type: MediaTypes.GeoJson,
-                    title: "Search results"),
-                Link.Create(
-                    href: stacBase,
-                    rel: StacConstants.StacRelations.Root,
-                    type: MediaTypes.Json,
-                    title: "STAC Catalog"));
+                    title: "Next page"));
+            }
 
             var response = new StacItemCollection
             {
                 Features = allItems.ToImmutable(),
-                Links = links,
+                Links = linksBuilder.ToImmutable(),
                 NumberReturned = allItems.Count,
                 NumberMatched = totalMatched,
                 Context = new StacSearchContext
@@ -282,5 +285,70 @@ internal static class SearchEndpoints
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred during STAC search.");
         }
+    }
+
+    private static FeatureQuery BuildLayerQuery(
+        StacSearchRequest request,
+        Core.Features.Catalog.Domain.LayerDefinition layer,
+        ImmutableArray<long>? parsedObjectIds)
+    {
+        var query = new FeatureQuery();
+
+        // Apply bbox filter
+        if (request.Bbox is { IsDefault: false } bboxArr && bboxArr.Length >= 4)
+        {
+            var spatialFilter = StacFilterHelpers.CreateBboxSpatialFilter(
+                west: bboxArr[0], south: bboxArr[1], east: bboxArr[2], north: bboxArr[3]);
+            query = query with { SpatialFilter = spatialFilter };
+        }
+
+        // Apply datetime filter
+        if (!string.IsNullOrWhiteSpace(request.Datetime))
+        {
+            var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, layer);
+            if (temporalFilter is not null)
+            {
+                query = query with { TemporalFilter = temporalFilter };
+            }
+        }
+
+        // Apply ID filter
+        if (parsedObjectIds is { Length: > 0 } objectIds)
+        {
+            query = query with { ObjectIds = objectIds };
+        }
+
+        // Apply sort
+        if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
+        {
+            var orderBy = sortby.Select(s =>
+                string.Equals(s.Direction, "desc", StringComparison.OrdinalIgnoreCase)
+                    ? OrderByClause.Desc(s.Field)
+                    : OrderByClause.Asc(s.Field))
+                .ToImmutableArray();
+            query = query with { OrderBy = orderBy };
+        }
+
+        // Apply field selection
+        if (request.Fields is { Includes: { IsDefault: false } includes } && includes.Length > 0)
+        {
+            query = query with { OutFields = includes };
+        }
+
+        return query;
+    }
+
+    private static string BuildSearchQuery(int limit, int offset, StacSearchRequest request)
+    {
+        var query = $"limit={limit}&offset={offset}";
+        if (request.Bbox is { IsDefault: false } bboxArr && bboxArr.Length >= 4)
+            query += "&bbox=" + string.Join(",", bboxArr.Select(v => v.ToString(CultureInfo.InvariantCulture)));
+        if (!string.IsNullOrWhiteSpace(request.Datetime))
+            query += $"&datetime={request.Datetime}";
+        if (request.Collections is { IsDefault: false } cols && cols.Length > 0)
+            query += $"&collections={string.Join(",", cols)}";
+        if (request.Ids is { IsDefault: false } ids && ids.Length > 0)
+            query += $"&ids={string.Join(",", ids)}";
+        return query;
     }
 }

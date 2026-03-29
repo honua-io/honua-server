@@ -2,13 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.Stac.Models;
 using Honua.Server.Features.Stac.Services;
@@ -71,22 +70,8 @@ internal static class CollectionEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var stacBase = $"{baseUrl}/stac";
 
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-
-            var layerToService = new Dictionary<int, ServiceDefinition>();
-            foreach (var service in services)
-            {
-                foreach (var serviceLayer in service.Layers)
-                {
-                    layerToService.TryAdd(serviceLayer.Id, service);
-                }
-            }
-
-            var visibleLayers = layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
-                    context, layer, layerToService.GetValueOrDefault(layer.Id)))
-                .ToList();
+            var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
+                context, layerCatalog, cancellationToken);
 
             var collectionTasks = visibleLayers
                 .Select(layer => StacMappingService.MapLayerToCollectionAsync(layer, featureReader, baseUrl, cancellationToken));
@@ -129,29 +114,23 @@ internal static class CollectionEndpoints
     private static async Task<IResult> HandleGetCollection(
         string collectionId,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
-
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         StacLog.CollectionRequested(logger, collectionId);
 
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                StacLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+            if (!validation.IsValid)
             {
                 StacLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return validation.ErrorResult!;
             }
 
+            var layer = validation.Layer!;
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var collection = await StacMappingService.MapLayerToCollectionAsync(layer, featureReader, baseUrl, cancellationToken);
 
@@ -169,22 +148,4 @@ internal static class CollectionEndpoints
                 context, "An error occurred while retrieving the STAC collection.");
         }
     }
-}
-
-/// <summary>
-/// Response wrapper for the STAC collections list.
-/// </summary>
-public sealed record StacCollectionsResponse
-{
-    /// <summary>
-    /// Available collections.
-    /// </summary>
-    [System.Text.Json.Serialization.JsonPropertyName("collections")]
-    public required ImmutableArray<StacCollection> Collections { get; init; }
-
-    /// <summary>
-    /// Hypermedia links.
-    /// </summary>
-    [System.Text.Json.Serialization.JsonPropertyName("links")]
-    public required ImmutableArray<Link> Links { get; init; }
 }

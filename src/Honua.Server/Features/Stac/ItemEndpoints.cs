@@ -3,11 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.Stac.Models;
 using Honua.Server.Features.Stac.Services;
@@ -50,9 +51,9 @@ internal static class ItemEndpoints
         string collectionId,
         HttpContext context,
         [FromQuery] int? limit,
+        [FromQuery] int? offset,
         [FromQuery] string? bbox,
         [FromQuery] string? datetime,
-        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
@@ -67,25 +68,24 @@ internal static class ItemEndpoints
 
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                StacLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+            if (!validation.IsValid)
             {
                 StacLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return validation.ErrorResult!;
             }
 
+            var layer = validation.Layer!;
+            var layerId = layer.Id;
             var effectiveLimit = Math.Clamp(limit ?? StacConstants.DefaultSearchLimit, 1, StacConstants.MaxSearchLimit);
+            var effectiveOffset = Math.Max(offset ?? 0, 0);
 
             var query = new FeatureQuery
             {
-                Limit = effectiveLimit
+                Limit = effectiveLimit,
+                Offset = effectiveOffset > 0 ? effectiveOffset : null
             };
 
             // Apply bbox filter
@@ -116,27 +116,39 @@ internal static class ItemEndpoints
                 .ToImmutableArray();
 
             var stacBase = $"{baseUrl}/stac";
-            var links = ImmutableArray.Create(
-                Link.Create(
-                    href: $"{stacBase}/collections/{collectionId}/items",
-                    rel: RelationTypes.Self,
+            var itemsPath = $"{stacBase}/collections/{collectionId}/items";
+            var linksBuilder = ImmutableArray.CreateBuilder<Link>();
+            linksBuilder.Add(Link.Create(
+                href: $"{itemsPath}?{BuildItemsFilterQuery(effectiveLimit, effectiveOffset, bbox, datetime)}",
+                rel: RelationTypes.Self,
+                type: MediaTypes.GeoJson,
+                title: "Items"));
+            linksBuilder.Add(Link.Create(
+                href: $"{stacBase}/collections/{collectionId}",
+                rel: RelationTypes.Collection,
+                type: MediaTypes.Json,
+                title: layer.Name));
+            linksBuilder.Add(Link.Create(
+                href: stacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
+
+            // Add next link when more items exist
+            var nextOffset = effectiveOffset + items.Length;
+            if (result.TotalCount > nextOffset)
+            {
+                linksBuilder.Add(Link.Create(
+                    href: $"{itemsPath}?{BuildItemsFilterQuery(effectiveLimit, nextOffset, bbox, datetime)}",
+                    rel: "next",
                     type: MediaTypes.GeoJson,
-                    title: "Items"),
-                Link.Create(
-                    href: $"{stacBase}/collections/{collectionId}",
-                    rel: RelationTypes.Collection,
-                    type: MediaTypes.Json,
-                    title: layer.Name),
-                Link.Create(
-                    href: stacBase,
-                    rel: StacConstants.StacRelations.Root,
-                    type: MediaTypes.Json,
-                    title: "STAC Catalog"));
+                    title: "Next page"));
+            }
 
             var response = new StacItemCollection
             {
                 Features = items,
-                Links = links,
+                Links = linksBuilder.ToImmutable(),
                 NumberReturned = items.Length,
                 NumberMatched = result.TotalCount,
                 Context = new StacSearchContext
@@ -167,7 +179,6 @@ internal static class ItemEndpoints
         string collectionId,
         string itemId,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
@@ -175,21 +186,22 @@ internal static class ItemEndpoints
 
         try
         {
-            if (!int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId) ||
-                !long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+            if (!validation.IsValid)
+            {
+                StacLog.CollectionNotFound(logger, collectionId);
+                return validation.ErrorResult!;
+            }
+
+            if (!long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Item '{itemId}' not found.");
             }
 
-            var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
-            {
-                StacLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
-            var feature = await featureReader.GetAsync(layerId, objectId, cancellationToken);
+            var layer = validation.Layer!;
+            var feature = await featureReader.GetAsync(layer.Id, objectId, cancellationToken);
             if (feature is null)
             {
                 StacLog.ItemNotFound(logger, collectionId, itemId);
@@ -212,5 +224,15 @@ internal static class ItemEndpoints
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving the STAC item.");
         }
+    }
+
+    private static string BuildItemsFilterQuery(int limit, int offset, string? bbox, string? datetime)
+    {
+        var query = $"limit={limit}&offset={offset}";
+        if (!string.IsNullOrWhiteSpace(bbox))
+            query += $"&bbox={bbox}";
+        if (!string.IsNullOrWhiteSpace(datetime))
+            query += $"&datetime={datetime}";
+        return query;
     }
 }

@@ -435,3 +435,21 @@ public sealed record StacSearchContext
     [JsonPropertyName("limit")]
     public int? Limit { get; init; }
 }
+
+/// <summary>
+/// Response wrapper for the STAC collections list.
+/// </summary>
+public sealed record StacCollectionsResponse
+{
+    /// <summary>
+    /// Available collections.
+    /// </summary>
+    [JsonPropertyName("collections")]
+    public required ImmutableArray<StacCollection> Collections { get; init; }
+
+    /// <summary>
+    /// Hypermedia links.
+    /// </summary>
+    [JsonPropertyName("links")]
+    public required ImmutableArray<Link> Links { get; init; }
+}

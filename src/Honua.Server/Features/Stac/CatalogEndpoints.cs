@@ -4,12 +4,11 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.Stac.Models;
+using Honua.Server.Features.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Stac;
@@ -57,23 +56,8 @@ internal static class CatalogEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var stacBase = $"{baseUrl}/stac";
 
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-
-            // Filter to layers visible via enabled services (or all if no protocol gating)
-            var layerToService = new Dictionary<int, ServiceDefinition>();
-            foreach (var service in services)
-            {
-                foreach (var serviceLayer in service.Layers)
-                {
-                    layerToService.TryAdd(serviceLayer.Id, service);
-                }
-            }
-
-            var visibleLayers = layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
-                    context, layer, layerToService.GetValueOrDefault(layer.Id)))
-                .ToArray();
+            var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
+                context, layerCatalog, cancellationToken);
 
             var links = ImmutableArray.CreateBuilder<Link>();
 
