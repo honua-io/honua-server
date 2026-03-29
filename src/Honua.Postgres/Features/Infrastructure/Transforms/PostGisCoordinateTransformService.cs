@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Postgres.Features.Infrastructure.Transforms;
@@ -77,8 +78,8 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
     private static bool IsWgs84Srid(int srid)
         => srid == 4326;
 
-    private const double EarthRadius = 6378137.0;
-    private const double MaxLatitude = 85.06;
+    private const double EarthRadius = SpatialConstants.EarthRadius;
+    private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
 
     private static bool TryTransformExtentInMemory(
         double minX, double minY, double maxX, double maxY,

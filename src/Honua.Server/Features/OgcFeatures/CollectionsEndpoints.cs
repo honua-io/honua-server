@@ -493,16 +493,17 @@ internal static class CollectionsEndpoints
                     OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, out maxTransformed);
 
                 // PostGIS fallback for non-WGS84/WebMercator CRS (e.g. NAD83, UTM zones)
+                // Uses TransformExtentAsync which transforms all 4 corners to find true min/max
                 if (!transformedToCrs84)
                 {
-                    var minResult = await coordinateTransformService.TransformPointAsync(
-                        layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, 4326, cancellationToken);
-                    var maxResult = await coordinateTransformService.TransformPointAsync(
-                        layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, 4326, cancellationToken);
-                    if (minResult.HasValue && maxResult.HasValue)
+                    var extentResult = await coordinateTransformService.TransformExtentAsync(
+                        layer.Extent.Value.MinX, layer.Extent.Value.MinY,
+                        layer.Extent.Value.MaxX, layer.Extent.Value.MaxY,
+                        extentSrid, 4326, cancellationToken);
+                    if (extentResult.HasValue)
                     {
-                        minTransformed = (minResult.Value.X, minResult.Value.Y);
-                        maxTransformed = (maxResult.Value.X, maxResult.Value.Y);
+                        minTransformed = (extentResult.Value.MinX, extentResult.Value.MinY);
+                        maxTransformed = (extentResult.Value.MaxX, extentResult.Value.MaxY);
                         transformedToCrs84 = true;
                     }
                 }
