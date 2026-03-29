@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -314,10 +315,11 @@ internal sealed class ODataCrudHandler(
             await InvalidateCacheAsync(context, resolvedLayerId.Value, effectiveToken);
             if (TryExtractObjectId(result.Data, out var createdObjectId))
             {
+                var serviceId = await ResolveServiceIdAsync(context, resolvedLayerId.Value, effectiveToken);
                 await _featureChangeEventPublisher.PublishAsync(
                     new FeatureChangeEventRequest
                     {
-                        ServiceId = "odata",
+                        ServiceId = serviceId,
                         LayerId = resolvedLayerId.Value,
                         ObjectId = createdObjectId,
                         Operation = "create",
@@ -426,10 +428,11 @@ internal sealed class ODataCrudHandler(
             }
 
             await InvalidateCacheAsync(context, layerId, effectiveToken);
+            var serviceId = await ResolveServiceIdAsync(context, layerId, effectiveToken);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
-                    ServiceId = "odata",
+                    ServiceId = serviceId,
                     LayerId = layerId,
                     ObjectId = objectId,
                     Operation = "update",
@@ -482,10 +485,11 @@ internal sealed class ODataCrudHandler(
         if (result.IsSuccess)
         {
             await InvalidateCacheAsync(context, layerId, effectiveToken);
+            var serviceId = await ResolveServiceIdAsync(context, layerId, effectiveToken);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
-                    ServiceId = "odata",
+                    ServiceId = serviceId,
                     LayerId = layerId,
                     ObjectId = objectId,
                     Operation = "delete",
@@ -512,6 +516,20 @@ internal sealed class ODataCrudHandler(
         {
             await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
         }
+    }
+
+    private static async Task<string> ResolveServiceIdAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
+            context,
+            layerId,
+            ServiceProtocols.OData,
+            cancellationToken);
+
+        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     private static bool TryExtractObjectId(object? payload, out long objectId)

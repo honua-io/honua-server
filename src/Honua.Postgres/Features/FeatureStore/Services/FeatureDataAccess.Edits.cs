@@ -7,6 +7,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using NetTopologySuite.IO;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
@@ -333,6 +334,37 @@ internal sealed partial class FeatureDataAccess
             return (ImmutableArray<long>.Empty, ImmutableArray<EditOperationResult>.Empty);
         }
 
+        if (transaction == null && features.Length > 1)
+        {
+            try
+            {
+                var batchCreatedIds = await CreateBatchWithConnectionAsync(
+                    layerId,
+                    features,
+                    connection,
+                    transaction,
+                    cancellationToken);
+                var batchResults = new EditOperationResult[batchCreatedIds.Length];
+                for (var i = 0; i < batchCreatedIds.Length; i++)
+                {
+                    batchResults[i] = EditOperationResult.Success(
+                        batchCreatedIds[i],
+                        features[i].Attributes.GetValueOrDefault("globalId")?.ToString());
+                }
+
+                return (batchCreatedIds, batchResults.ToImmutableArray());
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // Fall back to per-feature inserts so non-transactional edit batches
+                // preserve detailed partial-success results when any create fails.
+            }
+        }
+
         var createdIds = new List<long>();
         var results = new List<EditOperationResult>();
 
@@ -351,6 +383,76 @@ internal sealed partial class FeatureDataAccess
         }
 
         return (createdIds.ToImmutableArray(), results.ToImmutableArray());
+    }
+
+    private async Task<ImmutableArray<long>> CreateBatchWithConnectionAsync(
+        int layerId,
+        ImmutableArray<Feature> features,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var geometryPayload = new byte[]?[features.Length];
+        var attributesPayload = new string[features.Length];
+
+        for (var i = 0; i < features.Length; i++)
+        {
+            var feature = features[i];
+            ValidateGeometrySrid(feature.Geometry, layerSrid);
+            geometryPayload[i] = feature.Geometry;
+
+            var attributesDictionary = feature.Attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            attributesPayload[i] = SerializeToJsonString(attributesDictionary);
+        }
+
+        var geometryValueExpression = _geometryProcessor.GetGeometryWriteExpression(geometryStorageType, "payload.geometry", layerSrid);
+        var sql = $@"
+            WITH payload(geometry, attributes, ordinality) AS (
+                SELECT source.geometry, source.attributes, source.ordinalality
+                FROM unnest($2::bytea[], $3::jsonb[]) WITH ORDINALITY AS source(geometry, attributes, ordinality)
+            ),
+            inserted AS (
+                INSERT INTO {_tableName} (layer_id, geometry, attributes)
+                SELECT $1, {geometryValueExpression}, payload.attributes
+                FROM payload
+                ORDER BY payload.ordinalality
+                RETURNING objectid
+            )
+            SELECT objectid
+            FROM inserted";
+
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            Transaction = transaction
+        };
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
+        command.Parameters.AddWithValue(layerId);
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = geometryPayload,
+            NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bytea
+        });
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            Value = attributesPayload,
+            NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Jsonb
+        });
+
+        var createdIds = ImmutableArray.CreateBuilder<long>(features.Length);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            createdIds.Add(reader.GetInt64(0));
+        }
+
+        if (createdIds.Count != features.Length)
+        {
+            throw new InvalidOperationException("Failed to create all features in batch.");
+        }
+
+        return createdIds.MoveToImmutable();
     }
 
     private async Task<(int updatedCount, ImmutableArray<EditOperationResult> results)> ProcessUpdatesWithResultsAsync(

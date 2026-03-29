@@ -38,6 +38,11 @@ internal static class StandardErrorResponseFormatter
             return FormatODataError(context, errorResponse, options);
         }
 
+        if (ProtocolRequestClassifier.IsOgcServiceAlias(path))
+        {
+            return FormatWfsError(context, errorResponse, options);
+        }
+
         if (ProtocolRequestClassifier.IsOgc(path))
         {
             return FormatOgcError(context, errorResponse, options);

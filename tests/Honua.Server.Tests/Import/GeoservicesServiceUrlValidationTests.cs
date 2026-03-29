@@ -76,4 +76,26 @@ public sealed class GeoservicesServiceUrlValidationTests
         result.IsValid.Should().BeTrue();
         result.ErrorMessage.Should().BeNull();
     }
+
+    [UnitTest]
+    public async Task ValidateAsync_CloudMetadataLiteral_ReturnsFailure()
+    {
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://169.254.169.254/arcgis/rest/services/Test/FeatureServer",
+            static (_, _) => throw new InvalidOperationException("Literal IPs should not use DNS resolution."));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not allowed");
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_Ipv6MulticastResolution_ReturnsFailure()
+    {
+        var result = await GeoservicesServiceUrlValidation.ValidateAsync(
+            "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("ff02::1") }));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not allowed");
+    }
 }

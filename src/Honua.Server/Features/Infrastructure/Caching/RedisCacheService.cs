@@ -639,6 +639,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             await _redisGetPolicy.ExecuteAsync(
                 ct => _distributedCache.GetAsync(HealthCheckKey, ct),
                 cancellationToken).ConfigureAwait(false);
+            if (_isUsingFallback)
+            {
+                _fallbackCache.Clear();
+                _writeMetadata.Clear();
+            }
+
             _isUsingFallback = false;
             RedisCacheServiceLog.RedisConnectionRestored(_logger);
             return true;

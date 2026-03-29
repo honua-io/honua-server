@@ -647,34 +647,17 @@ internal sealed partial class OgcFilterProcessor
         }
 
         var hasZ = partCount == 6;
+        if (hasZ)
+        {
+            return BboxParseResult.Failure("3D bounding boxes are not supported.");
+        }
+
         double minX;
         double minY;
         double maxX;
         double maxY;
 
-        if (hasZ)
-        {
-            if (parts[2] > parts[5])
-            {
-                return BboxParseResult.Failure("Bounding box minimum Z must be less than or equal to maximum Z.");
-            }
-
-            if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
-            {
-                minX = parts[1];
-                minY = parts[0];
-                maxX = parts[4];
-                maxY = parts[3];
-            }
-            else
-            {
-                minX = parts[0];
-                minY = parts[1];
-                maxX = parts[3];
-                maxY = parts[4];
-            }
-        }
-        else if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
+        if (crsDefinition.AxisOrder == AxisOrder.NorthEast)
         {
             minX = parts[1];
             minY = parts[0];

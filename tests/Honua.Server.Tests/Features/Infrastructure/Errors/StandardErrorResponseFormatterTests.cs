@@ -130,6 +130,26 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         problemDetails.GetProperty("instance").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    public async Task FormatError_OgcServiceAliasPath_ReturnsXmlExceptionReport()
+    {
+        var context = CreateContext("/ogc/services/test-service/wmts");
+        var errorResponse = StandardErrorResponse.BadRequest("Tile matrix set is invalid.");
+
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(400);
+        context.Response.ContentType.Should().Be("application/xml; charset=utf-8");
+
+        var responseBody = GetResponseBody(context);
+        responseBody.Should().Contain("<ows:ExceptionReport");
+        responseBody.Should().Contain("Tile matrix set is invalid.");
+        responseBody.Should().NotContain("\"type\"");
+    }
+
     #endregion
 
     #region GeoServices Error Formatting

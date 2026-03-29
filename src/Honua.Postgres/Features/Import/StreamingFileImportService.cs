@@ -81,6 +81,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly string _geoParquetScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geoparquet");
     private static readonly CompositeFormat _nullGeometryWarningFormat =
         CompositeFormat.Parse("{0} row(s) were skipped because geometry was null.");
+    private static readonly CompositeFormat _partialImportWarningFormat =
+        CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -704,9 +706,19 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
         // Surface skipped null-geometry rows in the completion progress report
         // so background/queued imports expose the same warning as synchronous results.
-        string[] completionWarnings = format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0
-            ? [.. warnings, string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped)]
-            : warnings as string[] ?? [.. warnings];
+        var completionWarningsBuilder = new List<string>(warnings.Count + 2);
+        completionWarningsBuilder.AddRange(warnings);
+        if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
+        {
+            completionWarningsBuilder.Add(string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped));
+        }
+
+        if (_limits.ContinueOnError && totalFailed > 0)
+        {
+            completionWarningsBuilder.Add(string.Format(null, _partialImportWarningFormat, totalFailed));
+        }
+
+        string[] completionWarnings = [.. completionWarningsBuilder];
 
         // Report completion
         progress?.Report(new ImportProgress
@@ -780,43 +792,35 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ? await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
             : null;
 
-        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
-        {
-            Transaction = transaction
-        };
-        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
-        var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
-        var sourceSridParameter = command.Parameters.Add("source_srid", NpgsqlDbType.Integer);
-        sourceSridParameter.Value = sourceSrid;
-        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
-        var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
-
         try
         {
-            foreach (var feature in features)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
-                    // Use per-feature SRID when available (e.g. multi-layer FileGDBs
-                    // where each layer may have its own CRS).
-                    var featureSrid = feature.Geometry?.SRID;
-                    sourceSridParameter.Value = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
-                    propertiesParameter.Value = BuildPropertiesJson(feature);
-                    await command.ExecuteNonQueryAsync(cancellationToken);
-                    imported++;
-                }
-                catch (Exception ex)
-                {
-                    ImportLog.FeatureInsertFailed(_logger, ex, tableName);
-                    failed++;
-                    if (!_limits.ContinueOnError)
-                    {
-                        throw;
-                    }
-                }
+                imported = await InsertBatchFastAsync(
+                    connection,
+                    transaction,
+                    tableName,
+                    features,
+                    sourceSrid,
+                    targetSrid,
+                    wkbWriter,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception) when (_limits.ContinueOnError)
+            {
+                (imported, failed) = await InsertBatchIndividuallyAsync(
+                    connection,
+                    transaction,
+                    tableName,
+                    features,
+                    sourceSrid,
+                    targetSrid,
+                    wkbWriter,
+                    cancellationToken);
             }
 
             if (transaction != null)
@@ -831,6 +835,114 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 await transaction.RollbackAsync(CancellationToken.None);
             }
             throw;
+        }
+
+        return (imported, failed);
+    }
+
+    private async Task<int> InsertBatchFastAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string tableName,
+        IReadOnlyList<IFeature> features,
+        int sourceSrid,
+        int targetSrid,
+        WKBWriter wkbWriter,
+        CancellationToken cancellationToken)
+    {
+        var wkbs = new byte[]?[features.Count];
+        var sourceSrids = new int[features.Count];
+        var properties = new string[features.Count];
+
+        for (var i = 0; i < features.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var feature = features[i];
+            wkbs[i] = CreateWkb(feature, wkbWriter);
+
+            // Use per-feature SRID when available (e.g. multi-layer FileGDBs
+            // where each layer may have its own CRS).
+            var featureSrid = feature.Geometry?.SRID;
+            sourceSrids[i] = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
+            properties[i] = BuildPropertiesJson(feature);
+        }
+
+        const string sql = """
+            SELECT honua.insert_import_feature(
+                @table_name,
+                payload.wkb,
+                payload.source_srid,
+                @target_srid,
+                payload.properties)
+            FROM unnest(@wkbs, @source_srids, @properties) AS payload(wkb, source_srid, properties)
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            Transaction = transaction
+        };
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
+        command.Parameters.Add("source_srids", NpgsqlDbType.Array | NpgsqlDbType.Integer).Value = sourceSrids;
+        command.Parameters.Add("properties", NpgsqlDbType.Array | NpgsqlDbType.Jsonb).Value = properties;
+
+        var imported = 0;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            imported++;
+        }
+
+        return imported;
+    }
+
+    private async Task<(int imported, int failed)> InsertBatchIndividuallyAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string tableName,
+        IReadOnlyList<IFeature> features,
+        int sourceSrid,
+        int targetSrid,
+        WKBWriter wkbWriter,
+        CancellationToken cancellationToken)
+    {
+        var imported = 0;
+        var failed = 0;
+
+        await using var command = new NpgsqlCommand(InsertImportFeatureSql, connection)
+        {
+            Transaction = transaction
+        };
+        command.Parameters.Add("table_name", NpgsqlDbType.Text).Value = tableName;
+        var wkbParameter = command.Parameters.Add("wkb", NpgsqlDbType.Bytea);
+        var sourceSridParameter = command.Parameters.Add("source_srid", NpgsqlDbType.Integer);
+        sourceSridParameter.Value = sourceSrid;
+        command.Parameters.Add("target_srid", NpgsqlDbType.Integer).Value = targetSrid;
+        var propertiesParameter = command.Parameters.Add("properties", NpgsqlDbType.Jsonb);
+
+        foreach (var feature in features)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                wkbParameter.Value = CreateWkb(feature, wkbWriter) ?? (object)DBNull.Value;
+                var featureSrid = feature.Geometry?.SRID;
+                sourceSridParameter.Value = featureSrid is > 0 ? featureSrid.Value : sourceSrid;
+                propertiesParameter.Value = BuildPropertiesJson(feature);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                ImportLog.FeatureInsertFailed(_logger, ex, tableName);
+                failed++;
+                if (!_limits.ContinueOnError)
+                {
+                    throw;
+                }
+            }
         }
 
         return (imported, failed);

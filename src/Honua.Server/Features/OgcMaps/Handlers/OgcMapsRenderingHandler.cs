@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
@@ -246,9 +247,14 @@ internal sealed class OgcMapsRenderingHandler
             resolvedLayerCount = resolvedLayerIds.Length;
             scope.WithTag("layer_count", resolvedLayerCount);
 
-            // Use the first layer for extent calculation
-            var primaryLayer = layers[0];
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, primaryLayer, context);
+            var defaultExtentLayer = layers[0];
+            var datasetExtent = BuildDatasetExtent(layers);
+            if (datasetExtent.HasValue)
+            {
+                defaultExtentLayer = defaultExtentLayer with { Extent = datasetExtent.Value };
+            }
+
+            var (renderRequest, validationError) = CreateMapRenderRequest(request, defaultExtentLayer, context);
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, 0, validationError!);
@@ -486,6 +492,40 @@ internal sealed class OgcMapsRenderingHandler
 
     private static string FormatContentBboxHeader(double[] bbox)
         => FormattableString.Invariant($"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}");
+
+    private static FeatureExtent? BuildDatasetExtent(IReadOnlyList<Core.Features.Catalog.Domain.LayerDefinition> layers)
+    {
+        FeatureExtent? combined = null;
+        foreach (var layer in layers)
+        {
+            if (!layer.Extent.HasValue)
+            {
+                continue;
+            }
+
+            var extent = layer.Extent.Value;
+            if (!combined.HasValue)
+            {
+                combined = extent;
+                continue;
+            }
+
+            var current = combined.Value;
+            if (current.SpatialReference != extent.SpatialReference)
+            {
+                continue;
+            }
+
+            combined = FeatureExtent.Create(
+                Math.Min(current.MinX, extent.MinX),
+                Math.Min(current.MinY, extent.MinY),
+                Math.Max(current.MaxX, extent.MaxX),
+                Math.Max(current.MaxY, extent.MaxY),
+                current.SpatialReference);
+        }
+
+        return combined;
+    }
 
     /// <summary>
     /// Resolves the output format from the Accept header and/or f query parameter.

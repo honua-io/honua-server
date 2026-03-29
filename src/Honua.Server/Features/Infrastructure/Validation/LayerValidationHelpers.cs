@@ -81,14 +81,6 @@ internal static class LayerValidationHelpers
         }
 
         var layer = layerResult.Resource!;
-        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, effectiveToken);
-        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
-        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
-        if (accessError != null)
-        {
-            return new LayerValidationResult(false, null, accessError);
-        }
-
         var effectiveRequiredProtocol = string.IsNullOrWhiteSpace(requiredProtocol)
             ? protocol switch
             {
@@ -97,8 +89,17 @@ internal static class LayerValidationHelpers
                 _ => null
             }
             : requiredProtocol;
+        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, effectiveToken);
+        var resolvedService = ResolvePrimaryService(relatedServices, effectiveRequiredProtocol);
+        var accessDecision = EvaluateLayerAccess(context, layer, resolvedService, scope);
+        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
+        if (accessError != null)
+        {
+            return new LayerValidationResult(false, null, accessError);
+        }
+
         if (!string.IsNullOrWhiteSpace(effectiveRequiredProtocol) &&
-            !IsProtocolEnabledForLayer(layer, relatedServices, effectiveRequiredProtocol))
+            !IsProtocolEnabledForLayer(layer, resolvedService, effectiveRequiredProtocol))
         {
             var protocolError = protocol switch
             {
@@ -147,7 +148,8 @@ internal static class LayerValidationHelpers
 
         var layer = layerResult.Resource!;
         var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
-        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var resolvedService = ResolvePrimaryService(relatedServices, requiredProtocol);
+        var accessDecision = EvaluateLayerAccess(context, layer, resolvedService, scope);
         var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
@@ -156,7 +158,7 @@ internal static class LayerValidationHelpers
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
-            if (!IsProtocolEnabledForLayer(layer, relatedServices, requiredProtocol))
+            if (!IsProtocolEnabledForLayer(layer, resolvedService, requiredProtocol))
             {
                 var protocolError = StandardErrorHelpers.CreateNotFound(
                     context,
@@ -196,7 +198,8 @@ internal static class LayerValidationHelpers
 
         var layer = collectionResult.Resource!;
         var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
-        var accessDecision = EvaluateLayerAccess(context, layer, relatedServices, scope);
+        var resolvedService = ResolvePrimaryService(relatedServices, requiredProtocol);
+        var accessDecision = EvaluateLayerAccess(context, layer, resolvedService, scope);
         var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
         if (accessError != null)
         {
@@ -205,7 +208,7 @@ internal static class LayerValidationHelpers
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
-            if (!IsProtocolEnabledForLayer(layer, relatedServices, requiredProtocol))
+            if (!IsProtocolEnabledForLayer(layer, resolvedService, requiredProtocol))
             {
                 var protocolError = StandardErrorHelpers.CreateNotFound(
                     context,
@@ -242,6 +245,54 @@ internal static class LayerValidationHelpers
         }
 
         return layerValidation;
+    }
+
+    /// <summary>
+    /// Resolves the canonical service for the specified layer and protocol.
+    /// When a layer belongs to multiple services, the protocol-enabled service with the
+    /// lexicographically earliest name wins to keep routing deterministic.
+    /// </summary>
+    public static async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(
+        HttpContext context,
+        int layerId,
+        string? preferredProtocol = null,
+        CancellationToken cancellationToken = default)
+    {
+        var relatedServices = await GetRelatedServicesAsync(context, layerId, cancellationToken);
+        return ResolvePrimaryService(relatedServices, preferredProtocol);
+    }
+
+    /// <summary>
+    /// Resolves the canonical service name for the specified layer and protocol.
+    /// </summary>
+    public static async Task<string?> ResolvePrimaryServiceNameAsync(
+        HttpContext context,
+        int layerId,
+        string? preferredProtocol = null,
+        CancellationToken cancellationToken = default)
+    {
+        var service = await ResolvePrimaryServiceAsync(context, layerId, preferredProtocol, cancellationToken);
+        return service?.Name;
+    }
+
+    /// <summary>
+    /// Builds a deterministic layer-to-service map for a protocol-specific route surface.
+    /// </summary>
+    public static IReadOnlyDictionary<int, ServiceDefinition> BuildPrimaryServiceMap(
+        IEnumerable<ServiceDefinition> services,
+        string? preferredProtocol = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        return services
+            .SelectMany(service => service.Layers.Select(layer => (LayerId: layer.Id, Service: service)))
+            .GroupBy(static entry => entry.LayerId)
+            .ToDictionary(
+                static group => group.Key,
+                group => ResolvePrimaryService(
+                    group.Select(static entry => entry.Service).DistinctBy(static service => service.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
+                    preferredProtocol)
+                    ?? throw new InvalidOperationException("Layer service group unexpectedly resolved to no service."));
     }
 
     /// <summary>
@@ -345,51 +396,37 @@ internal static class LayerValidationHelpers
     private static AccessDecision EvaluateLayerAccess(
         HttpContext context,
         LayerDefinition layer,
-        ServiceDefinition[] relatedServices,
+        ServiceDefinition? service,
         AccessScope scope)
     {
-        if (relatedServices.Length == 0)
-        {
-            return AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope);
-        }
-
-        var requiresAuthentication = false;
-
-        foreach (var service in relatedServices)
-        {
-            var decision = AccessPolicyHelpers.EvaluateAccess(
-                context,
-                layer.Metadata?.AccessPolicy,
-                service.Metadata?.AccessPolicy,
-                scope);
-
-            if (decision.IsAllowed)
-            {
-                return decision;
-            }
-
-            if (decision.RequiresAuthentication)
-            {
-                requiresAuthentication = true;
-            }
-        }
-
-        return requiresAuthentication
-            ? AccessDecision.RequiresAuth("Authentication is required.")
-            : AccessDecision.Forbidden("Access to this resource is forbidden.");
+        return AccessPolicyHelpers.EvaluateAccess(
+            context,
+            layer.Metadata?.AccessPolicy,
+            service?.Metadata?.AccessPolicy,
+            scope);
     }
 
     private static bool IsProtocolEnabledForLayer(
         LayerDefinition layer,
-        ServiceDefinition[] relatedServices,
+        ServiceDefinition? service,
         string protocol)
     {
-        var layerAllowsProtocol = ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol);
-        if (relatedServices.Length == 0)
-        {
-            return layerAllowsProtocol;
-        }
+        return service == null
+            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol)
+            : ServiceProtocols.IsProtocolEnabled(service.Metadata, protocol);
+    }
 
-        return relatedServices.Any(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, protocol));
+    private static ServiceDefinition? ResolvePrimaryService(
+        IEnumerable<ServiceDefinition> relatedServices,
+        string? preferredProtocol)
+    {
+        ArgumentNullException.ThrowIfNull(relatedServices);
+
+        return relatedServices
+            .OrderByDescending(service =>
+                !string.IsNullOrWhiteSpace(preferredProtocol) &&
+                ServiceProtocols.IsProtocolEnabled(service.Metadata, preferredProtocol))
+            .ThenBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 }

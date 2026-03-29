@@ -17,6 +17,8 @@ internal static class TileRenderer
 {
     private const int TileSize = 256;
 
+    internal readonly record struct TileRenderLayer(ImmutableArray<Feature> Features, GeometryType GeometryType);
+
     /// <summary>
     /// Renders a set of features to a PNG image for the given tile bounds.
     /// </summary>
@@ -29,12 +31,19 @@ internal static class TileRenderer
         TileBounds bounds,
         GeometryType geometryType)
     {
+        return RenderTilePng([new TileRenderLayer(features, geometryType)], bounds);
+    }
+
+    internal static byte[] RenderTilePng(
+        IReadOnlyList<TileRenderLayer> layers,
+        TileBounds bounds)
+    {
         using var surface = SKSurface.Create(
             new SKImageInfo(TileSize, TileSize, SKColorType.Rgba8888, SKAlphaType.Premul));
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.Transparent);
 
-        if (features.Length == 0)
+        if (layers.Count == 0)
         {
             return EncodePng(surface);
         }
@@ -56,17 +65,20 @@ internal static class TileRenderer
             (float)((x - minX) * scaleX),
             (float)((maxY - y) * scaleY));
 
-        using var fill = CreateDefaultFillPaint(geometryType);
-        using var stroke = CreateDefaultStrokePaint(geometryType);
-
-        foreach (var feature in features)
+        foreach (var layer in layers)
         {
-            if (feature.Geometry == null || feature.Geometry.Length < 5)
-            {
-                continue;
-            }
+            using var fill = CreateDefaultFillPaint(layer.GeometryType);
+            using var stroke = CreateDefaultStrokePaint(layer.GeometryType);
 
-            RenderFeature(canvas, feature.Geometry, Transform, fill, stroke, geometryType);
+            foreach (var feature in layer.Features)
+            {
+                if (feature.Geometry == null || feature.Geometry.Length < 5)
+                {
+                    continue;
+                }
+
+                RenderFeature(canvas, feature.Geometry, Transform, fill, stroke, layer.GeometryType);
+            }
         }
 
         return EncodePng(surface);

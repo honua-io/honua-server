@@ -36,7 +36,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = $"ST_Transform({baseGeometry}, {query.OutputSrid.Value})";
         }
 
-        return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, 1)";
+        return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)})";
     }
 
     public string GetGeometryGeoJsonExpression(CoreGeometryStorageType storageType, FeatureQuery query)
@@ -177,5 +177,24 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         var baseGeometry = $"ST_GeomFromEWKB({parameterName})";
         var assumedSrid = layerSrid ?? targetSrid;
         return $"ST_SetSRID({baseGeometry}, COALESCE(NULLIF(ST_SRID({baseGeometry}), 0), {assumedSrid}))::geography";
+    }
+
+    private static int GetGmlOptions(FeatureQuery query)
+    {
+        var axisOrder = query.OutputAxisOrder;
+        if (!axisOrder.HasValue)
+        {
+            var outputSrid = query.OutputSrid ?? query.SpatialReferenceSrid;
+            if (outputSrid.HasValue && SpatialReference.Create(outputSrid.Value).IsGeographic)
+            {
+                axisOrder = AxisOrder.NorthEast;
+            }
+        }
+
+        const int longSrsNameOption = 1;
+        const int axisFlipOption = 16;
+        return axisOrder == AxisOrder.NorthEast
+            ? longSrsNameOption | axisFlipOption
+            : longSrsNameOption;
     }
 }

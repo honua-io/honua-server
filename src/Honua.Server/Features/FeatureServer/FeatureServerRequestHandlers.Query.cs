@@ -62,7 +62,7 @@ internal static partial class FeatureServerEndpoints
         {
             if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+                return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -158,7 +158,7 @@ internal static partial class FeatureServerEndpoints
         {
             if (TryGetUnsupportedMediaType(readError, out var receivedContentType))
             {
-                return CreateUnsupportedRequestContentTypeResult(receivedContentType);
+                return CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
             }
 
             return StandardErrorHelpers.CreateBadRequest(context,

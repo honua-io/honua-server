@@ -174,6 +174,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 OrderBy = orderBy,
                 SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
                 OutputSrid = filterResult.CrsDefinition.Srid,
+                OutputAxisOrder = filterResult.CrsDefinition.AxisOrder,
                 SpatialFilter = filterResult.SpatialFilter,
                 TemporalFilter = filterResult.TemporalFilter,
                 IncludeNullGeometry = filterResult.IncludeNullGeometry
@@ -550,7 +551,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 ObjectIds = ImmutableArray.Create(objectId),
                 Limit = 1,
                 SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-                OutputSrid = crsDefinition.Srid
+                OutputSrid = crsDefinition.Srid,
+                OutputAxisOrder = crsDefinition.AxisOrder
             };
             GeoJsonFeature? ogcFeature;
             if (_featureReader is IGeoJsonFeatureStore geoJsonFeatureStore &&

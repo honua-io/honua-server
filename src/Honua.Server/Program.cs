@@ -756,25 +756,7 @@ if (useTestSchemaHeaders && (app.Environment.IsDevelopment() || app.Environment.
 // Add performance monitoring middleware (tracks request duration and memory)
 app.UsePerformanceMonitoring();
 
-// Add global exception handling middleware (after correlation ID for exception logging)
-app.UseGlobalExceptionHandling();
-
-// Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
-app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
-
-// Add CORS middleware before auth to handle preflight requests
-app.UseHonuaCors(app.Environment);
-
-// Add authentication and authorization middleware early to short-circuit unauthorized requests
-app.UseApiKeyAuthentication();
-
-// Add limits enforcement middleware (after auth, before request logging)
-app.UseLimitsEnforcement();
-
-// Enable output caching middleware
-app.UseOutputCache();
-
-// Configure Serilog request logging with custom enrichment
+// Configure Serilog request logging before short-circuiting middleware so every request is observable.
 app.UseSerilogRequestLogging(options =>
 {
     options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
@@ -797,6 +779,24 @@ app.UseSerilogRequestLogging(options =>
             ? Serilog.Events.LogEventLevel.Verbose
             : Serilog.Events.LogEventLevel.Information;
 });
+
+// Add global exception handling middleware after request logging.
+app.UseGlobalExceptionHandling();
+
+// Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
+app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
+
+// Add CORS middleware before auth to handle preflight requests
+app.UseHonuaCors(app.Environment);
+
+// Add authentication and authorization middleware early to short-circuit unauthorized requests
+app.UseApiKeyAuthentication();
+
+// Add limits enforcement middleware (after auth, before request logging)
+app.UseLimitsEnforcement();
+
+// Enable output caching middleware
+app.UseOutputCache();
 
 // Log application startup
 var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";

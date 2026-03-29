@@ -3,6 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using NetTopologySuite;
@@ -45,7 +47,14 @@ public static class Fes20Parser
     {
         try
         {
-            var doc = XDocument.Parse(filterXml);
+            using var stringReader = new StringReader(filterXml);
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null
+            };
+            using var xmlReader = XmlReader.Create(stringReader, settings);
+            var doc = XDocument.Load(xmlReader, LoadOptions.None);
             var filterElement = doc.Root ?? throw new Fes20ParseException("Invalid XML: no root element");
             return ParseFilter(filterElement);
         }
@@ -191,7 +200,7 @@ public static class Fes20Parser
         var wildCard = element.Attribute("wildCard")?.Value ?? "%";
         var singleChar = element.Attribute("singleChar")?.Value ?? "_";
         var escapeChar = element.Attribute("escapeChar")?.Value ?? "\\";
-        var matchCase = element.Attribute("matchCase")?.Value;
+        var matchCase = !string.Equals(element.Attribute("matchCase")?.Value, "false", StringComparison.OrdinalIgnoreCase);
 
         var children = element.Elements().ToArray();
         if (children.Length != 2)
@@ -206,7 +215,21 @@ public static class Fes20Parser
         if (pattern is Literal literal && literal.Value is string patternStr)
         {
             var sqlPattern = ConvertFesPatternToSql(patternStr, wildCard, singleChar, escapeChar);
+            if (!matchCase)
+            {
+                sqlPattern = sqlPattern.ToLowerInvariant();
+            }
+
             pattern = new Literal(sqlPattern, LiteralType.Text);
+        }
+        else if (!matchCase)
+        {
+            pattern = new FunctionCall("LOWER", [pattern]);
+        }
+
+        if (!matchCase)
+        {
+            propertyRef = new FunctionCall("LOWER", [propertyRef]);
         }
 
         return new BinaryExpression(propertyRef, BinaryOperator.Like, pattern);
@@ -305,7 +328,7 @@ public static class Fes20Parser
     /// <summary>
     /// Parses DWithin spatial operation
     /// </summary>
-    private static SpatialPredicate ParseDWithin(XElement element)
+    private static SpatialDistancePredicate ParseDWithin(XElement element)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 3)
@@ -330,15 +353,17 @@ public static class Fes20Parser
         var property = new PropertyReference(propertyRef.Value.Trim());
         var geometry = ParseGeometry(geometryElement);
 
-        // TODO: Handle distance units and create proper distance-based spatial predicate
-        // For now, treat as regular intersects
-        return new SpatialPredicate(SpatialOperator.DWithin, property, geometry);
+        return new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            property,
+            geometry,
+            ParseDistanceLiteral(distance));
     }
 
     /// <summary>
     /// Parses Beyond spatial operation
     /// </summary>
-    private static SpatialPredicate ParseBeyond(XElement element)
+    private static SpatialDistancePredicate ParseBeyond(XElement element)
     {
         var children = element.Elements().ToArray();
         if (children.Length != 3)
@@ -363,9 +388,11 @@ public static class Fes20Parser
         var property = new PropertyReference(propertyRef.Value.Trim());
         var geometry = ParseGeometry(geometryElement);
 
-        // TODO: Handle distance units and create proper distance-based spatial predicate
-        // For now, treat as disjoint
-        return new SpatialPredicate(SpatialOperator.Beyond, property, geometry);
+        return new SpatialDistancePredicate(
+            SpatialOperator.Beyond,
+            property,
+            geometry,
+            ParseDistanceLiteral(distance));
     }
 
     /// <summary>
@@ -495,7 +522,9 @@ public static class Fes20Parser
                 "int" or "integer" or "xs:int" or "xs:integer" => new Literal(int.Parse(value, CultureInfo.InvariantCulture), LiteralType.Number),
                 "double" or "xs:double" or "decimal" or "xs:decimal" => new Literal(double.Parse(value, CultureInfo.InvariantCulture), LiteralType.Number),
                 "boolean" or "xs:boolean" => new Literal(bool.Parse(value), LiteralType.Boolean),
-                "date" or "xs:date" or "datetime" or "xs:dateTime" => new Literal(DateTime.Parse(value, CultureInfo.InvariantCulture), LiteralType.DateTime),
+                "date" or "xs:date" or "datetime" or "xs:datetime" => new Literal(
+                    DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                    LiteralType.DateTime),
                 _ => new Literal(value, LiteralType.Text)
             };
         }
@@ -510,7 +539,7 @@ public static class Fes20Parser
         if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
             return new Literal(doubleValue, LiteralType.Number);
 
-        if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateValue))
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateValue))
             return new Literal(dateValue, LiteralType.DateTime);
 
         return new Literal(value, LiteralType.Text);
@@ -521,11 +550,101 @@ public static class Fes20Parser
     /// </summary>
     private static string ConvertFesPatternToSql(string pattern, string wildCard, string singleChar, string escapeChar)
     {
-        // Replace FES wildcards with SQL wildcards
-        // This is a simplified conversion - a full implementation would need proper escaping
-        return pattern
-            .Replace(wildCard, "%")
-            .Replace(singleChar, "_");
+        if (string.IsNullOrEmpty(wildCard) || string.IsNullOrEmpty(singleChar) || string.IsNullOrEmpty(escapeChar))
+        {
+            throw new Fes20ParseException("PropertyIsLike wildcard, singleChar, and escapeChar values must be non-empty.");
+        }
+
+        var builder = new StringBuilder(pattern.Length * 2);
+
+        for (var index = 0; index < pattern.Length;)
+        {
+            if (MatchesToken(pattern, escapeChar, index))
+            {
+                index += escapeChar.Length;
+                if (index >= pattern.Length)
+                {
+                    AppendEscapedSqlLikeText(builder, escapeChar);
+                    break;
+                }
+
+                if (MatchesToken(pattern, wildCard, index))
+                {
+                    AppendEscapedSqlLikeText(builder, wildCard);
+                    index += wildCard.Length;
+                    continue;
+                }
+
+                if (MatchesToken(pattern, singleChar, index))
+                {
+                    AppendEscapedSqlLikeText(builder, singleChar);
+                    index += singleChar.Length;
+                    continue;
+                }
+
+                if (MatchesToken(pattern, escapeChar, index))
+                {
+                    AppendEscapedSqlLikeText(builder, escapeChar);
+                    index += escapeChar.Length;
+                    continue;
+                }
+
+                AppendEscapedSqlLikeCharacter(builder, pattern[index]);
+                index++;
+                continue;
+            }
+
+            if (MatchesToken(pattern, wildCard, index))
+            {
+                builder.Append('%');
+                index += wildCard.Length;
+                continue;
+            }
+
+            if (MatchesToken(pattern, singleChar, index))
+            {
+                builder.Append('_');
+                index += singleChar.Length;
+                continue;
+            }
+
+            AppendEscapedSqlLikeCharacter(builder, pattern[index]);
+            index++;
+        }
+
+        return builder.ToString();
+    }
+
+    private static Literal ParseDistanceLiteral(XElement distanceElement)
+    {
+        if (!double.TryParse(distanceElement.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance))
+        {
+            throw new Fes20ParseException("Distance element must contain a valid numeric value.");
+        }
+
+        return new Literal(distance, LiteralType.Number);
+    }
+
+    private static bool MatchesToken(string text, string token, int index)
+        => index + token.Length <= text.Length &&
+           string.CompareOrdinal(text, index, token, 0, token.Length) == 0;
+
+    private static void AppendEscapedSqlLikeText(StringBuilder builder, string value)
+    {
+        foreach (var character in value)
+        {
+            AppendEscapedSqlLikeCharacter(builder, character);
+        }
+    }
+
+    private static void AppendEscapedSqlLikeCharacter(StringBuilder builder, char character)
+    {
+        if (character is '%' or '_' or '\\')
+        {
+            builder.Append('\\');
+        }
+
+        builder.Append(character);
     }
 
     /// <summary>

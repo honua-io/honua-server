@@ -482,7 +482,7 @@ internal static partial class FeatureServerEndpoints
 
         if (!TryValidateRequestContentType(request, out var receivedContentType))
         {
-            return (null, null, CreateUnsupportedRequestContentTypeResult(receivedContentType));
+            return (null, null, CreateUnsupportedRequestContentTypeResult(request.HttpContext, receivedContentType));
         }
 
         return (await JsonSerializer.DeserializeAsync(
@@ -643,6 +643,7 @@ internal static partial class FeatureServerEndpoints
         if (!TryValidateRequestContentType(request, out var receivedContentType))
         {
             return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+                request.HttpContext,
                 receivedContentType ?? "(missing)",
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
@@ -695,6 +696,7 @@ internal static partial class FeatureServerEndpoints
         if (!TryValidateRequestContentType(request, out var receivedContentType))
         {
             return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+                request.HttpContext,
                 receivedContentType ?? "(missing)",
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
@@ -742,6 +744,7 @@ internal static partial class FeatureServerEndpoints
         if (!TryValidateRequestContentType(request, out var receivedContentType))
         {
             return (null, null, ValidationErrorHelpers.CreateUnsupportedMediaType(
+                request.HttpContext,
                 receivedContentType ?? "(missing)",
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {

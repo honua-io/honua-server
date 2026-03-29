@@ -210,6 +210,78 @@ public sealed class CachingLayerCatalogTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task LayerExistsAsync_MissingLayer_CachesNegativeResultWithNegativeTtl()
+    {
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            LayerTtlSeconds = 60,
+            ServiceTtlSeconds = 60,
+            NegativeTtlSeconds = 5,
+            JitterPercentage = 0,
+            EnableFallback = true,
+            FallbackMaxEntries = 100,
+            KeyPrefix = "neg-layer:"
+        };
+
+        using var cache = new RedisCacheService(
+            null,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+        var catalog = new MockLayerCatalog();
+        catalog.MissingLayerIds.Add(101);
+        var cachingCatalog = new CachingLayerCatalog(catalog, cache, Options.Create(options));
+
+        var exists = await cachingCatalog.LayerExistsAsync(101);
+        exists.Should().BeFalse();
+
+        var metadata = await cache.GetWithMetadataAsync<CachedExistenceResult>(
+            $"{CachingLayerCatalog.LayerExistsKeyPrefix}101");
+
+        metadata.HasValue.Should().BeTrue();
+        metadata.Value!.Exists.Should().BeFalse();
+        metadata.RemainingTtl.Should().BeLessThan(TimeSpan.FromSeconds(10));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task ServiceExistsAsync_MissingService_CachesNegativeResultWithNegativeTtl()
+    {
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            LayerTtlSeconds = 60,
+            ServiceTtlSeconds = 60,
+            NegativeTtlSeconds = 5,
+            JitterPercentage = 0,
+            EnableFallback = true,
+            FallbackMaxEntries = 100,
+            KeyPrefix = "neg-service:"
+        };
+
+        using var cache = new RedisCacheService(
+            null,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+        var catalog = new MockLayerCatalog();
+        catalog.MissingServiceNames.Add("ghost");
+        var cachingCatalog = new CachingLayerCatalog(catalog, cache, Options.Create(options));
+
+        var exists = await cachingCatalog.ServiceExistsAsync("ghost");
+        exists.Should().BeFalse();
+
+        var metadata = await cache.GetWithMetadataAsync<CachedExistenceResult>(
+            $"{CachingLayerCatalog.ServiceExistsKeyPrefix}ghost");
+
+        metadata.HasValue.Should().BeTrue();
+        metadata.Value!.Exists.Should().BeFalse();
+        metadata.RemainingTtl.Should().BeLessThan(TimeSpan.FromSeconds(10));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task InvalidateLayerAsync_ClearsLayerCache()
     {
         // Arrange

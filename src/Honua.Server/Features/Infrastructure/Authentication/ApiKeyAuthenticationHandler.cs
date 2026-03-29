@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Extensions.Options;
@@ -303,23 +304,17 @@ internal sealed class ApiKeyAuthenticationHandler(
             Response.Headers.Append("WWW-Authenticate", $"Basic realm=\"{AuthRealm}\", charset=\"UTF-8\"");
         }
 
-        Response.StatusCode = 401;
-        Response.ContentType = "application/problem+json; charset=utf-8";
-
         // Check if there's a specific failure message from authentication
         string? failureMessage = Context.Items[AuthFailureMessageKey] as string;
-        if (!string.IsNullOrEmpty(failureMessage))
-        {
-            string escapedMessage = System.Text.Json.JsonEncodedText.Encode(failureMessage).ToString();
-            string problemDetails = $$"""{"title":"Unauthorized","status":401,"detail":"{{escapedMessage}}"}""";
-            return Response.WriteAsync(problemDetails);
-        }
-
         bool devBypassEnabled = IsDevelopmentBypassEnabled();
-        string defaultDetails = devBypassEnabled
-            ? """{"title":"Unauthorized","status":401,"detail":"API key required. Development bypass is enabled but this request still requires authentication."}"""
-            : """{"title":"Unauthorized","status":401,"detail":"API key required. Provide a valid API key in the X-API-Key header."}""";
+        var detail = !string.IsNullOrEmpty(failureMessage)
+            ? failureMessage
+            : devBypassEnabled
+                ? "API key required. Development bypass is enabled but this request still requires authentication."
+                : "API key required. Provide a valid API key in the X-API-Key header.";
 
-        return Response.WriteAsync(defaultDetails);
+        return StandardErrorResponseFormatter.WriteErrorAsync(
+            Context,
+            StandardErrorResponse.Unauthorized(detail));
     }
 }

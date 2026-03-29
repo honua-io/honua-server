@@ -363,6 +363,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         layerResponse.SupportedQueryFormats.Should().Contain("FGB");
         layerResponse.SupportedQueryFormats.Should().Contain("GEOBUF");
         layerResponse.Capabilities.Should().NotBeNullOrEmpty();
+        layerResponse.AdvancedQueryCapabilities.Should().NotBeNull();
+        layerResponse.AdvancedQueryCapabilities!.SupportsPagination.Should().Be(layerResponse.SupportsPagination);
+        layerResponse.AdvancedQueryCapabilities.SupportsOrderBy.Should().Be(layerResponse.SupportsOrderBy);
+        layerResponse.AdvancedQueryCapabilities.SupportsDistinct.Should().Be(layerResponse.SupportsDistinct);
+        layerResponse.AdvancedQueryCapabilities.SupportsStatistics.Should().Be(layerResponse.SupportsStatistics);
 
         // Validate fields structure
         foreach (var field in layerResponse.Fields)

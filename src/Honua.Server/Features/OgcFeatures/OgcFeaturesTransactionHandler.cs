@@ -101,10 +101,11 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     if (result.IsSuccess &&
                         TryGetBatchEventOperation(operation, result, out var eventOperation, out var objectId))
                     {
+                        var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
                         await _featureChangeEventPublisher.PublishAsync(
                             new FeatureChangeEventRequest
                             {
-                                ServiceId = collectionId,
+                                ServiceId = serviceId,
                                 LayerId = layerId,
                                 ObjectId = objectId,
                                 Operation = eventOperation,
@@ -265,10 +266,11 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
                 await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+                var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
                 await _featureChangeEventPublisher.PublishAsync(
                     new FeatureChangeEventRequest
                     {
-                        ServiceId = collectionId,
+                        ServiceId = serviceId,
                         LayerId = layerId,
                         ObjectId = updated.Id,
                         Operation = "update",
@@ -476,10 +478,11 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(updated, inputCrs.AxisOrder, updateLinks);
 
                 await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+                var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
                 await _featureChangeEventPublisher.PublishAsync(
                     new FeatureChangeEventRequest
                     {
-                        ServiceId = collectionId,
+                        ServiceId = serviceId,
                         LayerId = layerId,
                         ObjectId = updated.Id,
                         Operation = "update",
@@ -939,6 +942,20 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
+    }
+
+    private static async Task<string> ResolveServiceIdAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
+            context,
+            layerId,
+            ServiceProtocols.OgcFeatures,
+            cancellationToken);
+
+        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     private static string GenerateETag(Feature feature)

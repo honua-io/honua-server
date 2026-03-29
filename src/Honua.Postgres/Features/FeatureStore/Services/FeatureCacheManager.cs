@@ -330,6 +330,8 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
 
         _layerSridCache.TryRemove((_cacheIdentity, layerId), out _);
+        _geometryStorageTypeCache.TryRemove(_cacheIdentity, out _);
+        _hasLayerCatalogCache.TryRemove(_cacheIdentity, out _);
     }
 
     private static bool IsLayerSridCacheExpired(Internal.LayerSridCacheEntry entry, DateTimeOffset now)

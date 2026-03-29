@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Concurrent;
 using System.Text;
 using FluentAssertions;
 using Honua.Postgres.Features.Import;
@@ -31,6 +32,44 @@ public sealed class GeoServerRestClientTests
         result.BuildTimestamp.Should().Be("13-Oct-2025 05:02");
         result.GitRevision.Should().Be("16064e8d72a06ac36b373d8cd7cf328bde2be7cd");
     }
+
+    [Fact]
+    public async Task DiscoverServiceAsync_ConcurrentCallsWithDifferentCredentials_UsesPerRequestAuthorizationHeaders()
+    {
+        using var handler = new CoordinatedGeoServerHandler();
+        using var httpClient = new HttpClient(handler);
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+
+        var alphaTask = client.DiscoverServiceAsync(
+            "https://alpha.example/geoserver/rest",
+            username: "alpha-user",
+            password: "alpha-pass",
+            includeCompatibilityAnalysis: false,
+            includeStyleContent: false,
+            timeoutSeconds: 5,
+            maxRetryAttempts: 0,
+            CancellationToken.None);
+
+        await handler.WaitForAlphaVersionRequestAsync();
+
+        var betaTask = client.DiscoverServiceAsync(
+            "https://beta.example/geoserver/rest",
+            username: "beta-user",
+            password: "beta-pass",
+            includeCompatibilityAnalysis: false,
+            includeStyleContent: false,
+            timeoutSeconds: 5,
+            maxRetryAttempts: 0,
+            CancellationToken.None);
+
+        await Task.WhenAll(alphaTask, betaTask);
+
+        handler.GetAuthorizations("alpha.example").Should().OnlyContain(value => value == CreateBasicAuthorization("alpha-user", "alpha-pass"));
+        handler.GetAuthorizations("beta.example").Should().OnlyContain(value => value == CreateBasicAuthorization("beta-user", "beta-pass"));
+    }
+
+    private static string CreateBasicAuthorization(string username, string password)
+        => $"Basic {Convert.ToBase64String(Encoding.ASCII.GetBytes($"{username}:{password}"))}";
 
     private sealed class StubGeoServerHandler : HttpMessageHandler
     {
@@ -64,6 +103,62 @@ public sealed class GeoServerRestClientTests
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             });
+        }
+    }
+
+    private sealed class CoordinatedGeoServerHandler : HttpMessageHandler, IDisposable
+    {
+        private readonly TaskCompletionSource _alphaVersionRequestSeen = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _betaRequestSeen = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentDictionary<string, ConcurrentQueue<string?>> _authorizations = new(StringComparer.OrdinalIgnoreCase);
+
+        public Task WaitForAlphaVersionRequestAsync()
+            => _alphaVersionRequestSeen.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public string?[] GetAuthorizations(string host)
+            => _authorizations.TryGetValue(host, out var values)
+                ? values.ToArray()
+                : Array.Empty<string?>();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var host = request.RequestUri?.Host ?? string.Empty;
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+
+            _authorizations.GetOrAdd(host, _ => new ConcurrentQueue<string?>())
+                .Enqueue(request.Headers.Authorization?.ToString());
+
+            if (string.Equals(host, "alpha.example", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(path, "/geoserver/rest/about/version.xml", StringComparison.Ordinal))
+            {
+                _alphaVersionRequestSeen.TrySetResult();
+                await _betaRequestSeen.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+            else if (string.Equals(host, "beta.example", StringComparison.OrdinalIgnoreCase))
+            {
+                _betaRequestSeen.TrySetResult();
+            }
+
+            var (contentType, payload) = path switch
+            {
+                "/geoserver/rest/about/version.xml" => ("application/xml", """
+                    <about>
+                      <resource name="GeoServer">
+                        <Version>2.28.0</Version>
+                      </resource>
+                    </about>
+                    """),
+                "/geoserver/rest/settings.json" => ("application/json", """{"global":{}}"""),
+                "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":""}}"""),
+                "/geoserver/rest/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
+            };
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, contentType)
+            };
         }
     }
 }

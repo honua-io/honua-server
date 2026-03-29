@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
@@ -52,6 +53,11 @@ public readonly record struct FeatureQuery
     /// Optional output SRID for geometry transformation in query results
     /// </summary>
     public int? OutputSrid { get; init; }
+
+    /// <summary>
+    /// Optional output axis order for formats that encode coordinates according to CRS axis definitions.
+    /// </summary>
+    public AxisOrder? OutputAxisOrder { get; init; }
 
     /// <summary>
     /// Temporal filter for time-based queries

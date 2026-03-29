@@ -22,6 +22,23 @@ internal static class ProtocolRequestClassifier
 
     internal static bool IsOData(PathString path) => path.StartsWithSegments("/odata");
 
+    internal static bool IsOgcServiceAlias(PathString path)
+    {
+        if (!path.StartsWithSegments("/ogc/services", out var remaining))
+        {
+            return false;
+        }
+
+        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments is null || segments.Length < 2)
+        {
+            return false;
+        }
+
+        return string.Equals(segments[1], "wms", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(segments[1], "wmts", StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static bool IsOgc(PathString path) =>
         path.StartsWithSegments("/ogc/features") ||
         path.StartsWithSegments("/ogc/tiles") ||

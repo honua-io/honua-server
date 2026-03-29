@@ -17,6 +17,8 @@ internal sealed partial class GeoServerRestClient
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<GeoServerRestClient> _logger;
+    private readonly AsyncLocal<AuthenticationHeaderValue?> _requestAuthorization = new();
+    private readonly AsyncLocal<TimeSpan?> _requestTimeout = new();
 
     public GeoServerRestClient(HttpClient httpClient, ILogger<GeoServerRestClient> logger)
     {
@@ -44,19 +46,13 @@ internal sealed partial class GeoServerRestClient
         using var activity = GeoServerImportActivity.StartDiscovery(geoServerRestUrl);
 
         var baseUrl = geoServerRestUrl.TrimEnd('/');
+        var previousAuthorization = _requestAuthorization.Value;
+        var previousTimeout = _requestTimeout.Value;
 
-        // Setup authentication if provided
-        if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
-        {
-            var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{username}:{password}"));
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
-        }
-        else
-        {
-            _httpClient.DefaultRequestHeaders.Authorization = null;
-        }
-
-        _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        _requestAuthorization.Value = !string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password)
+            ? new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.ASCII.GetBytes($"{username}:{password}")))
+            : null;
+        _requestTimeout.Value = TimeSpan.FromSeconds(timeoutSeconds);
 
         try
         {
@@ -125,6 +121,11 @@ internal sealed partial class GeoServerRestClient
             Log.ServiceDiscoveryUnexpectedError(_logger, geoServerRestUrl, ex);
             throw;
         }
+        finally
+        {
+            _requestAuthorization.Value = previousAuthorization;
+            _requestTimeout.Value = previousTimeout;
+        }
     }
 
     private async Task<(string? Version, string? BuildTimestamp, string? GitRevision)> GetServerVersionAsync(
@@ -132,7 +133,7 @@ internal sealed partial class GeoServerRestClient
     {
         try
         {
-            var response = await _httpClient.GetStringAsync(BuildXmlUrl(baseUrl, "about/version"), cancellationToken);
+            var response = await GetStringAsync(BuildXmlUrl(baseUrl, "about/version"), cancellationToken).ConfigureAwait(false);
             var doc = XDocument.Parse(response);
 
             var aboutElement = doc.Root?.Name.LocalName == "about"
@@ -615,7 +616,7 @@ internal sealed partial class GeoServerRestClient
                         ? BuildSldUrl(baseUrl, $"styles/{EscapePathSegment(styleName)}")
                         : BuildSldUrl(baseUrl, $"workspaces/{EscapePathSegment(workspaceName)}/styles/{EscapePathSegment(styleName)}");
 
-                    sldContent = await _httpClient.GetStringAsync(sldUrl, cancellationToken).ConfigureAwait(false);
+                    sldContent = await GetStringAsync(sldUrl, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -645,7 +646,7 @@ internal sealed partial class GeoServerRestClient
 
     private async Task<JsonDocument> GetRequiredJsonDocumentAsync(string url, CancellationToken cancellationToken)
     {
-        var response = await _httpClient.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
+        var response = await GetStringAsync(url, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -665,6 +666,46 @@ internal sealed partial class GeoServerRestClient
 
     private static string BuildSldUrl(string baseUrl, string relativePath)
         => $"{baseUrl}/{relativePath}.sld";
+
+    private async Task<string> GetStringAsync(string url, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (_requestAuthorization.Value is { } authorization)
+        {
+            request.Headers.Authorization = authorization;
+        }
+
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        using var timeoutCts = _requestTimeout.Value.HasValue
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : null;
+
+        if (timeoutCts != null)
+        {
+            timeoutCts.CancelAfter(_requestTimeout.Value!.Value);
+        }
+
+        var effectiveToken = timeoutCts?.Token ?? cancellationToken;
+
+        try
+        {
+            var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                effectiveToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return response;
+        }
+        catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TaskCanceledException("The request timed out.", new TimeoutException("The request timed out."));
+        }
+    }
 
     private static string EscapePathSegment(string value)
         => Uri.EscapeDataString(value);

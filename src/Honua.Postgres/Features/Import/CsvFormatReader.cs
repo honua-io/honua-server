@@ -23,6 +23,8 @@ internal static class CsvFormatReader
     /// Default: 10 MB per record should be sufficient for legitimate geospatial data.
     /// </summary>
     private const int MaxRecordSizeBytes = 10 * 1024 * 1024;
+    private const int DelimiterProbeRecordCount = 5;
+    private static readonly char[] _candidateDelimiters = [',', '\t', ';', '|'];
     private static readonly FrozenSet<string> _wktColumnNames = new[]
         {
             "wkt",
@@ -56,8 +58,17 @@ internal static class CsvFormatReader
     /// <summary>
     /// Stream features from a CSV file.
     /// </summary>
+    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+        => ReadStreamingAsync(stream, delimiterOverride: null, cancellationToken);
+
+    /// <summary>
+    /// Stream features from a CSV file with an optional explicit delimiter override.
+    /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
+        char? delimiterOverride,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
@@ -66,6 +77,36 @@ internal static class CsvFormatReader
         CsvColumnMapping mapping = default;
         var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
         var wktReader = new WKTReader();
+        var sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken);
+        var delimiter = delimiterOverride ?? DetectDelimiter(sampleRecords);
+
+        Feature? ProcessRecord(string record)
+        {
+            var fields = ParseCsvRecord(record, delimiter);
+            if (fields.Count == 0)
+            {
+                return null;
+            }
+
+            if (headers == null)
+            {
+                headers = NormalizeHeaders(fields);
+                mapping = BuildMapping(headers);
+                return null;
+            }
+
+            return BuildFeature(headers, fields, mapping, geometryFactory, wktReader);
+        }
+
+        foreach (var sampleRecord in sampleRecords)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var feature = ProcessRecord(sampleRecord);
+            if (feature != null)
+            {
+                yield return feature;
+            }
+        }
 
         while (true)
         {
@@ -81,20 +122,7 @@ internal static class CsvFormatReader
                 continue;
             }
 
-            var fields = ParseCsvRecord(record);
-            if (fields.Count == 0)
-            {
-                continue;
-            }
-
-            if (headers == null)
-            {
-                headers = NormalizeHeaders(fields);
-                mapping = BuildMapping(headers);
-                continue;
-            }
-
-            var feature = BuildFeature(headers, fields, mapping, geometryFactory, wktReader);
+            var feature = ProcessRecord(record);
             if (feature != null)
             {
                 yield return feature;
@@ -244,7 +272,92 @@ internal static class CsvFormatReader
         return headers;
     }
 
-    private static List<string> ParseCsvRecord(string record)
+    private static async Task<List<string>> ReadSampleRecordsAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
+    {
+        var sampleRecords = new List<string>(DelimiterProbeRecordCount);
+
+        while (sampleRecords.Count < DelimiterProbeRecordCount)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var record = await ReadCsvRecordAsync(reader, cancellationToken);
+            if (record == null)
+            {
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(record))
+            {
+                continue;
+            }
+
+            sampleRecords.Add(record);
+        }
+
+        return sampleRecords;
+    }
+
+    private static char DetectDelimiter(IReadOnlyList<string> sampleRecords)
+    {
+        if (sampleRecords.Count == 0)
+        {
+            return ',';
+        }
+
+        var bestDelimiter = ',';
+        var bestScore = int.MinValue;
+        var header = sampleRecords[0];
+
+        foreach (var candidate in _candidateDelimiters)
+        {
+            var fieldCounts = new int[sampleRecords.Count];
+            for (var i = 0; i < sampleRecords.Count; i++)
+            {
+                fieldCounts[i] = ParseCsvRecord(sampleRecords[i], candidate).Count;
+            }
+
+            var headerFieldCount = fieldCounts[0];
+            var matchingRows = 0;
+            for (var i = 0; i < fieldCounts.Length; i++)
+            {
+                if (fieldCounts[i] == headerFieldCount)
+                {
+                    matchingRows++;
+                }
+            }
+
+            var delimiterOccurrences = CountOccurrences(header, candidate);
+            var score = (headerFieldCount > 1 ? 1_000_000 : 0)
+                + (matchingRows * 10_000)
+                + (headerFieldCount * 100)
+                + delimiterOccurrences;
+
+            if (score > bestScore)
+            {
+                bestDelimiter = candidate;
+                bestScore = score;
+            }
+        }
+
+        return bestDelimiter;
+    }
+
+    private static int CountOccurrences(string value, char candidate)
+    {
+        var count = 0;
+        foreach (var ch in value)
+        {
+            if (ch == candidate)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static List<string> ParseCsvRecord(string record, char delimiter)
     {
         var fields = new List<string>();
         var current = new StringBuilder(record.Length);
@@ -276,7 +389,7 @@ internal static class CsvFormatReader
                 continue;
             }
 
-            if (ch == ',')
+            if (ch == delimiter)
             {
                 fields.Add(current.ToString());
                 current.Clear();

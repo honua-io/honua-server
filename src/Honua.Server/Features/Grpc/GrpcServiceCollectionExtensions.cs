@@ -50,6 +50,7 @@ internal static class GrpcServiceCollectionExtensions
             options.EnableDetailedErrors = enableDetailedErrors;
             options.MaxReceiveMessageSize = maxReceiveMessageSize;
             options.MaxSendMessageSize = maxSendMessageSize;
+            options.Interceptors.Add<GrpcExceptionInterceptor>();
 
             // Enable wire-level compression negotiation for gRPC calls.
             options.ResponseCompressionAlgorithm = responseCompressionAlgorithm;
@@ -61,6 +62,7 @@ internal static class GrpcServiceCollectionExtensions
             options.StreamBatchSize = configuration.GetValue<int?>("Grpc:StreamBatchSize") ?? 1000;
         });
 
+        services.TryAddSingleton<GrpcExceptionInterceptor>();
         services.TryAddScoped<SpatialReferenceResolver>();
 
         services.AddGrpcHealthChecks();

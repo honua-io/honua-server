@@ -406,7 +406,7 @@ public class OgcMapsRenderingHandlerTests
     [Operation(Operations.Render)]
     public async Task RenderDatasetMapAsync_ImplicitAllLayersExceedsLimit_ReturnsBadRequest()
     {
-        var layers = Enumerable.Range(1, 101).Select(CreateTestLayerWithExtent).ToArray();
+        var layers = Enumerable.Range(1, 101).Select(id => CreateTestLayerWithExtent(id)).ToArray();
         _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
             .Returns(layers);
 
@@ -601,6 +601,39 @@ public class OgcMapsRenderingHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public async Task RenderDatasetMapAsync_WithoutBbox_UsesUnionExtentAcrossLayers()
+    {
+        MapRenderRequest? capturedRequest = null;
+
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(1, -180, -90, -10, 5));
+        _layerCatalog.GetLayerAsync(2, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent(2, 20, -5, 180, 90));
+        _mapRenderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Do<MapRenderRequest>(request => capturedRequest = request), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89, 0x50 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326
+            });
+
+        var result = await _handler.RenderDatasetMapAsync([1, 2], new OgcMapRequest
+        {
+            Width = 256,
+            Height = 256,
+            F = "png"
+        });
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest.Value.BoundingBox.Should().Equal(-180d, -90d, 180d, 90d);
+        capturedRequest.Value.BoundingBoxCrs.Should().Be(4326);
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
@@ -628,16 +661,22 @@ public class OgcMapsRenderingHandlerTests
             }
         };
 
-    private static LayerDefinition CreateTestLayerWithExtent(int id = 1)
+    private static LayerDefinition CreateTestLayerWithExtent(
+        int id = 1,
+        double minX = -180,
+        double minY = -90,
+        double maxX = 180,
+        double maxY = 90,
+        int spatialReference = 4326)
         => CreateTestLayer(id) with
         {
             Extent = new FeatureExtent
             {
-                MinX = -180,
-                MinY = -90,
-                MaxX = 180,
-                MaxY = 90,
-                SpatialReference = 4326
+                MinX = minX,
+                MinY = minY,
+                MaxX = maxX,
+                MaxY = maxY,
+                SpatialReference = spatialReference
             }
         };
 

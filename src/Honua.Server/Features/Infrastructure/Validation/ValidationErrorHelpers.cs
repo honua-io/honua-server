@@ -89,6 +89,32 @@ public static class ValidationErrorHelpers
     }
 
     /// <summary>
+    /// Creates a method not allowed response with protocol-specific formatting.
+    /// </summary>
+    /// <param name="context">HTTP context used for protocol detection.</param>
+    /// <param name="allowedMethods">Set of allowed HTTP methods.</param>
+    /// <returns>Protocol-specific MethodNotAllowed result with Allow header.</returns>
+    public static IResult CreateMethodNotAllowed(HttpContext context, ISet<string> allowedMethods)
+    {
+        var allowHeader = string.Join(", ", allowedMethods);
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status405MethodNotAllowed,
+            "Method Not Allowed",
+            $"Allowed methods: {allowHeader}");
+
+        return StandardErrorResponseFormatter.FormatError(
+            context,
+            errorResponse,
+            new ErrorResponseFormatterOptions
+            {
+                AdditionalHeaders = new Dictionary<string, string>
+                {
+                    ["Allow"] = allowHeader
+                }
+            });
+    }
+
+    /// <summary>
     /// Creates a unsupported media type response for content type validation failures.
     /// </summary>
     /// <param name="receivedType">The content type that was received</param>
@@ -102,6 +128,24 @@ public static class ValidationErrorHelpers
             title: "Unsupported Media Type",
             detail: message,
             statusCode: StatusCodes.Status415UnsupportedMediaType);
+    }
+
+    /// <summary>
+    /// Creates an unsupported media type response with protocol-specific formatting.
+    /// </summary>
+    /// <param name="context">HTTP context used for protocol detection.</param>
+    /// <param name="receivedType">The content type that was received.</param>
+    /// <param name="allowedTypes">Set of allowed content types.</param>
+    /// <returns>Protocol-specific UnsupportedMediaType result.</returns>
+    public static IResult CreateUnsupportedMediaType(HttpContext context, string receivedType, ISet<string> allowedTypes)
+    {
+        var message = $"Unsupported media type '{receivedType}'. Supported types: {string.Join(", ", allowedTypes)}";
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status415UnsupportedMediaType,
+            "Unsupported Media Type",
+            message);
+
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 
     /// <summary>
