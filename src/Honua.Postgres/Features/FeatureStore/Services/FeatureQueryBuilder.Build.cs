@@ -79,12 +79,14 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 AppendWhereClause(sql, query, ref paramIndex, parameters);
                 AppendTemporalFilter(sql, query, ref paramIndex, parameters);
                 AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-                sql.Append("), snapped_points AS (SELECT ")
+                sql.Append("), projected_points AS (SELECT ")
                     .Append(DatabaseSchema.ObjectIdColumn)
-                    .Append(", ST_X(point_geom) AS x, ST_Y(point_geom) AS y, ");
-                sql.Append(CultureInfo.InvariantCulture, $"FLOOR((ST_X(point_geom) - ${originXParam}) / ${cellWidthParam})::bigint AS cell_x, ");
-                sql.Append(CultureInfo.InvariantCulture, $"FLOOR((${originYParam} - ST_Y(point_geom)) / ${cellHeightParam})::bigint AS cell_y ");
-                sql.Append("FROM point_source) SELECT DISTINCT ON (cell_x, cell_y) x, y FROM snapped_points ORDER BY cell_x, cell_y, objectid");
+                    .Append(", ST_X(point_geom) AS x, ST_Y(point_geom) AS y FROM point_source), snapped_points AS (SELECT ")
+                    .Append(DatabaseSchema.ObjectIdColumn)
+                    .Append(", x, y, ");
+                sql.Append(CultureInfo.InvariantCulture, $"FLOOR((x - ${originXParam}) / ${cellWidthParam})::bigint AS cell_x, ");
+                sql.Append(CultureInfo.InvariantCulture, $"FLOOR((${originYParam} - y) / ${cellHeightParam})::bigint AS cell_y ");
+                sql.Append("FROM projected_points) SELECT DISTINCT ON (cell_x, cell_y) x, y FROM snapped_points ORDER BY cell_x, cell_y, objectid");
             }
             else
             {

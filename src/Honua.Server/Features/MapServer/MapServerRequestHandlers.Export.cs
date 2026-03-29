@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
+using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
@@ -12,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.FeatureServer;
@@ -29,6 +31,28 @@ namespace Honua.Server.Features.MapServer;
 
 internal static partial class MapServerEndpoints
 {
+    private sealed class RasterStylePlan
+    {
+        public required MapLibreStyleLayer[] StyleLayers { get; init; }
+
+        public required string[] ReferencedFields { get; init; }
+
+        public ResolvedCircleStyle? SimpleCircleStyle { get; init; }
+    }
+
+    private sealed class CachedRasterStylePlan
+    {
+        public required int StyleVersion { get; init; }
+
+        public string? MapLibreStyleJson { get; init; }
+
+        public required RasterStylePlan Plan { get; init; }
+
+        public bool Matches(LayerStyleDefinition? style) =>
+            StyleVersion == (style?.StyleVersion ?? 0) &&
+            string.Equals(MapLibreStyleJson, style?.MapLibreStyleJson, StringComparison.Ordinal);
+    }
+
     private const float PointGeneralizationPixels = 0.8f;
     private const int PointGeneralizationThreshold = 1024;
     private const int MaxImageDimension = 4096;
@@ -42,6 +66,7 @@ internal static partial class MapServerEndpoints
     private const string InvalidDynamicLayersJsonMessage = "dynamicLayers contains invalid JSON.";
     private const string InvalidTimeParameterMessage = "Invalid time parameter.";
     private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
+    private static readonly ConcurrentDictionary<int, CachedRasterStylePlan> _rasterStylePlanCache = new();
 
     /// <summary>
     /// Handle MapServer export (map image generation) requests.
@@ -362,10 +387,12 @@ internal static partial class MapServerEndpoints
                         filterError ?? "Invalid filter parameter.");
                 }
 
-                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
-                var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+                var stylePlan = await GetRasterStylePlanAsync(
+                    styleCatalog,
+                    layer.Id,
+                    context.RequestAborted).ConfigureAwait(false);
                 var featureQuery = CreateRasterFeatureQuery(
-                    styleLayers,
+                    stylePlan,
                     spatialFilter,
                     serviceSrid,
                     imageSrid,
@@ -377,7 +404,7 @@ internal static partial class MapServerEndpoints
                     featureReader,
                     layer.Id,
                     layer.GeometryType,
-                    styleLayers,
+                    stylePlan,
                     featureQuery,
                     renderExtent,
                     imageWidth,
@@ -398,7 +425,7 @@ internal static partial class MapServerEndpoints
                 }
 
                 totalFeatureCount += features.Length;
-                RenderLayerToCanvas(canvas, features, styleLayers, transform, layer.GeometryType);
+                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType);
             }
 
             stopwatch.Stop();
@@ -885,15 +912,67 @@ internal static partial class MapServerEndpoints
         result.Path?.Dispose();
     }
 
-    private static FeatureQuery CreateRasterFeatureQuery(
+    private static async Task<RasterStylePlan> GetRasterStylePlanAsync(
+        ILayerStyleCatalog styleCatalog,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var style = await styleCatalog.GetLayerStyleAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (_rasterStylePlanCache.TryGetValue(layerId, out var cached) &&
+            cached.Matches(style))
+        {
+            return cached.Plan;
+        }
+
+        var plan = BuildRasterStylePlan(style);
+        _rasterStylePlanCache[layerId] = new CachedRasterStylePlan
+        {
+            StyleVersion = style?.StyleVersion ?? 0,
+            MapLibreStyleJson = style?.MapLibreStyleJson,
+            Plan = plan
+        };
+
+        return plan;
+    }
+
+    private static RasterStylePlan BuildRasterStylePlan(LayerStyleDefinition? style)
+    {
+        var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
+        var referencedFields = StyleTranslator.CollectReferencedFields(styleLayers);
+
+        return new RasterStylePlan
+        {
+            StyleLayers = styleLayers,
+            ReferencedFields = referencedFields,
+            SimpleCircleStyle = TryResolveSimpleCircleStyle(styleLayers, referencedFields)
+        };
+    }
+
+    private static ResolvedCircleStyle? TryResolveSimpleCircleStyle(
         MapLibreStyleLayer[] styleLayers,
+        string[] referencedFields)
+    {
+        if (styleLayers.Length != 1 ||
+            !string.Equals(styleLayers[0].Type, "circle", StringComparison.Ordinal) ||
+            styleLayers[0].Filter is not null ||
+            referencedFields.Length != 0)
+        {
+            return null;
+        }
+
+        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayers[0], ImmutableDictionary<string, object?>.Empty);
+        return circleStyle.Radius > 0 ? circleStyle : null;
+    }
+
+    private static FeatureQuery CreateRasterFeatureQuery(
+        RasterStylePlan stylePlan,
         SpatialFilter spatialFilter,
         int spatialReferenceSrid,
         int? outputSrid,
         int limit,
         SqlFragment? sqlFilter = null)
     {
-        var referencedFields = StyleTranslator.CollectReferencedFields(styleLayers);
+        var referencedFields = stylePlan.ReferencedFields;
 
         return new FeatureQuery
         {
@@ -912,7 +991,7 @@ internal static partial class MapServerEndpoints
         IFeatureReader featureReader,
         int layerId,
         GeometryType geometryType,
-        MapLibreStyleLayer[] styleLayers,
+        RasterStylePlan stylePlan,
         FeatureQuery featureQuery,
         SkiaMapRenderer.RenderExtent renderExtent,
         int imageWidth,
@@ -923,7 +1002,7 @@ internal static partial class MapServerEndpoints
         if (featureReader is not IRasterPointReader rasterPointReader ||
             !TryCreateRasterPointFastPathQuery(
                 geometryType,
-                styleLayers,
+                stylePlan,
                 featureQuery,
                 renderExtent,
                 imageWidth,
@@ -946,7 +1025,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryCreateRasterPointFastPathQuery(
         GeometryType geometryType,
-        MapLibreStyleLayer[] styleLayers,
+        RasterStylePlan stylePlan,
         FeatureQuery featureQuery,
         SkiaMapRenderer.RenderExtent renderExtent,
         int imageWidth,
@@ -958,9 +1037,7 @@ internal static partial class MapServerEndpoints
         circleStyle = default!;
 
         if (geometryType != GeometryType.Point ||
-            styleLayers.Length != 1 ||
-            !string.Equals(styleLayers[0].Type, "circle", StringComparison.Ordinal) ||
-            styleLayers[0].Filter is not null ||
+            stylePlan.SimpleCircleStyle is null ||
             !featureQuery.ExcludeAttributes ||
             imageWidth <= 0 ||
             imageHeight <= 0 ||
@@ -970,12 +1047,7 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        circleStyle = StyleTranslator.ResolveCircleStyle(styleLayers[0], ImmutableDictionary<string, object?>.Empty);
-        if (circleStyle.Radius <= 0)
-        {
-            return false;
-        }
-
+        circleStyle = stylePlan.SimpleCircleStyle;
         var generalizationPixels = Math.Max(PointGeneralizationPixels, circleStyle.Radius);
         var cellWidth = renderExtent.Width / imageWidth * generalizationPixels;
         var cellHeight = renderExtent.Height / imageHeight * generalizationPixels;
@@ -984,8 +1056,13 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
+        var spatialFilter = featureQuery.SpatialFilter is { SpatialRelationship: SpatialRelationship.Intersects } currentSpatialFilter
+            ? currentSpatialFilter with { SpatialRelationship = SpatialRelationship.EnvelopeIntersects }
+            : featureQuery.SpatialFilter;
+
         pointQuery = featureQuery with
         {
+            SpatialFilter = spatialFilter,
             RasterPointGrid = new RasterPointGrid
             {
                 OriginX = renderExtent.MinX,

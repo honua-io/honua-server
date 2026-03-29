@@ -13,23 +13,33 @@ internal sealed class RasterRenderCapacityLimiter : IDisposable
     private const int BytesPerPixel = 4;
     private const int DefaultMaxConcurrentRenders = 4;
     private const long DefaultMaxReservedBytes = 256L * 1024L * 1024L;
+    private static readonly TimeSpan DefaultAcquireTimeout = TimeSpan.FromSeconds(1);
 
     private readonly SemaphoreSlim _concurrencyGate;
     private readonly long _maxReservedBytes;
+    private readonly TimeSpan _acquireTimeout;
     private long _reservedBytes;
 
     public RasterRenderCapacityLimiter()
-        : this(DefaultMaxConcurrentRenders, DefaultMaxReservedBytes)
+        : this(DefaultMaxConcurrentRenders, DefaultMaxReservedBytes, DefaultAcquireTimeout)
     {
     }
 
-    internal RasterRenderCapacityLimiter(int maxConcurrentRenders, long maxReservedBytes)
+    internal RasterRenderCapacityLimiter(
+        int maxConcurrentRenders,
+        long maxReservedBytes,
+        TimeSpan? acquireTimeout = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConcurrentRenders);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxReservedBytes);
+        if (acquireTimeout.HasValue && acquireTimeout.Value < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(acquireTimeout));
+        }
 
         _concurrencyGate = new SemaphoreSlim(maxConcurrentRenders, maxConcurrentRenders);
         _maxReservedBytes = maxReservedBytes;
+        _acquireTimeout = acquireTimeout ?? DefaultAcquireTimeout;
     }
 
     public async ValueTask<Lease?> TryAcquireAsync(int width, int height, CancellationToken cancellationToken)
@@ -43,7 +53,7 @@ internal sealed class RasterRenderCapacityLimiter : IDisposable
             return null;
         }
 
-        if (!await _concurrencyGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        if (!await _concurrencyGate.WaitAsync(_acquireTimeout, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -97,8 +98,13 @@ internal sealed partial class FeatureDataAccess
                 cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
                 cancellationToken).ConfigureAwait(false);
 
-            var points = new List<ProjectedPoint>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            var capacity = featureQuery.Limit is > 0 and < int.MaxValue
+                ? featureQuery.Limit.Value
+                : 256;
+            var points = new List<ProjectedPoint>(capacity);
+            await using var reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
+                cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
