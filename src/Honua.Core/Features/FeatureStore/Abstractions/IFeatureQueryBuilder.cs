@@ -22,6 +22,14 @@ internal interface IFeatureQueryBuilder
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
 
     /// <summary>
+    /// Builds a projected-point query for raster rendering fast paths.
+    /// </summary>
+    ParameterizedQuery BuildProjectedPointQuery(
+        int layerId,
+        FeatureQuery query,
+        GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
+
+    /// <summary>
     /// Builds a SELECT query for object IDs only.
     /// </summary>
     ParameterizedQuery BuildObjectIdsQuery(

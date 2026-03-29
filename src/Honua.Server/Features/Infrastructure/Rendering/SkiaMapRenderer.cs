@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,6 +14,8 @@ namespace Honua.Server.Features.Infrastructure.Rendering;
 /// </summary>
 internal sealed class SkiaMapRenderer : IDisposable
 {
+    private const float PointGeneralizationPixels = 0.8f;
+    private const int PointGeneralizationThreshold = 1024;
     private bool _disposed;
 
     /// <summary>
@@ -271,6 +274,11 @@ internal sealed class SkiaMapRenderer : IDisposable
                 continue;
             }
 
+            if (TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform))
+            {
+                continue;
+            }
+
             foreach (var feature in features)
             {
                 if (feature.Geometry == null || feature.Geometry.Length < 5)
@@ -298,6 +306,12 @@ internal sealed class SkiaMapRenderer : IDisposable
         var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
         try
         {
+            if (geometryType == GeometryType.Point)
+            {
+                RenderDefaultPoints(canvas, features, transform, fill);
+                return;
+            }
+
             foreach (var feature in features)
             {
                 if (feature.Geometry == null || feature.Geometry.Length < 5)
@@ -314,6 +328,200 @@ internal sealed class SkiaMapRenderer : IDisposable
             fill.Dispose();
             stroke?.Dispose();
         }
+    }
+
+    private static void RenderDefaultPoints(
+        SKCanvas canvas,
+        IReadOnlyList<Feature> features,
+        Func<double, double, SKPoint> transform,
+        SKPaint fill)
+    {
+        if (features.Count == 0)
+        {
+            return;
+        }
+
+        var rented = ArrayPool<SKPoint>.Shared.Rent(features.Count);
+
+        try
+        {
+            var count = CollectRenderablePoints(features, transform, rented, PointGeneralizationPixels);
+            if (count == 0)
+            {
+                return;
+            }
+
+            DrawPointBatch(canvas, rented, count, fill);
+        }
+        finally
+        {
+            ArrayPool<SKPoint>.Shared.Return(rented);
+        }
+    }
+
+    private static bool TryRenderBatchedStyleLayer(
+        SKCanvas canvas,
+        IReadOnlyList<Feature> features,
+        MapLibreStyleLayer styleLayer,
+        Func<double, double, SKPoint> transform)
+    {
+        if (!string.Equals(styleLayer.Type, "circle", StringComparison.Ordinal) ||
+            styleLayer.Filter is not null ||
+            StyleTranslator.CollectReferencedFields([styleLayer]).Length != 0)
+        {
+            return false;
+        }
+
+        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, ImmutableDictionary<string, object?>.Empty);
+        RenderCirclePoints(canvas, features, transform, circleStyle);
+        return true;
+    }
+
+    private static void RenderCirclePoints(
+        SKCanvas canvas,
+        IReadOnlyList<Feature> features,
+        Func<double, double, SKPoint> transform,
+        ResolvedCircleStyle circleStyle)
+    {
+        if (features.Count == 0 || circleStyle.Radius <= 0)
+        {
+            return;
+        }
+
+        var rented = ArrayPool<SKPoint>.Shared.Rent(features.Count);
+
+        try
+        {
+            var count = CollectRenderablePoints(
+                features,
+                transform,
+                rented,
+                Math.Max(PointGeneralizationPixels, circleStyle.Radius));
+            if (count == 0)
+            {
+                return;
+            }
+
+            if (ShouldBatchCirclePoints(features.Count, count))
+            {
+                using var circlePaint = CreateBatchedCirclePaint(
+                    circleStyle.FillColor,
+                    Math.Max(1f, circleStyle.Radius * 2f));
+                DrawPointBatch(canvas, rented, count, circlePaint);
+
+                if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                {
+                    using var strokePaint = CreateBatchedCirclePaint(
+                        circleStyle.StrokeColor.Value,
+                        Math.Max(1f, (circleStyle.Radius * 2f) + circleStyle.StrokeWidth));
+                    DrawPointBatch(canvas, rented, count, strokePaint);
+                }
+            }
+            else
+            {
+                using var circlePaint = new SKPaint
+                {
+                    Style = SKPaintStyle.Fill,
+                    Color = circleStyle.FillColor,
+                    IsAntialias = true
+                };
+                DrawCircleLoop(canvas, rented, count, circleStyle.Radius, circlePaint);
+
+                if (circleStyle.StrokeColor.HasValue && circleStyle.StrokeWidth > 0)
+                {
+                    using var strokePaint = new SKPaint
+                    {
+                        Style = SKPaintStyle.Stroke,
+                        Color = circleStyle.StrokeColor.Value,
+                        StrokeWidth = circleStyle.StrokeWidth,
+                        IsAntialias = true
+                    };
+                    DrawCircleLoop(canvas, rented, count, circleStyle.Radius, strokePaint);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<SKPoint>.Shared.Return(rented);
+        }
+    }
+
+    private static bool ShouldBatchCirclePoints(int originalCount, int renderedCount)
+        => originalCount >= PointGeneralizationThreshold && (renderedCount * 20) <= (originalCount * 19);
+
+    private static int CollectRenderablePoints(
+        IReadOnlyList<Feature> features,
+        Func<double, double, SKPoint> transform,
+        SKPoint[] rented,
+        float generalizationPixels)
+    {
+        var count = 0;
+        var generalize = features.Count >= PointGeneralizationThreshold;
+        var seenCells = generalize ? new HashSet<long>() : null;
+
+        foreach (var feature in features)
+        {
+            if (!WkbToSkiaConverter.TryConvertPoint(feature.Geometry, transform, out var point))
+            {
+                continue;
+            }
+
+            if (seenCells is not null && !seenCells.Add(GetPointCellKey(point, generalizationPixels)))
+            {
+                continue;
+            }
+
+            rented[count++] = point;
+        }
+
+        return count;
+    }
+
+    private static void DrawPointBatch(
+        SKCanvas canvas,
+        SKPoint[] rented,
+        int count,
+        SKPaint paint)
+    {
+        if (count == rented.Length)
+        {
+            canvas.DrawPoints(SKPointMode.Points, rented, paint);
+            return;
+        }
+
+        var points = new SKPoint[count];
+        Array.Copy(rented, points, count);
+        canvas.DrawPoints(SKPointMode.Points, points, paint);
+    }
+
+    private static void DrawCircleLoop(
+        SKCanvas canvas,
+        SKPoint[] rented,
+        int count,
+        float radius,
+        SKPaint paint)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            canvas.DrawCircle(rented[i], radius, paint);
+        }
+    }
+
+    private static SKPaint CreateBatchedCirclePaint(SKColor color, float diameter)
+        => new()
+        {
+            Style = SKPaintStyle.Stroke,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeWidth = diameter,
+            Color = color,
+            IsAntialias = true
+        };
+
+    private static long GetPointCellKey(SKPoint point, float cellSize)
+    {
+        var cellX = (int)MathF.Floor(point.X / cellSize);
+        var cellY = (int)MathF.Floor(point.Y / cellSize);
+        return ((long)cellX << 32) | (uint)cellY;
     }
 
     private static void RenderFeatureWithStyle(
@@ -435,10 +643,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         {
             if (result.IsPoint && result.Points != null)
             {
-                foreach (var point in result.Points)
-                {
-                    canvas.DrawCircle(point, 4f, fill);
-                }
+                canvas.DrawPoints(SKPointMode.Points, result.Points, fill);
             }
             else if (result.Path != null)
             {

@@ -196,12 +196,14 @@ public class StyleTranslatorTests
     }
 
     [UnitTest]
-    public void CreateDefaultPaints_Point_ReturnsFillOnly()
+    public void CreateDefaultPaints_Point_ReturnsBatchedStrokePaint()
     {
         var (fill, stroke) = StyleTranslator.CreateDefaultPaints(GeometryType.Point);
 
         fill.Should().NotBeNull();
-        fill.Style.Should().Be(SKPaintStyle.Fill);
+        fill.Style.Should().Be(SKPaintStyle.Stroke);
+        fill.StrokeCap.Should().Be(SKStrokeCap.Round);
+        fill.StrokeWidth.Should().Be(8f);
         stroke.Should().BeNull();
         fill.Dispose();
     }
