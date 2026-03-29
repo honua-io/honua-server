@@ -523,6 +523,8 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(GeoservicesImportProgress) => OperationType.ExternalImport,
             nameof(GeoServerImportProgress) => OperationType.ExternalImport,
             nameof(TileOperationProgress) => OperationType.TileCache,
+            nameof(ExportProgress) => OperationType.Export,
+            nameof(PrintProgress) => OperationType.Print,
             _ => null
         };
     }
@@ -550,6 +552,8 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(UploadProgress))]
 [JsonSerializable(typeof(IngestProgress))]
 [JsonSerializable(typeof(TileOperationProgress))]
+[JsonSerializable(typeof(ExportProgress))]
+[JsonSerializable(typeof(PrintProgress))]
 [JsonSerializable(typeof(RasterImportProgress))]
 [JsonSerializable(typeof(RasterImportPhase))]
 [JsonSerializable(typeof(OperationType))]

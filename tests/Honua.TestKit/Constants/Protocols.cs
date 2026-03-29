@@ -103,4 +103,9 @@ public static class Protocols
     /// Real-time feature-change streaming protocol (WebSocket/SSE).
     /// </summary>
     public const string Streaming = "Streaming";
+
+    /// <summary>
+    /// GeoServices PrintingTools (GP Server) endpoints.
+    /// </summary>
+    public const string PrintingTools = "PrintingTools";
 }

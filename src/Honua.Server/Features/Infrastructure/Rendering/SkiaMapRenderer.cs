@@ -6,7 +6,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using SkiaSharp;
 
-namespace Honua.Server.Features.MapServer.Rendering;
+namespace Honua.Server.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Renders features to a raster image using SkiaSharp with MapLibre style translation.
@@ -89,6 +89,38 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
 
         return EncodeSurface(surface);
+    }
+
+    /// <summary>
+    /// Renders features directly onto an existing canvas without creating an intermediate surface or encoding.
+    /// Used by the print compositor to avoid per-layer PNG round-trips.
+    /// </summary>
+    internal void RenderFeaturesOnCanvas(
+        SKCanvas canvas,
+        IReadOnlyList<Feature> features,
+        MapLibreStyleLayer[] styleLayers,
+        RenderExtent extent,
+        int imageWidth,
+        int imageHeight,
+        GeometryType geometryType)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (features.Count == 0 || (extent.Width <= 0 && extent.Height <= 0))
+        {
+            return;
+        }
+
+        var transform = BuildTransform(extent, imageWidth, imageHeight);
+
+        if (styleLayers.Length > 0)
+        {
+            RenderWithStyles(canvas, features, styleLayers, transform);
+        }
+        else
+        {
+            RenderWithDefaults(canvas, features, transform, geometryType);
+        }
     }
 
     /// <summary>

@@ -17,7 +17,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.MapServer.Models;
-using Honua.Server.Features.MapServer.Rendering;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 

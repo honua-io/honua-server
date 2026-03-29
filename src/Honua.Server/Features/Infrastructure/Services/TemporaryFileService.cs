@@ -98,10 +98,11 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         "image/jpeg",
         "image/gif",
         "image/tiff",
+        "application/pdf",
         "application/octet-stream"
     };
 
-    private static readonly string[] _imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".tiff", ".tif", ""];
+    private static readonly string[] _allowedExtensions = [".png", ".jpg", ".jpeg", ".gif", ".tiff", ".tif", ".pdf", ""];
 
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
@@ -230,7 +231,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             }
 
             // Find the actual file (try different extensions)
-            var possibleExtensions = _imageExtensions;
+            var possibleExtensions = _allowedExtensions;
             string? filePath = null;
 
             foreach (var ext in possibleExtensions)
@@ -381,7 +382,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             }
 
             // Delete data file (try different extensions)
-            var possibleExtensions = _imageExtensions;
+            var possibleExtensions = _allowedExtensions;
             foreach (var ext in possibleExtensions)
             {
                 var filePath = Path.Combine(_options.StorageDirectory, $"{fileId}{ext}");
@@ -408,6 +409,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             "image/jpeg" => ".jpg",
             "image/gif" => ".gif",
             "image/tiff" => ".tif",
+            "application/pdf" => ".pdf",
             _ => ""
         };
     }

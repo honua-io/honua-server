@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using SkiaSharp;
 
-namespace Honua.Server.Features.MapServer.Rendering;
+namespace Honua.Server.Features.Infrastructure.Rendering;
 
 /// <summary>
 /// Evaluates MapLibre style expressions against feature properties.
