@@ -137,6 +137,12 @@ internal sealed class GeocodingHandler(
             var requestedProviderName = GetValue(values, "provider");
             var providerName = NormalizeProviderName(requestedProviderName);
             var resolvedProviderName = ResolveProviderName(requestedProviderName);
+
+            if (!string.IsNullOrWhiteSpace(requestedProviderName) && _providerRegistry.GetProvider(resolvedProviderName) == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
+            }
+
             var providerRequest = new Core.Features.Geocoding.Domain.ForwardGeocodeRequest(
                 Query: query,
                 MaxResults: maxLocations,
@@ -150,29 +156,8 @@ internal sealed class GeocodingHandler(
             if (!result.IsSuccess)
             {
                 var errorMessage = result.ErrorMessage ?? "Geocoding request failed";
-
                 GeocodingLog.OperationFailed(_logger, "findAddressCandidates", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
-
-                // Check error message content to determine response type
-                if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
-                    errorMessage.Contains("unauthorized", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateUnauthorized(context, "Authentication failed for geocoding service");
-                }
-                else if (errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateServiceUnavailable(context, "Rate limit exceeded");
-                }
-                else if (errorMessage.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("bad request", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-                else
-                {
-                    return StandardErrorHelpers.CreateInternalServerError(context, "Geocoding service error");
-                }
+                return MapCoordinatorErrorToResult(context, errorMessage, "Geocoding service error");
             }
 
             var candidates = result.Data ?? [];
@@ -201,10 +186,7 @@ internal sealed class GeocodingHandler(
                 })]
             };
 
-            var provider = _providerRegistry.GetProvider(resolvedProviderName);
-            var usedProviderName = provider?.Name ?? resolvedProviderName;
-
-            GeocodingLog.OperationCompleted(_logger, "findAddressCandidates", usedProviderName, response.Candidates.Length, stopwatch.Elapsed.TotalMilliseconds);
+            GeocodingLog.OperationCompleted(_logger, "findAddressCandidates", result.ProviderName, response.Candidates.Length, stopwatch.Elapsed.TotalMilliseconds);
 
             return Results.Json(response, GeocodingJsonContext.Default.FindAddressCandidatesResponse, contentType: JsonContentType);
         }
@@ -261,6 +243,12 @@ internal sealed class GeocodingHandler(
             var requestedProviderName = GetValue(values, "provider");
             var providerName = NormalizeProviderName(requestedProviderName);
             var resolvedProviderName = ResolveProviderName(requestedProviderName);
+
+            if (!string.IsNullOrWhiteSpace(requestedProviderName) && _providerRegistry.GetProvider(resolvedProviderName) == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
+            }
+
             var providerRequest = new Core.Features.Geocoding.Domain.ReverseGeocodeRequest(x, y, outSrid);
 
             var stopwatch = Stopwatch.StartNew();
@@ -270,34 +258,9 @@ internal sealed class GeocodingHandler(
             if (!result.IsSuccess)
             {
                 var errorMessage = result.ErrorMessage ?? "Reverse geocoding request failed";
-
                 GeocodingLog.OperationFailed(_logger, "reverseGeocode", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
-
-                // Check error message content to determine response type
-                if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
-                    errorMessage.Contains("unauthorized", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateUnauthorized(context, "Authentication failed for geocoding service");
-                }
-                else if (errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateServiceUnavailable(context, "Rate limit exceeded");
-                }
-                else if (errorMessage.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("bad request", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-                else if (errorMessage.Contains("no results", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateNotFound(context, "No matching address was found for the supplied location");
-                }
-                else
-                {
-                    return StandardErrorHelpers.CreateInternalServerError(context, "Reverse geocoding service error");
-                }
+                return MapCoordinatorErrorToResult(context, errorMessage, "Reverse geocoding service error",
+                    notFoundMessage: "No matching address was found for the supplied location");
             }
 
             var match = result.Data;
@@ -327,10 +290,7 @@ internal sealed class GeocodingHandler(
                 }
             };
 
-            var provider = _providerRegistry.GetProvider(resolvedProviderName);
-            var usedProviderName = provider?.Name ?? resolvedProviderName;
-
-            GeocodingLog.OperationCompleted(_logger, "reverseGeocode", usedProviderName, 1, stopwatch.Elapsed.TotalMilliseconds);
+            GeocodingLog.OperationCompleted(_logger, "reverseGeocode", result.ProviderName, 1, stopwatch.Elapsed.TotalMilliseconds);
 
             return Results.Json(response, GeocodingJsonContext.Default.ReverseGeocodeResponse, contentType: JsonContentType);
         }
@@ -384,7 +344,15 @@ internal sealed class GeocodingHandler(
             var providerName = NormalizeProviderName(requestedProviderName);
             var resolvedProviderName = ResolveProviderName(requestedProviderName);
             var provider = _providerRegistry.GetProvider(resolvedProviderName);
-            if (provider != null && !provider.Capabilities.SupportsSuggest)
+
+            // When the user explicitly requested a provider, validate it exists and supports the operation.
+            // When using the default provider, let the coordinator handle failover to a capable provider.
+            if (!string.IsNullOrWhiteSpace(requestedProviderName) && provider == null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(requestedProviderName) && provider != null && !provider.Capabilities.SupportsSuggest)
             {
                 GeocodingLog.CapabilityNotSupported(_logger, "suggest", provider.Name);
                 return StandardErrorHelpers.CreateBadRequest(
@@ -405,29 +373,8 @@ internal sealed class GeocodingHandler(
             if (!result.IsSuccess)
             {
                 var errorMessage = result.ErrorMessage ?? "Suggest request failed";
-
                 GeocodingLog.OperationFailed(_logger, "suggest", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
-
-                // Check error message content to determine response type
-                if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
-                    errorMessage.Contains("unauthorized", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateUnauthorized(context, "Authentication failed for geocoding service");
-                }
-                else if (errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateServiceUnavailable(context, "Rate limit exceeded");
-                }
-                else if (errorMessage.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
-                         errorMessage.Contains("bad request", StringComparison.OrdinalIgnoreCase))
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-                else
-                {
-                    return StandardErrorHelpers.CreateInternalServerError(context, "Suggest service error");
-                }
+                return MapCoordinatorErrorToResult(context, errorMessage, "Suggest service error");
             }
 
             var suggestions = result.Data ?? [];
@@ -441,9 +388,7 @@ internal sealed class GeocodingHandler(
                 })]
             };
 
-            var usedProviderName = provider?.Name ?? resolvedProviderName;
-
-            GeocodingLog.OperationCompleted(_logger, "suggest", usedProviderName, response.Suggestions.Length, stopwatch.Elapsed.TotalMilliseconds);
+            GeocodingLog.OperationCompleted(_logger, "suggest", result.ProviderName, response.Suggestions.Length, stopwatch.Elapsed.TotalMilliseconds);
 
             return Results.Json(response, GeocodingJsonContext.Default.SuggestResponse, contentType: JsonContentType);
         }
@@ -478,8 +423,17 @@ internal sealed class GeocodingHandler(
 
         var requestedProviderName = GetValue(values, "provider");
         var providerName = ResolveProviderName(requestedProviderName);
+        var resolvedProviderName = providerName;
         var provider = _providerRegistry.GetProvider(providerName);
-        if (provider != null && !provider.Capabilities.SupportsBatch)
+
+        if (!string.IsNullOrWhiteSpace(requestedProviderName) && provider == null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Geocoding provider '{requestedProviderName}' not found.");
+        }
+
+        // Only block when the user explicitly requested a specific provider that lacks batch support.
+        // When using the default provider, let the coordinator handle failover to a capable provider.
+        if (!string.IsNullOrWhiteSpace(requestedProviderName) && provider != null && !provider.Capabilities.SupportsBatch)
         {
             GeocodingLog.CapabilityNotSupported(_logger, "geocodeAddresses", provider.Name);
             return StandardErrorHelpers.CreateBadRequest(
@@ -487,9 +441,273 @@ internal sealed class GeocodingHandler(
                 "Batch geocoding is not supported by the configured geocode provider.");
         }
 
-        return StandardErrorHelpers.CreateBadRequest(
-            context,
-            "Batch geocoding request parsing is not yet available in this release.");
+        var recordsJson = GetValue(values, "records");
+        if (!TryParseRecords(recordsJson, out var queries, out var parseError))
+        {
+            GeocodingLog.BatchRecordsParseFailed(_logger, parseError ?? "Unknown parse error");
+            return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid records parameter.");
+        }
+
+        if (queries is null || queries.Count == 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "records parameter is required and must contain at least one address.");
+        }
+
+        // Use the explicit provider's limit when one was requested; otherwise use a
+        // default cap since the coordinator may route to a different provider via failover.
+        var maxBatchSize = !string.IsNullOrWhiteSpace(requestedProviderName)
+            ? (provider?.Capabilities.MaxBatchSize ?? 100)
+            : 100;
+        if (queries.Count > maxBatchSize)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Batch size {queries.Count} exceeds the maximum allowed batch size of {maxBatchSize}.");
+        }
+
+        if (!TryParseSpatialReference(GetValue(values, "outSR"), _options.DefaultSpatialReferenceWkid, out var outSrid))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid outSR parameter.");
+        }
+
+        if (outSrid != _options.DefaultSpatialReferenceWkid)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Only outSR={_options.DefaultSpatialReferenceWkid} is currently supported.");
+        }
+
+        try
+        {
+            var batchRequest = new Core.Features.Geocoding.Domain.BatchGeocodeRequest(
+                Queries: queries,
+                SpatialReferenceWkid: outSrid,
+                CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = await _coordinatorService.BatchGeocodeAsync(batchRequest, NormalizeProviderName(requestedProviderName), cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            if (!result.IsSuccess)
+            {
+                var errorMessage = result.ErrorMessage ?? "Batch geocoding request failed";
+                GeocodingLog.OperationFailed(_logger, "geocodeAddresses", resolvedProviderName, errorMessage, new InvalidOperationException(errorMessage));
+                return MapCoordinatorErrorToResult(context, errorMessage, "Batch geocoding service error");
+            }
+
+            var candidates = result.Data ?? [];
+            var response = new GeocodeAddressesResponse
+            {
+                SpatialReference = new GeocodeSpatialReference
+                {
+                    Wkid = outSrid,
+                    LatestWkid = outSrid
+                },
+                Locations = [.. candidates.Select(candidate => new GeocodeAddressLocation
+                {
+                    Address = candidate.Address,
+                    Score = candidate.Score,
+                    Location = new GeocodePoint
+                    {
+                        X = candidate.X,
+                        Y = candidate.Y,
+                        SpatialReference = new GeocodeSpatialReference
+                        {
+                            Wkid = outSrid,
+                            LatestWkid = outSrid
+                        }
+                    },
+                    Attributes = candidate.Attributes
+                })]
+            };
+
+            GeocodingLog.OperationCompleted(_logger, "geocodeAddresses", result.ProviderName, response.Locations.Length, stopwatch.Elapsed.TotalMilliseconds);
+
+            return Results.Json(response, GeocodingJsonContext.Default.GeocodeAddressesResponse, contentType: JsonContentType);
+        }
+        catch (Exception ex)
+        {
+            GeocodingLog.OperationFailed(_logger, "geocodeAddresses", resolvedProviderName, ex.Message, ex);
+            return StandardErrorHelpers.CreateInternalServerError(context, "Batch geocoding request failed.");
+        }
+    }
+
+    private static bool TryParseRecords(string? recordsJson, out List<string>? queries, out string? error)
+    {
+        queries = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(recordsJson))
+        {
+            error = "records parameter is required and must contain at least one address.";
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(recordsJson);
+            var root = document.RootElement;
+
+            JsonElement recordsArray;
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                recordsArray = root;
+            }
+            else if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("records", out var nested) && nested.ValueKind == JsonValueKind.Array)
+            {
+                recordsArray = nested;
+            }
+            else
+            {
+                error = "records must be a JSON array or an object with a 'records' array property.";
+                return false;
+            }
+
+            queries = new List<string>(recordsArray.GetArrayLength());
+            List<int>? invalidIndices = null;
+            var index = 0;
+            foreach (var record in recordsArray.EnumerateArray())
+            {
+                var address = ExtractAddressFromRecord(record);
+                if (!string.IsNullOrWhiteSpace(address))
+                {
+                    queries.Add(address);
+                }
+                else
+                {
+                    invalidIndices ??= [];
+                    invalidIndices.Add(index);
+                }
+
+                index++;
+            }
+
+            if (invalidIndices is { Count: > 0 })
+            {
+                queries = null;
+                error = invalidIndices.Count == 1
+                    ? $"Record at index {invalidIndices[0]} does not contain a valid address."
+                    : $"Records at indices {string.Join(", ", invalidIndices)} do not contain valid addresses.";
+                return false;
+            }
+
+            if (queries.Count == 0)
+            {
+                error = "No valid address records found in the request.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "records parameter contains invalid JSON.";
+            return false;
+        }
+    }
+
+    private static string? ExtractAddressFromRecord(JsonElement record)
+    {
+        if (record.ValueKind == JsonValueKind.String)
+        {
+            return record.GetString();
+        }
+
+        if (record.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        // Try attributes.SingleLine first
+        if (record.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+        {
+            if (attributes.TryGetProperty("SingleLine", out var singleLine) && singleLine.ValueKind == JsonValueKind.String)
+            {
+                var value = singleLine.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+
+            // Concatenate structured fields
+            var parts = new[]
+            {
+                TryGetStringProperty(attributes, "Address"),
+                TryGetStringProperty(attributes, "City"),
+                TryGetStringProperty(attributes, "Region"),
+                TryGetStringProperty(attributes, "Postal"),
+                TryGetStringProperty(attributes, "CountryCode")
+            }
+            .Where(static part => !string.IsNullOrWhiteSpace(part))
+            .Select(static part => part!.Trim());
+
+            var joined = string.Join(", ", parts);
+            if (!string.IsNullOrWhiteSpace(joined))
+            {
+                return joined;
+            }
+        }
+
+        // Try top-level address/singleLine as fallback
+        if (record.TryGetProperty("address", out var addr) && addr.ValueKind == JsonValueKind.String)
+        {
+            return addr.GetString();
+        }
+
+        if (record.TryGetProperty("singleLine", out var sl) && sl.ValueKind == JsonValueKind.String)
+        {
+            return sl.GetString();
+        }
+
+        return null;
+    }
+
+    private static string? TryGetStringProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var prop) && prop.ValueKind == JsonValueKind.String
+            ? prop.GetString()
+            : null;
+    }
+
+    private static IResult MapCoordinatorErrorToResult(
+        HttpContext context,
+        string errorMessage,
+        string fallbackMessage,
+        string? notFoundMessage = null)
+    {
+        if (errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+            errorMessage.Contains("unauthorized", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication failed for geocoding service");
+        }
+
+        if (errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
+            errorMessage.Contains("too many requests", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "Rate limit exceeded");
+        }
+
+        if (errorMessage.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
+            errorMessage.Contains("bad request", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
+        }
+
+        if (notFoundMessage is not null &&
+            (errorMessage.Contains("no results", StringComparison.OrdinalIgnoreCase) ||
+             errorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, notFoundMessage);
+        }
+
+        if (errorMessage.Contains("no providers available", StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "No configured geocoding provider supports this operation.");
+        }
+
+        return StandardErrorHelpers.CreateInternalServerError(context, fallbackMessage);
     }
 
     private static string? NormalizeProviderName(string? providerName)

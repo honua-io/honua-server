@@ -233,6 +233,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/GeocodeServer/findAddressCandidates"),
         new("GET", "/rest/services/GeocodeServer/reverseGeocode"),
         new("GET", "/rest/services/GeocodeServer/suggest"),
+        new("GET", "/rest/services/GeocodeServer/geocodeAddresses"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),

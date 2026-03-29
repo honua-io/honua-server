@@ -10,6 +10,7 @@ namespace Honua.Server.Features.Geocoding;
 [JsonSerializable(typeof(FindAddressCandidatesResponse))]
 [JsonSerializable(typeof(ReverseGeocodeResponse))]
 [JsonSerializable(typeof(SuggestResponse))]
+[JsonSerializable(typeof(GeocodeAddressesResponse))]
 [JsonSerializable(typeof(GeocodeCandidateResponse[]))]
 [JsonSerializable(typeof(GeocodeSuggestionResponse[]))]
 [JsonSerializable(typeof(Dictionary<string, string?>))]

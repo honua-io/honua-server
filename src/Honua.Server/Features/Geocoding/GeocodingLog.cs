@@ -35,6 +35,14 @@ internal static partial class GeocodingLog
         string provider,
         string errorMessage,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 9804,
+        Level = LogLevel.Warning,
+        Message = "Batch geocode records parse failed: {ErrorMessage}")]
+    public static partial void BatchRecordsParseFailed(
+        ILogger logger,
+        string errorMessage);
 }
 
 internal sealed class GeocodingLogCategory

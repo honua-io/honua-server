@@ -178,3 +178,27 @@ internal sealed record GeocodeSuggestionResponse
     [JsonPropertyName("isCollection")]
     public bool IsCollection { get; init; }
 }
+
+internal sealed record GeocodeAddressesResponse
+{
+    [JsonPropertyName("spatialReference")]
+    public required GeocodeSpatialReference SpatialReference { get; init; }
+
+    [JsonPropertyName("locations")]
+    public required GeocodeAddressLocation[] Locations { get; init; }
+}
+
+internal sealed record GeocodeAddressLocation
+{
+    [JsonPropertyName("address")]
+    public required string Address { get; init; }
+
+    [JsonPropertyName("location")]
+    public required GeocodePoint Location { get; init; }
+
+    [JsonPropertyName("score")]
+    public required double Score { get; init; }
+
+    [JsonPropertyName("attributes")]
+    public required IReadOnlyDictionary<string, string?> Attributes { get; init; }
+}
