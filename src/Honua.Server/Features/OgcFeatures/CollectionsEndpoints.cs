@@ -92,6 +92,7 @@ internal static class CollectionsEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
+        [FromServices] ICoordinateTransformService coordinateTransformService,
         [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
@@ -137,7 +138,7 @@ internal static class CollectionsEndpoints
                     layerToService.GetValueOrDefault(layer.Id)))
                 .ToList();
             var collectionTasks = visibleLayers
-                .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
+                .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, coordinateTransformService, cancellationToken));
             var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
 
             var links = OgcCommonUtilities.BuildFormatLinks(
@@ -200,6 +201,7 @@ internal static class CollectionsEndpoints
         string? f,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
+        [FromServices] ICoordinateTransformService coordinateTransformService,
         [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         var request = context.Request;
@@ -247,7 +249,7 @@ internal static class CollectionsEndpoints
 
             var layer = layerValidation.Layer!;
 
-            var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken);
+            var collection = await CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, coordinateTransformService, cancellationToken);
             var basePath = $"{baseUrl}/ogc/features/collections/{collectionId}";
             var selfHref = $"{basePath}{request.QueryString}";
             var updatedLinks = collection.Links.Select(link =>
@@ -405,6 +407,7 @@ internal static class CollectionsEndpoints
         string baseUrl,
         IFeatureReader featureReader,
         ICrsRegistry crsRegistry,
+        ICoordinateTransformService coordinateTransformService,
         CancellationToken cancellationToken)
     {
         // Use layer ID as collection ID (string representation)
@@ -488,6 +491,21 @@ internal static class CollectionsEndpoints
                 transformedToCrs84 =
                     OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, out minTransformed) &&
                     OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, out maxTransformed);
+
+                // PostGIS fallback for non-WGS84/WebMercator CRS (e.g. NAD83, UTM zones)
+                if (!transformedToCrs84)
+                {
+                    var minResult = await coordinateTransformService.TransformPointAsync(
+                        layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, 4326, cancellationToken);
+                    var maxResult = await coordinateTransformService.TransformPointAsync(
+                        layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, 4326, cancellationToken);
+                    if (minResult.HasValue && maxResult.HasValue)
+                    {
+                        minTransformed = (minResult.Value.X, minResult.Value.Y);
+                        maxTransformed = (maxResult.Value.X, maxResult.Value.Y);
+                        transformedToCrs84 = true;
+                    }
+                }
             }
 
             if (extentSrid == 4326 || transformedToCrs84)

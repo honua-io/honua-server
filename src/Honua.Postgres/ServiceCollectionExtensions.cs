@@ -34,6 +34,7 @@ using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.Infrastructure.Crs;
 using Honua.Postgres.Features.Infrastructure.Migrations;
+using Honua.Postgres.Features.Infrastructure.Transforms;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Styling;
 using Honua.Postgres.Features.Metadata;
@@ -192,6 +193,7 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
+        services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
         services.AddHostedService<PostgresCrsWarmupService>();
 
         // Register import limits configuration

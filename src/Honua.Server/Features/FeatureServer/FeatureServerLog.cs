@@ -345,4 +345,15 @@ internal static partial class FeatureServerLog
         Level = LogLevel.Warning,
         Message = "Relationship not found: LayerId {LayerId}, RelationshipId {RelationshipId}")]
     public static partial void RelationshipNotFound(ILogger logger, int layerId, int relationshipId);
+
+    /// <summary>
+    /// Logs when datumTransformation parameter is specified. PostGIS default pipeline is used.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="datumTransformation">The requested datum transformation value.</param>
+    [LoggerMessage(
+        EventId = 2405,
+        Level = LogLevel.Information,
+        Message = "datumTransformation parameter specified ({DatumTransformation}); using default PostGIS datum pipeline")]
+    public static partial void DatumTransformationRequested(ILogger logger, string datumTransformation);
 }
