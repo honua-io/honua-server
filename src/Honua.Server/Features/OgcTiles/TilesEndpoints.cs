@@ -541,7 +541,7 @@ internal static class TilesEndpoints
                 tileLimits,
                 cancellationToken,
                 activity)
-            : await HandleDatasetVectorTileAsync(
+            : await ExecuteDatasetVectorTileAsync(
                 context,
                 tileProvider,
                 layers,
@@ -606,7 +606,7 @@ internal static class TilesEndpoints
         return CreatePngTileResult(imageBytes, tileOptionsValue.CacheMaxAge);
     }
 
-    private static async Task<IResult> HandleDatasetVectorTileAsync(
+    private static async Task<IResult> ExecuteDatasetVectorTileAsync(
         HttpContext context,
         ITileProvider tileProvider,
         LayerDefinition[] layers,
