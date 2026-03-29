@@ -571,7 +571,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default,
-        Honua.Server.Features.Export.ExportJsonContext.Default);
+        Honua.Server.Features.Export.ExportJsonContext.Default,
+        Honua.Server.Features.Stac.StacJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation

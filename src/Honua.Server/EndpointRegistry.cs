@@ -410,6 +410,15 @@ public static class EndpointRegistry
         new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}"),
         new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File"),
         new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute"),
+
+        // STAC (SpatioTemporal Asset Catalog)
+        new("GET", "/stac"),
+        new("GET", "/stac/collections"),
+        new("GET", "/stac/collections/{collectionId}"),
+        new("GET", "/stac/collections/{collectionId}/items"),
+        new("GET", "/stac/collections/{collectionId}/items/{itemId}"),
+        new("GET", "/stac/search"),
+        new("POST", "/stac/search"),
     ];
 }
 
