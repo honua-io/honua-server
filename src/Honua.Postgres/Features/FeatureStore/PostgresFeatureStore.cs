@@ -31,7 +31,7 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -104,6 +104,16 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureReader, IFeatureW
             query,
             layerId,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ImmutableArray<ProjectedPoint>> QueryProjectedPointsAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildProjectedPointQuery(layerId, query, geometryStorageType);
+        return await _dataAccess.ExecuteSelectProjectedPointsAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<PagedQueryResult<Feature>> QueryPageAsync(

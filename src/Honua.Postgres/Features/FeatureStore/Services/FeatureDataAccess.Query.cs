@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -77,6 +78,50 @@ internal sealed partial class FeatureDataAccess
         {
             stopwatch.Stop();
             _cacheManager.RecordQueryMetrics("select_error", stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    public async Task<ImmutableArray<ProjectedPoint>> ExecuteSelectProjectedPointsAsync(
+        CoreParameterizedQuery query,
+        FeatureQuery featureQuery,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await using var connection = (NpgsqlConnection)await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = await CreateCommandAsync(
+                connection,
+                query.Sql,
+                cmd => AddQueryParameters(cmd, featureQuery, layerId, query.WhereParameters),
+                cancellationToken).ConfigureAwait(false);
+
+            var capacity = featureQuery.Limit is > 0 and < int.MaxValue
+                ? featureQuery.Limit.Value
+                : 256;
+            var points = new List<ProjectedPoint>(capacity);
+            await using var reader = await command.ExecuteReaderAsync(
+                CommandBehavior.SequentialAccess | CommandBehavior.SingleResult,
+                cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                points.Add(new ProjectedPoint(reader.GetDouble(0), reader.GetDouble(1)));
+            }
+
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_points", stopwatch.ElapsedMilliseconds, points.Count);
+            RecordPerformanceQuery("select_points", layerId, stopwatch.ElapsedMilliseconds, points.Count);
+            LogSlowQuery("select_points", stopwatch.ElapsedMilliseconds, layerId, points.Count);
+
+            return points.ToImmutableArray();
+        }
+        catch (Exception)
+        {
+            stopwatch.Stop();
+            _cacheManager.RecordQueryMetrics("select_points_error", stopwatch.ElapsedMilliseconds);
             throw;
         }
     }

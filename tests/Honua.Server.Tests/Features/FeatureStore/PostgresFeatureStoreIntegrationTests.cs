@@ -271,6 +271,39 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    public async Task QueryProjectedPointsAsync_WithRasterGrid_ShouldThinDensePointRows()
+    {
+        var store = CreateFeatureStore();
+        var rasterPointReader = store.Should().BeAssignableTo<IRasterPointReader>().Subject;
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326,
+            Limit = 100,
+            SpatialFilter = SpatialFilter.Create(
+                CreatePolygonWkb("POLYGON((-122.1 36.9, -120.8 36.9, -120.8 38.2, -122.1 38.2, -122.1 36.9))"),
+                SpatialRelationship.Intersects,
+                4326),
+            RasterPointGrid = new RasterPointGrid
+            {
+                OriginX = -122.1,
+                OriginY = 38.2,
+                CellWidth = 0.25,
+                CellHeight = 0.25
+            }
+        };
+
+        var points = await rasterPointReader.QueryProjectedPointsAsync(PointsLayerId, query, CancellationToken.None);
+
+        points.Should().NotBeEmpty();
+        points.Length.Should().BeLessThan(100);
+        points.Should().OnlyContain(point =>
+            point.X >= -122.1 && point.X <= -120.8 &&
+            point.Y >= 36.9 && point.Y <= 38.2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     public async Task QueryGeoJsonAsync_WithObjectIdFilter_ReturnsGeoJsonGeometry()
     {
         var store = CreateFeatureStore();
