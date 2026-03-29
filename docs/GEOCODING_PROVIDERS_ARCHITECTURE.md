@@ -198,25 +198,30 @@ var mockConfig = new MockGeocodeProviderConfiguration
 services.AddMockGeocodeProvider(mockConfig);
 ```
 
-## Future Enhancements
+## Beta Capability Status
 
-The architecture is designed to support future enhancements:
+The following documents the current state of geocoding capabilities as of the beta release:
 
-1. **Caching Layer** - Redis-based result caching
-2. **Analytics** - Provider performance tracking
-3. **Rate Limiting** - Request throttling per provider
-4. **Circuit Breaker** - Automatic provider failover
-5. **Load Balancing** - Distribute requests across providers
-6. **Custom Providers** - Plugin architecture for custom implementations
+### Implemented and Validated
 
-## Migration from Existing Code
+- **Forward geocoding** (`findAddressCandidates`): Fully implemented. Nominatim, Azure Maps, and Amazon Location providers supported. GET and POST methods. GET-only alias route without locator name.
+- **Reverse geocoding** (`reverseGeocode`): Fully implemented. All active providers supported. GET and POST methods. GET-only alias route without locator name.
+- **Suggest/autocomplete** (`suggest`): Fully implemented. Azure Maps and Amazon Location support native suggest. Nominatim supports suggest when `EnableSuggestFromSearch` is enabled (reuses the search endpoint). GET and POST methods. GET-only alias route without locator name.
+- **Batch geocoding** (`geocodeAddresses`): Implemented at handler level with full request parsing, validation, and response mapping. Pipeline-validated via MockGeocodeProvider. No external provider supports native batch yet; when they do, they participate automatically via the coordinator. GET and POST methods. GET-only alias route without locator name.
+- **Failover**: Fully implemented for all operations (forward, reverse, suggest, batch) via `GeocodeCoordinatorService`. Configurable via `EnableFailover` and `MaxFailoverAttempts`. For batch and suggest, the coordinator skips providers that lack the required capability and continues to the next provider in the failover chain. When a client explicitly requests a specific provider via the `provider` parameter and that provider lacks the required capability, a 400 is returned without attempting failover.
+- **Provider health checks**: Each provider exposes `CheckHealthAsync` for monitoring.
 
-The current Honua.Server geocoding implementation can be gradually migrated:
+### Known Limits
 
-1. Keep existing endpoints unchanged
-2. Replace internal provider calls with coordinator service
-3. Move provider implementations to use core abstractions
-4. Add new providers incrementally
-5. Enable failover and coordination features
+- **Spatial reference**: Only `outSR=4326` (WGS 84) is currently supported. Requests for other SRIDs return 400.
+- **Batch OBJECTID**: No OBJECTID tracking in batch responses. Results are returned in input order.
+- **No fan-out**: Batch requests require native provider batch support. Sequential forward-geocode fan-out (dispatching individual calls when no provider supports native batch) is deferred.
+- **Batch size**: When an explicit `provider` parameter is supplied, capped by that provider's `MaxBatchSize`. Otherwise, a default cap of 100 is applied.
 
-This maintains backward compatibility while enabling the new architecture.
+### Future Enhancements
+
+1. **Fan-out batch strategy** - Sequential forward calls for providers without native batch support
+2. **Caching layer** - Redis-based result caching
+3. **Additional SRIDs** - Coordinate reprojection for non-4326 output
+4. **OBJECTID tracking** - Per-record OBJECTID in batch responses per GeoServices spec
+5. **Custom providers** - Plugin architecture for custom implementations

@@ -98,6 +98,12 @@ internal static class GeocodingEndpoints
             .WithName("SuggestAddressesAlias")
             .WithTags("GeocodeServer");
 
+        endpoints.MapGet("/rest/services/GeocodeServer/geocodeAddresses", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Batch Geocode Addresses (Alias)")
+            .WithName("BatchGeocodeAddressesAlias")
+            .WithTags("GeocodeServer");
+
         return endpoints;
     }
 
