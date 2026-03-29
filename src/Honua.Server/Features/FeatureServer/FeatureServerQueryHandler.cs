@@ -266,6 +266,11 @@ internal sealed class FeatureServerQueryHandler(
                     [$"Unsupported outSR value: {validatedParams.OutSr}"]);
             }
 
+            if (!string.IsNullOrWhiteSpace(validatedParams.DatumTransformation))
+            {
+                FeatureServerLog.DatumTransformationRequested(_logger, validatedParams.DatumTransformation);
+            }
+
             var wgs84Srid = SpatialReference.WGS84.Wkid;
 
             var requiresGeoJsonOutput = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase)
@@ -1121,11 +1126,6 @@ internal sealed class FeatureServerQueryHandler(
         if (!string.IsNullOrWhiteSpace(queryParams.QuantizationParameters))
         {
             unsupported.Add("quantizationParameters");
-        }
-
-        if (!string.IsNullOrWhiteSpace(queryParams.DatumTransformation))
-        {
-            unsupported.Add("datumTransformation");
         }
 
         if (queryParams.ReturnCentroid)

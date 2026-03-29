@@ -29,7 +29,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [InlineData("sqlFormat=standard", "sqlFormat")]
     [InlineData("gdbVersion=sde.DEFAULT", "gdbVersion")]
     [InlineData("quantizationParameters=1", "quantizationParameters")]
-    [InlineData("datumTransformation=4326", "datumTransformation")]
     [InlineData("returnCentroid=true", "returnCentroid")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -41,6 +40,19 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported query parameters").And.Contain(expectedToken);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithDatumTransformation_ReturnsOk()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&datumTransformation=4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("\"features\"");
     }
 
     [IntegrationTest]
