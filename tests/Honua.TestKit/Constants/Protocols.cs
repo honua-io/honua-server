@@ -108,4 +108,9 @@ public static class Protocols
     /// GeoServices PrintingTools (GP Server) endpoints.
     /// </summary>
     public const string PrintingTools = "PrintingTools";
+
+    /// <summary>
+    /// STAC (SpatioTemporal Asset Catalog) API.
+    /// </summary>
+    public const string Stac = "STAC";
 }

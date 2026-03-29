@@ -26,10 +26,13 @@ public static class ServiceProtocols
     /// <summary>gRPC/gRPC-Web protocol.</summary>
     public const string Grpc = "Grpc";
 
+    /// <summary>STAC (SpatioTemporal Asset Catalog) protocol.</summary>
+    public const string Stac = "Stac";
+
     /// <summary>
     /// All supported protocol identifiers.
     /// </summary>
-    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, Wfs20, OData, Grpc];
+    public static readonly string[] All = [FeatureServer, MapServer, OgcFeatures, Wfs20, OData, Grpc, Stac];
 
     /// <summary>
     /// Checks whether a protocol is enabled for a service based on its metadata.

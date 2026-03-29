@@ -132,6 +132,10 @@ public static class Operations
     // Streaming Operations
     public const string Streaming = "Streaming";
 
+    // STAC Operations
+    public const string StacCatalog = "StacCatalog";
+    public const string StacSearch = "StacSearch";
+
     // Test Quality Operations
     public const string TestQuality = "TestQuality";
     public const string FuzzTesting = "FuzzTesting";

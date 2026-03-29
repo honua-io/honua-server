@@ -148,4 +148,19 @@ public sealed class OutputCacheTtlOptions
     /// OGC queryables cache duration. Default: 10 minutes.
     /// </summary>
     public TimeSpan OgcQueryables { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// STAC catalog (root landing page) cache duration. Default: 30 minutes.
+    /// </summary>
+    public TimeSpan StacCatalog { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// STAC collections list cache duration. Default: 10 minutes.
+    /// </summary>
+    public TimeSpan StacCollections { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// STAC single collection cache duration. Default: 10 minutes.
+    /// </summary>
+    public TimeSpan StacCollection { get; set; } = TimeSpan.FromMinutes(10);
 }

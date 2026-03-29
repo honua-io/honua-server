@@ -40,6 +40,7 @@ public sealed class VerticalSliceIsolationTests
         "FileStorage",
         "PrintingTools",
         "HealthCheck",
+        "Stac",
         "Streaming",
         "Infrastructure" // Infrastructure is allowed to be referenced by others
     };
