@@ -100,18 +100,7 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
-            var services = await _layerCatalog.ListServicesAsync(effectiveToken);
-            var protocolLayerIds = services
-                .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
-                .SelectMany(service => service.Layers.Select(layer => layer.Id))
-                .ToHashSet();
-            var visibleLayers = layers
-                .Where(layer => protocolLayerIds.Count == 0
-                    ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
-                    : protocolLayerIds.Contains(layer.Id))
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
-                .ToArray();
+            var visibleLayers = await GetVisibleODataLayersAsync(context, effectiveToken);
 
             // Apply filtering and processing
             IEnumerable<LayerDefinition> layerQuery = visibleLayers;
@@ -294,18 +283,7 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layers = await _layerCatalog.ListLayersAsync(effectiveToken);
-            var services = await _layerCatalog.ListServicesAsync(effectiveToken);
-            var protocolLayerIds = services
-                .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
-                .SelectMany(service => service.Layers.Select(layer => layer.Id))
-                .ToHashSet();
-            var visibleLayers = layers
-                .Where(layer => protocolLayerIds.Count == 0
-                    ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
-                    : protocolLayerIds.Contains(layer.Id))
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
-                .ToArray();
+            var visibleLayers = await GetVisibleODataLayersAsync(context, effectiveToken);
 
             IEnumerable<LayerDefinition> layerQuery = visibleLayers;
             if (!string.IsNullOrWhiteSpace(filter))
@@ -569,6 +547,34 @@ internal sealed partial class ODataQueryHandler(
         {
             featureActivity?.Dispose();
         }
+    }
+
+    private async Task<LayerDefinition[]> GetVisibleODataLayersAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
+        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OData);
+
+        return layers
+            .Where(layer => IsODataLayerVisible(context, layer, primaryServices))
+            .ToArray();
+    }
+
+    private static bool IsODataLayerVisible(
+        HttpContext context,
+        LayerDefinition layer,
+        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
+    {
+        if (primaryServices.TryGetValue(layer.Id, out var service))
+        {
+            return ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData) &&
+                AccessPolicyHelpers.IsLayerAccessible(context, layer, service);
+        }
+
+        return ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData) &&
+            AccessPolicyHelpers.IsLayerAccessible(context, layer);
     }
 
     private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)

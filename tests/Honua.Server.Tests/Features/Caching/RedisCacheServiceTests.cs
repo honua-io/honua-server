@@ -397,6 +397,55 @@ public sealed class RedisCacheServiceTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task TryRestoreRedisAsync_WhenRedisRecovers_ClearsFallbackState()
+    {
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache
+            .SetAsync(
+                Arg.Any<string>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<DistributedCacheEntryOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "redis unavailable"));
+        distributedCache
+            .GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<byte[]?>(null));
+
+        var options = new CacheOptions
+        {
+            Enabled = true,
+            EnableFallback = true,
+            FallbackMaxEntries = 10,
+            KeyPrefix = "restore:"
+        };
+
+        using var cache = new RedisCacheService(
+            distributedCache,
+            Options.Create(options),
+            NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor);
+
+        await cache.SetAsync("layer:1", new FieldDefinition("Recovered", FieldType.String, Length: 10));
+
+        cache.IsUsingFallback.Should().BeTrue();
+        GetFallbackCacheKeys(cache).Should().ContainSingle();
+        GetWriteMetadataCount(cache).Should().Be(1);
+
+        var tryRestoreMethod = typeof(RedisCacheService)
+            .GetMethod("TryRestoreRedisAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        tryRestoreMethod.Should().NotBeNull();
+
+        var restored = await (Task<bool>)tryRestoreMethod!
+            .Invoke(cache, [CancellationToken.None])!;
+
+        restored.Should().BeTrue();
+        cache.IsUsingFallback.Should().BeFalse();
+        GetFallbackCacheKeys(cache).Should().BeEmpty();
+        GetWriteMetadataCount(cache).Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task CacheDisabled_ReturnsNullAndDoesNotStore()
     {
         // Arrange
@@ -449,17 +498,31 @@ public sealed class RedisCacheServiceTests : IDisposable
     }
 
     private string[] GetFallbackCacheKeys()
+        => GetFallbackCacheKeys(_cacheService);
+
+    private static string[] GetFallbackCacheKeys(RedisCacheService cacheService)
     {
         var fallbackCacheField = typeof(RedisCacheService).GetField("_fallbackCache", BindingFlags.NonPublic | BindingFlags.Instance);
         fallbackCacheField.Should().NotBeNull();
 
-        var fallbackCache = fallbackCacheField!.GetValue(_cacheService) as System.Collections.IEnumerable;
+        var fallbackCache = fallbackCacheField!.GetValue(cacheService) as System.Collections.IEnumerable;
         fallbackCache.Should().NotBeNull();
 
         return fallbackCache!
             .Cast<object>()
             .Select(entry => (string)entry.GetType().GetProperty("Key")!.GetValue(entry)!)
             .ToArray();
+    }
+
+    private static int GetWriteMetadataCount(RedisCacheService cacheService)
+    {
+        var writeMetadataField = typeof(RedisCacheService).GetField("_writeMetadata", BindingFlags.NonPublic | BindingFlags.Instance);
+        writeMetadataField.Should().NotBeNull();
+
+        var writeMetadata = writeMetadataField!.GetValue(cacheService) as System.Collections.IDictionary;
+        writeMetadata.Should().NotBeNull();
+
+        return writeMetadata!.Count;
     }
 
     internal sealed class MockLogger<T> : ILogger<T>

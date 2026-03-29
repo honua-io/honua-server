@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Validation;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
@@ -269,5 +271,55 @@ public class ValidationErrorHelpersTests
         // Act & Assert
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             ValidationErrorHelpers.WriteValidationErrorAsync(context, 400, "Title", "Detail", cts.Token));
+    }
+
+    [Fact]
+    public async Task CreateUnsupportedMediaType_WithGeoServicesContext_ReturnsGeoServicesEnvelope()
+    {
+        var context = CreateContext("/rest/services/0/FeatureServer/0/applyEdits");
+        var result = ValidationErrorHelpers.CreateUnsupportedMediaType(
+            context,
+            "text/plain",
+            new HashSet<string> { "application/json", "application/x-www-form-urlencoded" });
+
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status415UnsupportedMediaType);
+        context.Response.Body.Position = 0;
+
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().BeGreaterThan(0);
+        document.RootElement.GetProperty("error").GetProperty("message").GetString().Should().Be("Unsupported Media Type");
+    }
+
+    [Fact]
+    public async Task CreateMethodNotAllowed_WithGeoServicesContext_ReturnsGeoServicesEnvelopeAndAllowHeader()
+    {
+        var context = CreateContext("/rest/services/0/FeatureServer/0/query");
+        var result = ValidationErrorHelpers.CreateMethodNotAllowed(
+            context,
+            new HashSet<string> { "GET", "POST" });
+
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status405MethodNotAllowed);
+        context.Response.Headers["Allow"].ToString().Should().Be("GET, POST");
+        context.Response.Body.Position = 0;
+
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(405);
+        document.RootElement.GetProperty("error").GetProperty("message").GetString().Should().Be("Method Not Allowed");
+    }
+
+    private static DefaultHttpContext CreateContext(string path)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = path;
+        context.RequestServices = new ServiceCollection()
+            .AddLogging()
+            .AddOptions()
+            .BuildServiceProvider();
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 }

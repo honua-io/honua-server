@@ -11,6 +11,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OData.Models;
 using Honua.Server.Features.OData.Services;
 using Microsoft.AspNetCore.WebUtilities;
@@ -548,22 +549,6 @@ internal sealed partial class ODataBatchOperationHandler(
         CancellationToken cancellationToken)
     {
         var layerCache = new Dictionary<int, LayerDefinition?>();
-        var services = await _batchDependencies.LayerCatalog.ListServicesAsync(cancellationToken);
-        var servicesByLayerId = new Dictionary<int, List<ServiceDefinition>>();
-        foreach (var service in services)
-        {
-            foreach (var layer in service.Layers)
-            {
-                if (!servicesByLayerId.TryGetValue(layer.Id, out var layerServices))
-                {
-                    layerServices = [];
-                    servicesByLayerId[layer.Id] = layerServices;
-                }
-
-                layerServices.Add(service);
-            }
-        }
-
         var requiresAuth = false;
         var hasDenied = false;
 
@@ -585,15 +570,12 @@ internal sealed partial class ODataBatchOperationHandler(
                 continue;
             }
 
-            servicesByLayerId.TryGetValue(layerId, out var allRelatedServices);
-            allRelatedServices ??= [];
-
-            var protocolEnabledServices = allRelatedServices
-                .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
-                .ToArray();
-
-            var layerAllowsProtocol = ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData);
-            if (protocolEnabledServices.Length == 0 && !layerAllowsProtocol)
+            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                context,
+                layerId,
+                ServiceProtocols.OData,
+                cancellationToken);
+            if (!IsODataEnabled(layer, service))
             {
                 return ODataUtilityService.CreateODataError(
                     context,
@@ -603,10 +585,10 @@ internal sealed partial class ODataBatchOperationHandler(
             }
 
             var scope = IsMutationMethod(request.Method) ? AccessScope.Write : AccessScope.Read;
-            var decision = EvaluateLayerAccess(
+            var decision = AccessPolicyHelpers.EvaluateAccess(
                 context,
-                layer,
-                protocolEnabledServices,
+                layer.Metadata?.AccessPolicy,
+                service?.Metadata?.AccessPolicy,
                 scope);
             if (decision.IsAllowed)
             {
@@ -647,39 +629,13 @@ internal sealed partial class ODataBatchOperationHandler(
             : StandardErrorHelpers.CreateForbidden(context, detail);
     }
 
-    private static AccessDecision EvaluateLayerAccess(
-        HttpContext context,
+    private static bool IsODataEnabled(
         LayerDefinition layer,
-        ServiceDefinition[] protocolEnabledServices,
-        AccessScope scope)
+        ServiceDefinition? service)
     {
-        if (protocolEnabledServices.Length == 0)
-        {
-            return AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null, scope);
-        }
-
-        var requiresAuthentication = false;
-        foreach (var service in protocolEnabledServices)
-        {
-            var decision = AccessPolicyHelpers.EvaluateAccess(
-                context,
-                layer.Metadata?.AccessPolicy,
-                service.Metadata?.AccessPolicy,
-                scope);
-            if (decision.IsAllowed)
-            {
-                return decision;
-            }
-
-            if (decision.RequiresAuthentication)
-            {
-                requiresAuthentication = true;
-            }
-        }
-
-        return requiresAuthentication
-            ? AccessDecision.RequiresAuth("Authentication is required.")
-            : AccessDecision.Forbidden("Access to one or more requested layers is forbidden.");
+        return service == null
+            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
+            : ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData);
     }
 
     private async Task PublishBatchFeatureEventsAsync(
@@ -717,11 +673,12 @@ internal sealed partial class ODataBatchOperationHandler(
                 "DELETE" => "delete",
                 _ => "update"
             };
+            var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
 
             await _batchDependencies.FeatureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
-                    ServiceId = "odata",
+                    ServiceId = serviceId,
                     LayerId = layerId,
                     ObjectId = objectId,
                     Operation = eventOperation,
@@ -730,6 +687,20 @@ internal sealed partial class ODataBatchOperationHandler(
                 },
                 cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static async Task<string> ResolveServiceIdAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
+            context,
+            layerId,
+            ServiceProtocols.OData,
+            cancellationToken);
+
+        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>

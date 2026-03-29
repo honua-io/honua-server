@@ -104,9 +104,10 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    internal static IResult CreateUnsupportedRequestContentTypeResult(string? receivedContentType)
+    internal static IResult CreateUnsupportedRequestContentTypeResult(HttpContext context, string? receivedContentType)
     {
         return ValidationErrorHelpers.CreateUnsupportedMediaType(
+            context,
             receivedContentType ?? "(missing)",
             SupportedRequestContentTypes);
     }

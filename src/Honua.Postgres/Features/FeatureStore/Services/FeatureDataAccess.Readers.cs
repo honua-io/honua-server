@@ -16,9 +16,12 @@ internal sealed partial class FeatureDataAccess
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
 
-        if (reader.FieldCount == 3 && reader.IsDBNull(2))
+        if (reader.FieldCount < 3)
         {
-            return Task.FromResult(Feature.Create(id, geometry));
+            return Task.FromResult(Feature.Create(
+                id,
+                geometry,
+                ImmutableDictionary<string, object?>.Empty.Add("objectid", id)));
         }
 
         var attributes = ReadAttributes(reader, id);

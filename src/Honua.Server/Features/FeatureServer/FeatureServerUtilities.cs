@@ -337,6 +337,15 @@ internal static partial class FeatureServerEndpoints
         var supportsStatistics = true;
         var supportsAdvancedQueries = service.SupportsAdvancedQueries;
         var supportsRelated = layer.HasRelationships;
+        var supportsOrderBy = supportsAdvancedQueries;
+        var supportsDistinct = supportsAdvancedQueries;
+        var supportsPagination = supportsAdvancedQueries;
+        var advancedQueryCapabilities = BuildAdvancedQueryCapabilities(
+            supportsAdvancedQueries,
+            supportsStatistics,
+            supportsOrderBy,
+            supportsDistinct,
+            supportsPagination);
 
         return new LayerResponse
         {
@@ -358,9 +367,9 @@ internal static partial class FeatureServerEndpoints
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
             SupportsCountDistinct = supportsStatistics,
-            SupportsOrderBy = true,
-            SupportsDistinct = true,
-            SupportsPagination = true,
+            SupportsOrderBy = supportsOrderBy,
+            SupportsDistinct = supportsDistinct,
+            SupportsPagination = supportsPagination,
             SupportsTrueCurve = false,
             SupportsRollbackOnFailureParameter = service.SupportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
@@ -372,7 +381,30 @@ internal static partial class FeatureServerEndpoints
             AllowGeometryUpdates = service.SupportsEditing,
             EditFieldsInfo = null,
             EditingInfo = service.SupportsEditing ? new EditingInfo() : null,
-            Templates = []
+            Templates = [],
+            AdvancedQueryCapabilities = advancedQueryCapabilities
+        };
+    }
+
+    private static AdvancedQueryCapabilities BuildAdvancedQueryCapabilities(
+        bool supportsAdvancedQueries,
+        bool supportsStatistics,
+        bool supportsOrderBy,
+        bool supportsDistinct,
+        bool supportsPagination)
+    {
+        return new AdvancedQueryCapabilities
+        {
+            UseStandardizedQueries = true,
+            SupportsStatistics = supportsStatistics,
+            SupportsOrderBy = supportsOrderBy,
+            SupportsDistinct = supportsDistinct,
+            SupportsCountDistinct = supportsStatistics,
+            SupportsPagination = supportsPagination,
+            SupportsReturningQueryExtent = supportsAdvancedQueries,
+            SupportsQueryWithDistance = supportsAdvancedQueries,
+            SupportsSqlExpression = supportsAdvancedQueries,
+            SupportsBatchEditing = supportsAdvancedQueries
         };
     }
 

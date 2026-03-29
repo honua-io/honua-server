@@ -3,8 +3,10 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
@@ -98,6 +100,22 @@ internal static class ServiceDataEditorAuthorization
         }
 
         var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
+        var preferredProtocol = ResolveLayerProtocol(context.Request.Path);
+        if (preferredProtocol != null)
+        {
+            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
+                context,
+                layerId,
+                preferredProtocol,
+                cancellationToken);
+            if (service != null)
+            {
+                return HasServiceScopedRole(context.User, options, service.Name)
+                    ? AccessDecision.Allowed()
+                    : AccessDecision.Forbidden("User does not have the required data editor role.");
+            }
+        }
+
         foreach (var serviceId in scopedServiceIds)
         {
             var service = await layerCatalog.GetServiceAsync(serviceId, cancellationToken);
@@ -108,6 +126,21 @@ internal static class ServiceDataEditorAuthorization
         }
 
         return AccessDecision.Forbidden("User does not have the required data editor role.");
+    }
+
+    private static string? ResolveLayerProtocol(PathString path)
+    {
+        if (ProtocolRequestClassifier.IsOData(path))
+        {
+            return ServiceProtocols.OData;
+        }
+
+        if (ProtocolRequestClassifier.IsOgc(path))
+        {
+            return ServiceProtocols.OgcFeatures;
+        }
+
+        return null;
     }
 
     private static IResult? CreateDecisionResult(HttpContext context, AccessDecision decision)

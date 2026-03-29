@@ -233,6 +233,44 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    public async Task QueryGmlAsync_WithNorthEastAxisOrder_UsesLatitudeLongitudeCoordinates()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326,
+            OutputAxisOrder = AxisOrder.NorthEast
+        };
+
+        var result = await store.QueryGmlAsync(PointsLayerId, query, CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].GeometryGml.Should().Contain("37 -122");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryGmlAsync_WithEastNorthAxisOrder_UsesLongitudeLatitudeCoordinates()
+    {
+        var store = CreateFeatureStore();
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 4326,
+            OutputAxisOrder = AxisOrder.EastNorth
+        };
+
+        var result = await store.QueryGmlAsync(PointsLayerId, query, CancellationToken.None);
+
+        result.Items.Should().HaveCount(1);
+        result.Items[0].GeometryGml.Should().Contain("-122 37");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     public async Task QueryProjectedPointsAsync_WithRasterGrid_ShouldThinDensePointRows()
     {
         var store = CreateFeatureStore();
@@ -531,6 +569,48 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         var verifyUpdatedFeature = await store.GetAsync(GetLayerId("points"), 3, CancellationToken.None);
         verifyUpdatedFeature.Should().NotBeNull();
         verifyUpdatedFeature!.Value.Attributes["category"].Should().Be("batch_updated");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WithMultipleCreates_ReturnsCreatedIdsInRequestOrder()
+    {
+        var store = CreateFeatureStore();
+        var firstFeature = Feature.Create(
+            0,
+            CreatePointWkb(-5, 5),
+            ImmutableDictionary<string, object?>.Empty
+                .Add("name", "first-batch-create")
+                .Add("globalId", "batch-create-1"));
+        var secondFeature = Feature.Create(
+            0,
+            CreatePointWkb(-6, 6),
+            ImmutableDictionary<string, object?>.Empty
+                .Add("name", "second-batch-create")
+                .Add("globalId", "batch-create-2"));
+
+        var result = await store.ApplyEditsAsync(
+            GetLayerId("points"),
+            FeatureEditBatch.Create(
+                creates: ImmutableArray.Create(firstFeature, secondFeature),
+                rollbackOnFailure: false),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.CreatedCount.Should().Be(2);
+        result.CreatedIds.Should().HaveCount(2);
+        result.CreateResults.Should().HaveCount(2);
+        result.CreateResults[0].GlobalId.Should().Be("batch-create-1");
+        result.CreateResults[1].GlobalId.Should().Be("batch-create-2");
+        result.CreatedIds[0].Should().NotBe(result.CreatedIds[1]);
+
+        var firstCreated = await store.GetAsync(GetLayerId("points"), result.CreatedIds[0], CancellationToken.None);
+        var secondCreated = await store.GetAsync(GetLayerId("points"), result.CreatedIds[1], CancellationToken.None);
+
+        firstCreated.Should().NotBeNull();
+        secondCreated.Should().NotBeNull();
+        firstCreated!.Value.Attributes["name"].Should().Be("first-batch-create");
+        secondCreated!.Value.Attributes["name"].Should().Be("second-batch-create");
     }
 
     [IntegrationTest]

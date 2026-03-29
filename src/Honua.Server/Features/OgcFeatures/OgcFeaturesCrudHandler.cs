@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -86,10 +87,11 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
             await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+            var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
-                    ServiceId = collectionId,
+                    ServiceId = serviceId,
                     LayerId = layerId,
                     ObjectId = created.Id,
                     Operation = "create",
@@ -164,10 +166,11 @@ internal sealed partial class OgcFeaturesCrudHandler(
             }
 
             await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
+            var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
-                    ServiceId = collectionId,
+                    ServiceId = serviceId,
                     LayerId = layerId,
                     ObjectId = objectId,
                     Operation = "delete",
@@ -196,6 +199,20 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
         return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
+    }
+
+    private static async Task<string> ResolveServiceIdAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
+            context,
+            layerId,
+            ServiceProtocols.OgcFeatures,
+            cancellationToken);
+
+        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     private static partial class Log

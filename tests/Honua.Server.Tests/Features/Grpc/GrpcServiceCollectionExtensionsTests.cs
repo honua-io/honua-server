@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Grpc.AspNetCore.Server;
 using Honua.Server.Features.Grpc;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -116,5 +117,26 @@ public sealed class GrpcServiceCollectionExtensionsTests
         var options = provider.GetRequiredService<IOptions<GrpcOptions>>().Value;
 
         options.StreamBatchSize.Should().Be(1000);
+    }
+
+    [UnitTest]
+    public void AddHonuaGrpc_RegistersExceptionInterceptorAndSpatialReferenceResolver()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+
+        services.AddHonuaGrpc(configuration);
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(GrpcExceptionInterceptor)
+            && descriptor.Lifetime == ServiceLifetime.Singleton);
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(SpatialReferenceResolver)
+            && descriptor.Lifetime == ServiceLifetime.Scoped);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<GrpcServiceOptions>>().Value;
+
+        options.Interceptors.Should().ContainSingle(interceptor => interceptor.Type == typeof(GrpcExceptionInterceptor));
     }
 }

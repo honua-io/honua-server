@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Text;
 
 namespace Honua.Postgres.Features.Import.FileGdb;
@@ -120,34 +122,49 @@ internal sealed class GdbTableReader : IDisposable
             yield break;
         }
 
-        var indexData = File.ReadAllBytes(indexPath);
-        if (indexData.Length < 16)
+        using var indexStream = new FileStream(indexPath, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            BufferSize = 4096,
+            Options = FileOptions.SequentialScan
+        });
+        if (indexStream.Length < 16)
         {
             yield break;
         }
 
+        using var indexReader = new BinaryReader(indexStream, Encoding.UTF8, leaveOpen: true);
+
         // Index header: 16 bytes.
         // Bytes 12-15: entry size (typically 5 for v3).
-        var entrySize = BitConverter.ToInt32(indexData, 12);
+        indexStream.Seek(12, SeekOrigin.Begin);
+        var entrySize = indexReader.ReadInt32();
         if (entrySize is < 4 or > 6)
         {
             entrySize = 5; // Default to 5 bytes per entry.
         }
 
-        var numEntries = (indexData.Length - 16) / entrySize;
-        var tableData = File.ReadAllBytes(_tablePath);
+        var numEntries = (indexStream.Length - 16) / entrySize;
+        indexStream.Seek(16, SeekOrigin.Begin);
+        var tableStream = _reader.BaseStream;
+        var entryBuffer = new byte[6];
         var objectId = 0;
 
         for (var i = 0; i < numEntries; i++)
         {
             objectId++;
-            var entryOffset = 16 + i * entrySize;
+            if (indexStream.Read(entryBuffer, 0, entrySize) < entrySize)
+            {
+                yield break;
+            }
 
             // Read row offset as a multi-byte little-endian value.
             long rowOffset = 0;
             for (var b = 0; b < entrySize; b++)
             {
-                rowOffset |= (long)indexData[entryOffset + b] << (b * 8);
+                rowOffset |= (long)entryBuffer[b] << (b * 8);
             }
 
             if (rowOffset == 0)
@@ -155,12 +172,7 @@ internal sealed class GdbTableReader : IDisposable
                 continue; // Deleted row.
             }
 
-            if (rowOffset + 4 > tableData.Length)
-            {
-                continue; // Invalid offset.
-            }
-
-            var row = ReadRow(tableData, (int)rowOffset, objectId);
+            var row = ReadRow(tableStream, rowOffset, objectId);
             if (row != null)
             {
                 yield return row;
@@ -168,22 +180,47 @@ internal sealed class GdbTableReader : IDisposable
         }
     }
 
-    private Dictionary<string, object?>? ReadRow(byte[] tableData, int offset, int objectId)
+    private Dictionary<string, object?>? ReadRow(Stream tableStream, long offset, int objectId)
     {
-        if (offset + 4 > tableData.Length)
+        if (offset < 0 || offset > tableStream.Length - sizeof(int))
         {
             return null;
         }
 
-        var rowSize = BitConverter.ToInt32(tableData, offset);
-        if (rowSize <= 0 || offset + 4 + rowSize > tableData.Length)
+        tableStream.Seek(offset, SeekOrigin.Begin);
+
+        Span<byte> rowSizeBuffer = stackalloc byte[sizeof(int)];
+        if (!TryReadExact(tableStream, rowSizeBuffer))
         {
             return null;
         }
 
-        var rowData = tableData.AsSpan(offset + 4, rowSize);
+        var rowSize = BinaryPrimitives.ReadInt32LittleEndian(rowSizeBuffer);
+        if (rowSize <= 0 || offset > tableStream.Length - sizeof(int) - rowSize)
+        {
+            return null;
+        }
+
+        var rentedBuffer = ArrayPool<byte>.Shared.Rent(rowSize);
+        try
+        {
+            var rowData = rentedBuffer.AsSpan(0, rowSize);
+            if (!TryReadExact(tableStream, rowData))
+            {
+                return null;
+            }
+
+            return ReadRow(rowData, objectId);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rentedBuffer);
+        }
+    }
+
+    private Dictionary<string, object?>? ReadRow(ReadOnlySpan<byte> rowData, int objectId)
+    {
         var result = new Dictionary<string, object?>(_fields.Count);
-        var pos = 0;
 
         // Read null bitmap.
         if (_nullBitmapSize > rowData.Length)
@@ -192,7 +229,7 @@ internal sealed class GdbTableReader : IDisposable
         }
 
         var nullBitmap = rowData[.._nullBitmapSize];
-        pos = _nullBitmapSize;
+        var pos = _nullBitmapSize;
 
         var nullableIndex = 0;
 
@@ -228,6 +265,23 @@ internal sealed class GdbTableReader : IDisposable
         }
 
         return result;
+    }
+
+    private static bool TryReadExact(Stream stream, Span<byte> buffer)
+    {
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            var read = stream.Read(buffer[totalRead..]);
+            if (read == 0)
+            {
+                return false;
+            }
+
+            totalRead += read;
+        }
+
+        return true;
     }
 
     private object? ReadFieldValue(GdbField field, ReadOnlySpan<byte> rowData, ref int pos)

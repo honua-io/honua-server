@@ -82,4 +82,28 @@ public sealed class GeoServerServiceUrlValidationTests
         result.IsValid.Should().BeTrue();
         result.ErrorMessage.Should().BeNull();
     }
+
+    [UnitTest]
+    public async Task ValidateAsync_CloudMetadataLiteral_ReturnsFailure_WhenUnsafeLocalUrlsAreDisabled()
+    {
+        var result = await GeoServerServiceUrlValidation.ValidateAsync(
+            "https://169.254.169.254/geoserver/rest",
+            allowUnsafeLocalUrls: false,
+            static (_, _) => throw new InvalidOperationException("Literal IPs should not use DNS resolution."));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not allowed");
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_Ipv6MulticastResolution_ReturnsFailure_WhenUnsafeLocalUrlsAreDisabled()
+    {
+        var result = await GeoServerServiceUrlValidation.ValidateAsync(
+            "https://example.com/geoserver/rest",
+            allowUnsafeLocalUrls: false,
+            (_, _) => Task.FromResult(new[] { IPAddress.Parse("ff02::1") }));
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("not allowed");
+    }
 }

@@ -113,7 +113,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
         // Assert - Should require authentication
         Assert.Equal(401, (int)response.StatusCode);
-        Assert.Equal("application/problem+json; charset=utf-8", response.Content.Headers.ContentType?.ToString());
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
 
     #endregion

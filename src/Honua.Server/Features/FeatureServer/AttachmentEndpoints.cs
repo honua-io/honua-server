@@ -141,7 +141,7 @@ internal static class AttachmentEndpoints
             {
                 if (FeatureServerEndpoints.TryGetUnsupportedMediaType(readError, out var receivedContentType))
                 {
-                    await FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(receivedContentType).ExecuteAsync(context);
+                    await FeatureServerEndpoints.CreateUnsupportedRequestContentTypeResult(context, receivedContentType).ExecuteAsync(context);
                     return;
                 }
 
@@ -511,6 +511,7 @@ internal static class AttachmentEndpoints
             : context.Request.ContentType.Split(';', 2)[0].Trim();
 
         await ValidationErrorHelpers.CreateUnsupportedMediaType(
+            context,
             receivedContentType,
             SupportedAttachmentContentTypes).ExecuteAsync(context);
         return null;

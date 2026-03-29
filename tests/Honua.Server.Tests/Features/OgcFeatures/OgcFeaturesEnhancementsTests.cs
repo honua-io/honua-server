@@ -306,6 +306,32 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithGml4326Crs_UsesLatitudeLongitudeCoordinates()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?f=gml&limit=1&crs=http://www.opengis.net/def/crs/EPSG/0/4326");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("37.5 -122.5");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithGmlCrs84_UsesLongitudeLatitudeCoordinates()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?f=gml&limit=1&crs=CRS84");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("-122.5 37.5");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task GetSingleItem_WithGmlFormat_ReturnsGml()
     {
@@ -364,7 +390,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
-    public async Task GetItems_With3dBbox_ReturnsFilteredFeatures()
+    public async Task GetItems_With3dBbox_ReturnsBadRequest()
     {
         // Arrange - 3D bbox (minx, miny, minz, maxx, maxy, maxz)
         var bbox = "-180,-90,-10,180,90,10";
@@ -373,12 +399,10 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().NotBeEmpty();
+        content.Should().Contain("3D bounding boxes are not supported");
     }
 
     [IntegrationTest]

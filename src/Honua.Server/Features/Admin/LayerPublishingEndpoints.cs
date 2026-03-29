@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -368,6 +369,20 @@ internal static class LayerPublishingEndpoints
         IEnumerable<int> layerIds,
         ILogger<LayerPublishingEndpointsLog> logger)
     {
+        var distinctLayerIds = layerIds
+            .Where(layerId => layerId > 0)
+            .Distinct()
+            .ToArray();
+
+        var featureCacheManager = context.RequestServices.GetService<IFeatureCacheManager>();
+        if (featureCacheManager != null)
+        {
+            foreach (var layerId in distinctLayerIds)
+            {
+                featureCacheManager.InvalidateLayerCache(layerId);
+            }
+        }
+
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator == null)
         {
@@ -378,7 +393,7 @@ internal static class LayerPublishingEndpoints
         {
             await cacheInvalidator.InvalidateServiceCatalogAsync(
                 serviceName,
-                layerIds,
+                distinctLayerIds,
                 context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -8,7 +8,7 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// <summary>
 /// Abstraction for caching layer metadata and performance optimization
 /// </summary>
-internal interface IFeatureCacheManager
+public interface IFeatureCacheManager
 {
     /// <summary>
     /// Gets the SRID for a layer, using cache when available
@@ -50,7 +50,7 @@ internal interface IFeatureCacheManager
 /// <summary>
 /// Geometry storage types supported by PostgreSQL
 /// </summary>
-internal enum GeometryStorageType
+public enum GeometryStorageType
 {
     /// <summary>PostGIS geometry type</summary>
     Geometry,

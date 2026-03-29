@@ -145,7 +145,23 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tilesets.Should().NotBeNull();
         tilesets!.Tilesets.Should().NotBeEmpty();
         tilesets.Tilesets.First().Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
-        tilesets.Tilesets.First().Links.Should().Contain(l => l.Href.Contains("collections=", StringComparison.OrdinalIgnoreCase));
+        tilesets.Tilesets.First().Links.Should().NotContain(l => l.Href.Contains("collections=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles")]
+    public async Task GetDatasetTilesets_WithCollections_CanonicalizesOrderInLinks()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles?collections=1,0");
+
+        response.Be200Ok();
+
+        var tilesets = await response.Content.ReadFromJsonAsync<TileSetsList>();
+        tilesets.Should().NotBeNull();
+        tilesets!.Tilesets.Should().NotBeEmpty();
+        tilesets.Tilesets.SelectMany(tileset => tileset.Links)
+            .Should().Contain(link => link.Href.Contains("collections=0,1", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -188,6 +204,21 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tileset.Should().NotBeNull();
         tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
         tileset.Links.Should().Contain(l => l.Rel == "item");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}")]
+    public async Task GetDatasetTileset_WithMultipleCollections_CanonicalizesLinksAndUsesDatasetMetadataLink()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad?collections=1,0");
+
+        response.Be200Ok();
+
+        var tileset = await response.Content.ReadFromJsonAsync<TileSet>();
+        tileset.Should().NotBeNull();
+        tileset!.Links.Should().Contain(link => link.Rel == "item" && link.Href.Contains("collections=0,1", StringComparison.OrdinalIgnoreCase));
+        tileset.Links.Should().Contain(link => link.Rel == RelationTypes.Geodata && link.Href.EndsWith("/ogc/features/collections", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -281,6 +312,21 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
     public async Task GetDatasetTile_ReturnsMvtOrNoContent()
     {
         var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Mvt);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetDatasetTile_WithoutCollections_ReturnsMvtOrNoContent()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/tiles/tiles/WebMercatorQuad/0/0/0");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
 

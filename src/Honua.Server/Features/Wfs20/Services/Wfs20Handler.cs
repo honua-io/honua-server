@@ -600,6 +600,7 @@ internal sealed class Wfs20Handler
         var objectIds = ParseResourceIds(resourceId);
         var orderBy = ParseSortBy(layer, sortBy);
         var outputSrid = ParseSrid(srsName) ?? layer.SpatialReference.ToSrid();
+        var outputAxisOrder = ResolveOutputAxisOrder(srsName, outputSrid);
 
         return new FeatureQuery
         {
@@ -609,6 +610,7 @@ internal sealed class Wfs20Handler
             SpatialFilter = spatialFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             OutputSrid = outputSrid,
+            OutputAxisOrder = outputAxisOrder,
             OrderBy = orderBy
         };
     }
@@ -629,6 +631,7 @@ internal sealed class Wfs20Handler
         var spatialFilter = ParseBboxFilter(bbox, layer);
         var objectIds = ParseResourceIds(resourceId);
         var outputSrid = ParseSrid(srsName) ?? layer.SpatialReference.ToSrid();
+        var outputAxisOrder = ResolveOutputAxisOrder(srsName, outputSrid);
 
         return new FeatureQuery
         {
@@ -637,7 +640,8 @@ internal sealed class Wfs20Handler
             OutFields = outFields,
             SpatialFilter = spatialFilter,
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
-            OutputSrid = outputSrid
+            OutputSrid = outputSrid,
+            OutputAxisOrder = outputAxisOrder
         };
     }
 
@@ -869,6 +873,19 @@ internal sealed class Wfs20Handler
         }
 
         return null;
+    }
+
+    private static AxisOrder ResolveOutputAxisOrder(string? srsName, int outputSrid)
+    {
+        if (!string.IsNullOrWhiteSpace(srsName) &&
+            srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            return AxisOrder.EastNorth;
+        }
+
+        return SpatialReference.Create(outputSrid).IsGeographic
+            ? AxisOrder.NorthEast
+            : AxisOrder.EastNorth;
     }
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(

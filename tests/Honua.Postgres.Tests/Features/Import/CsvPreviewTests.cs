@@ -51,6 +51,31 @@ public sealed class CsvPreviewTests
         preview.SampleProperties["name"].Should().Be("Test Feature");
     }
 
+    [Theory]
+    [InlineData(';')]
+    [InlineData('\t')]
+    [InlineData('|')]
+    public async Task PreviewFileAsync_CsvWithDetectedDelimiter_ReturnsPreviewMetadata(char delimiter)
+    {
+        var separator = delimiter == '\t' ? "\t" : delimiter.ToString();
+        var csv = string.Join(
+            Environment.NewLine,
+            $"id{separator}name{separator}longitude{separator}latitude{separator}category",
+            $"1{separator}San Francisco{separator}-122.4194{separator}37.7749{separator}city",
+            $"2{separator}\"Half Moon Bay{separator} CA\"{separator}-122.4286{separator}37.4636{separator}town");
+
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "sample.csv");
+
+        preview.Format.Should().Be(SupportedFileFormat.Csv);
+        preview.DetectedSrid.Should().Be(4326);
+        preview.TotalFeatureCount.Should().Be(2);
+        preview.SampleProperties.Should().ContainKey("name");
+        preview.SampleProperties["name"].Should().Be("San Francisco");
+    }
+
     [Fact]
     public async Task ReadStreamingAsync_CsvWithExcessivelyLargeRecord_ThrowsInvalidOperationException()
     {

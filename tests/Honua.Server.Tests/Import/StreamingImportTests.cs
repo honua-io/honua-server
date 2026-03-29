@@ -257,6 +257,60 @@ public class StreamingImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_CsvFile_WithSemicolonDelimiter_StreamsRows()
+    {
+        const string csvContent = """
+            id;name;longitude;latitude;category
+            1;San Francisco;-122.4194;37.7749;city
+            2;Oakland;-122.2711;37.8044;city
+            3;"Half Moon Bay; CA";-122.4286;37.4636;town
+            """;
+
+        var responseContent = await ImportDelimitedCsvAsync(csvContent, "csv_semicolon_import_table");
+
+        responseContent.Should().Contain("csv_semicolon_import_table");
+        responseContent.Should().Contain("Csv");
+        responseContent.Should().Contain("\"featureCount\":3");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_CsvFile_WithTabDelimiter_StreamsRows()
+    {
+        const string csvContent = """
+            id	name	longitude	latitude	category
+            1	San Francisco	-122.4194	37.7749	city
+            2	Oakland	-122.2711	37.8044	city
+            3	"Half Moon Bay	CA"	-122.4286	37.4636	town
+            """;
+
+        var responseContent = await ImportDelimitedCsvAsync(csvContent, "csv_tab_import_table");
+
+        responseContent.Should().Contain("csv_tab_import_table");
+        responseContent.Should().Contain("Csv");
+        responseContent.Should().Contain("\"featureCount\":3");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_CsvFile_WithPipeDelimiter_StreamsRows()
+    {
+        const string csvContent = """
+            id|name|longitude|latitude|category
+            1|San Francisco|-122.4194|37.7749|city
+            2|Oakland|-122.2711|37.8044|city
+            3|"Half Moon Bay| CA"|-122.4286|37.4636|town
+            """;
+
+        var responseContent = await ImportDelimitedCsvAsync(csvContent, "csv_pipe_import_table");
+
+        responseContent.Should().Contain("csv_pipe_import_table");
+        responseContent.Should().Contain("Csv");
+        responseContent.Should().Contain("\"featureCount\":3");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_KmlFile_StreamsPlacemarks()
     {
         // Arrange - KML file with placemarks
@@ -738,5 +792,24 @@ public class StreamingImportTests : IAsyncLifetime
         }
 
         return memoryStream.ToArray();
+    }
+
+    private async Task<string> ImportDelimitedCsvAsync(string csvContent, string tableName)
+    {
+        var content = new MultipartFormDataContent();
+        var fileContent = new StringContent(csvContent, Encoding.UTF8, "text/csv");
+        fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "test.csv"
+        };
+        content.Add(fileContent);
+        content.Add(new StringContent(tableName), "TableName");
+        content.Add(new StringContent("true"), "OverwriteExisting");
+
+        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+
+        response.BeSuccessful();
+        return await response.Content.ReadAsStringAsync();
     }
 }
