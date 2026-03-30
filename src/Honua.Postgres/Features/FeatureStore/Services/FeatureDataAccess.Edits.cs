@@ -410,14 +410,14 @@ internal sealed partial class FeatureDataAccess
         var geometryValueExpression = _geometryProcessor.GetGeometryWriteExpression(geometryStorageType, "payload.geometry", layerSrid);
         var sql = $@"
             WITH payload(geometry, attributes, ordinality) AS (
-                SELECT source.geometry, source.attributes, source.ordinalality
+                SELECT source.geometry, source.attributes, source.ordinality
                 FROM unnest($2::bytea[], $3::jsonb[]) WITH ORDINALITY AS source(geometry, attributes, ordinality)
             ),
             inserted AS (
                 INSERT INTO {_tableName} (layer_id, geometry, attributes)
                 SELECT $1, {geometryValueExpression}, payload.attributes
                 FROM payload
-                ORDER BY payload.ordinalality
+                ORDER BY payload.ordinality
                 RETURNING objectid
             )
             SELECT objectid
