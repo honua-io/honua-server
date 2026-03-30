@@ -262,6 +262,18 @@ public sealed class QueryFormatterTests
                 new FieldDefinition("name", FieldType.String, Length: 128)
             ]);
 
+    private static LayerDefinition CreateIdBackedPointLayer()
+        => new(
+            8,
+            "id-backed-test-layer",
+            null,
+            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+            SpatialReference.WGS84,
+            [
+                new FieldDefinition("id", FieldType.Integer, Nullable: false),
+                new FieldDefinition("name", FieldType.String, Length: 128)
+            ]);
+
     private static byte[] CreatePointGeometry(double x, double y, int srid)
     {
         var writer = new WKBWriter();

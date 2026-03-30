@@ -679,6 +679,8 @@ internal static class GeoServicesGeometryConverter
             ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
             : null;
 
+    private static bool? NormalizeDimensionFlag(bool value) => value ? true : null;
+
     private static int ReadInt32(ReadOnlySpan<byte> span, bool littleEndian)
         => littleEndian
             ? BinaryPrimitives.ReadInt32LittleEndian(span)
