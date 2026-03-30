@@ -275,7 +275,7 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
-    public async Task StreamQueryAsync_WithOutputSrid_SetsFeatureGeometrySpatialReference()
+    public async Task StreamQueryAsync_WithOutputSrid_SetsTopLevelSpatialReferenceOnly()
     {
         var featureReader = Substitute.For<IFeatureReader>();
         var streamingStore = Substitute.For<IStreamingFeatureStore>();
@@ -299,10 +299,50 @@ public sealed class FeatureServerQueryExecutorTests
 
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);
+        document.RootElement
+            .GetProperty("spatialReference")
+            .GetProperty("wkid")
+            .GetInt32()
+            .Should()
+            .Be(3857);
+        document.RootElement
+            .GetProperty("features")[0]
+            .GetProperty("geometry")
+            .TryGetProperty("spatialReference", out _)
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task StreamQueryAsync_WithPointGeometryPrecision_RoundsCoordinates()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => (IAsyncEnumerable<Feature>)StreamFeatures(
+            [
+                CreateFeature(1, "alpha", CreatePointGeometry(1.1234567, 2.7654321, 4326))
+            ]));
+
+        var sut = CreateSut(featureReader, streamingStore);
+        var context = CreateHttpContext();
+
+        await sut.StreamQueryAsync(
+            7,
+            new FeatureQuery { Limit = 1 },
+            CreatePointLayer(),
+            new QueryParameters { F = "json", ReturnGeometry = true, GeometryPrecision = 2 },
+            outputSrid: 4326,
+            context,
+            CancellationToken.None);
+
+        var json = await ReadResponseAsync(context);
+        using var document = JsonDocument.Parse(json);
         var geometry = document.RootElement
             .GetProperty("features")[0]
             .GetProperty("geometry");
-        geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        geometry.GetProperty("x").GetDouble().Should().Be(1.12);
+        geometry.GetProperty("y").GetDouble().Should().Be(2.77);
     }
 
     [Fact]

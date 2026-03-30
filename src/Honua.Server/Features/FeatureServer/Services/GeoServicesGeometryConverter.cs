@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
+using System.Text.Json;
 using Honua.Server.Features.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite;
@@ -15,6 +17,13 @@ namespace Honua.Server.Features.FeatureServer.Services;
 /// </summary>
 internal static class GeoServicesGeometryConverter
 {
+    private readonly record struct FastPointGeometry(
+        double X,
+        double Y,
+        double? Z,
+        double? M,
+        bool HasZ,
+        bool HasM);
 
     /// <summary>
     /// Converts WKB geometry to GeoServices format.
@@ -26,6 +35,11 @@ internal static class GeoServicesGeometryConverter
         bool includeZ = true,
         bool includeM = true)
     {
+        if (TryConvertFastPointWkb(wkbGeometry, srid, geometryLimits, includeZ, includeM, out var fastGeometry))
+        {
+            return fastGeometry;
+        }
+
         if (wkbGeometry == null || wkbGeometry.Length == 0)
             return null;
 
@@ -66,6 +80,23 @@ internal static class GeoServicesGeometryConverter
             : null;
 
         return ConvertGeometryToGeoServicesGeometry(geometry, spatialReference);
+    }
+
+    internal static bool TryWriteWkbAsGeoServicesGeometry(
+        Utf8JsonWriter writer,
+        byte[]? wkbGeometry,
+        int? srid = null,
+        Honua.Core.Configuration.GeometryLimits? geometryLimits = null,
+        bool includeZ = true,
+        bool includeM = true)
+    {
+        if (!TryReadFastPointGeometry(wkbGeometry, geometryLimits, includeZ, includeM, out var point))
+        {
+            return false;
+        }
+
+        WritePointGeometry(writer, point, srid);
+        return true;
     }
 
     /// <summary>
@@ -444,6 +475,222 @@ internal static class GeoServicesGeometryConverter
             SpatialReference = spatialReference
         };
     }
+
+    private static bool TryConvertFastPointWkb(
+        byte[]? wkbGeometry,
+        int? srid,
+        Honua.Core.Configuration.GeometryLimits? geometryLimits,
+        bool includeZ,
+        bool includeM,
+        out GeoServicesGeometry? geometry)
+    {
+        geometry = null;
+        if (!TryReadFastPointGeometry(wkbGeometry, geometryLimits, includeZ, includeM, out var point))
+        {
+            return false;
+        }
+
+        geometry = new GeoServicesGeometry
+        {
+            HasZ = NormalizeDimensionFlag(point.HasZ),
+            HasM = NormalizeDimensionFlag(point.HasM),
+            X = point.X,
+            Y = point.Y,
+            Z = point.Z,
+            M = point.M,
+            SpatialReference = CreateSpatialReference(srid)
+        };
+        return true;
+    }
+
+    private static bool TryReadFastPointGeometry(
+        byte[]? wkbGeometry,
+        Honua.Core.Configuration.GeometryLimits? geometryLimits,
+        bool includeZ,
+        bool includeM,
+        out FastPointGeometry point)
+    {
+        point = default;
+
+        if (wkbGeometry is null || wkbGeometry.Length < 1 + 4 + 16)
+        {
+            return false;
+        }
+
+        var span = wkbGeometry.AsSpan();
+        var byteOrder = span[0];
+        if (byteOrder is not 0 and not 1)
+        {
+            return false;
+        }
+
+        var littleEndian = byteOrder == 1;
+        var rawType = ReadInt32(span.Slice(1, 4), littleEndian);
+
+        var hasSrid = (rawType & 0x20000000) != 0;
+        var hasZ = (rawType & unchecked((int)0x80000000)) != 0;
+        var hasM = (rawType & 0x40000000) != 0;
+
+        var geometryType = rawType & 0xFFFF;
+        if (geometryType >= 3000 && geometryType < 4000)
+        {
+            hasZ = true;
+            hasM = true;
+            geometryType -= 3000;
+        }
+        else if (geometryType >= 2000 && geometryType < 3000)
+        {
+            hasM = true;
+            geometryType -= 2000;
+        }
+        else if (geometryType >= 1000 && geometryType < 2000)
+        {
+            hasZ = true;
+            geometryType -= 1000;
+        }
+
+        if (geometryType != 1)
+        {
+            return false;
+        }
+
+        var offset = 5;
+        if (hasSrid)
+        {
+            if (span.Length < offset + 4)
+            {
+                return false;
+            }
+
+            offset += 4;
+        }
+
+        var dimensions = 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0);
+        if (span.Length < offset + dimensions * 8)
+        {
+            return false;
+        }
+
+        var x = ReadDouble(span.Slice(offset, 8), littleEndian);
+        var y = ReadDouble(span.Slice(offset + 8, 8), littleEndian);
+        offset += 16;
+
+        if (double.IsNaN(x) || double.IsNaN(y))
+        {
+            return false;
+        }
+
+        double? z = null;
+        if (hasZ)
+        {
+            var zValue = ReadDouble(span.Slice(offset, 8), littleEndian);
+            offset += 8;
+            if (!double.IsNaN(zValue))
+            {
+                z = zValue;
+            }
+        }
+
+        double? m = null;
+        if (hasM)
+        {
+            var mValue = ReadDouble(span.Slice(offset, 8), littleEndian);
+            if (!double.IsNaN(mValue))
+            {
+                m = mValue;
+            }
+        }
+
+        if (!includeZ)
+        {
+            z = null;
+        }
+
+        if (!includeM)
+        {
+            m = null;
+        }
+
+        if (geometryLimits?.MaxCoordinatePrecision is >= 0 and var precision)
+        {
+            x = RoundCoordinate(x, precision);
+            y = RoundCoordinate(y, precision);
+            if (z.HasValue)
+            {
+                z = RoundCoordinate(z.Value, precision);
+            }
+
+            if (m.HasValue)
+            {
+                m = RoundCoordinate(m.Value, precision);
+            }
+        }
+
+        point = new FastPointGeometry(
+            x,
+            y,
+            z,
+            m,
+            z.HasValue,
+            m.HasValue);
+        return true;
+    }
+
+    private static void WritePointGeometry(Utf8JsonWriter writer, FastPointGeometry point, int? srid)
+    {
+        writer.WriteStartObject();
+
+        if (point.HasZ)
+        {
+            writer.WriteBoolean("hasZ", true);
+        }
+
+        if (point.HasM)
+        {
+            writer.WriteBoolean("hasM", true);
+        }
+
+        writer.WriteNumber("x", point.X);
+        writer.WriteNumber("y", point.Y);
+
+        if (point.Z.HasValue)
+        {
+            writer.WriteNumber("z", point.Z.Value);
+        }
+
+        if (point.M.HasValue)
+        {
+            writer.WriteNumber("m", point.M.Value);
+        }
+
+        if (CreateSpatialReference(srid) is { } spatialReference)
+        {
+            writer.WriteStartObject("spatialReference");
+            writer.WriteNumber("wkid", spatialReference.Wkid!.Value);
+            writer.WriteNumber("latestWkid", (spatialReference.LatestWkid ?? spatialReference.Wkid)!.Value);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static GeoServicesSpatialReference? CreateSpatialReference(int? srid)
+        => srid.HasValue && srid.Value > 0
+            ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
+            : null;
+
+    private static int ReadInt32(ReadOnlySpan<byte> span, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadInt32LittleEndian(span)
+            : BinaryPrimitives.ReadInt32BigEndian(span);
+
+    private static double ReadDouble(ReadOnlySpan<byte> span, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadDoubleLittleEndian(span)
+            : BinaryPrimitives.ReadDoubleBigEndian(span);
+
+    private static double RoundCoordinate(double value, int precision)
+        => Math.Round(value, Math.Clamp(precision, 0, 15), MidpointRounding.AwayFromZero);
 
     private static GeoServicesGeometry ConvertMultiPoint(MultiPoint multiPoint, GeoServicesSpatialReference? spatialReference)
     {
