@@ -20,6 +20,9 @@ namespace Honua.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 {
+    private const double WebMercatorEarthRadius = 6378137d;
+    private const double WebMercatorMaxLatitude = 85.05112878d;
+
     private readonly ObjectPool<StringBuilder> _stringBuilderPool;
     private readonly IGeometryProcessor _geometryProcessor;
     private readonly string _tableName;
@@ -56,8 +59,15 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
             var pointGeometry = _geometryProcessor.GetGeometryOperand(geometryStorageType, layerSrid: query.SpatialReferenceSrid);
+            var pointXExpression = "ST_X(point_geom)";
+            var pointYExpression = "ST_Y(point_geom)";
 
-            if (query.OutputSrid.HasValue &&
+            if (ShouldUseFastWebMercatorProjection(query))
+            {
+                pointXExpression = BuildWebMercatorXExpression("point_geom");
+                pointYExpression = BuildWebMercatorYExpression("point_geom");
+            }
+            else if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
                 pointGeometry = $"ST_Transform({pointGeometry}, {query.OutputSrid.Value})";
@@ -81,7 +91,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
                 sql.Append("), projected_points AS (SELECT ")
                     .Append(DatabaseSchema.ObjectIdColumn)
-                    .Append(", ST_X(point_geom) AS x, ST_Y(point_geom) AS y FROM point_source), snapped_points AS (SELECT ")
+                    .Append(", ")
+                    .Append(pointXExpression)
+                    .Append(" AS x, ")
+                    .Append(pointYExpression)
+                    .Append(" AS y FROM point_source), snapped_points AS (SELECT ")
                     .Append(DatabaseSchema.ObjectIdColumn)
                     .Append(", x, y, ");
                 sql.Append(CultureInfo.InvariantCulture, $"FLOOR((x - ${originXParam}) / ${cellWidthParam})::bigint AS cell_x, ");
@@ -95,7 +109,11 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 AppendWhereClause(sql, query, ref paramIndex, parameters);
                 AppendTemporalFilter(sql, query, ref paramIndex, parameters);
                 AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-                sql.Append(") SELECT ST_X(point_geom) AS x, ST_Y(point_geom) AS y FROM point_source ORDER BY objectid");
+                sql.Append(") SELECT ")
+                    .Append(pointXExpression)
+                    .Append(" AS x, ")
+                    .Append(pointYExpression)
+                    .Append(" AS y FROM point_source ORDER BY objectid");
             }
 
             if (query.Limit.HasValue)
@@ -109,6 +127,30 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         {
             _stringBuilderPool.Return(sql);
         }
+    }
+
+    private static bool ShouldUseFastWebMercatorProjection(FeatureQuery query)
+        => query.SpatialReferenceSrid == 4326 &&
+           query.OutputSrid.HasValue &&
+           IsWebMercatorSrid(query.OutputSrid.Value);
+
+    private static bool IsWebMercatorSrid(int srid)
+        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+
+    // Raster point queries are point-only call sites, so inline the same 4326->3857
+    // math Honua uses in-process and avoid per-row PostGIS ST_Transform overhead.
+    private static string BuildWebMercatorXExpression(string geometryExpression)
+        => FormattableString.Invariant(
+            $"(ST_X({geometryExpression}) * PI() / 180.0 * {WebMercatorEarthRadius.ToString(CultureInfo.InvariantCulture)})");
+
+    private static string BuildWebMercatorYExpression(string geometryExpression)
+    {
+        var minLatitude = (-WebMercatorMaxLatitude).ToString(CultureInfo.InvariantCulture);
+        var maxLatitude = WebMercatorMaxLatitude.ToString(CultureInfo.InvariantCulture);
+        var clampedLatitude = FormattableString.Invariant(
+            $"LEAST(GREATEST(ST_Y({geometryExpression}), {minLatitude}), {maxLatitude})");
+        return FormattableString.Invariant(
+            $"(LN(TAN((90.0 + {clampedLatitude}) * PI() / 360.0)) * {WebMercatorEarthRadius.ToString(CultureInfo.InvariantCulture)})");
     }
 
     public CoreParameterizedQuery BuildSelectGmlQuery(

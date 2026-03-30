@@ -12,6 +12,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -300,6 +301,35 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         points.Should().OnlyContain(point =>
             point.X >= -122.1 && point.X <= -120.8 &&
             point.Y >= 36.9 && point.Y <= 38.2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    public async Task QueryProjectedPointsAsync_WithWebMercatorOutput_ProjectsCoordinatesAccurately()
+    {
+        var store = CreateFeatureStore();
+        var rasterPointReader = store.Should().BeAssignableTo<IRasterPointReader>().Subject;
+        var query = new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.Create(1L),
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 3857,
+            Limit = 10,
+            RasterPointGrid = new RasterPointGrid
+            {
+                OriginX = -20037508.342789244,
+                OriginY = 20037508.342789244,
+                CellWidth = 500000d,
+                CellHeight = 500000d
+            }
+        };
+
+        var points = await rasterPointReader.QueryProjectedPointsAsync(PointsLayerId, query, CancellationToken.None);
+        var expected = CoordinateTransformer.TransformPoint(-122d, 37d, 4326, 3857);
+
+        points.Should().ContainSingle();
+        points[0].X.Should().BeApproximately(expected.X, 0.001);
+        points[0].Y.Should().BeApproximately(expected.Y, 0.001);
     }
 
     [IntegrationTest]
