@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Threading.Channels;
+using Honua.Server.Features.PrintingTools.Models;
 
 namespace Honua.Server.Features.PrintingTools;
 

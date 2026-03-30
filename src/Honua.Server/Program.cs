@@ -894,9 +894,6 @@ app.MapTemporaryFileEndpoints();
 // Configure data export endpoints
 app.MapExportEndpoints();
 
-// Configure print service endpoints
-app.MapPrintingToolsEndpoints();
-
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();

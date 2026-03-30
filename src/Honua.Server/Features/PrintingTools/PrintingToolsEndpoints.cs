@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -110,9 +111,9 @@ internal static class PrintingToolsEndpoints
         var templateNames = LayoutTemplateRegistry.GetTemplateNames();
 
         // Resolve edition to filter advertised choices
-        var licenseManager = context.RequestServices.GetRequiredService<ILicenseManager>();
-        var licenseInfo = await licenseManager.GetLicenseInfoAsync(cancellationToken);
-        var isPro = PrintingToolsRequestHandlers.IsProOrHigher(licenseInfo.Edition);
+        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        var isPro = edition >= HonuaEdition.Pro;
 
         var formatChoices = isPro
             ? new[] { PrintOutputFormat.Pdf, PrintOutputFormat.Png32, PrintOutputFormat.Jpg }
@@ -171,9 +172,9 @@ internal static class PrintingToolsEndpoints
 
     private static async Task<IResult> HandleGetLayoutTemplatesInfo(HttpContext context, CancellationToken cancellationToken)
     {
-        var licenseManager = context.RequestServices.GetRequiredService<ILicenseManager>();
-        var licenseInfo = await licenseManager.GetLicenseInfoAsync(cancellationToken);
-        var isPro = PrintingToolsRequestHandlers.IsProOrHigher(licenseInfo.Edition);
+        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        var isPro = edition >= HonuaEdition.Pro;
 
         var allTemplates = LayoutTemplateRegistry.GetTemplates();
         var templates = isPro ? allTemplates : allTemplates.Where(t => t.IsMapOnly).ToList();
@@ -268,9 +269,10 @@ internal static class PrintingToolsEndpoints
 
         var dpi = PrintingToolsRequestHandlers.ResolveDpi(webMap);
 
-        var licenseManager = context.RequestServices.GetRequiredService<ILicenseManager>();
-        var editionError = await PrintingToolsRequestHandlers.ValidateEditionAsync(
-            template, resolvedFormat, licenseManager, logger, cancellationToken);
+        var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
+        var edition = licenseProvider.GetCurrentStatus().Edition;
+        var editionError = PrintingToolsRequestHandlers.ValidateEdition(
+            template, resolvedFormat, edition, logger);
         if (editionError is not null)
         {
             return (null, StandardErrorHelpers.CreateForbidden(context, editionError));

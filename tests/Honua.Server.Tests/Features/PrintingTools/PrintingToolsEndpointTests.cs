@@ -553,10 +553,10 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         layoutOpts.GetProperty("titleText").GetProperty("isVisible").GetBoolean().Should().BeFalse();
         layoutOpts.GetProperty("legendOptions").GetProperty("isVisible").GetBoolean().Should().BeFalse();
 
-        // Community edition should NOT expose full-layout templates
+        // Default test host runs as Pro edition — all layout templates should be visible
         var letterPortrait = templates.EnumerateArray()
             .FirstOrDefault(t => t.GetProperty("layoutTemplate").GetString() == "Letter ANSI A Portrait");
-        letterPortrait.ValueKind.Should().Be(JsonValueKind.Undefined);
+        letterPortrait.ValueKind.Should().NotBe(JsonValueKind.Undefined);
 
         // GP contract requires messages array
         root.TryGetProperty("messages", out var messages).Should().BeTrue();

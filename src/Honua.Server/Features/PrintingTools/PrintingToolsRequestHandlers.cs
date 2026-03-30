@@ -21,6 +21,7 @@ using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Honua.Server.Features.PrintingTools.Layout;
 using Honua.Server.Features.PrintingTools.Models;
+using PrintLayoutTemplate = Honua.Server.Features.PrintingTools.Models.PrintLayoutTemplate;
 using SkiaSharp;
 
 namespace Honua.Server.Features.PrintingTools;
@@ -613,20 +614,16 @@ internal static class PrintingToolsRequestHandlers
     /// The caller must resolve the template first; this method skips the check
     /// if <paramref name="resolvedTemplate"/> is null.
     /// </summary>
-    internal static async Task<string?> ValidateEditionAsync(
+    internal static string? ValidateEdition(
         PrintLayoutTemplate? resolvedTemplate,
         string format,
-        ILicenseManager licenseManager,
-        ILogger logger,
-        CancellationToken cancellationToken)
+        HonuaEdition edition,
+        ILogger logger)
     {
         if (resolvedTemplate is null)
         {
             return null; // Template validation handled separately
         }
-
-        var licenseInfo = await licenseManager.GetLicenseInfoAsync(cancellationToken);
-        var edition = ParseEdition(licenseInfo.Edition);
 
         if (edition >= HonuaEdition.Pro) return null;
 
@@ -666,16 +663,4 @@ internal static class PrintingToolsRequestHandlers
         return [.. warnings];
     }
 
-    /// <summary>
-    /// Returns true when the edition string maps to Pro or Enterprise.
-    /// Shared by service-info, template-info, and edition-gating paths.
-    /// </summary>
-    internal static bool IsProOrHigher(string? edition) => ParseEdition(edition) >= HonuaEdition.Pro;
-
-    private static HonuaEdition ParseEdition(string? edition) => edition?.ToUpperInvariant() switch
-    {
-        "PRO" or "PROFESSIONAL" => HonuaEdition.Pro,
-        "ENTERPRISE" => HonuaEdition.Enterprise,
-        _ => HonuaEdition.Community
-    };
 }

@@ -403,6 +403,7 @@ public static class EndpointRegistry
         // Note: task metadata (service info) is served via GET /execute?f=json
         // matching ArcGIS Server behavior. A standalone base URL endpoint cannot be
         // registered due to ASP.NET Core treating decoded %20 as segment separators.
+        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task"),
         new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
         new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
         new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
@@ -417,16 +418,6 @@ public static class EndpointRegistry
 
         // Data export
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/export"),
-
-        // Print service (Utilities/PrintingTools)
-        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task"),
-        new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
-        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute"),
-        new("POST", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
-        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob"),
-        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}"),
-        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File"),
-        new("GET", "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute"),
 
         // STAC (SpatioTemporal Asset Catalog)
         new("GET", "/stac"),
