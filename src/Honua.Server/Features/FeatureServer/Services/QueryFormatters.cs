@@ -189,12 +189,12 @@ internal sealed class QueryFormatter : IQueryFormatter
             .ToArray();
         var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName);
         var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
-        bool? hasZ = null;
-        bool? hasM = null;
+        var hasZ = false;
+        var hasM = false;
         if (layer.HasGeometry && returnGeometry)
         {
-            hasZ = features.Any(feature => feature.Geometry?.HasZ == true) ? true : null;
-            hasM = features.Any(feature => feature.Geometry?.HasM == true) ? true : null;
+            hasZ = features.Any(feature => feature.Geometry?.HasZ == true);
+            hasM = features.Any(feature => feature.Geometry?.HasM == true);
         }
 
         var srid = outputSrid ?? layer.SpatialReference.Wkid;

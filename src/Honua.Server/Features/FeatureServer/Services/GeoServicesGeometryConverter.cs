@@ -142,8 +142,8 @@ internal static class GeoServicesGeometryConverter
         if (geometry.X.HasValue && geometry.Y.HasValue)
         {
             var ordinates = new List<double>(4) { geometry.X.Value, geometry.Y.Value };
-            var hasZ = geometry.HasZ ?? geometry.Z.HasValue;
-            var hasM = geometry.HasM ?? geometry.M.HasValue;
+            var hasZ = geometry.HasZ || geometry.Z.HasValue;
+            var hasM = geometry.HasM || geometry.M.HasValue;
 
             if (hasZ && geometry.Z.HasValue)
             {
@@ -466,8 +466,8 @@ internal static class GeoServicesGeometryConverter
 
         return new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(hasZ),
-            HasM = NormalizeDimensionFlag(hasM),
+            HasZ = hasZ,
+            HasM = hasM,
             X = point.X,
             Y = point.Y,
             Z = z,
@@ -492,8 +492,8 @@ internal static class GeoServicesGeometryConverter
 
         geometry = new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(point.HasZ),
-            HasM = NormalizeDimensionFlag(point.HasM),
+            HasZ = point.HasZ,
+            HasM = point.HasM,
             X = point.X,
             Y = point.Y,
             Z = point.Z,
@@ -679,8 +679,6 @@ internal static class GeoServicesGeometryConverter
             ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
             : null;
 
-    private static bool? NormalizeDimensionFlag(bool value) => value ? true : null;
-
     private static int ReadInt32(ReadOnlySpan<byte> span, bool littleEndian)
         => littleEndian
             ? BinaryPrimitives.ReadInt32LittleEndian(span)
@@ -706,8 +704,8 @@ internal static class GeoServicesGeometryConverter
 
         return new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(hasZ),
-            HasM = NormalizeDimensionFlag(hasM),
+            HasZ = hasZ,
+            HasM = hasM,
             Points = points,
             SpatialReference = spatialReference
         };
@@ -718,8 +716,8 @@ internal static class GeoServicesGeometryConverter
         var (hasZ, hasM) = GetHasZandM(lineString);
         return new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(hasZ),
-            HasM = NormalizeDimensionFlag(hasM),
+            HasZ = hasZ,
+            HasM = hasM,
             Paths = [BuildLineCoordinates(lineString)],
             SpatialReference = spatialReference
         };
@@ -736,8 +734,8 @@ internal static class GeoServicesGeometryConverter
 
         return new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(hasZ),
-            HasM = NormalizeDimensionFlag(hasM),
+            HasZ = hasZ,
+            HasM = hasM,
             Paths = paths,
             SpatialReference = spatialReference
         };
@@ -748,8 +746,8 @@ internal static class GeoServicesGeometryConverter
         var (hasZ, hasM) = GetHasZandM(polygon);
         return new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(hasZ),
-            HasM = NormalizeDimensionFlag(hasM),
+            HasZ = hasZ,
+            HasM = hasM,
             Rings = BuildPolygonRings(polygon).ToArray(),
             SpatialReference = spatialReference
         };
@@ -767,8 +765,8 @@ internal static class GeoServicesGeometryConverter
 
         return new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(hasZ),
-            HasM = NormalizeDimensionFlag(hasM),
+            HasZ = hasZ,
+            HasM = hasM,
             Rings = rings.ToArray(),
             SpatialReference = spatialReference
         };

@@ -216,11 +216,11 @@ internal static partial class MapServerEndpoints
 
                 foreach (var feature in queryResult.Items)
                 {
-                        var attributes = new Dictionary<string, object?>();
-                        foreach (var kvp in feature.Attributes)
-                        {
-                            attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
-                        }
+                    var attributes = new Dictionary<string, object?>();
+                    foreach (var kvp in feature.Attributes)
+                    {
+                        attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
+                    }
 
                     object? geometryResult = null;
                     if (returnGeometry && feature.Geometry != null)
