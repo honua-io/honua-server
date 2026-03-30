@@ -285,6 +285,8 @@ internal static class MapLibreToGeoServicesConverter
             {
                 ApplySymbolStyles(geometryType, defaultSymbol, null, lineStyle);
             }
+
+            renderer["defaultLabel"] = "Other";
         }
 
         return new Dictionary<string, object?> { ["renderer"] = renderer };

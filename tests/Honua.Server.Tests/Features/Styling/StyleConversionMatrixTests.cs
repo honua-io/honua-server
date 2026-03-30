@@ -1662,6 +1662,8 @@ public class StyleConversionMatrixTests
         Assert.Equal(204, color[0].GetInt32());
         Assert.Equal(204, color[1].GetInt32());
         Assert.Equal(204, color[2].GetInt32());
+
+        Assert.Equal("Other", renderer.GetProperty("defaultLabel").GetString());
     }
 
     [Fact]
@@ -1701,6 +1703,7 @@ public class StyleConversionMatrixTests
 
         Assert.True(renderer.TryGetProperty("defaultSymbol", out _),
             "Roundtripped uniqueValue must preserve defaultSymbol from case fallback");
+        Assert.Equal("Other", renderer.GetProperty("defaultLabel").GetString());
     }
 
     [Theory]
