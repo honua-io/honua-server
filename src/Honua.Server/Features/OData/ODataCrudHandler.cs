@@ -316,6 +316,7 @@ internal sealed class ODataCrudHandler(
             if (TryExtractObjectId(result.Data, out var createdObjectId))
             {
                 var serviceId = await ResolveServiceIdAsync(context, resolvedLayerId.Value, effectiveToken);
+                var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(result.MutationFeature);
                 await _featureChangeEventPublisher.PublishAsync(
                     new FeatureChangeEventRequest
                     {
@@ -324,7 +325,9 @@ internal sealed class ODataCrudHandler(
                         ObjectId = createdObjectId,
                         Operation = "create",
                         Protocol = HonuaTelemetry.Protocols.OData,
-                        RequestId = context.TraceIdentifier
+                        RequestId = context.TraceIdentifier,
+                        GeometryEnvelope = createEnv,
+                        PropertiesJson = createProps
                     },
                     effectiveToken).ConfigureAwait(false);
             }
@@ -429,6 +432,7 @@ internal sealed class ODataCrudHandler(
 
             await InvalidateCacheAsync(context, layerId, effectiveToken);
             var serviceId = await ResolveServiceIdAsync(context, layerId, effectiveToken);
+            var (updateEnv, updateProps) = FeatureChangeEventEnrichment.FromFeature(result.MutationFeature);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
@@ -437,7 +441,9 @@ internal sealed class ODataCrudHandler(
                     ObjectId = objectId,
                     Operation = "update",
                     Protocol = HonuaTelemetry.Protocols.OData,
-                    RequestId = context.TraceIdentifier
+                    RequestId = context.TraceIdentifier,
+                    GeometryEnvelope = updateEnv,
+                    PropertiesJson = updateProps
                 },
                 effectiveToken).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);

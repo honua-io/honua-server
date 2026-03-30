@@ -674,6 +674,7 @@ internal sealed partial class ODataBatchOperationHandler(
                 _ => "update"
             };
             var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
+            var (geometryEnvelope, propertiesJson) = FeatureChangeEventEnrichment.FromFeature(responseItem.MutationFeature);
 
             await _batchDependencies.FeatureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
@@ -683,7 +684,9 @@ internal sealed partial class ODataBatchOperationHandler(
                     ObjectId = objectId,
                     Operation = eventOperation,
                     Protocol = Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData,
-                    RequestId = $"{context.TraceIdentifier}:{responseItem.Id}"
+                    RequestId = $"{context.TraceIdentifier}:{responseItem.Id}",
+                    GeometryEnvelope = geometryEnvelope,
+                    PropertiesJson = propertiesJson
                 },
                 cancellationToken).ConfigureAwait(false);
         }

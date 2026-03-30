@@ -37,8 +37,11 @@ internal sealed partial class FeatureStreamPublisher(
         }
 
         // Fan out to live streaming sessions after durable append.
+        // Enrichment data (geometry envelope + properties) is carried on the message
+        // for subscription filter evaluation during broadcast — no I/O in the hot path.
         var envelope = ToEnvelope(persisted);
-        var delivered = _sessionManager.Broadcast(FeatureStreamMessage.Data(envelope));
+        var delivered = _sessionManager.Broadcast(
+            FeatureStreamMessage.Data(envelope, persisted.GeometryEnvelope, persisted.PropertiesJson));
 
         FeatureStreamLog.EventBroadcast(_logger, delivered, persisted.Cursor);
     }

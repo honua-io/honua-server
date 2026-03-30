@@ -417,34 +417,52 @@ internal sealed class FeatureServerEditsHandler(
     {
         var requestId = _httpContextAccessor.HttpContext?.TraceIdentifier ?? "unknown";
 
-        var addResults = FinalizeResults(context.AddResults) ?? [];
-        foreach (var result in addResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        for (var i = 0; i < context.CreateFeatures.Count; i++)
         {
+            var resultIndex = context.CreateIndexes[i];
+            var result = context.AddResults?[resultIndex];
+            if (result is not { Success: true, ObjectId: { } objectId })
+            {
+                continue;
+            }
+
+            var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(context.CreateFeatures[i]);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
                     ServiceId = serviceId,
                     LayerId = layerId,
-                    ObjectId = result.ObjectId!.Value,
+                    ObjectId = objectId,
                     Operation = "create",
                     Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId
+                    RequestId = requestId,
+                    GeometryEnvelope = createEnv,
+                    PropertiesJson = createProps
                 },
                 cancellationToken).ConfigureAwait(false);
         }
 
-        var updateResults = FinalizeResults(context.UpdateResults) ?? [];
-        foreach (var result in updateResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        for (var i = 0; i < context.UpdateFeatures.Count; i++)
         {
+            var resultIndex = context.UpdateIndexes[i];
+            var result = context.UpdateResults?[resultIndex];
+            if (result is not { Success: true, ObjectId: { } objectId })
+            {
+                continue;
+            }
+
+            var (updateEnv, updateProps) = FeatureChangeEventEnrichment.FromFeature(context.UpdateFeatures[i]);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
                     ServiceId = serviceId,
                     LayerId = layerId,
-                    ObjectId = result.ObjectId!.Value,
+                    ObjectId = objectId,
                     Operation = "update",
                     Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId
+                    RequestId = requestId,
+                    GeometryEnvelope = updateEnv,
+                    PropertiesJson = updateProps
                 },
                 cancellationToken).ConfigureAwait(false);
         }

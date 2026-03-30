@@ -310,7 +310,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public void Broadcast_WithLayerFilter_OnlyDeliversMatchingEvents()
     {
-        var filter = new FeatureStreamFilter { LayerIds = [1, 2] };
+        var filter = new StreamSubscriptionFilter(layerIds: [1, 2]);
         using var filtered = _manager.CreateSession("WebSocket", "filtered", filter);
         using var unfiltered = _manager.CreateSession("WebSocket", "unfiltered");
 
@@ -343,7 +343,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public void Broadcast_WithServiceFilter_OnlyDeliversMatchingEvents()
     {
-        var filter = new FeatureStreamFilter { ServiceId = "target-svc" };
+        var filter = new StreamSubscriptionFilter(serviceId: "target-svc");
         using var filtered = _manager.CreateSession("WebSocket", "svc-filtered", filter);
 
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelopeForService(cursor: 1, serviceId: "other-svc")));
@@ -364,7 +364,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     public void Broadcast_WithEmptyLayerFilter_MatchesNothing()
     {
         // Simulates malformed layerIds (e.g. ?layerIds=abc) where no valid IDs were parsed.
-        var filter = new FeatureStreamFilter { LayerIds = [] };
+        var filter = new StreamSubscriptionFilter(layerIds: []);
         using var filtered = _manager.CreateSession("WebSocket", "empty-filter", filter);
 
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 1, layerId: 0)));
@@ -376,7 +376,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public void Broadcast_HeartbeatBypassesFilter()
     {
-        var filter = new FeatureStreamFilter { LayerIds = [99] };
+        var filter = new StreamSubscriptionFilter(layerIds: [99]);
         using var filtered = _manager.CreateSession("WebSocket", "hb-filter", filter);
 
         // Heartbeats should always be delivered regardless of filter.

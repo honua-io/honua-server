@@ -171,7 +171,7 @@ internal sealed partial class ODataCrudService
             var etag = ComputeFeatureEtag(layerId, createdFeature, responseGeometry, serializedAttributes);
 
             var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdFeature.Id})";
-            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader);
+            return ODataCrudResult<Dictionary<string, object?>>.Created(response, etag, locationHeader, createdFeature);
         }
         catch (ResourceConflictException ex)
         {
@@ -297,7 +297,7 @@ internal sealed partial class ODataCrudService
             var response = ODataUtilityService.BuildFeaturePayload(layerId, result, responseGeometry, serializedAttributes);
             var etag = ComputeFeatureEtag(layerId, result, responseGeometry, serializedAttributes);
 
-            return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag);
+            return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag, result);
         }
         catch (ResourceNotFoundException ex)
         {
@@ -499,14 +499,23 @@ internal sealed record ODataCrudResult<T>
     public string? ErrorMessage { get; init; }
     public string? ETag { get; init; }
     public string? LocationHeader { get; init; }
+    internal Feature? MutationFeature { get; init; }
 
     private ODataCrudResult() { }
 
-    public static ODataCrudResult<T> Success(T data, string? etag = null)
-        => new() { IsSuccess = true, StatusCode = 200, Data = data, ETag = etag };
+    public static ODataCrudResult<T> Success(T data, string? etag = null, Feature? mutationFeature = null)
+        => new() { IsSuccess = true, StatusCode = 200, Data = data, ETag = etag, MutationFeature = mutationFeature };
 
-    public static ODataCrudResult<T> Created(T data, string? etag = null, string? locationHeader = null)
-        => new() { IsSuccess = true, StatusCode = 201, Data = data, ETag = etag, LocationHeader = locationHeader };
+    public static ODataCrudResult<T> Created(T data, string? etag = null, string? locationHeader = null, Feature? mutationFeature = null)
+        => new()
+        {
+            IsSuccess = true,
+            StatusCode = 201,
+            Data = data,
+            ETag = etag,
+            LocationHeader = locationHeader,
+            MutationFeature = mutationFeature
+        };
 
     public static ODataCrudResult<T> NoContent()
         => new() { IsSuccess = true, StatusCode = 204 };

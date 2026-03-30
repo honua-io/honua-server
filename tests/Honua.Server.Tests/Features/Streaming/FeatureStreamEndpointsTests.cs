@@ -471,11 +471,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task ListSessions_WithFilter_ReturnsSessionFilterInfo()
     {
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
-        var filter = new FeatureStreamFilter
-        {
-            ServiceId = "svc-admin-filter",
-            LayerIds = [1, 3]
-        };
+        var filter = new StreamSubscriptionFilter(serviceId: "svc-admin-filter", layerIds: [1, 3]);
         using var session = sessionManager.CreateSession("SSE", "filtered-admin-vis-test", filter);
 
         var response = await _client.GetAsync("/api/v1/admin/streaming/features/sessions");
@@ -489,6 +485,8 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             .EnumerateArray()
             .First(s => s.GetProperty("clientLabel").GetString() == "filtered-admin-vis-test");
 
+        sessionData.GetProperty("hasFilter").GetBoolean().Should().BeTrue();
+        sessionData.GetProperty("filterSummary").GetString().Should().Contain("serviceId=svc-admin-filter");
         sessionData.GetProperty("serviceIdFilter").GetString().Should().Be("svc-admin-filter");
         sessionData.GetProperty("layerIdFilter")
             .EnumerateArray()

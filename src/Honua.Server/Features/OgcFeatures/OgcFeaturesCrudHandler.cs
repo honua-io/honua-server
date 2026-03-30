@@ -88,6 +88,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
             await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
             var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
+            var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(created);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
@@ -96,7 +97,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
                     ObjectId = created.Id,
                     Operation = "create",
                     Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                    RequestId = context.TraceIdentifier
+                    RequestId = context.TraceIdentifier,
+                    GeometryEnvelope = createEnv,
+                    PropertiesJson = createProps
                 },
                 cancellationToken).ConfigureAwait(false);
             var createLinks = OgcFeaturesUtilities.BuildFeatureLinks(

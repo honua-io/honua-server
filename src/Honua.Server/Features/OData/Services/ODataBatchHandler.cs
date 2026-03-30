@@ -1105,7 +1105,8 @@ internal sealed partial class ODataBatchHandler
                 ["Location"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Id})",
                 ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Id})",
                 ["ETag"] = etag
-            });
+            },
+            created);
     }
 
     private async Task<ODataBatchResponseItem> HandlePatchAsync(
@@ -1159,7 +1160,8 @@ internal sealed partial class ODataBatchHandler
             requestId,
             200,
             updatedPayload,
-            new Dictionary<string, string> { ["ETag"] = etag });
+            new Dictionary<string, string> { ["ETag"] = etag },
+            result);
     }
 
     private async Task<ODataBatchResponseItem> HandleDeleteAsync(
@@ -1450,14 +1452,16 @@ internal sealed partial class ODataBatchHandler
         string id,
         int status,
         object? body,
-        Dictionary<string, string>? headers = null)
+        Dictionary<string, string>? headers = null,
+        Feature? mutationFeature = null)
     {
         return new ODataBatchResponseItem
         {
             Id = id,
             Status = status,
             Headers = headers,
-            Body = body
+            Body = body,
+            MutationFeature = mutationFeature
         };
     }
 

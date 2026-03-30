@@ -33,6 +33,18 @@ internal sealed record FeatureChangeEvent
     /// Best-effort: may default to false when the originating protocol cannot determine this.
     /// </summary>
     public bool GeometryChanged { get; init; }
+
+    /// <summary>
+    /// Geometry bounding box (MinX, MinY, MaxX, MaxY) captured at mutation time.
+    /// Null for deletes or non-spatial features.
+    /// </summary>
+    public double[]? GeometryEnvelope { get; init; }
+
+    /// <summary>
+    /// Pre-serialized JSON of feature attributes at mutation time.
+    /// Null for deletes.
+    /// </summary>
+    public string? PropertiesJson { get; init; }
 }
 
 /// <summary>
@@ -59,6 +71,18 @@ internal sealed record FeatureChangeEventRequest
     /// Best-effort: may default to false when the originating protocol cannot determine this.
     /// </summary>
     public bool GeometryChanged { get; init; }
+
+    /// <summary>
+    /// Geometry bounding box (MinX, MinY, MaxX, MaxY) captured at mutation time.
+    /// Null for deletes or non-spatial features.
+    /// </summary>
+    public double[]? GeometryEnvelope { get; init; }
+
+    /// <summary>
+    /// Pre-serialized JSON of feature attributes at mutation time.
+    /// Null for deletes.
+    /// </summary>
+    public string? PropertiesJson { get; init; }
 }
 
 /// <summary>
