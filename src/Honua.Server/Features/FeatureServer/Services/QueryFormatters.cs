@@ -261,7 +261,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             Geometry = returnGeometry
                 ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     feature.Geometry,
-                    outputSrid,
+                    srid: null,
                     geometryLimits,
                     returnZ,
                     returnM)
@@ -721,7 +721,7 @@ internal sealed class StreamingQueryFormatter
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            await WriteGeoServicesFeatureAsync(
+            WriteGeoServicesFeature(
                 writer,
                 feature,
                 returnGeometry,
@@ -796,7 +796,7 @@ internal sealed class StreamingQueryFormatter
 
         await foreach (var feature in features.WithCancellation(cancellationToken))
         {
-            await WriteGeoJsonFeatureAsync(
+            WriteGeoJsonFeature(
                 writer,
                 feature,
                 layer,
@@ -834,7 +834,7 @@ internal sealed class StreamingQueryFormatter
     /// <summary>
     /// Writes a single feature in GeoServices format
     /// </summary>
-    private static async Task WriteGeoServicesFeatureAsync(
+    private static void WriteGeoServicesFeature(
         Utf8JsonWriter writer,
         Feature feature,
         bool returnGeometry,
@@ -870,7 +870,7 @@ internal sealed class StreamingQueryFormatter
                     objectIdWritten = true;
                 }
 
-                await WriteJsonValueAsync(writer, fieldName, kvp.Value, cancellationToken);
+                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken);
             }
         }
 
@@ -889,11 +889,17 @@ internal sealed class StreamingQueryFormatter
             {
                 writer.WriteNullValue();
             }
-            else
+            else if (!GeoServicesGeometryConverter.TryWriteWkbAsGeoServicesGeometry(
+                         writer,
+                         feature.Geometry,
+                         srid: null,
+                         geometryLimits,
+                         returnZ,
+                         returnM))
             {
                 var geoServicesGeometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     feature.Geometry,
-                    outputSrid,
+                    srid: null,
                     geometryLimits,
                     returnZ,
                     returnM);
@@ -907,7 +913,7 @@ internal sealed class StreamingQueryFormatter
     /// <summary>
     /// Writes a single feature in GeoJSON format
     /// </summary>
-    private static async Task WriteGeoJsonFeatureAsync(
+    private static void WriteGeoJsonFeature(
         Utf8JsonWriter writer,
         Feature feature,
         LayerDefinition layer,
@@ -952,7 +958,7 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartObject("properties");
         foreach (var kvp in featureBase.Properties)
         {
-            await WriteJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
+            WriteJsonValue(writer, kvp.Key, kvp.Value, cancellationToken);
         }
 
         writer.WriteEndObject(); // End properties
@@ -972,7 +978,7 @@ internal sealed class StreamingQueryFormatter
     /// <summary>
     /// Writes a JSON value with proper type handling
     /// </summary>
-    private static async Task WriteJsonValueAsync(
+    private static void WriteJsonValue(
         Utf8JsonWriter writer,
         string propertyName,
         object? value,
@@ -1019,10 +1025,7 @@ internal sealed class StreamingQueryFormatter
         }
 
         // Allow for cancellation during long attribute writing
-        if (cancellationToken.IsCancellationRequested)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-        }
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     /// <summary>

@@ -152,6 +152,16 @@ Honua's admin UI and admin API are intended to become the foundation of a Honua-
 - Change management, deploy coordination, and instance lifecycle workflows are expected to live in the Honua control plane.
 - The public admin API is the substrate for those workflows; operator-grade AI DevOps/copilot tooling may be delivered through private enterprise surfaces on top of it rather than through the open-core server repository.
 
+## Recent Benchmark Snapshot
+
+Recent GeoBench runs on the 100K-point dataset show Honua ahead of GeoServer on throughput across the tracked comparative suites in the current full-suite snapshot.
+
+- WMS reprojection improved from `10.3 -> 27.8 req/s` on medium bboxes and `4.0 -> 29.2 req/s` on large bboxes after replacing per-point Web Mercator `ST_Transform` work with an inline projected-point fast path.
+- Concurrent mixed-workload throughput on the current image measured `43.8 / 191.9 / 203.8 / 191.3 req/s` at `1 / 10 / 50 / 100` VUs.
+- GeoServices `FeatureServer/query` measured `489.5 / 212.4 / 74.0 req/s` on small, medium, and large bbox scenarios.
+
+See [Benchmark Results](docs/operator/BENCHMARK_RESULTS.md) for methodology and comparative tracks.
+
 ## Documentation
 
 Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**

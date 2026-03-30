@@ -40,6 +40,32 @@ public sealed class FeatureQueryBuilderProjectedPointTests
     }
 
     [Fact]
+    public void BuildProjectedPointQuery_WithRasterGridAndWebMercatorOutput_UsesInlineProjectionFormula()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            OutputSrid = 3857,
+            Limit = 10,
+            RasterPointGrid = new RasterPointGrid
+            {
+                OriginX = -20037508.342789244,
+                OriginY = 20037508.342789244,
+                CellWidth = 512d,
+                CellHeight = 512d
+            }
+        };
+
+        var result = queryBuilder.BuildProjectedPointQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ST_X(point_geom) * PI() / 180.0 * 6378137");
+        result.Sql.Should().Contain("LEAST(GREATEST(ST_Y(point_geom), -85.05112878), 85.05112878)");
+        result.Sql.Should().NotContain("ST_Transform(geometry, 3857)");
+        result.WhereParameters.Should().Equal(-20037508.342789244d, 512d, 20037508.342789244d, 512d);
+    }
+
+    [Fact]
     public void BuildProjectedPointQuery_WithoutRasterGrid_SelectsProjectedCoordinates()
     {
         var queryBuilder = CreateQueryBuilder();

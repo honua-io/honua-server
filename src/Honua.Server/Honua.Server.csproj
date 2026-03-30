@@ -38,7 +38,7 @@
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" Version="8.1.1" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.19.1" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.19.4" />
     <PackageReference Include="Azure.Identity" Version="1.19.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
@@ -51,12 +51,12 @@
     <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.5" />
     <PackageReference Include="Polly" Version="8.6.6" />
-    <PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageReference Include="Serilog.Enrichers.Span" Version="3.1.0" />
-    <PackageReference Include="Serilog.Formatting.Compact" Version="2.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -69,9 +69,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.5" />
+    <PackageReference Include="AWSSDK.Lambda" Version="4.0.13.7" />
     <PackageReference Include="Grpc.Tools" Version="2.78.0" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.20" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.22" />
     <PackageReference Include="AWSSDK.SQS" Version="4.0.2.17" />
     <PackageReference Include="Azure.Messaging.EventGrid" Version="5.0.0" />
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
@@ -79,8 +79,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.5" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.25" />
     <PackageReference Include="ParquetSharp" Version="21.0.0" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.13.13" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.13.17" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.17.0" />
     <Content Update="openapi.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
