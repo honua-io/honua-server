@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Microsoft.AspNetCore.Mvc;
@@ -69,7 +70,50 @@ internal static class CollectionsEndpoints
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var visibleLayers = layers.Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer)).ToList();
+            var services = await layerCatalog.ListServicesAsync(cancellationToken);
+            var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+            var visibleLayers = new List<LayerDefinition>(layers.Length);
+            var requiresAuth = false;
+            var hasDenied = false;
+
+            foreach (var layer in layers)
+            {
+                var service = GetPrimaryService(layer.Id, primaryServices);
+                var decision = AccessPolicyHelpers.EvaluateAccess(
+                    context,
+                    layer.Metadata?.AccessPolicy,
+                    service?.Metadata?.AccessPolicy);
+
+                if (decision.IsAllowed)
+                {
+                    visibleLayers.Add(layer);
+                    continue;
+                }
+
+                hasDenied = true;
+                if (decision.RequiresAuthentication)
+                {
+                    requiresAuth = true;
+                }
+            }
+
+            if (visibleLayers.Count == 0)
+            {
+                if (layers.Length == 0)
+                {
+                    return StandardErrorHelpers.CreateNotFound(context, "No collections are available.");
+                }
+
+                if (hasDenied)
+                {
+                    return requiresAuth
+                        ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
+                        : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
+                }
+
+                return StandardErrorHelpers.CreateNotFound(context, "No collections are available.");
+            }
+
             var collectionTasks = visibleLayers
                 .Select(layer => CreateCollectionAsync(layer, baseUrl, featureReader, crsRegistry, cancellationToken));
             var collections = (await Task.WhenAll(collectionTasks)).ToImmutableArray();
@@ -147,7 +191,9 @@ internal static class CollectionsEndpoints
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+            var services = await layerCatalog.ListServicesAsync(cancellationToken);
+            var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
             if (accessError != null)
             {
                 return accessError;
@@ -184,6 +230,11 @@ internal static class CollectionsEndpoints
                 "An error occurred while retrieving the collection.");
         }
     }
+
+    private static ServiceDefinition? GetPrimaryService(
+        int layerId,
+        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
+        => primaryServices.TryGetValue(layerId, out var service) ? service : null;
 
     private static async Task<CollectionInfo> CreateCollectionAsync(
         LayerDefinition layer,

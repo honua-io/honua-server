@@ -466,8 +466,8 @@ internal static class GeoServicesGeometryConverter
 
         return new GeoServicesGeometry
         {
-            HasZ = hasZ,
-            HasM = hasM,
+            HasZ = NormalizeDimensionFlag(hasZ),
+            HasM = NormalizeDimensionFlag(hasM),
             X = point.X,
             Y = point.Y,
             Z = z,
@@ -704,7 +704,13 @@ internal static class GeoServicesGeometryConverter
             points[i] = BuildCoordinateArray(point.CoordinateSequence, 0);
         }
 
-        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Points = points, SpatialReference = spatialReference };
+        return new GeoServicesGeometry
+        {
+            HasZ = NormalizeDimensionFlag(hasZ),
+            HasM = NormalizeDimensionFlag(hasM),
+            Points = points,
+            SpatialReference = spatialReference
+        };
     }
 
     private static GeoServicesGeometry ConvertLineString(LineString lineString, GeoServicesSpatialReference? spatialReference)
@@ -712,8 +718,8 @@ internal static class GeoServicesGeometryConverter
         var (hasZ, hasM) = GetHasZandM(lineString);
         return new GeoServicesGeometry
         {
-            HasZ = hasZ,
-            HasM = hasM,
+            HasZ = NormalizeDimensionFlag(hasZ),
+            HasM = NormalizeDimensionFlag(hasM),
             Paths = [BuildLineCoordinates(lineString)],
             SpatialReference = spatialReference
         };
@@ -728,7 +734,13 @@ internal static class GeoServicesGeometryConverter
             paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i));
         }
 
-        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Paths = paths, SpatialReference = spatialReference };
+        return new GeoServicesGeometry
+        {
+            HasZ = NormalizeDimensionFlag(hasZ),
+            HasM = NormalizeDimensionFlag(hasM),
+            Paths = paths,
+            SpatialReference = spatialReference
+        };
     }
 
     private static GeoServicesGeometry ConvertPolygon(Polygon polygon, GeoServicesSpatialReference? spatialReference)
@@ -736,8 +748,8 @@ internal static class GeoServicesGeometryConverter
         var (hasZ, hasM) = GetHasZandM(polygon);
         return new GeoServicesGeometry
         {
-            HasZ = hasZ,
-            HasM = hasM,
+            HasZ = NormalizeDimensionFlag(hasZ),
+            HasM = NormalizeDimensionFlag(hasM),
             Rings = BuildPolygonRings(polygon).ToArray(),
             SpatialReference = spatialReference
         };
@@ -753,7 +765,13 @@ internal static class GeoServicesGeometryConverter
             rings.AddRange(BuildPolygonRings(polygon));
         }
 
-        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Rings = rings.ToArray(), SpatialReference = spatialReference };
+        return new GeoServicesGeometry
+        {
+            HasZ = NormalizeDimensionFlag(hasZ),
+            HasM = NormalizeDimensionFlag(hasM),
+            Rings = rings.ToArray(),
+            SpatialReference = spatialReference
+        };
     }
 
     private static GeoServicesGeometry? ConvertGeometryCollection(GeometryCollection collection, GeoServicesSpatialReference? spatialReference)

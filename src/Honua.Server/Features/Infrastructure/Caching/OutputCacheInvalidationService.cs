@@ -54,6 +54,7 @@ internal sealed partial class OutputCacheInvalidationService
             tags.Add($"collection:{layerId.Value}");
             tags.Add("layer-metadata");
             tags.Add("layer-styles");
+            tags.Add("ogc-maps");
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId.Value));
             responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(
@@ -70,6 +71,7 @@ internal sealed partial class OutputCacheInvalidationService
 
         tags.Add("ogc-metadata");
         tags.Add("ogc-tiles");
+        tags.Add("ogc-maps");
         tags.Add("mvt-tiles");
 
         await Task.WhenAll(
@@ -84,6 +86,7 @@ internal sealed partial class OutputCacheInvalidationService
             $"collection:{collectionId.Trim().ToLowerInvariant()}",
             "ogc-metadata",
             "ogc-tiles",
+            "ogc-maps",
             "mvt-tiles"
         };
 
@@ -99,7 +102,7 @@ internal sealed partial class OutputCacheInvalidationService
 
     public Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
     {
-        return EvictTagsAsync(["ogc-metadata", "ogc-tiles"], cancellationToken);
+        return EvictTagsAsync(["ogc-metadata", "ogc-tiles", "ogc-maps"], cancellationToken);
     }
 
     public Task InvalidateServiceCatalogAsync(
@@ -119,9 +122,12 @@ internal sealed partial class OutputCacheInvalidationService
             "service-directory",
             "service-metadata",
             "layer-metadata",
+            "layer-styles",
             "metadata",
             "ogc-metadata",
             "ogc-tiles",
+            "ogc-maps",
+            "stac-metadata",
             "mvt-tiles"
         };
 

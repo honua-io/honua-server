@@ -12,7 +12,7 @@ namespace Honua.Core.Features.Security.Abstractions;
 public interface IAccessPolicyEvaluator
 {
     /// <summary>
-    /// Evaluates layer/service access policies and returns an access decision.
+    /// Evaluates layer/service access policies and returns a composed access decision.
     /// </summary>
     /// <param name="principal">The current user principal.</param>
     /// <param name="layerPolicy">Layer-specific policy (highest precedence).</param>

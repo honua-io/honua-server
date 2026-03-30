@@ -37,6 +37,9 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received().EvictByTagAsync("service:testservice", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("layer:1", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("layer:2", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("layer-styles", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("ogc-maps", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("stac-metadata", Arg.Any<CancellationToken>());
 
         await metadataCache.Received().RemoveAsync("services:all", Arg.Any<CancellationToken>());
         await metadataCache.Received().RemoveAsync("layers:all", Arg.Any<CancellationToken>());
@@ -116,6 +119,7 @@ public sealed class OutputCacheInvalidationServiceTests
 
         await outputCacheStore.Received().EvictByTagAsync("service:alpha", Arg.Any<CancellationToken>());
         await outputCacheStore.Received().EvictByTagAsync("service:beta", Arg.Any<CancellationToken>());
+        await outputCacheStore.Received().EvictByTagAsync("ogc-maps", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:7:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:layer:7:*", Arg.Any<CancellationToken>());
     }

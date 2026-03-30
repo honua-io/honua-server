@@ -342,6 +342,29 @@ public sealed class OgcServiceAccessPolicyTests
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
     }
+
+    [IntegrationTest]
+    [Protocol(Protocols.OgcApiTiles)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
+    public async Task GetCollection_WithAnonymousClient_RespectsServiceReadPolicy()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymous = true
+                    }
+                }));
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/ogc/tiles/collections/{ServiceRbacTestFixture.AlphaLayerId}");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Unauthorized);
+    }
 }
 
 public sealed class ODataServiceRbacTests
@@ -426,6 +449,46 @@ public sealed class ODataServiceRbacTests
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Protocol(Protocols.ODataV4)]
+    [Operation(Operations.ODataBatch)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_WithAnonymousClient_AllowsPublicLayerReads()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: new CatalogMetadata
+                {
+                    AccessPolicy = new AccessPolicy
+                    {
+                        AllowAnonymous = true
+                    }
+                }));
+        using var client = factory.CreateClient();
+
+        var batchRequest = new ODataBatchRequest
+        {
+            Requests = ImmutableArray.Create(new ODataBatchRequestItem
+            {
+                Id = "read-alpha",
+                Method = "GET",
+                Url = $"Layers({ServiceRbacTestFixture.AlphaLayerId})"
+            })
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        var response = await client.PostAsync(
+            "/odata/$batch",
+            new StringContent(json, Encoding.UTF8, "application/json"));
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+
+        var responseDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = ServiceRbacTestFixture.GetPropertyCaseInsensitive(responseDocument.RootElement, "responses");
+        responses.GetArrayLength().Should().Be(1);
+        ServiceRbacTestFixture.GetPropertyCaseInsensitive(responses[0], "status").GetInt32().Should().Be(200);
     }
 
     [IntegrationTest]

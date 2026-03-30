@@ -68,6 +68,34 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithoutAuth_ReturnsUnauthorized()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-stream-admin-key");
+            });
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?cursor=1");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // ─── AC: Client can open an SSE connection ──────────────────────────
 
     [IntegrationTest]

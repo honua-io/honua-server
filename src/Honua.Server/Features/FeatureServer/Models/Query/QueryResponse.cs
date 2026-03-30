@@ -67,7 +67,7 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Extent returned by the query (when returnExtentOnly=true)
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ExtentInfo? Extent { get; init; }
 
     /// <summary>

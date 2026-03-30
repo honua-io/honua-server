@@ -3,9 +3,11 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
@@ -55,7 +57,8 @@ internal sealed class OgcMapsTileSetHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -153,4 +156,11 @@ internal sealed class OgcMapsTileSetHandler
         => context is not null
             ? StandardErrorHelpers.CreateInternalServerError(context, message)
             : Results.Problem(message, statusCode: 500);
+
+    private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
+    {
+        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+        return primaryServices.TryGetValue(layerId, out var service) ? service : null;
+    }
 }

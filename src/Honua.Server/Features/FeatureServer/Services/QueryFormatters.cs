@@ -171,8 +171,21 @@ internal sealed class QueryFormatter : IQueryFormatter
         string[]? outFields)
     {
         var objectIdFieldName = layer.ObjectIdFieldName;
+        var declaredAttributeFields = layer.Fields
+            .Where(field => !field.IsGeometry)
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         GeoServicesFeature[] features = result.Items
-            .Select(f => ConvertToGeoServicesFeature(f, returnGeometry, outputSrid, outFields, objectIdFieldName, returnZ, returnM, geometryLimits))
+            .Select(f => ConvertToGeoServicesFeature(
+                f,
+                returnGeometry,
+                outputSrid,
+                outFields,
+                declaredAttributeFields,
+                objectIdFieldName,
+                returnZ,
+                returnM,
+                geometryLimits))
             .ToArray();
         var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName);
         var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
@@ -180,8 +193,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool? hasM = null;
         if (layer.HasGeometry && returnGeometry)
         {
-            hasZ = features.Any(feature => feature.Geometry?.HasZ == true);
-            hasM = features.Any(feature => feature.Geometry?.HasM == true);
+            hasZ = features.Any(feature => feature.Geometry?.HasZ == true) ? true : null;
+            hasM = features.Any(feature => feature.Geometry?.HasM == true) ? true : null;
         }
 
         var srid = outputSrid ?? layer.SpatialReference.Wkid;
@@ -247,12 +260,18 @@ internal sealed class QueryFormatter : IQueryFormatter
         bool returnGeometry,
         int? outputSrid,
         string[]? outFields,
+        IReadOnlySet<string> declaredAttributeFields,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits)
     {
-        Dictionary<string, object?> attributes = FilterAttributes(feature.Attributes, outFields, objectIdFieldName, feature.Id);
+        Dictionary<string, object?> attributes = FilterAttributes(
+            feature.Attributes,
+            outFields,
+            declaredAttributeFields,
+            objectIdFieldName,
+            feature.Id);
 
         return new GeoServicesFeature
         {
@@ -292,13 +311,22 @@ internal sealed class QueryFormatter : IQueryFormatter
     private static Dictionary<string, object?> FilterAttributes(
         ImmutableDictionary<string, object?> attributes,
         string[]? outFields,
+        IReadOnlySet<string> declaredAttributeFields,
         string objectIdFieldName,
         long objectIdValue)
     {
         if (outFields == null || outFields.Length == 0 ||
             (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal)))
         {
-            var all = attributes.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            var all = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, value) in attributes)
+            {
+                if (declaredAttributeFields.Contains(name))
+                {
+                    all[name] = GeoServicesValueNormalizer.Normalize(value);
+                }
+            }
+
             if (!all.ContainsKey(objectIdFieldName))
             {
                 all[objectIdFieldName] = objectIdValue;
@@ -307,12 +335,12 @@ internal sealed class QueryFormatter : IQueryFormatter
             return all;
         }
 
-        var filtered = new Dictionary<string, object?>();
+        var filtered = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
         // Always include objectid field for GeoServices compatibility
         if (attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes))
         {
-            filtered[objectIdFieldName] = objectIdFromAttributes;
+            filtered[objectIdFieldName] = GeoServicesValueNormalizer.Normalize(objectIdFromAttributes);
         }
         else
         {
@@ -320,8 +348,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         }
         foreach (string field in outFields)
         {
-            if (attributes.TryGetValue(field, out object? fieldValue))
-                filtered[field] = fieldValue;
+            if (declaredAttributeFields.Contains(field) && attributes.TryGetValue(field, out object? fieldValue))
+                filtered[field] = GeoServicesValueNormalizer.Normalize(fieldValue);
         }
 
         return filtered;

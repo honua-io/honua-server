@@ -178,6 +178,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tileset.Should().NotBeNull();
         tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
         tileset.Links.Should().Contain(l => l.Rel == "item");
+        tileset.Links.Should().Contain(l => l.Rel == "item" && l.Type == MediaTypes.Png);
     }
 
     [IntegrationTest]
@@ -204,6 +205,7 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         tileset.Should().NotBeNull();
         tileset!.Links.Should().Contain(l => l.Rel == RelationTypes.TilingScheme);
         tileset.Links.Should().Contain(l => l.Rel == "item");
+        tileset.Links.Should().Contain(l => l.Rel == "item" && l.Type == MediaTypes.Png);
     }
 
     [IntegrationTest]

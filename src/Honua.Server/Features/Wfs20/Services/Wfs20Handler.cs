@@ -18,6 +18,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -788,19 +789,29 @@ internal sealed class Wfs20Handler
             throw new ArgumentException("BBOX must contain 4 coordinates and an optional CRS identifier.");
         }
 
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minY) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
+        var crsDefinition = parts.Length == 5
+            ? SpatialReferenceHelpers.TryParseCrsDefinition(parts[4], out var bboxCrs)
+                ? bboxCrs
+                : throw new ArgumentException($"Unsupported BBOX CRS '{parts[4]}'.")
+            : SpatialReferenceHelpers.TryParseCrsDefinition(
+                layer.SpatialReference.ToSrid().ToString(CultureInfo.InvariantCulture),
+                out var layerCrs)
+                ? layerCrs
+                : throw new ArgumentException($"Unsupported layer spatial reference '{layer.SpatialReference.ToSrid()}'.");
+
+        if (!RasterParsingHelpers.TryParseBoundingBox(
+                bbox,
+                crsDefinition.AxisOrder,
+                crsDefinition.IsGeographic,
+                out var minX,
+                out var minY,
+                out var maxX,
+                out var maxY))
         {
-            throw new ArgumentException("BBOX contains invalid numeric coordinates.");
+            throw new ArgumentException("BBOX contains invalid numeric coordinates or is outside supported CRS bounds.");
         }
 
-        var srid = parts.Length == 5
-            ? ParseSrid(parts[4]) ?? throw new ArgumentException($"Unsupported BBOX CRS '{parts[4]}'.")
-            : layer.SpatialReference.ToSrid();
-
-        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid);
+        var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(crsDefinition.Srid);
         var polygon = geometryFactory.CreatePolygon(
         [
             new Coordinate(minX, minY),
@@ -813,7 +824,7 @@ internal sealed class Wfs20Handler
         return new SpatialFilter
         {
             Geometry = BboxWkbWriter.Write(polygon),
-            Srid = srid,
+            Srid = crsDefinition.Srid,
             SpatialRelationship = SpatialRelationship.Intersects
         };
     }

@@ -62,6 +62,36 @@ public sealed class RecentErrorsEndpointTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/errors")]
+    public async Task RecentErrorsEndpoint_RecordsClientErrorsWhenExplicitlyRequested()
+    {
+        using var factory = CreateFactory(capacity: 5);
+        using var scope = factory.Services.CreateScope();
+        var buffer = scope.ServiceProvider.GetRequiredService<RecentErrorBuffer>();
+
+        var context = CreateContext("/rest/services/test/MapServer/WMS", "trace-client-error");
+        buffer.Record(
+            context,
+            StatusCodes.Status400BadRequest,
+            "Bad Request",
+            "WMS invalid BBOX",
+            includeClientErrors: true);
+
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/admin/observability/errors");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<RecentErrorsResponse>(payload, _jsonOptions);
+
+        result.Should().NotBeNull();
+        result!.Errors.Should().ContainSingle();
+        result.Errors[0].StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        result.Errors[0].Path.Should().Be("/rest/services/test/MapServer/WMS");
+        result.Errors[0].Message.Should().Contain("WMS invalid BBOX");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/errors")]
     public async Task RecentErrorsEndpoint_CapsBuffer()
     {
         using var factory = CreateFactory(capacity: 2);

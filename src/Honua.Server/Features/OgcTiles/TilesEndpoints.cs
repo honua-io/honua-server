@@ -14,6 +14,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.Tiles;
@@ -32,7 +33,7 @@ internal static class TilesEndpoints
             .WithDisplayName("OGC API Tiles Tilesets List")
             .WithName("OgcTilesTilesets")
             .WithSummary("Get available tilesets for the dataset")
-            .WithDescription("Lists vector tilesets for the dataset")
+            .WithDescription("Lists available tilesets for the dataset")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesTilesets")
             .Produces<TileSetsList>(200, MediaTypes.Json)
@@ -51,8 +52,8 @@ internal static class TilesEndpoints
         var datasetTileItem = endpoints.MapGet("/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}", HandleGetDatasetTileItem)
             .WithDisplayName("OGC API Tiles Dataset Tile")
             .WithName("OgcTilesDatasetTile")
-            .WithSummary("Get a vector tile for the dataset")
-            .WithDescription("Returns a Mapbox Vector Tile for the dataset and tile coordinates")
+            .WithSummary("Get a tile for the dataset")
+            .WithDescription("Returns a Mapbox Vector Tile or PNG tile for the dataset and tile coordinates")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesDatasetTile");
 
@@ -60,7 +61,7 @@ internal static class TilesEndpoints
             .WithDisplayName("OGC API Tiles Collection Tilesets List")
             .WithName("OgcTilesCollectionTilesets")
             .WithSummary("Get available tilesets for a collection")
-            .WithDescription("Lists vector tilesets for the specified collection")
+            .WithDescription("Lists available tilesets for the specified collection")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesCollectionTilesets")
             .Produces<TileSetsList>(200, MediaTypes.Json)
@@ -79,8 +80,8 @@ internal static class TilesEndpoints
         var collectionTile = endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}", HandleGetCollectionTile)
             .WithDisplayName("OGC API Tiles Collection Tile")
             .WithName("OgcTilesCollectionTile")
-            .WithSummary("Get a vector tile for a collection")
-            .WithDescription("Returns a Mapbox Vector Tile for the specified collection and tile coordinates")
+            .WithSummary("Get a tile for a collection")
+            .WithDescription("Returns a Mapbox Vector Tile or PNG tile for the specified collection and tile coordinates")
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesTile");
 
@@ -263,7 +264,9 @@ internal static class TilesEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
         if (accessError != null)
         {
             return accessError;
@@ -389,7 +392,9 @@ internal static class TilesEndpoints
                     return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
                 }
 
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                var services = await layerCatalog.ListServicesAsync(cancellationToken);
+                var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services));
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
                 if (accessError != null)
                 {
                     return (Array.Empty<LayerDefinition>(), accessError);
@@ -858,6 +863,14 @@ internal static class TilesEndpoints
                 Title = "Vector tiles",
                 Templated = true
             },
+            new Link
+            {
+                Href = tileTemplate,
+                Rel = "item",
+                Type = MediaTypes.Png,
+                Title = "Raster tiles",
+                Templated = true
+            },
             Link.Create(
                 href: tileMatrixSetHref,
                 rel: RelationTypes.TilingScheme,
@@ -867,7 +880,7 @@ internal static class TilesEndpoints
         return new TileSetItem
         {
             Title = title,
-            DataType = "vector",
+            DataType = "map",
             Crs = crs,
             TileMatrixSetId = tileMatrixSetId,
             TileMatrixSetUri = uri,
@@ -908,6 +921,14 @@ internal static class TilesEndpoints
                 Title = "Vector tiles",
                 Templated = true
             },
+            new Link
+            {
+                Href = tileTemplate,
+                Rel = "item",
+                Type = MediaTypes.Png,
+                Title = "Raster tiles",
+                Templated = true
+            },
             Link.Create(
                 href: tileMatrixSetHref,
                 rel: RelationTypes.TilingScheme,
@@ -924,7 +945,7 @@ internal static class TilesEndpoints
         {
             Title = $"{titleBase} ({tileMatrixSetId})",
             Description = description,
-            DataType = "vector",
+            DataType = "map",
             Crs = crs,
             TileMatrixSetId = tileMatrixSetId,
             TileMatrixSetUri = uri,
@@ -974,6 +995,9 @@ internal static class TilesEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
+        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
+
         if (string.IsNullOrWhiteSpace(collections))
         {
             var layers = await layerCatalog.ListLayersAsync(cancellationToken);
@@ -982,17 +1006,48 @@ internal static class TilesEndpoints
                 return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, "No collections are available."));
             }
 
-            var accessibleLayers = layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer))
+            var accessibleLayers = new List<LayerDefinition>(layers.Length);
+            var requiresAuth = false;
+            var hasDenied = false;
+
+            foreach (var layer in layers)
+            {
+                var service = GetPrimaryService(layer.Id, primaryServices);
+                var decision = AccessPolicyHelpers.EvaluateAccess(
+                    context,
+                    layer.Metadata?.AccessPolicy,
+                    service?.Metadata?.AccessPolicy);
+
+                if (decision.IsAllowed)
+                {
+                    accessibleLayers.Add(layer);
+                    continue;
+                }
+
+                hasDenied = true;
+                if (decision.RequiresAuthentication)
+                {
+                    requiresAuth = true;
+                }
+            }
+
+            var accessibleLayersArray = accessibleLayers
                 .OrderBy(layer => layer.Id)
                 .ToArray();
 
-            if (accessibleLayers.Length == 0)
+            if (accessibleLayersArray.Length == 0)
             {
-                return (Array.Empty<LayerDefinition>(), AccessPolicyHelpers.RequireAnyLayerAccess(context, layers));
+                if (hasDenied)
+                {
+                    return (Array.Empty<LayerDefinition>(), requiresAuth
+                        ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
+                        : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage));
+                }
+
+                return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, "No collections are available."));
             }
 
-            return (accessibleLayers, null);
+            return (accessibleLayersArray, null);
         }
 
         if (!TryParseCollectionIds(collections, out var collectionIds, out var parseError))
@@ -1009,7 +1064,8 @@ internal static class TilesEndpoints
                 return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateBadRequest(context, $"Collection '{collectionId}' not found."));
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, selectedLayer);
+            var primaryService = GetPrimaryService(selectedLayer.Id, primaryServices);
+            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, selectedLayer, primaryService);
             if (accessError != null)
             {
                 return (Array.Empty<LayerDefinition>(), accessError);
@@ -1249,5 +1305,10 @@ internal static class TilesEndpoints
             await _inner.ExecuteAsync(httpContext);
         }
     }
+
+    private static ServiceDefinition? GetPrimaryService(
+        int layerId,
+        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
+        => primaryServices.TryGetValue(layerId, out var service) ? service : null;
 
 }

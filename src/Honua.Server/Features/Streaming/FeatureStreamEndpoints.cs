@@ -24,11 +24,12 @@ internal static class FeatureStreamEndpoints
 
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Streaming data endpoint (public — callers authenticate via normal request pipeline)
+        // Feature-change events are global and include replay, so only admins can subscribe.
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Streaming");
+            .WithTags("Streaming")
+            .RequireAdminAuthorization();
 
         streamGroup.MapGet("/features", HandleFeatureStream)
             .WithDisplayName("Stream Feature Changes")

@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.OgcMaps;
 using Honua.Server.Features.OgcMaps.Models;
 using Honua.ServiceDefaults;
@@ -82,7 +84,8 @@ internal sealed class OgcMapsRenderingHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -149,6 +152,10 @@ internal sealed class OgcMapsRenderingHandler
         var resolvedLayerCount = layerIds.Length;
         try
         {
+            var primaryServices = context is not null
+                ? await GetPrimaryServicesAsync(cancellationToken)
+                : null;
+
             // Resolve dataset layers from explicit selection or all accessible layers.
             var layers = new List<Core.Features.Catalog.Domain.LayerDefinition>();
             int[] resolvedLayerIds;
@@ -165,7 +172,13 @@ internal sealed class OgcMapsRenderingHandler
                 {
                     foreach (var layer in allLayers)
                     {
-                        if (AccessPolicyHelpers.IsLayerAccessible(context, layer))
+                        var service = GetPrimaryService(layer.Id, primaryServices);
+                        var decision = AccessPolicyHelpers.EvaluateAccess(
+                            context,
+                            layer.Metadata?.AccessPolicy,
+                            service?.Metadata?.AccessPolicy);
+
+                        if (decision.IsAllowed)
                         {
                             layers.Add(layer);
                             if (layers.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
@@ -195,10 +208,30 @@ internal sealed class OgcMapsRenderingHandler
                 {
                     if (context is not null)
                     {
-                        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, allLayers);
-                        if (accessError != null)
+                        var requiresAuth = false;
+                        foreach (var layer in allLayers)
                         {
-                            return accessError;
+                            var service = GetPrimaryService(layer.Id, primaryServices);
+                            var decision = AccessPolicyHelpers.EvaluateAccess(
+                                context,
+                                layer.Metadata?.AccessPolicy,
+                                service?.Metadata?.AccessPolicy);
+                            if (decision.IsAllowed)
+                            {
+                                continue;
+                            }
+
+                            if (decision.RequiresAuthentication)
+                            {
+                                requiresAuth = true;
+                            }
+                        }
+
+                        if (requiresAuth || allLayers.Length > 0)
+                        {
+                            return requiresAuth
+                                ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
+                                : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
                         }
                     }
 
@@ -231,7 +264,8 @@ internal sealed class OgcMapsRenderingHandler
 
                     if (context is not null)
                     {
-                        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                        var service = GetPrimaryService(layerId, primaryServices);
+                        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                         if (accessError != null)
                         {
                             return accessError;
@@ -288,6 +322,26 @@ internal sealed class OgcMapsRenderingHandler
         }
     }
 
+    private async Task<IReadOnlyDictionary<int, ServiceDefinition>> GetPrimaryServicesAsync(
+        CancellationToken cancellationToken)
+    {
+        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
+        return LayerValidationHelpers.BuildPrimaryServiceMap(services);
+    }
+
+    private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
+    {
+        var primaryServices = await GetPrimaryServicesAsync(cancellationToken);
+        return GetPrimaryService(layerId, primaryServices);
+    }
+
+    private static ServiceDefinition? GetPrimaryService(
+        int layerId,
+        IReadOnlyDictionary<int, ServiceDefinition>? primaryServices)
+        => primaryServices != null && primaryServices.TryGetValue(layerId, out var service)
+            ? service
+            : null;
+
     /// <summary>
     /// Renders a map with a specific style applied.
     /// </summary>
@@ -317,7 +371,8 @@ internal sealed class OgcMapsRenderingHandler
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer);
+                var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
+                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -482,6 +537,11 @@ internal sealed class OgcMapsRenderingHandler
         if (srid is null or <= 0)
         {
             return null;
+        }
+
+        if (srid == SpatialReference.WGS84.Wkid)
+        {
+            return "<https://www.opengis.net/def/crs/OGC/1.3/CRS84>";
         }
 
         return FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid.Value}>");

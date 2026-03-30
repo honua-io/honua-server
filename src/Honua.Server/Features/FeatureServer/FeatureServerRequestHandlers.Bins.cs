@@ -56,6 +56,8 @@ internal static partial class FeatureServerEndpoints
         HttpContext context)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.queryBins");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
+        activity?.SetTag(HonuaTelemetry.Tags.Operation, "queryBins");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 

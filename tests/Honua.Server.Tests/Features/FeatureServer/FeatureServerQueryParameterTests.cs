@@ -45,14 +45,14 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithDatumTransformation_ReturnsOk()
+    public async Task Query_WithDatumTransformation_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&datumTransformation=4326");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("\"features\"");
+        content.Should().Contain("Unsupported query parameters").And.Contain("datumTransformation");
     }
 
     [IntegrationTest]

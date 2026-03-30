@@ -19,7 +19,38 @@ public sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
         AccessPolicy? servicePolicy,
         AccessScope scope = AccessScope.Read)
     {
-        var policy = layerPolicy ?? servicePolicy ?? new AccessPolicy { AllowAnonymous = false };
+        var layerDecision = EvaluatePolicy(principal, layerPolicy, scope);
+        var serviceDecision = EvaluatePolicy(principal, servicePolicy, scope);
+
+        if (layerDecision is null && serviceDecision is null)
+        {
+            return principal?.Identity?.IsAuthenticated == true
+                ? AccessDecision.Allowed()
+                : AccessDecision.RequiresAuth("Authentication is required.");
+        }
+
+        if (layerDecision is not null && !layerDecision.IsAllowed)
+        {
+            return layerDecision;
+        }
+
+        if (serviceDecision is not null && !serviceDecision.IsAllowed)
+        {
+            return serviceDecision;
+        }
+
+        return AccessDecision.Allowed();
+    }
+
+    private static AccessDecision? EvaluatePolicy(
+        ClaimsPrincipal principal,
+        AccessPolicy? policy,
+        AccessScope scope)
+    {
+        if (policy is null)
+        {
+            return null;
+        }
 
         var allowAnonymous = scope == AccessScope.Read
             ? policy.AllowAnonymous

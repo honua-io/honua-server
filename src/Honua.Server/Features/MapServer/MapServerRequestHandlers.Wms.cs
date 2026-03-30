@@ -13,11 +13,13 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.MapServer.Rendering;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
 
 namespace Honua.Server.Features.MapServer;
@@ -105,7 +107,7 @@ internal static partial class MapServerEndpoints
             if (!string.Equals(service, "WMS", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(service))
             {
-                return CreateWmsServiceException("InvalidParameterValue", "SERVICE must be WMS.");
+                return CreateWmsServiceException(context, "InvalidParameterValue", "SERVICE must be WMS.");
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
@@ -115,24 +117,24 @@ internal static partial class MapServerEndpoints
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
                 if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
                 {
-                    return CreateWmsServiceException("InvalidParameterValue", errorMessage);
+                    return CreateWmsServiceException(context, "InvalidParameterValue", errorMessage);
                 }
 
-                return CreateWmsServiceException("LayerNotDefined", errorMessage, StatusCodes.Status404NotFound);
+                return CreateWmsServiceException(context, "LayerNotDefined", errorMessage, StatusCodes.Status404NotFound);
             }
 
             var svcDef = serviceResult.Resource!;
             var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, svcDef, ServiceProtocols.MapServer);
             if (protocolError is not null)
             {
-                return CreateWmsServiceException("OperationNotSupported", "MapServer protocol is not enabled for this service.");
+                return CreateWmsServiceException(context, "OperationNotSupported", "MapServer protocol is not enabled for this service.");
             }
 
             var accessibleLayerCount = svcDef.Layers.Count(layer =>
                 layer.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, layer, svcDef));
             if (accessibleLayerCount == 0)
             {
-                return CreateWmsServiceException("LayerNotDefined", "No accessible WMS layers are available for this service.");
+                return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }
 
             if (string.IsNullOrWhiteSpace(requestType) ||
@@ -154,7 +156,7 @@ internal static partial class MapServerEndpoints
                 return await HandleWmsGetFeatureInfo(context, svcDef, serviceId, logger);
             }
 
-            return CreateWmsServiceException("OperationNotSupported", $"Unsupported WMS REQUEST '{requestType}'.");
+            return CreateWmsServiceException(context, "OperationNotSupported", $"Unsupported WMS REQUEST '{requestType}'.");
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -163,7 +165,7 @@ internal static partial class MapServerEndpoints
         catch (Exception ex)
         {
             MapServerLog.WmsFailed(logger, serviceId, ex.Message, ex);
-            return CreateWmsServiceException("NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
+            return CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
         }
     }
 
@@ -184,27 +186,27 @@ internal static partial class MapServerEndpoints
         var query = context.Request.Query;
         if (!TryGetRequiredQueryValue(query, "LAYERS", out var layersParam))
         {
-            return CreateWmsServiceException("MissingParameterValue", "LAYERS parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "LAYERS parameter is required.");
         }
 
         if (!TryGetRequiredQueryValue(query, "STYLES", out var stylesParam, allowEmpty: true))
         {
-            return CreateWmsServiceException("MissingParameterValue", "STYLES parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "STYLES parameter is required.");
         }
 
         if (!TryGetRequiredQueryValue(query, "BBOX", out var bboxValue))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
         if (!TryGetRequiredQueryValue(query, "VERSION", out var versionValue))
         {
-            return CreateWmsServiceException("MissingParameterValue", "VERSION parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "VERSION parameter is required.");
         }
 
         if (!IsSupportedWmsVersion(versionValue))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "Unsupported VERSION value. Only 1.3.0 is supported.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Unsupported VERSION value. Only 1.3.0 is supported.");
         }
 
         var crsValue = GetQueryValue(query, "CRS");
@@ -215,12 +217,12 @@ internal static partial class MapServerEndpoints
 
         if (!TryParseWmsCrs(crsValue, out var requestSrid, out var normalizedCrs))
         {
-            return CreateWmsServiceException("InvalidCRS", "Invalid or missing CRS/SRS parameter.");
+            return CreateWmsServiceException(context, "InvalidCRS", "Invalid or missing CRS/SRS parameter.");
         }
 
         if (!TryParseWmsBbox(bboxValue, normalizedCrs, out var requestedExtent))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
         var bboxOutsideCrsBounds = !IsExtentWithinCrsBounds(requestedExtent, normalizedCrs);
@@ -229,35 +231,35 @@ internal static partial class MapServerEndpoints
             !int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
             imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException("InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue) ||
             !int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
             imageHeight <= 0 || imageHeight > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException("InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
         {
-            return CreateWmsServiceException("MissingParameterValue", "FORMAT parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "FORMAT parameter is required.");
         }
 
         if (!TryNormalizeWmsMapFormat(formatValue, out var imageFormat, out var contentType))
         {
-            return CreateWmsServiceException("InvalidFormat", "FORMAT must be image/png or image/jpeg.");
+            return CreateWmsServiceException(context, "InvalidFormat", "FORMAT must be image/png or image/jpeg.");
         }
 
         var exceptionsValue = GetQueryValue(query, "EXCEPTIONS");
         if (!IsSupportedWmsExceptionFormat(exceptionsValue))
         {
-            return CreateWmsServiceException("InvalidFormat", "Unsupported EXCEPTIONS format. Only XML exceptions are supported.");
+            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported EXCEPTIONS format. Only XML exceptions are supported.");
         }
 
         if (!TryParseWmsTransparent(GetQueryValue(query, "TRANSPARENT"), out var transparent))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "TRANSPARENT must be TRUE or FALSE.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "TRANSPARENT must be TRUE or FALSE.");
         }
 
         var backgroundColor = SKColors.White;
@@ -265,23 +267,23 @@ internal static partial class MapServerEndpoints
         if (!string.IsNullOrWhiteSpace(backgroundValue) &&
             !TryParseWmsBackgroundColor(backgroundValue, out backgroundColor))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "BGCOLOR must be formatted as 0xRRGGBB or #RRGGBB.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "BGCOLOR must be formatted as 0xRRGGBB or #RRGGBB.");
         }
 
         if (!TryParseCsvTokens(layersParam, allowEmptyTokens: false, out var layerTokens))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "LAYERS must contain at least one layer name.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "LAYERS must contain at least one layer name.");
         }
 
         if (!TryResolveWmsRequestedLayers(service, context, layerTokens, out var renderLayers, out var unresolvedLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedLayer) ? "requested layer" : unresolvedLayer;
-            return CreateWmsServiceException("LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
+            return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
 
         if (!ValidateWmsStyles(stylesParam, renderLayers.Length, out var styleError))
         {
-            return CreateWmsServiceException("StyleNotDefined", styleError);
+            return CreateWmsServiceException(context, "StyleNotDefined", styleError);
         }
 
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
@@ -291,7 +293,7 @@ internal static partial class MapServerEndpoints
             .ConfigureAwait(false);
         if (renderLease is null)
         {
-            return CreateWmsServiceException(
+            return CreateWmsServiceException(context,
                 "NoApplicableCode",
                 RasterRenderCapacityLimiter.CapacityExceededMessage,
                 StatusCodes.Status503ServiceUnavailable);
@@ -302,7 +304,7 @@ internal static partial class MapServerEndpoints
             using var outsideSurface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
             if (outsideSurface is null)
             {
-                return CreateWmsServiceException("NoApplicableCode", "Failed to allocate render surface.", StatusCodes.Status500InternalServerError);
+                return CreateWmsServiceException(context, "NoApplicableCode", "Failed to allocate render surface.", StatusCodes.Status500InternalServerError);
             }
 
             outsideSurface.Canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
@@ -338,7 +340,7 @@ internal static partial class MapServerEndpoints
                 context.RequestAborted);
             if (!extentTransformResult.IsSuccess)
             {
-                return CreateWmsServiceException("InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
+                return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
             }
 
             queryExtent = extentTransformResult.Extent;
@@ -349,7 +351,7 @@ internal static partial class MapServerEndpoints
         using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
         if (surface is null)
         {
-            return CreateWmsServiceException("NoApplicableCode", "Failed to allocate render surface.", StatusCodes.Status500InternalServerError);
+            return CreateWmsServiceException(context, "NoApplicableCode", "Failed to allocate render surface.", StatusCodes.Status500InternalServerError);
         }
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -437,28 +439,28 @@ internal static partial class MapServerEndpoints
         if (!TryGetRequiredQueryValue(query, "LAYERS", out var layersParam) ||
             !TryParseCsvTokens(layersParam, allowEmptyTokens: false, out var mapLayerTokens))
         {
-            return CreateWmsServiceException("MissingParameterValue", "LAYERS parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "LAYERS parameter is required.");
         }
 
         if (!TryGetRequiredQueryValue(query, "QUERY_LAYERS", out var queryLayersParam) ||
             !TryParseCsvTokens(queryLayersParam, allowEmptyTokens: false, out var queryLayerTokens))
         {
-            return CreateWmsServiceException("MissingParameterValue", "QUERY_LAYERS parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "QUERY_LAYERS parameter is required.");
         }
 
         if (!TryGetRequiredQueryValue(query, "BBOX", out var bboxValue))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
         if (!TryGetRequiredQueryValue(query, "VERSION", out var versionValue))
         {
-            return CreateWmsServiceException("MissingParameterValue", "VERSION parameter is required.");
+            return CreateWmsServiceException(context, "MissingParameterValue", "VERSION parameter is required.");
         }
 
         if (!IsSupportedWmsVersion(versionValue))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "Unsupported VERSION value. Only 1.3.0 is supported.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Unsupported VERSION value. Only 1.3.0 is supported.");
         }
 
         var crsValue = GetQueryValue(query, "CRS");
@@ -469,48 +471,48 @@ internal static partial class MapServerEndpoints
 
         if (!TryParseWmsCrs(crsValue, out var requestSrid, out var normalizedCrs))
         {
-            return CreateWmsServiceException("InvalidCRS", "Invalid or missing CRS/SRS parameter.");
+            return CreateWmsServiceException(context, "InvalidCRS", "Invalid or missing CRS/SRS parameter.");
         }
 
         if (!TryParseWmsBbox(bboxValue, normalizedCrs, out var requestedExtent))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Invalid BBOX parameter. Expected format: xmin,ymin,xmax,ymax.");
         }
 
         if (!IsExtentWithinCrsBounds(requestedExtent, normalizedCrs))
         {
-            return CreateWmsServiceException("InvalidParameterValue", "BBOX is outside the valid range for the requested CRS.");
+            return CreateWmsServiceException(context, "InvalidParameterValue", "BBOX is outside the valid range for the requested CRS.");
         }
 
         if (!TryGetRequiredQueryValue(query, "WIDTH", out var widthValue) ||
             !int.TryParse(widthValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageWidth) ||
             imageWidth <= 0 || imageWidth > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException("InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidDimensionValue", $"WIDTH must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "HEIGHT", out var heightValue) ||
             !int.TryParse(heightValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var imageHeight) ||
             imageHeight <= 0 || imageHeight > WmsMaxImageDimension)
         {
-            return CreateWmsServiceException("InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
+            return CreateWmsServiceException(context, "InvalidDimensionValue", $"HEIGHT must be an integer between 1 and {WmsMaxImageDimension.ToString(CultureInfo.InvariantCulture)}.");
         }
 
         if (!TryParseWmsFeatureInfoPixel(query, imageWidth, imageHeight, out var pixelX, out var pixelY))
         {
-            return CreateWmsServiceException("InvalidPoint", "I/J (or X/Y) must be within the request image dimensions.");
+            return CreateWmsServiceException(context, "InvalidPoint", "I/J (or X/Y) must be within the request image dimensions.");
         }
 
         if (!TryResolveWmsRequestedLayers(service, context, mapLayerTokens, out var mapLayers, out var unresolvedMapLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedMapLayer) ? "requested layer" : unresolvedMapLayer;
-            return CreateWmsServiceException("LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
+            return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
 
         if (!TryResolveWmsRequestedLayers(service, context, queryLayerTokens, out var queryLayers, out var unresolvedQueryLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedQueryLayer) ? "requested layer" : unresolvedQueryLayer;
-            return CreateWmsServiceException("LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
+            return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
 
         var mapLayerIds = new HashSet<int>(mapLayers.Select(layer => layer.Id));
@@ -518,13 +520,13 @@ internal static partial class MapServerEndpoints
         {
             if (!mapLayerIds.Contains(layer.Id))
             {
-                return CreateWmsServiceException("LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
+                return CreateWmsServiceException(context, "LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
             }
         }
 
         if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))
         {
-            return CreateWmsServiceException("InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain and application/json.");
+            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain and application/json.");
         }
 
         var featureCount = WmsDefaultFeatureInfoCount;
@@ -533,7 +535,7 @@ internal static partial class MapServerEndpoints
         {
             if (!int.TryParse(featureCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureCount) || featureCount <= 0)
             {
-                return CreateWmsServiceException("InvalidParameterValue", "FEATURE_COUNT must be a positive integer.");
+                return CreateWmsServiceException(context, "InvalidParameterValue", "FEATURE_COUNT must be a positive integer.");
             }
         }
 
@@ -548,7 +550,7 @@ internal static partial class MapServerEndpoints
                 context.RequestAborted);
             if (!extentTransformResult.IsSuccess)
             {
-                return CreateWmsServiceException("InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
+                return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
             }
 
             queryExtent = extentTransformResult.Extent;
@@ -577,7 +579,7 @@ internal static partial class MapServerEndpoints
                 context.RequestAborted);
             if (!clickExtentTransform.IsSuccess)
             {
-                return CreateWmsServiceException("InvalidCRS", clickExtentTransform.Error ?? "Invalid spatial reference.");
+                return CreateWmsServiceException(context, "InvalidCRS", clickExtentTransform.Error ?? "Invalid spatial reference.");
             }
 
             clickExtent = clickExtentTransform.Extent;
@@ -1064,10 +1066,21 @@ internal static partial class MapServerEndpoints
     }
 
     private static IResult CreateWmsServiceException(
+        HttpContext? context,
         string code,
         string message,
         int statusCode = StatusCodes.Status400BadRequest)
     {
+        if (context is not null)
+        {
+            context.RequestServices.GetService<RecentErrorBuffer>()?.Record(
+                context,
+                statusCode,
+                code,
+                message,
+                includeClientErrors: true);
+        }
+
         var xml = BuildWmsServiceExceptionReport(code, message);
         return Results.Content(xml, WmsXmlExceptionMimeType, Encoding.UTF8, statusCode);
     }
@@ -1127,7 +1140,7 @@ internal static partial class MapServerEndpoints
                     out var warningHeader,
                     out var autosError))
             {
-                result = CreateWmsServiceException("InvalidDimensionValue", autosError ?? "Invalid TIME parameter.");
+                result = CreateWmsServiceException(context, "InvalidDimensionValue", autosError ?? "Invalid TIME parameter.");
                 return true;
             }
 
@@ -1150,7 +1163,7 @@ internal static partial class MapServerEndpoints
                     out var warningHeader,
                     out var terrainError))
             {
-                result = CreateWmsServiceException("InvalidDimensionValue", terrainError ?? "Invalid ELEVATION parameter.");
+                result = CreateWmsServiceException(context, "InvalidDimensionValue", terrainError ?? "Invalid ELEVATION parameter.");
                 return true;
             }
 
@@ -1173,7 +1186,7 @@ internal static partial class MapServerEndpoints
                     out var warningHeader,
                     out var lakesError))
             {
-                result = CreateWmsServiceException("InvalidDimensionValue", lakesError ?? "Invalid ELEVATION parameter.");
+                result = CreateWmsServiceException(context, "InvalidDimensionValue", lakesError ?? "Invalid ELEVATION parameter.");
                 return true;
             }
 

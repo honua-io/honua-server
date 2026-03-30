@@ -214,10 +214,7 @@ builder.Services.AddOptions<ControlPlaneOptions>()
     .Bind(builder.Configuration.GetSection(ControlPlaneOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddHttpClient("import-source")
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false
-    });
+    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Import.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHttpClient("control-plane-telemetry");
 builder.Services.AddHttpClient("control-plane-azure");
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();

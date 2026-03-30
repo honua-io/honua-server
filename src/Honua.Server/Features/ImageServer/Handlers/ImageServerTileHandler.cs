@@ -77,23 +77,21 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif.");
             }
 
-            // Get raster data
-            var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
-            if (rasters.Length == 0)
+            // Resolve the primary raster without scanning the entire layer.
+            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
+            if (primaryRaster is null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
+            var primaryRasterInfo = primaryRaster.Value;
 
             ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
-
-            // Use the first raster (could be enhanced for multi-raster scenarios)
-            var primaryRaster = rasters[0];
 
             // Get the image tile
             var tileResult = await _rasterStore.GetImageTileAsync(
                 layerId,
-                primaryRaster.Id,
+                primaryRasterInfo.Id,
                 level,
                 row,
                 col,

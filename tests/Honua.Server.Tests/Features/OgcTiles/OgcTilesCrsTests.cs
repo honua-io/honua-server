@@ -117,6 +117,7 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
         tileset.MediaTypes.Should().NotBeNull();
         tileset.MediaTypes!.Value.Should().Contain(MediaTypes.Mvt);
         tileset.MediaTypes!.Value.Should().Contain(MediaTypes.Png);
+        tileset.Links.Should().Contain(link => link.Rel == "item" && link.Type == MediaTypes.Png);
     }
 
     [IntegrationTest]

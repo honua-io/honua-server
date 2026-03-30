@@ -33,7 +33,7 @@ public sealed class GeometryServiceBufferTests : IAsyncLifetime
                 "geometryType": "esriGeometryPoint",
                 "geometries": [{"x": -122.4194, "y": 37.7749, "spatialReference": {"wkid": 4326}}]
             },
-            "inSR": "4326",
+            "inSR": {"latestWkid": 4326},
             "distances": "1000",
             "unit": "esriMeters",
             "geodesic": "true"

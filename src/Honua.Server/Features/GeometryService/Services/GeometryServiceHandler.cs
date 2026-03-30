@@ -8,6 +8,7 @@ using Honua.Server.Features.GeometryService.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.GeometryService.Services;
 
@@ -17,17 +18,22 @@ namespace Honua.Server.Features.GeometryService.Services;
 internal sealed class GeometryServiceHandler(
     IGeometryOperationService operationService,
     IGeometryConverter geometryConverter,
+    SpatialReferenceResolver spatialReferenceResolver,
     IOptions<LimitsOptions> limitsOptions,
     ILogger<GeometryServiceHandler> logger)
 {
     private const int MaxGeometriesPerRequestUpperBound = 1000;
     private const int MaxGeometryJsonLengthUpperBound = 10_000_000;
     private const string InvalidGeometryInputMessage = "Invalid geometry input.";
+    private const string InvalidSpatialReferenceMessage =
+        "must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.";
 
     private readonly IGeometryOperationService _operationService = operationService
         ?? throw new ArgumentNullException(nameof(operationService));
     private readonly IGeometryConverter _geometryConverter = geometryConverter
         ?? throw new ArgumentNullException(nameof(geometryConverter));
+    private readonly SpatialReferenceResolver _spatialReferenceResolver = spatialReferenceResolver
+        ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
     private readonly int _maxGeometriesPerRequest = Math.Clamp(
         limitsOptions?.Value.Query.MaxRecordCount ?? MaxGeometriesPerRequestUpperBound,
         1,
@@ -88,29 +94,20 @@ internal sealed class GeometryServiceHandler(
             }
 
             // Parse spatial references
-            var (inSr, inSrError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "inSR"));
+            var (inSr, inSrError) = await ResolveRequiredSpatialReferenceAsync(values, "inSR", ct);
             if (inSrError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", inSrError);
                 return CreateError(400, inSrError);
             }
 
-            if (inSr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "buffer", "Invalid inSR");
-                return CreateError(400, "Parameter 'inSR' must be a valid spatial reference WKID.");
-            }
-
-            var (outSr, outSrError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "outSR"));
+            var (outSr, outSrError) = await ResolveOptionalSpatialReferenceAsync(values, "outSR", ct);
             if (outSrError is not null)
             {
                 return CreateError(400, outSrError);
             }
 
-            var (bufferSr, bufferSrError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "bufferSR"));
+            var (bufferSr, bufferSrError) = await ResolveOptionalSpatialReferenceAsync(values, "bufferSR", ct);
             if (bufferSrError is not null)
             {
                 return CreateError(400, bufferSrError);
@@ -142,9 +139,9 @@ internal sealed class GeometryServiceHandler(
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                InSR = inSr,
-                OutSR = outSr > 0 ? outSr : null,
-                BufferSR = bufferSr > 0 ? bufferSr : null,
+                InSR = inSr!.Value,
+                OutSR = outSr.HasValue && outSr.Value > 0 ? outSr.Value : null,
+                BufferSR = bufferSr.HasValue && bufferSr.Value > 0 ? bufferSr.Value : null,
                 Distances = distances,
                 Unit = unit,
                 UnionResults = unionResults,
@@ -212,25 +209,18 @@ internal sealed class GeometryServiceHandler(
             }
 
             // ArcGIS simplify uses "sr" not "inSR"
-            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "sr"));
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
             if (srError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "simplify", srError);
                 return CreateError(400, srError);
             }
 
-            if (sr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "simplify", "Invalid sr");
-                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
-            }
-
             var parameters = new SimplifyParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                SR = sr
+                SR = sr!.Value
             };
 
             GeometryServiceLog.RequestParsed(_logger, "simplify", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -294,40 +284,26 @@ internal sealed class GeometryServiceHandler(
             }
 
             // Parse spatial references
-            var (inSr, inSrError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "inSR"));
+            var (inSr, inSrError) = await ResolveRequiredSpatialReferenceAsync(values, "inSR", ct);
             if (inSrError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "project", inSrError);
                 return CreateError(400, inSrError);
             }
 
-            if (inSr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "project", "Invalid inSR");
-                return CreateError(400, "Parameter 'inSR' must be a valid spatial reference WKID.");
-            }
-
-            var (outSr, outSrError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "outSR"));
+            var (outSr, outSrError) = await ResolveRequiredSpatialReferenceAsync(values, "outSR", ct);
             if (outSrError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "project", outSrError);
                 return CreateError(400, outSrError);
             }
 
-            if (outSr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "project", "Invalid outSR");
-                return CreateError(400, "Parameter 'outSR' must be a valid spatial reference WKID.");
-            }
-
             var parameters = new ProjectParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                InSR = inSr,
-                OutSR = outSr
+                InSR = inSr!.Value,
+                OutSR = outSr!.Value
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -389,25 +365,18 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
             }
 
-            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "sr"));
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
             if (srError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "union", srError);
                 return CreateError(400, srError);
             }
 
-            if (sr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "union", "Invalid sr");
-                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
-            }
-
             var parameters = new UnionParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                SR = sr
+                SR = sr!.Value
             };
 
             GeometryServiceLog.RequestParsed(_logger, "union", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -495,24 +464,17 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
             }
 
-            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "sr"));
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
             if (srError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "area", srError);
                 return CreateError(400, srError);
             }
 
-            if (sr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "area", "Invalid sr");
-                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
-            }
-
             var parameters = new MeasurementParameters
             {
                 GeometryJsonStrings = geomStrings,
-                SR = sr,
+                SR = sr!.Value,
                 Unit = GeometryServiceRequestParser.GetValue(values, "areaUnit")
             };
 
@@ -573,24 +535,17 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(400, "Parameter 'geometries' must contain at least one geometry.");
             }
 
-            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "sr"));
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
             if (srError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "length", srError);
                 return CreateError(400, srError);
             }
 
-            if (sr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "length", "Invalid sr");
-                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
-            }
-
             var parameters = new MeasurementParameters
             {
                 GeometryJsonStrings = geomStrings,
-                SR = sr,
+                SR = sr!.Value,
                 Unit = GeometryServiceRequestParser.GetValue(values, "lengthUnit")
             };
 
@@ -762,18 +717,11 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(400, operatorError ?? "Parameter 'geometry' is required.");
             }
 
-            var (sr, srError) = GeometryServiceRequestParser.ParseSpatialReference(
-                GeometryServiceRequestParser.GetValue(values, "sr"));
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
             if (srError is not null)
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, operationName, srError);
                 return CreateError(400, srError);
-            }
-
-            if (sr <= 0)
-            {
-                GeometryServiceLog.InvalidGeometryInput(_logger, operationName, "Invalid sr");
-                return CreateError(400, "Parameter 'sr' must be a valid spatial reference WKID.");
             }
 
             var parameters = new BinaryGeometryOperationParameters
@@ -781,7 +729,7 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 OperatorGeometryJson = operatorGeometry,
-                SR = sr
+                SR = sr!.Value
             };
 
             GeometryServiceLog.RequestParsed(_logger, operationName, parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -873,6 +821,41 @@ internal sealed class GeometryServiceHandler(
 
         return _areaUnitDivisors.TryGetValue(unit, out var divisor) ? divisor : 1.0;
     }
+
+    private async Task<(int? Srid, string? Error)> ResolveSpatialReferenceAsync(
+        IReadOnlyDictionary<string, StringValues> values,
+        string parameterName,
+        bool required,
+        CancellationToken ct)
+    {
+        var raw = GeometryServiceRequestParser.GetValue(values, parameterName);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return required
+                ? (null, $"Parameter '{parameterName}' must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.")
+                : (null, null);
+        }
+
+        var srid = await _spatialReferenceResolver.ResolveSridAsync(raw, null, ct).ConfigureAwait(false);
+        if (!srid.HasValue || srid.Value <= 0)
+        {
+            return (null, $"Parameter '{parameterName}' must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.");
+        }
+
+        return (srid, null);
+    }
+
+    private Task<(int? Srid, string? Error)> ResolveRequiredSpatialReferenceAsync(
+        IReadOnlyDictionary<string, StringValues> values,
+        string parameterName,
+        CancellationToken ct)
+        => ResolveSpatialReferenceAsync(values, parameterName, required: true, ct);
+
+    private Task<(int? Srid, string? Error)> ResolveOptionalSpatialReferenceAsync(
+        IReadOnlyDictionary<string, StringValues> values,
+        string parameterName,
+        CancellationToken ct)
+        => ResolveSpatialReferenceAsync(values, parameterName, required: false, ct);
 
     private GeometryServiceResponse ConvertToResponse(List<byte[]> wkbs, int srid, string? geometryType)
     {

@@ -82,6 +82,26 @@ public sealed class OgcTilesRasterTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetCollectionTile_WithPngPreferredOverVector_ReturnsRasterImage()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/0");
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.ParseAdd("image/png;q=1.0, application/vnd.mapbox-vector-tile;q=0.1");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MediaTypes.Png);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetCollectionTile_AfterCachedPngRequest_InvalidAcceptStillReturnsNotAcceptable()
     {
         using var pngRequest = new HttpRequestMessage(HttpMethod.Get,

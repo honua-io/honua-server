@@ -58,8 +58,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<RasterInfo>());
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)null);
 
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20");
@@ -75,8 +75,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         var context = CreateImageServerContext();
         var request = CreateRequest("invalid-geometry");
@@ -92,8 +92,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20,30");
@@ -111,8 +111,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         var oversizedGeometry = $"10,20,{new string('x', 1200)}";
         var context = CreateImageServerContext();
@@ -131,8 +131,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20", sr: "invalid-srid");
@@ -148,8 +148,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20", geometryType: "esriGeometryPolygon");
@@ -191,8 +191,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         // JSON geometry exceeding 1000 char limit
         var padding = new string(' ', 1001);
@@ -210,8 +210,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
 
         var context = CreateImageServerContext();
         var request = CreateRequest("{invalid-json}");
@@ -277,8 +277,8 @@ public class ImageServerIdentifyHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
         _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
             .Returns(new PixelValueResult
             {
