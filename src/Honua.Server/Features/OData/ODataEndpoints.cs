@@ -404,9 +404,8 @@ internal static partial class ODataEndpoints
         legacyDeleteFeature.RequireAuthorization();
 
         // POST - Batch operations
-        // Defense-in-depth: RequireAuthorization ensures unauthenticated users cannot reach
-        // the batch handler at all. The handler (ValidateBatchAccessAsync) performs additional
-        // per-operation authorization checks since a batch can contain both reads and writes.
+        // The handler (ValidateBatchAccessAsync) performs per-operation authorization checks
+        // so read-only requests to public layers can succeed while writes remain protected.
         var batch = endpoints.MapPost("/odata/$batch",
             (HttpContext context, [FromServices] ODataBatchOperationHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleBatchRequestAsync(context, cancellationToken))
@@ -416,7 +415,7 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Models.ODataBatchResponse>(200, "application/json")
             .Produces(400);
-        batch.RequireAuthorization();
+        batch.AllowAnonymous();
 
         // GET - Aggregation with $apply (legacy)
         var apply = endpoints.MapGet("/odata/Features({layerId:int})/$apply",

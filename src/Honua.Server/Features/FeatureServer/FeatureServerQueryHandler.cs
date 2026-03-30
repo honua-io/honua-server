@@ -95,7 +95,12 @@ internal sealed class FeatureServerQueryHandler(
         Activity? featureActivity = null;
         try
         {
-            FeatureServerLog.QueryRequested(_logger, serviceId, layerId, queryParams.Where);
+            var hasWhereClause = !string.IsNullOrWhiteSpace(queryParams.Where);
+            FeatureServerLog.QueryRequested(
+                _logger,
+                serviceId,
+                layerId,
+                hasWhereClause);
 
             var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
                 _resourceValidator,
@@ -264,11 +269,6 @@ internal sealed class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid output spatial reference",
                     [$"Unsupported outSR value: {validatedParams.OutSr}"]);
-            }
-
-            if (!string.IsNullOrWhiteSpace(validatedParams.DatumTransformation))
-            {
-                FeatureServerLog.DatumTransformationRequested(_logger, validatedParams.DatumTransformation);
             }
 
             var wgs84Srid = SpatialReference.WGS84.Wkid;
@@ -1131,6 +1131,11 @@ internal sealed class FeatureServerQueryHandler(
         if (queryParams.ReturnCentroid)
         {
             unsupported.Add("returnCentroid");
+        }
+
+        if (!string.IsNullOrWhiteSpace(queryParams.DatumTransformation))
+        {
+            unsupported.Add("datumTransformation");
         }
 
         if (unsupported.Count == 0)

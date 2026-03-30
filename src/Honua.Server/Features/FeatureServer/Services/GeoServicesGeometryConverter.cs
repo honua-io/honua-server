@@ -142,8 +142,8 @@ internal static class GeoServicesGeometryConverter
         if (geometry.X.HasValue && geometry.Y.HasValue)
         {
             var ordinates = new List<double>(4) { geometry.X.Value, geometry.Y.Value };
-            var hasZ = geometry.HasZ ?? geometry.Z.HasValue;
-            var hasM = geometry.HasM ?? geometry.M.HasValue;
+            var hasZ = geometry.HasZ || geometry.Z.HasValue;
+            var hasM = geometry.HasM || geometry.M.HasValue;
 
             if (hasZ && geometry.Z.HasValue)
             {
@@ -492,8 +492,8 @@ internal static class GeoServicesGeometryConverter
 
         geometry = new GeoServicesGeometry
         {
-            HasZ = NormalizeDimensionFlag(point.HasZ),
-            HasM = NormalizeDimensionFlag(point.HasM),
+            HasZ = point.HasZ,
+            HasM = point.HasM,
             X = point.X,
             Y = point.Y,
             Z = point.Z,
@@ -679,8 +679,6 @@ internal static class GeoServicesGeometryConverter
             ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
             : null;
 
-    private static bool? NormalizeDimensionFlag(bool value) => value ? true : null;
-
     private static int ReadInt32(ReadOnlySpan<byte> span, bool littleEndian)
         => littleEndian
             ? BinaryPrimitives.ReadInt32LittleEndian(span)
@@ -704,7 +702,13 @@ internal static class GeoServicesGeometryConverter
             points[i] = BuildCoordinateArray(point.CoordinateSequence, 0);
         }
 
-        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Points = points, SpatialReference = spatialReference };
+        return new GeoServicesGeometry
+        {
+            HasZ = hasZ,
+            HasM = hasM,
+            Points = points,
+            SpatialReference = spatialReference
+        };
     }
 
     private static GeoServicesGeometry ConvertLineString(LineString lineString, GeoServicesSpatialReference? spatialReference)
@@ -728,7 +732,13 @@ internal static class GeoServicesGeometryConverter
             paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i));
         }
 
-        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Paths = paths, SpatialReference = spatialReference };
+        return new GeoServicesGeometry
+        {
+            HasZ = hasZ,
+            HasM = hasM,
+            Paths = paths,
+            SpatialReference = spatialReference
+        };
     }
 
     private static GeoServicesGeometry ConvertPolygon(Polygon polygon, GeoServicesSpatialReference? spatialReference)
@@ -753,7 +763,13 @@ internal static class GeoServicesGeometryConverter
             rings.AddRange(BuildPolygonRings(polygon));
         }
 
-        return new GeoServicesGeometry { HasZ = hasZ, HasM = hasM, Rings = rings.ToArray(), SpatialReference = spatialReference };
+        return new GeoServicesGeometry
+        {
+            HasZ = hasZ,
+            HasM = hasM,
+            Rings = rings.ToArray(),
+            SpatialReference = spatialReference
+        };
     }
 
     private static GeoServicesGeometry? ConvertGeometryCollection(GeometryCollection collection, GeoServicesSpatialReference? spatialReference)

@@ -327,6 +327,12 @@ public sealed record StacSearchRequest
     public JsonElement? Filter { get; init; }
 
     /// <summary>
+    /// CRS for the filter geometry or filter expression.
+    /// </summary>
+    [JsonPropertyName("filter-crs")]
+    public string? FilterCrs { get; init; }
+
+    /// <summary>
     /// Filter language (defaults to cql2-json for POST).
     /// </summary>
     [JsonPropertyName("filter-lang")]
@@ -341,13 +347,13 @@ public sealed record StacFieldsExtension
     /// <summary>
     /// Properties to include.
     /// </summary>
-    [JsonPropertyName("includes")]
+    [JsonPropertyName("include")]
     public ImmutableArray<string>? Includes { get; init; }
 
     /// <summary>
     /// Properties to exclude.
     /// </summary>
-    [JsonPropertyName("excludes")]
+    [JsonPropertyName("exclude")]
     public ImmutableArray<string>? Excludes { get; init; }
 }
 

@@ -179,7 +179,7 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/geometry/project")]
-    public async Task Project_JsonSpatialReference_ParsesCorrectly()
+    public async Task Project_JsonSpatialReference_WithLatestWkid_ParsesCorrectly()
     {
         var body = """
         {
@@ -187,8 +187,37 @@ public sealed class GeometryServiceProjectTests : IAsyncLifetime
                 "geometryType": "esriGeometryPoint",
                 "geometries": [{"x": 0, "y": 0}]
             },
-            "inSR": {"wkid": 4326},
-            "outSR": {"wkid": 3857}
+            "inSR": {"latestWkid": 4326},
+            "outSR": {"latestWkid": 3857}
+        }
+        """;
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync("/rest/services/geometry/project", content);
+
+        response.Be200Ok();
+
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            responseContent, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/geometry/project")]
+    public async Task Project_JsonSpatialReference_WithName_ParsesCorrectly()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 0, "y": 0}]
+            },
+            "inSR": {"name": "EPSG:4326"},
+            "outSR": {"name": "EPSG:3857"}
         }
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");

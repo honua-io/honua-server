@@ -73,16 +73,14 @@ internal sealed class ImageServerExportHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // Get raster data
-            var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
-            if (rasters.Length == 0)
+            // Resolve the primary raster without scanning the entire layer.
+            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
+            if (primaryRaster is null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
-
-            // Use the first raster (could be enhanced for multi-raster scenarios)
-            var primaryRaster = rasters[0];
+            var primaryRasterInfo = primaryRaster.Value;
 
             // Parse export parameters
             var query = ParseExportParameters(request);
@@ -93,13 +91,13 @@ internal sealed class ImageServerExportHandler
             }
 
             // Determine output dimensions and propagate to query
-            var (width, height) = CalculateOutputDimensions(request, primaryRaster);
+            var (width, height) = CalculateOutputDimensions(request, primaryRasterInfo);
             var exportQuery = query.Value with { OutputWidth = width, OutputHeight = height };
             var formatName = exportQuery.OutputFormat.ToString();
             ImageServerLog.ExportImageStarted(_logger, layerId, width, height, formatName);
 
             // Export the image
-            var result = await _rasterStore.ExportImageAsync(layerId, primaryRaster.Id, exportQuery, cancellationToken);
+            var result = await _rasterStore.ExportImageAsync(layerId, primaryRasterInfo.Id, exportQuery, cancellationToken);
 
             // Store the image temporarily and get the public URL
             var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
@@ -109,7 +107,7 @@ internal sealed class ImageServerExportHandler
                 cancellationToken);
 
             var extent = result.Extent;
-            extent ??= await _rasterStore.GetExtentAsync(layerId, primaryRaster.Id, cancellationToken);
+            extent ??= await _rasterStore.GetExtentAsync(layerId, primaryRasterInfo.Id, cancellationToken);
 
             var exportResponse = new ExportImageResponse
             {

@@ -118,12 +118,12 @@ internal static partial class FeatureServerLog
     /// <param name="logger">The logger instance.</param>
     /// <param name="serviceId">The service identifier.</param>
     /// <param name="layerId">The layer identifier.</param>
-    /// <param name="whereClause">The WHERE clause for the query.</param>
+    /// <param name="hasWhereClause">Whether the request supplied a WHERE clause.</param>
     [LoggerMessage(
         EventId = 2201,
         Level = LogLevel.Information,
-        Message = "Query requested: {ServiceId}/FeatureServer/{LayerId}/query with WHERE: {WhereClause}")]
-    public static partial void QueryRequested(ILogger logger, string serviceId, int layerId, string? whereClause);
+        Message = "Query requested: {ServiceId}/FeatureServer/{LayerId}/query (WHERE clause present: {HasWhereClause})")]
+    public static partial void QueryRequested(ILogger logger, string serviceId, int layerId, bool hasWhereClause);
 
     /// <summary>
     /// Logs when a query is successfully completed.

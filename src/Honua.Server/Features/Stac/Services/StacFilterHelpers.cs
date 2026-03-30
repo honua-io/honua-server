@@ -5,7 +5,10 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.OgcFeatures.Models;
+using Honua.Server.Features.OgcFeatures.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -90,6 +93,41 @@ internal static class StacFilterHelpers
         var wkb = GetWkbWriter().Write(geometry);
 
         return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: 4326);
+    }
+
+    /// <summary>
+    /// Parses a GeoJSON geometry from a STAC intersects parameter into a spatial filter.
+    /// </summary>
+    public static bool TryCreateIntersectsSpatialFilter(
+        string? intersectsGeoJson,
+        OgcFeaturesGeometryServices geometryServices,
+        out SpatialFilter? spatialFilter,
+        out string? error)
+    {
+        spatialFilter = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(intersectsGeoJson))
+        {
+            return true;
+        }
+
+        var simpleGeometry = geometryServices.ConvertGeoJsonToSimpleGeometry(intersectsGeoJson, AxisOrder.EastNorth);
+        if (simpleGeometry is null)
+        {
+            error = "Invalid intersects geometry.";
+            return false;
+        }
+
+        var wkbResult = geometryServices.TryCreateWkbFromGeoJson(simpleGeometry, 4326, AxisOrder.EastNorth);
+        if (!wkbResult.IsSuccess || wkbResult.Wkb is null)
+        {
+            error = wkbResult.ErrorMessage ?? "Invalid intersects geometry.";
+            return false;
+        }
+
+        spatialFilter = SpatialFilter.Create(wkbResult.Wkb, SpatialRelationship.Intersects, srid: 4326);
+        return true;
     }
 
     /// <summary>

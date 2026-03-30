@@ -62,13 +62,14 @@ internal sealed class ImageServerIdentifyHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            // Get raster data
-            var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
-            if (rasters.Length == 0)
+            // Resolve the primary raster without scanning the entire layer.
+            var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
+            if (primaryRaster is null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
+            var primaryRasterInfo = primaryRaster.Value;
 
             if (!string.IsNullOrWhiteSpace(request.GeometryType) &&
                 !string.Equals(request.GeometryType, SupportedGeometryType, StringComparison.OrdinalIgnoreCase))
@@ -89,13 +90,10 @@ internal sealed class ImageServerIdentifyHandler
 
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);
 
-            // Use the first raster (could be enhanced for multi-raster scenarios)
-            var primaryRaster = rasters[0];
-
             // Identify pixel values
             var pixelResult = await _rasterStore.IdentifyAsync(
                 layerId,
-                primaryRaster.Id,
+                primaryRasterInfo.Id,
                 x.Value,
                 y.Value,
                 srid,
@@ -104,8 +102,8 @@ internal sealed class ImageServerIdentifyHandler
             // Build identify response
             var response = new IdentifyResponse
             {
-                ObjectId = primaryRaster.Id,
-                Name = primaryRaster.Name,
+                ObjectId = primaryRasterInfo.Id,
+                Name = primaryRasterInfo.Name,
                 Value = FormatPixelValues(pixelResult.BandValues),
                 Location = new Point
                 {
@@ -114,7 +112,7 @@ internal sealed class ImageServerIdentifyHandler
                 },
                 Properties = CreateProperties(pixelResult),
                 CatalogItems = request.ReturnCatalogItems == true
-                    ? [new CatalogItem { Id = primaryRaster.Id, Name = primaryRaster.Name }]
+                    ? [new CatalogItem { Id = primaryRasterInfo.Id, Name = primaryRasterInfo.Name }]
                     : null
             };
 

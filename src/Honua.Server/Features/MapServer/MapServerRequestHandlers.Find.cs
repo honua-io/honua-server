@@ -177,9 +177,10 @@ internal static partial class MapServerEndpoints
                 var objectIdField = layer.PrimaryKeyField?.Name ?? FieldNames.ObjectId;
                 var displayField = ResolveDisplayField(layer, objectIdField);
 
+                var escapedSearchText = EscapeSqlStringLiteral(searchText);
+                var fieldSearchClauses = new List<string>(fieldsToSearch.Length);
                 foreach (var field in fieldsToSearch)
                 {
-                    var escapedSearchText = EscapeSqlStringLiteral(searchText);
                     var quotedFieldName = $"\"{field.Name}\"";
                     var whereClause = contains
                         ? $"{quotedFieldName} LIKE '%{EscapeLikeWildcards(escapedSearchText)}%' ESCAPE '\\'"
@@ -190,44 +191,57 @@ internal static partial class MapServerEndpoints
                         whereClause = $"({layerDef}) AND ({whereClause})";
                     }
 
-                    var translationResult = filterExpressionService.Translate(FilterLanguage.ArcGisSql, whereClause, layer);
-                    if (!translationResult.IsSuccess)
+                    fieldSearchClauses.Add(whereClause);
+                }
+
+                var combinedWhereClause = fieldSearchClauses.Count == 1
+                    ? fieldSearchClauses[0]
+                    : $"({string.Join(" OR ", fieldSearchClauses.Select(clause => $"({clause})"))})";
+
+                var translationResult = filterExpressionService.Translate(FilterLanguage.ArcGisSql, combinedWhereClause, layer);
+                if (!translationResult.IsSuccess)
+                {
+                    continue;
+                }
+
+                var featureQuery = new FeatureQuery
+                {
+                    SpatialReferenceSrid = service.SpatialReference.Srid,
+                    OutputSrid = outputSrid,
+                    Limit = MaxFindResults - results.Count,
+                    SqlFilter = translationResult.SqlFilter
+                };
+
+                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+
+                foreach (var feature in queryResult.Items)
+                {
+                    var attributes = new Dictionary<string, object?>();
+                    foreach (var kvp in feature.Attributes)
                     {
-                        continue;
+                        attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
                     }
 
-                    var featureQuery = new FeatureQuery
+                    object? geometryResult = null;
+                    if (returnGeometry && feature.Geometry != null)
                     {
-                        SpatialReferenceSrid = service.SpatialReference.Srid,
-                        OutputSrid = outputSrid,
-                        Limit = MaxFindResults - results.Count,
-                        SqlFilter = translationResult.SqlFilter
-                    };
+                        try
+                        {
+                            geometryResult = geometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid);
+                        }
+                        catch (ArgumentException)
+                        {
+                            geometryResult = null;
+                        }
+                    }
 
-                    var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
-
-                    foreach (var feature in queryResult.Items)
+                    var displayValue = GetDisplayFieldValue(feature, displayField);
+                    foreach (var field in fieldsToSearch)
                     {
-                        var attributes = new Dictionary<string, object?>();
-                        foreach (var kvp in feature.Attributes)
+                        if (!TryMatchSearchField(feature, field, searchText, contains))
                         {
-                            attributes[kvp.Key] = kvp.Value;
+                            continue;
                         }
-
-                        object? geometryResult = null;
-                        if (returnGeometry && feature.Geometry != null)
-                        {
-                            try
-                            {
-                                geometryResult = geometryConverter.ConvertWkbToGeoServicesGeometry(feature.Geometry, outputSrid);
-                            }
-                            catch (ArgumentException)
-                            {
-                                geometryResult = null;
-                            }
-                        }
-
-                        var displayValue = GetDisplayFieldValue(feature, displayField);
 
                         results.Add(new FindResult
                         {
@@ -240,6 +254,11 @@ internal static partial class MapServerEndpoints
                             GeometryType = layer.HasGeometry ? MapGeometryTypeToEsri(layer.GeometryType) : null,
                             Geometry = geometryResult
                         });
+
+                        if (results.Count >= MaxFindResults)
+                        {
+                            break;
+                        }
                     }
 
                     if (results.Count >= MaxFindResults)
@@ -396,4 +415,26 @@ internal static partial class MapServerEndpoints
     private static string EscapeLikeWildcards(string value)
         => value.Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
+
+    private static bool TryMatchSearchField(
+        Feature feature,
+        FieldDefinition field,
+        string searchText,
+        bool contains)
+    {
+        if (!feature.Attributes.TryGetValue(field.Name, out var value) || value is null)
+        {
+            return false;
+        }
+
+        var actualText = value.ToString();
+        if (string.IsNullOrEmpty(actualText))
+        {
+            return false;
+        }
+
+        return contains
+            ? actualText.Contains(searchText, StringComparison.Ordinal)
+            : string.Equals(actualText, searchText, StringComparison.Ordinal);
+    }
 }

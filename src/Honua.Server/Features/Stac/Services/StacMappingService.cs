@@ -92,11 +92,15 @@ internal sealed class StacMappingService
     public static StacItem MapFeatureToItem(
         Feature feature,
         LayerDefinition layer,
-        string baseUrl)
+        string baseUrl,
+        IReadOnlySet<string>? selectedProperties = null)
     {
         var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
         var itemId = feature.ObjectId?.ToString(CultureInfo.InvariantCulture) ?? "0";
         var stacBase = $"{baseUrl}/stac";
+        var selectedPropertiesLookup = selectedProperties is null
+            ? null
+            : new HashSet<string>(selectedProperties, StringComparer.OrdinalIgnoreCase);
 
         var properties = new Dictionary<string, object?>();
 
@@ -122,6 +126,12 @@ internal sealed class StacMappingService
         {
             if (!string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase))
             {
+                if (selectedPropertiesLookup is not null &&
+                    !selectedPropertiesLookup.Contains(kvp.Key))
+                {
+                    continue;
+                }
+
                 properties[kvp.Key] = kvp.Value;
             }
         }

@@ -61,8 +61,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<RasterInfo>());
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns((RasterInfo?)null);
 
         var context = CreateImageServerContext();
         var request = CreateRequest();
@@ -164,8 +164,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns([CreateTestRasterInfo() with { Width = 100, Height = 20000 }]);
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo() with { Width = 100, Height = 20000 });
 
         RasterQuery? capturedQuery = null;
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -396,8 +396,8 @@ public class ImageServerExportHandlerTests
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestLayer());
-        _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())
-            .Returns(new[] { CreateTestRasterInfo() });
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterInfo());
     }
 
     private void SetupSuccessfulExport()

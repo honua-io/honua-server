@@ -7,6 +7,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.OgcMaps.Handlers;
@@ -309,6 +310,29 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_ServiceRestrictionOverridesPublicLayerAccess()
+    {
+        var layer = CreatePublicLayerWithExtent();
+        var service = CreateRestrictedService(layer);
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([service]);
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.RenderCollectionMapAsync(1, CreateDefaultRequest(), context: context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await _mapRenderer.DidNotReceive().RenderCollectionMapAsync(
+            Arg.Any<int>(),
+            Arg.Any<MapRenderRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderCollectionMapAsync_LayerWithoutExplicitPolicy_ReturnsUnauthorized()
     {
         _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
@@ -578,6 +602,40 @@ public class OgcMapsRenderingHandlerTests
 
     [UnitTest]
     [Operation(Operations.Render)]
+    public async Task RenderCollectionMapAsync_WithGeographicExtent_UsesCrs84ContentCrs()
+    {
+        var context = CreateAuthenticatedOgcMapsContext();
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(CreateTestLayerWithExtent());
+        _mapRenderer.RenderCollectionMapAsync(1, Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 4326,
+                Extent = new RasterExtent
+                {
+                    XMin = -122.5,
+                    YMin = 37.7,
+                    XMax = -122.3,
+                    YMax = 37.8,
+                    Srid = 4326
+                }
+            });
+
+        var result = await _handler.RenderCollectionMapAsync(1, CreateDefaultRequest(), context);
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        context.Response.Headers["Content-Crs"].ToString()
+            .Should().Be("<https://www.opengis.net/def/crs/OGC/1.3/CRS84>");
+        context.Response.Headers["Content-Bbox"].ToString()
+            .Should().Be("-122.5,37.7,-122.3,37.8");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
     public async Task RenderDatasetMapAsync_WithoutLayerIds_UsesAllCatalogLayers()
     {
         _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
@@ -657,6 +715,33 @@ public class OgcMapsRenderingHandlerTests
                 AccessPolicy = new AccessPolicy
                 {
                     AllowAnonymous = false
+                }
+            }
+        };
+
+    private static LayerDefinition CreatePublicLayerWithExtent(int id = 1)
+        => CreateTestLayerWithExtent(id) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymous = true
+                }
+            }
+        };
+
+    private static ServiceDefinition CreateRestrictedService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "restricted-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowedRoles = ["service-reader"]
                 }
             }
         };

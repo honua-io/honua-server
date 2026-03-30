@@ -224,6 +224,26 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
                 return "query";
             }
 
+            if (path.Contains("/queryTopFeatures", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryTopFeatures";
+            }
+
+            if (path.Contains("/queryBins", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryBins";
+            }
+
+            if (path.Contains("/getEstimates", StringComparison.OrdinalIgnoreCase))
+            {
+                return "getEstimates";
+            }
+
+            if (path.Contains("/queryH3", StringComparison.OrdinalIgnoreCase))
+            {
+                return "queryH3";
+            }
+
             return "metadata";
         }
 

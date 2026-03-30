@@ -300,7 +300,7 @@ internal static partial class MapServerEndpoints
                     var attributes = new Dictionary<string, object?>();
                     foreach (var kvp in feature.Attributes)
                     {
-                        attributes[kvp.Key] = kvp.Value;
+                        attributes[kvp.Key] = Honua.Server.Features.FeatureServer.Models.GeoServicesValueNormalizer.Normalize(kvp.Value);
                     }
 
                     object? geometryResult = null;

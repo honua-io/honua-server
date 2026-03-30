@@ -13,11 +13,13 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.MapServer;
@@ -92,7 +94,7 @@ internal static partial class MapServerEndpoints
             {
                 if (string.IsNullOrWhiteSpace(service))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "MissingParameterValue",
                         "service",
                         "SERVICE parameter is required.");
@@ -100,7 +102,7 @@ internal static partial class MapServerEndpoints
 
                 if (!string.Equals(service, "WMTS", StringComparison.OrdinalIgnoreCase))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "InvalidParameterValue",
                         "service",
                         "SERVICE must be WMTS.");
@@ -108,7 +110,7 @@ internal static partial class MapServerEndpoints
 
                 if (string.IsNullOrWhiteSpace(requestType))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "MissingParameterValue",
                         "request",
                         "REQUEST parameter is required.");
@@ -155,7 +157,7 @@ internal static partial class MapServerEndpoints
 
             if (!string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "request",
                     $"Unsupported REQUEST value '{requestType}'.");
@@ -167,7 +169,7 @@ internal static partial class MapServerEndpoints
                 var acceptFormats = GetQueryValue(request, "ACCEPTFORMATS");
                 if (string.IsNullOrWhiteSpace(acceptFormats))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "MissingParameterValue",
                         "acceptFormats",
                         "ACCEPTFORMATS parameter value is required.");
@@ -175,7 +177,7 @@ internal static partial class MapServerEndpoints
 
                 if (HasEmptyCommaSeparatedToken(acceptFormats))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "InvalidParameterValue",
                         "acceptFormats",
                         "ACCEPTFORMATS contains an empty format value.");
@@ -189,7 +191,7 @@ internal static partial class MapServerEndpoints
             {
                 if (HasEmptyCommaSeparatedToken(acceptVersions))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "InvalidParameterValue",
                         "acceptVersions",
                         "ACCEPTVERSIONS contains an empty version value.");
@@ -199,7 +201,7 @@ internal static partial class MapServerEndpoints
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (!versions.Contains(WmtsVersion, StringComparer.OrdinalIgnoreCase))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "VersionNegotiationFailed",
                         null,
                         "Only WMTS version 1.0.0 is supported.");
@@ -210,7 +212,7 @@ internal static partial class MapServerEndpoints
             if (!string.IsNullOrWhiteSpace(version) &&
                 !string.Equals(version, WmtsVersion, StringComparison.OrdinalIgnoreCase))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "version",
                     $"VERSION must be {WmtsVersion}.");
@@ -221,7 +223,7 @@ internal static partial class MapServerEndpoints
             {
                 if (string.IsNullOrWhiteSpace(updateSequence))
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "MissingParameterValue",
                         "updateSequence",
                         "UPDATESEQUENCE parameter value is required.");
@@ -230,7 +232,7 @@ internal static partial class MapServerEndpoints
                 var updateComparison = CompareUpdateSequence(updateSequence, WmtsUpdateSequence);
                 if (updateComparison > 0)
                 {
-                    return CreateWmtsExceptionReport(
+                    return CreateWmtsExceptionReport(context,
                         "InvalidUpdateSequence",
                         null,
                         "UPDATESEQUENCE is greater than the current capabilities update sequence.");
@@ -247,7 +249,7 @@ internal static partial class MapServerEndpoints
             var sectionsParam = GetQueryValue(request, "SECTIONS");
             if (request.ContainsKey("SECTIONS") && string.IsNullOrWhiteSpace(sectionsParam))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "MissingParameterValue",
                     "sections",
                     "SECTIONS parameter value is required.");
@@ -255,7 +257,7 @@ internal static partial class MapServerEndpoints
 
             if (HasEmptyCommaSeparatedToken(sectionsParam))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "sections",
                     "SECTIONS contains an empty section value.");
@@ -263,7 +265,7 @@ internal static partial class MapServerEndpoints
 
             if (!TryParseWmtsSections(sectionsParam, out var sections, out var sectionsError))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "sections",
                     sectionsError ?? "Invalid SECTIONS parameter.");
@@ -284,7 +286,7 @@ internal static partial class MapServerEndpoints
         catch (Exception ex)
         {
             MapServerLog.WmtsFailed(logger, serviceId, ex.Message, ex);
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "NoApplicableCode",
                 "request",
                 "WMTS request failed.",
@@ -323,7 +325,7 @@ internal static partial class MapServerEndpoints
 
             if (!TryUnescapeWmtsValue(segments[0], out var capabilitiesVersion))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "request",
                     "WMTS RESTful path contains malformed percent-encoding.");
@@ -356,7 +358,7 @@ internal static partial class MapServerEndpoints
                 out var tileColValue,
                 out var tileFormatMimeType))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",
                 "request",
                 "WMTS RESTful path contains malformed percent-encoding.");
@@ -385,7 +387,7 @@ internal static partial class MapServerEndpoints
                     out var pixelI,
                     out var infoFormatMimeType))
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "request",
                     "WMTS RESTful path contains malformed percent-encoding.");
@@ -428,7 +430,7 @@ internal static partial class MapServerEndpoints
         var version = GetQueryValue(query, "VERSION");
         if (string.IsNullOrWhiteSpace(version))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "MissingParameterValue",
                 "version",
                 "VERSION parameter is required.");
@@ -436,7 +438,7 @@ internal static partial class MapServerEndpoints
 
         if (!string.Equals(version, WmtsVersion, StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",
                 "version",
                 $"VERSION must be {WmtsVersion}.");
@@ -444,12 +446,12 @@ internal static partial class MapServerEndpoints
 
         if (!TryGetRequiredQueryValue(query, "LAYER", out var layerValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "layer", "LAYER parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "layer", "LAYER parameter is required.");
         }
 
         if (!TryResolveWmtsLayer(service, layerValue, out var layer))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "layer", "Invalid LAYER parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "layer", "Invalid LAYER parameter.");
         }
 
         var layerAccessError = AccessPolicyHelpers.RequireLayerAccess(context, layer!, service);
@@ -460,91 +462,91 @@ internal static partial class MapServerEndpoints
 
         if (!TryGetRequiredQueryValue(query, "STYLE", out var styleValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "style", "STYLE parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "style", "STYLE parameter is required.");
         }
 
         if (!string.Equals(styleValue, "default", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "Style", "Only STYLE=default is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "Style", "Only STYLE=default is supported.");
         }
 
-        if (!TryValidateWmtsDimensionParameters(query, layer!, includeFeatureInfoParameters: false, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer!, includeFeatureInfoParameters: false, out var dimensionError))
         {
             return dimensionError;
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "format", "FORMAT parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "format", "FORMAT parameter is required.");
         }
 
         if (!string.Equals(formatValue, "image/png", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIXSET", out var tileMatrixSet))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
         }
 
         if (!string.Equals(tileMatrixSet, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileMatrixSet", "Only TILEMATRIXSET=WebMercatorQuad is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Only TILEMATRIXSET=WebMercatorQuad is supported.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIX", out var tileMatrixValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileMatrix", "TILEMATRIX parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrix", "TILEMATRIX parameter is required.");
         }
 
         if (!int.TryParse(tileMatrixValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileMatrix) ||
             tileMatrix < 0 ||
             tileMatrix > wmtsMaxZoom)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEROW", out var tileRowValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileRow", "TILEROW parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileRow", "TILEROW parameter is required.");
         }
 
         if (!int.TryParse(tileRowValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileRow) || tileRow < 0)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileRow", "Invalid TILEROW parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileRow", "Invalid TILEROW parameter.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILECOL", out var tileColValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileCol", "TILECOL parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileCol", "TILECOL parameter is required.");
         }
 
         if (!int.TryParse(tileColValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileCol) || tileCol < 0)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
         var maxTileIndex = (1L << tileMatrix) - 1;
         if (tileRow > maxTileIndex)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
         }
 
         if (tileCol > maxTileIndex)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
         }
 
         var tileMatrixLimitMax = GetWmtsTileMatrixLimitMax(tileMatrix);
         if (tileRow > tileMatrixLimitMax)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileRow", "TILEROW is outside the TileMatrixSetLimits for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the TileMatrixSetLimits for TILEMATRIX.");
         }
 
         if (tileCol > tileMatrixLimitMax)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileCol", "TILECOL is outside the TileMatrixSetLimits for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the TileMatrixSetLimits for TILEMATRIX.");
         }
 
         // Delegate to tile endpoint by setting route values.
@@ -574,7 +576,7 @@ internal static partial class MapServerEndpoints
         var version = GetQueryValue(query, "VERSION");
         if (string.IsNullOrWhiteSpace(version))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "MissingParameterValue",
                 "version",
                 "VERSION parameter is required.");
@@ -582,7 +584,7 @@ internal static partial class MapServerEndpoints
 
         if (!string.Equals(version, WmtsVersion, StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",
                 "version",
                 $"VERSION must be {WmtsVersion}.");
@@ -590,12 +592,12 @@ internal static partial class MapServerEndpoints
 
         if (!TryGetRequiredQueryValue(query, "LAYER", out var layerValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "layer", "LAYER parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "layer", "LAYER parameter is required.");
         }
 
         if (!TryResolveWmtsLayer(service, layerValue, out var layer))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "layer", "Invalid LAYER parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "layer", "Invalid LAYER parameter.");
         }
 
         var layerAccessError = AccessPolicyHelpers.RequireLayerAccess(context, layer!, service);
@@ -606,140 +608,140 @@ internal static partial class MapServerEndpoints
 
         if (!TryGetRequiredQueryValue(query, "STYLE", out var styleValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "style", "STYLE parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "style", "STYLE parameter is required.");
         }
 
         if (!string.Equals(styleValue, "default", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "style", "Only STYLE=default is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "style", "Only STYLE=default is supported.");
         }
 
         if (!TryGetRequiredQueryValue(query, "FORMAT", out var formatValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "format", "FORMAT parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "format", "FORMAT parameter is required.");
         }
 
         if (!string.Equals(formatValue, "image/png", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
         }
 
         if (!IsWmtsLayerQueryable(service, layer!))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "OperationNotSupported",
                 "GetFeatureInfo",
                 "GetFeatureInfo is not supported for this layer.",
                 StatusCodes.Status501NotImplemented);
         }
 
-        if (!TryValidateWmtsDimensionParameters(query, layer!, includeFeatureInfoParameters: true, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer!, includeFeatureInfoParameters: true, out var dimensionError))
         {
             return dimensionError;
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIXSET", out var tileMatrixSet))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrixSet", "TILEMATRIXSET parameter is required.");
         }
 
         if (!string.Equals(tileMatrixSet, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileMatrixSet", "Only TILEMATRIXSET=WebMercatorQuad is supported.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrixSet", "Only TILEMATRIXSET=WebMercatorQuad is supported.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEMATRIX", out var tileMatrixValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileMatrix", "TILEMATRIX parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileMatrix", "TILEMATRIX parameter is required.");
         }
 
         if (!int.TryParse(tileMatrixValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileMatrix) ||
             tileMatrix < 0 ||
             tileMatrix > wmtsMaxZoom)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileMatrix", "Invalid TILEMATRIX parameter.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILEROW", out var tileRowValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileRow", "TILEROW parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileRow", "TILEROW parameter is required.");
         }
 
         if (!int.TryParse(tileRowValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileRow) || tileRow < 0)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileRow", "Invalid TILEROW parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileRow", "Invalid TILEROW parameter.");
         }
 
         if (!TryGetRequiredQueryValue(query, "TILECOL", out var tileColValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "TileCol", "TILECOL parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "TileCol", "TILECOL parameter is required.");
         }
 
         if (!int.TryParse(tileColValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tileCol) || tileCol < 0)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "TileCol", "Invalid TILECOL parameter.");
         }
 
         var maxTileIndex = (1L << tileMatrix) - 1;
         if (tileRow > maxTileIndex)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the valid range for TILEMATRIX.");
         }
 
         if (tileCol > maxTileIndex)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the valid range for TILEMATRIX.");
         }
 
         var tileMatrixLimitMax = GetWmtsTileMatrixLimitMax(tileMatrix);
         if (tileRow > tileMatrixLimitMax)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileRow", "TILEROW is outside the TileMatrixSetLimits for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileRow", "TILEROW is outside the TileMatrixSetLimits for TILEMATRIX.");
         }
 
         if (tileCol > tileMatrixLimitMax)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "TileCol", "TILECOL is outside the TileMatrixSetLimits for TILEMATRIX.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "TileCol", "TILECOL is outside the TileMatrixSetLimits for TILEMATRIX.");
         }
 
         if (!TryGetRequiredQueryValue(query, "I", out var iValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "I", "I parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "I", "I parameter is required.");
         }
 
         if (!int.TryParse(iValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pixelI) || pixelI < 0)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "I", "I must be a non-negative integer.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "I", "I must be a non-negative integer.");
         }
 
         if (pixelI >= TileSize)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "I", $"I must be less than {TileSize}.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "I", $"I must be less than {TileSize}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "J", out var jValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "J", "J parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "J", "J parameter is required.");
         }
 
         if (!int.TryParse(jValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pixelJ) || pixelJ < 0)
         {
-            return CreateWmtsExceptionReport("InvalidParameterValue", "J", "J must be a non-negative integer.");
+            return CreateWmtsExceptionReport(context, "InvalidParameterValue", "J", "J must be a non-negative integer.");
         }
 
         if (pixelJ >= TileSize)
         {
-            return CreateWmtsExceptionReport("TileOutOfRange", "J", $"J must be less than {TileSize}.");
+            return CreateWmtsExceptionReport(context, "TileOutOfRange", "J", $"J must be less than {TileSize}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "INFOFORMAT", out var infoFormatValue))
         {
-            return CreateWmtsExceptionReport("MissingParameterValue", "InfoFormat", "INFOFORMAT parameter is required.");
+            return CreateWmtsExceptionReport(context, "MissingParameterValue", "InfoFormat", "INFOFORMAT parameter is required.");
         }
 
         if (!TryNormalizeFeatureInfoFormat(infoFormatValue, out var infoFormat))
         {
-            return CreateWmtsExceptionReport(
+            return CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",
                 "InfoFormat",
                 $"Unsupported INFOFORMAT. Supported values are {WmsPlainTextMimeType} and {WmsJsonMimeType}.");
@@ -753,7 +755,7 @@ internal static partial class MapServerEndpoints
                 !int.TryParse(featureCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureCount) ||
                 featureCount <= 0)
             {
-                return CreateWmtsExceptionReport("InvalidParameterValue", "FEATURE_COUNT", "FEATURE_COUNT must be a positive integer.");
+                return CreateWmtsExceptionReport(context, "InvalidParameterValue", "FEATURE_COUNT", "FEATURE_COUNT must be a positive integer.");
             }
         }
 
@@ -782,7 +784,7 @@ internal static partial class MapServerEndpoints
                 context.RequestAborted);
             if (!clickExtentTransform.IsSuccess)
             {
-                return CreateWmtsExceptionReport(
+                return CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     "TileMatrixSet",
                     clickExtentTransform.Error ?? "Invalid spatial reference.");
@@ -969,11 +971,22 @@ internal static partial class MapServerEndpoints
     }
 
     private static IResult CreateWmtsExceptionReport(
+        HttpContext? context,
         string code,
         string? locator,
         string message,
         int statusCode = StatusCodes.Status400BadRequest)
     {
+        if (context is not null)
+        {
+            context.RequestServices.GetService<RecentErrorBuffer>()?.Record(
+                context,
+                statusCode,
+                code,
+                message,
+                includeClientErrors: true);
+        }
+
         var xml = BuildWmtsExceptionReport(code, locator, message);
         return Results.Content(xml, WmtsMimeType, Encoding.UTF8, statusCode);
     }
@@ -1442,6 +1455,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryValidateWmtsDimensionParameters(
+        HttpContext context,
         IQueryCollection query,
         LayerDefinition layer,
         bool includeFeatureInfoParameters,
@@ -1465,7 +1479,7 @@ internal static partial class MapServerEndpoints
 
             if (!dimensionLookup.ContainsKey(key))
             {
-                errorResult = CreateWmtsExceptionReport(
+                errorResult = CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     key,
                     $"Unsupported parameter '{key}'.");
@@ -1479,7 +1493,7 @@ internal static partial class MapServerEndpoints
             {
                 if (string.IsNullOrWhiteSpace(dimension.DefaultValue))
                 {
-                    errorResult = CreateWmtsExceptionReport(
+                    errorResult = CreateWmtsExceptionReport(context,
                         "MissingParameterValue",
                         dimension.Identifier,
                         $"{dimension.Identifier} parameter is required.");
@@ -1492,7 +1506,7 @@ internal static partial class MapServerEndpoints
             var rawValue = GetQueryValue(query, dimension.Identifier);
             if (string.IsNullOrWhiteSpace(rawValue))
             {
-                errorResult = CreateWmtsExceptionReport(
+                errorResult = CreateWmtsExceptionReport(context,
                     "MissingParameterValue",
                     dimension.Identifier,
                     $"{dimension.Identifier} parameter value is required.");
@@ -1501,7 +1515,7 @@ internal static partial class MapServerEndpoints
 
             if (!TryResolveWmtsDimensionValue(dimension, rawValue, out _))
             {
-                errorResult = CreateWmtsExceptionReport(
+                errorResult = CreateWmtsExceptionReport(context,
                     "InvalidParameterValue",
                     dimension.Identifier,
                     $"Invalid value for {dimension.Identifier} parameter.");

@@ -13,14 +13,16 @@ public sealed class GeoServicesGeometry
     /// <summary>
     /// Indicates whether the geometry includes Z values
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasZ")]
-    public bool? HasZ { get; init; }
+    public bool HasZ { get; init; }
 
     /// <summary>
     /// Indicates whether the geometry includes M values
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasM")]
-    public bool? HasM { get; init; }
+    public bool HasM { get; init; }
 
     /// <summary>
     /// X coordinate (longitude)

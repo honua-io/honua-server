@@ -472,6 +472,45 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     /// <inheritdoc />
+    public async Task<RasterInfo?> GetPrimaryRasterInfoAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT id, layer_id, name, width, height, band_count, pixel_type, srid,
+                   ST_BandNoDataValue(raster, 1) AS nodata_value,
+                   ST_UpperLeftX(raster) AS upper_left_x,
+                   ST_ScaleX(raster) AS scale_x,
+                   ST_SkewX(raster) AS skew_x,
+                   ST_UpperLeftY(raster) AS upper_left_y,
+                   ST_SkewY(raster) AS skew_y,
+                   ST_ScaleY(raster) AS scale_y,
+                   ST_XMin(ST_Envelope(raster)) AS xmin,
+                   ST_YMin(ST_Envelope(raster)) AS ymin,
+                   ST_XMax(ST_Envelope(raster)) AS xmax,
+                   ST_YMax(ST_Envelope(raster)) AS ymax,
+                   created_at, updated_at
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId
+            ORDER BY created_at DESC
+            LIMIT 1
+            """;
+        AddParameter(command, "@layerId", layerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
+            return null;
+        }
+
+        var info = ReadRasterInfo(reader);
+        PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, info.Id, info.Width, info.Height);
+        return info;
+    }
+
+    /// <inheritdoc />
     public async Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

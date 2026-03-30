@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.OgcMaps.Handlers;
@@ -171,6 +172,25 @@ public class OgcMapsTileSetHandlerTests
         statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
+    [UnitTest]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSetsAsync_ServiceRestrictionOverridesPublicLayerAccess()
+    {
+        var layer = CreatePublicLayer();
+        var service = CreateRestrictedService(layer);
+        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
+            .Returns(layer);
+        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
+            .Returns([service]);
+
+        var context = CreateAnonymousOgcMapsContext();
+        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>();
+        var statusCodeResult = (IStatusCodeHttpResult)result;
+        statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
     private static LayerDefinition CreateTestLayer()
         => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
 
@@ -182,6 +202,33 @@ public class OgcMapsTileSetHandlerTests
                 AccessPolicy = new AccessPolicy
                 {
                     AllowAnonymous = false
+                }
+            }
+        };
+
+    private static LayerDefinition CreatePublicLayer()
+        => CreateTestLayer() with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowAnonymous = true
+                }
+            }
+        };
+
+    private static ServiceDefinition CreateRestrictedService(LayerDefinition layer)
+        => ServiceDefinition.CreateSingle(
+            "restricted-service",
+            layer,
+            SpatialReference.Create(layer.SpatialReference.Wkid)) with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowedRoles = ["service-reader"]
                 }
             }
         };

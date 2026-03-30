@@ -37,16 +37,16 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Whether returned geometries include Z values.
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasZ")]
-    public bool? HasZ { get; init; }
+    public bool HasZ { get; init; }
 
     /// <summary>
     /// Whether returned geometries include M values.
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasM")]
-    public bool? HasM { get; init; }
+    public bool HasM { get; init; }
 
     /// <summary>
     /// Object ID field name for the layer
@@ -67,7 +67,7 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     /// <summary>
     /// Extent returned by the query (when returnExtentOnly=true)
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ExtentInfo? Extent { get; init; }
 
     /// <summary>

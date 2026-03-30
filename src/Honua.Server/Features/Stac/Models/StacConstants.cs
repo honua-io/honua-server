@@ -71,7 +71,8 @@ internal static class StacConstants
 
         public static readonly HashSet<string> SearchGet = new(StringComparer.OrdinalIgnoreCase)
         {
-            "f", "limit", "offset", "bbox", "datetime", "collections", "ids"
+            "f", "limit", "offset", "bbox", "datetime", "collections", "ids",
+            "intersects", "fields", "sortby", "filter", "filter-lang", "filter-crs"
         };
     }
 }

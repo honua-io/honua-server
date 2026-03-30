@@ -95,6 +95,14 @@ public interface IRasterStore
     Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Retrieves the primary raster metadata for a layer.
+    /// </summary>
+    /// <param name="layerId">Layer identifier to query</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Most recent raster metadata for the layer, or null if none exists</returns>
+    Task<RasterInfo?> GetPrimaryRasterInfoAsync(int layerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists all rasters in a layer.
     /// </summary>
     /// <param name="layerId">Layer identifier to query</param>

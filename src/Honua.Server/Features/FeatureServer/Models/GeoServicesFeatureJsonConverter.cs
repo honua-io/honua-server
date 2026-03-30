@@ -53,7 +53,10 @@ internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoService
         writer.WriteStartObject();
 
         writer.WritePropertyName("attributes");
-        JsonSerializer.Serialize(writer, value.Attributes, _attributesTypeInfo);
+        JsonSerializer.Serialize(
+            writer,
+            GeoServicesValueNormalizer.NormalizeAttributes(value.Attributes),
+            _attributesTypeInfo);
 
         if (value.IncludeGeometry)
         {
