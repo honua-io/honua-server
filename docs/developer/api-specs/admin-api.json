@@ -963,6 +963,59 @@
         }
       }
     },
+    "/metadata/layers/{layerId}/suggest-style": {
+      "post": {
+        "tags": [
+          "Styles"
+        ],
+        "summary": "Suggest Layer Style",
+        "description": "Generate an advisory style suggestion for a layer based on data analysis. Community edition returns enhanced geometry-aware defaults. Pro edition attempts field-based classification with smart palette selection, falling back to enhanced geometry-aware defaults when no suitable classification field is available.",
+        "operationId": "suggestLayerStyle",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "description": "Layer ID",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StyleSuggestionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Style suggestion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseStyleSuggestionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "tags": [
@@ -4234,6 +4287,136 @@
           "success": { "type": "boolean" },
           "message": { "type": "string" },
           "data": { "$ref": "#/components/schemas/GitOpsChangeDiffResponse" }
+        }
+      },
+      "StyleSuggestionRequest": {
+        "type": "object",
+        "description": "Optional overrides for style suggestion generation.",
+        "properties": {
+          "preferredField": {
+            "type": "string",
+            "description": "Use this field for classification instead of auto-selection. If the field does not exist or is not eligible (e.g. geometry, binary, boolean), the server falls back to geometry-only defaults and includes the reason in the observations array."
+          },
+          "preferredMethod": {
+            "type": "string",
+            "description": "Classification method override. Supported values: EqualInterval, Quantile, NaturalBreaks, UniqueValue. Unrecognized values are ignored and the server auto-selects."
+          },
+          "preferredPalette": {
+            "type": "string",
+            "description": "Palette name override. Supported values: Viridis, CartoBold, RdBu. Unrecognized values are ignored and the server auto-selects."
+          },
+          "classCount": {
+            "type": "integer",
+            "description": "Number of classes to generate (default 5). Clamped to the range 2-12.",
+            "default": 5
+          }
+        }
+      },
+      "StyleSuggestionResponse": {
+        "type": "object",
+        "description": "Advisory style suggestion for a layer.",
+        "properties": {
+          "mapLibreStyle": {
+            "type": "object",
+            "description": "MapLibre v8 style document (ready to apply)."
+          },
+          "drawingInfo": {
+            "type": "object",
+            "description": "GeoServices drawingInfo JSON (ready to apply)."
+          },
+          "legend": {
+            "$ref": "#/components/schemas/StyleSuggestionLegend"
+          },
+          "suggestedField": {
+            "$ref": "#/components/schemas/StyleSuggestionFieldInfo"
+          },
+          "classificationMethod": {
+            "type": "string",
+            "description": "Classification method used (null for geometry-only defaults)."
+          },
+          "paletteName": {
+            "type": "string",
+            "description": "Name of the color palette used."
+          },
+          "observations": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Human-readable observations about data analysis."
+          },
+          "edition": {
+            "type": "string",
+            "description": "Edition that generated the suggestion."
+          }
+        }
+      },
+      "StyleSuggestionLegend": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Legend title."
+          },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StyleSuggestionLegendEntry" },
+            "description": "Ordered legend entries."
+          }
+        }
+      },
+      "StyleSuggestionLegendEntry": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Display label."
+          },
+          "color": {
+            "type": "string",
+            "description": "Hex color string (e.g. #2D69A5)."
+          },
+          "minValue": {
+            "type": "number",
+            "description": "Minimum value for ranged classes."
+          },
+          "maxValue": {
+            "type": "number",
+            "description": "Maximum value for ranged classes."
+          }
+        }
+      },
+      "StyleSuggestionFieldInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Field name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Field data type."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason this field was selected."
+          }
+        }
+      },
+      "ApiResponseStyleSuggestionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StyleSuggestionResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     }

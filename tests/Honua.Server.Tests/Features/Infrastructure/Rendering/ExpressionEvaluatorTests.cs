@@ -216,6 +216,49 @@ public class ExpressionEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_TypeofExpression_ReturnsNumber()
+    {
+        var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "value"]]""");
+        var props = Props(("value", 42.0));
+
+        var result = ExpressionEvaluator.Evaluate(expr, props);
+
+        result.Should().Be("number");
+    }
+
+    [UnitTest]
+    public void Evaluate_TypeofExpression_ReturnsString()
+    {
+        var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "value"]]""");
+        var props = Props(("value", "N/A"));
+
+        var result = ExpressionEvaluator.Evaluate(expr, props);
+
+        result.Should().Be("string");
+    }
+
+    [UnitTest]
+    public void Evaluate_TypeofExpression_ReturnsNull()
+    {
+        var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "missing"]]""");
+
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
+
+        result.Should().Be("null");
+    }
+
+    [UnitTest]
+    public void Evaluate_TypeofExpression_ReturnsBoolean()
+    {
+        var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "flag"]]""");
+        var props = Props(("flag", true));
+
+        var result = ExpressionEvaluator.Evaluate(expr, props);
+
+        result.Should().Be("boolean");
+    }
+
+    [UnitTest]
     public void ParseColor_HexColor_ReturnsCorrectColor()
     {
         var color = ExpressionEvaluator.ParseColor("#ff0000");

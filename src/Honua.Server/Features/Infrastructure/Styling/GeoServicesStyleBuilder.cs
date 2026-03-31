@@ -7,23 +7,6 @@ namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class GeoServicesStyleBuilder
 {
-    public static Dictionary<string, object?> BuildDefaultSymbol(GeometryType geometryType)
-    {
-        var stroke = new StyleColor(
-            (byte)StyleDefaults.DefaultStrokeColor[0],
-            (byte)StyleDefaults.DefaultStrokeColor[1],
-            (byte)StyleDefaults.DefaultStrokeColor[2],
-            (byte)StyleDefaults.DefaultStrokeColor[3]);
-
-        var fill = new StyleColor(
-            (byte)StyleDefaults.DefaultFillColor[0],
-            (byte)StyleDefaults.DefaultFillColor[1],
-            (byte)StyleDefaults.DefaultFillColor[2],
-            (byte)StyleDefaults.DefaultFillColor[3]);
-
-        return BuildSymbol(geometryType, fill, stroke, StyleDefaults.DefaultLineWidth, StyleDefaults.DefaultPointSize);
-    }
-
     public static Dictionary<string, object?> BuildSymbol(
         GeometryType geometryType,
         StyleColor fillColor,
@@ -56,6 +39,7 @@ internal static class GeoServicesStyleBuilder
                 };
             case GeometryType.Polygon:
             case GeometryType.MultiPolygon:
+            case GeometryType.GeometryCollection:
                 return new Dictionary<string, object?>
                 {
                     ["type"] = "esriSFS",

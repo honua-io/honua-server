@@ -47,17 +47,20 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Identity);
         categories.Should().Contain(FeatureCatalog.Categories.Caching);
         categories.Should().Contain(FeatureCatalog.Categories.Import);
+        categories.Should().Contain(FeatureCatalog.Categories.StaticMap);
+        categories.Should().Contain(FeatureCatalog.Categories.Styling);
     }
 
     [Fact]
-    public void All_CommunityEditionHasNoFeatures()
+    public void All_CommunityFeaturesAreExpected()
     {
-        // Community is the baseline — all gated features require Pro or higher
+        // Community features are explicitly tracked — adding one requires updating this test
         var communityFeatures = FeatureCatalog.All
             .Where(f => f.MinimumEdition == HonuaEdition.Community)
+            .Select(f => f.Key)
             .ToList();
 
-        communityFeatures.Should().BeEmpty("all features in the catalog are edition-gated");
+        communityFeatures.Should().BeEquivalentTo(["styling.defaults"]);
     }
 
     [Theory]

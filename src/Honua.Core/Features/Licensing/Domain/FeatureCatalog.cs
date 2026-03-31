@@ -48,6 +48,9 @@ public static class FeatureCatalog
 
         /// <summary>Static map image rendering features.</summary>
         public const string StaticMap = "StaticMap";
+
+        /// <summary>Styling and cartographic features.</summary>
+        public const string Styling = "Styling";
     }
 
     /// <summary>
@@ -128,5 +131,11 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Render static map images up to 4096x4096 pixels."),
         new("staticmap.rich-overlays", "Rich Static Map Overlays", Categories.StaticMap,
             HonuaEdition.Pro, "Render up to 100 markers and 500 path vertices on static maps."),
+
+        // Styling — Community
+        new("styling.defaults", "Smart Style Defaults", Categories.Styling,
+            HonuaEdition.Community, "Enhanced geometry-aware default styles for published layers."),
+        new("styling.auto-suggest", "Auto-Cartographic Styling", Categories.Styling,
+            HonuaEdition.Pro, "Style suggestions based on field analysis and classification."),
     ];
 }

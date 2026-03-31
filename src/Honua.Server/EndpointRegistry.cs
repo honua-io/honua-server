@@ -128,6 +128,7 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
+        new("POST", "/api/v1/admin/metadata/layers/{layerId}/suggest-style"),
         new("POST", "/api/v1/admin/gitops/watch"),
         new("PUT", "/api/v1/admin/gitops/watch"),
         new("GET", "/api/v1/admin/gitops/watch"),
