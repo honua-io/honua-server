@@ -135,8 +135,8 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         {
             if (geometryEnvelope is null || geometryEnvelope.Length < 4)
             {
-                // No geometry — pass through (non-spatial feature).
-                // This is safe: the feature has no geometry to exclude.
+                // Non-delete events without geometry cannot intersect a bbox.
+                return false;
             }
             else if (!EnvelopesIntersect(_bbox, geometryEnvelope))
             {

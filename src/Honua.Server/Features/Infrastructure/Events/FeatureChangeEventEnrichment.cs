@@ -62,7 +62,15 @@ internal static class FeatureChangeEventEnrichment
             return null;
         }
 
-        return JsonSerializer.Serialize(attributes, FeatureChangeEventEnrichmentJsonContext.Default.ImmutableDictionaryStringObject);
+        try
+        {
+            return JsonSerializer.Serialize(attributes, FeatureChangeEventEnrichmentJsonContext.Default.ImmutableDictionaryStringObject);
+        }
+        catch
+        {
+            // Unsupported runtime attribute value — skip enrichment rather than failing the write.
+            return null;
+        }
     }
 }
 
@@ -76,6 +84,8 @@ internal static class FeatureChangeEventEnrichment
     DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ImmutableDictionary<string, object?>))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(Dictionary<string, object?>))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(List<object?>))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(object[]))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(object))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(string))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
@@ -84,8 +94,13 @@ internal static class FeatureChangeEventEnrichment
 [System.Text.Json.Serialization.JsonSerializable(typeof(float))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(decimal))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(bool))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(byte[]))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(Guid))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(DateTime))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(DateTimeOffset))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(DateOnly))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TimeOnly))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(TimeSpan))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(JsonElement))]
 internal sealed partial class FeatureChangeEventEnrichmentJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {

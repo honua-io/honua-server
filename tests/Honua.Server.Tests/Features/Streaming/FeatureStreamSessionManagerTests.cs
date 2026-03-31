@@ -380,6 +380,36 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public void Broadcast_WithBboxFilter_DropsNonDeleteEventsWithoutGeometry()
+    {
+        var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
+        using var filtered = _manager.CreateSession("WebSocket", "bbox-null-geometry", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 1), geometryEnvelope: null));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 2), geometryEnvelope: [5d, 5d, 6d, 6d]));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(2L, msg.Envelope.Cursor);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public void Broadcast_WithBboxFilter_DeleteEventsWithoutGeometryStillPass()
+    {
+        var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
+        using var filtered = _manager.CreateSession("WebSocket", "bbox-delete-no-geometry", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1) with { Operation = "delete" },
+            geometryEnvelope: null));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(1L, msg.Envelope.Cursor);
+        Assert.Equal("delete", msg.Envelope.Operation);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
     public void Broadcast_WithAttributeFilter_OnlyDeliversMatchingEvents()
     {
         var filter = new StreamSubscriptionFilter(attributeFilter: new Cql2Parser().Parse("status = 'active'"));
