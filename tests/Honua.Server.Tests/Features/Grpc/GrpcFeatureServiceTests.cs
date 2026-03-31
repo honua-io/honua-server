@@ -17,6 +17,7 @@ using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Grpc;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -41,6 +42,7 @@ public sealed class GrpcFeatureServiceTests
     private readonly IStreamingFeatureStore _streamingStore = Substitute.For<IStreamingFeatureStore>();
     private readonly ICrsDetectionService _crsDetectionService = Substitute.For<ICrsDetectionService>();
     private readonly ICrsRegistry _crsRegistry = Substitute.For<ICrsRegistry>();
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = Substitute.For<IFeatureChangeEventPublisher>();
     private readonly HonuaFeatureService _sut;
 
     private static readonly LayerDefinition _testLayer = new(
@@ -70,6 +72,7 @@ public sealed class GrpcFeatureServiceTests
             _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            _featureChangeEventPublisher,
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance);
@@ -692,6 +695,7 @@ public sealed class GrpcFeatureServiceTests
             _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            _featureChangeEventPublisher,
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance);

@@ -49,6 +49,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// accumulates live events; the drain loop deduplicates using the replay cursor.
     /// </summary>
     public FeatureStreamSession CreateSession(string transport, string? clientLabel)
+        => CreateSession(transport, clientLabel, filter: null);
+
+    /// <summary>
+    /// Creates a new session with an optional subscription filter.
+    /// When a filter is specified, only events matching the filter criteria are delivered.
+    /// </summary>
+    public FeatureStreamSession CreateSession(string transport, string? clientLabel, FeatureStreamFilter? filter)
     {
         var opts = _options.Value;
         var id = Guid.NewGuid();
@@ -59,7 +66,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             SingleReader = true
         });
         var cts = new CancellationTokenSource();
-        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport);
+        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter);
         _sessions.TryAdd(id, entry);
 
         FeatureStreamLog.SessionCreated(_logger, id, transport);
@@ -113,13 +120,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// Fan-out a live event to all connected sessions. When a session's bounded channel
     /// is full: pre-drain overflows are silently dropped; post-drain overflows consume a
     /// grace window (equal to the inherited replay-era backlog depth) before triggering a
-    /// slow-consumer disconnect.
+    /// slow-consumer disconnect. Sessions with subscription filters only receive matching events.
     /// </summary>
-    public void Broadcast(FeatureStreamMessage message)
+    public int Broadcast(FeatureStreamMessage message)
     {
+        var delivered = 0;
         foreach (var (id, entry) in _sessions)
         {
             if (entry.Cts.IsCancellationRequested)
+            {
+                continue;
+            }
+
+            // Skip sessions whose filter does not match this event.
+            if (!message.IsHeartbeat && entry.Filter != null && !entry.Filter.Matches(message.Envelope))
             {
                 continue;
             }
@@ -145,9 +159,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
             else
             {
+                delivered++;
                 entry.UpdateLastQueuedCursor(message.Envelope.Cursor);
             }
         }
+
+        return delivered;
     }
 
     /// <summary>
@@ -232,7 +249,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             kvp.Value.ConnectedAt,
             kvp.Value.ClientLabel,
             kvp.Value.Transport,
-            kvp.Value.LastQueuedCursor)).ToArray();
+            kvp.Value.LastQueuedCursor,
+            kvp.Value.Filter)).ToArray();
     }
 
     public void Dispose()
@@ -257,7 +275,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             CancellationTokenSource cts,
             DateTimeOffset connectedAt,
             string? clientLabel,
-            string transport)
+            string transport,
+            FeatureStreamFilter? filter = null)
         {
             Id = id;
             Channel = channel;
@@ -265,6 +284,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ConnectedAt = connectedAt;
             ClientLabel = clientLabel;
             Transport = transport;
+            Filter = filter;
         }
 
         public Guid Id { get; }
@@ -273,6 +293,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public DateTimeOffset ConnectedAt { get; }
         public string? ClientLabel { get; }
         public string Transport { get; }
+        public FeatureStreamFilter? Filter { get; }
         public volatile bool DrainStarted;
         public long LastQueuedCursor => Interlocked.Read(ref _lastQueuedCursor);
 

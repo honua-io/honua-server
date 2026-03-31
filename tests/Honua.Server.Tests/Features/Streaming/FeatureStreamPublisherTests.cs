@@ -83,6 +83,7 @@ public sealed class FeatureStreamPublisherTests : IDisposable
     [UnitTest]
     public void ToEnvelope_MapsAllFields()
     {
+        var changedAttrs = new Dictionary<string, object?> { ["name"] = "Test Park", ["area"] = 42.5 };
         var evt = new FeatureChangeEvent
         {
             EventId = "evt-1",
@@ -93,7 +94,9 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             ObjectId = 7,
             Operation = "delete",
             Protocol = "ogc",
-            RequestId = "req-1"
+            RequestId = "req-1",
+            ChangedAttributes = changedAttrs,
+            GeometryChanged = true
         };
 
         var envelope = FeatureStreamPublisher.ToEnvelope(evt);
@@ -106,5 +109,36 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         Assert.Equal(evt.Operation, envelope.Operation);
         Assert.Equal(evt.Protocol, envelope.Protocol);
         Assert.Equal(evt.RequestId, envelope.RequestId);
+        Assert.Same(changedAttrs, envelope.ChangedAttributes);
+        Assert.True(envelope.GeometryChanged);
+    }
+
+    [UnitTest]
+    public async Task PublishAsync_WithChangedData_PersistsAndBroadcastsDelta()
+    {
+        using var session = _sessionManager.CreateSession("WebSocket", null);
+        var attrs = new Dictionary<string, object?> { ["status"] = "active" };
+
+        await _publisher.PublishAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "svc-delta",
+            LayerId = 2,
+            ObjectId = 99,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "req-delta-1",
+            ChangedAttributes = attrs,
+            GeometryChanged = true
+        });
+
+        var stored = await _store.QueryAsync(null, null, null, 10);
+        Assert.Single(stored);
+        Assert.NotNull(stored[0].ChangedAttributes);
+        Assert.Equal("active", stored[0].ChangedAttributes!["status"]);
+        Assert.True(stored[0].GeometryChanged);
+
+        Assert.True(session.Reader.TryRead(out var msg));
+        Assert.NotNull(msg.Envelope.ChangedAttributes);
+        Assert.True(msg.Envelope.GeometryChanged);
     }
 }

@@ -20,6 +20,13 @@ namespace Honua.Server.Features.Streaming;
 [JsonSerializable(typeof(FeatureStreamSessionResponse))]
 [JsonSerializable(typeof(FeatureStreamSessionResponse[]))]
 [JsonSerializable(typeof(ApiResponse<object>))]
+[JsonSerializable(typeof(Dictionary<string, object?>))]
+[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(bool))]
 internal sealed partial class FeatureStreamJsonContext : JsonSerializerContext
 {
 }
@@ -115,4 +122,14 @@ internal sealed class FeatureStreamSessionResponse
     /// Connection duration in seconds.
     /// </summary>
     public double DurationSeconds { get; init; }
+
+    /// <summary>
+    /// Service ID filter applied to this session, if any.
+    /// </summary>
+    public string? ServiceIdFilter { get; init; }
+
+    /// <summary>
+    /// Layer ID filter applied to this session, if any.
+    /// </summary>
+    public int[]? LayerIdFilter { get; init; }
 }

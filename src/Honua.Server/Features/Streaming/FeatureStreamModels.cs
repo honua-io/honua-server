@@ -53,6 +53,53 @@ internal sealed record FeatureStreamEnvelope
     /// Correlation request identifier.
     /// </summary>
     public required string RequestId { get; init; }
+
+    /// <summary>
+    /// Optional. Changed attribute values when available. Null when the originating
+    /// protocol does not provide attribute-level change tracking, or for deletes.
+    /// </summary>
+    public Dictionary<string, object?>? ChangedAttributes { get; init; }
+
+    /// <summary>
+    /// Whether the feature's geometry was modified by this operation.
+    /// Best-effort: may default to false when the originating protocol cannot determine this.
+    /// </summary>
+    public bool GeometryChanged { get; init; }
+}
+
+/// <summary>
+/// Subscription filter applied to a streaming session.
+/// When set, only events matching the criteria are delivered.
+/// </summary>
+internal sealed class FeatureStreamFilter
+{
+    /// <summary>
+    /// If set, only events for this service are delivered.
+    /// </summary>
+    public string? ServiceId { get; init; }
+
+    /// <summary>
+    /// If set, only events for these layer IDs are delivered.
+    /// </summary>
+    public HashSet<int>? LayerIds { get; init; }
+
+    /// <summary>
+    /// Returns true if the given envelope matches this filter.
+    /// </summary>
+    public bool Matches(FeatureStreamEnvelope envelope)
+    {
+        if (ServiceId != null && !string.Equals(envelope.ServiceId, ServiceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (LayerIds != null && !LayerIds.Contains(envelope.LayerId))
+        {
+            return false;
+        }
+
+        return true;
+    }
 }
 
 /// <summary>
@@ -63,7 +110,8 @@ internal sealed record FeatureStreamSessionInfo(
     DateTimeOffset ConnectedAt,
     string? ClientLabel,
     string Transport,
-    long LastQueuedCursor);
+    long LastQueuedCursor,
+    FeatureStreamFilter? Filter = null);
 
 /// <summary>
 /// Disconnect reason for feature-stream sessions.

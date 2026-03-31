@@ -35,7 +35,9 @@ internal static class FeatureStreamEndpoints
             .WithDisplayName("Stream Feature Changes")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithDescription("Opens a WebSocket or SSE stream of real-time feature-change events. " +
-                             "WebSocket: send Upgrade header. SSE: send Accept: text/event-stream.")
+                             "WebSocket: send Upgrade header. SSE: send Accept: text/event-stream. " +
+                             "Query params: cursor (resume from cursor), clientLabel, " +
+                             "serviceId (filter by service), layerIds (comma-separated layer ID filter).")
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         // Admin endpoints for session visibility
@@ -84,6 +86,35 @@ internal static class FeatureStreamEndpoints
             "WebSocket upgrade or Accept: text/event-stream header required.");
     }
 
+    private static FeatureStreamFilter? ParseFilter(HttpContext context)
+    {
+        var serviceId = NullIfEmpty(context.Request.Query["serviceId"].ToString());
+        var layerIdsParam = NullIfEmpty(context.Request.Query["layerIds"].ToString());
+
+        if (serviceId == null && layerIdsParam == null)
+        {
+            return null;
+        }
+
+        HashSet<int>? layerIds = null;
+        if (layerIdsParam != null)
+        {
+            layerIds = [];
+            foreach (var part in layerIdsParam.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(part, CultureInfo.InvariantCulture, out var id))
+                {
+                    layerIds.Add(id);
+                }
+            }
+
+            // An empty set (all values were non-numeric) means "no valid layers
+            // requested" and will match nothing, preventing accidental stream widening.
+        }
+
+        return new FeatureStreamFilter { ServiceId = serviceId, LayerIds = layerIds };
+    }
+
     private static async Task HandleWebSocketStream(
         FeatureStreamSessionManager sessionManager,
         IFeatureChangeEventStore eventStore,
@@ -96,8 +127,9 @@ internal static class FeatureStreamEndpoints
         var clientLabel = context.Request.Query["clientLabel"].ToString();
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
+        var filter = ParseFilter(context);
 
-        using var session = sessionManager.CreateSession(WebSocketTransport, NullIfEmpty(clientLabel));
+        using var session = sessionManager.CreateSession(WebSocketTransport, NullIfEmpty(clientLabel), filter);
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
@@ -112,11 +144,11 @@ internal static class FeatureStreamEndpoints
         {
             try
             {
-                replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, cursor!.Value, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, cursor!.Value, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
-                replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
@@ -156,7 +188,7 @@ internal static class FeatureStreamEndpoints
                     while (session.Reader.TryRead(out _)) { }
 
                     previousCursor = replayCursor;
-                    replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                    replayCursor = await ReplayToWebSocketAsync(webSocket, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
                 } while (replayCursor > previousCursor || session.Reader.TryPeek(out _));
             }
         }
@@ -189,7 +221,7 @@ internal static class FeatureStreamEndpoints
                         while (session.Reader.TryRead(out _)) { }
 
                         long prev = cursor;
-                        cursor = await ReplayToWebSocketAsync(webSocket, eventStore, cursor, options.ReplayBatchSize, logger, session.SessionId, ct).ConfigureAwait(false);
+                        cursor = await ReplayToWebSocketAsync(webSocket, eventStore, cursor, options.ReplayBatchSize, logger, session.SessionId, filter, ct).ConfigureAwait(false);
                         if (cursor > prev)
                         {
                             progress = true;
@@ -338,7 +370,8 @@ internal static class FeatureStreamEndpoints
             }
         }
 
-        using var session = sessionManager.CreateSession(SseTransport, NullIfEmpty(clientLabel));
+        var filter = ParseFilter(context);
+        using var session = sessionManager.CreateSession(SseTransport, NullIfEmpty(clientLabel), filter);
 
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted, session.DisconnectToken);
@@ -353,11 +386,11 @@ internal static class FeatureStreamEndpoints
         {
             try
             {
-                replayCursor = await ReplayToSseAsync(context.Response, eventStore, cursor!.Value, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                replayCursor = await ReplayToSseAsync(context.Response, eventStore, cursor!.Value, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
 
                 // Catch-up: replay events published during the main replay window that
                 // were silently dropped from the bounded channel pre-drain.
-                replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
             {
@@ -400,7 +433,7 @@ internal static class FeatureStreamEndpoints
                     while (session.Reader.TryRead(out _)) { }
 
                     previousCursor = replayCursor;
-                    replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                    replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
                 } while (replayCursor > previousCursor || session.Reader.TryPeek(out _));
             }
 
@@ -426,7 +459,7 @@ internal static class FeatureStreamEndpoints
                         while (session.Reader.TryRead(out _)) { }
 
                         long prev = replayCursor;
-                        replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token).ConfigureAwait(false);
+                        replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, filter, linkedCts.Token).ConfigureAwait(false);
                         if (replayCursor > prev)
                         {
                             progress = true;
@@ -489,6 +522,7 @@ internal static class FeatureStreamEndpoints
         int batchSize,
         ILogger logger,
         Guid sessionId,
+        FeatureStreamFilter? filter,
         CancellationToken cancellationToken)
     {
         var cursor = fromCursor;
@@ -505,9 +539,15 @@ internal static class FeatureStreamEndpoints
             foreach (var evt in events)
             {
                 var envelope = FeatureStreamPublisher.ToEnvelope(evt);
+                cursor = evt.Cursor;
+
+                if (filter != null && !filter.Matches(envelope))
+                {
+                    continue;
+                }
+
                 var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
                 await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
-                cursor = evt.Cursor;
             }
 
             if (events.Count < batchSize)
@@ -526,6 +566,7 @@ internal static class FeatureStreamEndpoints
         int batchSize,
         ILogger logger,
         Guid sessionId,
+        FeatureStreamFilter? filter,
         CancellationToken cancellationToken)
     {
         var cursor = fromCursor;
@@ -542,6 +583,13 @@ internal static class FeatureStreamEndpoints
             foreach (var evt in events)
             {
                 var envelope = FeatureStreamPublisher.ToEnvelope(evt);
+                cursor = evt.Cursor;
+
+                if (filter != null && !filter.Matches(envelope))
+                {
+                    continue;
+                }
+
                 var json = JsonSerializer.Serialize(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
                 await response.WriteAsync(
                     string.Concat(
@@ -550,7 +598,6 @@ internal static class FeatureStreamEndpoints
                         "data: ", json, "\n\n"),
                     cancellationToken).ConfigureAwait(false);
                 await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
-                cursor = evt.Cursor;
             }
 
             if (events.Count < batchSize)
@@ -576,7 +623,9 @@ internal static class FeatureStreamEndpoints
             ClientLabel = s.ClientLabel,
             Transport = s.Transport,
             LastQueuedCursor = s.LastQueuedCursor,
-            DurationSeconds = (now - s.ConnectedAt).TotalSeconds
+            DurationSeconds = (now - s.ConnectedAt).TotalSeconds,
+            ServiceIdFilter = s.Filter?.ServiceId,
+            LayerIdFilter = s.Filter?.LayerIds?.ToArray()
         }).ToArray();
 
         var wsSessions = sessionResponses.Count(s => s.Transport == WebSocketTransport);

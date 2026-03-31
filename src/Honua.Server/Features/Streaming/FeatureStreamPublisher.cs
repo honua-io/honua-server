@@ -38,9 +38,9 @@ internal sealed partial class FeatureStreamPublisher(
 
         // Fan out to live streaming sessions after durable append.
         var envelope = ToEnvelope(persisted);
-        _sessionManager.Broadcast(FeatureStreamMessage.Data(envelope));
+        var delivered = _sessionManager.Broadcast(FeatureStreamMessage.Data(envelope));
 
-        FeatureStreamLog.EventBroadcast(_logger, _sessionManager.SessionCount, persisted.Cursor);
+        FeatureStreamLog.EventBroadcast(_logger, delivered, persisted.Cursor);
     }
 
     internal static FeatureStreamEnvelope ToEnvelope(FeatureChangeEvent e) => new()
@@ -53,7 +53,9 @@ internal sealed partial class FeatureStreamPublisher(
         ObjectId = e.ObjectId,
         Operation = e.Operation,
         Protocol = e.Protocol,
-        RequestId = e.RequestId
+        RequestId = e.RequestId,
+        ChangedAttributes = e.ChangedAttributes,
+        GeometryChanged = e.GeometryChanged
     };
 
     [LoggerMessage(EventId = 5100, Level = LogLevel.Warning, Message = "Failed to publish feature-change event to store.")]
