@@ -42,6 +42,7 @@ public sealed class VerticalSliceIsolationTests
         "HealthCheck",
         "Stac",
         "Streaming",
+        "CloudCog",
         "Infrastructure", // Infrastructure is allowed to be referenced by others
         "StaticMap"
     };

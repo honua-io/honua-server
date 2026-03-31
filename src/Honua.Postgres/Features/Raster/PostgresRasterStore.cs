@@ -17,7 +17,7 @@ namespace Honua.Postgres.Features.Raster;
 /// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
-    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
@@ -142,6 +142,18 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
         }
 
+        // COG export: use creation options for proper internal tiling.
+        // If the COG GDAL driver is unavailable, fall back to GTiff with COG-compatible options.
+        var creationOptionsClause = "";
+        var effectiveFormat = formatName;
+        const int exportBlockSize = 512;
+        if (formatName == "COG")
+        {
+            (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
+                connection, blockSize: exportBlockSize, layerId, rasterId,
+                includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH transformed AS (
@@ -149,7 +161,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id = @rasterId
             )
-            SELECT ST_AsGDALRaster(rast, '{formatName}') AS data,
+            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
@@ -311,6 +323,16 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
 
+        // COG driver check: same fallback as ExportImageAsync
+        var effectiveTileFormat = formatName;
+        var tileCreationOptions = "";
+        if (formatName == "COG")
+        {
+            (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
+                connection, blockSize: 256, layerId, rasterId,
+                includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
+        }
+
         await using var dynCommand = connection.CreateCommand();
         dynCommand.CommandText = $"""
             WITH tile_bounds AS (
@@ -321,7 +343,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                     ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster))),
                     256, 256
                 ),
-                '{formatName}'
+                '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM {_rasterDataTable}, tile_bounds tb
             WHERE layer_id = @layerId AND id = @rasterId
@@ -609,6 +631,57 @@ internal sealed class PostgresRasterStore : IRasterStore
             CreatedAt = reader.GetDateTime(createdAtOrd),
             ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
         };
+    }
+
+    // GDAL driver availability is static for the PostGIS process lifetime.
+    // Cache per driver name to avoid querying ST_GDALDrivers() on every export.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _gdalDriverCache = new();
+
+    /// <summary>
+    /// Resolves the effective GDAL format and creation options for COG output.
+    /// Falls back to GTiff with COG-compatible options if the native COG driver is unavailable.
+    /// </summary>
+    private async Task<(string EffectiveFormat, string CreationOptionsClause)> ResolveCogOptionsAsync(
+        DbConnection connection,
+        int blockSize,
+        int layerId,
+        long rasterId,
+        bool includeOverviewResampling,
+        CancellationToken cancellationToken)
+    {
+        var hasCogDriver = await CheckGdalDriverAsync(connection, "COG", cancellationToken).ConfigureAwait(false);
+        if (hasCogDriver)
+        {
+            var options = $"'COMPRESS=DEFLATE', 'BLOCKSIZE={blockSize}'";
+            if (includeOverviewResampling)
+            {
+                options += ", 'OVERVIEW_RESAMPLING=NEAREST'";
+            }
+
+            return ("COG", $", ARRAY[{options}]");
+        }
+
+        PostgresRasterLog.CogDriverFallback(_logger, layerId, rasterId);
+        return ("GTiff", $", ARRAY['TILED=YES', 'COMPRESS=DEFLATE', 'BLOCKXSIZE={blockSize}', 'BLOCKYSIZE={blockSize}']");
+    }
+
+    private static async Task<bool> CheckGdalDriverAsync(
+        DbConnection connection,
+        string driverName,
+        CancellationToken cancellationToken)
+    {
+        if (_gdalDriverCache.TryGetValue(driverName, out var cached))
+        {
+            return cached;
+        }
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM ST_GDALDrivers() WHERE short_name = @driver LIMIT 1";
+        AddParameter(cmd, "@driver", driverName);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var available = result != null;
+        _gdalDriverCache.TryAdd(driverName, available);
+        return available;
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

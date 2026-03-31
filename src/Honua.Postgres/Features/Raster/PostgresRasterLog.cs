@@ -88,4 +88,10 @@ internal static partial class PostgresRasterLog
         Level = LogLevel.Warning,
         Message = "Raster operation warning in {MethodName}: {Detail}")]
     public static partial void RasterOperationWarning(ILogger logger, string methodName, string detail);
+
+    [LoggerMessage(
+        EventId = 7813,
+        Level = LogLevel.Warning,
+        Message = "COG GDAL driver not available for layer {LayerId}, raster {RasterId}. Falling back to GTiff with COG-compatible options (TILED=YES, COMPRESS=DEFLATE)")]
+    public static partial void CogDriverFallback(ILogger logger, int layerId, long rasterId);
 }

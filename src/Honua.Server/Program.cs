@@ -22,6 +22,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.CloudCog;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Infrastructure.ControlPlane;
@@ -255,6 +256,9 @@ ConfigureCaching(builder.Services, builder.Configuration);
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
+
+// Configure cloud COG services (range readers, metadata parser, tile resolver)
+builder.Services.AddCloudCogServices(builder.Configuration);
 
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(
@@ -562,7 +566,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Server.Features.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Server.Features.Export.ExportJsonContext.Default,
-        Honua.Server.Features.Stac.StacJsonContext.Default);
+        Honua.Server.Features.Stac.StacJsonContext.Default,
+        Honua.Server.Features.CloudCog.CloudCogJsonContext.Default);
 });
 
 // Add comprehensive IOptions configuration validation
@@ -841,6 +846,9 @@ app.MapFeatureOverviewEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+
+// Configure cloud COG admin endpoints
+app.MapCloudCogEndpoints();
 
 // Configure control plane IAM endpoints (#511)
 app.MapLicenseEndpoints();

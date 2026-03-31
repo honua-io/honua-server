@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Core.Features.Infrastructure.Domain;
 
 /// <summary>
 /// Supported cloud storage providers for file storage operations
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<CloudStorageProvider>))]
 public enum CloudStorageProvider
 {
     /// <summary>
@@ -21,5 +24,10 @@ public enum CloudStorageProvider
     /// <summary>
     /// Microsoft Azure Blob Storage
     /// </summary>
-    AzureBlob = 2
+    AzureBlob = 2,
+
+    /// <summary>
+    /// Google Cloud Storage
+    /// </summary>
+    GoogleCloudStorage = 3
 }
