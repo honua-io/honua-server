@@ -8,6 +8,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.CloudCog.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Server.Features.CloudCog;
@@ -56,7 +57,7 @@ internal static class CloudCogEndpoints
 
     private static async Task<IResult> HandleRegister(
         RegisterCloudCogRequest request,
-        ICloudCogStore store,
+        [FromServices] ICloudCogStore store,
         ILogger<CloudCogEndpointsLog> logger,
         CancellationToken cancellationToken)
     {
@@ -92,7 +93,7 @@ internal static class CloudCogEndpoints
     }
 
     private static async Task<IResult> HandleList(
-        ICloudCogStore store,
+        [FromServices] ICloudCogStore store,
         ILogger<CloudCogEndpointsLog> logger,
         int? layerId = null,
         CancellationToken cancellationToken = default)
@@ -115,7 +116,7 @@ internal static class CloudCogEndpoints
 
     private static async Task<IResult> HandleGet(
         long id,
-        ICloudCogStore store,
+        [FromServices] ICloudCogStore store,
         CancellationToken cancellationToken)
     {
         var registration = await store.GetAsync(id, cancellationToken);
@@ -129,7 +130,7 @@ internal static class CloudCogEndpoints
 
     private static async Task<IResult> HandleDelete(
         long id,
-        ICloudCogStore store,
+        [FromServices] ICloudCogStore store,
         IMemoryCache cache,
         ILogger<CloudCogEndpointsLog> logger,
         CancellationToken cancellationToken)
@@ -148,9 +149,9 @@ internal static class CloudCogEndpoints
     private static async Task<IResult> HandleRefresh(
         long id,
         HttpContext context,
-        ICloudCogStore store,
-        IEnumerable<ICloudRangeReader> rangeReaders,
-        ICogMetadataReader metadataReader,
+        [FromServices] ICloudCogStore store,
+        [FromServices] IEnumerable<ICloudRangeReader> rangeReaders,
+        [FromServices] ICogMetadataReader metadataReader,
         IMemoryCache cache,
         ILogger<CloudCogEndpointsLog> logger,
         CancellationToken cancellationToken)
