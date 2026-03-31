@@ -12,8 +12,8 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.Stac.Models;
-using Honua.Server.Features.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Server.Features.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 

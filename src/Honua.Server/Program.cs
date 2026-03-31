@@ -1152,9 +1152,15 @@ async Task RunPostGisPreflightCheckAsync()
         return;
     }
 
+    var checker = app.Services.GetService<IDatabaseCompatibilityChecker>();
+    if (checker is null)
+    {
+        Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckSkipped(app.Logger);
+        return;
+    }
+
     Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
 
-    var checker = app.Services.GetRequiredService<IDatabaseCompatibilityChecker>();
     var result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
     compatibilityState.SetResult(result);
 

@@ -312,6 +312,16 @@ internal static partial class Log
         Message = "PostGIS preflight check failed: {ErrorMessage}. Continuing in Development mode.")]
     public static partial void PostGisPreflightCheckFailedDevelopment(ILogger logger, string errorMessage);
 
+    /// <summary>
+    /// Logs when the PostGIS preflight check is skipped because no compatibility checker is registered.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    [LoggerMessage(
+        EventId = 4058,
+        Level = LogLevel.Information,
+        Message = "PostGIS preflight check skipped: no database compatibility checker is registered.")]
+    public static partial void PostGisPreflightCheckSkipped(ILogger logger);
+
     #endregion
 
     #region Tracing Operations (6000-6999)
