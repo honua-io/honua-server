@@ -21,6 +21,18 @@ internal sealed record FeatureChangeEvent
     public required string Operation { get; init; }
     public required string Protocol { get; init; }
     public required string RequestId { get; init; }
+
+    /// <summary>
+    /// Optional. Changed attribute values when available. Null when the originating
+    /// protocol does not provide attribute-level change tracking, or for deletes.
+    /// </summary>
+    public Dictionary<string, object?>? ChangedAttributes { get; init; }
+
+    /// <summary>
+    /// Whether the feature's geometry was modified by this operation.
+    /// Best-effort: may default to false when the originating protocol cannot determine this.
+    /// </summary>
+    public bool GeometryChanged { get; init; }
 }
 
 /// <summary>
@@ -35,6 +47,18 @@ internal sealed record FeatureChangeEventRequest
     public required string Protocol { get; init; }
     public required string RequestId { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
+
+    /// <summary>
+    /// Optional. Changed attribute values when available. Null when the originating
+    /// protocol does not provide attribute-level change tracking, or for deletes.
+    /// </summary>
+    public Dictionary<string, object?>? ChangedAttributes { get; init; }
+
+    /// <summary>
+    /// Whether the feature's geometry was modified by this operation.
+    /// Best-effort: may default to false when the originating protocol cannot determine this.
+    /// </summary>
+    public bool GeometryChanged { get; init; }
 }
 
 /// <summary>

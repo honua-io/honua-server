@@ -307,12 +307,106 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.Equal(11L, delivered[0].Envelope.Cursor);
     }
 
-    private static FeatureStreamEnvelope CreateEnvelope(long cursor) => new()
+    [UnitTest]
+    public void Broadcast_WithLayerFilter_OnlyDeliversMatchingEvents()
+    {
+        var filter = new FeatureStreamFilter { LayerIds = [1, 2] };
+        using var filtered = _manager.CreateSession("WebSocket", "filtered", filter);
+        using var unfiltered = _manager.CreateSession("WebSocket", "unfiltered");
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 1, layerId: 0)));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 2, layerId: 1)));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 3, layerId: 2)));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 4, layerId: 3)));
+
+        // Filtered session should only get layer 1 and 2.
+        var filteredMessages = new List<FeatureStreamMessage>();
+        while (filtered.Reader.TryRead(out var msg))
+        {
+            filteredMessages.Add(msg);
+        }
+
+        Assert.Equal(2, filteredMessages.Count);
+        Assert.Equal(1, filteredMessages[0].Envelope.LayerId);
+        Assert.Equal(2, filteredMessages[1].Envelope.LayerId);
+
+        // Unfiltered session should get all 4.
+        var unfilteredCount = 0;
+        while (unfiltered.Reader.TryRead(out _))
+        {
+            unfilteredCount++;
+        }
+
+        Assert.Equal(4, unfilteredCount);
+    }
+
+    [UnitTest]
+    public void Broadcast_WithServiceFilter_OnlyDeliversMatchingEvents()
+    {
+        var filter = new FeatureStreamFilter { ServiceId = "target-svc" };
+        using var filtered = _manager.CreateSession("WebSocket", "svc-filtered", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelopeForService(cursor: 1, serviceId: "other-svc")));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelopeForService(cursor: 2, serviceId: "target-svc")));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelopeForService(cursor: 3, serviceId: "target-svc")));
+
+        var count = 0;
+        while (filtered.Reader.TryRead(out var msg))
+        {
+            Assert.Equal("target-svc", msg.Envelope.ServiceId);
+            count++;
+        }
+
+        Assert.Equal(2, count);
+    }
+
+    [UnitTest]
+    public void Broadcast_WithEmptyLayerFilter_MatchesNothing()
+    {
+        // Simulates malformed layerIds (e.g. ?layerIds=abc) where no valid IDs were parsed.
+        var filter = new FeatureStreamFilter { LayerIds = [] };
+        using var filtered = _manager.CreateSession("WebSocket", "empty-filter", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 1, layerId: 0)));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 2, layerId: 1)));
+
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public void Broadcast_HeartbeatBypassesFilter()
+    {
+        var filter = new FeatureStreamFilter { LayerIds = [99] };
+        using var filtered = _manager.CreateSession("WebSocket", "hb-filter", filter);
+
+        // Heartbeats should always be delivered regardless of filter.
+        _manager.BroadcastHeartbeat();
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.True(msg.IsHeartbeat);
+    }
+
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor) => CreateEnvelope(cursor, layerId: 0);
+
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId) => new()
     {
         EventId = Guid.NewGuid().ToString(),
         Cursor = cursor,
         Timestamp = DateTimeOffset.UtcNow,
         ServiceId = "test-svc",
+        LayerId = layerId,
+        ObjectId = 1,
+        Operation = "create",
+        Protocol = "rest",
+        RequestId = "req-1"
+    };
+
+    private static FeatureStreamEnvelope CreateEnvelopeForService(long cursor, string serviceId) => new()
+    {
+        EventId = Guid.NewGuid().ToString(),
+        Cursor = cursor,
+        Timestamp = DateTimeOffset.UtcNow,
+        ServiceId = serviceId,
         LayerId = 0,
         ObjectId = 1,
         Operation = "create",

@@ -56,6 +56,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     normalizedProtocol,
                     normalizedRequestId,
                     request.Timestamp,
+                    request.ChangedAttributes,
+                    request.GeometryChanged,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -70,6 +72,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     normalizedProtocol,
                     normalizedRequestId,
                     request.Timestamp,
+                    request.ChangedAttributes,
+                    request.GeometryChanged,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -85,7 +89,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 normalizedOperation,
                 normalizedProtocol,
                 normalizedRequestId,
-                request.Timestamp);
+                request.Timestamp,
+                request.ChangedAttributes,
+                request.GeometryChanged);
 
             _events.Add(created);
             TrimIfNeeded();
@@ -137,10 +143,12 @@ internal sealed class InMemoryFeatureChangeEventStore(
         string protocol,
         string requestId,
         DateTimeOffset? timestamp,
+        Dictionary<string, object?>? changedAttributes,
+        bool geometryChanged,
         CancellationToken cancellationToken)
     {
         var cursor = (long)await _redisDb!.StringIncrementAsync(CursorKey).ConfigureAwait(false);
-        var created = CreateEvent(cursor, serviceId, layerId, objectId, operation, protocol, requestId, timestamp);
+        var created = CreateEvent(cursor, serviceId, layerId, objectId, operation, protocol, requestId, timestamp, changedAttributes, geometryChanged);
         var eventKey = GetEventKey(cursor);
         var eventJson = JsonSerializer.Serialize(created, FeatureChangeEventsJsonContext.Default.FeatureChangeEvent);
 
@@ -158,6 +166,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
         string protocol,
         string requestId,
         DateTimeOffset? timestamp,
+        Dictionary<string, object?>? changedAttributes,
+        bool geometryChanged,
         CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -165,7 +175,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
         {
             var cursors = await ReadCachedIndexAsync(cancellationToken).ConfigureAwait(false);
             var cursor = await ReadCachedCursorAsync(cancellationToken).ConfigureAwait(false) + 1;
-            var created = CreateEvent(cursor, serviceId, layerId, objectId, operation, protocol, requestId, timestamp);
+            var created = CreateEvent(cursor, serviceId, layerId, objectId, operation, protocol, requestId, timestamp, changedAttributes, geometryChanged);
             cursors.Add(cursor);
 
             while (cursors.Count > _maxRetained)
@@ -350,7 +360,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
         string operation,
         string protocol,
         string requestId,
-        DateTimeOffset? timestamp)
+        DateTimeOffset? timestamp,
+        Dictionary<string, object?>? changedAttributes = null,
+        bool geometryChanged = false)
         => new()
         {
             EventId = Guid.NewGuid().ToString("N"),
@@ -361,7 +373,9 @@ internal sealed class InMemoryFeatureChangeEventStore(
             ObjectId = objectId,
             Operation = operation,
             Protocol = protocol,
-            RequestId = requestId
+            RequestId = requestId,
+            ChangedAttributes = changedAttributes,
+            GeometryChanged = geometryChanged
         };
 
     private void TrimIfNeeded()

@@ -10,6 +10,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -32,6 +33,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly ICommonQueryValidator _queryValidator;
     private readonly SpatialReferenceResolver _spatialReferenceResolver;
+    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher;
     private readonly ILogger<HonuaFeatureService> _logger;
     private readonly GeometryLimits _geometryLimits;
     private readonly int _streamBatchSize;
@@ -43,6 +45,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IStreamingFeatureStore streamingFeatureStore,
         ICommonQueryValidator queryValidator,
         SpatialReferenceResolver spatialReferenceResolver,
+        IFeatureChangeEventPublisher featureChangeEventPublisher,
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
         ILogger<HonuaFeatureService> logger)
@@ -53,6 +56,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _streamingFeatureStore = streamingFeatureStore;
         _queryValidator = queryValidator;
         _spatialReferenceResolver = spatialReferenceResolver;
+        _featureChangeEventPublisher = featureChangeEventPublisher;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
@@ -259,7 +263,84 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             editBatch,
             context.CancellationToken).ConfigureAwait(false);
 
+        await PublishFeatureChangeEventsAsync(
+            request.ServiceId ?? "unknown",
+            request.LayerId,
+            editBatch,
+            result,
+            context).ConfigureAwait(false);
+
         return GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+    }
+
+    private async Task PublishFeatureChangeEventsAsync(
+        string serviceId,
+        int layerId,
+        FeatureEditBatch editBatch,
+        FeatureEditResult editResult,
+        ServerCallContext context)
+    {
+        var requestId = context.GetHttpContext().TraceIdentifier;
+
+        for (var i = 0; i < editResult.CreateResults.Length; i++)
+        {
+            var r = editResult.CreateResults[i];
+            if (r.IsSuccess && r.ObjectId.HasValue)
+            {
+                var hasGeometry = i < editBatch.Creates.Length && editBatch.Creates[i].Geometry != null;
+                await _featureChangeEventPublisher.PublishAsync(
+                    new FeatureChangeEventRequest
+                    {
+                        ServiceId = serviceId,
+                        LayerId = layerId,
+                        ObjectId = r.ObjectId.Value,
+                        Operation = "create",
+                        Protocol = HonuaTelemetry.Protocols.Grpc,
+                        RequestId = requestId,
+                        GeometryChanged = hasGeometry
+                    },
+                    context.CancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        for (var i = 0; i < editResult.UpdateResults.Length; i++)
+        {
+            var r = editResult.UpdateResults[i];
+            if (r.IsSuccess && r.ObjectId.HasValue)
+            {
+                var hasGeometry = i < editBatch.Updates.Length && editBatch.Updates[i].Geometry != null;
+                await _featureChangeEventPublisher.PublishAsync(
+                    new FeatureChangeEventRequest
+                    {
+                        ServiceId = serviceId,
+                        LayerId = layerId,
+                        ObjectId = r.ObjectId.Value,
+                        Operation = "update",
+                        Protocol = HonuaTelemetry.Protocols.Grpc,
+                        RequestId = requestId,
+                        GeometryChanged = hasGeometry
+                    },
+                    context.CancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        foreach (var r in editResult.DeleteResults)
+        {
+            if (r.IsSuccess && r.ObjectId.HasValue)
+            {
+                await _featureChangeEventPublisher.PublishAsync(
+                    new FeatureChangeEventRequest
+                    {
+                        ServiceId = serviceId,
+                        LayerId = layerId,
+                        ObjectId = r.ObjectId.Value,
+                        Operation = "delete",
+                        Protocol = HonuaTelemetry.Protocols.Grpc,
+                        RequestId = requestId
+                    },
+                    context.CancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     private static Proto.FeaturePage CreatePage(
