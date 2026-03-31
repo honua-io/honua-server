@@ -1385,6 +1385,44 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.ExceededTransferLimit.Should().BeTrue("because offset=1 leaves 4 features, but only 2 were requested");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_WithPagingWithoutExplicitOrder_DoesNotOverlapPages()
+    {
+        var page1Response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&resultOffset=0&resultRecordCount=2");
+        var page2Response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&resultOffset=2&resultRecordCount=2");
+
+        page1Response.Be200Ok();
+        page2Response.Be200Ok();
+
+        var page1Content = await page1Response.Content.ReadAsStringAsync();
+        var page2Content = await page2Response.Content.ReadAsStringAsync();
+
+        var page1 = JsonSerializer.Deserialize<QueryResponse>(
+            page1Content,
+            FeatureServerJsonContext.Default.QueryResponse);
+        var page2 = JsonSerializer.Deserialize<QueryResponse>(
+            page2Content,
+            FeatureServerJsonContext.Default.QueryResponse);
+
+        page1.Should().NotBeNull();
+        page2.Should().NotBeNull();
+        page1!.Features.Should().NotBeNull();
+        page2!.Features.Should().NotBeNull();
+
+        var page1Ids = page1.Features!
+            .Select(feature => ReadObjectIdValue(feature.Attributes!["objectid"]))
+            .ToHashSet();
+        var page2Ids = page2.Features!
+            .Select(feature => ReadObjectIdValue(feature.Attributes!["objectid"]))
+            .ToHashSet();
+
+        page1Ids.Intersect(page2Ids).Should().BeEmpty();
+    }
+
     /// <summary>
     /// Tests that the exceededTransferLimit flag is correctly set when more results are available than requested
     /// </summary>

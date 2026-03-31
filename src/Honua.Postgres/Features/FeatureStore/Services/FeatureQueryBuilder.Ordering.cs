@@ -18,17 +18,22 @@ internal sealed partial class FeatureQueryBuilder
             return;
         }
 
-        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        var orderClauses = new List<string>();
+        if (query.OrderBy.HasValue && !query.OrderBy.Value.IsDefaultOrEmpty)
         {
-            return;
+            foreach (var orderBy in query.OrderBy.Value)
+            {
+                var fieldSql = MapOrderByField(orderBy, ref paramIndex, parameters);
+                var direction = orderBy.Ascending ? "ASC" : "DESC";
+                orderClauses.Add($"{fieldSql} {direction}");
+            }
         }
 
-        var orderClauses = new List<string>();
-        foreach (var orderBy in query.OrderBy.Value)
+        // Paging without an explicit sort is not stable in PostgreSQL. Use objectid as the
+        // deterministic default order, and add it as a tiebreaker for explicit paged sorts.
+        if (RequiresStablePageOrder(query) && !HasObjectIdOrdering(query))
         {
-            var fieldSql = MapOrderByField(orderBy, ref paramIndex, parameters);
-            var direction = orderBy.Ascending ? "ASC" : "DESC";
-            orderClauses.Add($"{fieldSql} {direction}");
+            orderClauses.Add($"{DatabaseSchema.ObjectIdColumn} ASC");
         }
 
         if (orderClauses.Count > 0)
@@ -36,6 +41,28 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(" ORDER BY ");
             sql.Append(string.Join(", ", orderClauses));
         }
+    }
+
+    private static bool RequiresStablePageOrder(FeatureQuery query)
+        => query.Offset.HasValue || query.Limit.HasValue;
+
+    private static bool HasObjectIdOrdering(FeatureQuery query)
+    {
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        foreach (var orderBy in query.OrderBy.Value)
+        {
+            var fieldLower = orderBy.Field.ToLowerInvariant();
+            if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt or DatabaseSchema.IdColumn)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string MapOrderByField(OrderByClause orderBy, ref int paramIndex, List<object> parameters)

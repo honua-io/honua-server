@@ -39,6 +39,11 @@ beforeAll(() => {
   geometryGenerator = new GeometryGenerator();
 });
 
+function readObjectId(attributes: Record<string, unknown>): number | undefined {
+  const value = attributes.OBJECTID ?? attributes.objectid ?? attributes.id;
+  return typeof value === 'number' ? value : Number(value);
+}
+
 // =============================================================================
 // Basic Query Tests
 // =============================================================================
@@ -386,9 +391,7 @@ describe('Pagination', () => {
       const data2 = assertEsriFeatureSet(page2Response);
 
       if (data1.features.length > 0 && data2.features.length > 0) {
-        // Get OBJECTIDs
-        const getIds = (features: any[]) =>
-          features.map((f) => f.attributes.OBJECTID || f.attributes.id);
+        const getIds = (features: any[]) => features.map((f) => readObjectId(f.attributes));
 
         const ids1 = new Set(getIds(data1.features));
         const ids2 = new Set(getIds(data2.features));
@@ -421,8 +424,8 @@ describe('Pagination', () => {
       const data = assertEsriFeatureSet(response);
 
       const ids = data.features
-        .map((f) => Number(f.attributes.OBJECTID ?? f.attributes.id))
-        .filter((id) => Number.isFinite(id));
+        .map((f) => readObjectId(f.attributes))
+        .filter((id): id is number => Number.isFinite(id));
       if (ids.length > 1) {
         // Check ascending order
         for (let i = 1; i < ids.length; i++) {
@@ -441,8 +444,8 @@ describe('Pagination', () => {
       const data = assertEsriFeatureSet(response);
 
       const ids = data.features
-        .map((f) => Number(f.attributes.OBJECTID ?? f.attributes.id))
-        .filter((id) => Number.isFinite(id));
+        .map((f) => readObjectId(f.attributes))
+        .filter((id): id is number => Number.isFinite(id));
       if (ids.length > 1) {
         // Check descending order
         for (let i = 1; i < ids.length; i++) {

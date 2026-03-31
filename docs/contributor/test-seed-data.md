@@ -75,7 +75,7 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 
 | File | Purpose | Applied by |
 |------|---------|------------|
-| `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and `test_service` + layer 0 seed data | All CI integration-test jobs (`js-integration-tests`, `mcp-certification`, `mcp-llm-smoke`) |
+| `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and deterministic `test_service` + layer 0 feature seed data | All CI integration-test jobs (`js-integration-tests`, `mcp-certification`, `mcp-llm-smoke`) |
 | `tests/seed/mcp.yaml` | MCP certification data (second service, polygon layer, deterministic features) | CI `mcp-certification` and `mcp-llm-smoke` jobs |
 | `tests/seed/apply-yaml-seed.sh` | Extracts SQL from a YAML seed file with a top-level `sql:` key and applies via `psql` | CI `mcp-certification` and `mcp-llm-smoke` jobs |
 

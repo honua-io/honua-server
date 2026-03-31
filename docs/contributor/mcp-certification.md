@@ -60,7 +60,7 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 
 ## How the seed is applied in CI
 
-All integration-test jobs share a single base schema file (`tests/seed/base-schema.sql`) that creates the `honua` schema, core tables, indexes, and the default `test_service` + layer 0 with all field definitions. This file is applied first via `psql -f`.
+All integration-test jobs share a single base schema file (`tests/seed/base-schema.sql`) that creates the `honua` schema, core tables, indexes, and the default `test_service` + layer 0 with all field definitions plus deterministic baseline features. This file is applied first via `psql -f`.
 
 MCP-specific data from `tests/seed/mcp.yaml` is then applied using the shared `tests/seed/apply-yaml-seed.sh` script:
 
