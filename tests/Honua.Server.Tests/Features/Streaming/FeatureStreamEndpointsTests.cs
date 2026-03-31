@@ -467,6 +467,37 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/streaming/features/sessions")]
+    public async Task ListSessions_WithFilter_ReturnsSessionFilterInfo()
+    {
+        var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
+        var filter = new FeatureStreamFilter
+        {
+            ServiceId = "svc-admin-filter",
+            LayerIds = [1, 3]
+        };
+        using var session = sessionManager.CreateSession("SSE", "filtered-admin-vis-test", filter);
+
+        var response = await _client.GetAsync("/api/v1/admin/streaming/features/sessions");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var sessionData = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("sessions")
+            .EnumerateArray()
+            .First(s => s.GetProperty("clientLabel").GetString() == "filtered-admin-vis-test");
+
+        sessionData.GetProperty("serviceIdFilter").GetString().Should().Be("svc-admin-filter");
+        sessionData.GetProperty("layerIdFilter")
+            .EnumerateArray()
+            .Select(layerId => layerId.GetInt32())
+            .Should()
+            .BeEquivalentTo([1, 3]);
+    }
+
+    [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/streaming/features/sessions/{sessionId}")]
     public async Task DisconnectSession_ExistingId_ReturnsSuccess()
     {
