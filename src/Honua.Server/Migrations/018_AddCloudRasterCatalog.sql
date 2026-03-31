@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS honua.cloud_raster_catalog (
     updated_at      TIMESTAMPTZ,
     CONSTRAINT fk_cloud_raster_layer FOREIGN KEY (layer_id)
         REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
-    CONSTRAINT uq_cloud_raster_object UNIQUE (provider, bucket, object_key)
+    CONSTRAINT uq_cloud_raster_object UNIQUE (layer_id, provider, bucket, object_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cloud_raster_layer ON honua.cloud_raster_catalog(layer_id);

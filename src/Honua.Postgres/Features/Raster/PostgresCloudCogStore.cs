@@ -99,7 +99,7 @@ internal sealed class PostgresCloudCogStore : ICloudCogStore
         {
             throw new InvalidOperationException(
                 $"A cloud COG is already registered for {request.Provider}://{request.Bucket}/{request.ObjectKey}. " +
-                "Each cloud object can only be registered to one layer.", ex);
+                $"Layer {request.LayerId} already has that object registered.", ex);
         }
     }
 

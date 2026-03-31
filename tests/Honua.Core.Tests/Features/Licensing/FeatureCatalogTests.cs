@@ -49,6 +49,7 @@ public sealed class FeatureCatalogTests
         categories.Should().Contain(FeatureCatalog.Categories.Import);
         categories.Should().Contain(FeatureCatalog.Categories.StaticMap);
         categories.Should().Contain(FeatureCatalog.Categories.Styling);
+        categories.Should().Contain(FeatureCatalog.Categories.Raster);
     }
 
     [Fact]

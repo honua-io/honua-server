@@ -170,7 +170,7 @@ public class CloudCogEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/cloud-rasters")]
-    public async Task RegisterCloudCog_DuplicateObject_Returns409()
+    public async Task RegisterCloudCog_SameObjectDifferentLayers_Returns201ForEachLayer()
     {
         // Arrange — register a cloud COG
         var request = new
@@ -185,13 +185,54 @@ public class CloudCogEndpointTests : IAsyncLifetime
         var firstResponse = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", request);
         firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Act — attempt to register the same object again
-        var duplicateRequest = new
+        // Act — register the same object for another layer
+        var secondLayerRequest = new
         {
             layerId = 2,
             name = "duplicate-test-cog-2",
             provider = "AwsS3",
             bucket = "dup-test-bucket",
+            objectKey = "duplicate-test.tif"
+        };
+        var secondResponse = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", secondLayerRequest);
+
+        // Assert
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Cleanup
+        using var firstDoc = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+        var firstId = firstDoc.RootElement.GetProperty("id").GetInt64();
+        await _client.DeleteAsync($"/api/v1/admin/cloud-rasters/{firstId}");
+
+        using var secondDoc = JsonDocument.Parse(await secondResponse.Content.ReadAsStringAsync());
+        var secondId = secondDoc.RootElement.GetProperty("id").GetInt64();
+        await _client.DeleteAsync($"/api/v1/admin/cloud-rasters/{secondId}");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cloud-rasters")]
+    public async Task RegisterCloudCog_DuplicateObjectSameLayer_Returns409()
+    {
+        // Arrange — register a cloud COG
+        var request = new
+        {
+            layerId = 1,
+            name = "duplicate-test-cog",
+            provider = "AwsS3",
+            bucket = "dup-test-bucket-same-layer",
+            objectKey = "duplicate-test.tif"
+        };
+
+        var firstResponse = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", request);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Act — attempt to register the same object for the same layer again
+        var duplicateRequest = new
+        {
+            layerId = 1,
+            name = "duplicate-test-cog-2",
+            provider = "AwsS3",
+            bucket = "dup-test-bucket-same-layer",
             objectKey = "duplicate-test.tif"
         };
         var secondResponse = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", duplicateRequest);
