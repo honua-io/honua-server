@@ -19,29 +19,36 @@ internal sealed class DeployPreflightProbe(
     IReadinessCheckService readinessCheckService,
     IDatabaseMigrationRunner migrationRunner,
     MigrationState migrationState,
+    DatabaseCompatibilityState databaseCompatibilityState,
     IConnectionSecretResolver? secretResolver = null) : IDeployPreflightProbe
 {
     public async Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
     {
         var readiness = await readinessCheckService.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
         var migration = await BuildMigrationSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var compatibilitySnapshot = BuildDatabaseCompatibilitySnapshot();
+
+        // null = check not applicable (no connection string); treat as compatible
+        var databaseCompatible = compatibilitySnapshot is null || compatibilitySnapshot.IsCompatible;
 
         var readyForCoordinatedDeploy = readiness.IsReady &&
             migration.PlanAvailable &&
-            !migration.UpgradeRequired;
+            !migration.UpgradeRequired &&
+            databaseCompatible;
 
         return new DeployPreflightSnapshot
         {
             Status = readyForCoordinatedDeploy ? "ready" : "blocked",
             ReadyForCoordinatedDeploy = readyForCoordinatedDeploy,
-            Message = BuildPreflightMessage(readiness, migration),
+            Message = BuildPreflightMessage(readiness, migration, compatibilitySnapshot),
             Readiness = new DeployPreflightReadinessSnapshot
             {
                 IsReady = readiness.IsReady,
                 StatusCode = readiness.StatusCode,
                 Message = readiness.Message
             },
-            Migration = migration
+            Migration = migration,
+            DatabaseCompatibility = compatibilitySnapshot
         };
     }
 
@@ -95,7 +102,10 @@ internal sealed class DeployPreflightProbe(
         }
     }
 
-    private static string BuildPreflightMessage(ReadinessResult readiness, DeployPreflightMigrationSnapshot migration)
+    private static string BuildPreflightMessage(
+        ReadinessResult readiness,
+        DeployPreflightMigrationSnapshot migration,
+        DeployPreflightDatabaseCompatibilitySnapshot? compatibility)
     {
         if (!readiness.IsReady)
         {
@@ -110,6 +120,11 @@ internal sealed class DeployPreflightProbe(
         if (migration.UpgradeRequired)
         {
             return "Pending migrations must be reconciled before coordinated deployment.";
+        }
+
+        if (compatibility is not null && !compatibility.IsCompatible)
+        {
+            return compatibility.ErrorMessage ?? "Database compatibility check failed.";
         }
 
         return "Instance is ready for coordinated deployment.";
@@ -140,6 +155,26 @@ internal sealed class DeployPreflightProbe(
             _ => null
         };
     }
+
+    private DeployPreflightDatabaseCompatibilitySnapshot? BuildDatabaseCompatibilitySnapshot()
+    {
+        var result = databaseCompatibilityState.Result;
+        if (result is null)
+        {
+            return null;
+        }
+
+        return new DeployPreflightDatabaseCompatibilitySnapshot
+        {
+            IsCompatible = result.IsCompatible,
+            EngineVersion = result.EngineVersion,
+            PostGisVersion = result.PostGisVersion,
+            PostGisRasterVersion = result.PostGisRasterVersion,
+            InstalledExtensions = result.InstalledExtensions,
+            Warnings = result.Warnings,
+            ErrorMessage = result.ErrorMessage
+        };
+    }
 }
 
 internal sealed class DeployPreflightSnapshot
@@ -153,6 +188,8 @@ internal sealed class DeployPreflightSnapshot
     public required DeployPreflightReadinessSnapshot Readiness { get; init; }
 
     public required DeployPreflightMigrationSnapshot Migration { get; init; }
+
+    public DeployPreflightDatabaseCompatibilitySnapshot? DatabaseCompatibility { get; init; }
 }
 
 internal sealed class DeployPreflightReadinessSnapshot
@@ -179,4 +216,21 @@ internal sealed class DeployPreflightMigrationSnapshot
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 
     public string? PlanError { get; init; }
+}
+
+internal sealed class DeployPreflightDatabaseCompatibilitySnapshot
+{
+    public required bool IsCompatible { get; init; }
+
+    public required string EngineVersion { get; init; }
+
+    public string? PostGisVersion { get; init; }
+
+    public string? PostGisRasterVersion { get; init; }
+
+    public IReadOnlyList<string> InstalledExtensions { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
+    public string? ErrorMessage { get; init; }
 }

@@ -14,6 +14,11 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Security](security.md) — Authentication, authorization, CORS, CSP
 - [Feature Change Webhooks](feature-change-webhooks.md) — Event notification setup
 
+## Database
+
+- [Database Support Matrix](database-support-matrix.md) — Tested PostgreSQL/PostGIS versions, Aurora, Azure
+- [TLS Connection Guide](tls-connection-guide.md) — SSL/TLS configuration for managed and self-hosted deployments
+
 ## Server Management
 
 - [Control Plane API](CONTROL_PLANE_API.md) — Admin REST API for connections, layers, services

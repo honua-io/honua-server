@@ -673,6 +673,18 @@
         "summary": "Get Deploy Preflight",
         "description": "Returns instance-local deploy preflight state used by the Honua control plane for coordinated rollouts.",
         "operationId": "getDeployPreflight",
+        "parameters": [
+          {
+            "name": "includeDiagnostics",
+            "in": "query",
+            "required": false,
+            "description": "When true, includes serverVersion, environment, deploymentMode, instanceName, readiness, migration, and databaseCompatibility fields in the response.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Deploy preflight status for this Honua instance",
@@ -2904,13 +2916,7 @@
           "status",
           "readyForCoordinatedDeploy",
           "message",
-          "serverVersion",
-          "environment",
-          "deploymentMode",
-          "instanceName",
-          "generatedAt",
-          "readiness",
-          "migration"
+          "generatedAt"
         ],
         "properties": {
           "status": {
@@ -2927,19 +2933,19 @@
           },
           "serverVersion": {
             "type": "string",
-            "description": "Current Honua server version"
+            "description": "Current Honua server version. Only present when includeDiagnostics=true."
           },
           "environment": {
             "type": "string",
-            "description": "Current ASP.NET host environment"
+            "description": "Current ASP.NET host environment. Only present when includeDiagnostics=true."
           },
           "deploymentMode": {
             "type": "string",
-            "description": "Configured Honua deployment mode"
+            "description": "Configured Honua deployment mode. Only present when includeDiagnostics=true."
           },
           "instanceName": {
             "type": "string",
-            "description": "Machine or instance name serving the request"
+            "description": "Machine or instance name serving the request. Only present when includeDiagnostics=true."
           },
           "generatedAt": {
             "type": "string",
@@ -2951,6 +2957,52 @@
           },
           "migration": {
             "$ref": "#/components/schemas/DeployPreflightMigration"
+          },
+          "databaseCompatibility": {
+            "$ref": "#/components/schemas/DeployPreflightDatabaseCompatibility"
+          }
+        }
+      },
+      "DeployPreflightDatabaseCompatibility": {
+        "type": "object",
+        "required": [
+          "isCompatible",
+          "engineVersion"
+        ],
+        "properties": {
+          "isCompatible": {
+            "type": "boolean",
+            "description": "Whether the database meets Honua compatibility requirements"
+          },
+          "engineVersion": {
+            "type": "string",
+            "description": "Database engine version string"
+          },
+          "postGisVersion": {
+            "type": "string",
+            "description": "PostGIS extension version, if installed"
+          },
+          "postGisRasterVersion": {
+            "type": "string",
+            "description": "PostGIS raster extension version, if installed"
+          },
+          "installedExtensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extensions installed in the database"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Non-fatal warnings from the compatibility check"
+          },
+          "errorMessage": {
+            "type": "string",
+            "description": "Error message when the compatibility check determined incompatibility"
           }
         }
       },

@@ -279,6 +279,39 @@ internal static partial class Log
     public static partial void RequestProcessingError(
         ILogger logger, string path, string exceptionType, string errorMessage, Exception exception);
 
+    /// <summary>
+    /// Logs when the PostGIS preflight compatibility check is starting.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    [LoggerMessage(
+        EventId = 4055,
+        Level = LogLevel.Information,
+        Message = "PostGIS preflight check starting")]
+    public static partial void PostGisPreflightCheckStarting(ILogger logger);
+
+    /// <summary>
+    /// Logs when the PostGIS preflight check passes successfully.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="engineVersion">The database engine version detected.</param>
+    /// <param name="postGisVersion">The PostGIS extension version detected.</param>
+    [LoggerMessage(
+        EventId = 4056,
+        Level = LogLevel.Information,
+        Message = "PostGIS preflight check passed: engine={EngineVersion}, PostGIS={PostGisVersion}")]
+    public static partial void PostGisPreflightCheckPassed(ILogger logger, string engineVersion, string postGisVersion);
+
+    /// <summary>
+    /// Logs when the PostGIS preflight check fails but the application continues in Development mode.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="errorMessage">The error message describing the failure.</param>
+    [LoggerMessage(
+        EventId = 4057,
+        Level = LogLevel.Warning,
+        Message = "PostGIS preflight check failed: {ErrorMessage}. Continuing in Development mode.")]
+    public static partial void PostGisPreflightCheckFailedDevelopment(ILogger logger, string errorMessage);
+
     #endregion
 
     #region Tracing Operations (6000-6999)
@@ -377,6 +410,17 @@ internal static partial class Log
         Message = "Application startup failed: {ErrorMessage}")]
     public static partial void ApplicationStartupFailed(
         ILogger logger, string errorMessage, Exception exception);
+
+    /// <summary>
+    /// Logs when the PostGIS preflight check fails and the application is aborting startup.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="errorMessage">The error message describing the failure.</param>
+    [LoggerMessage(
+        EventId = 5011,
+        Level = LogLevel.Critical,
+        Message = "PostGIS preflight check failed: {ErrorMessage}. Startup aborted.")]
+    public static partial void PostGisPreflightCheckFailedCritical(ILogger logger, string errorMessage);
 
     #endregion
 }

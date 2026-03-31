@@ -32,6 +32,7 @@ public sealed class DeployPreflightProbeTests
             new StubReadinessCheckService(),
             migrationRunner,
             migrationState,
+            new DatabaseCompatibilityState(),
             new StubConnectionSecretResolver("aws:secretsmanager:test-db", "Host=resolved;Database=honua;Username=test;Password=secret"));
 
         var snapshot = await probe.ProbeAsync();
@@ -58,6 +59,7 @@ public sealed class DeployPreflightProbeTests
             new StubReadinessCheckService(),
             new CapturingMigrationRunner(),
             migrationState,
+            new DatabaseCompatibilityState(),
             new ThrowingConnectionSecretResolver());
 
         var snapshot = await probe.ProbeAsync();

@@ -265,6 +265,7 @@ RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.DatabaseCompatibilityState>();
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Server.Features.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
@@ -793,6 +794,10 @@ Honua.Server.Features.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
     appVersion,
     app.Environment.EnvironmentName);
 
+// Run PostGIS preflight compatibility check (before migrations — migration scripts
+// create GEOMETRY columns and GiST indexes that require PostGIS to be installed)
+await RunPostGisPreflightCheckAsync();
+
 // Run database migrations on startup
 await RunDatabaseMigrationsAsync();
 
@@ -1054,7 +1059,10 @@ async Task RunDatabaseMigrationsAsync()
         return;
     }
 
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    // Resolve secret-backed connection strings (aws:secretsmanager:*, env:*, etc.)
+    var secretResolver = app.Services.GetService<Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver>();
+    var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+        builder.Configuration, secretResolver, app.Lifetime.ApplicationStopping);
     if (string.IsNullOrEmpty(connectionString))
     {
         // Skip migrations if no connection string is configured
@@ -1127,6 +1135,45 @@ async Task RunDatabaseMigrationsAsync()
             throw;
         }
     }
+}
+
+// PostGIS preflight compatibility check
+async Task RunPostGisPreflightCheckAsync()
+{
+    var compatibilityState = app.Services.GetRequiredService<Honua.Server.Features.Infrastructure.Monitoring.DatabaseCompatibilityState>();
+
+    // Resolve secret-backed connection strings (aws:secretsmanager:*, env:*, etc.)
+    var secretResolver = app.Services.GetService<Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver>();
+    var connectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+        builder.Configuration, secretResolver, app.Lifetime.ApplicationStopping);
+    if (string.IsNullOrEmpty(connectionString))
+    {
+        // No connection string configured — skip preflight (migrations already handle this case)
+        return;
+    }
+
+    Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
+
+    var checker = app.Services.GetRequiredService<IDatabaseCompatibilityChecker>();
+    var result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
+    compatibilityState.SetResult(result);
+
+    if (result.IsCompatible)
+    {
+        Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckPassed(
+            app.Logger, result.EngineVersion, result.PostGisVersion ?? "unknown");
+        return;
+    }
+
+    var errorMessage = result.ErrorMessage ?? "Database compatibility check failed.";
+
+    if (!app.Environment.IsDevelopment())
+    {
+        Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(app.Logger, errorMessage);
+        throw new InvalidOperationException($"PostGIS preflight check failed: {errorMessage}");
+    }
+
+    Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
 }
 
 // Configure tile options with validation
