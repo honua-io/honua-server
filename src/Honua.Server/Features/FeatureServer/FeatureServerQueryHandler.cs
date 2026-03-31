@@ -12,6 +12,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
@@ -27,6 +28,7 @@ using Honua.Server.Features.Infrastructure.Parsing;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.FeatureServer;
 
@@ -486,6 +488,7 @@ internal sealed class FeatureServerQueryHandler(
                 var extent = await _queryExecutor.GetExtentAsync(layerId, query, cancellationToken);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
+                extent ??= await ResolveExtentFallbackAsync(context, validatedParams, layer, outputSrid, cancellationToken);
                 HonuaTelemetry.SetSuccess(featureActivity);
                 var response = new QueryResponse
                 {
@@ -828,6 +831,72 @@ internal sealed class FeatureServerQueryHandler(
         }
 
         return query;
+    }
+
+    internal static async ValueTask<FeatureExtent?> ResolveExtentFallbackAsync(
+        HttpContext context,
+        QueryParameters queryParams,
+        LayerDefinition layer,
+        int? outputSrid,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(queryParams);
+
+        if (!CanFallbackToLayerExtent(queryParams) || !layer.Extent.HasValue)
+        {
+            return null;
+        }
+
+        var layerExtent = layer.Extent.Value;
+        if (!outputSrid.HasValue || outputSrid.Value == layerExtent.SpatialReference)
+        {
+            return layerExtent;
+        }
+
+        var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
+        if (transformService is null)
+        {
+            return null;
+        }
+
+        var transformedExtent = await transformService.TransformExtentAsync(
+            layerExtent.MinX,
+            layerExtent.MinY,
+            layerExtent.MaxX,
+            layerExtent.MaxY,
+            layerExtent.SpatialReference,
+            outputSrid.Value,
+            cancellationToken);
+
+        return transformedExtent.HasValue
+            ? FeatureExtent.Create(
+                transformedExtent.Value.MinX,
+                transformedExtent.Value.MinY,
+                transformedExtent.Value.MaxX,
+                transformedExtent.Value.MaxY,
+                outputSrid.Value)
+            : null;
+    }
+
+    internal static bool CanFallbackToLayerExtent(QueryParameters queryParams)
+    {
+        ArgumentNullException.ThrowIfNull(queryParams);
+
+        if (queryParams.ObjectIds is { Length: > 0 } ||
+            !string.IsNullOrWhiteSpace(queryParams.Geometry) ||
+            !string.IsNullOrWhiteSpace(queryParams.Time))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(queryParams.Where))
+        {
+            return true;
+        }
+
+        var normalizedWhere = string.Concat(queryParams.Where.Where(ch => !char.IsWhiteSpace(ch)));
+        return string.Equals(normalizedWhere, "1=1", StringComparison.Ordinal);
     }
 
     private static ValidationResult ValidateBboxAreaLimit(
