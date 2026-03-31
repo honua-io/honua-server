@@ -17,6 +17,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Schema;
+using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Services;
@@ -335,6 +336,7 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddStyleSuggestionCore();
 
 // Configure temporary file service for image exports
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
@@ -535,6 +537,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
         Honua.Server.Features.Admin.Models.GitOpsWatchJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.StyleSuggestionJsonContext.Default,
         Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
@@ -819,6 +822,7 @@ app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
 app.MapAdminLayerStyleEndpoints();
+app.MapAdminStyleSuggestionEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();

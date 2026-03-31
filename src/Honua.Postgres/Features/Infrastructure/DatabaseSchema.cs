@@ -218,6 +218,20 @@ internal static class DatabaseSchema
     }
 
     /// <summary>
+    /// Builds a JSONB accessor expression that preserves the native JSONB type.
+    /// Use this when you need <c>jsonb_typeof</c> or type-aware operations;
+    /// use <see cref="BuildJsonPath"/> for text extraction.
+    /// </summary>
+    /// <param name="attributeName">Name of the attribute to access</param>
+    /// <param name="columnName">Base column name (default: attributes)</param>
+    /// <returns>PostgreSQL JSONB expression like "attributes->'field_name'"</returns>
+    public static string BuildJsonbAccessor(string attributeName, string columnName = AttributesColumn)
+    {
+        var escapedAttributeName = attributeName.Replace("'", "''");
+        return $"{columnName}->'{escapedAttributeName}'";
+    }
+
+    /// <summary>
     /// Builds a JSON path expression using a parameter placeholder for the attribute name.
     /// </summary>
     /// <param name="parameterIndex">The SQL parameter index for the attribute name</param>

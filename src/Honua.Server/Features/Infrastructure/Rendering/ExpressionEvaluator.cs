@@ -117,6 +117,7 @@ internal static class ExpressionEvaluator
             "literal" => array.Length > 1 ? EvaluateLiteral(array[1]) : null,
             "to-string" => EvaluateToString(array, properties),
             "to-number" => EvaluateToNumber(array, properties),
+            "typeof" => EvaluateTypeof(array, properties),
             "concat" => EvaluateConcat(array, properties),
             "==" => EvaluateComparison(array, properties, CompareEqual),
             "!=" => EvaluateComparison(array, properties, CompareNotEqual),
@@ -379,6 +380,28 @@ internal static class ExpressionEvaluator
 
         var val = Evaluate(array[1], properties);
         return (double)ConvertToFloat(val, 0f);
+    }
+
+    /// <summary>
+    /// Evaluates the MapLibre <c>typeof</c> expression, returning the runtime type name
+    /// of the evaluated value: "number", "string", "boolean", "object", or "null".
+    /// </summary>
+    private static string EvaluateTypeof(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    {
+        if (array.Length < 2)
+        {
+            return "null";
+        }
+
+        var val = Evaluate(array[1], properties);
+        return val switch
+        {
+            null => "null",
+            bool => "boolean",
+            int or long or float or double or decimal => "number",
+            string => "string",
+            _ => "object"
+        };
     }
 
     private static string EvaluateConcat(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)

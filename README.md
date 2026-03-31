@@ -98,7 +98,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 
 **Service import** — Migrate existing Esri feature and map services, preserving structure and metadata.
 
-**Admin** — REST API and Blazor WASM UI (`/admin`) for managing connections, services, layers, relationships, styles, and import jobs.
+**Admin** — REST API and Blazor WASM UI (`/admin`) for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs.
 
 **Caching** — Multi-layer: output cache, Redis, in-memory fallback.
 

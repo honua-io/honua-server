@@ -11,7 +11,7 @@ internal static class GeoServicesToMapLibreConverter
 {
     public static string Convert(JsonElement drawingInfo, LayerDefinition layer)
     {
-        if (layer.GeometryType is GeometryType.None or GeometryType.GeometryCollection)
+        if (layer.GeometryType is GeometryType.None)
         {
             return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
@@ -61,13 +61,14 @@ internal static class GeoServicesToMapLibreConverter
                 break;
             case GeometryType.Polygon:
             case GeometryType.MultiPolygon:
+            case GeometryType.GeometryCollection:
                 BuildPolygonLayers(layer, sourceId, symbol, layers);
                 break;
             default:
                 return StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
         }
 
-        var style = BuildStyle(layer, sourceId, layers);
+        var style = StyleDefaults.BuildStyleDocument(layer, layers);
         return StyleJsonUtilities.Serialize(style);
     }
 
@@ -94,7 +95,10 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var sourceId = StyleDefaults.GetSourceId(layer);
-        var expression = new List<object?> { "match", new object?[] { "get", fieldName } };
+        // Wrap field access with to-string coercion so that tile values encoded
+        // as numeric types are coerced to strings before matching, keeping parity
+        // with the MapLibre expressions emitted by StyleSuggestionGenerator.
+        var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
         Dictionary<string, object?>? outlinePaint = null;
         double? size = null;
         double? lineWidth = null;
@@ -119,8 +123,9 @@ internal static class GeoServicesToMapLibreConverter
             }
 
             anyValues = true;
-            expression.Add(ConvertValueToken(valueElement));
-            expression.Add(color.ToRgbaString());
+            // Stop values must be strings to match the to-string coerced input.
+            matchExpr.Add(ConvertValueTokenAsString(valueElement));
+            matchExpr.Add(color.ToRgbaString());
 
             if (fallbackColor == null)
             {
@@ -144,14 +149,21 @@ internal static class GeoServicesToMapLibreConverter
             outlinePaint = TryBuildOutlinePaint(layer, defaultSymbol) ?? outlinePaint;
         }
 
-        expression.Add(fallbackColor?.ToRgbaString() ?? "#2D69A5");
+        var fallbackStr = fallbackColor?.ToRgbaString() ?? "#2D69A5";
+        matchExpr.Add(fallbackStr);
+
+        // Guard null/missing values: to-string(null) → "" would silently match
+        // an empty-string category instead of falling through to the default.
+        // The non-null guard routes missing/null features to the fallback,
+        // matching GeoServices uniqueValue defaultSymbol semantics.
+        var expression = new List<object?> { "case", StyleDefaults.BuildNonNullFieldGuard(fieldName), matchExpr, fallbackStr };
 
         var lineDashArray = layer.GeometryType is GeometryType.LineString or GeometryType.MultiLineString
             ? GetUniformLineDashArray(infos.EnumerateArray())
             : null;
 
         var layers = BuildExpressionLayers(layer, sourceId, expression, size, lineWidth, outlinePaint, lineDashArray);
-        var style = BuildStyle(layer, sourceId, layers);
+        var style = StyleDefaults.BuildStyleDocument(layer, layers);
         return StyleJsonUtilities.Serialize(style);
     }
 
@@ -209,12 +221,30 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var baseColor = breaks[0].Color;
-        var expression = new List<object?> { "step", new object?[] { "get", fieldName }, baseColor.ToRgbaString() };
+        // Wrap field access with to-number coercion so that tile values encoded
+        // as string types are coerced to numbers before classification, keeping parity
+        // with the MapLibre expressions emitted by StyleSuggestionGenerator.
+        var stepExpr = new List<object?> { "step", new object?[] { "to-number", new object?[] { "get", fieldName } }, baseColor.ToRgbaString() };
         for (var i = 1; i < breaks.Count; i++)
         {
-            expression.Add(breaks[i - 1].MaxValue);
-            expression.Add(breaks[i].Color.ToRgbaString());
+            stepExpr.Add(breaks[i - 1].MaxValue);
+            stepExpr.Add(breaks[i].Color.ToRgbaString());
         }
+
+        // Guard null/missing AND non-castable text: to-number(null) → 0 and
+        // to-number("N/A") → 0 would route into the first bucket.  The shared
+        // typeof guard rejects strings so only native numbers reach the step.
+        // Use defaultSymbol color as the fallback when present; otherwise fall
+        // back to the first class color for backward compatibility.
+        var fallbackColor = baseColor.ToRgbaString();
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol)
+            && defaultSymbol.ValueKind == JsonValueKind.Object
+            && TryGetSymbolColor(defaultSymbol, out var defaultColor))
+        {
+            fallbackColor = defaultColor.ToRgbaString();
+        }
+
+        var expression = new List<object?> { "case", StyleDefaults.BuildNumericFieldGuard(fieldName), stepExpr, fallbackColor };
 
         var size = TryGetNumber(breaks[0].Symbol, "size");
         var lineWidth = TryGetNumber(breaks[0].Symbol, "width");
@@ -226,30 +256,9 @@ internal static class GeoServicesToMapLibreConverter
             : null;
 
         var layers = BuildExpressionLayers(layer, sourceId, expression, size, lineWidth, outlinePaint, lineDashArray);
-        var style = BuildStyle(layer, sourceId, layers);
+        var style = StyleDefaults.BuildStyleDocument(layer, layers);
         return StyleJsonUtilities.Serialize(style);
     }
-
-    private static Dictionary<string, object?> BuildStyle(
-        LayerDefinition layer,
-        string sourceId,
-        List<Dictionary<string, object?>> layers)
-        => new()
-        {
-            ["version"] = 8,
-            ["name"] = layer.Name,
-            ["sources"] = new Dictionary<string, object?>
-            {
-                [sourceId] = new Dictionary<string, object?>
-                {
-                    ["type"] = "vector",
-                    ["tiles"] = new[] { StyleDefaults.GetTileUrl(layer.Id) },
-                    ["minzoom"] = 0,
-                    ["maxzoom"] = 22
-                }
-            },
-            ["layers"] = layers
-        };
 
     private static Dictionary<string, object?> BuildPointLayer(LayerDefinition layer, string sourceId, JsonElement symbol)
     {
@@ -375,6 +384,7 @@ internal static class GeoServicesToMapLibreConverter
                 break;
             case GeometryType.Polygon:
             case GeometryType.MultiPolygon:
+            case GeometryType.GeometryCollection:
                 layers.Add(BuildLayer(layer, sourceId, "fill", new Dictionary<string, object?>
                 {
                     ["fill-color"] = expression
@@ -438,7 +448,7 @@ internal static class GeoServicesToMapLibreConverter
             BuildSymbolLayer(layer, sourceId, layout)
         };
 
-        var style = BuildStyle(layer, sourceId, layers);
+        var style = StyleDefaults.BuildStyleDocument(layer, layers);
         AppendPictureMarkerMetadata(style, [new PictureMarkerImage(imageId, payload)]);
         return style;
     }
@@ -489,7 +499,8 @@ internal static class GeoServicesToMapLibreConverter
                 return false;
             }
 
-            stops.Add((ConvertValueToken(valueElement), payload));
+            // Use string conversion to match the to-string coerced input in the match expression.
+            stops.Add((ConvertValueTokenAsString(valueElement), payload));
         }
 
         if (stops.Count == 0)
@@ -498,15 +509,15 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var images = new List<PictureMarkerImage>();
-        var expression = new List<object?> { "match", new object?[] { "get", fieldName } };
+        var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
         var index = 0;
 
         foreach (var stop in stops)
         {
             var imageId = BuildPictureMarkerId(layer.Id, index++);
             images.Add(new PictureMarkerImage(imageId, stop.Payload));
-            expression.Add(stop.Value);
-            expression.Add(imageId);
+            matchExpr.Add(stop.Value);
+            matchExpr.Add(imageId);
         }
 
         var fallbackId = images[0].Id;
@@ -518,7 +529,10 @@ internal static class GeoServicesToMapLibreConverter
             images.Add(new PictureMarkerImage(fallbackId, defaultPayload));
         }
 
-        expression.Add(fallbackId);
+        matchExpr.Add(fallbackId);
+
+        // Guard null/missing values — mirrors the color match guard above.
+        var expression = new List<object?> { "case", StyleDefaults.BuildNonNullFieldGuard(fieldName), matchExpr, fallbackId };
 
         var layout = new Dictionary<string, object?>
         {
@@ -536,7 +550,7 @@ internal static class GeoServicesToMapLibreConverter
             BuildSymbolLayer(layer, sourceId, layout)
         };
 
-        style = BuildStyle(layer, sourceId, layers);
+        style = StyleDefaults.BuildStyleDocument(layer, layers);
         AppendPictureMarkerMetadata(style, images);
         return true;
     }
@@ -610,7 +624,7 @@ internal static class GeoServicesToMapLibreConverter
             BuildSymbolLayer(layer, sourceId, layout)
         };
 
-        style = BuildStyle(layer, sourceId, layers);
+        style = StyleDefaults.BuildStyleDocument(layer, layers);
         AppendPictureMarkerMetadata(style, images);
         return true;
     }
@@ -985,14 +999,22 @@ internal static class GeoServicesToMapLibreConverter
         return StyleParsingHelpers.TryGetDouble(prop, out var value) ? value : null;
     }
 
-    private static object ConvertValueToken(JsonElement element)
+    /// <summary>
+    /// Converts a GeoServices value token to its string representation, matching
+    /// the output of MapLibre's <c>to-string</c> coercion so that <c>match</c>
+    /// stops agree with the coerced input type.
+    /// </summary>
+    private static string ConvertValueTokenAsString(JsonElement element)
     {
         return element.ValueKind switch
         {
-            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue : element.GetDouble(),
             JsonValueKind.String => element.GetString() ?? string.Empty,
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
+            JsonValueKind.Number when element.TryGetInt64(out var longValue) =>
+                longValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            JsonValueKind.Number =>
+                element.GetDouble().ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
             _ => element.ToString() ?? string.Empty
         };
     }

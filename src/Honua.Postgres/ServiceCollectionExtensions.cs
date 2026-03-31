@@ -37,6 +37,7 @@ using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Transforms;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Styling;
+using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Raster;
@@ -136,7 +137,17 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
 
         // Register layer style catalog for MapLibre/GeoServices styling
-        services.AddScoped<ILayerStyleCatalog, PostgresLayerStyleCatalog>();
+        services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
+            new PostgresLayerStyleCatalog(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Register field profiling service for style suggestions (#400)
+        services.AddScoped<IFieldProfilingService>(serviceProvider =>
+            new PostgresFieldProfilingService(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresFieldProfilingService>>(),
+                configuration["Database:Schema"]));
 
         // Register table discovery implementation
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
