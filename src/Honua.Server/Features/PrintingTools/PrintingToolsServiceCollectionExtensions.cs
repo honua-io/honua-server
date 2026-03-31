@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Threading.Channels;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.PrintingTools.Models;
 
 namespace Honua.Server.Features.PrintingTools;
@@ -22,6 +23,10 @@ internal static class PrintingToolsServiceCollectionExtensions
             FullMode = BoundedChannelFullMode.Wait
         });
         services.AddSingleton(channel);
+        services.AddSingleton<PrintRenderConcurrencyGate>();
+        services.AddSingleton<PrintJobCancellationTokens>();
+        services.AddSingleton<IJobCancellationNotifier>(
+            sp => sp.GetRequiredService<PrintJobCancellationTokens>());
         services.AddHostedService<PrintingToolsBackgroundService>();
 
         return services;

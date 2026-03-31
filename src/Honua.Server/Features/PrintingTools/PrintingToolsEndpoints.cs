@@ -110,7 +110,10 @@ internal static class PrintingToolsEndpoints
     {
         var templateNames = LayoutTemplateRegistry.GetTemplateNames();
 
-        // Resolve edition to filter advertised choices
+        // Resolve edition to filter advertised choices.
+        // Uses ILicenseStatusProvider (config-driven, matches StaticMap and admin read endpoints).
+        // ILicenseManager is a separate in-memory placeholder for the mutable admin API.
+        // #338 will unify both behind a single persistent license source.
         var licenseProvider = context.RequestServices.GetRequiredService<ILicenseStatusProvider>();
         var edition = licenseProvider.GetCurrentStatus().Edition;
         var isPro = edition >= HonuaEdition.Pro;

@@ -75,9 +75,19 @@ internal sealed partial class OutputCacheInvalidationService
         }
         else if (layerId.HasValue)
         {
-            // Without a serviceId we cannot scope to a single service's static map cache.
-            // Evict all static map entries because any service may render this layer.
-            responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapPattern());
+            if (normalizedServiceIds.Length > 0)
+            {
+                // Use resolved owning services for targeted static-map eviction.
+                foreach (var normalizedServiceId in normalizedServiceIds)
+                {
+                    responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapServicePattern(normalizedServiceId));
+                }
+            }
+            else
+            {
+                // No owning services resolved — fall back to global eviction.
+                responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapPattern());
+            }
         }
 
         tags.Add("ogc-metadata");

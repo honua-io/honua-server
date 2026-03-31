@@ -185,6 +185,11 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received().EvictByTagAsync("ogc-maps", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:7:*", Arg.Any<CancellationToken>());
         await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:beta:layer:7:*", Arg.Any<CancellationToken>());
+
+        // With resolved owners, static-map eviction should be targeted, not global.
+        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:alpha:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:render:staticmap:service:beta:*", Arg.Any<CancellationToken>());
+        await responseCache.DidNotReceive().RemoveByPatternAsync("response:render:staticmap:service:*", Arg.Any<CancellationToken>());
     }
 
     private static ServiceDefinition CreateService(string name, params int[] layerIds)

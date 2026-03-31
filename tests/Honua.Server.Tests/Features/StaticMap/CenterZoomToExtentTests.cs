@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.StaticMap;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -99,5 +100,39 @@ public sealed class CenterZoomToExtentTests
         extent.Height.Should().BeGreaterThan(0);
         extent.MinX.Should().BeLessThan(extent.MaxX);
         extent.MinY.Should().BeLessThan(extent.MaxY);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Render)]
+    public void CenterZoom_MercatorTransform_PlacesCenterCorrectlyAtHighLatitude()
+    {
+        // At 60°N / zoom 2, CenterZoomToExtent produces a geographic extent whose
+        // midpoint is NOT at 60°N (Mercator inverse-projection is non-linear).
+        // Rendering in Mercator (3857) must place the center at the image center;
+        // a linear geographic (4326) transform would mis-place it by ~89 px.
+        const int width = 400;
+        const int height = 400;
+        var geoExtent = StaticMapEndpoints.CenterZoomToExtent(0, 60, 2, width, height);
+
+        // Mercator transform (correct for center/zoom rendering)
+        var mercExtent = CoordinateTransformer.TransformExtent(geoExtent, 4326, 3857);
+        var mercTransform = SkiaMapRenderer.BuildTransform(mercExtent, width, height);
+        var (cx, cy) = CoordinateTransformer.LonLatToWebMercator(0, 60);
+        var mercCenter = mercTransform(cx, cy);
+
+        mercCenter.X.Should().BeApproximately(width / 2f, 1f,
+            "center lon should map to horizontal center in Mercator");
+        mercCenter.Y.Should().BeApproximately(height / 2f, 1f,
+            "center lat should map to vertical center in Mercator");
+
+        // Linear geographic transform (the old, incorrect behavior)
+        var geoTransform = SkiaMapRenderer.BuildTransform(geoExtent, width, height);
+        var geoCenter = geoTransform(0, 60);
+
+        // The geographic transform places the center far from pixel 200 due to
+        // the non-linear relationship between geographic latitude and Mercator y.
+        var geoError = Math.Abs(geoCenter.Y - height / 2f);
+        geoError.Should().BeGreaterThan(50,
+            "linear geographic transform should visibly mis-place center at 60°N");
     }
 }

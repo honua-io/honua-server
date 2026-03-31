@@ -90,7 +90,7 @@ internal static partial class StaticMapEndpoints
             Filter = context.Request.Query["filter"].FirstOrDefault()
         };
 
-        return await RenderStaticMap(context, serviceId, parameters, extent);
+        return await RenderStaticMap(context, serviceId, parameters, extent, renderSrid: 3857);
     }
 
     /// <summary>
@@ -143,7 +143,8 @@ internal static partial class StaticMapEndpoints
         HttpContext context,
         string serviceId,
         StaticMapParameters parameters,
-        RenderExtent extent)
+        RenderExtent extent,
+        int renderSrid = 4326)
     {
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.StaticMapEndpoints");
@@ -281,6 +282,18 @@ internal static partial class StaticMapEndpoints
             var serviceSrid = service.SpatialReference.Srid;
             var spatialFilter = CreateBboxSpatialFilter(extent);
 
+            await using var renderLease = await context.RequestServices
+                .GetRequiredService<RasterRenderCapacityLimiter>()
+                .TryAcquireAsync(renderWidth, renderHeight, context.RequestAborted)
+                .ConfigureAwait(false);
+            if (renderLease is null)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    RasterRenderCapacityLimiter.CapacityExceededMessage,
+                    RasterRenderCapacityLimiter.RetryAfterSeconds);
+            }
+
             using var surface = SKSurface.Create(new SKImageInfo(renderWidth, renderHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
             if (surface is null)
             {
@@ -290,7 +303,23 @@ internal static partial class StaticMapEndpoints
             var canvas = surface.Canvas;
             canvas.Clear(parameters.Format == "jpeg" ? SKColors.White : SKColors.Transparent);
 
-            var transform = SkiaMapRenderer.BuildTransform(extent, renderWidth, renderHeight);
+            // For center/zoom (renderSrid=3857), render in Mercator for correct pixel placement.
+            // For bbox (renderSrid=4326), render in geographic as the user-specified extent defines.
+            var useMercator = renderSrid == 3857;
+            var renderExtent = useMercator
+                ? CoordinateTransformer.TransformExtent(extent, 4326, 3857)
+                : extent;
+            var transform = SkiaMapRenderer.BuildTransform(renderExtent, renderWidth, renderHeight);
+
+            // Overlay markers/paths are always specified in lon/lat — project to Mercator first
+            // when rendering in 3857, otherwise use the same transform.
+            var overlayTransform = useMercator
+                ? (double lon, double lat) =>
+                {
+                    var (mx, my) = CoordinateTransformer.LonLatToWebMercator(lon, lat);
+                    return transform(mx, my);
+                }
+            : transform;
 
             foreach (var layerId in renderLayerIds)
             {
@@ -312,7 +341,7 @@ internal static partial class StaticMapEndpoints
                 {
                     SpatialFilter = spatialFilter,
                     SpatialReferenceSrid = serviceSrid,
-                    OutputSrid = 4326,
+                    OutputSrid = renderSrid,
                     Limit = MaxFeaturesPerLayer,
                     SqlFilter = sqlFilter
                 };
@@ -335,13 +364,13 @@ internal static partial class StaticMapEndpoints
             // Render overlay markers
             if (markers.Length > 0)
             {
-                RenderMarkers(canvas, markers, transform, (float)dpiFactor);
+                RenderMarkers(canvas, markers, overlayTransform, (float)dpiFactor);
             }
 
             // Render overlay path
             if (path is not null)
             {
-                RenderPath(canvas, path, transform, (float)dpiFactor);
+                RenderPath(canvas, path, overlayTransform, (float)dpiFactor);
             }
 
             var imageBytes = SkiaMapRenderer.EncodeSurface(surface, parameters.Format);

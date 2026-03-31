@@ -19,7 +19,7 @@ internal static class MapServerServiceCollectionExtensions
         // MapServer uses core services (IFeatureReader, ILayerStyleCatalog) which are already registered.
         // Rendering is handled by static utility classes (SkiaMapRenderer, StyleTranslator, etc.).
         // Query endpoints reuse FeatureServer query handling for ArcGIS REST parity.
-        services.AddSingleton<Rendering.RasterRenderCapacityLimiter>();
+        services.AddSingleton<Infrastructure.Rendering.RasterRenderCapacityLimiter>();
 
         return services;
     }
