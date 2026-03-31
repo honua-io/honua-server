@@ -10,12 +10,12 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.Stac.Models;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Stac.Services;
+using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Stac;
 
@@ -67,11 +67,7 @@ internal static class SearchEndpoints
         [FromQuery(Name = "filter")] string? filter,
         [FromQuery(Name = "filter-lang")] string? filterLang,
         [FromQuery(Name = "filter-crs")] string? filterCrs,
-        [FromServices] ILayerCatalog layerCatalog,
-        [FromServices] IFeatureReader featureReader,
-        [FromServices] IFilterExpressionService filterExpressionService,
-        [FromServices] IGeometryService geometryService,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        [FromServices] StacSearchDependencies deps)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.SearchGet);
@@ -105,34 +101,29 @@ internal static class SearchEndpoints
             request,
             effectiveOffset,
             context,
-            layerCatalog,
-            featureReader,
-            filterExpressionService,
-            geometryService,
+            deps.LayerCatalog,
+            deps.FeatureReader,
+            deps.FilterExpressionService,
+            deps.GeometryService,
             defaultFilterLangIsText: true,
-            logger);
+            deps.Logger);
     }
 
     private static async Task<IResult> HandleSearchPost(
         HttpContext context,
         [FromBody] StacSearchRequest request,
-        [FromServices] ILayerCatalog layerCatalog,
-        [FromServices] IFeatureReader featureReader,
-        [FromServices] IFilterExpressionService filterExpressionService,
-        [FromServices] IGeometryService geometryService)
+        [FromServices] StacSearchDependencies deps)
     {
-        var logger = context.RequestServices.GetRequiredService<ILogger<StacEndpoints.StacEndpointsLog>>();
-
         return await ExecuteSearchAsync(
             request,
             0,
             context,
-            layerCatalog,
-            featureReader,
-            filterExpressionService,
-            geometryService,
+            deps.LayerCatalog,
+            deps.FeatureReader,
+            deps.FilterExpressionService,
+            deps.GeometryService,
             defaultFilterLangIsText: false,
-            logger);
+            deps.Logger);
     }
 
     private static async Task<IResult> ExecuteSearchAsync(
@@ -1108,7 +1099,7 @@ internal static class SearchEndpoints
 
     private static bool IsCrs84(string? crs)
         => string.IsNullOrWhiteSpace(crs) ||
-           crs.Equals(Honua.Server.Features.OgcFeatures.OgcFeaturesUtilities.Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
+           crs.Equals(SpatialReferenceHelpers.Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
            crs.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
            crs.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase);
 
