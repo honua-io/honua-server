@@ -6,6 +6,8 @@
 - [Infrastructure & Deployment](operator/infrastructure.md)
 - [Docker Compose](operator/docker-compose.md)
 - [Deployment Scenarios](operator/DEPLOYMENT_SCENARIOS.md)
+- [Database Support Matrix](operator/database-support-matrix.md)
+- [TLS Connection Guide](operator/tls-connection-guide.md)
 - [Security](operator/security.md)
 - [Monitoring & Observability](operator/monitoring.md)
 - [Operations](operator/operations.md)

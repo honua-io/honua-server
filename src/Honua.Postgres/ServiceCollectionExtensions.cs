@@ -161,6 +161,9 @@ internal static class ServiceCollectionExtensions
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
 
+        // Register database compatibility checker for PostGIS preflight validation
+        services.AddSingleton<IDatabaseCompatibilityChecker, PostgresDatabaseCompatibilityChecker>();
+
         // Register topology validator for geometry operations
         services.AddScoped<IGeometryTopologyValidator, PostgresGeometryTopologyValidator>();
 

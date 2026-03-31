@@ -17,9 +17,9 @@ Use this runbook for Honua application upgrades. The goal is to keep deployments
 Run these checks before any production rollout:
 
 ```bash
-# Instance-local deploy readiness
+# Instance-local deploy readiness (includes database compatibility, migration state)
 curl -H "X-API-Key: <admin-key>" \
-  https://<host>/api/v1/admin/deploy/preflight
+  "https://<host>/api/v1/admin/deploy/preflight?includeDiagnostics=true"
 
 # Migration visibility
 curl -H "X-API-Key: <admin-key>" \

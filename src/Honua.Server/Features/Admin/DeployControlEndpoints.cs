@@ -99,6 +99,18 @@ internal static class DeployControlEndpoints
                     ExecutedButNotDiscoveredScripts = snapshot.Migration.ExecutedButNotDiscoveredScripts,
                     PlanError = snapshot.Migration.PlanError
                 }
+                : null,
+            DatabaseCompatibility = includeDiagnostics && snapshot.DatabaseCompatibility != null
+                ? new DeployPreflightDatabaseCompatibility
+                {
+                    IsCompatible = snapshot.DatabaseCompatibility.IsCompatible,
+                    EngineVersion = snapshot.DatabaseCompatibility.EngineVersion,
+                    PostGisVersion = snapshot.DatabaseCompatibility.PostGisVersion,
+                    PostGisRasterVersion = snapshot.DatabaseCompatibility.PostGisRasterVersion,
+                    InstalledExtensions = snapshot.DatabaseCompatibility.InstalledExtensions,
+                    Warnings = snapshot.DatabaseCompatibility.Warnings,
+                    ErrorMessage = snapshot.DatabaseCompatibility.ErrorMessage
+                }
                 : null
         };
 

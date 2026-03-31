@@ -69,6 +69,12 @@ public sealed class DeployPreflightResponse
     /// </summary>
     [JsonPropertyName("migration")]
     public DeployPreflightMigration? Migration { get; init; }
+
+    /// <summary>
+    /// Database compatibility state for this instance (PostGIS/engine versions).
+    /// </summary>
+    [JsonPropertyName("databaseCompatibility")]
+    public DeployPreflightDatabaseCompatibility? DatabaseCompatibility { get; init; }
 }
 
 /// <summary>
@@ -141,6 +147,54 @@ public sealed class DeployPreflightMigration
     /// </summary>
     [JsonPropertyName("planError")]
     public string? PlanError { get; init; }
+}
+
+/// <summary>
+/// Database compatibility summary embedded in deploy preflight responses.
+/// </summary>
+public sealed class DeployPreflightDatabaseCompatibility
+{
+    /// <summary>
+    /// Whether the database meets Honua compatibility requirements.
+    /// </summary>
+    [JsonPropertyName("isCompatible")]
+    public bool IsCompatible { get; init; }
+
+    /// <summary>
+    /// Database engine version string.
+    /// </summary>
+    [JsonPropertyName("engineVersion")]
+    public string EngineVersion { get; init; } = string.Empty;
+
+    /// <summary>
+    /// PostGIS extension version, if installed.
+    /// </summary>
+    [JsonPropertyName("postGisVersion")]
+    public string? PostGisVersion { get; init; }
+
+    /// <summary>
+    /// PostGIS raster extension version, if installed.
+    /// </summary>
+    [JsonPropertyName("postGisRasterVersion")]
+    public string? PostGisRasterVersion { get; init; }
+
+    /// <summary>
+    /// Extensions installed in the database.
+    /// </summary>
+    [JsonPropertyName("installedExtensions")]
+    public IReadOnlyList<string> InstalledExtensions { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Non-fatal warnings from the compatibility check.
+    /// </summary>
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Error message when the compatibility check determined incompatibility.
+    /// </summary>
+    [JsonPropertyName("errorMessage")]
+    public string? ErrorMessage { get; init; }
 }
 
 /// <summary>
