@@ -5,10 +5,13 @@ using System.Globalization;
 using System.IO;
 using System.Net.WebSockets;
 using System.Text.Json;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Events;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Streaming;
@@ -19,6 +22,7 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal static class FeatureStreamEndpoints
 {
+    private const int SubscriptionBboxSrid = 4326;
     private const string WebSocketTransport = "WebSocket";
     private const string SseTransport = "SSE";
 
@@ -37,7 +41,7 @@ internal static class FeatureStreamEndpoints
             .WithDescription("Opens a WebSocket or SSE stream of real-time feature-change events. " +
                              "WebSocket: send Upgrade header. SSE: send Accept: text/event-stream. " +
                              "Query params: cursor (resume from cursor), clientLabel, serviceId, " +
-                             "layerIds/layers (comma-separated layer filter), bbox, filter, filter-lang.")
+                             "layerIds/layers (comma-separated layer filter), bbox (WGS84; requires exactly one layer), filter, filter-lang.")
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         // Admin endpoints for session visibility
@@ -184,6 +188,33 @@ internal static class FeatureStreamEndpoints
                 return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
             }
 
+            if (layerIds is null || layerIds.Length != 1)
+            {
+                const string msg = "bbox filters require exactly one layer specified via the layers or layerIds parameter.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+            }
+
+            var bboxLayer = await deps.LayerCatalog.GetLayerAsync(layerIds[0], context.RequestAborted).ConfigureAwait(false);
+            if (bboxLayer is null)
+            {
+                var msg = $"Layer {layerIds[0]} not found.";
+                FeatureStreamLog.FilterValidationFailed(logger, msg);
+                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+            }
+
+            var (projectedBbox, bboxError) = await TryProjectSubscriptionBboxAsync(
+                deps,
+                bbox,
+                bboxLayer,
+                context.RequestAborted).ConfigureAwait(false);
+            if (bboxError is not null)
+            {
+                FeatureStreamLog.FilterValidationFailed(logger, bboxError);
+                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, bboxError));
+            }
+
+            bbox = projectedBbox;
             hasAnyFilter = true;
         }
 
@@ -215,6 +246,13 @@ internal static class FeatureStreamEndpoints
                     return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
                 }
 
+                if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(parseResult.Expression, out var validationError))
+                {
+                    var msg = validationError ?? "Streaming subscriptions do not support the requested filter expression.";
+                    FeatureStreamLog.FilterValidationFailed(logger, msg);
+                    return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, msg));
+                }
+
                 attributeFilter = parseResult.Expression;
                 hasAnyFilter = true;
             }
@@ -231,6 +269,59 @@ internal static class FeatureStreamEndpoints
             bbox: bbox,
             attributeFilter: attributeFilter);
         return (filter, null);
+    }
+
+    private static async Task<(double[] Bbox, string? Error)> TryProjectSubscriptionBboxAsync(
+        FeatureStreamDependencies deps,
+        double[] bbox,
+        LayerDefinition layer,
+        CancellationToken cancellationToken)
+    {
+        if (!layer.HasGeometry)
+        {
+            return (bbox, $"bbox filters are not supported for non-spatial layer {layer.Id}.");
+        }
+
+        var layerSrid = layer.SpatialReference.Wkid;
+        if (layerSrid <= 0)
+        {
+            return (bbox, $"Layer {layer.Id} does not define a valid spatial reference.");
+        }
+
+        if (layerSrid == SubscriptionBboxSrid)
+        {
+            return (bbox, null);
+        }
+
+        try
+        {
+            var projectedWkb = await deps.GeometryOperationService.ProjectAsync(
+                SpatialFilterHelpers.CreateEnvelopeWkb(bbox[0], bbox[1], bbox[2], bbox[3]),
+                SubscriptionBboxSrid,
+                layerSrid,
+                cancellationToken).ConfigureAwait(false);
+
+            var geometry = WkbReaderCache.Get().Read(projectedWkb);
+            if (geometry is null || geometry.IsEmpty)
+            {
+                return (bbox, $"Unable to project bbox to layer {layer.Id} spatial reference.");
+            }
+
+            var env = geometry.EnvelopeInternal;
+            return ([env.MinX, env.MinY, env.MaxX, env.MaxY], null);
+        }
+        catch (ArgumentException ex)
+        {
+            return (bbox, $"Invalid bbox projection for layer {layer.Id}: {ex.Message}");
+        }
+        catch (NotSupportedException ex)
+        {
+            return (bbox, $"bbox filters do not support projecting layer {layer.Id} to SRID {layerSrid}: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return (bbox, $"bbox filters could not be projected for layer {layer.Id}: {ex.Message}");
+        }
     }
 
     private static async Task HandleWebSocketStream(

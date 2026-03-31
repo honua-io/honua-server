@@ -29,11 +29,23 @@ public static class InMemoryFilterEvaluator
         return EvaluateBool(expression, properties, depth: 0);
     }
 
+    /// <summary>
+    /// Validates that a filter expression only uses the subset of nodes and operators
+    /// supported by streaming subscriptions.
+    /// </summary>
+    /// <param name="expression">Expression to validate.</param>
+    /// <param name="error">Validation error when the expression is not stream-evaluable.</param>
+    /// <returns><see langword="true"/> when the expression can be evaluated in-memory for streaming.</returns>
+    public static bool TryValidateStreamingExpression(FilterExpression expression, out string? error)
+    {
+        return TryValidateBooleanExpression(expression, out error);
+    }
+
     private static bool EvaluateBool(FilterExpression expr, IReadOnlyDictionary<string, JsonElement> props, int depth)
     {
         if (depth > MaxStreamingDepth)
         {
-            return true; // Safety: pass through overly complex filters.
+            return false; // Fail closed for expressions that exceed streaming limits.
         }
 
         return expr switch
@@ -41,7 +53,7 @@ public static class InMemoryFilterEvaluator
             BinaryExpression bin => EvaluateBinary(bin, props, depth),
             UnaryExpression un => EvaluateUnary(un, props, depth),
             Literal lit => lit.Type == LiteralType.Boolean && lit.Value is true,
-            _ => true // Unsupported node types pass through.
+            _ => false
         };
     }
 
@@ -89,7 +101,7 @@ public static class InMemoryFilterEvaluator
             BinaryOperator.GreaterThanOrEqual => CompareValues(left, right) >= 0,
             BinaryOperator.Like => EvaluateLike(left, right),
             BinaryOperator.NotLike => !EvaluateLike(left, right),
-            _ => true // Unsupported operator — pass through.
+            _ => false
         };
     }
 
@@ -100,7 +112,7 @@ public static class InMemoryFilterEvaluator
             UnaryOperator.Not => !EvaluateBool(un.Operand, props, depth + 1),
             UnaryOperator.IsNull => ResolveValue(un.Operand, props) is null,
             UnaryOperator.IsNotNull => ResolveValue(un.Operand, props) is not null,
-            _ => true
+            _ => false
         };
     }
 
@@ -109,12 +121,12 @@ public static class InMemoryFilterEvaluator
         var left = ResolveValue(bin.Left, props);
         if (left is null)
         {
-            return bin.Operator == BinaryOperator.NotIn;
+            return false;
         }
 
         if (bin.Right is not ValueList valueList)
         {
-            return bin.Operator == BinaryOperator.NotIn;
+            return false;
         }
 
         foreach (var item in valueList.Values)
@@ -149,7 +161,7 @@ public static class InMemoryFilterEvaluator
         return element.ValueKind switch
         {
             JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.GetDouble(),
+            JsonValueKind.Number => ResolveNumericElement(element),
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.Null or JsonValueKind.Undefined => null,
@@ -165,11 +177,16 @@ public static class InMemoryFilterEvaluator
             LiteralType.Text => lit.Value as string,
             LiteralType.Number => lit.Value switch
             {
-                double d => d,
-                int i => (double)i,
-                long l => (double)l,
+                byte b => (long)b,
+                sbyte sb => (long)sb,
+                short s => (long)s,
+                ushort us => (long)us,
+                int i => (long)i,
+                uint ui => (long)ui,
+                long l => l,
+                decimal m => m,
                 float f => (double)f,
-                decimal m => (double)m,
+                double d => d,
                 _ => Convert.ToDouble(lit.Value, CultureInfo.InvariantCulture)
             },
             LiteralType.Boolean => lit.Value is true,
@@ -188,6 +205,16 @@ public static class InMemoryFilterEvaluator
 
     private static int CompareValues(object left, object right)
     {
+        if (TryGetInt64(left, out var li) && TryGetInt64(right, out var ri))
+        {
+            return li.CompareTo(ri);
+        }
+
+        if (TryGetDecimal(left, out var ldec) && TryGetDecimal(right, out var rdec))
+        {
+            return ldec.CompareTo(rdec);
+        }
+
         // Numeric comparison.
         if (TryGetDouble(left, out var ld) && TryGetDouble(right, out var rd))
         {
@@ -220,6 +247,203 @@ public static class InMemoryFilterEvaluator
         if (value is float f) { result = f; return true; }
         if (value is decimal m) { result = (double)m; return true; }
         result = 0;
+        return false;
+    }
+
+    private static bool TryGetInt64(object value, out long result)
+    {
+        switch (value)
+        {
+            case byte b:
+                result = b;
+                return true;
+            case sbyte sb:
+                result = sb;
+                return true;
+            case short s:
+                result = s;
+                return true;
+            case ushort us:
+                result = us;
+                return true;
+            case int i:
+                result = i;
+                return true;
+            case uint ui:
+                result = (long)ui;
+                return true;
+            case long l:
+                result = l;
+                return true;
+            default:
+                result = 0;
+                return false;
+        }
+    }
+
+    private static bool TryGetDecimal(object value, out decimal result)
+    {
+        switch (value)
+        {
+            case byte b:
+                result = b;
+                return true;
+            case sbyte sb:
+                result = sb;
+                return true;
+            case short s:
+                result = s;
+                return true;
+            case ushort us:
+                result = us;
+                return true;
+            case int i:
+                result = i;
+                return true;
+            case uint ui:
+                result = ui;
+                return true;
+            case long l:
+                result = l;
+                return true;
+            case decimal m:
+                result = m;
+                return true;
+            default:
+                result = 0;
+                return false;
+        }
+    }
+
+    private static object ResolveNumericElement(JsonElement element)
+    {
+        if (element.TryGetInt64(out var integer))
+        {
+            return integer;
+        }
+
+        if (element.TryGetDecimal(out var preciseDecimal))
+        {
+            return preciseDecimal;
+        }
+
+        return element.GetDouble();
+    }
+
+    private static bool TryValidateBooleanExpression(FilterExpression expression, out string? error)
+    {
+        switch (expression)
+        {
+            case BinaryExpression binary:
+                return TryValidateBinaryExpression(binary, out error);
+            case UnaryExpression unary:
+                return TryValidateUnaryExpression(unary, out error);
+            case Literal literal when literal.Type == LiteralType.Boolean:
+                error = null;
+                return true;
+            default:
+                return FailUnsupportedBooleanExpression(expression, out error);
+        }
+    }
+
+    private static bool TryValidateBinaryExpression(BinaryExpression binary, out string? error)
+    {
+        switch (binary.Operator)
+        {
+            case BinaryOperator.And:
+            case BinaryOperator.Or:
+                return TryValidateBooleanExpression(binary.Left, out error) &&
+                       TryValidateBooleanExpression(binary.Right, out error);
+            case BinaryOperator.Equal:
+            case BinaryOperator.NotEqual:
+            case BinaryOperator.LessThan:
+            case BinaryOperator.LessThanOrEqual:
+            case BinaryOperator.GreaterThan:
+            case BinaryOperator.GreaterThanOrEqual:
+            case BinaryOperator.Like:
+            case BinaryOperator.NotLike:
+                return TryValidateScalarExpression(binary.Left, out error) &&
+                       TryValidateScalarExpression(binary.Right, out error);
+            case BinaryOperator.In:
+            case BinaryOperator.NotIn:
+                return TryValidateScalarExpression(binary.Left, out error) &&
+                       TryValidateValueList(binary.Right, out error);
+            default:
+                error = $"Streaming subscriptions do not support the '{binary.Operator}' operator in filter expressions.";
+                return false;
+        }
+    }
+
+    private static bool TryValidateUnaryExpression(UnaryExpression unary, out string? error)
+    {
+        switch (unary.Operator)
+        {
+            case UnaryOperator.Not:
+                return TryValidateBooleanExpression(unary.Operand, out error);
+            case UnaryOperator.IsNull:
+            case UnaryOperator.IsNotNull:
+                return TryValidateScalarExpression(unary.Operand, out error);
+            default:
+                error = $"Streaming subscriptions do not support the '{unary.Operator}' operator in filter expressions.";
+                return false;
+        }
+    }
+
+    private static bool TryValidateScalarExpression(FilterExpression expression, out string? error)
+    {
+        switch (expression)
+        {
+            case PropertyReference:
+            case Literal:
+                error = null;
+                return true;
+            case FunctionCall:
+                error = "Streaming subscriptions do not support function calls in filter expressions.";
+                return false;
+            case SpatialPredicate or SpatialDistancePredicate:
+                error = "Streaming subscriptions do not support spatial predicates inside filter expressions. Use the bbox parameter instead.";
+                return false;
+            case TemporalPredicate:
+                error = "Streaming subscriptions do not support temporal predicates in filter expressions.";
+                return false;
+            case ValueList:
+                error = "Streaming subscriptions do not support nested value lists in filter expressions.";
+                return false;
+            default:
+                error = $"Streaming subscriptions do not support {expression.GetType().Name} expressions.";
+                return false;
+        }
+    }
+
+    private static bool TryValidateValueList(FilterExpression expression, out string? error)
+    {
+        if (expression is not ValueList valueList)
+        {
+            error = "Streaming subscriptions require a literal value list for IN/NOT IN filters.";
+            return false;
+        }
+
+        foreach (var value in valueList.Values)
+        {
+            if (!TryValidateScalarExpression(value, out error))
+            {
+                return false;
+            }
+        }
+
+        error = null;
+        return true;
+    }
+
+    private static bool FailUnsupportedBooleanExpression(FilterExpression expression, out string? error)
+    {
+        error = expression switch
+        {
+            FunctionCall => "Streaming subscriptions do not support function calls in filter expressions.",
+            SpatialPredicate or SpatialDistancePredicate => "Streaming subscriptions do not support spatial predicates inside filter expressions. Use the bbox parameter instead.",
+            TemporalPredicate => "Streaming subscriptions do not support temporal predicates in filter expressions.",
+            _ => $"Streaming subscriptions do not support {expression.GetType().Name} expressions."
+        };
         return false;
     }
 
@@ -266,7 +490,38 @@ public static class InMemoryFilterEvaluator
                 MeasureDepth(bin.Left, current + 1),
                 MeasureDepth(bin.Right, current + 1)),
             UnaryExpression un => MeasureDepth(un.Operand, current + 1),
+            SpatialPredicate spatial => Math.Max(
+                MeasureDepth(spatial.Left, current + 1),
+                MeasureDepth(spatial.Right, current + 1)),
+            SpatialDistancePredicate spatialDistance => Math.Max(
+                MeasureDepth(spatialDistance.Left, current + 1),
+                Math.Max(
+                    MeasureDepth(spatialDistance.Right, current + 1),
+                    MeasureDepth(spatialDistance.Distance, current + 1))),
+            TemporalPredicate temporal => Math.Max(
+                MeasureDepth(temporal.Left, current + 1),
+                MeasureDepth(temporal.Right, current + 1)),
+            ArrayPredicate array => Math.Max(
+                MeasureDepth(array.Left, current + 1),
+                MeasureDepth(array.Right, current + 1)),
+            FunctionCall function => MeasureDepth(function.Arguments, current + 1),
+            ArrayLiteral arrayLiteral => MeasureDepth(arrayLiteral.Elements, current + 1),
+            ValueList valueList => MeasureDepth(valueList.Values, current + 1),
+            IntervalLiteral interval => Math.Max(
+                interval.Start is null ? current : MeasureDepth(interval.Start, current + 1),
+                interval.End is null ? current : MeasureDepth(interval.End, current + 1)),
             _ => current
         };
+    }
+
+    private static int MeasureDepth(IReadOnlyList<FilterExpression> expressions, int current)
+    {
+        var max = current;
+        foreach (var expression in expressions)
+        {
+            max = Math.Max(max, MeasureDepth(expression, current));
+        }
+
+        return max;
     }
 }

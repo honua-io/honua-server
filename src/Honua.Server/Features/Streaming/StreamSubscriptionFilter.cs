@@ -14,6 +14,9 @@ namespace Honua.Server.Features.Streaming;
 /// </summary>
 internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 {
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptyProperties =
+        new Dictionary<string, JsonElement>(0, StringComparer.Ordinal);
+
     private readonly string? _serviceId;
     private readonly int[]? _layerIds;
     private readonly double[]? _bbox;
@@ -144,28 +147,30 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         // 4. Attribute filter — parse propertiesJson and evaluate AST.
         if (_attributeFilter is not null)
         {
-            if (propertiesJson is null)
-            {
-                return true; // No properties — pass through.
-            }
-
             if (!propertiesParsed)
             {
                 propertiesParsed = true;
-                try
+                if (propertiesJson is null)
                 {
-                    parsedProperties = JsonSerializer.Deserialize(
-                        propertiesJson,
-                        FeatureStreamJsonContext.Default.DictionaryStringJsonElement);
+                    parsedProperties = EmptyProperties;
                 }
-                catch
+                else
                 {
-                    parsedProperties = null;
+                    try
+                    {
+                        parsedProperties = JsonSerializer.Deserialize(
+                            propertiesJson,
+                            FeatureStreamJsonContext.Default.DictionaryStringJsonElement) ?? EmptyProperties;
+                    }
+                    catch
+                    {
+                        parsedProperties = null;
+                    }
                 }
             }
 
-            return parsedProperties is null
-                || InMemoryFilterEvaluator.Evaluate(_attributeFilter, parsedProperties);
+            return parsedProperties is not null &&
+                   InMemoryFilterEvaluator.Evaluate(_attributeFilter, parsedProperties);
         }
 
         return true;
