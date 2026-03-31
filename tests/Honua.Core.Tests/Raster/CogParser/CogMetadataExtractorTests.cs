@@ -172,6 +172,25 @@ public class CogMetadataExtractorTests
         metadata.PixelType.Should().Be("uint32");
     }
 
+    [Fact]
+    public async Task ReadMetadataAsync_InlineShortArrays_UsesFirstArrayElementForPixelMetadata()
+    {
+        var tiffData = BuildSyntheticCogBytesWithInlineShortArrays(
+            width: 256,
+            height: 256,
+            bitsPerSample: 8,
+            sampleFormat: 1,
+            samplesPerPixel: 2);
+
+        var reader = new InMemoryRangeReader(tiffData);
+        var extractor = new CogMetadataExtractor();
+
+        var metadata = await extractor.ReadMetadataAsync(reader, "test-bucket", "test.tif");
+
+        metadata.BandCount.Should().Be(2);
+        metadata.PixelType.Should().Be("uint8");
+    }
+
     /// <summary>
     /// Builds a synthetic classic TIFF (little-endian) with georeferencing tags
     /// in TIFF-spec ascending order. Tag 33550 comes before tag 33922.
@@ -357,6 +376,38 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Builds a minimal TIFF whose BitsPerSample and SampleFormat arrays fit inline
+    /// in the classic TIFF value field (two SHORT values each).
+    /// </summary>
+    private static byte[] BuildSyntheticCogBytesWithInlineShortArrays(
+        int width, int height, ushort bitsPerSample, ushort sampleFormat, ushort samplesPerPixel)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+
+        const int entryCount = 10;
+        writer.Write((ushort)entryCount);
+
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);                                      // ImageWidth
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);                                     // ImageLength
+        WriteIfdEntry(writer, 258, 3, 2, PackInlineShortPair(bitsPerSample, bitsPerSample)); // BitsPerSample[2]
+        WriteIfdEntry(writer, 259, 3, 1, 1);                                                // Compression = NONE
+        WriteIfdEntry(writer, 277, 3, 1, samplesPerPixel);                                  // SamplesPerPixel
+        WriteIfdEntry(writer, 322, 4, 1, 256);                                              // TileWidth
+        WriteIfdEntry(writer, 323, 4, 1, 256);                                              // TileLength
+        WriteIfdEntry(writer, 324, 4, 1, 5000);                                             // TileOffsets (dummy)
+        WriteIfdEntry(writer, 325, 4, 1, 1000);                                             // TileByteCounts (dummy)
+        WriteIfdEntry(writer, 339, 3, 2, PackInlineShortPair(sampleFormat, sampleFormat));   // SampleFormat[2]
+
+        writer.Write((uint)0); // no next IFD
+        return ms.ToArray();
+    }
+
     private static void WriteIfdEntry(BinaryWriter writer, ushort tag, ushort type, uint count, uint valueOrOffset)
     {
         writer.Write(tag);
@@ -364,6 +415,9 @@ public class CogMetadataExtractorTests
         writer.Write(count);
         writer.Write(valueOrOffset);
     }
+
+    private static uint PackInlineShortPair(ushort first, ushort second)
+        => (uint)(first | (second << 16));
 
     /// <summary>
     /// In-memory ICloudRangeReader for unit testing without cloud dependencies.

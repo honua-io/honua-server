@@ -101,14 +101,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                         tileByteCountsEntry = entry;
                         break;
                     case TiffConstants.TagBitsPerSample when levelIndex == 0:
-                        // For multi-band images (count > 1), BitsPerSample is stored
-                        // externally and entry.IsInline is false. Read the first band's
-                        // value from the external data in that case.
-                        if (entry.IsInline)
-                        {
-                            bitsPerSample = (int)entry.ValueOrOffset;
-                        }
-                        else if (entry.Count >= 1)
+                        if (entry.Count >= 1)
                         {
                             var bpsData = await ReadIntArrayFromEntryAsync(
                                 reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
@@ -119,11 +112,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                         }
                         break;
                     case TiffConstants.TagSampleFormat when levelIndex == 0:
-                        if (entry.IsInline)
-                        {
-                            sampleFormat = (ushort)entry.ValueOrOffset;
-                        }
-                        else if (entry.Count >= 1)
+                        if (entry.Count >= 1)
                         {
                             var sfData = await ReadIntArrayFromEntryAsync(
                                 reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
@@ -215,7 +204,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     {
         if (entry.IsInline)
         {
-            return [entry.ValueOrOffset];
+            if (entry.Count == 1)
+            {
+                return [entry.ValueOrOffset];
+            }
+
+            return parser.ReadInlineLongArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
         }
 
         var typeSize = TiffConstants.GetTypeSize(entry.Type);
@@ -230,7 +224,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     {
         if (entry.IsInline)
         {
-            return [(int)entry.ValueOrOffset];
+            if (entry.Count == 1)
+            {
+                return [(int)entry.ValueOrOffset];
+            }
+
+            return parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
         }
 
         var typeSize = TiffConstants.GetTypeSize(entry.Type);

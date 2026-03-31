@@ -49,6 +49,7 @@ internal sealed record RegisterCloudCogRequest
         if (string.IsNullOrWhiteSpace(Name)) { error = "Name is required."; return false; }
         if (string.IsNullOrWhiteSpace(Bucket)) { error = "Bucket is required."; return false; }
         if (string.IsNullOrWhiteSpace(ObjectKey)) { error = "ObjectKey is required."; return false; }
+        if (!Enum.IsDefined(Provider)) { error = "Provider must be one of: AwsS3, AzureBlob, GoogleCloudStorage."; return false; }
         if (Provider == CloudStorageProvider.Local) { error = "Local storage is not supported for cloud COG serving."; return false; }
         error = string.Empty;
         return true;

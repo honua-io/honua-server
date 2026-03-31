@@ -74,6 +74,42 @@ public class CloudCogEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cloud-rasters")]
+    public async Task RegisterCloudCog_WithUndefinedProviderValue_Returns400()
+    {
+        var request = new
+        {
+            layerId = 1,
+            name = "test-cog",
+            provider = 99,
+            bucket = "test-bucket",
+            objectKey = "test.tif"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cloud-rasters")]
+    public async Task RegisterCloudCog_WithMissingLayer_Returns404()
+    {
+        var request = new
+        {
+            layerId = 99999,
+            name = "missing-layer-cog",
+            provider = "AwsS3",
+            bucket = "test-bucket",
+            objectKey = "missing-layer.tif"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/cloud-rasters")]
     public async Task ListCloudCogs_WithoutLayerId_Returns400()
     {

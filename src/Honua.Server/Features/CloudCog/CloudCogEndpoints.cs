@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
@@ -57,6 +58,7 @@ internal static class CloudCogEndpoints
 
     private static async Task<IResult> HandleRegister(
         RegisterCloudCogRequest request,
+        [FromServices] ILayerCatalog layerCatalog,
         [FromServices] ICloudCogStore store,
         ILogger<CloudCogEndpointsLog> logger,
         CancellationToken cancellationToken)
@@ -64,6 +66,11 @@ internal static class CloudCogEndpoints
         if (!request.IsValid(out var error))
         {
             return TypedResults.BadRequest(error);
+        }
+
+        if (!await layerCatalog.LayerExistsAsync(request.LayerId, cancellationToken).ConfigureAwait(false))
+        {
+            return TypedResults.NotFound("Layer not found.");
         }
 
         CloudCogRegistration registration;

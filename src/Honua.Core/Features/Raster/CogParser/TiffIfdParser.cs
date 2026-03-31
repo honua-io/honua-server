@@ -199,6 +199,26 @@ internal sealed class TiffIfdParser
         return result;
     }
 
+    /// <summary>
+    /// Reads an inline array of long values from an IFD entry's value/offset field.
+    /// </summary>
+    public long[] ReadInlineLongArray(long valueOrOffset, int count, ushort type)
+    {
+        Span<byte> inlineData = stackalloc byte[_isBigTiff ? 8 : 4];
+        WriteInlineValue(inlineData, valueOrOffset);
+        return ReadLongArray(inlineData[..(count * TiffConstants.GetTypeSize(type))], count, type);
+    }
+
+    /// <summary>
+    /// Reads an inline array of int values from an IFD entry's value/offset field.
+    /// </summary>
+    public int[] ReadInlineIntArray(long valueOrOffset, int count, ushort type)
+    {
+        Span<byte> inlineData = stackalloc byte[_isBigTiff ? 8 : 4];
+        WriteInlineValue(inlineData, valueOrOffset);
+        return ReadIntArray(inlineData[..(count * TiffConstants.GetTypeSize(type))], count, type);
+    }
+
     private IfdEntry ParseIfdEntry(ReadOnlySpan<byte> data, int offset)
     {
         var tag = ReadUInt16(data, offset, _isLittleEndian);
@@ -258,6 +278,33 @@ internal sealed class TiffIfdParser
         => isLittleEndian
             ? BinaryPrimitives.ReadInt64LittleEndian(data.Slice(offset))
             : BinaryPrimitives.ReadInt64BigEndian(data.Slice(offset));
+
+    private void WriteInlineValue(Span<byte> buffer, long valueOrOffset)
+    {
+        if (_isBigTiff)
+        {
+            if (_isLittleEndian)
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(buffer, valueOrOffset);
+            }
+            else
+            {
+                BinaryPrimitives.WriteInt64BigEndian(buffer, valueOrOffset);
+            }
+
+            return;
+        }
+
+        var rawValue = unchecked((uint)valueOrOffset);
+        if (_isLittleEndian)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer, rawValue);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(buffer, rawValue);
+        }
+    }
 }
 
 /// <summary>
