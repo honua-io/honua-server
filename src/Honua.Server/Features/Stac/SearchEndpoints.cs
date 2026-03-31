@@ -13,8 +13,9 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.Stac.Models;
 using Honua.Server.Features.Stac.Services;
-using Honua.Server.Features.OgcFeatures.Services;
+using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Stac;
 
@@ -69,7 +70,7 @@ internal static class SearchEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] IFilterExpressionService filterExpressionService,
-        [FromServices] OgcFeaturesGeometryServices geometryServices,
+        [FromServices] IGeometryService geometryService,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         var validationError = OgcCommonUtilities.ValidateQueryParameters(
@@ -107,7 +108,7 @@ internal static class SearchEndpoints
             layerCatalog,
             featureReader,
             filterExpressionService,
-            geometryServices,
+            geometryService,
             defaultFilterLangIsText: true,
             logger);
     }
@@ -118,9 +119,10 @@ internal static class SearchEndpoints
         [FromServices] ILayerCatalog layerCatalog,
         [FromServices] IFeatureReader featureReader,
         [FromServices] IFilterExpressionService filterExpressionService,
-        [FromServices] OgcFeaturesGeometryServices geometryServices,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        [FromServices] IGeometryService geometryService)
     {
+        var logger = context.RequestServices.GetRequiredService<ILogger<StacEndpoints.StacEndpointsLog>>();
+
         return await ExecuteSearchAsync(
             request,
             0,
@@ -128,7 +130,7 @@ internal static class SearchEndpoints
             layerCatalog,
             featureReader,
             filterExpressionService,
-            geometryServices,
+            geometryService,
             defaultFilterLangIsText: false,
             logger);
     }
@@ -140,7 +142,7 @@ internal static class SearchEndpoints
         ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
-        OgcFeaturesGeometryServices geometryServices,
+        IGeometryService geometryService,
         bool defaultFilterLangIsText,
         ILogger logger)
     {
@@ -188,7 +190,7 @@ internal static class SearchEndpoints
                     baseUrl,
                     featureReader,
                     filterExpressionService,
-                    geometryServices,
+                    geometryService,
                     defaultFilterLangIsText,
                     logger,
                     layerList,
@@ -203,7 +205,7 @@ internal static class SearchEndpoints
                 baseUrl,
                 featureReader,
                 filterExpressionService,
-                geometryServices,
+                geometryService,
                 defaultFilterLangIsText,
                 logger,
                 targetLayers.ToArray(),
@@ -230,7 +232,7 @@ internal static class SearchEndpoints
         string baseUrl,
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
-        OgcFeaturesGeometryServices geometryServices,
+        IGeometryService geometryService,
         bool defaultFilterLangIsText,
         ILogger logger,
         Core.Features.Catalog.Domain.LayerDefinition[] layerList,
@@ -255,7 +257,7 @@ internal static class SearchEndpoints
                     layer,
                     parsedObjectIds,
                     filterExpressionService,
-                    geometryServices,
+                    geometryService,
                     defaultFilterLangIsText,
                     out var query,
                     out var selectedProperties,
@@ -348,7 +350,7 @@ internal static class SearchEndpoints
         Core.Features.Catalog.Domain.LayerDefinition layer,
         ImmutableArray<long>? parsedObjectIds,
         IFilterExpressionService filterExpressionService,
-        OgcFeaturesGeometryServices geometryServices,
+        IGeometryService geometryService,
         bool defaultFilterLangIsText,
         out FeatureQuery query,
         out IReadOnlySet<string>? selectedProperties,
@@ -377,7 +379,7 @@ internal static class SearchEndpoints
         {
             if (!StacFilterHelpers.TryCreateIntersectsSpatialFilter(
                     request.Intersects.Value.GetRawText(),
-                    geometryServices,
+                    geometryService,
                     out var intersectsSpatialFilter,
                     out var intersectsError))
             {

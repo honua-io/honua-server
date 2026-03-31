@@ -49,6 +49,18 @@ internal static class CoordinateTransformer
     }
 
     /// <summary>
+    /// Converts a shared render extent from one SRID to another.
+    /// </summary>
+    public static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent TransformExtent(
+        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+        int fromSrid,
+        int toSrid)
+    {
+        var transformed = TransformExtent(ToRendererExtent(extent), fromSrid, toSrid);
+        return ToSharedExtent(transformed);
+    }
+
+    /// <summary>
     /// Converts a single point from one SRID to another.
     /// </summary>
     public static (double X, double Y) TransformPoint(double x, double y, int fromSrid, int toSrid)
@@ -109,7 +121,7 @@ internal static class CoordinateTransformer
 
     /// <summary>
     /// Adjusts an extent to match a requested scale denominator, keeping the center point fixed.
-    /// This is the inverse of <see cref="CalculateScaleDenominator"/>: given a target scale,
+    /// This is the inverse of <see cref="CalculateScaleDenominator(SkiaMapRenderer.RenderExtent, int, int, int)"/>: given a target scale,
     /// it computes the extent width/height in map units that corresponds to that scale
     /// at the given output dimensions and DPI.
     /// </summary>
@@ -154,6 +166,21 @@ internal static class CoordinateTransformer
     }
 
     /// <summary>
+    /// Adjusts a shared render extent to match a requested scale denominator.
+    /// </summary>
+    public static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent AdjustExtentForScale(
+        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+        double scaleDenominator,
+        int imageWidth,
+        int imageHeight,
+        int dpi,
+        int srid)
+    {
+        var adjusted = AdjustExtentForScale(ToRendererExtent(extent), scaleDenominator, imageWidth, imageHeight, dpi, srid);
+        return ToSharedExtent(adjusted);
+    }
+
+    /// <summary>
     /// Calculates the approximate scale denominator for a given extent and image size.
     /// </summary>
     public static double CalculateScaleDenominator(
@@ -189,6 +216,16 @@ internal static class CoordinateTransformer
     }
 
     /// <summary>
+    /// Calculates the approximate scale denominator for a shared render extent.
+    /// </summary>
+    public static double CalculateScaleDenominator(
+        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+        int imageWidth,
+        int dpi,
+        int srid)
+        => CalculateScaleDenominator(ToRendererExtent(extent), imageWidth, dpi, srid);
+
+    /// <summary>
     /// Converts a pixel tolerance to map units for identify operations.
     /// </summary>
     public static double PixelToMapUnits(
@@ -203,6 +240,15 @@ internal static class CoordinateTransformer
 
         return pixelTolerance * mapExtent.Width / imageWidth;
     }
+
+    /// <summary>
+    /// Converts a pixel tolerance to map units for identify operations on a shared render extent.
+    /// </summary>
+    public static double PixelToMapUnits(
+        int pixelTolerance,
+        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent mapExtent,
+        int imageWidth)
+        => PixelToMapUnits(pixelTolerance, ToRendererExtent(mapExtent), imageWidth);
 
     /// <summary>
     /// Returns the meters-per-linear-unit factor for common projected CRS codes.
@@ -239,4 +285,12 @@ internal static class CoordinateTransformer
             _ => 1.0
         };
     }
+
+    private static SkiaMapRenderer.RenderExtent ToRendererExtent(
+        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent)
+        => new(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
+
+    private static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent ToSharedExtent(
+        SkiaMapRenderer.RenderExtent extent)
+        => new(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
 }

@@ -5,10 +5,9 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.OgcFeatures.Models;
-using Honua.Server.Features.OgcFeatures.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -100,7 +99,7 @@ internal static class StacFilterHelpers
     /// </summary>
     public static bool TryCreateIntersectsSpatialFilter(
         string? intersectsGeoJson,
-        OgcFeaturesGeometryServices geometryServices,
+        IGeometryService geometryService,
         out SpatialFilter? spatialFilter,
         out string? error)
     {
@@ -112,22 +111,23 @@ internal static class StacFilterHelpers
             return true;
         }
 
-        var simpleGeometry = geometryServices.ConvertGeoJsonToSimpleGeometry(intersectsGeoJson, AxisOrder.EastNorth);
-        if (simpleGeometry is null)
+        try
+        {
+            var wkb = geometryService.ConvertGeoJsonToWkb(intersectsGeoJson, srid: 4326);
+            if (wkb is null)
+            {
+                error = "Invalid intersects geometry.";
+                return false;
+            }
+
+            spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: 4326);
+            return true;
+        }
+        catch (ArgumentException)
         {
             error = "Invalid intersects geometry.";
             return false;
         }
-
-        var wkbResult = geometryServices.TryCreateWkbFromGeoJson(simpleGeometry, 4326, AxisOrder.EastNorth);
-        if (!wkbResult.IsSuccess || wkbResult.Wkb is null)
-        {
-            error = wkbResult.ErrorMessage ?? "Invalid intersects geometry.";
-            return false;
-        }
-
-        spatialFilter = SpatialFilter.Create(wkbResult.Wkb, SpatialRelationship.Intersects, srid: 4326);
-        return true;
     }
 
     /// <summary>

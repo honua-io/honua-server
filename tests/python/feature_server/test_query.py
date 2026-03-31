@@ -497,11 +497,15 @@ class TestQueryPagination:
         if page1.get("features") and page2.get("features"):
             # Get OBJECTIDs if available
             page1_ids = {
-                f.get("attributes", {}).get("OBJECTID") or f.get("attributes", {}).get("id")
+                f.get("attributes", {}).get("OBJECTID")
+                or f.get("attributes", {}).get("objectid")
+                or f.get("attributes", {}).get("id")
                 for f in page1["features"]
             }
             page2_ids = {
-                f.get("attributes", {}).get("OBJECTID") or f.get("attributes", {}).get("id")
+                f.get("attributes", {}).get("OBJECTID")
+                or f.get("attributes", {}).get("objectid")
+                or f.get("attributes", {}).get("id")
                 for f in page2["features"]
             }
             # Pages should not overlap

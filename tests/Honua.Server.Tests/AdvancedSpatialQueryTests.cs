@@ -289,6 +289,9 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Fields.Should().Contain(field => field.Name.Equals("distance", StringComparison.OrdinalIgnoreCase));
+        queryResponse.Features.Should().NotBeEmpty();
+        queryResponse.Features[0].Attributes.Should().ContainKey("distance");
     }
 
     /// <summary>

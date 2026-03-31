@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.TestKit.Attributes;
+using MapLibreStyleLayer = Honua.Server.Features.Infrastructure.Rendering.MapLibreStyleLayer;
 using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;

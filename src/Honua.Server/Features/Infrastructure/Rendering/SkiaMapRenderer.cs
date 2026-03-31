@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Infrastructure.Rendering;
 using SkiaSharp;
 
 namespace Honua.Server.Features.Infrastructure.Rendering;
@@ -261,7 +262,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    private static void RenderWithStyles(
+    internal static void RenderWithStyles(
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer[] styleLayers,
@@ -297,7 +298,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    private static void RenderWithDefaults(
+    internal static void RenderWithDefaults(
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         Func<double, double, SKPoint> transform,
@@ -695,6 +696,12 @@ internal sealed class SkiaMapRenderer : IDisposable
             (float)((maxY - y) * scaleY) // Flip Y axis
         );
     }
+
+    internal static Func<double, double, SKPoint> BuildTransform(
+        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+        int imageWidth,
+        int imageHeight)
+        => BuildTransform(new RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY), imageWidth, imageHeight);
 
     private static byte[] EncodeSurface(SKSurface surface)
     {

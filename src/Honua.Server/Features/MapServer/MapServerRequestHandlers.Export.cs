@@ -22,7 +22,6 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.MapServer.Models;
-using Honua.Server.Features.MapServer.Rendering;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using SkiaSharp;
@@ -1303,29 +1302,107 @@ internal static partial class MapServerEndpoints
         int toSrid,
         CancellationToken cancellationToken)
     {
-        var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
-        if (transformService == null)
+        try
         {
-            // No transform service available — try in-memory only
-            try
-            {
-                return ExtentTransformResult.Success(
-                    CoordinateTransformer.TransformExtent(extent, fromSrid, toSrid));
-            }
-            catch (NotSupportedException)
+            return ExtentTransformResult.Success(
+                CoordinateTransformer.TransformExtent(extent, fromSrid, toSrid));
+        }
+        catch (NotSupportedException)
+        {
+            var connectionProvider = context.RequestServices.GetService<IDatabaseConnectionProvider>();
+            if (connectionProvider == null)
             {
                 return ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
             }
+
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Honua.Server.MapServerEndpoints");
+
+            var transformed = await TryTransformExtentWithPostGisAsync(
+                connectionProvider,
+                logger,
+                extent,
+                fromSrid,
+                toSrid,
+                cancellationToken);
+            return transformed.HasValue
+                ? ExtentTransformResult.Success(transformed.Value)
+                : ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
         }
+    }
 
-        var result = await transformService.TransformExtentAsync(
-            extent.MinX, extent.MinY, extent.MaxX, extent.MaxY,
-            fromSrid, toSrid, cancellationToken);
+    private static async Task<SkiaMapRenderer.RenderExtent?> TryTransformExtentWithPostGisAsync(
+        IDatabaseConnectionProvider connectionProvider,
+        ILogger logger,
+        SkiaMapRenderer.RenderExtent extent,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = await connectionProvider
+                .OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH points AS (
+                    SELECT ST_SetSRID(ST_MakePoint(@minX, @minY), @fromSrid) AS geom
+                    UNION ALL
+                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @minY), @fromSrid) AS geom
+                    UNION ALL
+                    SELECT ST_SetSRID(ST_MakePoint(@maxX, @maxY), @fromSrid) AS geom
+                    UNION ALL
+                    SELECT ST_SetSRID(ST_MakePoint(@minX, @maxY), @fromSrid) AS geom
+                ),
+                transformed AS (
+                    SELECT ST_Transform(geom, @toSrid) AS geom
+                    FROM points
+                )
+                SELECT MIN(ST_X(geom)) AS xmin,
+                       MIN(ST_Y(geom)) AS ymin,
+                       MAX(ST_X(geom)) AS xmax,
+                       MAX(ST_Y(geom)) AS ymax
+                FROM transformed
+                """;
 
-        return result.HasValue
-            ? ExtentTransformResult.Success(new SkiaMapRenderer.RenderExtent(
-                result.Value.MinX, result.Value.MinY, result.Value.MaxX, result.Value.MaxY))
-            : ExtentTransformResult.Failure(InvalidSpatialReferenceMessage);
+            AddParameter(command, "@minX", extent.MinX);
+            AddParameter(command, "@minY", extent.MinY);
+            AddParameter(command, "@maxX", extent.MaxX);
+            AddParameter(command, "@maxY", extent.MaxY);
+            AddParameter(command, "@fromSrid", fromSrid);
+            AddParameter(command, "@toSrid", toSrid);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3))
+            {
+                return null;
+            }
+
+            return new SkiaMapRenderer.RenderExtent(
+                reader.GetDouble(0),
+                reader.GetDouble(1),
+                reader.GetDouble(2),
+                reader.GetDouble(3));
+        }
+        catch (Exception ex)
+        {
+            MapServerLog.PostGisExtentTransformFailed(logger, fromSrid, toSrid, ex);
+            return null;
+        }
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     private readonly record struct ExtentTransformResult(

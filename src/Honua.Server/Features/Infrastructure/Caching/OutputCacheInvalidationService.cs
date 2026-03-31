@@ -69,6 +69,27 @@ internal sealed partial class OutputCacheInvalidationService
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(serviceId))
+        {
+            responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapServicePattern(serviceId));
+        }
+        else if (layerId.HasValue)
+        {
+            if (normalizedServiceIds.Length > 0)
+            {
+                // Use resolved owning services for targeted static-map eviction.
+                foreach (var normalizedServiceId in normalizedServiceIds)
+                {
+                    responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapServicePattern(normalizedServiceId));
+                }
+            }
+            else
+            {
+                // No owning services resolved — fall back to global eviction.
+                responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapPattern());
+            }
+        }
+
         tags.Add("ogc-metadata");
         tags.Add("ogc-tiles");
         tags.Add("ogc-maps");
@@ -140,6 +161,7 @@ internal sealed partial class OutputCacheInvalidationService
         if (!string.IsNullOrWhiteSpace(normalizedServiceId))
         {
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerServicePattern(normalizedServiceId));
+            responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapServicePattern(normalizedServiceId));
         }
 
         foreach (var layerId in layerIdList)
@@ -163,6 +185,13 @@ internal sealed partial class OutputCacheInvalidationService
             responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerPattern());
             responsePatterns.Add(ResponseCacheUtilities.BuildOgcPattern());
             responsePatterns.Add(ResponseCacheUtilities.BuildODataPattern());
+            responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapPattern());
+        }
+        else if (string.IsNullOrWhiteSpace(normalizedServiceId) && layerIdList.Length > 0)
+        {
+            // Without a serviceId we cannot scope to a single service's static map cache.
+            // Evict all static map entries because any service may render these layers.
+            responsePatterns.Add(ResponseCacheUtilities.BuildStaticMapPattern());
         }
 
         return Task.WhenAll(

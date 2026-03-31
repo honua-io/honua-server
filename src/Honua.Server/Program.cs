@@ -394,17 +394,6 @@ builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Ho
     }));
 builder.Services.AddHostedService<Honua.Server.Features.Export.ExportBackgroundService>();
 
-// Register print background service with bounded channel
-builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Honua.Server.Features.PrintingTools.Models.PrintJob>(
-    new System.Threading.Channels.BoundedChannelOptions(4)
-    {
-        FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
-    }));
-builder.Services.AddSingleton<Honua.Server.Features.PrintingTools.PrintRenderConcurrencyGate>();
-builder.Services.AddSingleton<Honua.Server.Features.PrintingTools.PrintJobCancellationTokens>();
-builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IJobCancellationNotifier>(
-    sp => sp.GetRequiredService<Honua.Server.Features.PrintingTools.PrintJobCancellationTokens>());
-builder.Services.AddHostedService<Honua.Server.Features.PrintingTools.PrintingToolsBackgroundService>();
 
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>(
     builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions.SectionName));
@@ -893,9 +882,6 @@ app.MapTemporaryFileEndpoints();
 
 // Configure data export endpoints
 app.MapExportEndpoints();
-
-// Configure print service endpoints
-app.MapPrintingToolsEndpoints();
 
 // Configure unified operations progress endpoints
 app.MapOperationsProgressEndpoints();

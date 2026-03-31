@@ -175,6 +175,10 @@ internal sealed class QueryFormatter : IQueryFormatter
             .Where(field => !field.IsGeometry)
             .Select(field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var runtimeFields = DetectRuntimeFields(result.Items, declaredAttributeFields, objectIdFieldName);
+        var runtimeFieldNames = runtimeFields
+            .Select(field => field.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         GeoServicesFeature[] features = result.Items
             .Select(f => ConvertToGeoServicesFeature(
                 f,
@@ -182,12 +186,13 @@ internal sealed class QueryFormatter : IQueryFormatter
                 outputSrid,
                 outFields,
                 declaredAttributeFields,
+                runtimeFieldNames,
                 objectIdFieldName,
                 returnZ,
                 returnM,
                 geometryLimits))
             .ToArray();
-        var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName);
+        var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName, runtimeFields);
         var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
         var hasZ = false;
         var hasM = false;
@@ -261,6 +266,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         int? outputSrid,
         string[]? outFields,
         IReadOnlySet<string> declaredAttributeFields,
+        IReadOnlySet<string> runtimeAttributeFields,
         string objectIdFieldName,
         bool returnZ,
         bool returnM,
@@ -270,6 +276,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             feature.Attributes,
             outFields,
             declaredAttributeFields,
+            runtimeAttributeFields,
             objectIdFieldName,
             feature.Id);
 
@@ -312,6 +319,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         ImmutableDictionary<string, object?> attributes,
         string[]? outFields,
         IReadOnlySet<string> declaredAttributeFields,
+        IReadOnlySet<string> runtimeAttributeFields,
         string objectIdFieldName,
         long objectIdValue)
     {
@@ -321,7 +329,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             var all = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
             foreach (var (name, value) in attributes)
             {
-                if (declaredAttributeFields.Contains(name))
+                if (ShouldIncludeGeoServicesAttribute(name, declaredAttributeFields, runtimeAttributeFields))
                 {
                     all[name] = GeoServicesValueNormalizer.Normalize(value);
                 }
@@ -348,12 +356,32 @@ internal sealed class QueryFormatter : IQueryFormatter
         }
         foreach (string field in outFields)
         {
-            if (declaredAttributeFields.Contains(field) && attributes.TryGetValue(field, out object? fieldValue))
+            if (attributes.TryGetValue(field, out object? fieldValue)
+                && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields))
+            {
                 filtered[field] = GeoServicesValueNormalizer.Normalize(fieldValue);
+            }
         }
 
         return filtered;
     }
+
+    private static bool ShouldIncludeGeoServicesAttribute(
+        string fieldName,
+        IReadOnlySet<string> declaredAttributeFields,
+        IReadOnlySet<string> runtimeAttributeFields)
+    {
+        if (IsInternalAttribute(fieldName))
+        {
+            return false;
+        }
+
+        return declaredAttributeFields.Contains(fieldName)
+            || runtimeAttributeFields.Contains(fieldName);
+    }
+
+    private static bool IsInternalAttribute(string fieldName)
+        => fieldName.StartsWith("__", StringComparison.Ordinal);
 
     private static void AddObjectIdAlias(Dictionary<string, object?> target, string objectIdFieldName)
     {
@@ -399,7 +427,8 @@ internal sealed class QueryFormatter : IQueryFormatter
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         LayerDefinition layer,
         string[]? outFields,
-        string objectIdFieldName)
+        string objectIdFieldName,
+        IReadOnlyCollection<GeoServicesFieldInfo>? runtimeFields = null)
     {
         var includeAllFields = outFields == null || outFields.Length == 0
             || (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
@@ -431,7 +460,97 @@ internal sealed class QueryFormatter : IQueryFormatter
             });
         }
 
+        if (runtimeFields is { Count: > 0 })
+        {
+            foreach (var runtimeField in runtimeFields)
+            {
+                if (!includeAllFields && !requestedFields!.Contains(runtimeField.Name))
+                {
+                    continue;
+                }
+
+                if (mappedFields.Any(field => field.Name.Equals(runtimeField.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                mappedFields.Add(runtimeField);
+            }
+        }
+
         return mappedFields.ToArray();
+    }
+
+    private static List<GeoServicesFieldInfo> DetectRuntimeFields(
+        ImmutableArray<Feature> features,
+        HashSet<string> declaredAttributeFields,
+        string objectIdFieldName)
+    {
+        var runtimeFields = new List<GeoServicesFieldInfo>();
+        var seenFieldNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var feature in features)
+        {
+            foreach (var (name, value) in feature.Attributes)
+            {
+                if (seenFieldNames.Contains(name)
+                    || declaredAttributeFields.Contains(name)
+                    || name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)
+                    || name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)
+                    || IsInternalAttribute(name))
+                {
+                    continue;
+                }
+
+                var runtimeField = MapRuntimeFieldInfo(name, value);
+                if (runtimeField is null)
+                {
+                    continue;
+                }
+
+                runtimeFields.Add(runtimeField);
+                seenFieldNames.Add(name);
+            }
+        }
+
+        return runtimeFields;
+    }
+
+    private static GeoServicesFieldInfo? MapRuntimeFieldInfo(string name, object? value)
+    {
+        return value switch
+        {
+            sbyte or byte or short or ushort or int or uint => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger", "INTEGER"),
+            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger64", "BIGINT"),
+            float => CreateRuntimeFieldInfo(name, "esriFieldTypeSingle", "REAL"),
+            double or decimal => CreateRuntimeFieldInfo(name, "esriFieldTypeDouble", "DOUBLE PRECISION"),
+            bool => CreateRuntimeFieldInfo(name, "esriFieldTypeSmallInteger", "BOOLEAN"),
+            DateTimeOffset or DateTime => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "TIMESTAMP WITH TIME ZONE"),
+            DateOnly => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "DATE"),
+            TimeOnly or TimeSpan => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "TIME"),
+            Guid => CreateRuntimeFieldInfo(name, "esriFieldTypeGUID", "UUID"),
+            byte[] => CreateRuntimeFieldInfo(name, "esriFieldTypeBlob", "BYTEA"),
+            string text => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "TEXT", text.Length),
+            _ => null
+        };
+    }
+
+    private static GeoServicesFieldInfo CreateRuntimeFieldInfo(
+        string name,
+        string type,
+        string sqlType,
+        int? length = null)
+    {
+        return new GeoServicesFieldInfo
+        {
+            Name = name,
+            Type = type,
+            SqlType = sqlType,
+            Alias = name,
+            Length = length,
+            Nullable = true,
+            Editable = false
+        };
     }
 
     internal static string ResolveDisplayFieldName(IReadOnlyList<GeoServicesFieldInfo> fields, string objectIdFieldName)

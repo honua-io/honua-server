@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.MapServer.Rendering;
+using Honua.Server.Features.Infrastructure.Rendering;
 
 namespace Honua.Server.Tests.Features.MapServer.Rendering;
 

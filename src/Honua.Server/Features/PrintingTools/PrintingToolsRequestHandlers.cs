@@ -21,6 +21,7 @@ using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Honua.Server.Features.PrintingTools.Layout;
 using Honua.Server.Features.PrintingTools.Models;
+using PrintLayoutTemplate = Honua.Server.Features.PrintingTools.Models.PrintLayoutTemplate;
 using SkiaSharp;
 
 namespace Honua.Server.Features.PrintingTools;
@@ -67,6 +68,7 @@ internal static class PrintingToolsRequestHandlers
         activity?.SetTag("print.template", templateName);
         activity?.SetTag("print.format", format);
         activity?.SetTag("print.dpi", dpi);
+        var stopwatch = Stopwatch.StartNew();
 
         // Validate and resolve template
         if (!LayoutTemplateRegistry.TryGetTemplate(templateName, out var template))
@@ -77,84 +79,95 @@ internal static class PrintingToolsRequestHandlers
         // Edition gating is enforced by the endpoint layer (ValidateAndResolveRequestAsync)
         // before this method is called. No redundant check here.
 
-        // Resolve visible layers once — shared by both map-frame rendering and legend
-        // building to avoid duplicate service validation and style catalog calls.
-        var resolvedLayers = await MaterializeVisibleLayersAsync(
-            webMap, resourceValidator, styleCatalog, callerPrincipal, accessPolicyEvaluator, cancellationToken);
-
-        // Render map frame
-        var mapFrameBytes = await RenderMapFrameAsync(
-            webMap, template, dpi, resolvedLayers, featureReader, logger, cancellationToken);
-
-        if (mapFrameBytes is null)
+        try
         {
-            return null;
-        }
+            // Resolve visible layers once — shared by both map-frame rendering and legend
+            // building to avoid duplicate service validation and style catalog calls.
+            var resolvedLayers = await MaterializeVisibleLayersAsync(
+                webMap, resourceValidator, styleCatalog, callerPrincipal, accessPolicyEvaluator, cancellationToken);
 
-        // Build legend swatches for layout templates (honor showLegend option)
-        List<LegendSwatchEntry>? legendEntries = null;
-        if (!template.IsMapOnly && template.Legend is not null
-            && webMap.LayoutOptions?.ShowLegend != false)
-        {
-            legendEntries = BuildLegendEntries(resolvedLayers);
-        }
+            // Render map frame
+            var mapFrameBytes = await RenderMapFrameAsync(
+                webMap, template, dpi, resolvedLayers, featureReader, logger, cancellationToken);
 
-        // Get layout options
-        var titleText = webMap.LayoutOptions?.TitleText;
-        var attributionText = webMap.LayoutOptions?.CopyrightText ?? "Powered by Honua";
-
-        // Calculate scale denominator from extent (only needed for layout templates with a scale bar)
-        var scaleDenominator = template.IsMapOnly ? 0.0 : CalculateScaleDenominator(webMap, template, dpi);
-
-        // Compose the layout — full-page dimensions for layout templates, map-frame for MAP_ONLY
-        var (pageWidthPx, pageHeightPx) = template.IsMapOnly
-            ? ResolveOutputDimensions(webMap, template, dpi)
-            : ((int)(template.PageWidth * dpi / 72f), (int)(template.PageHeight * dpi / 72f));
-
-        // When MAP_ONLY with custom outputSize, construct a runtime template whose
-        // page/map-frame dimensions match the resolved pixels (in points) so the
-        // LayoutComposer draws into the correct rect instead of the fixed Letter slot.
-        var compositionTemplate = template;
-        if (template.IsMapOnly)
-        {
-            var pagePtW = pageWidthPx * 72f / dpi;
-            var pagePtH = pageHeightPx * 72f / dpi;
-            compositionTemplate = new PrintLayoutTemplate
+            if (mapFrameBytes is null)
             {
-                Name = template.Name,
-                Label = template.Label,
-                PageWidth = pagePtW,
-                PageHeight = pagePtH,
-                MapFrame = new LayoutSlot { X = 0, Y = 0, Width = pagePtW, Height = pagePtH }
-            };
+                return null;
+            }
+
+            // Build legend swatches for layout templates (honor showLegend option)
+            List<LegendSwatchEntry>? legendEntries = null;
+            if (!template.IsMapOnly && template.Legend is not null
+                && webMap.LayoutOptions?.ShowLegend != false)
+            {
+                legendEntries = BuildLegendEntries(resolvedLayers);
+            }
+
+            // Get layout options
+            var titleText = webMap.LayoutOptions?.TitleText;
+            var attributionText = webMap.LayoutOptions?.CopyrightText ?? "Powered by Honua";
+
+            // Calculate scale denominator from extent (only needed for layout templates with a scale bar)
+            var scaleDenominator = template.IsMapOnly ? 0.0 : CalculateScaleDenominator(webMap, template, dpi);
+
+            // Compose the layout — full-page dimensions for layout templates, map-frame for MAP_ONLY
+            var (pageWidthPx, pageHeightPx) = template.IsMapOnly
+                ? ResolveOutputDimensions(webMap, template, dpi)
+                : ((int)(template.PageWidth * dpi / 72f), (int)(template.PageHeight * dpi / 72f));
+
+            // When MAP_ONLY with custom outputSize, construct a runtime template whose
+            // page/map-frame dimensions match the resolved pixels (in points) so the
+            // LayoutComposer draws into the correct rect instead of the fixed Letter slot.
+            var compositionTemplate = template;
+            if (template.IsMapOnly)
+            {
+                var pagePtW = pageWidthPx * 72f / dpi;
+                var pagePtH = pageHeightPx * 72f / dpi;
+                compositionTemplate = new PrintLayoutTemplate
+                {
+                    Name = template.Name,
+                    Label = template.Label,
+                    PageWidth = pagePtW,
+                    PageHeight = pagePtH,
+                    MapFrame = new LayoutSlot { X = 0, Y = 0, Width = pagePtW, Height = pagePtH }
+                };
+            }
+
+            byte[] outputBytes;
+            string contentType;
+            string fileName;
+
+            if (format.Equals(PrintOutputFormat.Pdf, StringComparison.OrdinalIgnoreCase))
+            {
+                outputBytes = RenderPdf(compositionTemplate, pageWidthPx, pageHeightPx, mapFrameBytes, legendEntries, titleText, attributionText, scaleDenominator, dpi);
+                contentType = PrintOutputFormat.GetContentType(format);
+                fileName = $"print_output{PrintOutputFormat.GetExtension(format)}";
+            }
+            else
+            {
+                // Raster output (PNG, JPG)
+                using var surface = SKSurface.Create(new SKImageInfo(pageWidthPx, pageHeightPx, SKColorType.Rgba8888, SKAlphaType.Premul));
+                var canvas = surface.Canvas;
+
+                LayoutComposer.Compose(canvas, compositionTemplate, mapFrameBytes, legendEntries,
+                    titleText, attributionText, scaleDenominator, dpi);
+
+                outputBytes = EncodeRaster(surface, format);
+                contentType = PrintOutputFormat.GetContentType(format);
+                fileName = $"print_output{PrintOutputFormat.GetExtension(format)}";
+            }
+
+            activity?.SetTag("print.output_bytes", outputBytes.Length);
+            stopwatch.Stop();
+            HonuaTelemetry.SetSuccess(activity);
+            HonuaTelemetry.CategorizeLatency(activity, stopwatch.Elapsed.TotalMilliseconds);
+            return (outputBytes, contentType, fileName);
         }
-
-        byte[] outputBytes;
-        string contentType;
-        string fileName;
-
-        if (format.Equals(PrintOutputFormat.Pdf, StringComparison.OrdinalIgnoreCase))
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            outputBytes = RenderPdf(compositionTemplate, pageWidthPx, pageHeightPx, mapFrameBytes, legendEntries, titleText, attributionText, scaleDenominator, dpi);
-            contentType = PrintOutputFormat.GetContentType(format);
-            fileName = $"print_output{PrintOutputFormat.GetExtension(format)}";
+            HonuaTelemetry.RecordException(activity, ex);
+            throw;
         }
-        else
-        {
-            // Raster output (PNG, JPG)
-            using var surface = SKSurface.Create(new SKImageInfo(pageWidthPx, pageHeightPx, SKColorType.Rgba8888, SKAlphaType.Premul));
-            var canvas = surface.Canvas;
-
-            LayoutComposer.Compose(canvas, compositionTemplate, mapFrameBytes, legendEntries,
-                titleText, attributionText, scaleDenominator, dpi);
-
-            outputBytes = EncodeRaster(surface, format);
-            contentType = PrintOutputFormat.GetContentType(format);
-            fileName = $"print_output{PrintOutputFormat.GetExtension(format)}";
-        }
-
-        activity?.SetTag("print.output_bytes", outputBytes.Length);
-        return (outputBytes, contentType, fileName);
     }
 
     /// <summary>
@@ -613,20 +626,16 @@ internal static class PrintingToolsRequestHandlers
     /// The caller must resolve the template first; this method skips the check
     /// if <paramref name="resolvedTemplate"/> is null.
     /// </summary>
-    internal static async Task<string?> ValidateEditionAsync(
+    internal static string? ValidateEdition(
         PrintLayoutTemplate? resolvedTemplate,
         string format,
-        ILicenseManager licenseManager,
-        ILogger logger,
-        CancellationToken cancellationToken)
+        HonuaEdition edition,
+        ILogger logger)
     {
         if (resolvedTemplate is null)
         {
             return null; // Template validation handled separately
         }
-
-        var licenseInfo = await licenseManager.GetLicenseInfoAsync(cancellationToken);
-        var edition = ParseEdition(licenseInfo.Edition);
 
         if (edition >= HonuaEdition.Pro) return null;
 
@@ -666,16 +675,4 @@ internal static class PrintingToolsRequestHandlers
         return [.. warnings];
     }
 
-    /// <summary>
-    /// Returns true when the edition string maps to Pro or Enterprise.
-    /// Shared by service-info, template-info, and edition-gating paths.
-    /// </summary>
-    internal static bool IsProOrHigher(string? edition) => ParseEdition(edition) >= HonuaEdition.Pro;
-
-    private static HonuaEdition ParseEdition(string? edition) => edition?.ToUpperInvariant() switch
-    {
-        "PRO" or "PROFESSIONAL" => HonuaEdition.Pro,
-        "ENTERPRISE" => HonuaEdition.Enterprise,
-        _ => HonuaEdition.Community
-    };
 }

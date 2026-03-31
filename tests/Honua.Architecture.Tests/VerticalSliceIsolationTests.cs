@@ -42,7 +42,8 @@ public sealed class VerticalSliceIsolationTests
         "HealthCheck",
         "Stac",
         "Streaming",
-        "Infrastructure" // Infrastructure is allowed to be referenced by others
+        "Infrastructure", // Infrastructure is allowed to be referenced by others
+        "StaticMap"
     };
 
     [ArchitectureTest]

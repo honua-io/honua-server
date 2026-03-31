@@ -225,3 +225,64 @@ ON CONFLICT (layer_id, field_name) DO NOTHING;
 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES ('test_service', 0, 0)
 ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+-- Deterministic feature rows for CI lanes that only apply base-schema.sql.
+-- Keep these aligned with the JS/Python shared test attributes so query
+-- contracts validate against a populated layer instead of an empty catalog.
+WITH seeded_features AS (
+    SELECT *
+    FROM (
+        VALUES
+            ('alpha',   'active',   1,  1.25, true,  '2024-01-01T12:00:00Z', '2024-02-01', '12:34:56', '00000000-0000-0000-0000-000000000001', '["red","blue"]'::jsonb, '[0,1,2]'::jsonb, NULL::text,            'POINT(-122.4900 37.7100)'),
+            ('beta',    'inactive', 2,  2.50, false, '2024-01-02T12:00:00Z', '2024-02-02', '12:34:56', '00000000-0000-0000-0000-000000000002', '["green"]'::jsonb,      '[1,2,3]'::jsonb, 'description_1',     'POINT(-122.4750 37.7200)'),
+            ('gamma',   'active',   3,  3.75, true,  '2024-01-03T12:00:00Z', '2024-02-03', '12:34:56', '00000000-0000-0000-0000-000000000003', '["red","blue"]'::jsonb, '[2,3,4]'::jsonb, 'description_2',     'POINT(-122.4600 37.7300)'),
+            ('delta',   'inactive', 4,  5.00, false, '2024-01-04T12:00:00Z', '2024-02-04', '12:34:56', '00000000-0000-0000-0000-000000000004', '["green"]'::jsonb,      '[3,4,5]'::jsonb, NULL::text,            'POINT(-122.4450 37.7400)'),
+            ('epsilon', 'active',   5,  6.25, true,  '2024-01-05T12:00:00Z', '2024-02-05', '12:34:56', '00000000-0000-0000-0000-000000000005', '["red","blue"]'::jsonb, '[4,5,6]'::jsonb, 'description_4',     'POINT(-122.4300 37.7500)'),
+            ('zeta',    'inactive', 6,  7.50, false, '2024-01-06T12:00:00Z', '2024-02-06', '12:34:56', '00000000-0000-0000-0000-000000000006', '["green"]'::jsonb,      '[5,6,7]'::jsonb, 'description_5',     'POINT(-122.4150 37.7600)'),
+            ('eta',     'active',   7,  8.75, true,  '2024-01-07T12:00:00Z', '2024-02-07', '12:34:56', '00000000-0000-0000-0000-000000000007', '["red","blue"]'::jsonb, '[6,7,8]'::jsonb, NULL::text,            'POINT(-122.4000 37.7700)'),
+            ('theta',   'inactive', 8, 10.00, false, '2024-01-08T12:00:00Z', '2024-02-08', '12:34:56', '00000000-0000-0000-0000-000000000008', '["green"]'::jsonb,      '[7,8,9]'::jsonb, 'description_7',     'POINT(-122.3850 37.7800)'),
+            ('iota',    'active',   9, 11.25, true,  '2024-01-09T12:00:00Z', '2024-02-09', '12:34:56', '00000000-0000-0000-0000-000000000009', '["red","blue"]'::jsonb, '[8,9,10]'::jsonb, 'description_8',    'POINT(-122.3700 37.7900)'),
+            ('lambda',  'inactive',10, 12.50, false, '2024-01-10T12:00:00Z', '2024-02-10', '12:34:56', '00000000-0000-0000-0000-000000000010', '["green"]'::jsonb,      '[9,10,11]'::jsonb, NULL::text,          NULL::text)
+    ) AS seed(
+        name,
+        status,
+        feature_count,
+        ratio,
+        active_flag,
+        created_at,
+        event_date,
+        event_time,
+        uid,
+        tags,
+        numbers,
+        description,
+        wkt
+    )
+)
+INSERT INTO features (layer_id, geometry, attributes)
+SELECT
+    0,
+    CASE
+        WHEN wkt IS NULL THEN NULL
+        ELSE ST_SetSRID(ST_GeomFromText(wkt), 4326)
+    END,
+    jsonb_build_object(
+        'name', name,
+        'status', status,
+        'count', feature_count,
+        'ratio', ratio,
+        'active', active_flag,
+        'created_at', created_at,
+        'event_date', event_date,
+        'event_time', event_time,
+        'uid', uid,
+        'tags', tags,
+        'numbers', numbers,
+        'description', description
+    )
+FROM seeded_features
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM features
+    WHERE layer_id = 0
+);
