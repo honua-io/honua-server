@@ -415,6 +415,32 @@ public class StyleConversionMatrixTests
         Assert.Equal(10d, GetNumber(classBreaks[0].GetProperty("classMaxValue")), 3);
     }
 
+    [Fact]
+    public void MapLibreToGeoServices_CustomGuardedCaseWrappedStep_FallsBackToSimpleRenderer()
+    {
+        // Regression: arbitrary case predicates must not be unwrapped into classBreaks,
+        // or the converted renderer would silently drop the outer condition.
+        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        const string mapLibreJson = """
+        {
+          "layers": [
+            {
+              "type": "fill",
+              "paint": {
+                "fill-color": ["case", ["==", ["get", "eligible"], true], ["step", ["to-number", ["get", "value"]], "#ff0000", 10, "#00ff00", 20, "#0000ff"], "#cccccc"]
+              }
+            }
+          ]
+        }
+        """;
+
+        var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var renderer = doc.RootElement.GetProperty("renderer");
+
+        Assert.Equal("simple", renderer.GetProperty("type").GetString());
+    }
+
     [Theory]
     [InlineData(GeometryType.Point, "esriSMS", 8d, 217)]
     [InlineData(GeometryType.LineString, "esriSLS", null, 230)]
@@ -1664,6 +1690,32 @@ public class StyleConversionMatrixTests
         Assert.Equal(204, color[2].GetInt32());
 
         Assert.Equal("Other", renderer.GetProperty("defaultLabel").GetString());
+    }
+
+    [Fact]
+    public void MapLibreToGeoServices_CustomGuardedCaseWrappedMatch_FallsBackToSimpleRenderer()
+    {
+        // Regression: arbitrary case predicates must not be unwrapped into uniqueValue,
+        // or the converted renderer would silently drop the outer condition.
+        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        const string mapLibreJson = """
+        {
+          "layers": [
+            {
+              "type": "fill",
+              "paint": {
+                "fill-color": ["case", ["==", ["get", "eligible"], true], ["match", ["to-string", ["get", "status"]], "active", "rgba(0,255,0,1)", "inactive", "rgba(255,0,0,1)", "rgba(204,204,204,1)"], "rgba(204,204,204,1)"]
+              }
+            }
+          ]
+        }
+        """;
+
+        var drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var renderer = doc.RootElement.GetProperty("renderer");
+
+        Assert.Equal("simple", renderer.GetProperty("type").GetString());
     }
 
     [Fact]
