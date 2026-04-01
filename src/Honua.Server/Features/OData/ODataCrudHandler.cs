@@ -492,6 +492,7 @@ internal sealed class ODataCrudHandler(
         {
             await InvalidateCacheAsync(context, layerId, effectiveToken);
             var serviceId = await ResolveServiceIdAsync(context, layerId, effectiveToken);
+            var (deleteEnv, deleteProps) = FeatureChangeEventEnrichment.FromFeature(result.MutationFeature);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
@@ -500,7 +501,9 @@ internal sealed class ODataCrudHandler(
                     ObjectId = objectId,
                     Operation = "delete",
                     Protocol = HonuaTelemetry.Protocols.OData,
-                    RequestId = context.TraceIdentifier
+                    RequestId = context.TraceIdentifier,
+                    GeometryEnvelope = deleteEnv,
+                    PropertiesJson = deleteProps
                 },
                 effectiveToken).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);

@@ -377,7 +377,7 @@ internal sealed partial class ODataCrudService
                 return ODataCrudResult<object>.NotFound($"Feature {objectId} not found in layer {layerId}");
             }
 
-            return ODataCrudResult<object>.NoContent();
+            return ODataCrudResult<object>.NoContent(existingFeature.Value);
         }
         catch (Exception ex)
         {
@@ -517,8 +517,8 @@ internal sealed record ODataCrudResult<T>
             MutationFeature = mutationFeature
         };
 
-    public static ODataCrudResult<T> NoContent()
-        => new() { IsSuccess = true, StatusCode = 204 };
+    public static ODataCrudResult<T> NoContent(Feature? mutationFeature = null)
+        => new() { IsSuccess = true, StatusCode = 204, MutationFeature = mutationFeature };
 
     public static ODataCrudResult<T> BadRequest(string message)
         => new() { IsSuccess = false, StatusCode = 400, ErrorMessage = message };
