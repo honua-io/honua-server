@@ -15,7 +15,7 @@ internal static class StacServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // All STAC mapping/filter helpers are static — no scoped registrations needed currently.
+        services.AddScoped<StacSearchDependencies>();
 
         return services;
     }

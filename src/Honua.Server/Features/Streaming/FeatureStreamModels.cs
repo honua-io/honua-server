@@ -68,41 +68,6 @@ internal sealed record FeatureStreamEnvelope
 }
 
 /// <summary>
-/// Subscription filter applied to a streaming session.
-/// When set, only events matching the criteria are delivered.
-/// </summary>
-internal sealed class FeatureStreamFilter
-{
-    /// <summary>
-    /// If set, only events for this service are delivered.
-    /// </summary>
-    public string? ServiceId { get; init; }
-
-    /// <summary>
-    /// If set, only events for these layer IDs are delivered.
-    /// </summary>
-    public HashSet<int>? LayerIds { get; init; }
-
-    /// <summary>
-    /// Returns true if the given envelope matches this filter.
-    /// </summary>
-    public bool Matches(FeatureStreamEnvelope envelope)
-    {
-        if (ServiceId != null && !string.Equals(envelope.ServiceId, ServiceId, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (LayerIds != null && !LayerIds.Contains(envelope.LayerId))
-        {
-            return false;
-        }
-
-        return true;
-    }
-}
-
-/// <summary>
 /// Metadata about an active feature-stream session for admin visibility.
 /// </summary>
 internal sealed record FeatureStreamSessionInfo(
@@ -111,7 +76,10 @@ internal sealed record FeatureStreamSessionInfo(
     string? ClientLabel,
     string Transport,
     long LastQueuedCursor,
-    FeatureStreamFilter? Filter = null);
+    bool HasFilter,
+    string? FilterSummary = null,
+    string? ServiceIdFilter = null,
+    int[]? LayerIdFilter = null);
 
 /// <summary>
 /// Disconnect reason for feature-stream sessions.

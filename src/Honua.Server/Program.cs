@@ -425,6 +425,7 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatu
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
         sp.GetRequiredService<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamPublisher>>()));
+builder.Services.AddScoped<Honua.Server.Features.Streaming.FeatureStreamDependencies>();
 builder.Services.AddHostedService<Honua.Server.Features.Streaming.FeatureStreamHeartbeatService>();
 builder.Services.AddHttpClient("feature-change-webhook")
     .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());

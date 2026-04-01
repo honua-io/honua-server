@@ -184,8 +184,8 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
     public async Task CdcFanOut_FilteredSubscribers_ReceiveOnlyMatchingLayerDeltas()
     {
         // Arrange: create subscribers with different layer filters.
-        var layer0Filter = new FeatureStreamFilter { LayerIds = [0] };
-        var layer1Filter = new FeatureStreamFilter { LayerIds = [1] };
+        var layer0Filter = new StreamSubscriptionFilter(layerIds: [0]);
+        var layer1Filter = new StreamSubscriptionFilter(layerIds: [1]);
 
         using var session0 = _sessionManager.CreateSession("WebSocket", "layer-0", layer0Filter);
         _sessionManager.MarkDrainStarted(session0.SessionId);

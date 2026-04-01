@@ -43,4 +43,12 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5009, Level = LogLevel.Information,
         Message = "Feature stream heartbeat service stopped")]
     public static partial void HeartbeatServiceStopped(ILogger logger);
+
+    [LoggerMessage(EventId = 5010, Level = LogLevel.Information,
+        Message = "Feature stream session {SessionId} created with filter: {FilterSummary}")]
+    public static partial void SessionCreatedWithFilter(ILogger logger, Guid sessionId, string filterSummary);
+
+    [LoggerMessage(EventId = 5011, Level = LogLevel.Warning,
+        Message = "Feature stream filter validation failed: {Error}")]
+    public static partial void FilterValidationFailed(ILogger logger, string error);
 }

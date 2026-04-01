@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.Streaming;
+using Honua.Core.Queries.Filters.Cql2;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -310,7 +311,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public void Broadcast_WithLayerFilter_OnlyDeliversMatchingEvents()
     {
-        var filter = new FeatureStreamFilter { LayerIds = [1, 2] };
+        var filter = new StreamSubscriptionFilter(layerIds: [1, 2]);
         using var filtered = _manager.CreateSession("WebSocket", "filtered", filter);
         using var unfiltered = _manager.CreateSession("WebSocket", "unfiltered");
 
@@ -343,7 +344,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public void Broadcast_WithServiceFilter_OnlyDeliversMatchingEvents()
     {
-        var filter = new FeatureStreamFilter { ServiceId = "target-svc" };
+        var filter = new StreamSubscriptionFilter(serviceId: "target-svc");
         using var filtered = _manager.CreateSession("WebSocket", "svc-filtered", filter);
 
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelopeForService(cursor: 1, serviceId: "other-svc")));
@@ -361,10 +362,108 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     }
 
     [UnitTest]
+    public void Broadcast_WithBboxFilter_OnlyDeliversIntersectingEvents()
+    {
+        var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
+        using var filtered = _manager.CreateSession("WebSocket", "bbox-filtered", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1),
+            geometryEnvelope: [20d, 20d, 30d, 30d]));
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 2),
+            geometryEnvelope: [5d, 5d, 15d, 15d]));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(2L, msg.Envelope.Cursor);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public void Broadcast_WithBboxFilter_DropsNonDeleteEventsWithoutGeometry()
+    {
+        var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
+        using var filtered = _manager.CreateSession("WebSocket", "bbox-null-geometry", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 1), geometryEnvelope: null));
+        _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 2), geometryEnvelope: [5d, 5d, 6d, 6d]));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(2L, msg.Envelope.Cursor);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public void Broadcast_WithBboxFilter_DeleteEventsWithoutGeometryStillPass()
+    {
+        var filter = new StreamSubscriptionFilter(bbox: [0d, 0d, 10d, 10d]);
+        using var filtered = _manager.CreateSession("WebSocket", "bbox-delete-no-geometry", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1) with { Operation = "delete" },
+            geometryEnvelope: null));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(1L, msg.Envelope.Cursor);
+        Assert.Equal("delete", msg.Envelope.Operation);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public void Broadcast_WithAttributeFilter_OnlyDeliversMatchingEvents()
+    {
+        var filter = new StreamSubscriptionFilter(attributeFilter: new Cql2Parser().Parse("status = 'active'"));
+        using var filtered = _manager.CreateSession("WebSocket", "attribute-filtered", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1),
+            propertiesJson: """{"status":"inactive"}"""));
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 2),
+            propertiesJson: """{"status":"active"}"""));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(2L, msg.Envelope.Cursor);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
+    public void Broadcast_WithCombinedFilters_OnlyDeliversEventsMatchingAllCriteria()
+    {
+        var filter = new StreamSubscriptionFilter(
+            serviceId: "target-svc",
+            layerIds: [2],
+            bbox: [0d, 0d, 10d, 10d],
+            attributeFilter: new Cql2Parser().Parse("status = 'active'"));
+        using var filtered = _manager.CreateSession("WebSocket", "combined-filtered", filter);
+
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 1, layerId: 2, serviceId: "other-svc"),
+            geometryEnvelope: [5d, 5d, 6d, 6d],
+            propertiesJson: """{"status":"active"}"""));
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 2, layerId: 2, serviceId: "target-svc"),
+            geometryEnvelope: [20d, 20d, 30d, 30d],
+            propertiesJson: """{"status":"active"}"""));
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 3, layerId: 2, serviceId: "target-svc"),
+            geometryEnvelope: [5d, 5d, 6d, 6d],
+            propertiesJson: """{"status":"inactive"}"""));
+        _manager.Broadcast(FeatureStreamMessage.Data(
+            CreateEnvelope(cursor: 4, layerId: 2, serviceId: "target-svc"),
+            geometryEnvelope: [5d, 5d, 6d, 6d],
+            propertiesJson: """{"status":"active"}"""));
+
+        Assert.True(filtered.Reader.TryRead(out var msg));
+        Assert.Equal(4L, msg.Envelope.Cursor);
+        Assert.False(filtered.Reader.TryRead(out _));
+    }
+
+    [UnitTest]
     public void Broadcast_WithEmptyLayerFilter_MatchesNothing()
     {
         // Simulates malformed layerIds (e.g. ?layerIds=abc) where no valid IDs were parsed.
-        var filter = new FeatureStreamFilter { LayerIds = [] };
+        var filter = new StreamSubscriptionFilter(layerIds: []);
         using var filtered = _manager.CreateSession("WebSocket", "empty-filter", filter);
 
         _manager.Broadcast(FeatureStreamMessage.Data(CreateEnvelope(cursor: 1, layerId: 0)));
@@ -376,7 +475,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     [UnitTest]
     public void Broadcast_HeartbeatBypassesFilter()
     {
-        var filter = new FeatureStreamFilter { LayerIds = [99] };
+        var filter = new StreamSubscriptionFilter(layerIds: [99]);
         using var filtered = _manager.CreateSession("WebSocket", "hb-filter", filter);
 
         // Heartbeats should always be delivered regardless of filter.
@@ -386,14 +485,16 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         Assert.True(msg.IsHeartbeat);
     }
 
-    private static FeatureStreamEnvelope CreateEnvelope(long cursor) => CreateEnvelope(cursor, layerId: 0);
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor) => CreateEnvelope(cursor, layerId: 0, serviceId: "test-svc");
 
-    private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId) => new()
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId) => CreateEnvelope(cursor, layerId, serviceId: "test-svc");
+
+    private static FeatureStreamEnvelope CreateEnvelope(long cursor, int layerId, string serviceId) => new()
     {
         EventId = Guid.NewGuid().ToString(),
         Cursor = cursor,
         Timestamp = DateTimeOffset.UtcNow,
-        ServiceId = "test-svc",
+        ServiceId = serviceId,
         LayerId = layerId,
         ObjectId = 1,
         Operation = "create",
@@ -401,16 +502,5 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
         RequestId = "req-1"
     };
 
-    private static FeatureStreamEnvelope CreateEnvelopeForService(long cursor, string serviceId) => new()
-    {
-        EventId = Guid.NewGuid().ToString(),
-        Cursor = cursor,
-        Timestamp = DateTimeOffset.UtcNow,
-        ServiceId = serviceId,
-        LayerId = 0,
-        ObjectId = 1,
-        Operation = "create",
-        Protocol = "rest",
-        RequestId = "req-1"
-    };
+    private static FeatureStreamEnvelope CreateEnvelopeForService(long cursor, string serviceId) => CreateEnvelope(cursor, layerId: 0, serviceId: serviceId);
 }

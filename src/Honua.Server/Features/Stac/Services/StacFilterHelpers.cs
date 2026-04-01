@@ -6,7 +6,6 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;

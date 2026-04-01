@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Server.Features.OData.Models;
 
@@ -107,6 +108,8 @@ public sealed class ODataBatchResponseItem
     /// </summary>
     [JsonPropertyName("body")]
     public object? Body { get; init; }
+
+    internal Feature? MutationFeature { get; init; }
 }
 
 /// <summary>

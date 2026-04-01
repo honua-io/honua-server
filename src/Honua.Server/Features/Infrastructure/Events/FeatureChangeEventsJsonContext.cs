@@ -15,7 +15,13 @@ namespace Honua.Server.Features.Infrastructure.Events;
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(float))]
+[JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(double[]))]
 internal sealed partial class FeatureChangeEventsJsonContext : JsonSerializerContext
 {
 }

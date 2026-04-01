@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 
@@ -51,11 +52,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public FeatureStreamSession CreateSession(string transport, string? clientLabel)
         => CreateSession(transport, clientLabel, filter: null);
 
-    /// <summary>
-    /// Creates a new session with an optional subscription filter.
-    /// When a filter is specified, only events matching the filter criteria are delivered.
-    /// </summary>
-    public FeatureStreamSession CreateSession(string transport, string? clientLabel, FeatureStreamFilter? filter)
+    public FeatureStreamSession CreateSession(string transport, string? clientLabel, IStreamSubscriptionFilter? filter = null)
     {
         var opts = _options.Value;
         var id = Guid.NewGuid();
@@ -125,6 +122,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public int Broadcast(FeatureStreamMessage message)
     {
         var delivered = 0;
+        IReadOnlyDictionary<string, JsonElement>? parsedProperties = null;
+        bool propertiesParsed = false;
         foreach (var (id, entry) in _sessions)
         {
             if (entry.Cts.IsCancellationRequested)
@@ -132,8 +131,21 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
-            // Skip sessions whose filter does not match this event.
-            if (!message.IsHeartbeat && entry.Filter != null && !entry.Filter.Matches(message.Envelope))
+            // Apply subscription filter before queueing. Filtered events never
+            // enter the channel, reducing buffer pressure for selective subscribers.
+            if (entry.SubscriptionFilter is not null
+                && !message.IsHeartbeat
+                && !(entry.SubscriptionFilter is StreamSubscriptionFilter streamFilter
+                    ? streamFilter.Matches(
+                        message.Envelope,
+                        message.GeometryEnvelope,
+                        message.PropertiesJson,
+                        ref parsedProperties,
+                        ref propertiesParsed)
+                    : entry.SubscriptionFilter.Matches(
+                        message.Envelope,
+                        message.GeometryEnvelope,
+                        message.PropertiesJson)))
             {
                 continue;
             }
@@ -244,13 +256,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// </summary>
     public IReadOnlyList<FeatureStreamSessionInfo> GetSessions()
     {
-        return _sessions.Select(kvp => new FeatureStreamSessionInfo(
-            kvp.Key,
-            kvp.Value.ConnectedAt,
-            kvp.Value.ClientLabel,
-            kvp.Value.Transport,
-            kvp.Value.LastQueuedCursor,
-            kvp.Value.Filter)).ToArray();
+        return _sessions.Select(kvp =>
+        {
+            var streamFilter = kvp.Value.SubscriptionFilter as StreamSubscriptionFilter;
+            return new FeatureStreamSessionInfo(
+                kvp.Key,
+                kvp.Value.ConnectedAt,
+                kvp.Value.ClientLabel,
+                kvp.Value.Transport,
+                kvp.Value.LastQueuedCursor,
+                kvp.Value.SubscriptionFilter is not null,
+                kvp.Value.SubscriptionFilter?.Summary,
+                streamFilter?.ServiceId,
+                streamFilter?.LayerIds?.ToArray());
+        }).ToArray();
     }
 
     public void Dispose()
@@ -276,7 +295,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             DateTimeOffset connectedAt,
             string? clientLabel,
             string transport,
-            FeatureStreamFilter? filter = null)
+            IStreamSubscriptionFilter? subscriptionFilter = null)
         {
             Id = id;
             Channel = channel;
@@ -284,7 +303,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ConnectedAt = connectedAt;
             ClientLabel = clientLabel;
             Transport = transport;
-            Filter = filter;
+            SubscriptionFilter = subscriptionFilter;
         }
 
         public Guid Id { get; }
@@ -293,7 +312,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public DateTimeOffset ConnectedAt { get; }
         public string? ClientLabel { get; }
         public string Transport { get; }
-        public FeatureStreamFilter? Filter { get; }
+        public IStreamSubscriptionFilter? SubscriptionFilter { get; }
         public volatile bool DrainStarted;
         public long LastQueuedCursor => Interlocked.Read(ref _lastQueuedCursor);
 
@@ -378,10 +397,29 @@ internal readonly record struct FeatureStreamMessage
     public FeatureStreamEnvelope Envelope { get; private init; }
 
     /// <summary>
-    /// Creates a data message.
+    /// Geometry bounding box from the enriched event (internal only, never serialized to clients).
     /// </summary>
-    public static FeatureStreamMessage Data(FeatureStreamEnvelope envelope) =>
-        new() { IsHeartbeat = false, Envelope = envelope };
+    public double[]? GeometryEnvelope { get; private init; }
+
+    /// <summary>
+    /// Pre-serialized attribute JSON from the enriched event (internal only, never serialized to clients).
+    /// </summary>
+    public string? PropertiesJson { get; private init; }
+
+    /// <summary>
+    /// Creates a data message with optional enrichment for subscription filtering.
+    /// </summary>
+    public static FeatureStreamMessage Data(
+        FeatureStreamEnvelope envelope,
+        double[]? geometryEnvelope = null,
+        string? propertiesJson = null) =>
+        new()
+        {
+            IsHeartbeat = false,
+            Envelope = envelope,
+            GeometryEnvelope = geometryEnvelope,
+            PropertiesJson = propertiesJson
+        };
 
     /// <summary>
     /// Creates a heartbeat message.

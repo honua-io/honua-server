@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Server.Features.Infrastructure.Models;
 
@@ -26,7 +27,12 @@ namespace Honua.Server.Features.Streaming;
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(float))]
+[JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
+[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 internal sealed partial class FeatureStreamJsonContext : JsonSerializerContext
 {
 }
@@ -122,6 +128,16 @@ internal sealed class FeatureStreamSessionResponse
     /// Connection duration in seconds.
     /// </summary>
     public double DurationSeconds { get; init; }
+
+    /// <summary>
+    /// Whether this session has an active subscription filter.
+    /// </summary>
+    public bool HasFilter { get; init; }
+
+    /// <summary>
+    /// Human-readable summary of the subscription filter, if any.
+    /// </summary>
+    public string? FilterSummary { get; init; }
 
     /// <summary>
     /// Service ID filter applied to this session, if any.

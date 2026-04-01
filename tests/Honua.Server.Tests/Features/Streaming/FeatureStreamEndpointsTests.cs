@@ -6,11 +6,13 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -89,6 +91,85 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             using var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithUnsupportedFunctionFilter_ReturnsBadRequest()
+    {
+        var encodedFilter = Uri.EscapeDataString("UPPER(name) = 'ALICE'");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/v1/streaming/features?layers=0&filter={encodedFilter}");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("function calls");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithUnsupportedFilterLanguage_ReturnsBadRequest()
+    {
+        var encodedFilter = Uri.EscapeDataString("name = 'alpha'");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/v1/streaming/features?layers=0&filter={encodedFilter}&filter-lang=unsupported");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("Unsupported filter language");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithBboxWithoutSingleLayer_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/streaming/features?bbox=-122.5,37.5,-122.0,38.0");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("exactly one layer");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithProjectedBboxLayer_AllowsSseHandshake()
+    {
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILayerCatalog>(new SpatialReferenceTestLayerCatalog());
+
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var client = fixture.CreateAdminClient();
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/v1/streaming/features?layers={SpatialReferenceTestLayerCatalog.PointLayerId}&bbox=-122.5,37.5,-122.0,38.0");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
         }
         finally
         {
@@ -471,11 +552,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task ListSessions_WithFilter_ReturnsSessionFilterInfo()
     {
         var sessionManager = _fixture.GetService<FeatureStreamSessionManager>();
-        var filter = new FeatureStreamFilter
-        {
-            ServiceId = "svc-admin-filter",
-            LayerIds = [1, 3]
-        };
+        var filter = new StreamSubscriptionFilter(serviceId: "svc-admin-filter", layerIds: [1, 3]);
         using var session = sessionManager.CreateSession("SSE", "filtered-admin-vis-test", filter);
 
         var response = await _client.GetAsync("/api/v1/admin/streaming/features/sessions");
@@ -489,6 +566,8 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             .EnumerateArray()
             .First(s => s.GetProperty("clientLabel").GetString() == "filtered-admin-vis-test");
 
+        sessionData.GetProperty("hasFilter").GetBoolean().Should().BeTrue();
+        sessionData.GetProperty("filterSummary").GetString().Should().Contain("serviceId=svc-admin-filter");
         sessionData.GetProperty("serviceIdFilter").GetString().Should().Be("svc-admin-filter");
         sessionData.GetProperty("layerIdFilter")
             .EnumerateArray()

@@ -119,6 +119,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
             if (!hasErrors)
             {
+                PreparedBatchOperation?[]? preparedOperationsByIndex = null;
+                if (!preparedBatch.PreparedOperations.IsDefaultOrEmpty)
+                {
+                    preparedOperationsByIndex = new PreparedBatchOperation?[batchRequest.Operations.Count];
+                    foreach (var preparedOperation in preparedBatch.PreparedOperations)
+                    {
+                        preparedOperationsByIndex[preparedOperation.Index] = preparedOperation;
+                    }
+                }
+
                 var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
                 for (var index = 0; index < results.Count && index < batchRequest.Operations.Count; index++)
                 {
@@ -129,6 +139,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         continue;
                     }
 
+                    var (geometryEnvelope, propertiesJson) = GetBatchEventEnrichment(preparedOperationsByIndex?[index]);
                     await _featureChangeEventPublisher.PublishAsync(
                         new FeatureChangeEventRequest
                         {
@@ -137,7 +148,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                             ObjectId = objectId,
                             Operation = eventOperation,
                             Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                            RequestId = $"{context.TraceIdentifier}:{operation.Id ?? "batch"}"
+                            RequestId = $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
+                            GeometryEnvelope = geometryEnvelope,
+                            PropertiesJson = propertiesJson
                         },
                         cancellationToken).ConfigureAwait(false);
                 }
@@ -265,6 +278,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
                 await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
                 var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
+                var (replaceEnv, replaceProps) = FeatureChangeEventEnrichment.FromFeature(updated);
                 await _featureChangeEventPublisher.PublishAsync(
                     new FeatureChangeEventRequest
                     {
@@ -273,7 +287,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = updated.Id,
                         Operation = "update",
                         Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                        RequestId = context.TraceIdentifier
+                        RequestId = context.TraceIdentifier,
+                        GeometryEnvelope = replaceEnv,
+                        PropertiesJson = replaceProps
                     },
                     cancellationToken).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
@@ -477,6 +493,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
                 await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
                 var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
+                var (patchEnv, patchProps) = FeatureChangeEventEnrichment.FromFeature(updated);
                 await _featureChangeEventPublisher.PublishAsync(
                     new FeatureChangeEventRequest
                     {
@@ -485,7 +502,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         ObjectId = updated.Id,
                         Operation = "update",
                         Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                        RequestId = context.TraceIdentifier
+                        RequestId = context.TraceIdentifier,
+                        GeometryEnvelope = patchEnv,
+                        PropertiesJson = patchProps
                     },
                     cancellationToken).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
@@ -935,6 +954,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             state.DeletedObjectIds.Add(operation.ObjectId.Value);
         }
+    }
+
+    private static (double[]? GeometryEnvelope, string? PropertiesJson) GetBatchEventEnrichment(PreparedBatchOperation? operation)
+    {
+        if (operation is null || operation.OperationKind == BatchOperationKind.Delete)
+        {
+            return (null, null);
+        }
+
+        return FeatureChangeEventEnrichment.FromFeature(operation.Feature);
     }
 
     private static async Task<(BatchRequest? Request, string? Error)> ReadBatchRequestAsync(

@@ -354,7 +354,7 @@ internal sealed partial class ODataBatchHandler
         // Collect all operations for atomic execution
         var createRequests = new Dictionary<int, List<(string requestId, Feature feature)>>();
         var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature)>>();
-        var deleteRequests = new Dictionary<int, List<(string requestId, long objectId)>>();
+        var deleteRequests = new Dictionary<int, List<(string requestId, long objectId, Feature existingFeature)>>();
         var reads = new List<(string requestId, int layerId, long? objectId)>();
         var writeLayerIds = new HashSet<int>();
         var layerCache = new Dictionary<int, LayerDefinition>();
@@ -571,11 +571,11 @@ internal sealed partial class ODataBatchHandler
 
                             if (!deleteRequests.TryGetValue(layerId.Value, out var deleteList))
                             {
-                                deleteList = new List<(string requestId, long objectId)>();
+                                deleteList = new List<(string requestId, long objectId, Feature existingFeature)>();
                                 deleteRequests[layerId.Value] = deleteList;
                             }
 
-                            deleteList.Add((request.Id, objectId.Value));
+                            deleteList.Add((request.Id, objectId.Value, existing.Value));
                             writeLayerIds.Add(layerId.Value);
                             break;
                         }
@@ -838,11 +838,15 @@ internal sealed partial class ODataBatchHandler
                     for (var i = 0; i < result.DeleteResults.Length && i < layerDeletes.Count; i++)
                     {
                         var deleteResult = result.DeleteResults[i];
-                        var (requestId, _) = layerDeletes[i];
+                        var (requestId, _, existingFeature) = layerDeletes[i];
 
                         if (deleteResult.IsSuccess)
                         {
-                            responses.Add(CreateSuccessResponse(requestId, 204, null));
+                            responses.Add(CreateSuccessResponse(
+                                requestId,
+                                204,
+                                null,
+                                mutationFeature: existingFeature));
                         }
                         else
                         {
@@ -875,7 +879,7 @@ internal sealed partial class ODataBatchHandler
 
             foreach (var deleteList in deleteRequests.Values)
             {
-                foreach (var (requestId, _) in deleteList.Where(d => !responses.Any(r => r.Id == d.requestId)))
+                foreach (var (requestId, _, _) in deleteList.Where(d => !responses.Any(r => r.Id == d.requestId)))
                 {
                     responses.Add(CreateErrorResponse(requestId, 500, "TransactionFailed", "Atomic group transaction failed."));
                 }
@@ -1105,7 +1109,8 @@ internal sealed partial class ODataBatchHandler
                 ["Location"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Id})",
                 ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.Id},ObjectId={created.Id})",
                 ["ETag"] = etag
-            });
+            },
+            created);
     }
 
     private async Task<ODataBatchResponseItem> HandlePatchAsync(
@@ -1159,7 +1164,8 @@ internal sealed partial class ODataBatchHandler
             requestId,
             200,
             updatedPayload,
-            new Dictionary<string, string> { ["ETag"] = etag });
+            new Dictionary<string, string> { ["ETag"] = etag },
+            result);
     }
 
     private async Task<ODataBatchResponseItem> HandleDeleteAsync(
@@ -1450,14 +1456,16 @@ internal sealed partial class ODataBatchHandler
         string id,
         int status,
         object? body,
-        Dictionary<string, string>? headers = null)
+        Dictionary<string, string>? headers = null,
+        Feature? mutationFeature = null)
     {
         return new ODataBatchResponseItem
         {
             Id = id,
             Status = status,
             Headers = headers,
-            Body = body
+            Body = body,
+            MutationFeature = mutationFeature
         };
     }
 

@@ -14,6 +14,7 @@ internal sealed class FeatureServerEditsDependencies
     public FeatureServerEditsDependencies(
         IResourceValidator resourceValidator,
         IFeatureWriter featureWriter,
+        IFeatureReader featureReader,
         IFeatureServerGeometryServices geometryServices,
         FeatureMutationValidator mutationValidator,
         IHttpContextAccessor httpContextAccessor,
@@ -21,6 +22,7 @@ internal sealed class FeatureServerEditsDependencies
     {
         ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
+        FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         GeometryServices = geometryServices ?? throw new ArgumentNullException(nameof(geometryServices));
         MutationValidator = mutationValidator ?? throw new ArgumentNullException(nameof(mutationValidator));
         HttpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
@@ -29,6 +31,7 @@ internal sealed class FeatureServerEditsDependencies
 
     public IResourceValidator ResourceValidator { get; }
     public IFeatureWriter FeatureWriter { get; }
+    public IFeatureReader FeatureReader { get; }
     public IFeatureServerGeometryServices GeometryServices { get; }
     public FeatureMutationValidator MutationValidator { get; }
     public IHttpContextAccessor HttpContextAccessor { get; }

@@ -32,6 +32,7 @@ internal sealed class FeatureServerEditsHandler(
 
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
     private readonly IFeatureWriter _featureWriter = dependencies.FeatureWriter;
     private readonly IFeatureServerGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
@@ -191,7 +192,7 @@ internal sealed class FeatureServerEditsHandler(
 
         await ProcessAddOperationsAsync(request, context, layer, cancellationToken);
         await ProcessUpdateOperationsAsync(request, context, layer, cancellationToken);
-        ProcessDeleteOperations(request, context);
+        await ProcessDeleteOperationsAsync(request, layer.Id, context, cancellationToken);
 
         return context;
     }
@@ -288,7 +289,11 @@ internal sealed class FeatureServerEditsHandler(
     /// <summary>
     /// Processes delete operations and tracks features to delete
     /// </summary>
-    private static void ProcessDeleteOperations(ApplyEditsRequest request, EditOperationContext context)
+    private async Task ProcessDeleteOperationsAsync(
+        ApplyEditsRequest request,
+        int layerId,
+        EditOperationContext context,
+        CancellationToken cancellationToken)
     {
         if (request.Deletes == null)
             return;
@@ -306,6 +311,22 @@ internal sealed class FeatureServerEditsHandler(
 
             context.DeleteIds.Add(objectId);
             context.DeleteIndexes.Add(i);
+            context.DeleteFeatures.Add(await ReadDeleteFeatureSnapshotAsync(layerId, objectId, cancellationToken));
+        }
+    }
+
+    private async Task<Feature?> ReadDeleteFeatureSnapshotAsync(
+        int layerId,
+        long objectId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -417,50 +438,78 @@ internal sealed class FeatureServerEditsHandler(
     {
         var requestId = _httpContextAccessor.HttpContext?.TraceIdentifier ?? "unknown";
 
-        var addResults = FinalizeResults(context.AddResults) ?? [];
-        foreach (var result in addResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        for (var i = 0; i < context.CreateFeatures.Count; i++)
         {
+            var resultIndex = context.CreateIndexes[i];
+            var result = context.AddResults?[resultIndex];
+            if (result is not { Success: true, ObjectId: { } objectId })
+            {
+                continue;
+            }
+
+            var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(context.CreateFeatures[i]);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
                     ServiceId = serviceId,
                     LayerId = layerId,
-                    ObjectId = result.ObjectId!.Value,
+                    ObjectId = objectId,
                     Operation = "create",
                     Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId
+                    RequestId = requestId,
+                    GeometryEnvelope = createEnv,
+                    PropertiesJson = createProps
                 },
                 cancellationToken).ConfigureAwait(false);
         }
 
-        var updateResults = FinalizeResults(context.UpdateResults) ?? [];
-        foreach (var result in updateResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        for (var i = 0; i < context.UpdateFeatures.Count; i++)
         {
+            var resultIndex = context.UpdateIndexes[i];
+            var result = context.UpdateResults?[resultIndex];
+            if (result is not { Success: true, ObjectId: { } objectId })
+            {
+                continue;
+            }
+
+            var (updateEnv, updateProps) = FeatureChangeEventEnrichment.FromFeature(context.UpdateFeatures[i]);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
                     ServiceId = serviceId,
                     LayerId = layerId,
-                    ObjectId = result.ObjectId!.Value,
+                    ObjectId = objectId,
                     Operation = "update",
                     Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId
+                    RequestId = requestId,
+                    GeometryEnvelope = updateEnv,
+                    PropertiesJson = updateProps
                 },
                 cancellationToken).ConfigureAwait(false);
         }
 
-        var deleteResults = FinalizeResults(context.DeleteResults) ?? [];
-        foreach (var result in deleteResults.Where(static r => r.Success && r.ObjectId.HasValue))
+        for (var i = 0; i < context.DeleteIndexes.Count; i++)
         {
+            var resultIndex = context.DeleteIndexes[i];
+            var result = context.DeleteResults?[resultIndex];
+            if (result is not { Success: true, ObjectId: { } objectId })
+            {
+                continue;
+            }
+
+            var deleteFeature = context.DeleteFeatures.Count > i ? context.DeleteFeatures[i] : null;
+            var (deleteEnv, deleteProps) = FeatureChangeEventEnrichment.FromFeature(deleteFeature);
             await _featureChangeEventPublisher.PublishAsync(
                 new FeatureChangeEventRequest
                 {
                     ServiceId = serviceId,
                     LayerId = layerId,
-                    ObjectId = result.ObjectId!.Value,
+                    ObjectId = objectId,
                     Operation = "delete",
                     Protocol = HonuaTelemetry.Protocols.FeatureServer,
-                    RequestId = requestId
+                    RequestId = requestId,
+                    GeometryEnvelope = deleteEnv,
+                    PropertiesJson = deleteProps
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -480,6 +529,7 @@ internal sealed class FeatureServerEditsHandler(
         public List<int> UpdateIndexes { get; } = new();
         public List<long> UpdateObjectIds { get; } = new();
         public List<long> DeleteIds { get; } = new();
+        public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
         public bool HasValidationErrors { get; set; }
     }
