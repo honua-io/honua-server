@@ -32,3 +32,4 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 - [Known Limitations](MVP_COMPATIBILITY_CONTRACT.md) — Current protocol limitations
 - [Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md) — Cross-client interop test results
+- [Certification Evidence](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — Final `.cert.json` envelope plus the Windows client smoke-artifact contract

@@ -65,7 +65,16 @@ runs:
         else
           dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile &
         fi
-        curl --retry 15 --retry-delay 2 --retry-connrefused --retry-all-errors -fsS http://localhost:5000/healthz/ready || exit 1
+
+        for _ in $(seq 1 15); do
+          if curl -fsS http://localhost:5000/healthz/ready >/dev/null; then
+            exit 0
+          fi
+
+          sleep 2
+        done
+
+        exit 1
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
         ASPNETCORE_URLS: "http://localhost:5000"

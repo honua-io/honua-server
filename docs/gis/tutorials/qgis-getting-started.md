@@ -140,24 +140,29 @@ The features appear on the map canvas and in the attribute table.
 
 ## Using the QGIS Project Template
 
-A pre-configured QGIS project template is available in the repository:
+A pre-configured QGIS project template source is available in the repository:
 
 ```
 docs/user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template
 ```
 
-To use it:
+For repeatable certification runs, prefer the generated workflow pack at `artifacts/client-compat/<service>-<timestamp>/pack/templates/desktop/qgis/`.
+
+To use the repo sources directly:
 
 ```bash
-cd docs/user/client-templates
-cp .env.example .env
-# Edit .env with your server URL and collection ID
+mkdir -p /tmp/honua-client-templates/desktop/qgis
+cp docs/gis/client-templates/.env.example /tmp/honua-client-templates/.env
+cp docs/user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template /tmp/honua-client-templates/desktop/qgis/
+
+cd /tmp/honua-client-templates
+# Edit .env with your server URL and collection ID (`HONUA_COLLECTION_ID` is currently the numeric layer id)
 
 set -a; source .env; set +a
-envsubst < qgis/Honua-Desktop-Smoke.qgs.template > qgis/Honua-Desktop-Smoke.qgs
+envsubst < desktop/qgis/Honua-Desktop-Smoke.qgs.template > desktop/qgis/Honua-Desktop-Smoke.qgs
 ```
 
-Open the generated `.qgs` file in QGIS.
+Open the generated `.qgs` file in QGIS, or package it as `.qgz` using the client-template runbook.
 
 ## Verify OGC API Features Endpoints
 

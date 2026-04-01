@@ -130,6 +130,31 @@ The CLI lane lists FeatureServer, OGC API Features, and Admin API evidence files
 
 When extension-protocol testing is active, additional per-protocol files are produced (e.g., `*-js-mvt.cert.json`, `*-desktop-qgis-wms.cert.json`, `*-desktop-qgis-wmts.cert.json`). See the [Certification Matrix — Lane-Specific Extensions](CROSS_CLIENT_CERTIFICATION_MATRIX.md#lane-specific-extensions) for the full list.
 
+## Windows Client Compatibility Workflow Output
+
+The `windows-client-compat-nightly.yml` workflow introduced in ticket `#320` uploads a deterministic smoke-evidence artifact under:
+
+```text
+artifacts/client-compat/<service>-<timestamp>/
+```
+
+That artifact is intentionally simpler than the final `.cert.json` certification envelope described above. It captures stable server-response evidence and packages the reusable client templates needed for manual Windows follow-through.
+
+| Artifact path | Format | Contract |
+|---|---|---|
+| `README.md` | Markdown | Human-readable overview of the artifact root, lane folders, metadata, and reusable pack |
+| `overall-summary.json` / `overall-summary.md` | JSON / Markdown | Root summary with `generated_at`, `artifact_root`, `service_id`, `layer_id`, `seed_source`, `server_version`, overall `status`, and `lanes[] { lane, title, status, summary, summary_path }`, plus a human-readable lane table |
+| `lanes/<lane>/checks.tsv` | TSV | Raw smoke-check rows with `check_id`, `status`, `http_status`, transcript path, and optional note |
+| `lanes/<lane>/lane-summary.json` / `lane-summary.md` | JSON / Markdown | Lane summary with `lane`, `title`, lane `status`, `summary { total, passed, failed }`, and `checks[] { id, status, http_status, transcript, note }`, plus a human-readable check table |
+| `lanes/<lane>/transcripts/<check-id>.txt` | Text | Exact request/response transcript for a single smoke check |
+| `metadata/workflow-context.json` | JSON | Workflow provenance including timestamp, base URL, service id, layer id, seed source, server version, and GitHub run metadata when available |
+| `metadata/<seed-file>.sql` | SQL | Exact versioned seed snapshot used by the run |
+| `server/server.log` | Text | Honua server stdout/stderr captured during the workflow run |
+| `pack/README.md` | Markdown | Human-readable guide to the normalized pack contents |
+| `pack/` | Directory | Canonical manual follow-through pack with templates, runbook, matrix, version ledger, and this evidence specification |
+
+The workflow does not currently emit final per-client `.cert.json` files. If release or customer evidence requires those envelopes, derive them from the uploaded `pack/` and the manual lane execution described in the [Client Templates and Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
+
 ## Integration Mapping
 
 This section describes how each evidence source will map to the evidence envelope. The repo currently enforces `[Protocol]`, `[Operation]`, and `[Endpoint]` attributes on integration tests (see `TestAttributeEnforcementTests`). CERT-ID-specific markers described below are proposed conventions to be added in a follow-up implementation ticket.
@@ -222,3 +247,4 @@ MapLibre GL JS MVT certification is currently manual (visual browser-based verif
 | 1.0.4 | 2026-03-16 | Add `admin-api` protocol; add `measured_count`/`measured_delta` to extensions; fix pytest lane mapping; align examples with current JS scope |
 | 1.0.5 | 2026-03-17 | Add `cli-ogc-features.cert.json` to example directory; add CLI lane coverage note |
 | 1.0.6 | 2026-03-18 | Fix MVT workflow status semantics: use `skip` for "All"-protocol tests not exercised in visual workflow, `not-applicable` only for tests that don't list MVT |
+| 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |

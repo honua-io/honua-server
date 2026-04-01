@@ -84,6 +84,8 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 
 `client-compat-v1.sql` is intentionally a versioned snapshot instead of an alias to the moving CI base seed. When the client compatibility workflow needs a different dataset, add a new snapshot (`client-compat-v2.sql`) rather than rewriting `v1`.
 
+The current snapshot seeds anonymous access for service `test_service`, layer/collection `0`, and layer title `Test Layer` so the Windows client compatibility transcripts and manual follow-through remain repeatable.
+
 ## Profiles in CI
 
 Use a profile to keep seed data minimal for fast tests:
