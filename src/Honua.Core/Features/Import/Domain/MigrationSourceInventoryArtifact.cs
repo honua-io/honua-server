@@ -423,7 +423,7 @@ public sealed record MigrationExternalDependency
     public string? DependencyType { get; init; }
 
     /// <summary>
-    /// Dependency address or endpoint when available.
+    /// Dependency address or endpoint when available. External URLs are normalized to a secret-safe form.
     /// </summary>
     public string? Address { get; init; }
 
@@ -464,7 +464,7 @@ public sealed record MigrationSpatialReferenceInfo
     public int? Srid { get; init; }
 
     /// <summary>
-    /// Canonical CRS URI when resolved.
+    /// Canonical CRS URI when resolved or safely normalized to EPSG.
     /// </summary>
     public string? CrsUri { get; init; }
 

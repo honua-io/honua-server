@@ -3253,7 +3253,7 @@
           },
           "externalDependencies": {
             "type": "array",
-            "description": "Deterministically ordered external dependencies with sanitized metadata.",
+            "description": "Deterministically ordered external dependencies with sanitized metadata and normalized external URL addresses.",
             "items": {
               "$ref": "#/components/schemas/MigrationExternalDependency"
             }
@@ -3614,7 +3614,7 @@
           },
           "address": {
             "type": "string",
-            "description": "Dependency address or endpoint when available."
+            "description": "Dependency address or endpoint when available. External URLs omit embedded credentials, query strings, and fragments."
           },
           "metadata": {
             "type": "object",
@@ -3646,7 +3646,7 @@
           },
           "sourceValue": {
             "type": "string",
-            "description": "Source-provided CRS identifier or text."
+            "description": "Source-provided CRS identifier or text. ArcGIS WKID values remain in source form when the scanner cannot confirm EPSG authority."
           },
           "srid": {
             "type": "integer",
@@ -3654,7 +3654,8 @@
           },
           "crsUri": {
             "type": "string",
-            "format": "uri"
+            "format": "uri",
+            "description": "Canonical CRS URI when resolved or safely normalized to EPSG."
           },
           "datum": {
             "type": "string"

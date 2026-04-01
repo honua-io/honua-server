@@ -79,8 +79,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                     serviceType: ExtractServiceType(normalizedUrl));
             }
 
-            var serviceName = GetServiceName(serviceDocument.RootElement, normalizedUrl);
-            var containerId = $"service:{serviceName}";
+            var serviceKey = GetServiceKey(normalizedUrl);
+            var serviceDisplayName = GetServiceDisplayName(serviceDocument.RootElement, serviceKey);
+            var containerId = $"service:{serviceKey}";
             var serviceCapabilities = SplitCsv(GetOptionalStringProperty(serviceDocument.RootElement, "capabilities"));
             var completenessWarnings = new List<string>();
             var missingArtifacts = new List<string>();
@@ -95,7 +96,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                     var resourceResult = await BuildScanResourceAsync(
                         normalizedUrl,
                         containerId,
-                        serviceName,
+                        serviceKey,
                         resourceReference,
                         serviceCapabilities,
                         request.TimeoutSeconds,
@@ -135,8 +136,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 {
                     Id = containerId,
                     Kind = "service",
-                    Name = serviceName,
-                    Title = GetOptionalStringProperty(serviceDocument.RootElement, "serviceDescription") ?? serviceName,
+                    Name = serviceKey,
+                    Title = serviceDisplayName,
                     Description = GetOptionalStringProperty(serviceDocument.RootElement, "description"),
                     Compatibility = containerAssessment
                 }
@@ -169,7 +170,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 SourceKind = "arcgis-geoservices-rest",
                 Source = new MigrationSourceIdentity
                 {
-                    DisplayName = serviceName,
+                    DisplayName = serviceDisplayName,
                     BaseUrl = normalizedUrl,
                     Product = "ArcGIS GeoServices REST",
                     Version = FormatVersion(serviceDocument.RootElement.TryGetProperty("currentVersion", out var versionElement) ? versionElement : default),
@@ -374,19 +375,21 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         JsonElement spatialReference,
         CancellationToken cancellationToken)
     {
-        var wkid = GetOptionalIntProperty(spatialReference, "latestWkid") ?? GetOptionalIntProperty(spatialReference, "wkid");
+        var wkid = GetOptionalIntProperty(spatialReference, "wkid");
+        var latestWkid = GetOptionalIntProperty(spatialReference, "latestWkid");
         var wkt = GetOptionalStringProperty(spatialReference, "wkt");
-        var sourceValue = wkid.HasValue
-            ? $"EPSG:{wkid.Value}"
-            : wkt;
+        var sourceValue = BuildArcGisSourceValue(wkid, latestWkid, wkt);
+        var normalizedSrid = latestWkid ?? NormalizeArcGisWkid(wkid);
+        var allowFallbackCrsUri = latestWkid.HasValue || IsKnownArcGisAlias(wkid);
 
         return MigrationInventoryHelpers.BuildSpatialReferenceAsync(
             _crsRegistry,
             role,
             sourceValue,
             cancellationToken,
-            explicitSrid: wkid,
-            explicitWkt: wkt);
+            explicitSrid: normalizedSrid,
+            explicitWkt: wkt,
+            allowFallbackCrsUri: allowFallbackCrsUri);
     }
 
     private async Task<int?> TryGetFeatureCountAsync(
@@ -430,20 +433,26 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         var rendererType = GetOptionalStringProperty(renderer, "type") ?? "unknown";
         var resourceId = GetResourceId(serviceName, resourceReference);
         var styleId = $"renderer:{serviceName}:{resourceReference.Id}";
-        var externalUrls = ExtractJsonUrls(renderer);
+        var externalUrls = ExtractJsonUrls(renderer)
+            .Select(MigrationInventoryHelpers.NormalizeExternalAddress)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static address => address, StringComparer.Ordinal)
+            .ToArray();
+
         warnings = externalUrls.Length == 0
             ? []
             : ["Renderer references one or more external symbol URLs."];
 
-        dependencies = externalUrls.Select(url => new MigrationExternalDependency
+        dependencies = externalUrls.Select(address => new MigrationExternalDependency
         {
-            Id = $"{styleId}:external:{url}",
+            Id = MigrationInventoryHelpers.BuildExternalDependencyId(styleId, address),
             ContainerId = containerId,
             ResourceId = resourceId,
             Kind = "external-symbol",
             Name = resourceReference.Name,
             DependencyType = "url",
-            Address = url,
+            Address = address,
             Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["source"] = "renderer"
@@ -605,8 +614,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         }
     }
 
-    private static string GetServiceName(JsonElement serviceRoot, string normalizedUrl)
-        => GetOptionalStringProperty(serviceRoot, "serviceDescription") ?? ExtractServiceName(normalizedUrl);
+    private static string GetServiceDisplayName(JsonElement serviceRoot, string serviceKey)
+        => GetOptionalStringProperty(serviceRoot, "serviceDescription") ?? serviceKey;
+
+    private static string GetServiceKey(string normalizedUrl)
+        => ExtractServiceName(normalizedUrl);
 
     private static string ExtractServiceName(string normalizedUrl)
     {
@@ -628,6 +640,36 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         var segments = normalizedUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments.Length == 0 ? "GeoServices" : segments[^1];
     }
+
+    private static string? BuildArcGisSourceValue(int? wkid, int? latestWkid, string? wkt)
+    {
+        if (wkid.HasValue)
+        {
+            if (latestWkid.HasValue && latestWkid.Value != wkid.Value)
+            {
+                return $"WKID:{wkid.Value}; latestWkid:{latestWkid.Value}";
+            }
+
+            return $"WKID:{wkid.Value}";
+        }
+
+        if (latestWkid.HasValue)
+        {
+            return $"latestWkid:{latestWkid.Value}";
+        }
+
+        return wkt;
+    }
+
+    private static int? NormalizeArcGisWkid(int? wkid)
+        => wkid switch
+        {
+            102100 or 102113 or 900913 or 3785 => 3857,
+            _ => wkid
+        };
+
+    private static bool IsKnownArcGisAlias(int? wkid)
+        => wkid is 102100 or 102113 or 900913 or 3785;
 
     private static string[] SplitCsv(string? value)
         => string.IsNullOrWhiteSpace(value)

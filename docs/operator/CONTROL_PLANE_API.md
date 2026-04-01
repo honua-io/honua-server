@@ -292,7 +292,7 @@ Successful response contract:
 | `containers` | Deterministically ordered workspaces or services. |
 | `resources` | Deterministically ordered layers, tables, or layer groups. |
 | `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
-| `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references. |
+| `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references with secret-safe addresses for external URLs. |
 
 The response body is the artifact itself, not a `success/data` admin envelope.
 
@@ -301,10 +301,11 @@ Behavior notes:
 - GeoServer currently also returns `200 OK` with `scanCompleteness.status = "failed"` for discovery failures such as reachability, timeout, auth challenges, and unusable metadata. Failed GeoServer artifacts keep `authPosture.mode = "basic"` when both credentials were supplied; otherwise they use `anonymous-or-auth-required` and record failure details in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
 - GeoServer scans only send Basic auth when both `username` and `password` are present. Supplying only one credential field leaves the scan in anonymous mode and adds an explanatory auth note.
 - Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
+- External URL dependencies strip embedded credentials, query strings, and fragments before serialization, and the corresponding dependency IDs use stable hashed fingerprints instead of raw URLs.
 - GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
 - GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner.
 - GeoServer can emit a synthetic `workspace:global` container when global styles or layer groups are discovered.
-- Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Optional JSON properties are omitted when the scanner has no value to emit.
+- Stable artifact IDs are keyed from canonical source names rather than display text, so changing a source description does not churn container, resource, style, or dependency identifiers. Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Optional JSON properties are omitted when the scanner has no value to emit.
 
 Failure semantics:
 - `400 Bad Request`: invalid JSON body, missing required fields, unsupported `sourceKind`, non-positive `timeoutSeconds`, invalid HTTPS requirements, embedded credentials in the URL, or disallowed private or loopback targets.

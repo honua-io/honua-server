@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -135,7 +137,8 @@ internal static partial class MigrationInventoryHelpers
         string? sourceValue,
         CancellationToken cancellationToken,
         int? explicitSrid = null,
-        string? explicitWkt = null)
+        string? explicitWkt = null,
+        bool allowFallbackCrsUri = true)
     {
         var srid = explicitSrid ?? TryParseSrid(sourceValue) ?? TryParseSrid(explicitWkt);
         var definition = srid.HasValue
@@ -151,12 +154,44 @@ internal static partial class MigrationInventoryHelpers
             Role = role,
             SourceValue = sourceValue,
             Srid = srid,
-            CrsUri = definition?.Uri ?? (srid.HasValue ? $"http://www.opengis.net/def/crs/EPSG/0/{srid.Value}" : null),
+            CrsUri = definition?.Uri ?? (allowFallbackCrsUri && srid.HasValue ? $"http://www.opengis.net/def/crs/EPSG/0/{srid.Value}" : null),
             Datum = datum,
             Unit = unit,
             AxisOrder = definition.HasValue ? ToAxisOrderText(definition.Value.AxisOrder) : null,
             IsGeographic = definition?.IsGeographic ?? InferIsGeographic(wkt, srid)
         };
+    }
+
+    public static string? NormalizeExternalAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri))
+        {
+            return address.Trim();
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri.AbsoluteUri;
+    }
+
+    public static string BuildExternalDependencyId(string prefix, string address)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+        ArgumentException.ThrowIfNullOrWhiteSpace(address);
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(address));
+        return $"{prefix}:external:{Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant()}";
     }
 
     public static MigrationCompatibilityAssessment FromGeoServerCompatibility(

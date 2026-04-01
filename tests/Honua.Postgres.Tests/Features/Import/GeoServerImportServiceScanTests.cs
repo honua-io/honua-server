@@ -55,6 +55,32 @@ public sealed class GeoServerImportServiceScanTests
             .Which.Should().Contain("requires both username and password");
     }
 
+    [Fact]
+    public async Task ScanSourceAsync_WithExternalGraphicUrls_SanitizesDependencyAddressesAndIds()
+    {
+        using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var service = CreateService(restClient);
+
+        var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            IncludeStyleContent = true,
+            IncludeCompatibilityAnalysis = true
+        });
+
+        var dependency = artifact.ExternalDependencies.Should()
+            .ContainSingle(item => item.Kind == "external-graphic" && item.ResourceId == "style:demo:polygon")
+            .Subject;
+        dependency.Address.Should().Be("https://example.com/styles/marker.svg");
+        dependency.Id.Should().MatchRegex("^style:demo:polygon:external:[0-9a-f]{16}$");
+        dependency.Id.Should().NotContain("https://");
+        dependency.Id.Should().NotContain("secret");
+        dependency.Id.Should().NotContain("token");
+        artifact.Styles.Should().ContainSingle(style => style.Id == "style:demo:polygon")
+            .Which.ExternalDependencyIds.Should().ContainSingle(dependency.Id);
+    }
+
     private static GeoServerImportService CreateService(GeoServerRestClient restClient)
     {
         var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
@@ -102,8 +128,46 @@ public sealed class GeoServerImportServiceScanTests
                 "/geoserver/rest/workspaces/demo/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
                 "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":[{"name":"polygon"}]}}"""),
                 "/geoserver/rest/styles/polygon.json" => ("application/json", """{"style":{"name":"polygon","format":"sld"}}"""),
+                "/geoserver/rest/styles/polygon.sld" => ("application/vnd.ogc.sld+xml", """
+                    <StyledLayerDescriptor>
+                      <NamedLayer>
+                        <UserStyle>
+                          <FeatureTypeStyle>
+                            <Rule>
+                              <PointSymbolizer>
+                                <Graphic>
+                                  <ExternalGraphic>
+                                    <OnlineResource xlink:href="https://user:secret@example.com/styles/marker.svg?token=abc#frag" />
+                                  </ExternalGraphic>
+                                </Graphic>
+                              </PointSymbolizer>
+                            </Rule>
+                          </FeatureTypeStyle>
+                        </UserStyle>
+                      </NamedLayer>
+                    </StyledLayerDescriptor>
+                    """),
                 "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":[{"name":"polygon"}]}}"""),
                 "/geoserver/rest/workspaces/demo/styles/polygon.json" => ("application/json", """{"style":{"name":"polygon","format":"sld"}}"""),
+                "/geoserver/rest/workspaces/demo/styles/polygon.sld" => ("application/vnd.ogc.sld+xml", """
+                    <StyledLayerDescriptor>
+                      <NamedLayer>
+                        <UserStyle>
+                          <FeatureTypeStyle>
+                            <Rule>
+                              <PointSymbolizer>
+                                <Graphic>
+                                  <ExternalGraphic>
+                                    <OnlineResource xlink:href="https://user:secret@example.com/styles/marker.svg?token=abc#frag" />
+                                  </ExternalGraphic>
+                                </Graphic>
+                              </PointSymbolizer>
+                            </Rule>
+                          </FeatureTypeStyle>
+                        </UserStyle>
+                      </NamedLayer>
+                    </StyledLayerDescriptor>
+                    """),
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 

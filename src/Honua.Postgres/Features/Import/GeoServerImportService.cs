@@ -440,9 +440,13 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         {
             foreach (var style in serviceInfo.Styles)
             {
-                foreach (var url in ExtractStyleUrls(style.SldContent))
+                foreach (var address in ExtractStyleUrls(style.SldContent)
+                             .Select(MigrationInventoryHelpers.NormalizeExternalAddress)
+                             .OfType<string>()
+                             .Distinct(StringComparer.Ordinal)
+                             .OrderBy(static value => value, StringComparer.Ordinal))
                 {
-                    var dependencyId = $"{GetStyleId(style)}:external:{url}";
+                    var dependencyId = MigrationInventoryHelpers.BuildExternalDependencyId(GetStyleId(style), address);
                     dependencies.Add(new MigrationExternalDependency
                     {
                         Id = dependencyId,
@@ -451,7 +455,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                         Kind = "external-graphic",
                         Name = style.Name,
                         DependencyType = "url",
-                        Address = url,
+                        Address = address,
                         Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
                         {
                             ["source"] = "sld"
@@ -564,7 +568,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     {
         if (metadata.TryGetValue("url", out var url) && !string.IsNullOrWhiteSpace(url))
         {
-            return url;
+            return MigrationInventoryHelpers.NormalizeExternalAddress(url) ?? url;
         }
 
         if (metadata.TryGetValue("host", out var host) && !string.IsNullOrWhiteSpace(host))
