@@ -5,10 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
-using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Migration;
 
 namespace Honua.Server.Features.Admin;
 
@@ -81,17 +79,21 @@ internal static partial class MigrationEvidenceEndpoints
             return;
         }
 
-        var sourceValidation = await GeoservicesServiceUrlValidation.ValidateAsync(request.SourceServiceUrl, cancellationToken).ConfigureAwait(false);
-        if (!sourceValidation.IsValid)
+        var sourceValidationError = await ExternalServiceUrlValidation
+            .ValidateGeoservicesUrlAsync(request.SourceServiceUrl, nameof(MigrationEvidenceRequest.SourceServiceUrl), cancellationToken)
+            .ConfigureAwait(false);
+        if (sourceValidationError != null)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, sourceValidation.ErrorMessage!, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, sourceValidationError, StatusCodes.Status400BadRequest);
             return;
         }
 
-        var targetValidation = await ValidateTargetBaseUrlAsync(request.TargetBaseUrl, cancellationToken).ConfigureAwait(false);
-        if (!targetValidation.IsValid)
+        var targetValidationError = await ExternalServiceUrlValidation
+            .ValidateGeoservicesUrlAsync(request.TargetBaseUrl, nameof(MigrationEvidenceRequest.TargetBaseUrl), cancellationToken)
+            .ConfigureAwait(false);
+        if (targetValidationError != null)
         {
-            await AdminResponseWriter.WriteErrorAsync(context, targetValidation.ErrorMessage!, StatusCodes.Status400BadRequest);
+            await AdminResponseWriter.WriteErrorAsync(context, targetValidationError, StatusCodes.Status400BadRequest);
             return;
         }
 
@@ -342,20 +344,6 @@ internal static partial class MigrationEvidenceEndpoints
 
         validationError = null;
         return true;
-    }
-
-    private static async Task<GeoservicesServiceUrlValidationResult> ValidateTargetBaseUrlAsync(
-        string targetBaseUrl,
-        CancellationToken cancellationToken)
-    {
-        var result = await GeoservicesServiceUrlValidation.ValidateAsync(targetBaseUrl, cancellationToken).ConfigureAwait(false);
-        if (result.IsValid)
-        {
-            return result;
-        }
-
-        return GeoservicesServiceUrlValidationResult.Failure(
-            (result.ErrorMessage ?? "TargetBaseUrl is invalid").Replace("ServiceUrl", "TargetBaseUrl", StringComparison.Ordinal));
     }
 
     private static bool TryParseIntQuery(string? rawValue, int defaultValue, out int parsedValue, out string? error)

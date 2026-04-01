@@ -20,12 +20,35 @@ Honua can now generate a durable migration evidence artifact through the admin A
 - `GET /api/v1/admin/migrations/reports` lists immutable report summaries.
 - `GET /api/v1/admin/migrations/reports/{reportId}` fetches the full JSON artifact for signoff, audit, or attachment to pilot records.
 
+The request contract is intentionally narrow:
+
+- `provider` currently supports only `arcgis-geoservices`.
+- `sourceServiceUrl` and `targetBaseUrl` must be public HTTPS URLs without embedded credentials; loopback, private, and unresolvable hosts are rejected.
+- `layers` is required and maps source layer IDs to target layer IDs; all layer IDs must be non-negative.
+- `cutoverProfile` is `pilot` or `production`. The production profile escalates production-only warnings and failures into blocking readiness reasons.
+- `rollbackPlanReference` is required. Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are echoed into the stored artifact.
+
+The job lifecycle is asynchronous:
+
+- The start call returns `202 Accepted` with a short `jobId` plus relative `statusUrl` and `cancelUrl`.
+- Poll the job endpoint until `status` reaches `completed`, `failed`, or `cancelled`.
+- Completed jobs include `reportId`, `readiness`, and any readiness warnings. Cancelled jobs do not create a persisted report artifact.
+- Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start call returns `503` instead of falling back to local-only execution.
+
 The report artifact captures:
 
 - source baseline metadata and digests
 - target snapshot metadata and deploy-preflight state
 - split comparison sections for capability, style, data, and operational readiness
 - a computed cutover-readiness checklist with blocking reasons and warnings
+
+The persisted artifact contract is stable enough for pilot evidence packs:
+
+- `request` preserves operator inputs and provenance references.
+- `sourceBaseline` and `targetSnapshot` capture the metadata and digests used for the run.
+- `comparison` is split into `capability`, `style`, `data`, and `operationalReadiness` arrays so downstream tooling can reason about each parity lane independently.
+- `cutoverReadiness` carries the final `state`, a de-duplicated `blockingReasons` list, warnings, and the full checklist that produced the decision.
+- `GET /api/v1/admin/migrations/reports` returns summary rows ordered by `generatedAt` descending and supports `provider`, `cutoverProfile`, and `readiness` filters for audit views.
 
 ## Pilot Lifecycle
 

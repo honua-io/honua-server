@@ -28,8 +28,12 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 |-------|-------|
 | Latest nightly run date | |
 | Run link / artifact | |
+| Latest evidence job ID | |
 | Latest evidence report ID | |
+| Readiness state | |
 | Evidence artifact endpoint | `/api/v1/admin/migrations/reports/{reportId}` |
+
+Before sign-off, queue or refresh the server-generated evidence report and record both the transient `jobId` and persisted `reportId`.
 
 | Service Case | Pass | Fail | N/A | Notes |
 |-------------|------|------|-----|-------|
@@ -43,6 +47,7 @@ Items that require human judgment beyond automated checks.
 - [ ] Query behavior matches source for pilot-critical queries
 - [ ] Styling/renderer fidelity is acceptable for pilot use cases
 - [ ] Auth flow works end-to-end for pilot client configuration
+- [ ] Immutable migration evidence JSON is attached to the pilot record or audit packet
 - [ ] CRS handling is correct for all pilot spatial references
 - [ ] Error response shape matches expected client handling
 - [ ] Pagination behavior is consistent with source for pilot data volumes

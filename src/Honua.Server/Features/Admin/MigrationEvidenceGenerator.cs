@@ -19,7 +19,7 @@ using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Styling;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Server.Features.Admin;
 
 /// <summary>
 /// GeoServices-focused migration evidence generator for parity and cutover-readiness reports.

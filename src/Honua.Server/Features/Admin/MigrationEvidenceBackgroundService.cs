@@ -5,7 +5,7 @@ using System.Diagnostics;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Server.Features.Admin;
 
 /// <summary>
 /// Background worker that processes queued migration evidence jobs.

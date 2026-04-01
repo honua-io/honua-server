@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints (connections, layers, styles, observability, and deploy control). For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints (connections, layers, styles, observability, deploy control, and migration evidence). For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -62,6 +62,10 @@
     {
       "name": "Deploy",
       "description": "Deploy preflight and rollout-readiness surfaces"
+    },
+    {
+      "name": "Migration",
+      "description": "Migration parity evidence and cutover-readiness artifacts"
     },
     {
       "name": "Services",
@@ -1993,6 +1997,212 @@
         }
       }
     },
+    "/migrations/reports": {
+      "post": {
+        "tags": ["Migration"],
+        "summary": "Start Migration Evidence Report",
+        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact.",
+        "operationId": "startMigrationEvidenceReport",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationEvidenceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Migration evidence job accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationEvidenceStartResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
+      "get": {
+        "tags": ["Migration"],
+        "summary": "List Migration Evidence Reports",
+        "description": "List immutable migration evidence artifacts ordered by generation time descending.",
+        "operationId": "listMigrationEvidenceReports",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of report summaries to return. Defaults to 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Number of report summaries to skip. Defaults to 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "description": "Optional provider filter.",
+            "schema": {
+              "$ref": "#/components/schemas/MigrationEvidenceProvider"
+            }
+          },
+          {
+            "name": "cutoverProfile",
+            "in": "query",
+            "required": false,
+            "description": "Optional cutover profile filter.",
+            "schema": {
+              "$ref": "#/components/schemas/MigrationCutoverProfile"
+            }
+          },
+          {
+            "name": "readiness",
+            "in": "query",
+            "required": false,
+            "description": "Optional computed readiness filter.",
+            "schema": {
+              "$ref": "#/components/schemas/MigrationReadinessState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration evidence report summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationEvidenceReportsResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/migrations/reports/jobs/{jobId}": {
+      "get": {
+        "tags": ["Migration"],
+        "summary": "Get Migration Evidence Job Status",
+        "description": "Get progress for a queued or running migration evidence job.",
+        "operationId": "getMigrationEvidenceJobStatus",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "description": "Migration evidence job identifier.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration evidence job progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationEvidenceProgress"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/migrations/reports/jobs/{jobId}/cancel": {
+      "post": {
+        "tags": ["Migration"],
+        "summary": "Cancel Migration Evidence Job",
+        "description": "Cancel a queued or currently running migration evidence job.",
+        "operationId": "cancelMigrationEvidenceJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "description": "Migration evidence job identifier.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration evidence cancellation accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationEvidenceCancelResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/migrations/reports/{reportId}": {
+      "get": {
+        "tags": ["Migration"],
+        "summary": "Get Migration Evidence Report",
+        "description": "Fetch a persisted immutable migration evidence artifact by report identifier.",
+        "operationId": "getMigrationEvidenceReport",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "Migration evidence report identifier.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration evidence artifact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationEvidenceReport"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/gitops/watch": {
       "post": {
         "tags": ["GitOps Watch"],
@@ -2264,6 +2474,16 @@
       },
       "Conflict": {
         "description": "Conflict - resource state prevents the requested operation",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Service unavailable - a required coordination dependency is unavailable",
         "content": {
           "application/json": {
             "schema": {
@@ -4204,6 +4424,812 @@
             "type": "string",
             "format": "date-time",
             "description": "Response generation timestamp"
+          }
+        }
+      },
+      "MigrationEvidenceProvider": {
+        "type": "string",
+        "description": "Supported migration evidence provider.",
+        "enum": ["arcgis-geoservices"]
+      },
+      "MigrationCutoverProfile": {
+        "type": "string",
+        "description": "Readiness profile used when evaluating cutover evidence.",
+        "enum": ["pilot", "production"]
+      },
+      "MigrationReadinessState": {
+        "type": "string",
+        "description": "Computed cutover readiness state.",
+        "enum": ["blocked", "pilot_ready", "production_ready"]
+      },
+      "MigrationEvidenceStatus": {
+        "type": "string",
+        "description": "Status for comparison checks and checklist items.",
+        "enum": ["pass", "warning", "fail", "not_applicable"]
+      },
+      "MigrationEvidenceJobStatus": {
+        "type": "string",
+        "description": "Execution status for a background migration evidence job.",
+        "enum": [
+          "queued",
+          "resolving_source_baseline",
+          "resolving_target_snapshot",
+          "comparing",
+          "persisting_report",
+          "completed",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "MigrationEvidenceRequest": {
+        "type": "object",
+        "required": [
+          "provider",
+          "sourceServiceUrl",
+          "targetBaseUrl",
+          "targetServiceName",
+          "layers",
+          "cutoverProfile",
+          "rollbackPlanReference"
+        ],
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/MigrationEvidenceProvider"
+          },
+          "sourceServiceUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Canonical source GeoServices URL used for discovery and parity probes. Must be a public HTTPS URL."
+          },
+          "targetBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Canonical public target base URL used for parity probes. Must be a public HTTPS URL."
+          },
+          "targetServiceName": {
+            "type": "string",
+            "description": "Target Honua service name."
+          },
+          "layers": {
+            "type": "array",
+            "description": "Source-to-target layer mappings used by the evidence run.",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/MigrationEvidenceLayerMapping"
+            }
+          },
+          "cutoverProfile": {
+            "$ref": "#/components/schemas/MigrationCutoverProfile"
+          },
+          "inventoryArtifactRef": {
+            "type": "string",
+            "description": "Optional inventory artifact reference used as provenance."
+          },
+          "translationManifestRef": {
+            "type": "string",
+            "description": "Optional translation manifest reference used as provenance."
+          },
+          "importJobId": {
+            "type": "string",
+            "description": "Optional import job identifier used as provenance."
+          },
+          "rollbackPlanReference": {
+            "type": "string",
+            "description": "Operator-supplied rollback reference required for the cutover decision."
+          },
+          "requestedBy": {
+            "type": "string",
+            "description": "Optional operator identifier."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Optional human-readable summary for the run."
+          },
+          "sampleRowCount": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 25,
+            "description": "Maximum number of sample rows to compare per layer."
+          },
+          "queryPageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "Maximum page size used for bounded parity probes."
+          },
+          "latencySampleCount": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 5,
+            "description": "Number of latency samples per bounded probe family."
+          },
+          "probeTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 30,
+            "description": "Timeout in seconds for a single remote probe."
+          }
+        }
+      },
+      "MigrationEvidenceLayerMapping": {
+        "type": "object",
+        "required": ["sourceLayerId", "targetLayerId"],
+        "properties": {
+          "sourceLayerId": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Source layer identifier."
+          },
+          "targetLayerId": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Target layer identifier."
+          }
+        }
+      },
+      "MigrationEvidenceStartResponse": {
+        "type": "object",
+        "required": ["jobId", "message", "statusUrl", "cancelUrl"],
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Short migration evidence job identifier."
+          },
+          "message": {
+            "type": "string",
+            "description": "Queue acknowledgement message."
+          },
+          "statusUrl": {
+            "type": "string",
+            "description": "Relative job-status URL."
+          },
+          "cancelUrl": {
+            "type": "string",
+            "description": "Relative cancellation URL."
+          }
+        }
+      },
+      "MigrationEvidenceCancelResponse": {
+        "type": "object",
+        "required": ["jobId", "message"],
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Migration evidence job identifier."
+          },
+          "message": {
+            "type": "string",
+            "description": "Cancellation confirmation message."
+          }
+        }
+      },
+      "MigrationEvidenceReportsResponse": {
+        "type": "object",
+        "required": ["reports", "limit", "offset"],
+        "properties": {
+          "reports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationEvidenceReportSummary"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Applied limit value echoed by the endpoint."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Applied offset value echoed by the endpoint."
+          }
+        }
+      },
+      "MigrationEvidenceReportSummary": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "schemaVersion",
+          "provider",
+          "cutoverProfile",
+          "readiness",
+          "sourceServiceUrl",
+          "targetBaseUrl",
+          "targetServiceName",
+          "reportHash",
+          "warningCount",
+          "blockerCount",
+          "generatedAt"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Report identifier."
+          },
+          "schemaVersion": {
+            "type": "string",
+            "description": "Report schema version."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/MigrationEvidenceProvider"
+          },
+          "cutoverProfile": {
+            "$ref": "#/components/schemas/MigrationCutoverProfile"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/MigrationReadinessState"
+          },
+          "sourceServiceUrl": {
+            "type": "string",
+            "description": "Source service URL."
+          },
+          "targetBaseUrl": {
+            "type": "string",
+            "description": "Target base URL."
+          },
+          "targetServiceName": {
+            "type": "string",
+            "description": "Target service name."
+          },
+          "reportHash": {
+            "type": "string",
+            "description": "Stable hash of the canonical report payload."
+          },
+          "requestedBy": {
+            "type": "string",
+            "description": "Optional operator identifier."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Optional human-readable summary."
+          },
+          "inventoryArtifactRef": {
+            "type": "string",
+            "description": "Optional inventory artifact reference."
+          },
+          "translationManifestRef": {
+            "type": "string",
+            "description": "Optional translation manifest reference."
+          },
+          "importJobId": {
+            "type": "string",
+            "description": "Optional import job identifier."
+          },
+          "warningCount": {
+            "type": "integer",
+            "description": "Number of readiness warnings captured for the report."
+          },
+          "blockerCount": {
+            "type": "integer",
+            "description": "Number of blocking reasons captured for the report."
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Generation timestamp."
+          }
+        }
+      },
+      "MigrationEvidenceReport": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "schemaVersion",
+          "generatedAt",
+          "reportHash",
+          "request",
+          "sourceBaseline",
+          "targetSnapshot",
+          "comparison",
+          "cutoverReadiness"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique report identifier."
+          },
+          "schemaVersion": {
+            "type": "string",
+            "description": "Schema version for the JSON artifact."
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the report was generated."
+          },
+          "reportHash": {
+            "type": "string",
+            "description": "Stable hash of the canonical report payload."
+          },
+          "request": {
+            "$ref": "#/components/schemas/MigrationEvidenceRequest"
+          },
+          "sourceBaseline": {
+            "$ref": "#/components/schemas/MigrationEvidenceSourceBaseline"
+          },
+          "targetSnapshot": {
+            "$ref": "#/components/schemas/MigrationEvidenceTargetSnapshot"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/MigrationEvidenceComparison"
+          },
+          "cutoverReadiness": {
+            "$ref": "#/components/schemas/MigrationEvidenceReadinessSummary"
+          }
+        }
+      },
+      "MigrationEvidenceSourceBaseline": {
+        "type": "object",
+        "required": ["serviceUrl", "serviceName", "serviceDigest"],
+        "properties": {
+          "serviceUrl": {
+            "type": "string",
+            "description": "Source service URL."
+          },
+          "serviceName": {
+            "type": "string",
+            "description": "Source service name."
+          },
+          "version": {
+            "type": "string",
+            "description": "Source service version, when reported."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Source service capabilities."
+          },
+          "supportedQueryFormats": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Source supported query formats."
+          },
+          "serviceDigest": {
+            "type": "string",
+            "description": "Digest of the source service metadata used for the run."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationEvidenceLayerSnapshot"
+            },
+            "description": "Per-layer baseline snapshots."
+          }
+        }
+      },
+      "MigrationEvidenceTargetSnapshot": {
+        "type": "object",
+        "required": ["baseUrl", "serviceName", "serviceDigest", "operationalSnapshot"],
+        "properties": {
+          "baseUrl": {
+            "type": "string",
+            "description": "Target base URL used for parity probes."
+          },
+          "serviceName": {
+            "type": "string",
+            "description": "Target Honua service name."
+          },
+          "serviceDigest": {
+            "type": "string",
+            "description": "Digest of the target service metadata used for the run."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Target service capabilities."
+          },
+          "supportedQueryFormats": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Target supported query formats."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationEvidenceLayerSnapshot"
+            },
+            "description": "Per-layer target snapshots."
+          },
+          "operationalSnapshot": {
+            "$ref": "#/components/schemas/MigrationEvidenceOperationalSnapshot"
+          }
+        }
+      },
+      "MigrationEvidenceLayerSnapshot": {
+        "type": "object",
+        "required": ["layerId", "name", "layerDigest"],
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "description": "Layer identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Layer name."
+          },
+          "geometryType": {
+            "type": "string",
+            "description": "Layer geometry type string."
+          },
+          "spatialReferenceWkid": {
+            "type": "integer",
+            "description": "Layer spatial reference WKID."
+          },
+          "featureCount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Layer feature count when reported by metadata or probes."
+          },
+          "hasAttachments": {
+            "type": "boolean",
+            "description": "Whether the layer advertises attachment support."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationEvidenceFieldSnapshot"
+            },
+            "description": "Layer fields used for comparison and provenance."
+          },
+          "extent": {
+            "$ref": "#/components/schemas/MigrationEvidenceExtentSnapshot"
+          },
+          "layerDigest": {
+            "type": "string",
+            "description": "Metadata digest for the layer payload."
+          },
+          "styleDigest": {
+            "type": "string",
+            "description": "Canonical style-input digest when available."
+          },
+          "mapLibreStyleDigest": {
+            "type": "string",
+            "description": "Canonical target MapLibre style digest when available."
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Notes captured while building the snapshot."
+          }
+        }
+      },
+      "MigrationEvidenceFieldSnapshot": {
+        "type": "object",
+        "required": ["name", "canonicalName", "type"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Original field name."
+          },
+          "canonicalName": {
+            "type": "string",
+            "description": "Sanitized canonical field name used for parity matching."
+          },
+          "type": {
+            "type": "string",
+            "description": "Field type identifier."
+          },
+          "nullable": {
+            "type": "boolean",
+            "description": "Whether the field is nullable."
+          }
+        }
+      },
+      "MigrationEvidenceExtentSnapshot": {
+        "type": "object",
+        "required": ["minX", "minY", "maxX", "maxY"],
+        "properties": {
+          "minX": {
+            "type": "number",
+            "format": "double",
+            "description": "Minimum X coordinate."
+          },
+          "minY": {
+            "type": "number",
+            "format": "double",
+            "description": "Minimum Y coordinate."
+          },
+          "maxX": {
+            "type": "number",
+            "format": "double",
+            "description": "Maximum X coordinate."
+          },
+          "maxY": {
+            "type": "number",
+            "format": "double",
+            "description": "Maximum Y coordinate."
+          },
+          "spatialReferenceWkid": {
+            "type": "integer",
+            "description": "Spatial reference WKID."
+          }
+        }
+      },
+      "MigrationEvidenceOperationalSnapshot": {
+        "type": "object",
+        "required": [
+          "status",
+          "readyForCoordinatedDeploy",
+          "migrationPlanAvailable",
+          "upgradeRequired"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Overall preflight status label."
+          },
+          "readyForCoordinatedDeploy": {
+            "type": "boolean",
+            "description": "Whether the instance was ready for coordinated deployment at probe time."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable preflight message."
+          },
+          "migrationPlanAvailable": {
+            "type": "boolean",
+            "description": "Whether a migration plan could be generated."
+          },
+          "upgradeRequired": {
+            "type": "boolean",
+            "description": "Whether the instance reported pending migrations."
+          },
+          "pendingScripts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Pending scripts identified by the migration plan."
+          },
+          "executedButNotDiscoveredScripts": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Executed scripts no longer discovered by the current binary."
+          },
+          "databaseCompatible": {
+            "type": "boolean",
+            "description": "Whether the database compatibility probe considered the database compatible."
+          },
+          "databaseCompatibilityWarnings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Compatibility warnings emitted by the database probe."
+          },
+          "errorMessage": {
+            "type": "string",
+            "description": "Error message emitted by preflight or compatibility probes."
+          }
+        }
+      },
+      "MigrationEvidenceComparison": {
+        "type": "object",
+        "properties": {
+          "capability": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationComparisonCheck"
+            },
+            "description": "Capability comparison checks."
+          },
+          "style": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationComparisonCheck"
+            },
+            "description": "Style comparison checks."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationComparisonCheck"
+            },
+            "description": "Data comparison checks."
+          },
+          "operationalReadiness": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationComparisonCheck"
+            },
+            "description": "Operational-readiness comparison checks."
+          }
+        }
+      },
+      "MigrationComparisonCheck": {
+        "type": "object",
+        "required": ["checkName", "status", "scope", "summary"],
+        "properties": {
+          "checkName": {
+            "type": "string",
+            "description": "Stable check identifier."
+          },
+          "status": {
+            "$ref": "#/components/schemas/MigrationEvidenceStatus"
+          },
+          "scope": {
+            "type": "string",
+            "description": "Scope string describing the affected service or layer mapping."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Short operator-facing summary."
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional detailed notes."
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationComparisonObservation"
+            },
+            "description": "Structured observations captured for the check."
+          }
+        }
+      },
+      "MigrationComparisonObservation": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Observation name."
+          },
+          "expected": {
+            "type": "string",
+            "description": "Expected value."
+          },
+          "actual": {
+            "type": "string",
+            "description": "Actual value."
+          }
+        }
+      },
+      "MigrationEvidenceReadinessSummary": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/MigrationReadinessState"
+          },
+          "blockingReasons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Operator-facing blocking reasons."
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Operator-facing warnings."
+          },
+          "checklist": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CutoverChecklistItem"
+            },
+            "description": "Full readiness checklist."
+          }
+        }
+      },
+      "CutoverChecklistItem": {
+        "type": "object",
+        "required": ["name", "requirementLevel", "status", "summary"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stable checklist identifier."
+          },
+          "requirementLevel": {
+            "type": "string",
+            "description": "Requirement level for the checklist item.",
+            "enum": ["pilot_required", "production_required"]
+          },
+          "status": {
+            "$ref": "#/components/schemas/MigrationEvidenceStatus"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Operator-facing summary for the item."
+          }
+        }
+      },
+      "MigrationEvidenceProgress": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "provider",
+          "sourceServiceUrl",
+          "targetBaseUrl",
+          "targetServiceName",
+          "cutoverProfile",
+          "status",
+          "completedSteps",
+          "totalSteps",
+          "percentComplete",
+          "startedAt",
+          "duration",
+          "warnings"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "description": "Job identifier."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/MigrationEvidenceProvider"
+          },
+          "sourceServiceUrl": {
+            "type": "string",
+            "description": "Source service URL."
+          },
+          "targetBaseUrl": {
+            "type": "string",
+            "description": "Target base URL."
+          },
+          "targetServiceName": {
+            "type": "string",
+            "description": "Target Honua service name."
+          },
+          "cutoverProfile": {
+            "$ref": "#/components/schemas/MigrationCutoverProfile"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MigrationEvidenceJobStatus"
+          },
+          "completedSteps": {
+            "type": "integer",
+            "description": "Number of completed logical steps."
+          },
+          "totalSteps": {
+            "type": "integer",
+            "description": "Total number of logical steps."
+          },
+          "percentComplete": {
+            "type": "number",
+            "format": "double",
+            "description": "Percent complete for the job."
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the job started."
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the job completed."
+          },
+          "duration": {
+            "type": "string",
+            "description": "Elapsed duration serialized as a .NET TimeSpan string."
+          },
+          "errorMessage": {
+            "type": "string",
+            "description": "Failure message when the job failed."
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Warnings captured during job processing."
+          },
+          "currentPhase": {
+            "type": "string",
+            "description": "Current processing phase."
+          },
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Persisted report identifier when the job completed successfully."
+          },
+          "readiness": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationReadinessState"
+              }
+            ],
+            "nullable": true,
+            "description": "Computed readiness state when available."
           }
         }
       },

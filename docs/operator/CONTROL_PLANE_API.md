@@ -51,6 +51,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- deploy/                   # Deploy preflight, plan, operations, submit, rollback
 |-- import/                   # Import workflows
 |-- operations/               # Long-running operations
+|-- migrations/reports/       # Migration evidence jobs and immutable report artifacts
 |-- performance/database/     # Query cache statistics
 |-- observability/            # Recent errors and telemetry status
 |-- alerts/                   # Alert zones and rules
@@ -307,6 +308,48 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/performance/database/query-cache/statistics` | GET | Query cache performance statistics |
 | `/api/v1/admin/observability/errors` | GET | Recent in-memory error buffer |
 | `/api/v1/admin/observability/telemetry` | GET | Tracing/OTLP telemetry status |
+
+## **Migration Evidence (Minimal Example)**
+
+```http
+POST /api/v1/admin/migrations/reports
+Content-Type: application/json
+
+{
+  "provider": "arcgis-geoservices",
+  "sourceServiceUrl": "https://source.example.com/arcgis/rest/services/Parcels/FeatureServer",
+  "targetBaseUrl": "https://honua.example.com",
+  "targetServiceName": "parcels",
+  "layers": [
+    { "sourceLayerId": 0, "targetLayerId": 0 }
+  ],
+  "cutoverProfile": "pilot",
+  "rollbackPlanReference": "runbook://cutover/parcels/rollback",
+  "requestedBy": "migration-ops",
+  "summary": "Pilot parity evidence for parcels"
+}
+```
+
+### **Migration Evidence Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/migrations/reports` | POST | Queue background generation of a migration evidence report |
+| `/api/v1/admin/migrations/reports` | GET | List persisted report summaries |
+| `/api/v1/admin/migrations/reports/jobs/{jobId}` | GET | Get migration evidence job progress |
+| `/api/v1/admin/migrations/reports/jobs/{jobId}/cancel` | POST | Cancel a queued or running migration evidence job |
+| `/api/v1/admin/migrations/reports/{reportId}` | GET | Fetch the immutable JSON report artifact |
+
+**Usage notes:**
+
+- `POST /api/v1/admin/migrations/reports` returns `202 Accepted` with `jobId`, `statusUrl`, and `cancelUrl`.
+- Poll `GET /api/v1/admin/migrations/reports/jobs/{jobId}` until `status` reaches `completed`, `failed`, or `cancelled`. Only completed jobs include `reportId` and computed `readiness`.
+- `provider` currently supports only `arcgis-geoservices`. `sourceServiceUrl` and `targetBaseUrl` must be public HTTPS URLs without embedded credentials.
+- Listing supports `limit`, `offset`, `provider`, `cutoverProfile`, and `readiness`. Results are returned newest-first.
+- Generated reports are immutable JSON artifacts. There are no update or delete endpoints in the MVP.
+- Cancelling a terminal job returns `409`. Cancelled jobs do not persist a report artifact.
+- Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start endpoint returns `503`.
+- The same job state is also visible through `/api/v1/admin/operations/{operationId}` and `/api/v1/admin/operations/type/MigrationEvidence`.
 
 ### **Deploy Control Endpoints**
 
