@@ -53,10 +53,12 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Publish and configure layers from database tables
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
-- Generate migration evidence reports and fetch immutable cutover-readiness artifacts
+- Queue migration evidence jobs, poll dedicated or unified operations progress endpoints, and fetch immutable cutover-readiness artifacts
 - Monitor system health and observability
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
+
+For migration evidence workflows, pair the curated admin contract with the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) for endpoint behavior and the [Pilot Evidence Kit](../../contributor/migration/README.md) for evidence-pack usage.
 
 {% swagger src="admin-api.json" %}
 {% endswagger %}

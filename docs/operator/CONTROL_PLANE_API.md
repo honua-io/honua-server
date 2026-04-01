@@ -330,6 +330,18 @@ Content-Type: application/json
 }
 ```
 
+```http
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+
+{
+  "jobId": "a1b2c3d4e5f6",
+  "message": "Migration evidence generation started",
+  "statusUrl": "jobs/a1b2c3d4e5f6",
+  "cancelUrl": "jobs/a1b2c3d4e5f6/cancel"
+}
+```
+
 ### **Migration Evidence Endpoints**
 
 | Endpoint | Method | Purpose |
@@ -348,6 +360,9 @@ Content-Type: application/json
 - `sourceServiceUrl` and `targetBaseUrl` share the same external URL validation: they must be public HTTPS URLs without embedded credentials, and loopback, private, and unresolvable hosts are rejected.
 - Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are preserved in the stored artifact. Optional bounded probe controls are also available: `sampleRowCount` (default `25`), `queryPageSize` (default `50`), `latencySampleCount` (default `5`), and `probeTimeoutSeconds` (default `30`, max `60`).
 - Listing supports `limit`, `offset`, `provider`, `cutoverProfile`, and `readiness`. Results are returned newest-first, summary rows include `reportHash`, `warningCount`, and `blockerCount`, and the response echoes the requested pagination values. The backing store currently clamps fetched page size to `1..200` summaries.
+- `GET /api/v1/admin/migrations/reports/{reportId}` returns the full immutable artifact with top-level `reportId`, `schemaVersion`, `generatedAt`, `reportHash`, `request`, `sourceBaseline`, `targetSnapshot`, `comparison`, and `cutoverReadiness` sections.
+- `targetSnapshot.operationalSnapshot` captures the deploy-preflight and database-compatibility probe output used for the run, including `status`, `readyForCoordinatedDeploy`, `migrationPlanAvailable`, `upgradeRequired`, `pendingScripts`, `executedButNotDiscoveredScripts`, `databaseCompatible`, `databaseCompatibilityWarnings`, and `errorMessage` when present.
+- Comparison lanes (`capability`, `style`, `data`, and `operationalReadiness`) are arrays of stable check objects with `checkName`, `status`, `scope`, `summary`, optional `notes`, and structured `observations`.
 - Generated reports are immutable JSON artifacts. There are no update or delete endpoints in the MVP.
 - Cancelling a terminal job returns `409`. Cancelled jobs do not persist a report artifact.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start endpoint returns `503`.

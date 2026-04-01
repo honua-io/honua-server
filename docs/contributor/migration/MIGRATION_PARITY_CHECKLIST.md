@@ -31,10 +31,13 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 | Latest evidence job ID | |
 | Latest evidence report ID | |
 | Latest evidence report hash | |
+| Cutover profile | `pilot` / `production` |
 | Readiness state | |
+| Warning count | |
+| Blocker count | |
 | Evidence artifact endpoint | `/api/v1/admin/migrations/reports/{reportId}` |
 
-Before sign-off, queue or refresh the server-generated evidence report and record the transient `jobId`, persisted `reportId`, and immutable `reportHash`.
+Before sign-off, queue or refresh the server-generated evidence report and record the transient `jobId`, persisted `reportId`, immutable `reportHash`, and the final readiness summary counts. Use `GET /api/v1/admin/migrations/reports?provider=arcgis-geoservices&cutoverProfile=<profile>&readiness=<state>` for newest-first audit lookup, then fetch the full artifact by `reportId`.
 
 | Service Case | Pass | Fail | N/A | Notes |
 |-------------|------|------|-----|-------|

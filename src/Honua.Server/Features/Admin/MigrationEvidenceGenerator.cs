@@ -489,9 +489,13 @@ internal sealed partial class MigrationEvidenceGenerator(
                 $"{sourceIds.ErrorMessage ?? "unknown source error"} | {targetIds.ErrorMessage ?? "unknown target error"}");
         }
 
-        var sourceCount = CountDistinct(sourceIds.ObjectIds);
-        var targetCount = CountDistinct(targetIds.ObjectIds);
-        var matched = sourceIds.ObjectIds.Length == targetIds.ObjectIds.Length && sourceCount == sourceIds.ObjectIds.Length && targetCount == targetIds.ObjectIds.Length;
+        var sourceIdsSorted = sourceIds.ObjectIds.OrderBy(static id => id).ToArray();
+        var targetIdsSorted = targetIds.ObjectIds.OrderBy(static id => id).ToArray();
+        var sourceCount = CountDistinct(sourceIdsSorted);
+        var targetCount = CountDistinct(targetIdsSorted);
+        var matched = sourceCount == sourceIdsSorted.Length &&
+                      targetCount == targetIdsSorted.Length &&
+                      sourceIdsSorted.SequenceEqual(targetIdsSorted);
 
         return new MigrationComparisonCheck
         {
@@ -506,8 +510,8 @@ internal sealed partial class MigrationEvidenceGenerator(
                 new MigrationComparisonObservation
                 {
                     Name = "source_ids",
-                    Expected = sourceIds.ObjectIds.Length.ToString(CultureInfo.InvariantCulture),
-                    Actual = targetIds.ObjectIds.Length.ToString(CultureInfo.InvariantCulture)
+                    Expected = sourceIdsSorted.Length.ToString(CultureInfo.InvariantCulture),
+                    Actual = targetIdsSorted.Length.ToString(CultureInfo.InvariantCulture)
                 },
                 new MigrationComparisonObservation
                 {
