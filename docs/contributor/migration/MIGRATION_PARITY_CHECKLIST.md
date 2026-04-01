@@ -28,6 +28,8 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 |-------|-------|
 | Latest nightly run date | |
 | Run link / artifact | |
+| Latest evidence report ID | |
+| Evidence artifact endpoint | `/api/v1/admin/migrations/reports/{reportId}` |
 
 | Service Case | Pass | Fail | N/A | Notes |
 |-------------|------|------|-----|-------|

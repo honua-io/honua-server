@@ -11,6 +11,22 @@ Standardized scorecards, checklists, and readout templates for lighthouse migrat
 - [Executive Readout Template](EXECUTIVE_READOUT_TEMPLATE.md) — executive summary for pilot closeout
 - [Case Study Checklist](CASE_STUDY_CHECKLIST.md) — evidence capture checklist for referenceability
 
+## Server-Generated Evidence Reports
+
+Honua can now generate a durable migration evidence artifact through the admin API instead of relying on ad hoc exported notes.
+
+- `POST /api/v1/admin/migrations/reports` starts background generation of a parity and cutover-readiness report.
+- `GET /api/v1/admin/migrations/reports/jobs/{jobId}` returns job progress and the persisted `reportId` after completion.
+- `GET /api/v1/admin/migrations/reports` lists immutable report summaries.
+- `GET /api/v1/admin/migrations/reports/{reportId}` fetches the full JSON artifact for signoff, audit, or attachment to pilot records.
+
+The report artifact captures:
+
+- source baseline metadata and digests
+- target snapshot metadata and deploy-preflight state
+- split comparison sections for capability, style, data, and operational readiness
+- a computed cutover-readiness checklist with blocking reasons and warnings
+
 ## Pilot Lifecycle
 
 | Stage | Artifacts | Timing |

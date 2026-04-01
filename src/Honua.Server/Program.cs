@@ -17,6 +17,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Schema;
+using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
@@ -39,6 +40,7 @@ using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Server.Features.Migration;
 using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -217,6 +219,8 @@ builder.Services.AddOptions<ControlPlaneOptions>()
     .ValidateOnStart();
 builder.Services.AddHttpClient("import-source")
     .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Import.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
+builder.Services.AddHttpClient("migration-evidence")
+    .ConfigurePrimaryHttpMessageHandler(static () => Honua.Server.Features.Import.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddHttpClient("control-plane-telemetry");
 builder.Services.AddHttpClient("control-plane-azure");
 builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
@@ -384,6 +388,15 @@ builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistribut
         sp.GetRequiredService<IHostEnvironment>(),
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoservicesImportBackgroundService>();
+builder.Services.AddScoped<IMigrationEvidenceGenerator, MigrationEvidenceGenerator>();
+builder.Services.AddSingleton<MigrationEvidenceJobManager>(sp =>
+    new MigrationEvidenceJobManager(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
+        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+        sp.GetRequiredService<ILogger<MigrationEvidenceJobManager>>(),
+        sp.GetRequiredService<IHostEnvironment>(),
+        sp.GetService<IConnectionMultiplexer>()));
+builder.Services.AddHostedService<MigrationEvidenceBackgroundService>();
 builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobManager>(sp =>
     new Honua.Server.Features.Import.GeoServerImportJobManager(
         sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
@@ -536,6 +549,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.RasterImportJsonContext.Default,
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
+        Honua.Server.Features.Admin.MigrationEvidenceApiJsonContext.Default,
+        Honua.Core.Features.Migration.Domain.MigrationEvidenceDomainJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
         Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
@@ -894,6 +909,9 @@ app.MapGeoservicesImportEndpoints();
 
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
+
+// Configure migration evidence report endpoints
+app.MapMigrationEvidenceEndpoints();
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();

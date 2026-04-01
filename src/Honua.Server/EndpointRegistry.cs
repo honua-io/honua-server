@@ -207,6 +207,11 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),
         new("GET", "/api/v1/admin/observability/migrations"),
+        new("POST", "/api/v1/admin/migrations/reports"),
+        new("GET", "/api/v1/admin/migrations/reports"),
+        new("GET", "/api/v1/admin/migrations/reports/{reportId}"),
+        new("GET", "/api/v1/admin/migrations/reports/jobs/{jobId}"),
+        new("POST", "/api/v1/admin/migrations/reports/jobs/{jobId}/cancel"),
 
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
 

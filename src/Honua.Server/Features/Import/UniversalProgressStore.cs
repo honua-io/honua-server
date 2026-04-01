@@ -8,6 +8,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
@@ -522,6 +523,7 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
             nameof(ImportProgress) => OperationType.Import,
             nameof(GeoservicesImportProgress) => OperationType.ExternalImport,
             nameof(GeoServerImportProgress) => OperationType.ExternalImport,
+            nameof(MigrationEvidenceProgress) => OperationType.MigrationEvidence,
             nameof(TileOperationProgress) => OperationType.TileCache,
             nameof(ExportProgress) => OperationType.Export,
             nameof(PrintProgress) => OperationType.Print,
@@ -549,6 +551,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(ImportProgress))]
 [JsonSerializable(typeof(GeoservicesImportProgress))]
 [JsonSerializable(typeof(GeoServerImportProgress))]
+[JsonSerializable(typeof(MigrationEvidenceProgress))]
 [JsonSerializable(typeof(UploadProgress))]
 [JsonSerializable(typeof(IngestProgress))]
 [JsonSerializable(typeof(TileOperationProgress))]
@@ -561,6 +564,7 @@ internal sealed record ProgressWrapper
 [JsonSerializable(typeof(ImportStatus))]
 [JsonSerializable(typeof(GeoservicesImportStatus))]
 [JsonSerializable(typeof(GeoServerImportStatus))]
+[JsonSerializable(typeof(MigrationEvidenceJobStatus))]
 internal sealed partial class UniversalProgressJsonContext : JsonSerializerContext
 {
 }

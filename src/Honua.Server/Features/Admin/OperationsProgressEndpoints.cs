@@ -5,6 +5,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
@@ -94,6 +95,7 @@ internal static class OperationsProgressEndpoints
             ImportProgress importProgress => Results.Json(importProgress, OperationsProgressJsonContext.Default.ImportProgress),
             IngestProgress ingestProgress => Results.Json(ingestProgress, OperationsProgressJsonContext.Default.IngestProgress),
             GeoservicesImportProgress externalImportProgress => Results.Json(externalImportProgress, OperationsProgressJsonContext.Default.GeoservicesImportProgress),
+            MigrationEvidenceProgress migrationEvidenceProgress => Results.Json(migrationEvidenceProgress, OperationsProgressJsonContext.Default.MigrationEvidenceProgress),
             TileOperationProgress tileOperationProgress => Results.Json(tileOperationProgress, OperationsProgressJsonContext.Default.TileOperationProgress),
             ExportProgress exportProgress => Results.Json(exportProgress, OperationsProgressJsonContext.Default.ExportProgress),
             PrintProgress printProgress => Results.Json(printProgress, OperationsProgressJsonContext.Default.PrintProgress),
@@ -401,6 +403,7 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(ImportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(IngestProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(GeoservicesImportProgress))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(MigrationEvidenceProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(ExportProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(PrintProgress))]
@@ -411,6 +414,7 @@ internal sealed record OperationsByTypeResponse
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationsByTypeResponse))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationType))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(OperationStatus))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(MigrationEvidenceJobStatus))]
 internal sealed partial class OperationsProgressJsonContext : System.Text.Json.Serialization.JsonSerializerContext
 {
 }

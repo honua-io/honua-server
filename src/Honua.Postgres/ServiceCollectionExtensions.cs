@@ -37,6 +37,7 @@ using Honua.Postgres.Features.Infrastructure.Migrations;
 using Honua.Postgres.Features.Infrastructure.Transforms;
 using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Infrastructure.Styling;
+using Honua.Postgres.Features.Migration;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -121,6 +122,12 @@ internal static class ServiceCollectionExtensions
         // Register manifest version store for GitOps drift detection (#515)
         services.AddScoped<IManifestVersionStore>(serviceProvider =>
             new PostgresManifestVersionStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Register immutable migration evidence report store (#652)
+        services.AddScoped<Honua.Core.Features.Migration.Abstractions.IMigrationEvidenceReportStore>(serviceProvider =>
+            new PostgresMigrationEvidenceReportStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
