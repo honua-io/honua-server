@@ -172,6 +172,7 @@ public static class EndpointRegistry
 
         // v1 admin import endpoints (GeoServer)
         new("POST", "/api/v1/admin/import/geoserver/discover"),
+        new("POST", "/api/v1/admin/import/geoserver/translate"),
         new("POST", "/api/v1/admin/import/geoserver/start"),
         new("GET", "/api/v1/admin/import/geoserver/jobs/{jobId}"),
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),

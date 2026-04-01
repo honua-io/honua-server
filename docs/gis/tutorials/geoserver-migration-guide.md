@@ -1,10 +1,10 @@
 # GeoServer to Honua Migration Guide
 
-Migrate from GeoServer to Honua Server, covering endpoint equivalence, automated import, and key configuration differences.
+Migrate from GeoServer to Honua Server, covering endpoint equivalence, migration-manifest generation, dry-run import, and key configuration differences.
 
 ## Overview
 
-Honua provides built-in GeoServer migration tooling that discovers your existing GeoServer configuration and imports workspaces, layers, and styles into Honua services. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
+Honua provides built-in GeoServer migration tooling that discovers your existing GeoServer configuration, translates supported resources into a deterministic migration manifest, and supports dry-run validation of the unfinished executor path. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
 
 ## Endpoint Equivalence Mapping
 
@@ -41,7 +41,7 @@ Honua provides built-in GeoServer migration tooling that discovers your existing
 
 ## Automated Migration
 
-Honua provides admin API endpoints that automate the import of GeoServer configurations.
+Honua provides admin API endpoints that discover GeoServer resources, generate reviewable migration manifests, and validate the current dry-run import path.
 
 ### Step 1: Discover Your GeoServer
 
@@ -66,7 +66,33 @@ The response includes:
 
 Review the compatibility report before proceeding. Layers backed by PostGIS data stores have the highest migration fidelity.
 
-### Step 2: Start a Dry-Run Import
+### Step 2: Generate a Migration Manifest
+
+Use the translate endpoint to generate a deterministic manifest that can be reviewed, saved externally, and used as the source artifact for later replay work.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/translate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "geoServerRestUrl": "http://geoserver-host:8080/geoserver/rest",
+    "username": "admin",
+    "password": "geoserver",
+    "workspaceNames": ["transport"],
+    "importStyles": true,
+    "includeStyleContent": false
+  }'
+```
+
+The manifest includes:
+- Source provenance and a stable `manifestHash`
+- Sanitized PostGIS connection drafts without source secrets
+- Publish-plan entries for supported vector layers
+- Metadata resources ready for later apply workflows
+- Style-plan entries and explicit diagnostics for unsupported/manual work
+
+Initial automatic translation is intentionally limited to PostGIS-backed vector layers. Non-PostGIS datastores, coverage stores, layer groups, ambiguous SRIDs, and SLD styles are surfaced as explicit diagnostics and manual follow-up steps.
+
+### Step 3: Start a Dry-Run Import
 
 > **Note:** The GeoServer import endpoint currently supports **dry-run mode only**. A dry run validates connectivity, discovers resources, and reports what would be imported without making changes.
 
@@ -83,7 +109,7 @@ curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
 
 This returns a job ID for tracking progress.
 
-### Step 3: Monitor Progress
+### Step 4: Monitor Progress
 
 ```bash
 # Check specific job status
@@ -93,7 +119,7 @@ curl http://localhost:8080/api/v1/admin/import/geoserver/jobs/{jobId}
 curl http://localhost:8080/api/v1/admin/import/geoserver/jobs
 ```
 
-### Step 4: Cancel (if needed)
+### Step 5: Cancel (if needed)
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/jobs/{jobId}/cancel
@@ -161,7 +187,7 @@ HONUA_REDIS_URL=redis:6379
 
 ### Styling
 
-GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. When importing from GeoServer, styles are converted to MapLibre format on a best-effort basis. Complex SLD filters and symbolizers may require manual adjustment.
+GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. The current GeoServer translation endpoint preserves style intent in the migration manifest, but it does not automatically convert SLD into MapLibre JSON yet. Expect SLD and other unsupported style formats to be flagged for manual conversion.
 
 Manage styles via the Admin API:
 

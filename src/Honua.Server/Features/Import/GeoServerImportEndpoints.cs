@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -31,6 +32,11 @@ internal static partial class GeoServerImportEndpoints
         _ = group.MapPost("/discover", HandleDiscoverService)
             .WithName("DiscoverGeoServerService")
             .WithSummary("Discover GeoServer configuration and assess migration compatibility");
+
+        // Translate GeoServer discovery into a deterministic migration manifest
+        _ = group.MapPost("/translate", HandleTranslateManifest)
+            .WithName("TranslateGeoServerMigrationManifest")
+            .WithSummary("Translate GeoServer discovery into a deterministic migration manifest");
 
         // Start a background import job
         _ = group.MapPost("/start", HandleStartImport)
@@ -123,6 +129,82 @@ internal static partial class GeoServerImportEndpoints
             Log.ServiceDiscoveryFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(context,
                 "Failed to discover service",
+                StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    /// <summary>
+    /// Translate GeoServer discovery into a deterministic migration manifest.
+    /// </summary>
+    private static async Task HandleTranslateManifest(HttpContext context)
+    {
+        var cancellationToken = context.RequestAborted;
+
+        GeoServerTranslationRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync(
+                MigrationManifestJsonContext.Default.GeoServerTranslationRequest,
+                cancellationToken);
+        }
+        catch (JsonException ex) when (ex.Message.Contains(nameof(GeoServerTranslationRequest.GeoServerRestUrl), StringComparison.Ordinal))
+        {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
+            await AdminResponseWriter.WriteErrorAsync(context, "GeoServerRestUrl is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+        catch (Exception ex) when (ex.Message.Contains(nameof(GeoServerTranslationRequest.GeoServerRestUrl), StringComparison.Ordinal))
+        {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
+            await AdminResponseWriter.WriteErrorAsync(context, "GeoServerRestUrl is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+        catch (Exception ex)
+        {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
+            await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        if (request == null || string.IsNullOrWhiteSpace(request.GeoServerRestUrl))
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "GeoServerRestUrl is required", StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+        var urlValidation = await GeoServerServiceUrlValidation.ValidateAsync(
+            request.GeoServerRestUrl,
+            allowUnsafeLocalUrls,
+            cancellationToken);
+        if (!urlValidation.IsValid)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context,
+                urlValidation.ErrorMessage!,
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
+        try
+        {
+            var translationService = context.RequestServices.GetRequiredService<IGeoServerMigrationManifestService>();
+            var manifest = await translationService.TranslateAsync(request, cancellationToken);
+
+            await Results.Json(manifest, MigrationManifestJsonContext.Default.MigrationManifest)
+                .ExecuteAsync(context);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.ManifestTranslationFailed(GetLogger(context), request.GeoServerRestUrl, ex);
+            await AdminResponseWriter.WriteErrorAsync(context,
+                $"Failed to translate GeoServer service: {ex.Message}",
+                StatusCodes.Status400BadRequest);
+        }
+        catch (Exception ex)
+        {
+            Log.ManifestTranslationFailed(GetLogger(context), request.GeoServerRestUrl, ex);
+            await AdminResponseWriter.WriteErrorAsync(context,
+                "Failed to translate GeoServer migration manifest",
                 StatusCodes.Status500InternalServerError);
         }
     }
@@ -496,6 +578,9 @@ internal static partial class GeoServerImportEndpoints
 
         [LoggerMessage(7957, LogLevel.Warning, "Failed to cancel import job {JobId}")]
         public static partial void JobCancelFailed(ILogger logger, string jobId, Exception exception);
+
+        [LoggerMessage(7958, LogLevel.Warning, "GeoServer manifest translation failed for {GeoServerUrl}")]
+        public static partial void ManifestTranslationFailed(ILogger logger, string geoServerUrl, Exception exception);
     }
 }
 

@@ -299,6 +299,7 @@ internal static class ServiceCollectionExtensions
 
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
+        services.AddScoped<IGeoServerMigrationManifestService, GeoServerMigrationManifestService>();
 
         // Register secure connection management services
         services.AddSecureConnectionServices(configuration);

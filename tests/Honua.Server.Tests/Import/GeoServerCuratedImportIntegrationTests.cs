@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -118,6 +119,52 @@ public sealed class GeoServerCuratedImportIntegrationTests : IAsyncLifetime
         layerGroup.GetProperty("layers").EnumerateArray()
             .Select(element => element.GetProperty("name").GetString())
             .Should().Contain(GeoServerFixture.CuratedQualifiedLayerName);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/translate")]
+    public async Task Translate_CuratedHarness_ReturnsDeterministicUnsupportedManifest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/translate", new
+        {
+            GeoServerRestUrl = _geoServer.RestUrl,
+            Username = _geoServer.Username,
+            Password = _geoServer.Password,
+            WorkspaceNames = new[] { GeoServerFixture.CuratedWorkspaceName },
+            ImportStyles = true,
+            IncludeStyleContent = true,
+            RequestTimeoutSeconds = 120
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        payload.Should().NotBeNull();
+
+        payload!.RootElement.GetProperty("apiVersion").GetString().Should().Be(MigrationManifestVersions.V1Alpha1);
+        payload.RootElement.GetProperty("manifestHash").GetString().Should().NotBeNullOrWhiteSpace();
+        payload.RootElement.GetProperty("connectionDrafts").GetArrayLength().Should().Be(0);
+        payload.RootElement.GetProperty("publishPlan").GetArrayLength().Should().Be(0);
+
+        payload.RootElement.GetProperty("stylePlan").GetArrayLength().Should().BeGreaterThan(0);
+
+        var workspaceStylePlan = payload.RootElement.GetProperty("stylePlan").EnumerateArray()
+            .Single(element => element.GetProperty("sourceStyleName").GetString() == GeoServerFixture.CuratedWorkspaceStyleName);
+        workspaceStylePlan.GetProperty("translationStatus").GetString().Should().Be("ManualActionRequired");
+        workspaceStylePlan.GetProperty("diagnosticCodes").EnumerateArray()
+            .Select(element => element.GetString())
+            .Should().Contain(MigrationReasonCodes.UnsupportedSldStyle);
+        workspaceStylePlan.GetProperty("sourceContent").GetString().Should().Contain("#f36f21");
+
+        payload.RootElement.GetProperty("diagnostics").EnumerateArray()
+            .Select(element => element.GetProperty("code").GetString())
+            .Should().Contain(
+            [
+                MigrationReasonCodes.UnsupportedDatastoreType,
+                MigrationReasonCodes.UnsupportedLayerSource,
+                MigrationReasonCodes.UnsupportedLayerGroup,
+                MigrationReasonCodes.UnsupportedSldStyle
+            ]);
     }
 
     private static string? GetOptionalStringProperty(JsonElement element, string propertyName)

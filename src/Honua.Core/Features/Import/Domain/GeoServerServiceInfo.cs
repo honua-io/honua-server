@@ -265,6 +265,16 @@ public sealed record GeoServerLayerInfo
     public string? NativeCRS { get; init; }
 
     /// <summary>
+    /// Geometry column name exposed by the backing feature type when known.
+    /// </summary>
+    public string? GeometryColumn { get; init; }
+
+    /// <summary>
+    /// Geometry type exposed by the backing feature type when known.
+    /// </summary>
+    public string? GeometryType { get; init; }
+
+    /// <summary>
     /// Bounding box in lat/lon coordinates.
     /// </summary>
     public GeoServerBoundingBox? LatLonBoundingBox { get; init; }

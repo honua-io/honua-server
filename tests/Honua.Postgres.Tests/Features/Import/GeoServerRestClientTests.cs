@@ -68,6 +68,38 @@ public sealed class GeoServerRestClientTests
         handler.GetAuthorizations("beta.example").Should().OnlyContain(value => value == CreateBasicAuthorization("beta-user", "beta-pass"));
     }
 
+    [Fact]
+    public async Task DiscoverServiceAsync_WithFeatureTypeResource_MapsGeometryMetadata()
+    {
+        using var httpClient = new HttpClient(new FeatureTypeGeoServerHandler());
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+
+        var result = await client.DiscoverServiceAsync(
+            "https://example.com/geoserver/rest",
+            username: null,
+            password: null,
+            includeCompatibilityAnalysis: true,
+            includeStyleContent: false,
+            timeoutSeconds: 5,
+            maxRetryAttempts: 0,
+            CancellationToken.None);
+
+        result.Workspaces.Should().ContainSingle(workspace => workspace.Name == "demo");
+        result.DataStores.Should().ContainSingle(store => store.Name == "states");
+        result.Layers.Should().ContainSingle();
+
+        var layer = result.Layers.Single();
+        layer.Name.Should().Be("states");
+        layer.DataStoreName.Should().Be("states");
+        layer.NativeName.Should().Be("public.states");
+        layer.SRS.Should().Be("EPSG:4326");
+        layer.GeometryColumn.Should().Be("geom");
+        layer.GeometryType.Should().Be("MultiPolygon");
+        layer.LatLonBoundingBox.Should().NotBeNull();
+        layer.LatLonBoundingBox!.MinX.Should().Be(-160.3d);
+        layer.LatLonBoundingBox.MaxY.Should().Be(22.4d);
+    }
+
     private static string CreateBasicAuthorization(string username, string password)
         => $"Basic {Convert.ToBase64String(Encoding.ASCII.GetBytes($"{username}:{password}"))}";
 
@@ -159,6 +191,94 @@ public sealed class GeoServerRestClientTests
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             };
+        }
+    }
+
+    private sealed class FeatureTypeGeoServerHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var (contentType, payload) = path switch
+            {
+                "/geoserver/rest/about/version.xml" => ("application/xml", """
+                    <about>
+                      <resource name="GeoServer">
+                        <Version>2.28.0</Version>
+                      </resource>
+                    </about>
+                    """),
+                "/geoserver/rest/settings.json" => ("application/json", """{"global":{}}"""),
+                "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
+                "/geoserver/rest/workspaces/demo.json" => ("application/json", """{"workspace":{"name":"demo"}}"""),
+                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":[{"name":"states"}]}}"""),
+                "/geoserver/rest/workspaces/demo/datastores/states.json" => ("application/json", """
+                    {
+                      "dataStore": {
+                        "name": "states",
+                        "type": "PostGIS",
+                        "connectionParameters": {
+                          "entry": [
+                            { "@key": "host", "$": "db.internal" },
+                            { "@key": "database", "$": "gis" },
+                            { "@key": "schema", "$": "public" }
+                          ]
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/layers.json" => ("application/json", """{"layers":{"layer":[{"name":"states"}]}}"""),
+                "/geoserver/rest/workspaces/demo/layers/states.json" => ("application/json", """
+                    {
+                      "layer": {
+                        "name": "states",
+                        "title": "States",
+                        "resource": {
+                          "href": "https://example.com/geoserver/rest/workspaces/demo/datastores/states/featuretypes/states.json"
+                        },
+                        "defaultStyle": {
+                          "name": "polygon"
+                        },
+                        "queryable": true,
+                        "enabled": true
+                      }
+                    }
+                    """),
+                "/geoserver/rest/workspaces/demo/datastores/states/featuretypes/states.json" => ("application/json", """
+                    {
+                      "featureType": {
+                        "name": "states",
+                        "nativeName": "public.states",
+                        "srs": "EPSG:4326",
+                        "nativeCRS": "EPSG:4326",
+                        "attributes": {
+                          "attribute": [
+                            { "name": "id", "binding": "java.lang.Integer" },
+                            { "name": "geom", "binding": "org.locationtech.jts.geom.MultiPolygon" }
+                          ]
+                        },
+                        "latLonBoundingBox": {
+                          "minx": -160.3,
+                          "miny": 18.5,
+                          "maxx": -154.7,
+                          "maxy": 22.4,
+                          "crs": "EPSG:4326"
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, contentType)
+            });
         }
     }
 }

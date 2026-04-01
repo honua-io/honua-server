@@ -13,6 +13,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
@@ -31,14 +32,24 @@ namespace Honua.Server.Tests.Import;
 [Operation(Operations.Import)]
 public class GeoServerImportEndpointTests : IAsyncLifetime
 {
+    private const string TestGeoServerUrl = "http://127.0.0.1/geoserver/rest";
     private readonly TestGeoServerImportService _importService = new(TimeSpan.FromMilliseconds(250));
+    private readonly TestGeoServerMigrationManifestService _manifestService = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
     public GeoServerImportEndpointTests()
     {
         _fixture = new WebAppFixture()
-            .ReplaceService<IGeoServerImportService>(_importService);
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+            {
+                configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [GeoServerImportExecutionSettings.AllowUnsafeLocalUrlsInTestEnvironmentKey] = bool.TrueString
+                });
+            }))
+            .ReplaceService<IGeoServerImportService>(_importService)
+            .ReplaceService<IGeoServerMigrationManifestService>(_manifestService);
     }
 
     public async Task InitializeAsync()
@@ -69,7 +80,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain(GeoServerServiceUrlValidation.InvalidHttpsUrlMessage);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(GeoServerServiceUrlValidation.InvalidHttpOrHttpsUrlMessage);
     }
 
     [IntegrationTest]
@@ -78,14 +89,14 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/discover", new
         {
-            GeoServerRestUrl = "https://example.com/geoserver/rest"
+            GeoServerRestUrl = TestGeoServerUrl
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var content = await response.Content.ReadFromJsonAsync<JsonDocument>();
         content.Should().NotBeNull();
-        content!.RootElement.GetProperty("geoServerRestUrl").GetString().Should().Be("https://example.com/geoserver/rest");
+        content!.RootElement.GetProperty("geoServerRestUrl").GetString().Should().Be(TestGeoServerUrl);
         content.RootElement.GetProperty("version").GetString().Should().Be("2.28.0");
         content.RootElement.GetProperty("workspaces").GetArrayLength().Should().Be(1);
     }
@@ -109,7 +120,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
         {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            GeoServerRestUrl = TestGeoServerUrl,
             DryRun = false
         });
 
@@ -118,12 +129,43 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/translate")]
+    public async Task Translate_WithMissingGeoServerUrl_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/translate", new { });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Invalid request body");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoserver/translate")]
+    public async Task Translate_WithValidUrl_ReturnsMigrationManifest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/translate", new
+        {
+            GeoServerRestUrl = TestGeoServerUrl,
+            ImportStyles = true
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var content = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        content.Should().NotBeNull();
+        content!.RootElement.GetProperty("apiVersion").GetString().Should().Be(MigrationManifestVersions.V1Alpha1);
+        content.RootElement.GetProperty("sourceType").GetString().Should().Be("GeoServer");
+        content.RootElement.GetProperty("manifestHash").GetString().Should().NotBeNullOrWhiteSpace();
+        content.RootElement.GetProperty("connectionDrafts").GetArrayLength().Should().Be(1);
+        content.RootElement.GetProperty("publishPlan").GetArrayLength().Should().Be(1);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/geoserver/start")]
     public async Task Start_WithValidDryRun_QueuesAndCompletesJob()
     {
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
         {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            GeoServerRestUrl = TestGeoServerUrl,
             DryRun = true
         });
 
@@ -153,6 +195,13 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             .Returns(database);
 
         var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+            {
+                configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [GeoServerImportExecutionSettings.AllowUnsafeLocalUrlsInTestEnvironmentKey] = bool.TrueString
+                });
+            }))
             .ReplaceService<IGeoServerImportService>(_importService)
             .ConfigureServices(services =>
             {
@@ -173,7 +222,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
 
             var response = await isolatedFixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
             {
-                GeoServerRestUrl = "https://example.com/geoserver/rest",
+                GeoServerRestUrl = TestGeoServerUrl,
                 DryRun = true
             });
 
@@ -196,7 +245,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     {
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
         {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            GeoServerRestUrl = TestGeoServerUrl,
             DryRun = true
         });
 
@@ -229,7 +278,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     {
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
         {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            GeoServerRestUrl = TestGeoServerUrl,
             DryRun = true
         });
 
@@ -358,6 +407,98 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             {
                 FailedResources = 0
             };
+        }
+    }
+
+    private sealed class TestGeoServerMigrationManifestService : IGeoServerMigrationManifestService
+    {
+        public Task<MigrationManifest> TranslateAsync(
+            GeoServerTranslationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var manifest = new MigrationManifest
+            {
+                GeneratedAt = DateTimeOffset.UtcNow,
+                TranslatorVersion = "test",
+                SourceSummary = new GeoServerMigrationSourceSummary
+                {
+                    GeoServerRestUrl = request.GeoServerRestUrl,
+                    Host = "example.com",
+                    SourceFingerprint = "source-fingerprint",
+                    WorkspaceCount = 1,
+                    DataStoreCount = 1,
+                    LayerCount = 1
+                },
+                Selection = new GeoServerMigrationSelection
+                {
+                    ImportStyles = request.ImportStyles
+                },
+                Summary = new MigrationManifestSummary
+                {
+                    SelectedWorkspaceCount = 1,
+                    SelectedDataStoreCount = 1,
+                    SelectedLayerCount = 1,
+                    ConnectionDraftCount = 1,
+                    PublishPlanCount = 1,
+                    ReadyPublishPlanCount = 1,
+                    DiagnosticCount = 1
+                },
+                ConnectionDrafts =
+                [
+                    new MigrationConnectionDraft
+                    {
+                        Alias = "demo:states",
+                        Host = "db.internal",
+                        DatabaseName = "gis",
+                        SourceWorkspace = "demo",
+                        SourceDataStore = "states",
+                        SecretRequirements =
+                        [
+                            new MigrationSecretRequirement
+                            {
+                                Kind = MigrationSecretRequirementKind.Password,
+                                Description = "Supply the database password."
+                            }
+                        ]
+                    }
+                ],
+                PublishPlan =
+                [
+                    new MigrationPublishPlanEntry
+                    {
+                        SourceLayerKey = "demo:states",
+                        SourceWorkspace = "demo",
+                        SourceLayerName = "states",
+                        SourceDataStore = "states",
+                        SourceSchemaName = "public",
+                        SourceTableName = "states",
+                        GeometryColumn = "geom",
+                        GeometryType = "MultiPolygon",
+                        SourceSrid = 4326,
+                        ConnectionAlias = "demo:states",
+                        TargetServiceName = "demo",
+                        TargetLayerName = "states",
+                        EligibleForDirectPublish = true,
+                        Status = MigrationPlanStatus.Ready
+                    }
+                ],
+                Diagnostics =
+                [
+                    new MigrationDiagnostic
+                    {
+                        Severity = MigrationDiagnosticSeverity.Info,
+                        Code = MigrationReasonCodes.CreateSecureConnection,
+                        SourceResourceType = "DataStore",
+                        SourceKey = "demo:states",
+                        Message = "Create secure connection before replay."
+                    }
+                ]
+            };
+
+            return Task.FromResult(manifest with
+            {
+                ManifestHash = MigrationManifestHasher.ComputeHash(manifest)
+            });
         }
     }
 

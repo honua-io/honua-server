@@ -213,47 +213,24 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private static FilteredResources FilterRequestedResources(GeoServerServiceInfo serviceInfo, GeoServerImportRequest request)
     {
-        var workspaces = request.WorkspaceNames == null
-            ? serviceInfo.Workspaces
-            : serviceInfo.Workspaces.Where(w => request.WorkspaceNames.Contains(w.Name)).ToArray();
-
-        var dataStores = request.DataStoreNames == null
-            ? serviceInfo.DataStores
-            : serviceInfo.DataStores.Where(ds => IsResourceRequested(ds.WorkspaceName, ds.Name, request.DataStoreNames)).ToArray();
-
-        var layers = request.LayerNames == null
-            ? serviceInfo.Layers
-            : serviceInfo.Layers.Where(l => IsResourceRequested(l.WorkspaceName, l.Name, request.LayerNames)).ToArray();
-
-        var styles = request.ImportStyles
-            ? (request.LayerNames == null ? serviceInfo.Styles : serviceInfo.Styles.Where(s => IsResourceNeededForLayers(s, layers)).ToArray())
-            : Array.Empty<GeoServerStyleInfo>();
+        var selected = GeoServerSelectionPlanner.Filter(
+            serviceInfo,
+            request.WorkspaceNames,
+            request.DataStoreNames,
+            request.LayerNames,
+            request.ImportStyles);
 
         return new FilteredResources
         {
-            Workspaces = workspaces,
-            DataStores = dataStores,
-            Layers = layers,
-            Styles = styles,
-            WorkspaceCount = workspaces.Length,
-            DataStoreCount = dataStores.Length,
-            LayerCount = layers.Length,
-            StyleCount = styles.Length
+            Workspaces = selected.Workspaces,
+            DataStores = selected.DataStores,
+            Layers = selected.Layers,
+            Styles = selected.Styles,
+            WorkspaceCount = selected.Workspaces.Length,
+            DataStoreCount = selected.DataStores.Length,
+            LayerCount = selected.Layers.Length,
+            StyleCount = selected.Styles.Length
         };
-    }
-
-    private static bool IsResourceRequested(string workspaceName, string resourceName, string[] requestedNames)
-    {
-        return requestedNames.Any(name =>
-            name.Equals(resourceName, StringComparison.OrdinalIgnoreCase) ||
-            name.Equals($"{workspaceName}:{resourceName}", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsResourceNeededForLayers(GeoServerStyleInfo style, GeoServerLayerInfo[] layers)
-    {
-        return layers.Any(l =>
-            l.DefaultStyle?.Equals(style.Name, StringComparison.OrdinalIgnoreCase) == true ||
-            l.AlternativeStyles.Any(altStyle => altStyle.Equals(style.Name, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static GeoServerImportResult CreateDryRunResult(GeoServerServiceInfo serviceInfo, FilteredResources resources, GeoServerImportRequest request, TimeSpan duration)

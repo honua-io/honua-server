@@ -449,6 +449,20 @@ internal sealed partial class GeoServerRestClient
                 }
             }
 
+            GeoServerFeatureTypeDetails? featureTypeDetails = null;
+            var resourceHref = GetResourceHref(layerElement);
+            if (!string.IsNullOrWhiteSpace(resourceHref))
+            {
+                try
+                {
+                    featureTypeDetails = await TryGetFeatureTypeDetailsAsync(baseUrl, resourceHref, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.FeatureTypeDetailsUnavailable(_logger, workspaceName, layerName, ex);
+                }
+            }
+
             var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
             var compatibility = AssessLayerCompatibility(layerElement);
 
@@ -462,9 +476,13 @@ internal sealed partial class GeoServerRestClient
                 AlternativeStyles = alternativeStyles.ToArray(),
                 DataStoreName = dataStoreName,
                 CoverageStoreName = coverageStoreName,
-                NativeName = GetOptionalStringProperty(layerElement, "nativeName"),
-                SRS = GetOptionalStringProperty(layerElement, "srs"),
-                NativeCRS = GetOptionalStringProperty(layerElement, "nativeCRS"),
+                NativeName = featureTypeDetails?.NativeName ?? GetOptionalStringProperty(layerElement, "nativeName"),
+                SRS = featureTypeDetails?.Srs ?? GetOptionalStringProperty(layerElement, "srs"),
+                NativeCRS = featureTypeDetails?.NativeCrs ?? GetOptionalStringProperty(layerElement, "nativeCRS"),
+                GeometryColumn = featureTypeDetails?.GeometryColumn,
+                GeometryType = featureTypeDetails?.GeometryType,
+                LatLonBoundingBox = featureTypeDetails?.LatLonBoundingBox ?? TryGetBoundingBox(layerElement, "latLonBoundingBox"),
+                NativeBoundingBox = featureTypeDetails?.NativeBoundingBox ?? TryGetBoundingBox(layerElement, "nativeBoundingBox"),
                 Enabled = GetOptionalBoolProperty(layerElement, "enabled") ?? true,
                 Queryable = GetOptionalBoolProperty(layerElement, "queryable") ?? true,
                 Opaque = GetOptionalBoolProperty(layerElement, "opaque") ?? false,
@@ -475,6 +493,39 @@ internal sealed partial class GeoServerRestClient
         }
 
         throw new InvalidOperationException($"GeoServer layer '{workspaceName}/{layerName}' was returned without a layer payload.");
+    }
+
+    private async Task<GeoServerFeatureTypeDetails?> TryGetFeatureTypeDetailsAsync(
+        string baseUrl,
+        string resourceHref,
+        CancellationToken cancellationToken)
+    {
+        if (!resourceHref.Contains("/featuretypes/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        using var json = await GetRequiredJsonDocumentAsync(
+            ResolveJsonResourceUrl(baseUrl, resourceHref),
+            cancellationToken).ConfigureAwait(false);
+
+        if (!json.RootElement.TryGetProperty("featureType", out var featureTypeElement) ||
+            featureTypeElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var geometryAttribute = TryGetGeometryAttribute(featureTypeElement);
+        return new GeoServerFeatureTypeDetails
+        {
+            NativeName = GetOptionalStringProperty(featureTypeElement, "nativeName"),
+            Srs = GetOptionalStringProperty(featureTypeElement, "srs"),
+            NativeCrs = GetOptionalStringProperty(featureTypeElement, "nativeCRS"),
+            GeometryColumn = geometryAttribute?.Name,
+            GeometryType = NormalizeGeometryType(geometryAttribute?.Binding),
+            LatLonBoundingBox = TryGetBoundingBox(featureTypeElement, "latLonBoundingBox"),
+            NativeBoundingBox = TryGetBoundingBox(featureTypeElement, "nativeBoundingBox")
+        };
     }
 
     private async Task<GeoServerLayerGroupInfo[]> GetLayerGroupsAsync(
@@ -667,6 +718,16 @@ internal sealed partial class GeoServerRestClient
     private static string BuildSldUrl(string baseUrl, string relativePath)
         => $"{baseUrl}/{relativePath}.sld";
 
+    private static string ResolveJsonResourceUrl(string baseUrl, string resourceHref)
+    {
+        var baseUri = new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/", UriKind.Absolute);
+        var resourceUri = Uri.TryCreate(resourceHref, UriKind.Absolute, out var absoluteUri)
+            ? absoluteUri
+            : new Uri(baseUri, resourceHref);
+        var url = resourceUri.ToString();
+        return url.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? url : $"{url}.json";
+    }
+
     private async Task<string> GetStringAsync(string url, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -768,6 +829,12 @@ internal sealed partial class GeoServerRestClient
         return null;
     }
 
+    private static string? GetResourceHref(JsonElement layerElement)
+        => layerElement.TryGetProperty("resource", out var resourceElement)
+           && resourceElement.ValueKind == JsonValueKind.Object
+            ? GetOptionalStringProperty(resourceElement, "href")
+            : null;
+
     private static string ResolveDataStoreType(
         JsonElement dataStoreElement,
         Dictionary<string, object> connectionParams)
@@ -837,6 +904,84 @@ internal sealed partial class GeoServerRestClient
         return (null, null);
     }
 
+    private static GeoServerGeometryAttribute? TryGetGeometryAttribute(JsonElement featureTypeElement)
+    {
+        foreach (var attributeElement in EnumerateCollectionItems(featureTypeElement, "attributes", "attribute"))
+        {
+            var binding = GetOptionalStringProperty(attributeElement, "binding");
+            if (!IsGeometryBinding(binding))
+            {
+                continue;
+            }
+
+            var attributeName = GetOptionalStringProperty(attributeElement, "name");
+            return new GeoServerGeometryAttribute(attributeName, binding!);
+        }
+
+        return null;
+    }
+
+    private static bool IsGeometryBinding(string? binding)
+        => !string.IsNullOrWhiteSpace(binding) &&
+           (binding.Contains(".geom.", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("Geometry", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("Point", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("MultiPoint", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("LineString", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("MultiLineString", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("Polygon", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("MultiPolygon", StringComparison.OrdinalIgnoreCase) ||
+            binding.EndsWith("GeometryCollection", StringComparison.OrdinalIgnoreCase));
+
+    private static string? NormalizeGeometryType(string? binding)
+    {
+        if (string.IsNullOrWhiteSpace(binding))
+        {
+            return null;
+        }
+
+        var candidate = binding.Trim();
+        var separator = candidate.LastIndexOf('.');
+        if (separator >= 0 && separator < candidate.Length - 1)
+        {
+            candidate = candidate[(separator + 1)..];
+        }
+
+        return candidate switch
+        {
+            "LinearRing" => "LineString",
+            _ => candidate
+        };
+    }
+
+    private static GeoServerBoundingBox? TryGetBoundingBox(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var boundingBoxElement) ||
+            boundingBoxElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var minX = GetOptionalDoubleProperty(boundingBoxElement, "minx");
+        var minY = GetOptionalDoubleProperty(boundingBoxElement, "miny");
+        var maxX = GetOptionalDoubleProperty(boundingBoxElement, "maxx");
+        var maxY = GetOptionalDoubleProperty(boundingBoxElement, "maxy");
+
+        if (!minX.HasValue || !minY.HasValue || !maxX.HasValue || !maxY.HasValue)
+        {
+            return null;
+        }
+
+        return new GeoServerBoundingBox
+        {
+            MinX = minX.Value,
+            MinY = minY.Value,
+            MaxX = maxX.Value,
+            MaxY = maxY.Value,
+            CRS = GetOptionalStringProperty(boundingBoxElement, "crs")
+        };
+    }
+
     // Helper methods for JSON property extraction
     private static string? GetOptionalStringProperty(JsonElement element, string propertyName)
     {
@@ -856,6 +1001,13 @@ internal sealed partial class GeoServerRestClient
     {
         return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number
             ? property.GetInt32()
+            : null;
+    }
+
+    private static double? GetOptionalDoubleProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Number
+            ? property.GetDouble()
             : null;
     }
 
@@ -1152,8 +1304,24 @@ internal sealed partial class GeoServerRestClient
 
         [LoggerMessage(7987, LogLevel.Warning, "Failed to fetch SLD content for style {StyleName}")]
         public static partial void StyleContentFetchFailed(ILogger logger, string styleName, Exception exception);
+
+        [LoggerMessage(7988, LogLevel.Warning, "Failed to fetch feature type details for GeoServer layer {WorkspaceName}/{LayerName}")]
+        public static partial void FeatureTypeDetailsUnavailable(ILogger logger, string workspaceName, string layerName, Exception exception);
     }
 }
+
+internal sealed record GeoServerFeatureTypeDetails
+{
+    public string? NativeName { get; init; }
+    public string? Srs { get; init; }
+    public string? NativeCrs { get; init; }
+    public string? GeometryColumn { get; init; }
+    public string? GeometryType { get; init; }
+    public GeoServerBoundingBox? LatLonBoundingBox { get; init; }
+    public GeoServerBoundingBox? NativeBoundingBox { get; init; }
+}
+
+internal sealed record GeoServerGeometryAttribute(string? Name, string Binding);
 
 /// <summary>
 /// Activity tracking for GeoServer import operations.
@@ -1169,4 +1337,8 @@ internal static partial class GeoServerImportActivity
         => ActivitySource.StartActivity("geoserver.import")
             ?.SetTag("geoserver.url", geoServerUrl)
             ?.SetTag("target.url", targetUrl);
+
+    public static System.Diagnostics.Activity? StartTranslation(string geoServerUrl)
+        => ActivitySource.StartActivity("geoserver.translation")
+            ?.SetTag("geoserver.url", geoServerUrl);
 }
