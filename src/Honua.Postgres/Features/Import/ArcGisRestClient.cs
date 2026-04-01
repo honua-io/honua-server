@@ -21,6 +21,8 @@ namespace Honua.Postgres.Features.Import;
 internal sealed partial class ArcGisRestClient
 {
     private const string DisallowedNetworkAddressMessage = "ArcGIS service URL resolves to a disallowed network address.";
+    private const string InvalidServiceRootUrlMessage =
+        "ArcGIS service URL must target a service root URL (FeatureServer or MapServer).";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<ArcGisRestClient> _logger;
@@ -328,10 +330,24 @@ internal sealed partial class ArcGisRestClient
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
-            return uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            var normalizedUrl = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            if (!IsServiceRootUrl(normalizedUrl))
+            {
+                throw new HttpRequestException(InvalidServiceRootUrlMessage);
+            }
+
+            return normalizedUrl;
         }
 
         return url.TrimEnd('/');
+    }
+
+    private static bool IsServiceRootUrl(string normalizedUrl)
+    {
+        var segments = normalizedUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length > 0 &&
+            (segments[^1].Equals("FeatureServer", StringComparison.OrdinalIgnoreCase)
+             || segments[^1].Equals("MapServer", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task EnsureSafeOutboundUriAsync(string url, CancellationToken cancellationToken)

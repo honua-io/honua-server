@@ -44,6 +44,23 @@ public sealed class ArcGisRestClientSecurityTests
     }
 
     [Fact]
+    public async Task DiscoverServiceAsync_LayerUrl_ThrowsWithoutSendingRequest()
+    {
+        var handler = new CountingHandler();
+        var client = CreateClient(handler, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.DiscoverServiceAsync(
+                "https://example.com/arcgis/rest/services/Test/FeatureServer/0",
+                timeoutSeconds: 5,
+                maxRetries: 0,
+                CancellationToken.None));
+
+        ex.Message.Should().Contain("service root");
+        handler.RequestCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task DiscoverServiceAsync_PublicResolution_SendsRequest()
     {
         var handler = new CountingHandler("""

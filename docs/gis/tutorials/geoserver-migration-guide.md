@@ -62,21 +62,23 @@ curl -X POST http://localhost:8080/api/v1/admin/import/scan \
 Contract notes:
 - `sourceKind: "geoserver"` is normalized to `sourceKind: "geoserver-rest"` in the response artifact.
 - `includeStyleContent: true` fetches SLD documents for deeper compatibility analysis and external graphic detection, but the artifact does not echo raw SLD bodies.
+- GeoServer basic auth is only used when both `username` and `password` are supplied. Providing only one field falls back to anonymous discovery and records a note in `authPosture.notes`.
 - `timeoutSeconds` is optional for GeoServer scans and defaults to `120`.
 - The response body is the artifact itself, not a `success/data` admin envelope.
-- HTTP `200` only means the scanner returned an artifact. Review `scanCompleteness.status` and `overallCompatibility.level` before treating the source as ready for migration planning.
+- HTTP `200` only means the scanner returned an artifact. Review `scanCompleteness.status` and `overallCompatibility.level` before treating the source as ready for migration planning. Failed GeoServer artifacts can report `authPosture.mode = "basic"` when both credentials were supplied, or `anonymous-or-auth-required` when discovery ran without full credentials.
 
 The response includes:
 - Stable artifact fields: `artifactKind = "honua.migration.source-inventory"` and `artifactVersion = "1.0"`
 - Source identity and reported version
 - Authentication posture and scan completeness
 - Workspace and layer inventory
+- Synthetic `workspace:global` container entries when GeoServer exposes global styles or layer groups
 - Data store types and sanitized connection metadata
 - Style formats and compatibility assessment
 - CRS, datum, and unit details for migration planning
 - External dependencies and manual follow-up steps
 
-Review the inventory artifact before proceeding. Arrays are deterministically ordered for repeatable diffs, and sensitive datastore values are redacted before serialization. Layers backed by PostGIS data stores have the highest migration fidelity.
+Review the inventory artifact before proceeding. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and optional JSON properties are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
 
 ### Step 2: Start a Dry-Run Import
 
@@ -175,7 +177,7 @@ HONUA_REDIS_URL=redis:6379
 
 ### Styling
 
-GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. When importing from GeoServer, styles are converted to MapLibre format on a best-effort basis. Complex SLD filters and symbolizers may require manual adjustment.
+GeoServer uses SLD (Styled Layer Descriptor) or CSS styling. Honua uses MapLibre GL Style JSON. The scanner inventories style metadata, compatibility warnings, and external graphic references, but the current GeoServer import flow does not convert or apply styles. Recreate target styles through the Admin API after data import, using the scanner artifact and its manual follow-up steps as the migration checklist.
 
 Manage styles via the Admin API:
 
@@ -198,7 +200,7 @@ After migrating server configuration, update client applications:
 - [ ] **WMTS clients**: Point to `http://honua-host:8080/rest/services/{id}/MapServer/WMTS` or `http://honua-host:8080/ogc/services/{id}/wmts`
 - [ ] **REST API consumers**: Map GeoServer REST paths to Honua Admin API equivalents (see table above)
 - [ ] **Authentication**: Replace GeoServer credentials with Honua API keys or OIDC tokens
-- [ ] **Styles**: Review imported styles and adjust MapLibre JSON as needed
+- [ ] **Styles**: Recreate target styles from the scanner artifact and adjust MapLibre JSON as needed
 - [ ] **CRS configuration**: Verify required SRIDs exist in PostGIS `spatial_ref_sys`
 - [ ] **Tile consumers**: Update tile URLs to Honua vector tile or WMTS endpoints
 

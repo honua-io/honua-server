@@ -250,8 +250,8 @@ Request body:
 |----------|--------|---------|
 | `sourceKind` | Yes | Accepted aliases: `geoserver`, `geoserver-rest`, `geoservices`, `arcgis-geoservices-rest`. The response normalizes this to `geoserver-rest` or `arcgis-geoservices-rest`. |
 | `sourceUrl` | Yes | Canonical source URL to scan. GeoServices requires HTTPS and rejects embedded credentials plus private, loopback, or unresolvable addresses. GeoServer uses the same HTTPS rule in normal environments; test-only unsafe local URLs can be enabled separately. |
-| `username` | No | GeoServer basic-auth username. Ignored for GeoServices scans. |
-| `password` | No | GeoServer basic-auth password. Ignored for GeoServices scans. |
+| `username` | No | GeoServer basic-auth username. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
+| `password` | No | GeoServer basic-auth password. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
 | `timeoutSeconds` | No | Defaults to `120` for GeoServer scans and `30` for GeoServices scans. |
 | `includeStyleContent` | No | GeoServer-only. Fetches SLD documents for deeper classification and external graphic detection. Raw style documents are not returned in the artifact. |
 
@@ -285,24 +285,26 @@ Successful response contract:
 | `artifactVersion` | Current schema version: `1.0`. |
 | `sourceKind` | Canonical source kind: `geoserver-rest` or `arcgis-geoservices-rest`. |
 | `source` | Source identity, product, version, build, and service type metadata. |
-| `authPosture` | Observed authentication mode, whether credentials were supplied, whether access was confirmed, and any auth notes. |
+| `authPosture` | Observed authentication mode (`anonymous`, `basic`, `auth-required`, `anonymous-or-auth-required`, or `unknown`), whether usable credentials were supplied, whether access was confirmed, and any auth notes. |
 | `scanCompleteness` | Scan status (`complete`, `partial`, or `failed`) plus warnings and missing artifact categories. |
 | `summary` | Aggregate counts for containers, resources, styles, dependencies, and compatibility tallies. |
 | `overallCompatibility` | Roll-up compatibility level (`compatible`, `partial`, `incompatible`) with warnings and manual follow-up steps. |
 | `containers` | Deterministically ordered workspaces or services. |
 | `resources` | Deterministically ordered layers, tables, or layer groups. |
 | `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
-| `externalDependencies` | Deterministically ordered datastore, coverage-store, attachment, external graphic, or external symbol references. |
+| `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references. |
 
 The response body is the artifact itself, not a `success/data` admin envelope.
 
 Behavior notes:
 - `200 OK` means Honua produced an inventory artifact. Use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate before import or cutover decisions.
-- GeoServer currently also returns `200 OK` with `scanCompleteness.status = "failed"` for reachability, timeout, and auth-required failures; those details appear in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
+- GeoServer currently also returns `200 OK` with `scanCompleteness.status = "failed"` for discovery failures such as reachability, timeout, auth challenges, and unusable metadata. Failed GeoServer artifacts keep `authPosture.mode = "basic"` when both credentials were supplied; otherwise they use `anonymous-or-auth-required` and record failure details in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
+- GeoServer scans only send Basic auth when both `username` and `password` are present. Supplying only one credential field leaves the scan in anonymous mode and adds an explanatory auth note.
 - Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
 - GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
 - GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner.
-- Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts.
+- GeoServer can emit a synthetic `workspace:global` container when global styles or layer groups are discovered.
+- Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Optional JSON properties are omitted when the scanner has no value to emit.
 
 Failure semantics:
 - `400 Bad Request`: invalid JSON body, missing required fields, unsupported `sourceKind`, non-positive `timeoutSeconds`, invalid HTTPS requirements, embedded credentials in the URL, or disallowed private or loopback targets.

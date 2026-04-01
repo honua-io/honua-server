@@ -1038,7 +1038,7 @@
           "Import"
         ],
         "summary": "Scan Migration Source",
-        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when discovery could not complete cleanly; GeoServer currently also uses that failed-artifact path for transport, timeout, and auth-required failures instead of surfacing 502/504.",
+        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when discovery could not complete cleanly; GeoServer currently also uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures instead of surfacing 502/504.",
         "operationId": "scanMigrationSource",
         "requestBody": {
           "required": true,
@@ -1052,7 +1052,7 @@
         },
         "responses": {
           "200": {
-            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can also return a failed artifact for transport, timeout, or auth-required failures; GeoServices surfaces transport and timeout failures as 502/504.",
+            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can also return a failed artifact for transport, timeout, auth-related, or other discovery failures; GeoServices surfaces transport and timeout failures as 502/504.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3164,11 +3164,11 @@
           },
           "username": {
             "type": "string",
-            "description": "Optional GeoServer basic-auth username. Ignored for GeoServices scans."
+            "description": "Optional GeoServer basic-auth username. Both username and password are required to send GeoServer basic auth; otherwise the scan proceeds anonymously and records a note. Ignored for GeoServices scans."
           },
           "password": {
             "type": "string",
-            "description": "Optional GeoServer basic-auth password. Ignored for GeoServices scans.",
+            "description": "Optional GeoServer basic-auth password. Both username and password are required to send GeoServer basic auth; otherwise the scan proceeds anonymously and records a note. Ignored for GeoServices scans.",
             "writeOnly": true
           },
           "timeoutSeconds": {
@@ -3304,7 +3304,7 @@
         "properties": {
           "mode": {
             "type": "string",
-            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown."
+            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown. GeoServer scans without a complete username/password pair remain anonymous and add an explanatory note."
           },
           "credentialsSupplied": {
             "type": "boolean",
@@ -3316,7 +3316,7 @@
           },
           "notes": {
             "type": "array",
-            "description": "Additional posture notes.",
+            "description": "Additional posture notes, including anonymous-fallback notes when only one GeoServer credential field was supplied.",
             "items": {
               "type": "string"
             }
