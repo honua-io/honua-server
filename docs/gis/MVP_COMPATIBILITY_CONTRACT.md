@@ -2,7 +2,7 @@
 
 This page is the launch-facing compatibility contract for Honua open-core MVP.
 Use this page first, then drill into the linked protocol matrices/spec docs.
-For GeoServices REST specifically, start with [GeoServices REST Parity](geoservices-rest-parity.md) and then drill into the service-specific matrices.
+For GeoServices REST specifically, start with [GeoServices REST Parity](geoservices-rest-parity.md), use [data/geoservices-rest-parity.json](data/geoservices-rest-parity.json) for machine-readable review, and then drill into the service-specific matrices.
 
 ## Launch Summary
 
@@ -42,7 +42,7 @@ Recommended use during MVP:
 
 ## Versioning Policies
 
-- **Control-plane/admin APIs**: Path-versioned with deprecation lifecycle, preview channels, and OpenAPI contract governance. See [CONTROL_PLANE_VERSIONING_POLICY.md](CONTROL_PLANE_VERSIONING_POLICY.md).
+- **Control-plane/admin APIs**: Path-versioned with deprecation lifecycle, preview channels, and OpenAPI contract governance. See [CONTROL_PLANE_VERSIONING_POLICY.md](../developer/CONTROL_PLANE_VERSIONING_POLICY.md).
 - **Standards APIs**: Stable protocol paths defined by external specifications, not path-versioned by Honua. See [STANDARDS_APIS.md — Versioning and Compatibility Policy](STANDARDS_APIS.md#versioning-and-compatibility-policy).
 
 ## Release Ownership

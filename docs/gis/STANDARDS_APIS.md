@@ -249,7 +249,7 @@ Any Honua-specific extensions to standards APIs (e.g., additional query paramete
 
 ### Deprecation of previously supported operations
 
-Removal of previously supported standards API operations follows the same deprecation lifecycle as control-plane APIs: a minimum of **90 calendar days** and at least **2 minor releases**, whichever is longer. See [CONTROL_PLANE_VERSIONING_POLICY.md](CONTROL_PLANE_VERSIONING_POLICY.md#deprecation-lifecycle) for the full lifecycle.
+Removal of previously supported standards API operations follows the same deprecation lifecycle as control-plane APIs: a minimum of **90 calendar days** and at least **2 minor releases**, whichever is longer. See [CONTROL_PLANE_VERSIONING_POLICY.md](../developer/CONTROL_PLANE_VERSIONING_POLICY.md#deprecation-lifecycle) for the full lifecycle.
 
 ---
 
@@ -259,6 +259,7 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 
 **GeoServices REST (Esri-compatible):**
 - [GeoServices REST Parity](geoservices-rest-parity.md) — canonical landing page for FeatureServer, MapServer, ImageServer, and Geometry Service
+- [GeoServices REST Parity Data (JSON)](data/geoservices-rest-parity.json) — machine-readable export of the same operation and parameter contract
 - [FeatureServer Coverage Matrix](feature-server-matrix.md) — aligned to [Esri REST Feature Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/)
 - [MapServer Coverage Matrix](map-server-matrix.md) (includes WMS 1.3 and WMTS 1.0) — aligned to [Esri REST Map Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/)
 - [ImageServer Coverage Matrix](image-server-matrix.md) — aligned to [Esri REST Image Service spec](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/)
@@ -295,9 +296,12 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 ## **Related Documentation**
 
 - [MVP Compatibility Contract](MVP_COMPATIBILITY_CONTRACT.md)
-- [Geospatial API Examples](API_EXAMPLES.md)
-- [Integration Patterns](INTEGRATION_PATTERNS.md)
+- [Geospatial API Examples](../developer/API_EXAMPLES.md)
+- [Integration Patterns](../developer/INTEGRATION_PATTERNS.md)
 - [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)*
 - [GeoServices REST Parity](geoservices-rest-parity.md)
+- [GeoServices REST Parity Data (JSON)](data/geoservices-rest-parity.json)
 - [FeatureServer Coverage Matrix](feature-server-matrix.md)
 - [MapServer Coverage Matrix](map-server-matrix.md)
+- [ImageServer Coverage Matrix](image-server-matrix.md)
+- [Geometry Service Matrix](geometry-service-matrix.md)

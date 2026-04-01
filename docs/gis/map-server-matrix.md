@@ -20,9 +20,9 @@ Sources:
 | --- | --- | --- | --- | --- | --- |
 | Service metadata | `.../MapServer` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer` | Includes `maxRecordCount`, `supportedQueryFormats`, `documentInfo`, `minScale`/`maxScale`. |
 | Layer metadata | `.../MapServer/{layerId}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/{layerId}` | Includes `drawingInfo`, query capability flags, `parentLayerId`/`subLayerIds`. |
-| Export map | `.../MapServer/export` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/export` | Supports `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`. Unsupported `gdbVersion` is rejected with `400 Bad Request`. |
-| Identify | `.../MapServer/identify` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/identify` | Supports all geometry types, `dynamicLayers`, `time`/`timeRelation`, and `layerDefs`. |
-| Find | `.../MapServer/find` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/find` | Supports `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`. |
+| Export map | `.../MapServer/export` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/export` | Supports `bbox`, `size`, `dpi`, `format`, `transparent`, `layers`, `bboxSR`, `imageSR`, `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`, and `f=image|json|pjson`. `gdbVersion` is accepted but ignored. |
+| Identify | `.../MapServer/identify` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/identify` | Supports all geometry types, `mapExtent`, `imageDisplay`, `layers`, `tolerance`, `dynamicLayers`, `time`/`timeRelation`, and `layerDefs`. `gdbVersion` is accepted but ignored. |
+| Find | `.../MapServer/find` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/find` | Supports `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`, and `f=json|pjson`. `gdbVersion` is accepted but ignored. |
 | Generate KML | `.../MapServer/generateKml` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/generateKml` | Supports `f=kml` and `f=kmz` plus `layers`, `layerDefs`, `dynamicLayers`, `time`, and `layerTimeOptions`. |
 | Legend | `.../MapServer/legend` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
 | Layer query | `.../MapServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/{layerId}/query` | Delegates to the FeatureServer query handler. See [FeatureServer Matrix](feature-server-matrix.md). |
@@ -55,6 +55,38 @@ Sources:
 | KML Image child resource | `.../MapServer/kml/mapImage.kmz` | GET | Not implemented | |
 | Job child resource | `.../MapServer/jobs/{jobId}` | GET | Not implemented | |
 | Map Service Extension | `.../MapServer/exts/*` | GET | Not implemented | |
+
+## Export parameter coverage
+
+### Implemented
+
+| Parameter | Status | Notes |
+| --- | --- | --- |
+| `bbox` | Implemented | Required. Format: `xmin,ymin,xmax,ymax`. |
+| `size` | Implemented | Width and height pair (`width,height`). Invalid pairs return `400 Bad Request`. |
+| `dpi` | Implemented | Validated integer value. |
+| `format` | Implemented | Supports `png`, `png8`, `png24`, `png32`, `jpg`, `jpeg`, and `gif`. |
+| `transparent` | Implemented | Accepts boolean text or numeric `0`/`1`. |
+| `layers` | Implemented | Layer inclusion/exclusion mask. Empty or non-integer tokens are rejected. |
+| `bboxSR` | Implemented | Numeric WKID text. |
+| `imageSR` | Implemented | Numeric WKID text. Unsupported transforms return `400 Bad Request` with a generic spatial-reference error. |
+| `layerDefs` | Implemented | JSON object keyed by layer id. Malformed JSON returns `400 Bad Request` without parser-detail leakage. |
+| `dynamicLayers` | Implemented | JSON array. Malformed JSON returns `400 Bad Request` without parser-detail leakage. |
+| `time` | Implemented | Supports instant or extent syntax used by the shared temporal query pipeline. |
+| `timeRelation` | Implemented | Normalized through the shared time-relation parser. |
+| `layerTimeOptions` | Implemented | JSON object keyed by layer id. Malformed JSON returns `400 Bad Request`. |
+| `backgroundColor` | Implemented | `r,g,b` or `r,g,b,a`. Invalid tuples return `400 Bad Request`. |
+| `f` | Implemented | `image` streams bytes directly; `json` and `pjson` return an Esri-style JSON envelope with `href`, `width`, `height`, `extent`, and `scale`. |
+
+### Ignored or not applied
+
+| Parameter | Status | Notes |
+| --- | --- | --- |
+| `gdbVersion` | Ignored | Accepted to preserve ArcGIS compatibility. No alternate geodatabase version routing occurs. |
+| `maxAllowableOffset` | Ignored | Accepted but not applied. |
+| `geometryPrecision` | Ignored | Accepted but not applied. |
+| `returnZ` | Ignored | Accepted but not applied. |
+| `returnM` | Ignored | Accepted but not applied. |
 
 ## Response Properties
 
@@ -151,7 +183,8 @@ Sources:
 - `drawingInfo` is loaded from `ILayerStyleService` and returned as-is (JSON passthrough).
 - The `find` operation uses SQL `LIKE` with `ESCAPE '\'` for `contains=true` and equality for `contains=false`, searching string fields only. Field names are double-quoted in generated SQL.
 - Export defaults `transparent` to `false` per ArcGIS spec (configurable via `MapServer.DefaultTransparent` in service metadata).
-- `gdbVersion` is consistently rejected with `400 Bad Request` across Export, Identify, and Find operations.
+- Export returns bytes by default (`f=image`). When `f=json` or `f=pjson` is requested, Honua stores the rendered image temporarily and returns an Esri-style JSON envelope with `href`, `width`, `height`, `extent`, and `scale`.
+- `gdbVersion` is accepted and ignored across Export, Identify, and Find operations.
 - Identify result limit uses `LimitsOptions.Query.MaxRecordCount` (configurable) instead of a hard-coded value.
 - `maxAllowableOffset`, `geometryPrecision`, `returnZ`, `returnM`, and other advanced params are silently accepted (no validation error) but not yet applied.
 - Service metadata includes a `tileInfo` block even though map tiles are generated dynamically (not from a pre-built fused cache).

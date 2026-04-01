@@ -1,0 +1,1592 @@
+{
+  "schemaVersion": 1,
+  "lastReviewed": "2026-03-31",
+  "canonicalDocs": {
+    "landingPage": "docs/gis/geoservices-rest-parity.md",
+    "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
+  },
+  "statusVocabulary": {
+    "operation": [
+      "implemented",
+      "partial",
+      "not_implemented"
+    ],
+    "parameter": [
+      "implemented",
+      "partial",
+      "ignored",
+      "rejected",
+      "not_applicable"
+    ]
+  },
+  "services": [
+    {
+      "id": "feature-server",
+      "displayName": "FeatureServer",
+      "parity": "partial",
+      "drillDownDoc": "docs/gis/feature-server-matrix.md",
+      "implementedSurface": [
+        "query",
+        "service and layer metadata",
+        "applyEdits",
+        "addFeatures",
+        "updateFeatures",
+        "deleteFeatures",
+        "queryRelatedRecords",
+        "queryDomains",
+        "relationships",
+        "attachments",
+        "replica endpoints",
+        "append",
+        "calculate",
+        "validateSQL",
+        "getEstimates",
+        "queryBins",
+        "queryDateBins",
+        "queryTopFeatures"
+      ],
+      "knownGaps": [
+        "cleanupChangeTracking",
+        "queryContingentValues",
+        "sharedTemplates",
+        "asset and 3D operations",
+        "full ArcGIS SQL parity",
+        "full offline change-tracking parity"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Server/Features/FeatureServer/FeatureServerEndpoints.cs",
+          "src/Honua.Server/Features/FeatureServer/AttachmentEndpoints.cs",
+          "src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Query.cs",
+          "src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Edits.cs",
+          "src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Replication.cs"
+        ],
+        "tests": [
+          "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerQueryParameterTests.cs",
+          "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerReplicationTests.cs",
+          "tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerMaintenanceTests.cs"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "Service metadata",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer"
+            ],
+            "notes": "Returns service metadata and layer list. Capabilities string is dynamic."
+          },
+          {
+            "name": "Apply Edits (service)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/applyEdits",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/applyEdits"
+            ],
+            "notes": "Batch edits across layers using a JSON array of per-layer edit payloads."
+          },
+          {
+            "name": "Append (service)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/append",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/append"
+            ],
+            "notes": "Delegates to applyEdits semantics and returns append counts."
+          },
+          {
+            "name": "Query (service)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/query",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/query",
+              "POST /rest/services/{serviceId}/FeatureServer/query"
+            ],
+            "notes": "Delegates to a target layer selected by layerId or layers."
+          },
+          {
+            "name": "Query Domains",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/queryDomains",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/queryDomains"
+            ],
+            "notes": "Returns coded-value domains discovered from the backing data."
+          },
+          {
+            "name": "Relationships",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/relationships",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/relationships"
+            ],
+            "notes": "Aggregates relationship metadata across service layers."
+          },
+          {
+            "name": "Create Replica",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/createReplica",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/createReplica"
+            ],
+            "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
+          },
+          {
+            "name": "Extract Changes",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/extractChanges",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/extractChanges"
+            ],
+            "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
+          },
+          {
+            "name": "Synchronize Replica",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/synchronizeReplica",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica"
+            ],
+            "notes": "Supports download, upload, and bidirectional sync directions."
+          },
+          {
+            "name": "Unregister Replica",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/unRegisterReplica",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica"
+            ]
+          },
+          {
+            "name": "Get Estimates (service)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/getEstimates",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/getEstimates"
+            ]
+          },
+          {
+            "name": "Layer metadata",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}"
+            ],
+            "notes": "Includes editing info, templates, statistics flags, and relationships where available."
+          },
+          {
+            "name": "Query (layer)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/query",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/query",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/query"
+            ],
+            "notes": "Supports filters, statistics, paging, multiple output formats, spatial predicates, and temporal filters."
+          },
+          {
+            "name": "Apply Edits (layer)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits"
+            ]
+          },
+          {
+            "name": "Add Features",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures"
+            ]
+          },
+          {
+            "name": "Update Features",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures"
+            ]
+          },
+          {
+            "name": "Delete Features",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures"
+            ],
+            "notes": "Supports deletes by objectIds, where, or spatial filter."
+          },
+          {
+            "name": "Query Related Records",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords"
+            ]
+          },
+          {
+            "name": "Append (layer)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/append",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/append"
+            ]
+          },
+          {
+            "name": "Calculate",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate"
+            ],
+            "notes": "Supports calcExpression arrays of field/sqlExpression pairs."
+          },
+          {
+            "name": "Validate SQL",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL"
+            ]
+          },
+          {
+            "name": "Get Estimates (layer)",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/getEstimates"
+            ]
+          },
+          {
+            "name": "Query Bins",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBins",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins"
+            ]
+          },
+          {
+            "name": "Query Date Bins",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins"
+            ]
+          },
+          {
+            "name": "Query Top Features",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures"
+            ]
+          },
+          {
+            "name": "Add Attachment",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment"
+            ]
+          },
+          {
+            "name": "Update Attachment",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment"
+            ]
+          },
+          {
+            "name": "Delete Attachments",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments"
+            ]
+          },
+          {
+            "name": "Download Attachment",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
+            ]
+          }
+        ],
+        "partial": [
+          {
+            "name": "Generate Renderer",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer"
+            ],
+            "notes": "Returns a simple renderer. classificationDef is rejected."
+          },
+          {
+            "name": "Query Attachments",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"
+            ],
+            "notes": "Only objectId-driven lookup is supported."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "Cleanup Change Tracking",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/cleanupChangeTracking",
+            "methods": [
+              "POST"
+            ]
+          },
+          {
+            "name": "Query Contingent Values",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/queryContingentValues",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Shared Templates and child operations",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/sharedTemplates",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "HTML Popup",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/htmlPopup",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Image",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/image",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Cleanup Assets",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Convert 3D",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/convert3D",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Has Assets",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Query 3D",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/query3D",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Query Assets",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Update Metadata",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update",
+            "methods": [
+              "POST"
+            ]
+          },
+          {
+            "name": "Upload Assets",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets",
+            "methods": [
+              "GET"
+            ]
+          }
+        ]
+      },
+      "parameterCoverage": {
+        "layerQuery": [
+          {
+            "name": "where",
+            "status": "implemented",
+            "notes": "ArcGIS SQL parser."
+          },
+          {
+            "name": "objectIds",
+            "status": "implemented"
+          },
+          {
+            "name": "geometry, geometryType, spatialRel, distance, units",
+            "status": "implemented"
+          },
+          {
+            "name": "inSR, outSR",
+            "status": "implemented",
+            "notes": "GeoJSON and GeoParquet enforce EPSG:4326-compatible output behavior."
+          },
+          {
+            "name": "resultOffset, resultRecordCount",
+            "status": "implemented"
+          },
+          {
+            "name": "outFields",
+            "status": "implemented"
+          },
+          {
+            "name": "orderByFields",
+            "status": "implemented"
+          },
+          {
+            "name": "returnGeometry, returnIdsOnly, returnCountOnly, returnExtentOnly, returnZ, returnM",
+            "status": "implemented",
+            "notes": "Dimensional behavior varies by output format."
+          },
+          {
+            "name": "returnDistinctValues",
+            "status": "implemented"
+          },
+          {
+            "name": "outStatistics, groupByFieldsForStatistics",
+            "status": "implemented"
+          },
+          {
+            "name": "nearestCount, returnDistance",
+            "status": "partial",
+            "notes": "returnDistance only affects KNN queries and runtime-computed attributes are format-dependent."
+          },
+          {
+            "name": "time, timeRelation",
+            "status": "implemented"
+          },
+          {
+            "name": "f=json, geojson, pbf, fgb, geobuf, parquet",
+            "status": "implemented"
+          },
+          {
+            "name": "geometryPrecision",
+            "status": "implemented"
+          },
+          {
+            "name": "maxAllowableOffset",
+            "status": "implemented"
+          },
+          {
+            "name": "having",
+            "status": "rejected"
+          },
+          {
+            "name": "returnCentroid",
+            "status": "rejected"
+          },
+          {
+            "name": "returnTrueCurves",
+            "status": "rejected"
+          },
+          {
+            "name": "returnExceededLimitFeatures",
+            "status": "rejected"
+          },
+          {
+            "name": "resultType",
+            "status": "rejected"
+          },
+          {
+            "name": "sqlFormat",
+            "status": "rejected"
+          },
+          {
+            "name": "gdbVersion",
+            "status": "rejected"
+          },
+          {
+            "name": "quantizationParameters",
+            "status": "rejected"
+          },
+          {
+            "name": "datumTransformation",
+            "status": "rejected"
+          }
+        ],
+        "layerApplyEdits": [
+          {
+            "name": "adds, updates, deletes, rollbackOnFailure",
+            "status": "implemented"
+          },
+          {
+            "name": "useGlobalIds, gdbVersion",
+            "status": "rejected"
+          },
+          {
+            "name": "returnEditMoment, attachments, assetMaps, trueCurveClient, sessionID, usePreviousEditMoment, timeReferenceUnknownClient, async, returnEditResults, editsUploadId, editsUploadFormat, useUniqueIds",
+            "status": "ignored"
+          },
+          {
+            "name": "datumTransformation",
+            "status": "rejected",
+            "notes": "Geometry must already match the layer SRID."
+          }
+        ],
+        "queryRelatedRecords": [
+          {
+            "name": "objectIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset",
+            "status": "implemented"
+          },
+          {
+            "name": "maxAllowableOffset, geometryPrecision, historicMoment, outSR, returnZ, returnM, returnTrueCurves, orderByFields, returnCountOnly, f",
+            "status": "ignored"
+          },
+          {
+            "name": "gdbVersion",
+            "status": "rejected"
+          }
+        ]
+      },
+      "knownLimitations": [
+        "GeoJSON output requires EPSG:4326-compatible output behavior.",
+        "GeoParquet writes WKB geometry and always strips M values.",
+        "Binary query formats do not all expose runtime-computed attributes such as KNN distance.",
+        "Replica synchronization is MVP-level and not a full ArcGIS enterprise offline replacement."
+      ]
+    },
+    {
+      "id": "map-server",
+      "displayName": "MapServer",
+      "parity": "partial",
+      "drillDownDoc": "docs/gis/map-server-matrix.md",
+      "implementedSurface": [
+        "service metadata",
+        "layer metadata",
+        "export",
+        "identify",
+        "find",
+        "legend",
+        "query",
+        "tiles",
+        "generateKml",
+        "WMS",
+        "WMTS"
+      ],
+      "knownGaps": [
+        "exportTiles",
+        "estimateExportTilesSize",
+        "generateRenderer",
+        "queryAttachments",
+        "queryDomains",
+        "queryLegends",
+        "queryRelatedRecords",
+        "additional Esri child resources"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Server/Features/MapServer/MapServerEndpoints.cs",
+          "src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Export.cs",
+          "src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Identify.cs",
+          "src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Find.cs",
+          "src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Wms.cs",
+          "src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Wmts.cs"
+        ],
+        "tests": [
+          "tests/Honua.Server.Tests/Features/MapServer/MapServerEndpointTests.cs",
+          "tests/Honua.Server.Tests/Features/MapServer/MapServerTileEndpointTests.cs",
+          "tests/Honua.Server.Tests/Features/MapServer/MapServerWmsTests.cs",
+          "tests/Honua.Server.Tests/Features/MapServer/MapServerWmtsTests.cs"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "Service metadata",
+            "esriPath": "/rest/services/{serviceId}/MapServer",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer"
+            ]
+          },
+          {
+            "name": "Layer metadata",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}"
+            ]
+          },
+          {
+            "name": "Export map",
+            "esriPath": "/rest/services/{serviceId}/MapServer/export",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/export",
+              "POST /rest/services/{serviceId}/MapServer/export"
+            ],
+            "notes": "Supports image streaming via f=image and JSON envelope responses via f=json or f=pjson."
+          },
+          {
+            "name": "Identify",
+            "esriPath": "/rest/services/{serviceId}/MapServer/identify",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/identify",
+              "POST /rest/services/{serviceId}/MapServer/identify"
+            ]
+          },
+          {
+            "name": "Find",
+            "esriPath": "/rest/services/{serviceId}/MapServer/find",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/find",
+              "POST /rest/services/{serviceId}/MapServer/find"
+            ]
+          },
+          {
+            "name": "Generate KML",
+            "esriPath": "/rest/services/{serviceId}/MapServer/generateKml",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/generateKml",
+              "POST /rest/services/{serviceId}/MapServer/generateKml"
+            ]
+          },
+          {
+            "name": "Legend",
+            "esriPath": "/rest/services/{serviceId}/MapServer/legend",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/legend"
+            ]
+          },
+          {
+            "name": "Layer query",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/query",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/query",
+              "POST /rest/services/{serviceId}/MapServer/{layerId}/query"
+            ],
+            "notes": "Delegates to the FeatureServer query contract."
+          },
+          {
+            "name": "Service query",
+            "esriPath": "/rest/services/{serviceId}/MapServer/query",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/query",
+              "POST /rest/services/{serviceId}/MapServer/query"
+            ],
+            "notes": "Delegates to the FeatureServer service-query contract."
+          },
+          {
+            "name": "Tile",
+            "esriPath": "/rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}"
+            ]
+          },
+          {
+            "name": "WMS",
+            "esriPath": "/rest/services/{serviceId}/MapServer/WMS",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/WMS",
+              "GET /ogc/services/{serviceId}/wms"
+            ]
+          }
+        ],
+        "partial": [
+          {
+            "name": "WMTS",
+            "esriPath": "/rest/services/{serviceId}/MapServer/WMTS",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/WMTS",
+              "GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}",
+              "GET /ogc/services/{serviceId}/wmts"
+            ],
+            "notes": "Supports GetCapabilities, GetTile, and GetFeatureInfo, but only for WebMercatorQuad."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "Estimate Export Tile Size",
+            "esriPath": "/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Export Tiles",
+            "esriPath": "/rest/services/{serviceId}/MapServer/exportTiles",
+            "methods": [
+              "POST"
+            ]
+          },
+          {
+            "name": "Generate Renderer",
+            "esriPath": "/rest/services/{serviceId}/MapServer/generateRenderer",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Query Attachments",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAttachments",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Query Domains",
+            "esriPath": "/rest/services/{serviceId}/MapServer/queryDomains",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Query Legends",
+            "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Query Related Records",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Query Analytic",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/queryAnalytic",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "All Layers and Tables",
+            "esriPath": "/rest/services/{serviceId}/MapServer/allLayersAndTables",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Dynamic Layer or Table resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/dynamicLayer",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Feature child resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/{featureId}",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Image child resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/image",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "KML image child resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/kml/mapImage.kmz",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Job child resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/jobs/{jobId}",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Map Service Extension",
+            "esriPath": "/rest/services/{serviceId}/MapServer/exts/*",
+            "methods": [
+              "GET"
+            ]
+          }
+        ]
+      },
+      "parameterCoverage": {
+        "export": [
+          {
+            "name": "bbox, size, dpi, format, transparent, layers, bboxSR, imageSR, layerDefs, dynamicLayers, time, timeRelation, layerTimeOptions, backgroundColor",
+            "status": "implemented"
+          },
+          {
+            "name": "f",
+            "status": "implemented",
+            "notes": "image streams bytes directly; json and pjson return a JSON envelope."
+          },
+          {
+            "name": "gdbVersion",
+            "status": "ignored",
+            "notes": "Accepted for ArcGIS compatibility but does not alter routing."
+          },
+          {
+            "name": "maxAllowableOffset, geometryPrecision, returnZ, returnM",
+            "status": "ignored"
+          }
+        ],
+        "identifyAndFind": [
+          {
+            "name": "mapExtent, imageDisplay, tolerance, layers, layerDefs, dynamicLayers, time, timeRelation",
+            "status": "implemented",
+            "notes": "Identify also supports all documented geometry types."
+          },
+          {
+            "name": "searchText, searchFields, contains, sr, returnGeometry",
+            "status": "implemented",
+            "notes": "Find-specific parameters."
+          },
+          {
+            "name": "gdbVersion",
+            "status": "ignored"
+          }
+        ]
+      },
+      "knownLimitations": [
+        "WMTS support remains WebMercatorQuad-only.",
+        "Layer queries inherit the FeatureServer query contract, including its format behavior.",
+        "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
+      ]
+    },
+    {
+      "id": "image-server",
+      "displayName": "ImageServer",
+      "parity": "partial",
+      "drillDownDoc": "docs/gis/image-server-matrix.md",
+      "implementedSurface": [
+        "service metadata",
+        "exportImage",
+        "identify",
+        "tile"
+      ],
+      "knownGaps": [
+        "query",
+        "queryBoundary",
+        "find",
+        "measure",
+        "project",
+        "exportTiles",
+        "catalog mutation",
+        "WMTS",
+        "richer image child resources"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Server/Features/ImageServer/ImageServerEndpoints.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerMetadataHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerExportHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
+          "src/Honua.Server/Features/ImageServer/Handlers/ImageServerTileHandler.cs"
+        ],
+        "tests": [
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerBasicTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerParameterValidationTests.cs",
+          "tests/Honua.Server.Tests/Features/ImageServer/ImageServerErrorHandlingTests.cs"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "Service metadata",
+            "esriPath": "/rest/services/{id}/ImageServer",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer"
+            ],
+            "notes": "Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
+          },
+          {
+            "name": "Tile",
+            "esriPath": "/rest/services/{id}/ImageServer/tile/{level}/{row}/{col}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}"
+            ],
+            "notes": "Supports png, jpeg, and tiff tile output."
+          }
+        ],
+        "partial": [
+          {
+            "name": "Export Image",
+            "esriPath": "/rest/services/{id}/ImageServer/exportImage",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/exportImage"
+            ],
+            "notes": "Returns a JSON envelope with a temporary href. f=image byte streaming is not supported."
+          },
+          {
+            "name": "Identify",
+            "esriPath": "/rest/services/{id}/ImageServer/identify",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/identify"
+            ],
+            "notes": "Point-only identify with JSON responses."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "Add Rasters",
+            "esriPath": "/rest/services/{id}/ImageServer/addRasters",
+            "methods": [
+              "POST"
+            ]
+          },
+          {
+            "name": "Calculate Volume",
+            "esriPath": "/rest/services/{id}/ImageServer/calculateVolume",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Compute Cache Info",
+            "esriPath": "/rest/services/{id}/ImageServer/computeCacheInfo",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Compute Class Statistics",
+            "esriPath": "/rest/services/{id}/ImageServer/computeClassStatistics",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Compute Histograms",
+            "esriPath": "/rest/services/{id}/ImageServer/computeHistograms",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Delete Rasters",
+            "esriPath": "/rest/services/{id}/ImageServer/deleteRasters",
+            "methods": [
+              "POST"
+            ]
+          },
+          {
+            "name": "Download Rasters",
+            "esriPath": "/rest/services/{id}/ImageServer/downloadRasters",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Export Tiles",
+            "esriPath": "/rest/services/{id}/ImageServer/exportTiles",
+            "methods": [
+              "POST"
+            ]
+          },
+          {
+            "name": "Find",
+            "esriPath": "/rest/services/{id}/ImageServer/find",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Get Samples",
+            "esriPath": "/rest/services/{id}/ImageServer/getSamples",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Measure",
+            "esriPath": "/rest/services/{id}/ImageServer/measure",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Project",
+            "esriPath": "/rest/services/{id}/ImageServer/project",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Query Boundary",
+            "esriPath": "/rest/services/{id}/ImageServer/queryBoundary",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Query",
+            "esriPath": "/rest/services/{id}/ImageServer/query",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          }
+        ]
+      },
+      "childResources": {
+        "notImplemented": [
+          "colormap",
+          "histograms",
+          "info/*",
+          "imageSupportData",
+          "keyProperties",
+          "kml",
+          "legend",
+          "multiDimensionalInfo",
+          "rasterAttributeTable",
+          "{rasterId}/*",
+          "rasterFile",
+          "rasterFunctionInfos",
+          "slices",
+          "statistics",
+          "WMTS"
+        ]
+      },
+      "parameterCoverage": {
+        "exportImage": [
+          {
+            "name": "bbox, imageSR, bboxSR, interpolation, compressionQuality",
+            "status": "implemented"
+          },
+          {
+            "name": "format",
+            "status": "partial",
+            "notes": "Supports png, jpg, jpeg, tif, and tiff."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          },
+          {
+            "name": "size",
+            "status": "partial",
+            "notes": "Honua accepts a single integer width and derives height from aspect ratio."
+          },
+          {
+            "name": "pixelType",
+            "status": "partial",
+            "notes": "Validated but not applied."
+          },
+          {
+            "name": "compression",
+            "status": "ignored",
+            "notes": "Validated to 0-100 but not mapped to RasterQuery.TiffCompression."
+          },
+          {
+            "name": "bandIds, mosaicRule, renderingRule, noData, noDataInterpretation",
+            "status": "ignored"
+          }
+        ],
+        "identify": [
+          {
+            "name": "geometry, sr, returnCatalogItems",
+            "status": "implemented"
+          },
+          {
+            "name": "geometryType",
+            "status": "partial",
+            "notes": "Only esriGeometryPoint is supported."
+          },
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          },
+          {
+            "name": "mosaicRule, renderingRule, pixelSize, time, returnGeometry",
+            "status": "ignored"
+          }
+        ],
+        "tile": [
+          {
+            "name": "format, level, row, col",
+            "status": "implemented"
+          }
+        ]
+      },
+      "knownLimitations": [
+        "The route shape is layer-scoped: /rest/services/{id}/ImageServer.",
+        "Metadata, export, and identify operate on the layer's primary raster.",
+        "Export responses always return JSON with a temporary file URL.",
+        "Honua does not currently expose ImageServer WMTS or offline tile export."
+      ]
+    },
+    {
+      "id": "geometry-service",
+      "displayName": "Geometry Service",
+      "parity": "partial",
+      "drillDownDoc": "docs/gis/geometry-service-matrix.md",
+      "implementedSurface": [
+        "buffer",
+        "simplify",
+        "project",
+        "intersect",
+        "union",
+        "clip",
+        "difference",
+        "supplemental area",
+        "supplemental length"
+      ],
+      "knownGaps": [
+        "GeometryServer root metadata resource",
+        "areasAndLengths",
+        "lengths",
+        "distance",
+        "offset",
+        "relation",
+        "reshape",
+        "cut",
+        "convexHull",
+        "densify",
+        "labelPoints",
+        "trimExtend"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Server/Features/GeometryService/GeometryServiceEndpoints.cs",
+          "src/Honua.Server/Features/GeometryService/Services/GeometryServiceRequestParser.cs",
+          "src/Honua.Server/Features/GeometryService/Services/GeometryServiceHandler.cs"
+        ],
+        "tests": [
+          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
+          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
+          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs",
+          "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "Buffer",
+            "esriPath": "/GeometryServer/buffer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/buffer",
+              "POST /rest/services/geometry/buffer"
+            ]
+          },
+          {
+            "name": "Simplify",
+            "esriPath": "/GeometryServer/simplify",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/simplify",
+              "POST /rest/services/geometry/simplify"
+            ]
+          },
+          {
+            "name": "Project",
+            "esriPath": "/GeometryServer/project",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/project",
+              "POST /rest/services/geometry/project"
+            ]
+          },
+          {
+            "name": "Intersect",
+            "esriPath": "/GeometryServer/intersect",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/intersect",
+              "POST /rest/services/geometry/intersect"
+            ]
+          },
+          {
+            "name": "Union",
+            "esriPath": "/GeometryServer/union",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/union",
+              "POST /rest/services/geometry/union"
+            ]
+          },
+          {
+            "name": "Clip",
+            "esriPath": "/GeometryServer/clip",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/clip",
+              "POST /rest/services/geometry/clip"
+            ],
+            "notes": "Uses the envelope of the clip geometry."
+          },
+          {
+            "name": "Difference",
+            "esriPath": "/GeometryServer/difference",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/geometry/difference",
+              "POST /rest/services/geometry/difference"
+            ]
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "Geometry Service metadata",
+            "esriPath": "/Utilities/Geometry/GeometryServer",
+            "methods": [
+              "GET"
+            ]
+          },
+          {
+            "name": "Areas and Lengths",
+            "esriPath": "/GeometryServer/areasAndLengths",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Auto Complete",
+            "esriPath": "/GeometryServer/autoComplete",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Convex Hull",
+            "esriPath": "/GeometryServer/convexHull",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Cut",
+            "esriPath": "/GeometryServer/cut",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Densify",
+            "esriPath": "/GeometryServer/densify",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Distance",
+            "esriPath": "/GeometryServer/distance",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Find Transformations",
+            "esriPath": "/GeometryServer/findTransformations",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Generalize",
+            "esriPath": "/GeometryServer/generalize",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Label Points",
+            "esriPath": "/GeometryServer/labelPoints",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Lengths",
+            "esriPath": "/GeometryServer/lengths",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Offset",
+            "esriPath": "/GeometryServer/offset",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Relation",
+            "esriPath": "/GeometryServer/relation",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Reshape",
+            "esriPath": "/GeometryServer/reshape",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "name": "Trim/Extend",
+            "esriPath": "/GeometryServer/trimExtend",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          }
+        ]
+      },
+      "supplementalRoutes": [
+        {
+          "name": "Area",
+          "status": "implemented",
+          "honuaEndpoint": "GET/POST /rest/services/geometry/area",
+          "notes": "Honua-specific helper. Not an Esri canonical GeometryServer operation."
+        },
+        {
+          "name": "Length",
+          "status": "implemented",
+          "honuaEndpoint": "GET/POST /rest/services/geometry/length",
+          "notes": "Honua-specific helper. Not an Esri canonical GeometryServer operation."
+        }
+      ],
+      "parameterCoverage": {
+        "common": [
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          },
+          {
+            "name": "geometries",
+            "status": "implemented"
+          }
+        ],
+        "buffer": [
+          {
+            "name": "inSR, outSR, bufferSR, distances, unit, unionResults, geodesic",
+            "status": "implemented"
+          }
+        ],
+        "intersectUnionClipDifference": [
+          {
+            "name": "sr, geometry",
+            "status": "implemented",
+            "notes": "geometry is required for intersect, clip, and difference."
+          }
+        ],
+        "project": [
+          {
+            "name": "inSR, outSR",
+            "status": "implemented",
+            "notes": "Supports WKID text and Esri-style spatial-reference JSON with latestWkid or name."
+          }
+        ],
+        "supplemental": [
+          {
+            "name": "sr, areaUnit, lengthUnit",
+            "status": "implemented"
+          }
+        ]
+      },
+      "knownLimitations": [
+        "Honua does not expose a GeometryServer root metadata endpoint.",
+        "Only JSON-style responses are supported.",
+        "clip uses the envelope of the supplied clip geometry, not the full clip shape.",
+        "The implemented area and length routes are Honua-specific helpers rather than drop-in replacements for Esri areasAndLengths and lengths."
+      ]
+    }
+  ]
+}

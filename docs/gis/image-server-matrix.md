@@ -90,7 +90,6 @@ Sources:
 | `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`. Esri formats such as `png8`, `png24`, `bmp`, and `gif` are not supported. |
 | `interpolation` | Implemented | Parsed into raster resampling behavior. |
 | `compressionQuality` | Implemented | Validated to `1-100`. |
-| `compression` | Implemented | Validated to `0-100`. |
 | `f` | Partial | Only `json` and `pjson` are supported. `html` and `image` are not supported. |
 
 #### Partial or behavior differences
@@ -104,6 +103,7 @@ Sources:
 
 | Esri parameter | Notes |
 | --- | --- |
+| `compression` | Validated to `0-100`, but the export handler currently drops the value and does not map it to TIFF compression behavior. |
 | `bandIds` | Accepted by the request model but not applied by the export handler. |
 | `mosaicRule` | Accepted by the request model but not applied. |
 | `renderingRule` | Accepted by the request model but not applied. |

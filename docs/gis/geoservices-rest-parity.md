@@ -3,6 +3,11 @@
 This is the canonical GeoServices REST landing page for Honua Server.
 Start here, then use the linked drill-down pages for endpoint-level parameters, limitations, and implementation evidence.
 
+Published artifacts:
+- Human-readable landing page: this page
+- Service drill-down pages: [FeatureServer](feature-server-matrix.md), [MapServer](map-server-matrix.md), [ImageServer](image-server-matrix.md), [Geometry Service](geometry-service-matrix.md)
+- Machine-readable parity export: [data/geoservices-rest-parity.json](data/geoservices-rest-parity.json)
+
 ## Status vocabulary
 
 - Implemented: the Esri operation/resource exists in Honua at a compatible path and the documented behavior is supported.
@@ -16,7 +21,7 @@ Start here, then use the linked drill-down pages for endpoint-level parameters, 
 | FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replication, estimates, calculate, validate SQL, append, bins/date bins/top features | Cleanup change tracking, contingent values, shared templates, asset/3D operations, broader ArcGIS SQL parity | [FeatureServer Matrix](feature-server-matrix.md) |
 | MapServer | Supported with partial parity | Service/layer metadata, export, identify, find, legend, query, tiles, generateKml, WMS, WMTS | Export tiles, estimate export tile size, generate renderer, query attachments/related records/domains/legends, several Esri child resources | [MapServer Matrix](map-server-matrix.md) |
 | ImageServer | Supported with partial parity | Service metadata, exportImage, identify, tile | Catalog mutation, export tiles, find/query/query boundary, measure/project, raster catalog child resources, WMTS, richer metadata resources | [ImageServer Matrix](image-server-matrix.md) |
-| Geometry Service | Supported with partial parity | Buffer, simplify, project, intersect, union, clip, difference | Root metadata resource, most ArcGIS Geometry Service operations, canonical `areasAndLengths`/`lengths` routes | [Geometry Service Matrix](geometry-service-matrix.md) |
+| Geometry Service | Supported with partial parity | Buffer, simplify, project, intersect, union, clip, difference, supplemental `area` and `length` routes | Root metadata resource, most ArcGIS Geometry Service operations, canonical `areasAndLengths`/`lengths` routes | [Geometry Service Matrix](geometry-service-matrix.md) |
 
 ## Evidence map
 
@@ -35,3 +40,8 @@ Start here, then use the linked drill-down pages for endpoint-level parameters, 
 - [Esri Layer / Table (Map Service)](https://developers.arcgis.com/rest/services-reference/enterprise/layer-table/)
 - [Esri Image Service](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/)
 - [Esri Geometry Service](https://developers.arcgis.com/rest/services-reference/enterprise/geometry-service/)
+
+## Upkeep
+
+- When GeoServices routes, parameter handling, or response shapes change, update the relevant drill-down page and [data/geoservices-rest-parity.json](data/geoservices-rest-parity.json) in the same PR.
+- Release owners verify these parity docs during the [Release Checklist](../contributor/RELEASE_CHECKLIST.md#compatibility-contract-updates-required).

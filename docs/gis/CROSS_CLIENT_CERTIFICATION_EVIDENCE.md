@@ -106,13 +106,13 @@ Examples:
 Evidence files are stored under:
 
 ```
-docs/user/certification-evidence/<run-id>/
+docs/gis/certification-evidence/<run-id>/
 ```
 
 Example directory for a common-core certification run:
 
 ```
-docs/user/certification-evidence/20260316T1430Z/
+docs/gis/certification-evidence/20260316T1430Z/
 ├── 20260316T1430Z-js-featureserver.cert.json
 ├── 20260316T1430Z-desktop-arcgis-featureserver.cert.json
 ├── 20260316T1430Z-desktop-arcgis-mapserver.cert.json
