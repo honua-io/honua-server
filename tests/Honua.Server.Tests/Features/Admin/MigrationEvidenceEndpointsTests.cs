@@ -62,6 +62,41 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("valid HTTPS");
     }
 
+    [Endpoint("POST /api/v1/admin/migrations/reports")]
+    [Theory]
+    [InlineData(0, 50, 30, "SampleRowCount must be between 1 and 100.")]
+    [InlineData(101, 50, 30, "SampleRowCount must be between 1 and 100.")]
+    [InlineData(25, 0, 30, "QueryPageSize must be between 1 and 100.")]
+    [InlineData(25, 101, 30, "QueryPageSize must be between 1 and 100.")]
+    [InlineData(25, 50, 0, "ProbeTimeoutSeconds must be between 1 and 60.")]
+    [InlineData(25, 50, 61, "ProbeTimeoutSeconds must be between 1 and 60.")]
+    public async Task StartReport_WithOutOfRangeProbeControls_ReturnsBadRequest(
+        int sampleRowCount,
+        int queryPageSize,
+        int probeTimeoutSeconds,
+        string expectedError)
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", new
+        {
+            provider = "arcgis-geoservices",
+            sourceServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            targetBaseUrl = "https://example.com",
+            targetServiceName = "test",
+            layers = new[]
+            {
+                new { sourceLayerId = 0, targetLayerId = 0 }
+            },
+            cutoverProfile = "pilot",
+            rollbackPlanReference = "runbook://rollback/pilot",
+            sampleRowCount,
+            queryPageSize,
+            probeTimeoutSeconds
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(expectedError);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/migrations/reports")]
     [Endpoint("GET /api/v1/admin/migrations/reports/jobs/{jobId}")]
@@ -92,6 +127,9 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         using var reportDocument = await reportResponse.Content.ReadFromJsonAsync<JsonDocument>();
         reportDocument.Should().NotBeNull();
         var root = reportDocument!.RootElement;
+        root.GetProperty("request").GetProperty("sampleRowCount").GetInt32().Should().Be(25);
+        root.GetProperty("request").GetProperty("queryPageSize").GetInt32().Should().Be(50);
+        root.GetProperty("request").GetProperty("probeTimeoutSeconds").GetInt32().Should().Be(30);
         root.GetProperty("sourceBaseline").GetProperty("serviceUrl").GetString().Should().Be("https://example.com/arcgis/rest/services/Test/FeatureServer");
         root.GetProperty("targetSnapshot").GetProperty("serviceName").GetString().Should().Be("test");
         root.GetProperty("comparison").GetProperty("capability").GetArrayLength().Should().BeGreaterThan(0);

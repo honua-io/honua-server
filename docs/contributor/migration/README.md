@@ -27,7 +27,7 @@ The request contract is intentionally narrow:
 - `layers` is required and maps source layer IDs to target layer IDs; all layer IDs must be non-negative.
 - `cutoverProfile` is `pilot` or `production`. The production profile escalates production-only warnings and failures into blocking readiness reasons.
 - `rollbackPlanReference` is required. Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are echoed into the stored artifact.
-- Optional bounded probe controls are available when a pilot needs a narrower or more aggressive probe envelope: `sampleRowCount` (default `25`), `queryPageSize` (default `50`), `latencySampleCount` (default `5`), and `probeTimeoutSeconds` (default `30`, max `60`). These inputs keep remote parity work bounded instead of turning a pilot evidence run into an open-ended probe sweep.
+- Optional bounded probe controls are available when a pilot needs a narrower or more aggressive probe envelope: `sampleRowCount` (`1..100`, default `25`), `queryPageSize` (`1..100`, default `50`), and `probeTimeoutSeconds` (`1..60`, default `30`). These inputs keep remote parity work bounded instead of turning a pilot evidence run into an open-ended probe sweep.
 
 The job lifecycle is asynchronous:
 

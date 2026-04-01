@@ -225,11 +225,6 @@ public sealed record MigrationEvidenceRequest
     public int QueryPageSize { get; init; } = 50;
 
     /// <summary>
-    /// Number of latency samples per bounded probe family.
-    /// </summary>
-    public int LatencySampleCount { get; init; } = 5;
-
-    /// <summary>
     /// Timeout in seconds for a single remote probe.
     /// </summary>
     public int ProbeTimeoutSeconds { get; init; } = 30;

@@ -15,6 +15,16 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static partial class MigrationEvidenceEndpoints
 {
+    private const int DefaultSampleRowCount = 25;
+    private const int DefaultQueryPageSize = 50;
+    private const int DefaultProbeTimeoutSeconds = 30;
+    private const int MinSampleRowCount = 1;
+    private const int MaxSampleRowCount = 100;
+    private const int MinQueryPageSize = 1;
+    private const int MaxQueryPageSize = 100;
+    private const int MinProbeTimeoutSeconds = 1;
+    private const int MaxProbeTimeoutSeconds = 60;
+
     /// <summary>
     /// Maps migration evidence endpoints.
     /// </summary>
@@ -56,9 +66,9 @@ internal static partial class MigrationEvidenceEndpoints
         MigrationEvidenceRequest? request;
         try
         {
-            request = await context.Request.ReadFromJsonAsync(
-                MigrationEvidenceApiJsonContext.Default.MigrationEvidenceRequest,
-                cancellationToken);
+            using var requestDocument = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
+            request = requestDocument.RootElement.Deserialize(MigrationEvidenceApiJsonContext.Default.MigrationEvidenceRequest);
+            request = request is null ? null : NormalizeProbeControls(request, requestDocument.RootElement);
         }
         catch (Exception ex)
         {
@@ -339,6 +349,85 @@ internal static partial class MigrationEvidenceEndpoints
         if (string.IsNullOrWhiteSpace(request.RollbackPlanReference))
         {
             validationError = "RollbackPlanReference is required";
+            return false;
+        }
+
+        if (!TryValidateInclusiveRange(
+                request.SampleRowCount,
+                MinSampleRowCount,
+                MaxSampleRowCount,
+                nameof(MigrationEvidenceRequest.SampleRowCount),
+                out validationError))
+        {
+            return false;
+        }
+
+        if (!TryValidateInclusiveRange(
+                request.QueryPageSize,
+                MinQueryPageSize,
+                MaxQueryPageSize,
+                nameof(MigrationEvidenceRequest.QueryPageSize),
+                out validationError))
+        {
+            return false;
+        }
+
+        if (!TryValidateInclusiveRange(
+                request.ProbeTimeoutSeconds,
+                MinProbeTimeoutSeconds,
+                MaxProbeTimeoutSeconds,
+                nameof(MigrationEvidenceRequest.ProbeTimeoutSeconds),
+                out validationError))
+        {
+            return false;
+        }
+
+        validationError = null;
+        return true;
+    }
+
+    private static MigrationEvidenceRequest NormalizeProbeControls(MigrationEvidenceRequest request, JsonElement requestRoot) =>
+        request with
+        {
+            SampleRowCount = HasProperty(requestRoot, "sampleRowCount")
+                ? request.SampleRowCount
+                : DefaultSampleRowCount,
+            QueryPageSize = HasProperty(requestRoot, "queryPageSize")
+                ? request.QueryPageSize
+                : DefaultQueryPageSize,
+            ProbeTimeoutSeconds = HasProperty(requestRoot, "probeTimeoutSeconds")
+                ? request.ProbeTimeoutSeconds
+                : DefaultProbeTimeoutSeconds
+        };
+
+    private static bool HasProperty(JsonElement requestRoot, string propertyName)
+    {
+        if (requestRoot.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var property in requestRoot.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryValidateInclusiveRange(
+        int value,
+        int minimum,
+        int maximum,
+        string propertyName,
+        out string? validationError)
+    {
+        if (value < minimum || value > maximum)
+        {
+            validationError = $"{propertyName} must be between {minimum} and {maximum}.";
             return false;
         }
 

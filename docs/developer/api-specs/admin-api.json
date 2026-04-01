@@ -4528,20 +4528,16 @@
           "sampleRowCount": {
             "type": "integer",
             "minimum": 1,
+            "maximum": 100,
             "default": 25,
             "description": "Maximum number of sample rows to compare per layer."
           },
           "queryPageSize": {
             "type": "integer",
             "minimum": 1,
+            "maximum": 100,
             "default": 50,
             "description": "Maximum page size used for bounded parity probes."
-          },
-          "latencySampleCount": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 5,
-            "description": "Number of latency samples per bounded probe family."
           },
           "probeTimeoutSeconds": {
             "type": "integer",
