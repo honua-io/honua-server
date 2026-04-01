@@ -456,6 +456,8 @@ jobs:
           path: |
             tests/TestResults/
             tests/python/gdal-ogr-results*.json
+            tests/python/stac-client-compat-results*.json
+            tests/python/stac-client-compat-results*.md
           retention-days: 7
 
   js-integration-tests:

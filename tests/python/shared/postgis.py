@@ -16,6 +16,7 @@ import uuid
 import os
 import inspect
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 import json
@@ -668,6 +669,20 @@ class PostGISFixture:
         runner = SeedRunner(seed_path)
         with self.get_connection(schema) as conn:
             runner.apply(conn, schema=schema, profile=profile)
+
+    def apply_sql_file(self, sql_path: str | Path, schema: str | None = None) -> None:
+        """Apply a raw SQL seed file to the database."""
+        path = Path(sql_path)
+        if not path.exists():
+            raise FileNotFoundError(f"SQL seed file not found: {path}")
+
+        sql = path.read_text()
+        if not sql.strip():
+            return
+
+        with self.get_connection(schema) as conn:
+            conn.execute(sql)
+            conn.commit()
 
     def __enter__(self) -> "PostGISFixture":
         return self.start()

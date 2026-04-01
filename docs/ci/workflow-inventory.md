@@ -7,7 +7,7 @@
 
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate |
+| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; uploads STAC client-compat evidence (`stac-client-compat-results*.json/md`) |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
 | `proto-wire-governance.yml` | Proto Wire Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to `.proto` changes |
