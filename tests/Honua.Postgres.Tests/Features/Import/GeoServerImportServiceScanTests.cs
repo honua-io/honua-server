@@ -175,6 +175,51 @@ public sealed class GeoServerImportServiceScanTests
             .Which.SpatialReferences.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ScanSourceAsync_WithLayerBounds_PopulatesLayerBoundsSpatialReferences()
+    {
+        using var httpClient = new HttpClient(new LayerBoundsGeoServerHandler());
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
+        crsRegistry.Setup(registry => registry.ResolveBySridAsync(4326, It.IsAny<CancellationToken>()))
+            .Returns(new ValueTask<CrsDefinition?>((CrsDefinition?)null));
+        crsRegistry.Setup(registry => registry.ResolveBySridAsync(3857, It.IsAny<CancellationToken>()))
+            .Returns(new ValueTask<CrsDefinition?>((CrsDefinition?)null));
+        var service = CreateService(restClient, crsRegistry);
+
+        var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            IncludeCompatibilityAnalysis = true
+        });
+
+        artifact.Resources.Should().ContainSingle(resource => resource.Id == "layer:demo:roads")
+            .Which.SpatialReferences.Should().BeEquivalentTo(
+                new[]
+                {
+                    new MigrationSpatialReferenceInfo
+                    {
+                        Role = "latlon-bounds",
+                        SourceValue = "EPSG:4326",
+                        Srid = 4326,
+                        CrsUri = "http://www.opengis.net/def/crs/EPSG/0/4326",
+                        IsGeographic = true
+                    },
+                    new MigrationSpatialReferenceInfo
+                    {
+                        Role = "native-bounds",
+                        SourceValue = "EPSG:3857",
+                        Srid = 3857,
+                        CrsUri = "http://www.opengis.net/def/crs/EPSG/0/3857",
+                        IsGeographic = false
+                    }
+                },
+                options => options
+                    .Excluding(info => info.Datum)
+                    .Excluding(info => info.Unit)
+                    .Excluding(info => info.AxisOrder));
+    }
+
     private static GeoServerImportService CreateService(GeoServerRestClient restClient, Mock<ICrsRegistry>? crsRegistry = null)
     {
         var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
@@ -356,6 +401,61 @@ public sealed class GeoServerImportServiceScanTests
                 "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
                 "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":[{"name":"group-style"}]}}"""),
                 "/geoserver/rest/workspaces/demo/styles/group-style.json" => ("application/json", """{"style":{"name":"group-style","format":"sld"}}"""),
+                _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, contentType)
+            });
+        }
+    }
+
+    private sealed class LayerBoundsGeoServerHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var (contentType, payload) = path switch
+            {
+                "/geoserver/rest/about/version.xml" => ("application/xml", """
+                    <about>
+                      <resource name="GeoServer">
+                        <Version>2.28.0</Version>
+                      </resource>
+                    </about>
+                    """),
+                "/geoserver/rest/settings.json" => ("application/json", """{"global":{"title":"Demo GeoServer"}}"""),
+                "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
+                "/geoserver/rest/workspaces/demo.json" => ("application/json", """{"workspace":{"name":"demo"}}"""),
+                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/layers.json" => ("application/json", """{"layers":{"layer":[{"name":"roads"}]}}"""),
+                "/geoserver/rest/workspaces/demo/layers/roads.json" => ("application/json", """
+                    {
+                      "layer": {
+                        "name": "roads",
+                        "latLonBoundingBox": {
+                          "minx": -123.5,
+                          "miny": 45.0,
+                          "maxx": -122.0,
+                          "maxy": 46.5,
+                          "crs": "EPSG:4326"
+                        },
+                        "nativeBoundingBox": {
+                          "minx": 1000,
+                          "miny": 1000,
+                          "maxx": 4000,
+                          "maxy": 6000,
+                          "crs": "EPSG:3857"
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 

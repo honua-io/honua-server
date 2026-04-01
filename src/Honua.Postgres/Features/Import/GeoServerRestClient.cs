@@ -466,6 +466,8 @@ internal sealed partial class GeoServerRestClient
                 NativeName = GetOptionalStringProperty(layerElement, "nativeName"),
                 SRS = GetOptionalStringProperty(layerElement, "srs"),
                 NativeCRS = GetOptionalStringProperty(layerElement, "nativeCRS"),
+                LatLonBoundingBox = GetOptionalBoundingBox(layerElement, "latLonBoundingBox"),
+                NativeBoundingBox = GetOptionalBoundingBox(layerElement, "nativeBoundingBox"),
                 Enabled = GetOptionalBoolProperty(layerElement, "enabled") ?? true,
                 Queryable = GetOptionalBoolProperty(layerElement, "queryable") ?? true,
                 Opaque = GetOptionalBoolProperty(layerElement, "opaque") ?? false,
