@@ -117,6 +117,21 @@ internal sealed class CloudCogTileResolver : ICloudCogTileResolver
         // Decompress based on compression type
         var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression);
 
+        if (!CanServeRequestedFormat(format, contentType))
+        {
+            var requestedFormat = format switch
+            {
+                RasterFormat.PNG => "PNG",
+                RasterFormat.JPEG => "JPEG",
+                RasterFormat.TIFF => "TIFF",
+                RasterFormat.Raw => "Raw",
+                RasterFormat.COG => "COG",
+                _ => "Unknown"
+            };
+            CloudCogLog.UnsupportedTileFormat(_logger, registration.Id, requestedFormat, contentType);
+            return null;
+        }
+
         CloudCogLog.CloudTileServed(_logger, registration.Id, level, row, col, decompressedData.Length, metadataSource);
 
         return new RasterResult
@@ -247,4 +262,13 @@ internal sealed class CloudCogTileResolver : ICloudCogTileResolver
 
         return metadata.OverviewLevels[ifdIndex];
     }
+
+    private static bool CanServeRequestedFormat(RasterFormat requestedFormat, string contentType) => requestedFormat switch
+    {
+        RasterFormat.PNG => contentType == "image/png",
+        RasterFormat.JPEG => contentType == "image/jpeg",
+        RasterFormat.TIFF or RasterFormat.COG => contentType == "image/tiff",
+        RasterFormat.Raw => contentType == "application/octet-stream",
+        _ => false
+    };
 }

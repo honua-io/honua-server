@@ -70,4 +70,10 @@ internal static partial class CloudCogLog
         Level = LogLevel.Warning,
         Message = "Cloud COG {RegistrationId} uses CRS SRID {Srid} which is not EPSG:3857 or EPSG:4326. Web map clients may display tiles incorrectly.")]
     public static partial void NonWebMercatorCrs(ILogger logger, long registrationId, int srid);
+
+    [LoggerMessage(
+        EventId = 7910,
+        Level = LogLevel.Debug,
+        Message = "Cloud COG {RegistrationId} cannot satisfy requested format {RequestedFormat} with native tile content type {ContentType}.")]
+    public static partial void UnsupportedTileFormat(ILogger logger, long registrationId, string requestedFormat, string contentType);
 }
