@@ -85,6 +85,7 @@ public sealed class GeoServerRestClientTests
             CancellationToken.None);
 
         var layerGroup = result.LayerGroups.Should().ContainSingle(group => group.Name == "transport").Subject;
+        layerGroup.Layers.Should().ContainSingle(entry => entry.Name == "demo:roads" && entry.WorkspaceName == "demo");
         layerGroup.Styles.Should().ContainSingle(style => style.Name == "group-style" && style.WorkspaceName == "demo");
         layerGroup.Bounds.Should().NotBeNull();
         layerGroup.Bounds!.CRS.Should().Be("EPSG:3857");
@@ -118,6 +119,26 @@ public sealed class GeoServerRestClientTests
         layer.NativeBoundingBox!.CRS.Should().Be("EPSG:3857");
         layer.NativeBoundingBox.MinY.Should().Be(1000);
         layer.NativeBoundingBox.MaxX.Should().Be(4000);
+    }
+
+    [Fact]
+    public async Task DiscoverServiceAsync_WithAlreadyQualifiedDefaultStyle_DoesNotDoublePrefixWorkspace()
+    {
+        using var httpClient = new HttpClient(new QualifiedStyleGeoServerHandler());
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+
+        var result = await client.DiscoverServiceAsync(
+            "https://example.com/geoserver/rest",
+            username: null,
+            password: null,
+            includeCompatibilityAnalysis: false,
+            includeStyleContent: false,
+            timeoutSeconds: 5,
+            maxRetryAttempts: 0,
+            CancellationToken.None);
+
+        result.Layers.Should().ContainSingle(layer => layer.Name == "states")
+            .Which.DefaultStyle.Should().Be("demo:polygon");
     }
 
     private static string CreateBasicAuthorization(string username, string password)
@@ -310,6 +331,51 @@ public sealed class GeoServerRestClientTests
                           "maxx": 4000,
                           "maxy": 6000,
                           "crs": "EPSG:3857"
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, contentType)
+            });
+        }
+    }
+
+    private sealed class QualifiedStyleGeoServerHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var (contentType, payload) = path switch
+            {
+                "/geoserver/rest/about/version.xml" => ("application/xml", """
+                    <about>
+                      <resource name="GeoServer">
+                        <Version>2.28.0</Version>
+                      </resource>
+                    </about>
+                    """),
+                "/geoserver/rest/settings.json" => ("application/json", """{"global":{}}"""),
+                "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
+                "/geoserver/rest/workspaces/demo.json" => ("application/json", """{"workspace":{"name":"demo"}}"""),
+                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/layers.json" => ("application/json", """{"layers":{"layer":[{"name":"states"}]}}"""),
+                "/geoserver/rest/workspaces/demo/layers/states.json" => ("application/json", """
+                    {
+                      "layer": {
+                        "name": "states",
+                        "defaultStyle": {
+                          "name": "demo:polygon",
+                          "workspace": "demo"
                         }
                       }
                     }

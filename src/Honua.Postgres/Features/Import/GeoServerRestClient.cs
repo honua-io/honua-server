@@ -787,7 +787,7 @@ internal sealed partial class GeoServerRestClient
         }
 
         var workspaceName = GetOptionalStringProperty(element, "workspace");
-        return string.IsNullOrWhiteSpace(workspaceName)
+        return string.IsNullOrWhiteSpace(workspaceName) || name.Contains(':', StringComparison.Ordinal)
             ? name
             : $"{workspaceName}:{name}";
     }
@@ -804,7 +804,9 @@ internal sealed partial class GeoServerRestClient
         var entryWorkspaceName = separatorIndex > 0 && separatorIndex < qualifiedName.Length - 1
             ? qualifiedName[..separatorIndex]
             : string.IsNullOrWhiteSpace(defaultWorkspaceName) ? null : defaultWorkspaceName;
-        var entryName = separatorIndex > 0 && separatorIndex < qualifiedName.Length - 1
+        var entryName = string.Equals(defaultType, "STYLE", StringComparison.OrdinalIgnoreCase) &&
+                        separatorIndex > 0 &&
+                        separatorIndex < qualifiedName.Length - 1
             ? qualifiedName[(separatorIndex + 1)..]
             : qualifiedName;
 
