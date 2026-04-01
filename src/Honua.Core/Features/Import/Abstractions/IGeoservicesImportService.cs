@@ -21,6 +21,16 @@ public interface IGeoservicesImportService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Scan an ArcGIS GeoServices source and produce a deterministic migration inventory artifact.
+    /// </summary>
+    /// <param name="request">Discovery request with service URL.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Normalized inventory artifact for planning and review.</returns>
+    Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+        GeoservicesDiscoveryRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Import a layer from an ArcGIS Server service into PostGIS.
     /// </summary>
     /// <param name="request">Import request with layer details</param>
@@ -42,4 +52,3 @@ public interface IGeoservicesImportService
         IProgress<GeoservicesImportProgress>? progress,
         CancellationToken cancellationToken = default);
 }
-

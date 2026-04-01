@@ -940,6 +940,7 @@ if (app.Environment.IsDevelopment())
 
 // Configure file import endpoints
 app.MapImportEndpoints();
+app.MapMigrationScannerEndpoints();
 app.MapRasterImportEndpoints();
 
 // Configure Geoservices service import endpoints

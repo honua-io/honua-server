@@ -43,28 +43,32 @@ Honua provides built-in GeoServer migration tooling that discovers your existing
 
 Honua provides admin API endpoints that automate the import of GeoServer configurations.
 
-### Step 1: Discover Your GeoServer
+### Step 1: Scan Your GeoServer
 
-Assess your GeoServer instance before importing. The discover endpoint analyzes workspaces, layers, and styles and returns a compatibility report.
+Assess your GeoServer instance before importing. The unified migration scanner returns a deterministic planning artifact for review and can be used consistently across GeoServer REST and ArcGIS GeoServices REST sources.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/discover \
+curl -X POST http://localhost:8080/api/v1/admin/import/scan \
   -H "Content-Type: application/json" \
   -d '{
-    "geoServerRestUrl": "http://geoserver-host:8080/geoserver/rest",
+    "sourceKind": "geoserver",
+    "sourceUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
     "password": "geoserver",
-    "includeCompatibilityAnalysis": true
+    "includeStyleContent": true
   }'
 ```
 
 The response includes:
+- Source identity and reported version
+- Authentication posture and scan completeness
 - Workspace and layer inventory
 - Data store types and connection parameters
 - Style formats and compatibility assessment
-- Feature type counts and geometry types
+- CRS, datum, and unit details for migration planning
+- External dependencies and manual follow-up steps
 
-Review the compatibility report before proceeding. Layers backed by PostGIS data stores have the highest migration fidelity.
+Review the inventory artifact before proceeding. Layers backed by PostGIS data stores have the highest migration fidelity.
 
 ### Step 2: Start a Dry-Run Import
 
@@ -74,7 +78,7 @@ Review the compatibility report before proceeding. Layers backed by PostGIS data
 curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
   -H "Content-Type: application/json" \
   -d '{
-    "geoServerRestUrl": "http://geoserver-host:8080/geoserver/rest",
+    "geoServerRestUrl": "https://geoserver-host/geoserver/rest",
     "username": "admin",
     "password": "geoserver",
     "dryRun": true

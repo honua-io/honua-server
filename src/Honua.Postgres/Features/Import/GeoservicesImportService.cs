@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -25,15 +26,18 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 {
     private readonly ArcGisRestClient _restClient;
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly ILogger<GeoservicesImportService> _logger;
 
     public GeoservicesImportService(
         ArcGisRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
+        ICrsRegistry crsRegistry,
         ILogger<GeoservicesImportService> logger)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,12 +54,773 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     }
 
     /// <inheritdoc />
+    public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+        GeoservicesDiscoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var normalizedUrl = ArcGisRestClient.NormalizeServiceUrl(request.ServiceUrl);
+
+        try
+        {
+            using var serviceDocument = await _restClient.GetJsonDocumentAsync(
+                $"{normalizedUrl}?f=json",
+                ResiliencePolicyOptions.Default.MaxRetryAttempts,
+                request.TimeoutSeconds,
+                cancellationToken).ConfigureAwait(false);
+
+            if (TryReadArcGisError(serviceDocument.RootElement, out var errorCode, out var errorMessage))
+            {
+                return CreateFailedScanArtifact(
+                    normalizedUrl,
+                    IsAuthError(errorCode) ? "auth-required" : "unknown",
+                    errorMessage,
+                    serviceType: ExtractServiceType(normalizedUrl));
+            }
+
+            var serviceName = GetServiceName(serviceDocument.RootElement, normalizedUrl);
+            var containerId = $"service:{serviceName}";
+            var serviceCapabilities = SplitCsv(GetOptionalStringProperty(serviceDocument.RootElement, "capabilities"));
+            var completenessWarnings = new List<string>();
+            var missingArtifacts = new List<string>();
+            var resources = new List<MigrationInventoryResource>();
+            var styles = new List<MigrationInventoryStyle>();
+            var dependencies = new List<MigrationExternalDependency>();
+
+            foreach (var resourceReference in EnumerateResourceReferences(serviceDocument.RootElement))
+            {
+                try
+                {
+                    var resourceResult = await BuildScanResourceAsync(
+                        normalizedUrl,
+                        containerId,
+                        serviceName,
+                        resourceReference,
+                        serviceCapabilities,
+                        request.TimeoutSeconds,
+                        cancellationToken).ConfigureAwait(false);
+
+                    resources.Add(resourceResult.Resource);
+                    if (resourceResult.Style != null)
+                    {
+                        styles.Add(resourceResult.Style);
+                    }
+
+                    dependencies.AddRange(resourceResult.Dependencies);
+                    completenessWarnings.AddRange(resourceResult.Warnings);
+                    missingArtifacts.AddRange(resourceResult.MissingArtifacts);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Log.InventoryResourceScanFailed(_logger, normalizedUrl, resourceReference.Id, resourceReference.Kind, ex);
+                    completenessWarnings.Add($"Failed to scan {resourceReference.Kind} {resourceReference.Id}: {ex.Message}");
+                    missingArtifacts.Add($"{resourceReference.Kind}:{resourceReference.Id}");
+                }
+            }
+
+            var orderedResources = resources.OrderBy(static resource => resource.Id, StringComparer.Ordinal).ToArray();
+            var orderedStyles = styles.OrderBy(static style => style.Id, StringComparer.Ordinal).ToArray();
+            var orderedDependencies = dependencies.OrderBy(static dependency => dependency.Id, StringComparer.Ordinal).ToArray();
+
+            var containerAssessment = MigrationInventoryHelpers.Aggregate(
+                orderedResources.Select(resource => resource.Compatibility)
+                    .Concat(orderedStyles.Select(style => style.Compatibility))
+                    .Concat(orderedDependencies.Select(dependency => dependency.Compatibility)),
+                "No GeoServices resources were discovered.");
+
+            var containers = new[]
+            {
+                new MigrationInventoryContainer
+                {
+                    Id = containerId,
+                    Kind = "service",
+                    Name = serviceName,
+                    Title = GetOptionalStringProperty(serviceDocument.RootElement, "serviceDescription") ?? serviceName,
+                    Description = GetOptionalStringProperty(serviceDocument.RootElement, "description"),
+                    Compatibility = containerAssessment
+                }
+            };
+
+            if (orderedResources.Length == 0 && !missingArtifacts.Contains("resources", StringComparer.Ordinal))
+            {
+                missingArtifacts.Add("resources");
+            }
+
+            var summary = MigrationInventoryHelpers.BuildSummary(containers, orderedResources, orderedStyles, orderedDependencies);
+            var overallCompatibility = MigrationInventoryHelpers.Aggregate(
+                containers.Select(container => container.Compatibility)
+                    .Concat(orderedResources.Select(resource => resource.Compatibility))
+                    .Concat(orderedStyles.Select(style => style.Compatibility))
+                    .Concat(orderedDependencies.Select(dependency => dependency.Compatibility)),
+                "No inventory items were discovered.");
+
+            var completeness = MigrationInventoryHelpers.BuildCompleteness(
+                completenessWarnings.Count == 0
+                    ? "complete"
+                    : orderedResources.Length > 0 || orderedStyles.Length > 0 || orderedDependencies.Length > 0
+                        ? "partial"
+                        : "failed",
+                completenessWarnings,
+                missingArtifacts);
+
+            return new MigrationSourceInventoryArtifact
+            {
+                SourceKind = "arcgis-geoservices-rest",
+                Source = new MigrationSourceIdentity
+                {
+                    DisplayName = serviceName,
+                    BaseUrl = normalizedUrl,
+                    Product = "ArcGIS GeoServices REST",
+                    Version = FormatVersion(serviceDocument.RootElement.TryGetProperty("currentVersion", out var versionElement) ? versionElement : default),
+                    ServiceType = ExtractServiceType(normalizedUrl)
+                },
+                AuthPosture = new MigrationInventoryAuthPosture
+                {
+                    Mode = "anonymous",
+                    CredentialsSupplied = false,
+                    AccessConfirmed = true
+                },
+                ScanCompleteness = completeness,
+                Summary = summary,
+                OverallCompatibility = overallCompatibility,
+                Containers = containers,
+                Resources = orderedResources,
+                Styles = orderedStyles,
+                ExternalDependencies = orderedDependencies
+            };
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            Log.InventoryScanFailed(_logger, normalizedUrl, ex);
+            return CreateFailedScanArtifact(
+                normalizedUrl,
+                "auth-required",
+                "The ArcGIS service requires authentication for discovery.",
+                ExtractServiceType(normalizedUrl));
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.InventoryScanFailed(_logger, normalizedUrl, ex);
+            return CreateFailedScanArtifact(
+                normalizedUrl,
+                "unknown",
+                ex.Message,
+                ExtractServiceType(normalizedUrl));
+        }
+    }
+
+    /// <inheritdoc />
     public Task<GeoservicesImportResult> ImportLayerAsync(
         GeoservicesImportRequest request,
         CancellationToken cancellationToken = default)
     {
         return ImportLayerAsync(request, null, cancellationToken);
     }
+
+    private async Task<GeoservicesScanResourceResult> BuildScanResourceAsync(
+        string normalizedUrl,
+        string containerId,
+        string serviceName,
+        GeoservicesResourceReference resourceReference,
+        string[] serviceCapabilities,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        using var resourceDocument = await _restClient.GetJsonDocumentAsync(
+            $"{normalizedUrl}/{resourceReference.Id}?f=json",
+            ResiliencePolicyOptions.Default.MaxRetryAttempts,
+            timeoutSeconds,
+            cancellationToken).ConfigureAwait(false);
+
+        if (TryReadArcGisError(resourceDocument.RootElement, out _, out var resourceError))
+        {
+            throw new InvalidOperationException(resourceError);
+        }
+
+        var resourceCapabilities = SplitCsv(GetOptionalStringProperty(resourceDocument.RootElement, "capabilities"));
+        var advertisedCapabilities = resourceCapabilities.Length == 0 ? serviceCapabilities : resourceCapabilities;
+        var geometryType = GetOptionalStringProperty(resourceDocument.RootElement, "geometryType");
+        var hasAttachments = GetOptionalBoolProperty(resourceDocument.RootElement, "hasAttachments") ?? false;
+
+        int? featureCount = null;
+        try
+        {
+            featureCount = await TryGetFeatureCountAsync(
+                normalizedUrl,
+                resourceReference.Id,
+                timeoutSeconds,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.InventoryFeatureCountFailed(_logger, normalizedUrl, resourceReference.Id, ex);
+        }
+
+        var spatialReferences = await BuildArcGisSpatialReferencesAsync(resourceDocument.RootElement, cancellationToken).ConfigureAwait(false);
+
+        var style = BuildRendererStyle(
+            containerId,
+            serviceName,
+            resourceReference,
+            resourceDocument.RootElement,
+            out var rendererWarnings,
+            out var rendererDependencies);
+
+        var dependencies = new List<MigrationExternalDependency>(rendererDependencies);
+        if (hasAttachments)
+        {
+            dependencies.Add(new MigrationExternalDependency
+            {
+                Id = $"dependency:{serviceName}:{resourceReference.Kind}:{resourceReference.Id}:attachments",
+                ContainerId = containerId,
+                ResourceId = GetResourceId(serviceName, resourceReference),
+                Kind = "attachments",
+                Name = resourceReference.Name,
+                DependencyType = "attachments",
+                Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["advertised"] = "true"
+                },
+                SpatialReferences = [],
+                Compatibility = MigrationInventoryHelpers.Partial(
+                    "Attachments require a separate migration path.",
+                    ["The source resource advertises attachments."],
+                    ["Plan a separate attachment migration alongside the core data import."])
+            });
+        }
+
+        var resourceWarnings = new List<string>(rendererWarnings);
+        var missingArtifacts = new List<string>();
+
+        if (featureCount == null)
+        {
+            resourceWarnings.Add($"Feature count was unavailable for {resourceReference.Kind} {resourceReference.Id}.");
+            missingArtifacts.Add($"{resourceReference.Kind}:{resourceReference.Id}:feature-count");
+        }
+
+        var compatibility = BuildResourceCompatibility(
+            resourceReference.Kind,
+            geometryType,
+            advertisedCapabilities,
+            hasAttachments,
+            spatialReferences.Length > 0);
+
+        var resource = new MigrationInventoryResource
+        {
+            Id = GetResourceId(serviceName, resourceReference),
+            ContainerId = containerId,
+            Kind = resourceReference.Kind,
+            Name = resourceReference.Name,
+            Title = GetOptionalStringProperty(resourceDocument.RootElement, "name") ?? resourceReference.Name,
+            Description = GetOptionalStringProperty(resourceDocument.RootElement, "description"),
+            GeometryType = geometryType,
+            FeatureCount = featureCount,
+            HasAttachments = hasAttachments,
+            Capabilities = advertisedCapabilities.OrderBy(static capability => capability, StringComparer.Ordinal).ToArray(),
+            SpatialReferences = spatialReferences,
+            StyleIds = style == null ? [] : [style.Id],
+            ExternalDependencyIds = dependencies.Select(dependency => dependency.Id)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray(),
+            Compatibility = compatibility
+        };
+
+        return new GeoservicesScanResourceResult(
+            resource,
+            style,
+            dependencies.ToArray(),
+            MigrationInventoryHelpers.NormalizeStrings(resourceWarnings),
+            MigrationInventoryHelpers.NormalizeStrings(missingArtifacts));
+    }
+
+    private async Task<MigrationSpatialReferenceInfo[]> BuildArcGisSpatialReferencesAsync(
+        JsonElement resourceElement,
+        CancellationToken cancellationToken)
+    {
+        var tasks = new List<Task<MigrationSpatialReferenceInfo?>>(capacity: 3);
+
+        if (TryGetSpatialReference(resourceElement, out var spatialReference))
+        {
+            tasks.Add(BuildArcGisSpatialReferenceAsync("resource", spatialReference, cancellationToken));
+        }
+
+        if (resourceElement.TryGetProperty("sourceSpatialReference", out var sourceSpatialReference))
+        {
+            tasks.Add(BuildArcGisSpatialReferenceAsync("source", sourceSpatialReference, cancellationToken));
+        }
+
+        if (resourceElement.TryGetProperty("extent", out var extentElement) &&
+            TryGetSpatialReference(extentElement, out var extentSpatialReference))
+        {
+            tasks.Add(BuildArcGisSpatialReferenceAsync("extent", extentSpatialReference, cancellationToken));
+        }
+
+        if (tasks.Count == 0)
+        {
+            return [];
+        }
+
+        return (await Task.WhenAll(tasks).ConfigureAwait(false))
+            .OfType<MigrationSpatialReferenceInfo>()
+            .GroupBy(info => $"{info.Role}|{info.Srid}|{info.SourceValue}", StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(static info => info.Role, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private Task<MigrationSpatialReferenceInfo?> BuildArcGisSpatialReferenceAsync(
+        string role,
+        JsonElement spatialReference,
+        CancellationToken cancellationToken)
+    {
+        var wkid = GetOptionalIntProperty(spatialReference, "latestWkid") ?? GetOptionalIntProperty(spatialReference, "wkid");
+        var wkt = GetOptionalStringProperty(spatialReference, "wkt");
+        var sourceValue = wkid.HasValue
+            ? $"EPSG:{wkid.Value}"
+            : wkt;
+
+        return MigrationInventoryHelpers.BuildSpatialReferenceAsync(
+            _crsRegistry,
+            role,
+            sourceValue,
+            cancellationToken,
+            explicitSrid: wkid,
+            explicitWkt: wkt);
+    }
+
+    private async Task<int?> TryGetFeatureCountAsync(
+        string normalizedUrl,
+        int resourceId,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        using var countDocument = await _restClient.GetJsonDocumentAsync(
+            $"{normalizedUrl}/{resourceId}/query?where=1%3D1&returnCountOnly=true&f=json",
+            ResiliencePolicyOptions.Default.MaxRetryAttempts,
+            timeoutSeconds,
+            cancellationToken).ConfigureAwait(false);
+
+        if (TryReadArcGisError(countDocument.RootElement, out _, out _))
+        {
+            return null;
+        }
+
+        return GetOptionalIntProperty(countDocument.RootElement, "count");
+    }
+
+    private static MigrationInventoryStyle? BuildRendererStyle(
+        string containerId,
+        string serviceName,
+        GeoservicesResourceReference resourceReference,
+        JsonElement resourceElement,
+        out string[] warnings,
+        out MigrationExternalDependency[] dependencies)
+    {
+        warnings = [];
+        dependencies = [];
+
+        if (!resourceElement.TryGetProperty("drawingInfo", out var drawingInfo) ||
+            !drawingInfo.TryGetProperty("renderer", out var renderer) ||
+            renderer.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var rendererType = GetOptionalStringProperty(renderer, "type") ?? "unknown";
+        var resourceId = GetResourceId(serviceName, resourceReference);
+        var styleId = $"renderer:{serviceName}:{resourceReference.Id}";
+        var externalUrls = ExtractJsonUrls(renderer);
+        warnings = externalUrls.Length == 0
+            ? []
+            : ["Renderer references one or more external symbol URLs."];
+
+        dependencies = externalUrls.Select(url => new MigrationExternalDependency
+        {
+            Id = $"{styleId}:external:{url}",
+            ContainerId = containerId,
+            ResourceId = resourceId,
+            Kind = "external-symbol",
+            Name = resourceReference.Name,
+            DependencyType = "url",
+            Address = url,
+            Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["source"] = "renderer"
+            },
+            SpatialReferences = [],
+            Compatibility = MigrationInventoryHelpers.Partial(
+                "External symbol URLs require manual migration review.",
+                ["The renderer references one or more external URLs."],
+                ["Mirror or replace external symbol assets in the target deployment."])
+        }).ToArray();
+
+        var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["rendererType"] = rendererType
+        };
+
+        AddRendererMetadata(metadata, renderer, "field1");
+        AddRendererMetadata(metadata, renderer, "field2");
+        AddRendererMetadata(metadata, renderer, "field3");
+        AddRendererMetadata(metadata, renderer, "normalizationField");
+
+        return new MigrationInventoryStyle
+        {
+            Id = styleId,
+            ContainerId = containerId,
+            Kind = "renderer",
+            Name = resourceReference.Name,
+            Format = "esri-renderer",
+            ResourceIds = [resourceId],
+            ExternalDependencyIds = dependencies.Select(dependency => dependency.Id)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray(),
+            Metadata = metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+            Compatibility = BuildRendererCompatibility(rendererType, externalUrls.Length > 0)
+        };
+    }
+
+    private static MigrationCompatibilityAssessment BuildRendererCompatibility(string rendererType, bool hasExternalUrls)
+    {
+        var warnings = new List<string>();
+        var manualSteps = new List<string>();
+
+        if (hasExternalUrls)
+        {
+            warnings.Add("Renderer references external symbol URLs.");
+            manualSteps.Add("Mirror or replace external symbol assets in the target deployment.");
+        }
+
+        switch (rendererType)
+        {
+            case "simple":
+            case "uniqueValue":
+            case "classBreaks":
+                manualSteps.Add("Recreate the renderer via the Honua style endpoints after data import.");
+                return MigrationInventoryHelpers.Partial(
+                    $"Renderer type '{rendererType}' can be recreated in Honua with manual follow-up.",
+                    warnings,
+                    manualSteps);
+            default:
+                manualSteps.Add("Review the renderer manually and rebuild an equivalent target style.");
+                return MigrationInventoryHelpers.Incompatible(
+                    $"Renderer type '{rendererType}' is not currently classified as portable to Honua.",
+                    warnings,
+                    manualSteps);
+        }
+    }
+
+    private static MigrationCompatibilityAssessment BuildResourceCompatibility(
+        string resourceKind,
+        string? geometryType,
+        IReadOnlyCollection<string> capabilities,
+        bool hasAttachments,
+        bool hasSpatialReference)
+    {
+        var warnings = new List<string>();
+        var manualSteps = new List<string>();
+
+        if (!capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase))
+        {
+            return MigrationInventoryHelpers.Incompatible(
+                "The resource does not advertise query capability.",
+                null,
+                ["Enable query access or export the source data through another path before migration."]);
+        }
+
+        if (!resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase) &&
+            !IsSupportedGeometryType(geometryType))
+        {
+            return MigrationInventoryHelpers.Incompatible(
+                $"Geometry type '{geometryType ?? "unknown"}' is not supported by the current import path.",
+                null,
+                ["Normalize or export the resource to a supported vector geometry type before migration."]);
+        }
+
+        if (!resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase) && !hasSpatialReference)
+        {
+            warnings.Add("Spatial reference metadata was unavailable.");
+            manualSteps.Add("Confirm CRS, datum, and units before migration.");
+        }
+
+        if (hasAttachments)
+        {
+            warnings.Add("Attachments are advertised on this resource.");
+            manualSteps.Add("Plan a separate attachment migration.");
+        }
+
+        if (warnings.Count == 0)
+        {
+            return MigrationInventoryHelpers.Compatible(
+                resourceKind.Equals("table", StringComparison.OrdinalIgnoreCase)
+                    ? "Tabular resource can be queried through the GeoServices API."
+                    : "Vector resource can be queried through the GeoServices API.");
+        }
+
+        return MigrationInventoryHelpers.Partial(
+            "The resource data is queryable, but follow-up migration work is required.",
+            warnings,
+            manualSteps);
+    }
+
+    private static bool IsSupportedGeometryType(string? geometryType)
+        => geometryType is "esriGeometryPoint" or "esriGeometryPolyline" or "esriGeometryPolygon" or "esriGeometryMultipoint";
+
+    private static IEnumerable<GeoservicesResourceReference> EnumerateResourceReferences(JsonElement serviceRoot)
+    {
+        foreach (var layer in EnumerateResourceReferences(serviceRoot, "layers", "layer"))
+        {
+            yield return layer with { Kind = "layer" };
+        }
+
+        foreach (var table in EnumerateResourceReferences(serviceRoot, "tables", "table"))
+        {
+            yield return table with { Kind = "table" };
+        }
+    }
+
+    private static IEnumerable<GeoservicesResourceReference> EnumerateResourceReferences(
+        JsonElement serviceRoot,
+        string collectionName,
+        string defaultKind)
+    {
+        if (!serviceRoot.TryGetProperty(collectionName, out var collection) || collection.ValueKind != JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        foreach (var item in collection.EnumerateArray().OrderBy(static element => GetOptionalIntProperty(element, "id") ?? int.MaxValue))
+        {
+            var id = GetOptionalIntProperty(item, "id");
+            if (!id.HasValue)
+            {
+                continue;
+            }
+
+            yield return new GeoservicesResourceReference(
+                id.Value,
+                GetOptionalStringProperty(item, "name") ?? $"{defaultKind}-{id.Value}",
+                defaultKind);
+        }
+    }
+
+    private static string GetServiceName(JsonElement serviceRoot, string normalizedUrl)
+        => GetOptionalStringProperty(serviceRoot, "serviceDescription") ?? ExtractServiceName(normalizedUrl);
+
+    private static string ExtractServiceName(string normalizedUrl)
+    {
+        var segments = normalizedUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = segments.Length - 1; i >= 0; i--)
+        {
+            if (segments[i].Equals("FeatureServer", StringComparison.OrdinalIgnoreCase) ||
+                segments[i].Equals("MapServer", StringComparison.OrdinalIgnoreCase))
+            {
+                return i > 0 ? segments[i - 1] : segments[i];
+            }
+        }
+
+        return segments.Length == 0 ? "ArcGIS Service" : segments[^1];
+    }
+
+    private static string ExtractServiceType(string normalizedUrl)
+    {
+        var segments = normalizedUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0 ? "GeoServices" : segments[^1];
+    }
+
+    private static string[] SplitCsv(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static item => item, StringComparer.Ordinal)
+                .ToArray();
+
+    private static string FormatVersion(JsonElement versionElement)
+    {
+        return versionElement.ValueKind switch
+        {
+            JsonValueKind.Number => versionElement.GetRawText(),
+            JsonValueKind.String => versionElement.GetString() ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static string GetResourceId(string serviceName, GeoservicesResourceReference resourceReference)
+        => $"resource:{serviceName}:{resourceReference.Kind}:{resourceReference.Id}";
+
+    private static bool TryReadArcGisError(JsonElement rootElement, out int? code, out string message)
+    {
+        code = null;
+        message = string.Empty;
+
+        if (!rootElement.TryGetProperty("error", out var errorElement) || errorElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        code = GetOptionalIntProperty(errorElement, "code");
+        message = GetOptionalStringProperty(errorElement, "message") ?? "ArcGIS service returned an error.";
+        return true;
+    }
+
+    private static bool IsAuthError(int? code)
+        => code is 401 or 403 or 498 or 499;
+
+    private static bool TryGetSpatialReference(JsonElement element, out JsonElement spatialReference)
+    {
+        if (element.TryGetProperty("spatialReference", out spatialReference) &&
+            spatialReference.ValueKind == JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        spatialReference = default;
+        return false;
+    }
+
+    private static string? GetOptionalStringProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return property.GetString();
+    }
+
+    private static int? GetOptionalIntProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var intValue))
+        {
+            return intValue;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out intValue))
+        {
+            return intValue;
+        }
+
+        return null;
+    }
+
+    private static bool? GetOptionalBoolProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+
+    private static void AddRendererMetadata(IDictionary<string, string> metadata, JsonElement renderer, string propertyName)
+    {
+        var value = GetOptionalStringProperty(renderer, propertyName);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            metadata[propertyName] = value;
+        }
+    }
+
+    private static string[] ExtractJsonUrls(JsonElement element)
+    {
+        var urls = new HashSet<string>(StringComparer.Ordinal);
+        CollectJsonUrls(element, urls);
+        return urls.OrderBy(static url => url, StringComparer.Ordinal).ToArray();
+    }
+
+    private static void CollectJsonUrls(JsonElement element, ISet<string> urls)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if ((property.NameEquals("url") || property.NameEquals("href")) &&
+                        property.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var candidate = property.Value.GetString();
+                        if (!string.IsNullOrWhiteSpace(candidate) &&
+                            Uri.TryCreate(candidate, UriKind.Absolute, out _))
+                        {
+                            _ = urls.Add(candidate);
+                        }
+                    }
+
+                    CollectJsonUrls(property.Value, urls);
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var child in element.EnumerateArray())
+                {
+                    CollectJsonUrls(child, urls);
+                }
+
+                break;
+        }
+    }
+
+    private static MigrationSourceInventoryArtifact CreateFailedScanArtifact(
+        string normalizedUrl,
+        string authMode,
+        string message,
+        string serviceType)
+    {
+        return new MigrationSourceInventoryArtifact
+        {
+            SourceKind = "arcgis-geoservices-rest",
+            Source = new MigrationSourceIdentity
+            {
+                DisplayName = ExtractServiceName(normalizedUrl),
+                BaseUrl = normalizedUrl,
+                Product = "ArcGIS GeoServices REST",
+                ServiceType = serviceType
+            },
+            AuthPosture = new MigrationInventoryAuthPosture
+            {
+                Mode = authMode,
+                CredentialsSupplied = false,
+                AccessConfirmed = false,
+                Notes = MigrationInventoryHelpers.NormalizeStrings([message])
+            },
+            ScanCompleteness = MigrationInventoryHelpers.BuildCompleteness(
+                "failed",
+                [message],
+                ["source-inventory"]),
+            Summary = new MigrationInventorySummary(),
+            OverallCompatibility = MigrationInventoryHelpers.Partial(
+                "The scan did not complete successfully.",
+                [message],
+                ["Verify service reachability, access, and metadata exposure before rerunning the scan."]),
+            Containers = [],
+            Resources = [],
+            Styles = [],
+            ExternalDependencies = []
+        };
+    }
+
+    private sealed record GeoservicesResourceReference(int Id, string Name, string Kind);
+
+    private sealed record GeoservicesScanResourceResult(
+        MigrationInventoryResource Resource,
+        MigrationInventoryStyle? Style,
+        MigrationExternalDependency[] Dependencies,
+        string[] Warnings,
+        string[] MissingArtifacts);
 
     /// <inheritdoc />
     public async Task<GeoservicesImportResult> ImportLayerAsync(
@@ -712,6 +1477,27 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         [LoggerMessage(7821, LogLevel.Information,
             "Layer discovered: {LayerName}, {FieldCount} fields, ~{FeatureCount} features")]
         public static partial void LayerDiscovered(ILogger logger, string layerName, int fieldCount, int? featureCount);
+
+        [LoggerMessage(78215, LogLevel.Warning,
+            "GeoServices inventory scan failed for {ServiceUrl}")]
+        public static partial void InventoryScanFailed(ILogger logger, string serviceUrl, Exception exception);
+
+        [LoggerMessage(78216, LogLevel.Warning,
+            "GeoServices inventory resource scan failed for {ServiceUrl} resource {ResourceId} ({ResourceKind})")]
+        public static partial void InventoryResourceScanFailed(
+            ILogger logger,
+            string serviceUrl,
+            int resourceId,
+            string resourceKind,
+            Exception exception);
+
+        [LoggerMessage(78217, LogLevel.Debug,
+            "GeoServices feature count was unavailable for {ServiceUrl} resource {ResourceId}")]
+        public static partial void InventoryFeatureCountFailed(
+            ILogger logger,
+            string serviceUrl,
+            int resourceId,
+            Exception exception);
 
         [LoggerMessage(7822, LogLevel.Debug, "Table {TableName} created")]
         public static partial void TableCreated(ILogger logger, string tableName);

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -17,15 +18,18 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 {
     private readonly GeoServerRestClient _restClient;
     private readonly IDatabaseConnectionProvider _connectionProvider;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly ILogger<GeoServerImportService> _logger;
 
     public GeoServerImportService(
         GeoServerRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
+        ICrsRegistry crsRegistry,
         ILogger<GeoServerImportService> logger)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -48,11 +52,571 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     }
 
     /// <inheritdoc />
+    public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+        GeoServerDiscoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var serviceInfo = await DiscoverServiceAsync(request, cancellationToken).ConfigureAwait(false);
+
+            var styleResourceIds = BuildStyleResourceMap(serviceInfo);
+            var dependencies = BuildExternalDependencies(serviceInfo, request.IncludeStyleContent);
+            var resources = await BuildResourcesAsync(serviceInfo, styleResourceIds, dependencies, cancellationToken).ConfigureAwait(false);
+            var containers = BuildContainers(serviceInfo, resources, dependencies, styleResourceIds.Keys);
+            var styles = BuildStyles(serviceInfo, styleResourceIds, dependencies);
+
+            var summary = MigrationInventoryHelpers.BuildSummary(containers, resources, styles, dependencies);
+            var overallCompatibility = MigrationInventoryHelpers.Aggregate(
+                containers.Select(c => c.Compatibility)
+                    .Concat(resources.Select(r => r.Compatibility))
+                    .Concat(styles.Select(s => s.Compatibility))
+                    .Concat(dependencies.Select(d => d.Compatibility)),
+                "No inventory items were discovered.");
+
+            var completenessWarnings = new List<string>();
+            var missingArtifacts = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(serviceInfo.Version))
+            {
+                completenessWarnings.Add("GeoServer version metadata was unavailable.");
+                missingArtifacts.Add("source-version");
+            }
+
+            if (serviceInfo.GlobalSettings == null)
+            {
+                completenessWarnings.Add("GeoServer global settings were unavailable.");
+                missingArtifacts.Add("global-settings");
+            }
+
+            if (request.IncludeStyleContent &&
+                serviceInfo.Styles.Any(style =>
+                    style.Format.Equals("sld", StringComparison.OrdinalIgnoreCase) &&
+                    string.IsNullOrWhiteSpace(style.SldContent)))
+            {
+                completenessWarnings.Add("One or more SLD style documents could not be fetched.");
+                missingArtifacts.Add("style-content");
+            }
+
+            var completeness = MigrationInventoryHelpers.BuildCompleteness(
+                completenessWarnings.Count == 0 ? "complete" : "partial",
+                completenessWarnings,
+                missingArtifacts);
+
+            return new MigrationSourceInventoryArtifact
+            {
+                SourceKind = "geoserver-rest",
+                Source = new MigrationSourceIdentity
+                {
+                    DisplayName = serviceInfo.GlobalSettings?.Title ?? "GeoServer",
+                    BaseUrl = serviceInfo.GeoServerRestUrl,
+                    Product = "GeoServer",
+                    Version = serviceInfo.Version,
+                    Build = serviceInfo.GitRevision ?? serviceInfo.BuildTimestamp,
+                    ServiceType = "REST"
+                },
+                AuthPosture = new MigrationInventoryAuthPosture
+                {
+                    Mode = string.IsNullOrWhiteSpace(request.Username) && string.IsNullOrWhiteSpace(request.Password)
+                        ? "anonymous"
+                        : "basic",
+                    CredentialsSupplied = !string.IsNullOrWhiteSpace(request.Username) || !string.IsNullOrWhiteSpace(request.Password),
+                    AccessConfirmed = true
+                },
+                ScanCompleteness = completeness,
+                Summary = summary,
+                OverallCompatibility = overallCompatibility,
+                Containers = containers,
+                Resources = resources,
+                Styles = styles,
+                ExternalDependencies = dependencies
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.InventoryScanFailed(_logger, request.GeoServerRestUrl, ex);
+
+            return new MigrationSourceInventoryArtifact
+            {
+                SourceKind = "geoserver-rest",
+                Source = new MigrationSourceIdentity
+                {
+                    DisplayName = "GeoServer",
+                    BaseUrl = request.GeoServerRestUrl,
+                    Product = "GeoServer",
+                    ServiceType = "REST"
+                },
+                AuthPosture = new MigrationInventoryAuthPosture
+                {
+                    Mode = string.IsNullOrWhiteSpace(request.Username) && string.IsNullOrWhiteSpace(request.Password)
+                        ? "anonymous-or-auth-required"
+                        : "basic",
+                    CredentialsSupplied = !string.IsNullOrWhiteSpace(request.Username) || !string.IsNullOrWhiteSpace(request.Password),
+                    AccessConfirmed = false,
+                    Notes = MigrationInventoryHelpers.NormalizeStrings([ex.Message])
+                },
+                ScanCompleteness = MigrationInventoryHelpers.BuildCompleteness(
+                    "failed",
+                    [ex.Message],
+                    ["source-inventory"]),
+                Summary = new MigrationInventorySummary(),
+                OverallCompatibility = MigrationInventoryHelpers.Partial(
+                    "The scan did not complete successfully.",
+                    [ex.Message],
+                    ["Verify GeoServer reachability and credentials, then rerun the scan."]),
+                Containers = [],
+                Resources = [],
+                Styles = [],
+                ExternalDependencies = []
+            };
+        }
+    }
+
+    /// <inheritdoc />
     public Task<GeoServerImportResult> ImportConfigurationAsync(
         GeoServerImportRequest request,
         CancellationToken cancellationToken = default)
     {
         return ImportConfigurationAsync(request, null, cancellationToken);
+    }
+
+    private async Task<MigrationInventoryResource[]> BuildResourcesAsync(
+        GeoServerServiceInfo serviceInfo,
+        IReadOnlyDictionary<string, string[]> styleResourceIds,
+        IReadOnlyList<MigrationExternalDependency> dependencies,
+        CancellationToken cancellationToken)
+    {
+        var resources = new List<MigrationInventoryResource>(serviceInfo.Layers.Length + serviceInfo.LayerGroups.Length);
+
+        foreach (var layer in serviceInfo.Layers.OrderBy(static layer => GetLayerId(layer), StringComparer.Ordinal))
+        {
+            var spatialReferences = (await Task.WhenAll(
+                    MigrationInventoryHelpers.BuildSpatialReferenceAsync(_crsRegistry, "declared", layer.SRS, cancellationToken),
+                    MigrationInventoryHelpers.BuildSpatialReferenceAsync(_crsRegistry, "native", layer.NativeCRS, cancellationToken),
+                    MigrationInventoryHelpers.BuildSpatialReferenceAsync(_crsRegistry, "latlon-bounds", layer.LatLonBoundingBox?.CRS, cancellationToken),
+                    MigrationInventoryHelpers.BuildSpatialReferenceAsync(_crsRegistry, "native-bounds", layer.NativeBoundingBox?.CRS, cancellationToken))
+                .ConfigureAwait(false))
+                .OfType<MigrationSpatialReferenceInfo>()
+                .OrderBy(static info => info.Role, StringComparer.Ordinal)
+                .ToArray();
+
+            var styleIds = serviceInfo.Styles
+                .Where(style => styleResourceIds.TryGetValue(GetStyleId(style), out var linkedResources) &&
+                    linkedResources.Contains(GetLayerId(layer), StringComparer.Ordinal))
+                .Select(GetStyleId)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray();
+
+            var dependencyIds = new[]
+                {
+                    !string.IsNullOrWhiteSpace(layer.DataStoreName) ? GetDataStoreId(layer.WorkspaceName, layer.DataStoreName) : null,
+                    !string.IsNullOrWhiteSpace(layer.CoverageStoreName) ? GetCoverageStoreId(layer.WorkspaceName, layer.CoverageStoreName) : null
+                }
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value!)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray();
+
+            resources.Add(new MigrationInventoryResource
+            {
+                Id = GetLayerId(layer),
+                ContainerId = GetWorkspaceId(layer.WorkspaceName),
+                Kind = "layer",
+                Name = layer.Name,
+                Title = layer.Title,
+                Description = layer.Abstract,
+                GeometryType = null,
+                FeatureCount = null,
+                HasAttachments = null,
+                Capabilities = BuildLayerCapabilities(layer),
+                SpatialReferences = spatialReferences,
+                StyleIds = styleIds,
+                ExternalDependencyIds = dependencyIds,
+                Compatibility = MigrationInventoryHelpers.FromGeoServerCompatibility(
+                    layer.Compatibility,
+                    "GeoServer layer metadata is compatible with discovery.")
+            });
+        }
+
+        foreach (var layerGroup in serviceInfo.LayerGroups.OrderBy(static group => GetLayerGroupId(group), StringComparer.Ordinal))
+        {
+            var boundsSpatialReference = await MigrationInventoryHelpers.BuildSpatialReferenceAsync(
+                    _crsRegistry,
+                    "bounds",
+                    layerGroup.Bounds?.CRS,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var spatialReferences = boundsSpatialReference == null
+                ? Array.Empty<MigrationSpatialReferenceInfo>()
+                : new[] { boundsSpatialReference };
+
+            resources.Add(new MigrationInventoryResource
+            {
+                Id = GetLayerGroupId(layerGroup),
+                ContainerId = GetContainerIdForWorkspace(layerGroup.WorkspaceName),
+                Kind = "layer-group",
+                Name = layerGroup.Name,
+                Title = layerGroup.Title,
+                Description = layerGroup.Abstract,
+                GeometryType = null,
+                FeatureCount = null,
+                HasAttachments = null,
+                Capabilities = layerGroup.Layers.Select(entry => entry.Type)
+                    .Where(static value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(static value => value, StringComparer.Ordinal)
+                    .ToArray(),
+                SpatialReferences = spatialReferences,
+                StyleIds = [],
+                ExternalDependencyIds = [],
+                Compatibility = MigrationInventoryHelpers.FromGeoServerCompatibility(
+                    layerGroup.Compatibility,
+                    "GeoServer layer group metadata is compatible with discovery.")
+            });
+        }
+
+        return resources.ToArray();
+    }
+
+    private static MigrationInventoryContainer[] BuildContainers(
+        GeoServerServiceInfo serviceInfo,
+        IReadOnlyList<MigrationInventoryResource> resources,
+        IReadOnlyList<MigrationExternalDependency> dependencies,
+        IEnumerable<string> styleIds)
+    {
+        var containers = new List<MigrationInventoryContainer>(serviceInfo.Workspaces.Length + 1);
+        var globalContainerNeeded = serviceInfo.Styles.Any(style => string.IsNullOrWhiteSpace(style.WorkspaceName)) ||
+            serviceInfo.LayerGroups.Any(group => string.IsNullOrWhiteSpace(group.WorkspaceName));
+
+        if (globalContainerNeeded)
+        {
+            containers.Add(CreateContainer(
+                GetGlobalContainerId(),
+                "workspace",
+                "global",
+                "Global",
+                null,
+                isDefault: false,
+                resources,
+                dependencies,
+                styleIds));
+        }
+
+        foreach (var workspace in serviceInfo.Workspaces.OrderBy(static workspace => workspace.Name, StringComparer.Ordinal))
+        {
+            containers.Add(CreateContainer(
+                GetWorkspaceId(workspace.Name),
+                "workspace",
+                workspace.Name,
+                workspace.Name,
+                workspace.Description,
+                workspace.IsDefault,
+                resources,
+                dependencies,
+                styleIds));
+        }
+
+        return containers.OrderBy(static container => container.Id, StringComparer.Ordinal).ToArray();
+    }
+
+    private static MigrationInventoryContainer CreateContainer(
+        string id,
+        string kind,
+        string name,
+        string? title,
+        string? description,
+        bool isDefault,
+        IReadOnlyList<MigrationInventoryResource> resources,
+        IReadOnlyList<MigrationExternalDependency> dependencies,
+        IEnumerable<string> styleIds)
+    {
+        var containerStyles = styleIds.Where(styleId => GetContainerIdForStyle(styleId) == id)
+            .Select(_ => MigrationInventoryHelpers.Compatible("Style metadata discovered for this container."));
+        var assessments = resources.Where(resource => resource.ContainerId == id).Select(resource => resource.Compatibility)
+            .Concat(dependencies.Where(dependency => dependency.ContainerId == id).Select(dependency => dependency.Compatibility))
+            .Concat(containerStyles);
+
+        return new MigrationInventoryContainer
+        {
+            Id = id,
+            Kind = kind,
+            Name = name,
+            Title = title,
+            Description = description,
+            IsDefault = isDefault,
+            Compatibility = MigrationInventoryHelpers.Aggregate(assessments, "No resources were discovered in this container.")
+        };
+    }
+
+    private static MigrationInventoryStyle[] BuildStyles(
+        GeoServerServiceInfo serviceInfo,
+        IReadOnlyDictionary<string, string[]> styleResourceIds,
+        IReadOnlyList<MigrationExternalDependency> dependencies)
+    {
+        return serviceInfo.Styles
+            .OrderBy(static style => GetStyleId(style), StringComparer.Ordinal)
+            .Select(style =>
+            {
+                var styleId = GetStyleId(style);
+                var externalDependencyIds = dependencies
+                    .Where(dependency => dependency.ResourceId == styleId)
+                    .Select(dependency => dependency.Id)
+                    .OrderBy(static value => value, StringComparer.Ordinal)
+                    .ToArray();
+
+                var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["format"] = style.Format
+                };
+
+                if (!string.IsNullOrWhiteSpace(style.LanguageVersion))
+                {
+                    metadata["languageVersion"] = style.LanguageVersion;
+                }
+
+                if (!string.IsNullOrWhiteSpace(style.Filename))
+                {
+                    metadata["filename"] = style.Filename;
+                }
+
+                return new MigrationInventoryStyle
+                {
+                    Id = styleId,
+                    ContainerId = GetContainerIdForWorkspace(style.WorkspaceName),
+                    Kind = "style",
+                    Name = style.Name,
+                    Format = style.Format,
+                    ResourceIds = styleResourceIds.GetValueOrDefault(styleId) ?? [],
+                    ExternalDependencyIds = externalDependencyIds,
+                    Metadata = metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                    Compatibility = MigrationInventoryHelpers.FromGeoServerCompatibility(
+                        style.Compatibility,
+                        "GeoServer style metadata is compatible with discovery.")
+                };
+            })
+            .ToArray();
+    }
+
+    private static MigrationExternalDependency[] BuildExternalDependencies(
+        GeoServerServiceInfo serviceInfo,
+        bool includeStyleContent)
+    {
+        var dependencies = new List<MigrationExternalDependency>(serviceInfo.DataStores.Length + serviceInfo.CoverageStores.Length);
+
+        foreach (var dataStore in serviceInfo.DataStores.OrderBy(static store => GetDataStoreId(store.WorkspaceName, store.Name), StringComparer.Ordinal))
+        {
+            var sanitizedMetadata = MigrationInventoryHelpers.SanitizeMetadata(dataStore.ConnectionParameters);
+
+            dependencies.Add(new MigrationExternalDependency
+            {
+                Id = GetDataStoreId(dataStore.WorkspaceName, dataStore.Name),
+                ContainerId = GetWorkspaceId(dataStore.WorkspaceName),
+                ResourceId = null,
+                Kind = "datastore",
+                Name = dataStore.Name,
+                DependencyType = dataStore.Type,
+                Address = ResolveDependencyAddress(sanitizedMetadata),
+                Metadata = sanitizedMetadata,
+                SpatialReferences = [],
+                Compatibility = MigrationInventoryHelpers.FromGeoServerCompatibility(
+                    dataStore.Compatibility,
+                    "GeoServer datastore metadata is compatible with discovery.")
+            });
+        }
+
+        foreach (var coverageStore in serviceInfo.CoverageStores.OrderBy(static store => GetCoverageStoreId(store.WorkspaceName, store.Name), StringComparer.Ordinal))
+        {
+            var sanitizedMetadata = MigrationInventoryHelpers.SanitizeMetadata(coverageStore.ConnectionParameters);
+
+            dependencies.Add(new MigrationExternalDependency
+            {
+                Id = GetCoverageStoreId(coverageStore.WorkspaceName, coverageStore.Name),
+                ContainerId = GetWorkspaceId(coverageStore.WorkspaceName),
+                ResourceId = null,
+                Kind = "coverage-store",
+                Name = coverageStore.Name,
+                DependencyType = coverageStore.Type,
+                Address = ResolveDependencyAddress(sanitizedMetadata),
+                Metadata = sanitizedMetadata,
+                SpatialReferences = [],
+                Compatibility = MigrationInventoryHelpers.FromGeoServerCompatibility(
+                    coverageStore.Compatibility,
+                    "GeoServer coverage store metadata is compatible with discovery.")
+            });
+        }
+
+        if (includeStyleContent)
+        {
+            foreach (var style in serviceInfo.Styles)
+            {
+                foreach (var url in ExtractStyleUrls(style.SldContent))
+                {
+                    var dependencyId = $"{GetStyleId(style)}:external:{url}";
+                    dependencies.Add(new MigrationExternalDependency
+                    {
+                        Id = dependencyId,
+                        ContainerId = GetContainerIdForWorkspace(style.WorkspaceName),
+                        ResourceId = GetStyleId(style),
+                        Kind = "external-graphic",
+                        Name = style.Name,
+                        DependencyType = "url",
+                        Address = url,
+                        Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["source"] = "sld"
+                        },
+                        SpatialReferences = [],
+                        Compatibility = MigrationInventoryHelpers.Partial(
+                            "External graphic references require manual migration review.",
+                            ["The style references an external URL."],
+                            ["Mirror or replace external graphics in the target deployment."])
+                    });
+                }
+            }
+        }
+
+        return dependencies
+            .OrderBy(static dependency => dependency.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static Dictionary<string, string[]> BuildStyleResourceMap(GeoServerServiceInfo serviceInfo)
+    {
+        var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        foreach (var layer in serviceInfo.Layers)
+        {
+            if (!string.IsNullOrWhiteSpace(layer.DefaultStyle))
+            {
+                AddStyleResourceLink(map, layer.WorkspaceName, layer.DefaultStyle, GetLayerId(layer));
+                AddStyleResourceLink(map, null, layer.DefaultStyle, GetLayerId(layer));
+            }
+
+            foreach (var alternativeStyle in layer.AlternativeStyles)
+            {
+                AddStyleResourceLink(map, layer.WorkspaceName, alternativeStyle, GetLayerId(layer));
+                AddStyleResourceLink(map, null, alternativeStyle, GetLayerId(layer));
+            }
+        }
+
+        return map.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.OrderBy(static value => value, StringComparer.Ordinal).ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    private static void AddStyleResourceLink(
+        IDictionary<string, HashSet<string>> map,
+        string? workspaceName,
+        string styleName,
+        string resourceId)
+    {
+        var styleId = GetStyleId(workspaceName, styleName);
+        if (!map.TryGetValue(styleId, out var resourceIds))
+        {
+            resourceIds = new HashSet<string>(StringComparer.Ordinal);
+            map[styleId] = resourceIds;
+        }
+
+        _ = resourceIds.Add(resourceId);
+    }
+
+    private static string[] BuildLayerCapabilities(GeoServerLayerInfo layer)
+    {
+        var capabilities = new List<string>();
+
+        if (layer.Queryable)
+        {
+            capabilities.Add("query");
+        }
+
+        if (layer.Enabled)
+        {
+            capabilities.Add("enabled");
+        }
+
+        if (layer.Opaque)
+        {
+            capabilities.Add("opaque");
+        }
+
+        return capabilities.OrderBy(static value => value, StringComparer.Ordinal).ToArray();
+    }
+
+    private static string GetWorkspaceId(string workspaceName)
+        => $"workspace:{workspaceName}";
+
+    private static string GetGlobalContainerId()
+        => "workspace:global";
+
+    private static string GetContainerIdForWorkspace(string? workspaceName)
+        => string.IsNullOrWhiteSpace(workspaceName) ? GetGlobalContainerId() : GetWorkspaceId(workspaceName);
+
+    private static string GetLayerId(GeoServerLayerInfo layer)
+        => $"layer:{layer.WorkspaceName}:{layer.Name}";
+
+    private static string GetLayerGroupId(GeoServerLayerGroupInfo layerGroup)
+        => $"layer-group:{(string.IsNullOrWhiteSpace(layerGroup.WorkspaceName) ? "global" : layerGroup.WorkspaceName)}:{layerGroup.Name}";
+
+    private static string GetStyleId(GeoServerStyleInfo style)
+        => GetStyleId(style.WorkspaceName, style.Name);
+
+    private static string GetStyleId(string? workspaceName, string styleName)
+        => $"style:{(string.IsNullOrWhiteSpace(workspaceName) ? "global" : workspaceName)}:{styleName}";
+
+    private static string GetDataStoreId(string workspaceName, string dataStoreName)
+        => $"datastore:{workspaceName}:{dataStoreName}";
+
+    private static string GetCoverageStoreId(string workspaceName, string coverageStoreName)
+        => $"coverage-store:{workspaceName}:{coverageStoreName}";
+
+    private static string GetContainerIdForStyle(string styleId)
+    {
+        var segments = styleId.Split(':', 3, StringSplitOptions.None);
+        return segments.Length < 3
+            ? GetGlobalContainerId()
+            : GetContainerIdForWorkspace(segments[1].Equals("global", StringComparison.Ordinal) ? null : segments[1]);
+    }
+
+    private static string? ResolveDependencyAddress(IReadOnlyDictionary<string, string> metadata)
+    {
+        if (metadata.TryGetValue("url", out var url) && !string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        if (metadata.TryGetValue("host", out var host) && !string.IsNullOrWhiteSpace(host))
+        {
+            return metadata.TryGetValue("database", out var database) && !string.IsNullOrWhiteSpace(database)
+                ? $"{host}/{database}"
+                : host;
+        }
+
+        if (metadata.TryGetValue("database", out var db) && !string.IsNullOrWhiteSpace(db))
+        {
+            return db;
+        }
+
+        return null;
+    }
+
+    private static string[] ExtractStyleUrls(string? sldContent)
+    {
+        if (string.IsNullOrWhiteSpace(sldContent))
+        {
+            return [];
+        }
+
+        return StyleUrlRegex()
+            .Matches(sldContent)
+            .Select(static match => match.Groups["url"].Value)
+            .Where(static value => Uri.TryCreate(value, UriKind.Absolute, out _))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
     }
 
     /// <inheritdoc />
@@ -774,6 +1338,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         [LoggerMessage(7994, LogLevel.Error, "GeoServer import failed: {ErrorMessage}")]
         public static partial void ImportFailed(ILogger logger, string errorMessage, Exception exception);
 
+        [LoggerMessage(79945, LogLevel.Warning, "GeoServer inventory scan failed for {GeoServerUrl}")]
+        public static partial void InventoryScanFailed(ILogger logger, string geoServerUrl, Exception exception);
+
         [LoggerMessage(7995, LogLevel.Information, "Importing {Count} workspaces")]
         public static partial void ImportingWorkspaces(ILogger logger, int count);
 
@@ -825,4 +1392,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         [LoggerMessage(8011, LogLevel.Information, "Validating imported resources (placeholder)")]
         public static partial void ValidatingImportedResources(ILogger logger);
     }
+
+    [GeneratedRegex(@"(?<url>https?://[^\s""'<>]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex StyleUrlRegex();
 }

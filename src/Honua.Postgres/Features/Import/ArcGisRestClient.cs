@@ -250,6 +250,38 @@ internal sealed partial class ArcGisRestClient
         return result ?? throw new InvalidOperationException("Failed to deserialize response");
     }
 
+    internal async Task<JsonDocument> GetJsonDocumentAsync(
+        string url,
+        int maxRetries,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
+
+        var options = BuildHttpOptions(maxRetries);
+        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
+        using var response = await policy.ExecuteAsync(
+            async ct =>
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                return await _httpClient.GetAsync(url, timeoutCts.Token).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return JsonDocument.Parse(content);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Failed to parse ArcGIS JSON from '{url}'.", ex);
+        }
+    }
+
     private static ResiliencePolicyOptions BuildHttpOptions(int maxRetries)
     {
         return new ResiliencePolicyOptions
@@ -292,7 +324,7 @@ internal sealed partial class ArcGisRestClient
             : "Unknown failure";
     }
 
-    private static string NormalizeServiceUrl(string url)
+    internal static string NormalizeServiceUrl(string url)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {

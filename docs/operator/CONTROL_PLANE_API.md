@@ -219,6 +219,8 @@ For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` di
 
 For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The server reads GeoParquet `geo` metadata for CRS detection and requires WKB geometry encoding. Non-WKB encodings are rejected. Nested column types (Struct, List, Map) are skipped with warnings. Rows with null geometry are skipped during both preview and import, and reported as warnings in the import response. Files with more than 100,000 rows in a single Parquet row group are rejected to maintain bounded memory usage; re-export such files with smaller row groups.
 
+For source-system migration planning, use the unified scan endpoint before starting any GeoServer or GeoServices import job. The scan response is a deterministic inventory artifact that records source identity and version, authentication posture, scan completeness, containers, resources, styles or renderers, external dependencies, spatial reference details, and compatibility classifications.
+
 ### **Import Endpoints**
 
 | Endpoint | Method | Purpose |
@@ -235,6 +237,35 @@ For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The se
 | `/api/v1/admin/import/jobs/{jobId}` | GET | Get import job status |
 | `/api/v1/admin/import/jobs/{jobId}/cancel` | POST | Cancel an import job |
 | `/api/v1/admin/import/limits` | GET | Get import limits/configuration |
+
+### **Migration Scanner Endpoints**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/import/scan` | POST | Scan a supported source environment and return a deterministic migration inventory artifact |
+
+Minimal request:
+
+```json
+{
+  "sourceKind": "geoserver",
+  "sourceUrl": "https://example.com/geoserver/rest",
+  "username": "admin",
+  "password": "geoserver",
+  "includeStyleContent": true
+}
+```
+
+Supported `sourceKind` values:
+- `geoserver` or `geoserver-rest`
+- `geoservices` or `arcgis-geoservices-rest`
+
+The artifact includes:
+- source identity and version
+- auth posture and scan completeness
+- workspaces or services, layers or tables, styles or renderers, and external dependencies
+- CRS, datum, and unit details needed for migration planning
+- per-resource and overall compatibility assessments, warnings, and manual follow-up steps
 
 ### **GeoServices Import Endpoints**
 
