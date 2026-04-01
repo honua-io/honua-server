@@ -74,9 +74,9 @@ These routes are implemented in Honua, but they are not Esri Geometry Service op
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `inSR` | Implemented | Supports numeric WKIDs and Esri-style spatial-reference JSON. |
-| `outSR` | Implemented | Optional. |
-| `bufferSR` | Implemented | Optional. |
+| `inSR` | Implemented | Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
+| `outSR` | Implemented | Same parser forms as `inSR`. Optional. |
+| `bufferSR` | Implemented | Same parser forms as `inSR`. Optional. |
 | `distances` | Implemented | Supports comma-separated multiple distances. |
 | `unit` | Implemented | Used for distance calculations. |
 | `unionResults` | Implemented | Returns a single merged geometry when `true`. |
@@ -86,21 +86,21 @@ These routes are implemented in Honua, but they are not Esri Geometry Service op
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `sr` | Implemented | Required for these operations. |
+| `sr` | Implemented | Required. Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
 | `geometry` | Implemented | Required for intersect, clip, and difference. |
 
 ### Project
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `inSR` | Implemented | Supports WKID text plus spatial-reference JSON with `latestWkid` or `name`. |
-| `outSR` | Implemented | Supports WKID text plus spatial-reference JSON with `latestWkid` or `name`. |
+| `inSR` | Implemented | Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
+| `outSR` | Implemented | Same parser forms as `inSR`. |
 
 ### Honua supplemental `area` and `length`
 
 | Parameter | Honua status | Notes |
 | --- | --- | --- |
-| `sr` | Implemented | Required. |
+| `sr` | Implemented | Required. Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, or `wkt`. |
 | `areaUnit` | Implemented | Supported by `/rest/services/geometry/area`. |
 | `lengthUnit` | Implemented | Supported by `/rest/services/geometry/length`. |
 

@@ -85,8 +85,8 @@ Sources:
 | Esri parameter | Honua status | Notes |
 | --- | --- | --- |
 | `bbox` | Implemented | Envelope clipping region. When omitted, Honua uses the primary raster extent. |
-| `imageSR` | Implemented | Accepts numeric WKID text only. |
-| `bboxSR` | Implemented | Accepts numeric WKID text only. |
+| `imageSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
+| `bboxSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `format` | Partial | Supports `png`, `jpg`, `jpeg`, `tif`, `tiff`. Esri formats such as `png8`, `png24`, `bmp`, and `gif` are not supported. |
 | `interpolation` | Implemented | Parsed into raster resampling behavior. |
 | `compressionQuality` | Implemented | Validated to `1-100`. |
@@ -118,7 +118,7 @@ Sources:
 | --- | --- | --- |
 | `geometry` | Implemented | Supports comma-separated `x,y` input or JSON point objects. |
 | `geometryType` | Partial | Only `esriGeometryPoint` is supported. |
-| `sr` | Implemented | Accepts numeric WKID text only. |
+| `sr` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases. |
 | `returnCatalogItems` | Implemented | When `true`, returns the primary raster catalog item in `catalogItems[]`. |
 | `f` | Partial | Only `json` and `pjson` are supported. |
 

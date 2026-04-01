@@ -23,8 +23,6 @@ Use this checklist for every MVP release.
 
 - [ ] Update [MVP Compatibility Contract](../gis/MVP_COMPATIBILITY_CONTRACT.md)
 - [ ] Refresh [GeoServices REST Parity](../gis/geoservices-rest-parity.md), the service drill-down matrices, and [data/geoservices-rest-parity.json](../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed in the release
-
-  - [ ] Update [GeoServices REST Parity](../gis/geoservices-rest-parity.md), drill-down matrices, and [data/geoservices-rest-parity.json](../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../gis/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Confirm supported/partial/unsupported protocol notes are current
 - [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices

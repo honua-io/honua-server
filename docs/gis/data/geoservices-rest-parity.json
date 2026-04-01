@@ -949,7 +949,8 @@
         "export": [
           {
             "name": "bbox, size, dpi, format, transparent, layers, bboxSR, imageSR, layerDefs, dynamicLayers, time, timeRelation, layerTimeOptions, backgroundColor",
-            "status": "implemented"
+            "status": "implemented",
+            "notes": "CRS inputs for `bboxSR` and `imageSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
           },
           {
             "name": "f",
@@ -975,7 +976,7 @@
           {
             "name": "searchText, searchFields, contains, sr, returnGeometry",
             "status": "implemented",
-            "notes": "Find-specific parameters."
+            "notes": "Find-specific parameters. `sr` accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
           },
           {
             "name": "gdbVersion",
@@ -1209,7 +1210,8 @@
         "exportImage": [
           {
             "name": "bbox, imageSR, bboxSR, interpolation, compressionQuality",
-            "status": "implemented"
+            "status": "implemented",
+            "notes": "CRS inputs for `imageSR` and `bboxSR` accept numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
           },
           {
             "name": "format",
@@ -1244,7 +1246,8 @@
         "identify": [
           {
             "name": "geometry, sr, returnCatalogItems",
-            "status": "implemented"
+            "status": "implemented",
+            "notes": "`sr` accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases."
           },
           {
             "name": "geometryType",
@@ -1557,27 +1560,29 @@
         "buffer": [
           {
             "name": "inSR, outSR, bufferSR, distances, unit, unionResults, geodesic",
-            "status": "implemented"
+            "status": "implemented",
+            "notes": "SR parameters share parser support for numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, `name`, or `wkt`."
           }
         ],
         "intersectUnionClipDifference": [
           {
             "name": "sr, geometry",
             "status": "implemented",
-            "notes": "geometry is required for intersect, clip, and difference."
+            "notes": "sr is required for intersect/clip/difference and accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, `name`, or `wkt`."
           }
         ],
         "project": [
           {
             "name": "inSR, outSR",
             "status": "implemented",
-            "notes": "Supports WKID text and Esri-style spatial-reference JSON with latestWkid or name."
+            "notes": "Supports numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and Esri-style spatial-reference JSON with `wkid`, `latestWkid`, `name`, or `wkt`."
           }
         ],
         "supplemental": [
           {
             "name": "sr, areaUnit, lengthUnit",
-            "status": "implemented"
+            "status": "implemented",
+            "notes": "`sr` accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), `CRS84` aliases, and JSON objects with `wkid`, `latestWkid`, `name`, or `wkt`."
           }
         ]
       },

@@ -68,8 +68,8 @@ Sources:
 | `format` | Implemented | Supports `png`, `png8`, `png24`, `png32`, `jpg`, `jpeg`, and `gif`. |
 | `transparent` | Implemented | Accepts boolean text or numeric `0`/`1`. |
 | `layers` | Implemented | Layer inclusion/exclusion mask. Empty or non-integer tokens are rejected. |
-| `bboxSR` | Implemented | Numeric WKID text. |
-| `imageSR` | Implemented | Numeric WKID text. Unsupported transforms return `400 Bad Request` with a generic spatial-reference error. |
+| `bboxSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases via shared CRS parser. |
+| `imageSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases via shared CRS parser. Unsupported transforms return `400 Bad Request` with a generic spatial-reference error. |
 | `layerDefs` | Implemented | JSON object keyed by layer id. Malformed JSON returns `400 Bad Request` without parser-detail leakage. |
 | `dynamicLayers` | Implemented | JSON array. Malformed JSON returns `400 Bad Request` without parser-detail leakage. |
 | `time` | Implemented | Supports instant or extent syntax used by the shared temporal query pipeline. |
