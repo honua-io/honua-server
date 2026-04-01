@@ -355,6 +355,8 @@ internal sealed partial class MigrationEvidenceGenerator(
                 targetClient,
                 request,
                 mapping,
+                sourceMetadataResult.Body.Value,
+                targetMetadataResult.Body.Value,
                 queryPageSize,
                 cancellationToken)
             .ConfigureAwait(false));
@@ -911,6 +913,8 @@ internal sealed partial class MigrationEvidenceGenerator(
 
         var sourceFeatures = CanonicalizeFeatureRows(source.Body.Value, fieldMappings, FeatureRowFieldOrigin.Source, geoJson: true);
         var targetFeatures = CanonicalizeFeatureRows(target.Body.Value, fieldMappings, FeatureRowFieldOrigin.Target, geoJson: true);
+        Array.Sort(sourceFeatures, StringComparer.Ordinal);
+        Array.Sort(targetFeatures, StringComparer.Ordinal);
         var matched = sourceFeatures.SequenceEqual(targetFeatures, StringComparer.Ordinal);
 
         return new MigrationComparisonCheck
@@ -938,13 +942,15 @@ internal sealed partial class MigrationEvidenceGenerator(
         HttpClient targetClient,
         MigrationEvidenceRequest request,
         MigrationEvidenceLayerMapping mapping,
+        JsonElement sourceMetadata,
+        JsonElement targetMetadata,
         int pageSize,
         CancellationToken cancellationToken)
     {
         var source = await QueryRowsPageAsync(
                 sourceClient,
                 BuildSourceLayerQueryUrl(request.SourceServiceUrl, mapping.SourceLayerId),
-                "objectid",
+                ResolveObjectIdField(sourceMetadata),
                 ["*"],
                 pageSize,
                 cancellationToken)
@@ -952,7 +958,7 @@ internal sealed partial class MigrationEvidenceGenerator(
         var target = await QueryRowsPageAsync(
                 targetClient,
                 BuildTargetLayerQueryUrl(request.TargetBaseUrl, request.TargetServiceName, mapping.TargetLayerId),
-                "objectid",
+                ResolveObjectIdField(targetMetadata),
                 ["*"],
                 pageSize,
                 cancellationToken,
