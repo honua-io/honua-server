@@ -21,21 +21,21 @@ Use this checklist for every MVP release.
 
 ## Compatibility Contract Updates (Required)
 
-- [ ] Update [MVP Compatibility Contract](../user/MVP_COMPATIBILITY_CONTRACT.md)
-- [ ] Execute [Client Templates + Manual Smoke Runbook](../user/CLIENT_TEMPLATE_RUNBOOK.md)
+- [ ] Update [MVP Compatibility Contract](../gis/MVP_COMPATIBILITY_CONTRACT.md)
+- [ ] Execute [Client Templates + Manual Smoke Runbook](../gis/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Confirm supported/partial/unsupported protocol notes are current
 - [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices
 - [ ] Confirm replication limitations section reflects runtime behavior
 
 ### Cross-Client Certification (Required)
 
-- [ ] Produce cross-client certification evidence per the [Evidence Specification](../user/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
+- [ ] Produce cross-client certification evidence per the [Evidence Specification](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
 - [ ] Verify all common-core CERT-\* test cases have results for each active client lane
 
 ### Tested Client Versions (Required)
 
 Update from certification workflow outputs and manual validation logs:
-- [ ] Update [Client Template Version Matrix](../user/CLIENT_TEMPLATE_VERSION_MATRIX.md) with exact client versions, run date, and evidence links from `#320`
+- [ ] Update [Client Template Version Matrix](../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) with exact client versions, run date, the `#320` smoke-artifact link, and any final evidence file links
 
 | Client | Version tested | Protocol(s) | Result | Notes |
 |---|---|---|---|---|
@@ -46,7 +46,7 @@ Update from certification workflow outputs and manual validation logs:
 | Excel | _update_ | OData v4 | _update_ | _update_ |
 | MapLibre GL JS ‡ | _update_ | MVT | _update_ | _update_ |
 
-‡ MapLibre GL JS certification is currently **manual** (visual browser-based verification). Evidence rolls up under the **JS lane** (`client_lane: "js"`) with protocol `"mvt"`. The existing Vitest suite does not yet include MVT tests; automated coverage is tracked as a follow-up. See [Certification Matrix — JS Lane Extensions](../user/CROSS_CLIENT_CERTIFICATION_MATRIX.md#js-lane) for JS-EXT-01/JS-EXT-02 scope.
+‡ MapLibre GL JS certification is currently **manual** (visual browser-based verification). Evidence rolls up under the **JS lane** (`client_lane: "js"`) with protocol `"mvt"`. The existing Vitest suite does not yet include MVT tests; automated coverage is tracked as a follow-up. See [Certification Matrix — JS Lane Extensions](../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#js-lane) for JS-EXT-01/JS-EXT-02 scope.
 
 ### Known Caveats and Workarounds (Required)
 

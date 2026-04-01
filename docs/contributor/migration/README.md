@@ -25,7 +25,7 @@ Standardized scorecards, checklists, and readout templates for lighthouse migrat
 |----------|---------|
 | [Esri Migration Platform Plan](../ESRI_MIGRATION_PLATFORM_PLAN.md) | Migration architecture, phase gates, success metrics |
 | [MVP Launch GTM Playbook](../../user/MVP_LAUNCH_GTM_PLAYBOOK.md) | GTM pilot stages, SOW structure |
-| [Client Template Runbook](../../user/CLIENT_TEMPLATE_RUNBOOK.md) | Client verification procedures |
+| [Client Template Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md) | Client verification procedures |
 | [Enterprise Procurement Readiness](../../user/ENTERPRISE_PROCUREMENT_READINESS.md) | Procurement packet |
 | [DevOps Runbooks](../../devops/runbooks/README.md) | Deployment and infrastructure |
 | [Release Checklist](../RELEASE_CHECKLIST.md) | Release gate integration |

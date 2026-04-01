@@ -1,7 +1,7 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-03-27 (ticket #625)
+> Last updated: 2026-03-31 (ticket #320)
 
 ## honua-server
 
@@ -25,6 +25,7 @@
 | `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 6am UTC |
 | `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 3am UTC |
 | `geoservices-parity-nightly.yml` | GeoServices Parity Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled parity check |
+| `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; emits `overall-summary.json`, per-lane summaries/transcripts, and `pack/` under canonical `artifacts/client-compat/<service>-<timestamp>/` evidence |
 | `load-soak-nightly.yml` | Load/Soak Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled load/soak tests |
 | `container-security.yml` | Container Security | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container scan |
 | `security-nightly.yml` | Security Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled security analysis |

@@ -10,16 +10,68 @@ Use this runbook when validating a demo or customer environment.
 
 ## Template Pack
 
-Template sources live in [`docs/user/client-templates`](client-templates/README.md).
+Template sources are split between [`docs/gis/client-templates`](client-templates/README.md) and [`docs/user/client-templates/qgis`](../user/client-templates/qgis/).
 
 | Client | Template Source | Saved Output Artifact |
 |---|---|---|
 | ArcGIS Pro | [`arcgis-pro/Honua-Desktop-Smoke.aprx.template.md`](client-templates/arcgis-pro/Honua-Desktop-Smoke.aprx.template.md) | `Honua-Desktop-Smoke.aprx` |
-| QGIS | [`qgis/Honua-Desktop-Smoke.qgs.template`](client-templates/qgis/Honua-Desktop-Smoke.qgs.template) | `Honua-Desktop-Smoke.qgz` |
+| QGIS | [`../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template`](../user/client-templates/qgis/Honua-Desktop-Smoke.qgs.template) | `Honua-Desktop-Smoke.qgz` |
 | Power BI Desktop | [`power-bi/Honua-OData-Smoke.pq.template`](client-templates/power-bi/Honua-OData-Smoke.pq.template) and [`power-bi/Honua-OData-Smoke.pbix.template.md`](client-templates/power-bi/Honua-OData-Smoke.pbix.template.md) | `Honua-OData-Smoke.pbix` |
 | Excel | [`excel/Honua-OData-Smoke.pq.template`](client-templates/excel/Honua-OData-Smoke.pq.template) and [`excel/Honua-OData-Smoke.xlsx.template.md`](client-templates/excel/Honua-OData-Smoke.xlsx.template.md) | `Honua-OData-Smoke.xlsx` |
 
-The repository keeps source templates and run instructions. Generated binary outputs (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) should be attached to release evidence and `#320` workflow artifacts.
+The repository keeps source templates and run instructions. Generated binary outputs (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) are not checked into the repo; attach them to release evidence or downstream certification records created from the `#320` workflow pack.
+
+The `windows-client-compat-nightly.yml` workflow assembles these sources into a single reusable artifact pack under:
+
+```text
+artifacts/client-compat/<service>-<timestamp>/pack/
+```
+
+That pack includes the template sources, the smoke runbook, the evidence schema, the certification matrix, and the version ledger so manual Windows follow-through can start from one canonical layout.
+
+The pack is the preferred operator entry point because it normalizes the current split repo layout into one directory tree:
+
+```text
+pack/
+├── templates/
+│   ├── .env.example
+│   ├── desktop/arcgis-pro/
+│   ├── desktop/qgis/
+│   └── bi/{power-bi,excel}/
+└── runbook/
+```
+
+## Workflow Artifact Contract
+
+`windows-client-compat-nightly.yml` uploads a deterministic smoke-evidence artifact rooted at:
+
+```text
+artifacts/client-compat/<service>-<timestamp>/
+```
+
+The uploaded contract is:
+
+| Path | Purpose |
+|---|---|
+| `README.md` | Human-readable overview of the artifact root, including the lane directories and metadata contents |
+| `overall-summary.json` / `overall-summary.md` | Aggregate pass/fail for the `desktop` and `bi` lanes |
+| `lanes/<lane>/checks.tsv` | Raw smoke-check rows used to build the lane summaries |
+| `lanes/<lane>/lane-summary.json` / `lane-summary.md` | Per-lane check results with HTTP status, transcript path, and optional failure note |
+| `lanes/<lane>/transcripts/<check-id>.txt` | Full request/response transcript captured by the smoke script |
+| `metadata/workflow-context.json` | Base URL, service/layer ids, seed source, timestamp, workflow metadata |
+| `metadata/<seed-file>.sql` | Exact versioned SQL snapshot applied for the run |
+| `server/server.log` | Honua server stdout/stderr captured during the run |
+| `pack/README.md` | Human-readable guide to the normalized pack layout and source provenance |
+| `pack/` | Reusable templates plus the runbook, matrix, evidence spec, and version ledger for manual follow-through |
+
+The workflow currently produces smoke evidence for stable server responses; it does not emit final per-client `.cert.json` certification envelopes by itself. Use the uploaded `pack/` plus the manual steps below when you need customer-facing desktop or BI certification evidence files.
+
+The automated lane coverage is intentionally narrow and deterministic. The check IDs below are the exact transcript filenames and `lane-summary.json` entries emitted by the smoke script:
+
+| Lane | Automated checks |
+|---|---|
+| `desktop` | `featureserver-service-metadata`, `featureserver-layer-metadata`, `featureserver-query-active-subset`, `mapserver-service-metadata`, `ogc-collections`, `ogc-items-first-page` |
+| `bi` | `odata-service-document`, `odata-metadata`, `odata-layer-filter`, `odata-features-first-page`, `odata-features-second-page` |
 
 ## Environment Substitution
 
@@ -28,30 +80,33 @@ Use these placeholders across templates:
 | Variable | Example | Notes |
 |---|---|---|
 | `HONUA_BASE_URL` | `https://demo.honua.example` | No trailing slash |
-| `HONUA_SERVICE_ID` | `utilities` | Service id/name for `/rest/services/{id}` |
-| `HONUA_COLLECTION_ID` | `parcels` | OGC API Features collection id |
-| `HONUA_ODATA_ENTITY_SET` | `Parcels` | OData entity set name |
+| `HONUA_SERVICE_ID` | `test_service` | Service id/name for `/rest/services/{id}`. The ticket `#320` certification seed uses `test_service`. |
+| `HONUA_COLLECTION_ID` | `0` | OGC API Features collection id. Current server contract uses the numeric layer id as the collection id. |
+| `HONUA_ODATA_ENTITY_SET` | `Features` | OData entity set name. The ticket `#320` certification pack defaults to `Features`. |
 | `HONUA_API_KEY` | `demo-key-123` | Leave blank if not using API-key auth |
 
-1. Copy [`docs/user/client-templates/.env.example`](client-templates/.env.example) to `.env` in the same directory.
-2. Fill values for your target environment.
-3. Substitute placeholders with `envsubst`:
+1. Prefer the workflow artifact pack when it is available. Copy `artifacts/client-compat/<service>-<timestamp>/pack/templates/.env.example` to `.env` in that same `templates/` directory.
+2. If you are working directly from the repo instead of the artifact pack, copy [`docs/gis/client-templates/.env.example`](client-templates/.env.example) to a scratch `templates/` directory and also copy the QGIS template from [`docs/user/client-templates/qgis`](../user/client-templates/qgis/).
+3. Fill values for your target environment.
+4. Substitute placeholders with `envsubst` from the canonical pack layout:
 
 ```bash
-cd docs/user/client-templates
+cd artifacts/client-compat/<service>-<timestamp>/pack/templates
 set -a; source .env; set +a
 
-envsubst < qgis/Honua-Desktop-Smoke.qgs.template > qgis/Honua-Desktop-Smoke.qgs
-envsubst < power-bi/Honua-OData-Smoke.pq.template > power-bi/Honua-OData-Smoke.pq
-envsubst < excel/Honua-OData-Smoke.pq.template > excel/Honua-OData-Smoke.pq
+envsubst < desktop/qgis/Honua-Desktop-Smoke.qgs.template > desktop/qgis/Honua-Desktop-Smoke.qgs
+envsubst < bi/power-bi/Honua-OData-Smoke.pq.template > bi/power-bi/Honua-OData-Smoke.pq
+envsubst < bi/excel/Honua-OData-Smoke.pq.template > bi/excel/Honua-OData-Smoke.pq
 
 # Optional pre-packaging for QGIS (QGIS can also save `.qgz` directly from UI)
-zip -j qgis/Honua-Desktop-Smoke.qgz qgis/Honua-Desktop-Smoke.qgs
+zip -j desktop/qgis/Honua-Desktop-Smoke.qgz desktop/qgis/Honua-Desktop-Smoke.qgs
 ```
+
+If you are generating files directly from repo sources, use the same directory structure as the pack (`desktop/qgis`, `bi/power-bi`, `bi/excel`) so the commands above still apply after you copy the sources into place.
 
 If `envsubst` is unavailable, replace placeholder tokens manually in each template file.
 
-4. Save final client-native files (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) after applying each client section below.
+5. Save final client-native files (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) after applying each client section below.
 
 ## ArcGIS Pro Smoke Checklist
 
@@ -88,6 +143,9 @@ See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the
 Connection target:
 - OGC API Features root: `${HONUA_BASE_URL}/ogc/features`
 - Collection for items checks: `${HONUA_BASE_URL}/ogc/features/collections/${HONUA_COLLECTION_ID}/items`
+
+Current contract note:
+- Honua currently uses the numeric layer id as the OGC `collectionId`. The ticket `#320` certification seed uses collection `0`.
 
 Checklist:
 - [ ] Connect/auth: Add an OGC API Features connection and authenticate with API key/OIDC/Basic as required. Verify that an unauthenticated request is rejected.

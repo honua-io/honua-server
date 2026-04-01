@@ -1,0 +1,87 @@
+name: Windows Client Compatibility Certification
+
+on:
+  # Tier: nightly. This is certification-style coverage with reusable evidence.
+  schedule:
+    - cron: '15 7 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  CLIENT_COMPAT_SERVICE_ID: 'test_service'
+  CLIENT_COMPAT_LAYER_ID: '0'
+  CLIENT_COMPAT_SEED_SOURCE: 'tests/seed/client-compat-v1.sql'
+
+jobs:
+  client-compat:
+    name: Client Compatibility Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Derive artifact context
+        id: context
+        shell: bash
+        run: |
+          timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
+          artifact_root="artifacts/client-compat/${CLIENT_COMPAT_SERVICE_ID}-${timestamp}"
+
+          echo "timestamp=${timestamp}" >> "$GITHUB_OUTPUT"
+          echo "artifact_root=${artifact_root}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Honua Server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          base-seed-path: ${{ env.CLIENT_COMPAT_SEED_SOURCE }}
+          log-path: ${{ steps.context.outputs.artifact_root }}/server/server.log
+
+      - name: Run client compatibility smoke
+        id: smoke
+        shell: bash
+        run: |
+          set +e
+          bash scripts/run-client-compat-smoke.sh \
+            --base-url "http://localhost:5000" \
+            --service-id "${CLIENT_COMPAT_SERVICE_ID}" \
+            --layer-id "${CLIENT_COMPAT_LAYER_ID}" \
+            --timestamp "${{ steps.context.outputs.timestamp }}" \
+            --seed-source "${CLIENT_COMPAT_SEED_SOURCE}"
+          exit_code=$?
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload client compatibility evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: client-compat
+          path: ${{ steps.context.outputs.artifact_root }}
+          tier: nightly
+          summary-file: ${{ steps.context.outputs.artifact_root }}/overall-summary.md
+
+      - name: Fail on lane regressions
+        if: always() && steps.smoke.outputs.exit_code != '0'
+        shell: bash
+        run: exit 1
