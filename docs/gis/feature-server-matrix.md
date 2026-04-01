@@ -1,10 +1,13 @@
 # FeatureServer API Matrix (Esri Enterprise vs Honua)
 
+Canonical GeoServices entry point: [GeoServices REST Parity](geoservices-rest-parity.md)
+
 Sources:
 - https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/
 - https://developers.arcgis.com/rest/services-reference/enterprise/layer-feature-service/
 
-Legend:
+## Status vocabulary
+
 - Implemented: endpoint exists and handles the operation.
 - Partial: endpoint exists but only a subset of parameters or behavior is implemented.
 - Not implemented: no endpoint or handler.
@@ -34,6 +37,16 @@ MapServer coverage is tracked separately:
 | Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica` | Synchronizes a replica. Supports `download`, `upload`, and `bidirectional` sync directions. Incoming edits on upload/bidirectional syncs are applied via `applyEdits`. |
 | Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica` | Removes a registered replica. |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/getEstimates` | Returns approximate feature count and spatial extent aggregated across service layers. |
+
+### Not implemented (service-level resources and operations)
+
+| Esri operation or resource | Esri path | Methods | Honua status | Notes |
+| --- | --- | --- | --- | --- |
+| Cleanup Change Tracking | `/rest/services/{serviceName}/FeatureServer/cleanupChangeTracking` | POST | Not implemented | |
+| Query Contingent Values | `/rest/services/{serviceName}/FeatureServer/queryContingentValues` | GET | Not implemented | |
+| Shared Templates | `/rest/services/{serviceName}/FeatureServer/sharedTemplates` and child add/update/delete/query operations | GET, POST | Not implemented | |
+| HTML Popup | `/rest/services/{serviceName}/FeatureServer/htmlPopup` | GET | Not implemented | |
+| Image | `/rest/services/{serviceName}/FeatureServer/image` | GET | Not implemented | |
 
 ## Feature Layer (resource + operations)
 
@@ -242,3 +255,11 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `timeInfo` | Implemented | Start/end time fields, time extent, track ID. |
 | `maxRecordCount` | Implemented | From query limits. |
 | `supportedQueryFormats` | Implemented | Normalized format list plus runtime-supported binary formats (`PBF`, `FGB`, `PARQUET`, and conditional `GEOBUF` when the backing store exposes native GeoBuf output). |
+
+## Implementation evidence
+
+- Endpoint mapping: [FeatureServerEndpoints](../../src/Honua.Server/Features/FeatureServer/FeatureServerEndpoints.cs), [AttachmentEndpoints](../../src/Honua.Server/Features/FeatureServer/AttachmentEndpoints.cs)
+- Query implementation: [FeatureServerRequestHandlers.Query](../../src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Query.cs), [FeatureServerQueryHandler](../../src/Honua.Server/Features/FeatureServer/FeatureServerQueryHandler.cs)
+- Edit implementation: [FeatureServerRequestHandlers.Edits](../../src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Edits.cs)
+- Replication and maintenance: [FeatureServerRequestHandlers.Replication](../../src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Replication.cs), [FeatureServerRequestHandlers.Maintenance](../../src/Honua.Server/Features/FeatureServer/FeatureServerRequestHandlers.Maintenance.cs)
+- Integration tests: [FeatureServerQueryParameterTests](../../tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerQueryParameterTests.cs), [FeatureServerReplicationTests](../../tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerReplicationTests.cs), [FeatureServerMaintenanceTests](../../tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerMaintenanceTests.cs), [FeatureServerExceptionMappingTests](../../tests/Honua.Server.Tests/Features/FeatureServer/FeatureServerExceptionMappingTests.cs)

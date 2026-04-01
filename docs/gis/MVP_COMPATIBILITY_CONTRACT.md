@@ -2,6 +2,7 @@
 
 This page is the launch-facing compatibility contract for Honua open-core MVP.
 Use this page first, then drill into the linked protocol matrices/spec docs.
+For GeoServices REST specifically, start with [GeoServices REST Parity](geoservices-rest-parity.md) and then drill into the service-specific matrices.
 
 ## Launch Summary
 
@@ -9,8 +10,8 @@ Use this page first, then drill into the linked protocol matrices/spec docs.
 |---|---|---|---|---|
 | GeoServices REST FeatureServer | Supported with partial parity | Query, edits, attachments, related records, domains, replica endpoints, calculate, validateSQL, append, query bins/top features/date bins, estimates, GeoParquet query export | Advanced Esri operations remain partial/unsupported (asset management, 3D queries, advanced SQL options, full offline parity) | [FeatureServer Coverage Matrix](feature-server-matrix.md) |
 | GeoServices REST MapServer | Supported with partial parity | Export/identify/legend/find/query/tiles, generateKml, WMS 1.3, WMTS 1.0 (KVP + RESTful) | WMTS scope limited to WebMercatorQuad; some optional response properties not populated | [MapServer Coverage Matrix](map-server-matrix.md) |
-| GeoServices REST ImageServer | Supported | Service metadata, exportImage, identify, tile | Raster serving for ArcGIS image workflows | — |
-| GeoServices REST Geometry Service | Supported | Buffer, simplify, project, intersect, union, clip, difference, area, length | 9 geometry operations via PostGIS | [Geometry Service Coverage](specifications/geometry-service-coverage.md) |
+| GeoServices REST ImageServer | Supported with partial parity | Service metadata, exportImage, identify, tile | Many Image Service catalog, analysis, and offline workflows are not yet exposed | [ImageServer Coverage Matrix](image-server-matrix.md) |
+| GeoServices REST Geometry Service | Supported with partial parity | Buffer, simplify, project, intersect, union, clip, difference, supplemental `area`/`length` routes | No GeometryServer root metadata endpoint; most Esri geometry operations remain unimplemented; Honua `area`/`length` routes are not Esri canonical paths | [Geometry Service Matrix](geometry-service-matrix.md) |
 | OGC API Features | Supported (CITE certified) | Core collections/items, transactions, CQL2 filtering, CRS, OpenAPI | 137/137 CITE tests passing; coverage varies by optional extensions | [OGC API Features Coverage](specifications/ogc-api-features-coverage.md) |
 | OGC API Tiles | Supported (CITE certified) | Landing/conformance/collections, tilesets, vector/raster tiles | 16/16 CITE tests passing; 7 conformance classes | [OGC API Tiles Coverage](specifications/ogc-api-tiles-coverage.md) |
 | OGC API Maps | Supported | Conformance, dataset map, collection map, styled map, map tiles | 32/32 conformance tests passing | — |

@@ -21,12 +21,14 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Protocol Coverage
 
+- [GeoServices REST Parity](geoservices-rest-parity.md) — Canonical landing page for FeatureServer, MapServer, ImageServer, and Geometry Service
 - [FeatureServer Matrix](feature-server-matrix.md) — Esri FeatureServer endpoint coverage
 - [MapServer Matrix](map-server-matrix.md) — MapServer, WMS 1.3, WMTS 1.0 coverage
+- [ImageServer Matrix](image-server-matrix.md) — Esri ImageServer endpoint coverage
 - [OGC API Features](specifications/ogc-api-features-coverage.md) — Parts [1](specifications/ogc-api-features-part1-core.md), [2](specifications/ogc-api-features-part2-crs.md), [3](specifications/ogc-api-features-part3-filtering.md)
 - [OGC API Tiles](specifications/ogc-api-tiles-coverage.md)
 - [OData v4](specifications/odata-v4-coverage.md)
-- [Geometry Service](specifications/geometry-service-coverage.md)
+- [Geometry Service Matrix](geometry-service-matrix.md)
 
 ## Compatibility
 
