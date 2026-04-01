@@ -53,14 +53,14 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Publish and configure layers from database tables
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
-- Queue migration evidence jobs, poll dedicated or unified operations progress endpoints, and fetch immutable cutover-readiness artifacts
+- Queue and cancel migration evidence jobs, poll dedicated or unified operations progress endpoints, and fetch immutable cutover-readiness artifacts
 - Monitor system health and observability
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
 
 For migration evidence workflows, pair the curated admin contract with the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) for endpoint behavior and the [Pilot Evidence Kit](../../contributor/migration/README.md) for evidence-pack usage.
 
-Contract notes for migration evidence: the queue response returns relative `statusUrl` and `cancelUrl` that resolve under `/api/v1/admin/migrations/reports/`, the polling `jobId` is transient operational state rather than the durable audit handle, and the list endpoint accepts non-negative `limit` and `offset` plus `provider=arcgis-geoservices`, `cutoverProfile=pilot|production`, and `readiness=blocked|pilot_ready|production_ready`. A `limit` of `0` returns an empty page, and the backing store fetches at most 200 summaries per call.
+Contract notes for migration evidence: the queue response returns root-relative `statusUrl` and `cancelUrl` values under `/api/v1/admin/migrations/reports/`, the polling `jobId` is transient operational state rather than the durable audit handle, and the list endpoint accepts non-negative `limit` and `offset` plus `provider=arcgis-geoservices`, `cutoverProfile=pilot|production`, and `readiness=blocked|pilot_ready|production_ready`. A `limit` of `0` returns an empty page, and the backing store fetches at most 200 summaries per call. Cancellation is exposed on both `POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel` and `POST /api/v1/admin/operations/{jobId}/cancel`; once a report has already persisted, cancellation returns `409` and the completed artifact remains available.
 
 {% swagger src="admin-api.json" %}
 {% endswagger %}

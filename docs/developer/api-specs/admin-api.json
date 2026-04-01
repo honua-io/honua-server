@@ -2139,7 +2139,7 @@
       "post": {
         "tags": ["Migration"],
         "summary": "Cancel Migration Evidence Job",
-        "description": "Cancel a queued or currently running migration evidence job. Terminal or no-longer-cancellable jobs return 409 Conflict.",
+        "description": "Cancel a queued or currently running migration evidence job. The same transient job ID can also be cancelled through POST /api/v1/admin/operations/{jobId}/cancel when a client is already using the unified operations surface. Terminal or no-longer-cancellable jobs return 409 Conflict; if the artifact has already been persisted, the completed report remains available by reportId.",
         "operationId": "cancelMigrationEvidenceJob",
         "parameters": [
           {
@@ -4578,11 +4578,11 @@
           },
           "statusUrl": {
             "type": "string",
-            "description": "Relative job-status URL under /api/v1/admin/migrations/reports/."
+            "description": "Root-relative job-status URL under /api/v1/admin/migrations/reports/."
           },
           "cancelUrl": {
             "type": "string",
-            "description": "Relative cancellation URL under /api/v1/admin/migrations/reports/."
+            "description": "Root-relative cancellation URL under /api/v1/admin/migrations/reports/."
           }
         }
       },

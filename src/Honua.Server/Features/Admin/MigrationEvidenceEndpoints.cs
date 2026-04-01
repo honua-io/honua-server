@@ -7,6 +7,7 @@ using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Admin;
 
@@ -152,12 +153,13 @@ internal static partial class MigrationEvidenceEndpoints
             await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken).ConfigureAwait(false);
             Log.JobQueued(GetLogger(context), jobId, request.SourceServiceUrl, request.TargetServiceName);
 
+            var reportCollectionPath = GetRequestCollectionPath(context);
             var response = new MigrationEvidenceStartResponse
             {
                 JobId = jobId,
                 Message = "Migration evidence generation started",
-                StatusUrl = $"jobs/{jobId}",
-                CancelUrl = $"jobs/{jobId}/cancel"
+                StatusUrl = $"{reportCollectionPath}/jobs/{jobId}",
+                CancelUrl = $"{reportCollectionPath}/jobs/{jobId}/cancel"
             };
 
             await Results.Json(
@@ -167,7 +169,7 @@ internal static partial class MigrationEvidenceEndpoints
                 .ExecuteAsync(context)
                 .ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import queue is unavailable", StringComparison.OrdinalIgnoreCase))
+        catch (Exception ex) when (DistributedCoordinationMode.IsDurableCoordinationUnavailable(ex))
         {
             if (jobManager != null && !string.IsNullOrWhiteSpace(jobId))
             {
@@ -177,7 +179,7 @@ internal static partial class MigrationEvidenceEndpoints
             Log.JobQueueFailed(GetLogger(context), request.SourceServiceUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                "Distributed migration evidence queue is temporarily unavailable. Retry when Redis is healthy.",
+                "Distributed migration evidence coordination is temporarily unavailable. Retry when Redis is healthy.",
                 StatusCodes.Status503ServiceUnavailable);
         }
         catch (Exception ex)
@@ -304,7 +306,7 @@ internal static partial class MigrationEvidenceEndpoints
             await AdminResponseWriter.WriteErrorAsync(
                 context,
                 decision.Message,
-                StatusCodes.Status409Conflict);
+                decision.StatusCode);
             return;
         }
 
@@ -319,6 +321,12 @@ internal static partial class MigrationEvidenceEndpoints
         await Results.Json(response, MigrationEvidenceApiJsonContext.Default.MigrationEvidenceCancelResponse)
             .ExecuteAsync(context)
             .ConfigureAwait(false);
+    }
+
+    private static string GetRequestCollectionPath(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return $"{context.Request.PathBase}{context.Request.Path}".TrimEnd('/');
     }
 
     private static bool ValidateRequest(MigrationEvidenceRequest request, out string? validationError)
@@ -615,7 +623,16 @@ internal static partial class MigrationEvidenceEndpoints
         string jobId,
         CancellationToken cancellationToken)
     {
-        await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await jobManager.RequestStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (DistributedCoordinationMode.IsDurableCoordinationUnavailable(ex))
+        {
+            // The durable request state may already be unreachable; let the TTL
+            // expire it naturally and still clear the unified progress entry.
+        }
+
         await jobManager.ProgressStore.DeleteProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
     }
 

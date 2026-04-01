@@ -45,7 +45,8 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
             logger,
             "migration:evidence:request:",
             MigrationEvidenceJobJsonContext.Default.MigrationEvidenceJobState,
-            redis);
+            redis,
+            allowFallback: !_requiresStrictDistributedMode);
 
         _universalProgressStore = universalProgressStore;
         _progressStore = new DistributedProgressStoreAdapter<MigrationEvidenceProgress>(universalProgressStore);

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Server.Features.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Admin;
 
@@ -102,6 +103,34 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
             await _jobManager.ProgressStore.SetProgressAsync(jobId, update, TimeSpan.FromHours(24), token).ConfigureAwait(false);
         }
 
+        async Task DeleteRequestStateAsync(CancellationToken token)
+        {
+            try
+            {
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (DistributedCoordinationMode.IsDurableCoordinationUnavailable(ex))
+            {
+                Log.RequestStateCleanupSkipped(_logger, jobId, ex);
+            }
+        }
+
+        async Task MarkReportPersistedAsync(MigrationEvidenceJobState persistedState)
+        {
+            try
+            {
+                await _jobManager.RequestStore.SetProgressAsync(
+                    jobId,
+                    persistedState,
+                    TimeSpan.FromHours(24),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (DistributedCoordinationMode.IsDurableCoordinationUnavailable(ex))
+            {
+                Log.RequestStateUnavailableAfterPersistence(_logger, jobId, ex);
+            }
+        }
+
         async Task MonitorCancellationAsync(string id, CancellationTokenSource jobCts, CancellationToken token)
         {
             while (!token.IsCancellationRequested && !jobCts.IsCancellationRequested)
@@ -154,7 +183,7 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
             jobState = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
             if (progress?.Status == MigrationEvidenceJobStatus.Cancelled || jobState?.CancellationRequested == true)
             {
-                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                await DeleteRequestStateAsync(stoppingToken).ConfigureAwait(false);
                 if (progress is not null && progress.Status != MigrationEvidenceJobStatus.Cancelled)
                 {
                     await SetProgressAsync(progress with
@@ -220,15 +249,11 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
             {
                 ReportPersistedAt = DateTimeOffset.UtcNow
             };
-            await _jobManager.RequestStore.SetProgressAsync(
-                jobId,
-                jobState,
-                TimeSpan.FromHours(24),
-                CancellationToken.None).ConfigureAwait(false);
+            await MarkReportPersistedAsync(jobState).ConfigureAwait(false);
 
             _cancellationTokens.Remove(jobId);
             await _lifecycleObserver.OnReportPersistedAsync(jobId, report.ReportId, CancellationToken.None).ConfigureAwait(false);
-            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+            await DeleteRequestStateAsync(CancellationToken.None).ConfigureAwait(false);
 
             await SetProgressAsync(progress! with
             {
@@ -245,7 +270,7 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
         }
         catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
         {
-            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+            await DeleteRequestStateAsync(CancellationToken.None).ConfigureAwait(false);
 
             if (progress != null)
             {
@@ -325,5 +350,11 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
 
         [LoggerMessage(9138, LogLevel.Warning, "Migration evidence job {JobId} failed: {Message}")]
         public static partial void JobFailed(ILogger logger, string jobId, string message, Exception exception);
+
+        [LoggerMessage(9180, LogLevel.Warning, "Migration evidence request state was unavailable after report persistence for job {JobId}; completing with the stored artifact.")]
+        public static partial void RequestStateUnavailableAfterPersistence(ILogger logger, string jobId, Exception exception);
+
+        [LoggerMessage(9181, LogLevel.Warning, "Migration evidence request-state cleanup skipped for job {JobId} because durable coordination is unavailable.")]
+        public static partial void RequestStateCleanupSkipped(ILogger logger, string jobId, Exception exception);
     }
 }

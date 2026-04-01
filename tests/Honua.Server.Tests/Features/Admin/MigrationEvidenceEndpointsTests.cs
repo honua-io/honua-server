@@ -5,12 +5,21 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Server.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -132,8 +141,15 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "pilot evidence"));
         startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var jobId = await GetStringPropertyAsync(startResponse, "jobId");
-        var completedJob = await WaitForJobStatusAsync(_client, jobId, "completed", TimeSpan.FromSeconds(15));
+        using var startDocument = await startResponse.Content.ReadFromJsonAsync<JsonDocument>();
+        startDocument.Should().NotBeNull();
+        var startRoot = startDocument!.RootElement;
+        var jobId = startRoot.GetProperty("jobId").GetString();
+        jobId.Should().NotBeNullOrWhiteSpace();
+        startRoot.GetProperty("statusUrl").GetString().Should().Be($"/api/v1/admin/migrations/reports/jobs/{jobId}");
+        startRoot.GetProperty("cancelUrl").GetString().Should().Be($"/api/v1/admin/migrations/reports/jobs/{jobId}/cancel");
+
+        var completedJob = await WaitForJobStatusAsync(_client, jobId!, "completed", TimeSpan.FromSeconds(15));
         var reportId = completedJob.RootElement.GetProperty("reportId").GetGuid();
         completedJob.RootElement.GetProperty("readiness").GetString().Should().Be("pilot_ready");
 
@@ -225,6 +241,60 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         finally
         {
             _generator.Delay = TimeSpan.Zero;
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel")]
+    public async Task CancelJob_WhenDurableCoordinationIsUnavailable_ReturnsServiceUnavailable()
+    {
+        var distributedCache = new ToggleDistributedCache();
+        var isolatedFixture = CreateStrictCoordinationFixture(distributedCache);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            const string jobId = "job-503-dedicated";
+            await SeedActiveJobAsync(isolatedFixture, jobId, "dedicated coordination outage");
+            distributedCache.ThrowOnRead = true;
+            distributedCache.ThrowOnWrite = true;
+
+            var response = await isolatedFixture.Client.PostAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Distributed migration evidence coordination is unavailable");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    public async Task CancelOperation_WhenDurableCoordinationIsUnavailable_ReturnsServiceUnavailable()
+    {
+        var distributedCache = new ToggleDistributedCache();
+        var isolatedFixture = CreateStrictCoordinationFixture(distributedCache);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            const string jobId = "job-503-unified";
+            await SeedActiveJobAsync(isolatedFixture, jobId, "unified coordination outage");
+            distributedCache.ThrowOnRead = true;
+            distributedCache.ThrowOnWrite = true;
+
+            var response = await isolatedFixture.Client.PostAsync($"/api/v1/admin/operations/{jobId}/cancel", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Distributed migration evidence coordination is unavailable");
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
         }
     }
 
@@ -342,6 +412,83 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         requestedBy = "integration-test",
         summary
     };
+
+    private static MigrationEvidenceRequest CreateRequest(string summary) => new()
+    {
+        Provider = MigrationEvidenceProvider.ArcGisGeoservices,
+        SourceServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+        TargetBaseUrl = ValidTargetBaseUrl,
+        TargetServiceName = "test",
+        Layers =
+        [
+            new MigrationEvidenceLayerMapping
+            {
+                SourceLayerId = 0,
+                TargetLayerId = 0
+            }
+        ],
+        CutoverProfile = MigrationCutoverProfile.Pilot,
+        RollbackPlanReference = "runbook://rollback/pilot",
+        RequestedBy = "integration-test",
+        Summary = summary
+    };
+
+    private static WebAppFixture CreateStrictCoordinationFixture(ToggleDistributedCache distributedCache)
+    {
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        database.LockTakeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(false));
+        database.LockReleaseAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>())
+            .Returns(database);
+
+        return new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Public:BaseUrl", ValidTargetBaseUrl);
+            })
+            .ReplaceService<IMigrationEvidenceGenerator>(new FakeMigrationEvidenceGenerator(BuildCompletedReportAsync))
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDistributedCache>();
+                services.AddSingleton<IDistributedCache>(distributedCache);
+                services.RemoveAll<MigrationEvidenceJobManager>();
+                services.AddSingleton(sp => new MigrationEvidenceJobManager(
+                    sp.GetRequiredService<IUniversalProgressStore>(),
+                    distributedCache,
+                    sp.GetRequiredService<ILogger<MigrationEvidenceJobManager>>(),
+                    new StaticHostEnvironment("Production"),
+                    redis));
+            });
+    }
+
+    private static async Task SeedActiveJobAsync(WebAppFixture fixture, string jobId, string summary)
+    {
+        var jobManager = fixture.GetService<MigrationEvidenceJobManager>();
+        var request = CreateRequest(summary);
+
+        await jobManager.RequestStore.SetProgressAsync(
+            jobId,
+            new MigrationEvidenceJobState
+            {
+                Request = request
+            },
+            TimeSpan.FromHours(24),
+            CancellationToken.None);
+
+        await jobManager.ProgressStore.SetProgressAsync(
+            jobId,
+            MigrationEvidenceProgress.CreateInitial(jobId, request) with
+            {
+                Status = MigrationEvidenceJobStatus.ResolvingSourceBaseline,
+                CompletedSteps = 1,
+                CurrentPhase = "Resolving source baseline"
+            },
+            TimeSpan.FromHours(24),
+            CancellationToken.None);
+    }
 
     private static async Task<string> GetStringPropertyAsync(HttpResponseMessage response, string propertyName)
     {
@@ -732,6 +879,95 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         public void Release()
         {
             _release.TrySetResult(true);
+        }
+    }
+
+    private sealed class StaticHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+
+        public string ApplicationName { get; set; } = "Honua.Server.Tests";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class ToggleDistributedCache : IDistributedCache
+    {
+        private readonly Dictionary<string, byte[]> _entries = new(StringComparer.Ordinal);
+        private readonly object _sync = new();
+
+        public bool ThrowOnRead { get; set; }
+
+        public bool ThrowOnWrite { get; set; }
+
+        public byte[]? Get(string key)
+        {
+            ThrowIfReadFailed();
+            lock (_sync)
+            {
+                return _entries.TryGetValue(key, out var value) ? value : null;
+            }
+        }
+
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default)
+        {
+            ThrowIfReadFailed();
+            return Task.FromResult(Get(key));
+        }
+
+        public void Refresh(string key)
+        {
+        }
+
+        public Task RefreshAsync(string key, CancellationToken token = default)
+            => Task.CompletedTask;
+
+        public void Remove(string key)
+        {
+            lock (_sync)
+            {
+                _entries.Remove(key);
+            }
+        }
+
+        public Task RemoveAsync(string key, CancellationToken token = default)
+        {
+            Remove(key);
+            return Task.CompletedTask;
+        }
+
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
+        {
+            ThrowIfWriteFailed();
+            lock (_sync)
+            {
+                _entries[key] = value;
+            }
+        }
+
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
+        {
+            ThrowIfWriteFailed();
+            Set(key, value, options);
+            return Task.CompletedTask;
+        }
+
+        private void ThrowIfReadFailed()
+        {
+            if (ThrowOnRead)
+            {
+                throw new InvalidOperationException("Simulated cache read failure.");
+            }
+        }
+
+        private void ThrowIfWriteFailed()
+        {
+            if (ThrowOnWrite)
+            {
+                throw new InvalidOperationException("Simulated cache write failure.");
+            }
         }
     }
 }

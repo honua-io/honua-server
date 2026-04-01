@@ -29,6 +29,13 @@ internal static class DistributedCoordinationMode
         ArgumentNullException.ThrowIfNull(hostEnvironment);
         return !hostEnvironment.IsDevelopment() && !hostEnvironment.IsEnvironment("Test");
     }
+
+    public static bool IsDurableCoordinationUnavailable(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception is InvalidOperationException invalidOperationException &&
+               invalidOperationException.Message.Contains("durable coordination is required", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>
@@ -636,12 +643,14 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 /// </summary>
 internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T> where T : class
 {
+    private const string StrictModeUnavailableMessage = "Distributed progress store is unavailable while durable coordination is required.";
     private readonly IDistributedCache? _cache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly ILogger _logger;
     private readonly string _keyPrefix;
     private readonly string _healthCheckKey;
     private readonly JsonTypeInfo<T> _jsonTypeInfo;
+    private readonly bool _allowFallback;
     private readonly ConcurrentDictionary<string, T> _fallbackStore = new();
     private readonly ConcurrentDictionary<string, DateTime> _fallbackExpiry = new();
     private const int MaxFallbackEntries = 5000;
@@ -656,13 +665,15 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         ILogger logger,
         string keyPrefix,
         JsonTypeInfo<T> jsonTypeInfo,
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        bool allowFallback = true)
     {
         _cache = cache;
         _logger = logger;
         _keyPrefix = keyPrefix;
         _jsonTypeInfo = jsonTypeInfo;
         _redis = redis;
+        _allowFallback = allowFallback;
         _healthCheckKey = $"{_keyPrefix}__health_check__";
         _isUsingFallback = cache == null;
     }
@@ -674,7 +685,10 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         var key = $"{_keyPrefix}{jobId}";
         var effectiveTtl = ttl ?? TimeSpan.FromHours(24);
 
-        CacheFallback(key, progress, effectiveTtl);
+        if (_allowFallback)
+        {
+            CacheFallback(key, progress, effectiveTtl);
+        }
 
         if (_isUsingFallback && _cache != null && ShouldRetryRedis(DateTime.UtcNow))
         {
@@ -683,6 +697,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         if (_isUsingFallback || _cache == null)
         {
+            ThrowIfStrictCoordinationUnavailable();
             return;
         }
 
@@ -698,6 +713,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "set progress");
+            ThrowIfStrictCoordinationUnavailable(ex);
         }
     }
 
@@ -712,6 +728,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
 
         if (_isUsingFallback || _cache == null)
         {
+            ThrowIfStrictCoordinationUnavailable();
             CleanupFallbackIfNeeded(enforceMax: false);
 
             if (_fallbackStore.TryGetValue(key, out var fallbackProgress))
@@ -742,6 +759,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "get progress");
+            ThrowIfStrictCoordinationUnavailable(ex);
             return _fallbackStore.TryGetValue(key, out var progress) ? progress : null;
         }
     }
@@ -763,12 +781,16 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             try
             {
                 await _cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+                return;
             }
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "delete progress");
+                ThrowIfStrictCoordinationUnavailable(ex);
             }
         }
+
+        ThrowIfStrictCoordinationUnavailable();
     }
 
     public Task<IReadOnlyList<string>> GetActiveJobIdsAsync(CancellationToken cancellationToken = default)
@@ -886,6 +908,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     {
         if (_cache == null)
         {
+            ThrowIfStrictCoordinationUnavailable();
             return GetActiveJobIdsFromFallback();
         }
 
@@ -903,10 +926,24 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "scan progress");
+                ThrowIfStrictCoordinationUnavailable(ex);
             }
         }
 
+        ThrowIfStrictCoordinationUnavailable();
         return GetActiveJobIdsFromFallback();
+    }
+
+    private void ThrowIfStrictCoordinationUnavailable(Exception? innerException = null)
+    {
+        if (_allowFallback)
+        {
+            return;
+        }
+
+        throw innerException == null
+            ? new InvalidOperationException(StrictModeUnavailableMessage)
+            : new InvalidOperationException(StrictModeUnavailableMessage, innerException);
     }
 
     private List<string> GetActiveJobIdsFromFallback()

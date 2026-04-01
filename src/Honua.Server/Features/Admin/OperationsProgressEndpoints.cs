@@ -163,8 +163,8 @@ internal static class OperationsProgressEndpoints
             if (!decision.Success)
             {
                 return ProblemDetailsHelpers.CreateAdminProblem(
-                    StatusCodes.Status409Conflict,
-                    "Conflict",
+                    decision.StatusCode,
+                    ProblemDetailsHelpers.GetTitle(decision.StatusCode),
                     decision.Message);
             }
 

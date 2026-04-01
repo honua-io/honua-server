@@ -62,7 +62,7 @@ public sealed class MigrationEvidenceCoordinationTests
     }
 
     [Fact]
-    public async Task CanAcceptNewJobs_RequestStoreFallsBack_TracksLiveDurabilityState()
+    public async Task RequestStore_InStrictDistributedMode_DoesNotFallbackWhenDurabilityIsLost()
     {
         var distributedCache = new ToggleDistributedCache();
         var redis = Substitute.For<IConnectionMultiplexer>();
@@ -80,8 +80,38 @@ public sealed class MigrationEvidenceCoordinationTests
 
         distributedCache.ThrowOnWrite = true;
 
-        await manager.RequestStore.SetProgressAsync(
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => manager.RequestStore.SetProgressAsync(
             "job-456",
+            new MigrationEvidenceJobState
+            {
+                Request = CreateRequest()
+            },
+            TimeSpan.FromHours(24),
+            CancellationToken.None));
+
+        exception.Message.Should().Contain("durable coordination is required");
+        manager.IsClusterDurable.Should().BeFalse();
+        manager.CanAcceptNewJobs.Should().BeFalse();
+        universalProgressStore.IsUsingFallback.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RequestStore_InStrictDistributedMode_DoesNotServeFallbackReadWhenDurabilityIsLost()
+    {
+        var distributedCache = new ToggleDistributedCache();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        using var manager = CreateJobManager(
+            new TestHostEnvironment("Production"),
+            distributedCache,
+            redis,
+            out _);
+
+        const string jobId = "job-789";
+        await manager.RequestStore.SetProgressAsync(
+            jobId,
             new MigrationEvidenceJobState
             {
                 Request = CreateRequest()
@@ -89,9 +119,18 @@ public sealed class MigrationEvidenceCoordinationTests
             TimeSpan.FromHours(24),
             CancellationToken.None);
 
+        var storedState = await manager.RequestStore.GetProgressAsync(jobId, CancellationToken.None);
+        storedState.Should().NotBeNull();
+
+        distributedCache.ThrowOnRead = true;
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => manager.RequestStore.GetProgressAsync(
+            jobId,
+            CancellationToken.None));
+
+        exception.Message.Should().Contain("durable coordination is required");
         manager.IsClusterDurable.Should().BeFalse();
         manager.CanAcceptNewJobs.Should().BeFalse();
-        universalProgressStore.IsUsingFallback.Should().BeFalse();
     }
 
     private static MigrationEvidenceJobManager CreateJobManager(

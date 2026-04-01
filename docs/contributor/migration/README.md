@@ -17,6 +17,8 @@ Honua can now generate a durable migration evidence artifact through the admin A
 
 - `POST /api/v1/admin/migrations/reports` starts background generation of a parity and cutover-readiness report.
 - `GET /api/v1/admin/migrations/reports/jobs/{jobId}` returns job progress and the persisted `reportId` after completion.
+- `POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel` requests cancellation through the migration-evidence route.
+- `POST /api/v1/admin/operations/{jobId}/cancel` requests the same cancellation through the unified operations surface.
 - `GET /api/v1/admin/migrations/reports` lists immutable report summaries.
 - `GET /api/v1/admin/migrations/reports/{reportId}` fetches the full JSON artifact for signoff, audit, or attachment to pilot records.
 
@@ -34,7 +36,7 @@ The job lifecycle is asynchronous:
 
 - The start call returns `202 Accepted` with a short `jobId` plus relative `statusUrl` and `cancelUrl` under `/api/v1/admin/migrations/reports/`.
 - Poll the job endpoint until `status` reaches `completed`, `failed`, or `cancelled`. Progress payloads expose the request identity fields, `startedAt` and `completedAt`, `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, warnings, and any terminal `errorMessage`.
-- Completed jobs include `reportId`, `readiness`, and any readiness warnings. Cancelled jobs do not create a persisted report artifact, and cancelling a terminal job returns `409 Conflict`.
+- Use either cancellation route while the job is queued or running. Completed jobs include `reportId`, `readiness`, and any readiness warnings. Cancelled jobs do not create a persisted report artifact, and cancelling a terminal or already-persisted job returns `409 Conflict` while leaving any completed artifact available through `reportId`.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start call returns `503` instead of falling back to local-only execution.
 - Job progress is transient distributed state retained for roughly 24 hours after queueing or the last update. Persist `reportId`, `reportHash`, and `generatedAt` in the pilot record instead of relying on `jobId` for long-term lookup.
 - The same progress record is also available through the unified operations endpoints at `/api/v1/admin/operations/{jobId}` and `/api/v1/admin/operations/type/MigrationEvidence`, but the dedicated migration job route remains the primary polling surface.

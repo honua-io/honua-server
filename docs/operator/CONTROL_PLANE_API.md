@@ -337,8 +337,8 @@ Content-Type: application/json
 {
   "jobId": "a1b2c3d4e5f6",
   "message": "Migration evidence generation started",
-  "statusUrl": "jobs/a1b2c3d4e5f6",
-  "cancelUrl": "jobs/a1b2c3d4e5f6/cancel"
+  "statusUrl": "/api/v1/admin/migrations/reports/jobs/a1b2c3d4e5f6",
+  "cancelUrl": "/api/v1/admin/migrations/reports/jobs/a1b2c3d4e5f6/cancel"
 }
 ```
 
@@ -382,7 +382,7 @@ Content-Type: application/json
 **Usage notes:**
 
 - `POST /api/v1/admin/migrations/reports` returns `202 Accepted` with `jobId`, `statusUrl`, and `cancelUrl`.
-- The queue response URLs are relative to `/api/v1/admin/migrations/reports/`; resolve them against that collection path instead of treating them as absolute URLs.
+- The queue response URLs are root-relative paths that resolve directly to the dedicated polling and cancellation endpoints.
 - Poll `GET /api/v1/admin/migrations/reports/jobs/{jobId}` until `status` reaches `completed`, `failed`, or `cancelled`. Progress responses always echo the request identity fields (`provider`, `sourceServiceUrl`, `targetBaseUrl`, `targetServiceName`, and `cutoverProfile`) plus `startedAt`, `completedAt`, `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, `warnings`, and `errorMessage` when present. Only completed jobs include `reportId` and computed `readiness`.
 - Job progress is transient distributed state retained for roughly 24 hours after queueing or the last update. Treat `jobId` as an operational handle; treat the persisted `reportId` artifact as the durable audit reference.
 - The request contract is intentionally narrow: `provider` must be `arcgis-geoservices`, `cutoverProfile` must be `pilot` or `production`, `rollbackPlanReference` is required, and `layers` must contain at least one mapping whose `sourceLayerId` and `targetLayerId` are non-negative integers.
@@ -394,7 +394,8 @@ Content-Type: application/json
 - `targetSnapshot.operationalSnapshot` captures the current server's deploy-preflight and database-compatibility probe output used for the run, including `status`, `readyForCoordinatedDeploy`, `migrationPlanAvailable`, `upgradeRequired`, `pendingScripts`, `executedButNotDiscoveredScripts`, `databaseCompatible`, `databaseCompatibilityWarnings`, and `errorMessage` when present.
 - Comparison lanes (`capability`, `style`, `data`, and `operationalReadiness`) are arrays of stable check objects with `checkName`, `status`, `scope`, `summary`, optional `notes`, and structured `observations`. Comparison and checklist statuses use `pass`, `warning`, `fail`, and `not_applicable`; checklist `requirementLevel` is `pilot_required` or `production_required`.
 - Generated reports are immutable JSON artifacts. There are no update or delete endpoints in the MVP.
-- Cancelling a terminal job returns `409`. Cancelled jobs do not persist a report artifact.
+- Use `POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel` as the feature-local cancel route, or `POST /api/v1/admin/operations/{jobId}/cancel` when your client is already operating through the unified operations surface; both target the same transient `jobId`.
+- Cancelling a terminal or no-longer-cancellable job returns `409`. Cancelled jobs do not persist a report artifact, and a `409` after persistence means the completed artifact remains available through its `reportId`.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start endpoint returns `503`.
 - The same job state is also visible through `/api/v1/admin/operations/{operationId}` and `/api/v1/admin/operations/type/MigrationEvidence`.
 
