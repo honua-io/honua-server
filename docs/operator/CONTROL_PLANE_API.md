@@ -249,7 +249,7 @@ Request body:
 | Field | Required | Notes |
 |----------|--------|---------|
 | `sourceKind` | Yes | Accepted aliases: `geoserver`, `geoserver-rest`, `geoservices`, `arcgis-geoservices-rest`. The response normalizes this to `geoserver-rest` or `arcgis-geoservices-rest`. |
-| `sourceUrl` | Yes | Canonical source URL to scan. GeoServices requires HTTPS and rejects embedded credentials plus private, loopback, or unresolvable addresses. GeoServer uses the same HTTPS rule in normal environments; test-only unsafe local URLs can be enabled separately. |
+| `sourceUrl` | Yes | Canonical source URL to scan. GeoServices requires an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`; layer or table URLs are rejected. GeoServer and GeoServices reject embedded credentials. GeoServices also rejects private, loopback, or unresolvable addresses. GeoServer follows the same HTTPS and address-safety rules in normal environments; test-only unsafe local URLs can be enabled separately. |
 | `username` | No | GeoServer basic-auth username. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
 | `password` | No | GeoServer basic-auth password. Both `username` and `password` are required before the scan sends Basic auth; if only one is supplied the scan proceeds anonymously and records a note. Ignored for GeoServices scans. |
 | `timeoutSeconds` | No | Defaults to `120` for GeoServer scans and `30` for GeoServices scans. |
@@ -298,20 +298,21 @@ The response body is the artifact itself, not a `success/data` admin envelope.
 
 Behavior notes:
 - `200 OK` means Honua produced an inventory artifact. Use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate before import or cutover decisions.
-- GeoServer currently also returns `200 OK` with `scanCompleteness.status = "failed"` for discovery failures such as reachability, timeout, auth challenges, and unusable metadata. Failed GeoServer artifacts keep `authPosture.mode = "basic"` when both credentials were supplied; otherwise they use `anonymous-or-auth-required` and record failure details in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
+- A `200 OK` artifact can still report `scanCompleteness.status = "failed"`. GeoServer uses that path for reachability, timeout, auth, and other discovery failures. GeoServices also uses it when anonymous discovery is blocked or the ArcGIS API returns a source-reported discovery error.
+- Failed GeoServer artifacts keep `authPosture.mode = "basic"` when both credentials were supplied; otherwise they use `anonymous-or-auth-required` and record failure details in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
 - GeoServer scans only send Basic auth when both `username` and `password` are present. Supplying only one credential field leaves the scan in anonymous mode and adds an explanatory auth note.
 - Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
 - External URL dependencies strip embedded credentials, query strings, and fragments before serialization, and the corresponding dependency IDs use stable hashed fingerprints instead of raw URLs.
 - GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
-- GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner.
+- GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner. Successful GeoServices artifacts therefore report `authPosture.mode = "anonymous"`, while failed artifacts can report `auth-required` or `unknown`.
 - GeoServer can emit a synthetic `workspace:global` container when global styles or layer groups are discovered.
-- Stable artifact IDs are keyed from canonical source names rather than display text, so changing a source description does not churn container, resource, style, or dependency identifiers. Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Optional JSON properties are omitted when the scanner has no value to emit.
+- Stable artifact IDs are keyed from canonical source names rather than display text, so changing a source description does not churn container, resource, style, or dependency identifiers. Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts. Nullable scalar properties are omitted when the scanner has no value to emit.
 
 Failure semantics:
-- `400 Bad Request`: invalid JSON body, missing required fields, unsupported `sourceKind`, non-positive `timeoutSeconds`, invalid HTTPS requirements, embedded credentials in the URL, or disallowed private or loopback targets.
-- `200 OK` with `scanCompleteness.status = "failed"`: GeoServer could not complete discovery cleanly, including auth-required, reachability, timeout, or unusable-metadata cases.
-- `502 Bad Gateway`: GeoServices scan failed to connect to the source service.
-- `504 Gateway Timeout`: GeoServices scan exceeded the request timeout.
+- `400 Bad Request`: invalid JSON body, missing required fields, unsupported `sourceKind`, non-positive `timeoutSeconds`, invalid HTTPS requirements, invalid GeoServices service-root paths, embedded credentials in the URL, or disallowed private or loopback targets.
+- `200 OK` with `scanCompleteness.status = "failed"`: the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses this for auth-required, reachability, timeout, or unusable-metadata cases. GeoServices uses it for auth-required and source-reported ArcGIS discovery errors.
+- `502 Bad Gateway`: the scanner failed to connect to the source service. This is surfaced primarily for GeoServices; GeoServer transport failures are normalized into a failed artifact with HTTP `200`.
+- `504 Gateway Timeout`: the scanner exceeded the request timeout. This is surfaced primarily for GeoServices; GeoServer timeout failures are normalized into a failed artifact with HTTP `200`.
 
 The artifact includes:
 - source identity and version

@@ -146,8 +146,17 @@ internal static partial class MigrationInventoryHelpers
             : null;
 
         var wkt = definition?.Wkt ?? explicitWkt ?? ExtractWkt(sourceValue);
+        if (definition == null &&
+            !srid.HasValue &&
+            string.IsNullOrWhiteSpace(sourceValue) &&
+            string.IsNullOrWhiteSpace(wkt))
+        {
+            return null;
+        }
+
+        var isGeographic = definition?.IsGeographic ?? InferIsGeographic(wkt, srid);
         var datum = ExtractDatum(wkt);
-        var unit = ExtractUnit(wkt, definition?.IsGeographic);
+        var unit = ExtractUnit(wkt, isGeographic);
 
         return new MigrationSpatialReferenceInfo
         {
@@ -158,7 +167,7 @@ internal static partial class MigrationInventoryHelpers
             Datum = datum,
             Unit = unit,
             AxisOrder = definition.HasValue ? ToAxisOrderText(definition.Value.AxisOrder) : null,
-            IsGeographic = definition?.IsGeographic ?? InferIsGeographic(wkt, srid)
+            IsGeographic = isGeographic
         };
     }
 
@@ -299,10 +308,14 @@ internal static partial class MigrationInventoryHelpers
     {
         if (!string.IsNullOrWhiteSpace(wkt))
         {
-            var lengthMatch = LengthUnitRegex().Match(wkt);
-            if (lengthMatch.Success)
+            var lengthMatches = LengthUnitRegex().Matches(wkt);
+            if (lengthMatches.Count > 0)
             {
-                return lengthMatch.Groups[1].Value;
+                var matchIndex = isGeographic == false || ContainsProjectedCrsMarker(wkt)
+                    ? lengthMatches.Count - 1
+                    : 0;
+
+                return lengthMatches[matchIndex].Groups[1].Value;
             }
 
             var angleMatch = AngleUnitRegex().Match(wkt);
@@ -315,13 +328,16 @@ internal static partial class MigrationInventoryHelpers
         return isGeographic == true ? "degree" : null;
     }
 
+    private static bool ContainsProjectedCrsMarker(string wkt)
+        => wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) ||
+           wkt.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase) ||
+           wkt.Contains("PROJECTEDCRS", StringComparison.OrdinalIgnoreCase);
+
     private static bool? InferIsGeographic(string? wkt, int? srid)
     {
         if (!string.IsNullOrWhiteSpace(wkt))
         {
-            if (wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("PROJCRS", StringComparison.OrdinalIgnoreCase) ||
-                wkt.Contains("PROJECTEDCRS", StringComparison.OrdinalIgnoreCase))
+            if (ContainsProjectedCrsMarker(wkt))
             {
                 return false;
             }

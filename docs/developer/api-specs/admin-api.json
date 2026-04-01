@@ -1038,7 +1038,7 @@
           "Import"
         ],
         "summary": "Scan Migration Source",
-        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when discovery could not complete cleanly; GeoServer currently also uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures instead of surfacing 502/504.",
+        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504.",
         "operationId": "scanMigrationSource",
         "requestBody": {
           "required": true,
@@ -1052,7 +1052,7 @@
         },
         "responses": {
           "200": {
-            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can also return a failed artifact for transport, timeout, auth-related, or other discovery failures; GeoServices surfaces transport and timeout failures as 502/504.",
+            "description": "Migration source inventory artifact, including partial or failed completeness states when discovery could not finish cleanly. GeoServer can return a failed artifact for transport, timeout, auth-related, or other discovery failures; GeoServices can return a failed artifact for auth-related and source-reported discovery errors, while transport and timeout failures surface as 502/504.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1071,7 +1071,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "502": {
-            "description": "Failed to connect to source service. This is currently surfaced for GeoServices scans; GeoServer transport failures return a failed inventory artifact with HTTP 200.",
+            "description": "Failed to connect to source service. This is currently surfaced primarily for GeoServices transport failures; GeoServer transport failures return a failed inventory artifact with HTTP 200.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1081,7 +1081,7 @@
             }
           },
           "504": {
-            "description": "Source scan timed out. This is currently surfaced for GeoServices scans; GeoServer timeout failures return a failed inventory artifact with HTTP 200.",
+            "description": "Source scan timed out. This is currently surfaced primarily for GeoServices timeout failures; GeoServer timeout failures return a failed inventory artifact with HTTP 200.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3160,7 +3160,7 @@
           "sourceUrl": {
             "type": "string",
             "format": "uri",
-            "description": "Source URL to scan. GeoServices requires HTTPS and rejects embedded credentials plus private, loopback, or unresolvable targets. GeoServer follows the same rule outside the test-only unsafe local URL mode."
+            "description": "Source URL to scan. GeoServices requires an HTTPS ArcGIS service root ending in FeatureServer or MapServer and rejects layer/table URLs, embedded credentials, plus private, loopback, or unresolvable targets. GeoServer follows the same HTTPS and address-safety rules outside the test-only unsafe local URL mode and also rejects embedded credentials."
           },
           "username": {
             "type": "string",
@@ -3304,7 +3304,7 @@
         "properties": {
           "mode": {
             "type": "string",
-            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown. GeoServer scans without a complete username/password pair remain anonymous and add an explanatory note."
+            "description": "Observed authentication posture, for example anonymous, basic, auth-required, anonymous-or-auth-required, or unknown. GeoServer scans without a complete username/password pair remain anonymous and add an explanatory note. Successful GeoServices scans are currently anonymous-only; failed artifacts can report auth-required or unknown."
           },
           "credentialsSupplied": {
             "type": "boolean",
@@ -3331,7 +3331,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "Scan completeness classification. failed can still be returned with HTTP 200 when the source responded but the scanner could not complete inventory generation cleanly.",
+            "description": "Scan completeness classification. failed can still be returned with HTTP 200 when the scanner produced an artifact but could not complete inventory generation cleanly.",
             "enum": [
               "complete",
               "partial",

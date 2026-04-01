@@ -81,6 +81,23 @@ public sealed class GeoServerImportServiceScanTests
             .Which.ExternalDependencyIds.Should().ContainSingle(dependency.Id);
     }
 
+    [Fact]
+    public async Task ScanSourceAsync_WithoutCrsMetadata_OmitsPlaceholderSpatialReferences()
+    {
+        using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var service = CreateService(restClient);
+
+        var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            IncludeCompatibilityAnalysis = true
+        });
+
+        artifact.Resources.Should().ContainSingle(resource => resource.Id == "layer:demo:states")
+            .Which.SpatialReferences.Should().BeEmpty();
+    }
+
     private static GeoServerImportService CreateService(GeoServerRestClient restClient)
     {
         var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);

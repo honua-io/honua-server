@@ -119,6 +119,48 @@ public sealed class GeoservicesImportServiceScanTests
         artifact.Styles.Should().ContainSingle().Which.ExternalDependencyIds.Should().ContainSingle(dependency.Id);
     }
 
+    [Fact]
+    public async Task ScanSourceAsync_MissingAttachmentMetadata_PreservesUnknownState()
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: """{"wkid":3857}"""));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.HasAttachments.Should().BeNull();
+        resource.Compatibility.Warnings.Should().NotContain(warning => warning.Contains("Attachments", StringComparison.Ordinal));
+        artifact.ExternalDependencies.Should().NotContain(dependency => dependency.Kind == "attachments");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_ProjectedWkt_UsesProjectedLengthUnit()
+    {
+        var service = CreateService(
+            new GeoservicesScanHandler(
+                serviceDescription: "Parcel Viewer",
+                spatialReferenceJson: JsonSerializer.Serialize(new
+                {
+                    wkt = SpatialReference.WebMercator.Wkt
+                })));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var spatialReference = artifact.Resources.Should().ContainSingle().Subject.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.Unit.Should().Be("metre");
+        spatialReference.IsGeographic.Should().BeFalse();
+    }
+
     private static GeoservicesImportService CreateService(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);

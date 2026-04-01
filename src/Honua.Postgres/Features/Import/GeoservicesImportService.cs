@@ -242,7 +242,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         var resourceCapabilities = SplitCsv(GetOptionalStringProperty(resourceDocument.RootElement, "capabilities"));
         var advertisedCapabilities = resourceCapabilities.Length == 0 ? serviceCapabilities : resourceCapabilities;
         var geometryType = GetOptionalStringProperty(resourceDocument.RootElement, "geometryType");
-        var hasAttachments = GetOptionalBoolProperty(resourceDocument.RootElement, "hasAttachments") ?? false;
+        var hasAttachments = GetOptionalBoolProperty(resourceDocument.RootElement, "hasAttachments");
 
         int? featureCount = null;
         try
@@ -269,7 +269,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             out var rendererDependencies);
 
         var dependencies = new List<MigrationExternalDependency>(rendererDependencies);
-        if (hasAttachments)
+        if (hasAttachments == true)
         {
             dependencies.Add(new MigrationExternalDependency
             {
@@ -524,7 +524,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         string resourceKind,
         string? geometryType,
         IReadOnlyCollection<string> capabilities,
-        bool hasAttachments,
+        bool? hasAttachments,
         bool hasSpatialReference)
     {
         var warnings = new List<string>();
@@ -553,7 +553,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             manualSteps.Add("Confirm CRS, datum, and units before migration.");
         }
 
-        if (hasAttachments)
+        if (hasAttachments == true)
         {
             warnings.Add("Attachments are advertised on this resource.");
             manualSteps.Add("Plan a separate attachment migration.");
