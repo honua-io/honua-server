@@ -22,6 +22,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.Configuration)]
 public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
 {
+    private const string ValidTargetBaseUrl = "https://example.com";
     private readonly WebAppFixture _fixture;
     private readonly FakeMigrationEvidenceGenerator _generator;
     private HttpClient _client = null!;
@@ -30,6 +31,7 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
     {
         _generator = new FakeMigrationEvidenceGenerator(BuildCompletedReportAsync);
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", ValidTargetBaseUrl))
             .ReplaceService<IMigrationEvidenceGenerator>(_generator);
     }
 
@@ -96,6 +98,28 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain(expectedError);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migrations/reports")]
+    public async Task StartReport_WithTargetBaseUrlForAnotherServer_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", new
+        {
+            provider = "arcgis-geoservices",
+            sourceServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            targetBaseUrl = "https://example.org",
+            targetServiceName = "test",
+            layers = new[]
+            {
+                new { sourceLayerId = 0, targetLayerId = 0 }
+            },
+            cutoverProfile = "pilot",
+            rollbackPlanReference = "runbook://rollback/pilot"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Cross-instance migration evidence generation");
     }
 
     [IntegrationTest]
@@ -212,6 +236,7 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
     {
         var blockingStore = new BlockingMigrationEvidenceReportStore();
         var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", ValidTargetBaseUrl))
             .ReplaceService<IMigrationEvidenceGenerator>(new FakeMigrationEvidenceGenerator(BuildCompletedReportAsync))
             .ReplaceService<IMigrationEvidenceReportStore>(blockingStore);
 
@@ -249,6 +274,7 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
     {
         var lifecycleObserver = new BlockingMigrationEvidenceLifecycleObserver();
         var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("Public:BaseUrl", ValidTargetBaseUrl))
             .ReplaceService<IMigrationEvidenceGenerator>(new FakeMigrationEvidenceGenerator(BuildCompletedReportAsync))
             .ReplaceService<IMigrationEvidenceLifecycleObserver>(lifecycleObserver);
 
@@ -305,7 +331,7 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
     {
         provider = "arcgis-geoservices",
         sourceServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
-        targetBaseUrl = "https://example.com",
+        targetBaseUrl = ValidTargetBaseUrl,
         targetServiceName = "test",
         layers = new[]
         {

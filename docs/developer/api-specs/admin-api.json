@@ -2001,7 +2001,7 @@
       "post": {
         "tags": ["Migration"],
         "summary": "Start Migration Evidence Report",
-        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact. The 202 response returns a short job ID plus relative status and cancellation URLs under /api/v1/admin/migrations/reports/. Job progress is transient operational state; use the completed report artifact for durable audit references.",
+        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact. The 202 response returns a short job ID plus relative status and cancellation URLs under /api/v1/admin/migrations/reports/. Job progress is transient operational state; use the completed report artifact for durable audit references. This endpoint only supports targetBaseUrl values that match the current server's resolved public base URL.",
         "operationId": "startMigrationEvidenceReport",
         "requestBody": {
           "required": true,
@@ -4484,7 +4484,7 @@
           "targetBaseUrl": {
             "type": "string",
             "format": "uri",
-            "description": "Canonical public target base URL used for parity probes. Must be a public HTTPS URL without embedded credentials; loopback, private, and unresolvable hosts are rejected."
+            "description": "Canonical public target base URL used for parity probes. Must be a public HTTPS URL without embedded credentials; loopback, private, and unresolvable hosts are rejected. Must also match the current server's resolved public base URL because cross-instance evidence generation is not supported by this endpoint."
           },
           "targetServiceName": {
             "type": "string",
@@ -4662,7 +4662,7 @@
           },
           "targetBaseUrl": {
             "type": "string",
-            "description": "Target base URL."
+            "description": "Target base URL for the current server instance."
           },
           "targetServiceName": {
             "type": "string",
@@ -5160,7 +5160,7 @@
           },
           "targetBaseUrl": {
             "type": "string",
-            "description": "Target base URL."
+            "description": "Target base URL for the current server instance."
           },
           "targetServiceName": {
             "type": "string",

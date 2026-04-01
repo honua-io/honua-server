@@ -24,6 +24,7 @@ The request contract is intentionally narrow:
 
 - `provider` currently supports only `arcgis-geoservices`.
 - `sourceServiceUrl` and `targetBaseUrl` must be public HTTPS URLs without embedded credentials; loopback, private, and unresolvable hosts are rejected.
+- `targetBaseUrl` must match the current Honua server's resolved public base URL. Cross-instance evidence generation is not supported by this endpoint because target-side style and deploy-preflight evidence comes from the current server's admin state.
 - `layers` is required, must contain at least one mapping, and maps source layer IDs to target layer IDs; all layer IDs must be non-negative.
 - `cutoverProfile` is `pilot` or `production`. The production profile escalates production-only warnings and failures into blocking readiness reasons.
 - `rollbackPlanReference` is required. Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are echoed into the stored artifact.
@@ -50,7 +51,7 @@ The persisted artifact contract is stable enough for pilot evidence packs:
 - `request` preserves operator inputs and provenance references.
 - `schemaVersion` is currently `migration-evidence/v1`; downstream automation should treat it as the artifact contract version.
 - `sourceBaseline` and `targetSnapshot` capture the metadata and digests used for the run, including per-layer field snapshots, extent snapshots, notes, and style digests when available.
-- `targetSnapshot.operationalSnapshot` records the deploy-preflight outcome and database probe details used in the report decision, including pending migrations, executed-but-missing scripts, compatibility warnings, and probe errors.
+- `targetSnapshot.operationalSnapshot` records the current server's deploy-preflight outcome and database probe details used in the report decision, including pending migrations, executed-but-missing scripts, compatibility warnings, and probe errors.
 - `comparison` is split into `capability`, `style`, `data`, and `operationalReadiness` arrays so downstream tooling can reason about each parity lane independently. Each entry carries `checkName`, `status`, `scope`, `summary`, optional `notes`, and structured `observations`.
 - `cutoverReadiness` carries the final `state`, a de-duplicated `blockingReasons` list, warnings, and the full checklist that produced the decision. Checklist items expose both `requirementLevel` and `status`; `requirementLevel` is `pilot_required` or `production_required`, and statuses use `pass`, `warning`, `fail`, and `not_applicable`.
 - `GET /api/v1/admin/migrations/reports` returns summary rows ordered by `generatedAt` descending and supports non-negative pagination inputs plus exact audit filters `provider=arcgis-geoservices`, `cutoverProfile=pilot|production`, and `readiness=blocked|pilot_ready|production_ready`. Each summary includes the immutable `reportHash`, durable `reportId`, `warningCount`, `blockerCount`, `generatedAt`, and the echoed provenance fields (`requestedBy`, `summary`, `inventoryArtifactRef`, `translationManifestRef`, and `importJobId`) for quick triage, while the response still echoes the requested `limit` and `offset`. A `limit` of `0` returns an empty page, and the backing store fetches at most 200 summaries per call.

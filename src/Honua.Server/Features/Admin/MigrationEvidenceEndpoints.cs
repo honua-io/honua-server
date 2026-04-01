@@ -107,6 +107,16 @@ internal static partial class MigrationEvidenceEndpoints
             return;
         }
 
+        var currentBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+        if (!TargetBaseUrlMatchesCurrentServer(request.TargetBaseUrl, currentBaseUrl))
+        {
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                $"TargetBaseUrl must match this server's public base URL ('{currentBaseUrl}'). Cross-instance migration evidence generation is not supported by this endpoint.",
+                StatusCodes.Status400BadRequest);
+            return;
+        }
+
         try
         {
             jobManager = context.RequestServices.GetRequiredService<MigrationEvidenceJobManager>();
@@ -436,6 +446,46 @@ internal static partial class MigrationEvidenceEndpoints
 
         validationError = null;
         return true;
+    }
+
+    private static bool TargetBaseUrlMatchesCurrentServer(string requestedTargetBaseUrl, string currentBaseUrl)
+    {
+        if (TryNormalizeBaseUrl(requestedTargetBaseUrl, out var requestedUri) &&
+            TryNormalizeBaseUrl(currentBaseUrl, out var currentUri))
+        {
+            return Uri.Compare(
+                    requestedUri,
+                    currentUri,
+                    UriComponents.SchemeAndServer | UriComponents.Path,
+                    UriFormat.SafeUnescaped,
+                    StringComparison.OrdinalIgnoreCase) == 0;
+        }
+
+        return string.Equals(
+            requestedTargetBaseUrl.TrimEnd('/'),
+            currentBaseUrl.TrimEnd('/'),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryNormalizeBaseUrl(string value, out Uri uri)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out var parsed) &&
+            (string.Equals(parsed.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            var builder = new UriBuilder(parsed)
+            {
+                Query = string.Empty,
+                Fragment = string.Empty,
+                Path = parsed.AbsolutePath.Length <= 1 ? string.Empty : parsed.AbsolutePath.TrimEnd('/')
+            };
+
+            uri = builder.Uri;
+            return true;
+        }
+
+        uri = default!;
+        return false;
     }
 
     private static bool TryParseIntQuery(string? rawValue, int defaultValue, out int parsedValue, out string? error)

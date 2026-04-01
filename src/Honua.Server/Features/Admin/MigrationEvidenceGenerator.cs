@@ -85,6 +85,8 @@ internal sealed partial class MigrationEvidenceGenerator(
                 $"Unable to retrieve target service metadata for '{request.TargetServiceName}': {targetServiceResult.ErrorMessage ?? "unknown error"}");
         }
 
+        // Request validation constrains targetBaseUrl to this server's public base URL, so the
+        // local catalog/style/preflight services remain the authoritative admin-side target view.
         var targetServices = await _layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
         var targetServiceDefinition = targetServices.FirstOrDefault(service =>
             string.Equals(service.Name, request.TargetServiceName, StringComparison.OrdinalIgnoreCase));
