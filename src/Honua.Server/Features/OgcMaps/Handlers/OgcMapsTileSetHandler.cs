@@ -73,6 +73,10 @@ internal sealed class OgcMapsTileSetHandler
             {
                 tilesBasePath = $"{configuredBaseUrl}{relativeTilesBasePath}";
             }
+            var tileMatrixSetBasePath = context is not null && BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var baseUrl) &&
+                !string.IsNullOrWhiteSpace(baseUrl)
+                ? $"{baseUrl}/ogc/tiles/tileMatrixSets"
+                : "/ogc/tiles/tileMatrixSets";
 
             // Create tile set definitions for common tile matrix sets
             var tileSets = new[]
@@ -95,7 +99,7 @@ internal sealed class OgcMapsTileSetHandler
                         },
                         new OgcLink
                         {
-                            Href = $"{tilesBasePath}/WebMercatorQuad",
+                            Href = $"{tileMatrixSetBasePath}/WebMercatorQuad",
                             Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
                             Type = "application/json",
                             Title = "Web Mercator tile matrix set definition"
@@ -121,7 +125,7 @@ internal sealed class OgcMapsTileSetHandler
                         },
                         new OgcLink
                         {
-                            Href = $"{tilesBasePath}/WorldCRS84Quad",
+                            Href = $"{tileMatrixSetBasePath}/WorldCRS84Quad",
                             Rel = "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
                             Type = "application/json",
                             Title = "WGS84 tile matrix set definition"

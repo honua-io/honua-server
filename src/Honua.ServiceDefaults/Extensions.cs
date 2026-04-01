@@ -195,7 +195,8 @@ public static partial class Extensions
             return app;
         }
 
-        app.MapPrometheusScrapingEndpoint(NormalizePrometheusPath(options.Path));
+        app.MapPrometheusScrapingEndpoint(NormalizePrometheusPath(options.Path))
+            .RequireAuthorization("Admin");
         return app;
     }
 

@@ -212,10 +212,35 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
     [IntegrationTest]
     [Operation(Operations.HealthCheck)]
     [Endpoint("GET /metrics")]
+    public async Task PrometheusMetricsEndpoint_WithoutAuthentication_ReturnsUnauthorized()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
+
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/metrics");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /metrics")]
     public async Task PrometheusMetricsEndpoint_ReturnsPrometheusTextExposition()
     {
-        // Act
-        var response = await _client.GetAsync("/metrics");
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+
+        var response = await client.GetAsync("/metrics");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);

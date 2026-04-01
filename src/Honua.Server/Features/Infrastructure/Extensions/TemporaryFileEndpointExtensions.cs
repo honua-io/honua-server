@@ -32,10 +32,14 @@ public static class TemporaryFileEndpointExtensions
 
     private static async Task<IResult> GetTemporaryFile(
         string fileId,
+        HttpContext context,
         ITemporaryFileService temporaryFileService,
         CancellationToken cancellationToken = default)
     {
-        var result = await temporaryFileService.GetTemporaryFileAsync(fileId, cancellationToken);
+        var result = await temporaryFileService.GetTemporaryFileAsync(
+            fileId,
+            principal: context.User,
+            cancellationToken: cancellationToken);
 
         if (result == null)
         {

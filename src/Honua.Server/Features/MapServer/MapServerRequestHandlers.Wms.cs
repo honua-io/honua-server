@@ -88,6 +88,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleWms(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -110,7 +111,7 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -157,7 +158,7 @@ internal static partial class MapServerEndpoints
 
             return CreateWmsServiceException(context, "OperationNotSupported", $"Unsupported WMS REQUEST '{requestType}'.");
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -174,6 +175,7 @@ internal static partial class MapServerEndpoints
         string serviceId,
         ILogger logger)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         MapServerLog.WmsRequested(logger, serviceId, "GetMap");
         var stopwatch = Stopwatch.StartNew();
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -288,7 +290,7 @@ internal static partial class MapServerEndpoints
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
             .GetRequiredService<RasterRenderCapacityLimiter>()
-            .TryAcquireAsync(imageWidth, imageHeight, context.RequestAborted)
+            .TryAcquireAsync(imageWidth, imageHeight, cancellationToken)
             .ConfigureAwait(false);
         if (renderLease is null)
         {
@@ -336,7 +338,7 @@ internal static partial class MapServerEndpoints
                 requestedExtent,
                 requestSrid,
                 service.SpatialReference.Srid,
-                context.RequestAborted);
+                cancellationToken);
             if (!extentTransformResult.IsSuccess)
             {
                 return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
@@ -365,7 +367,7 @@ internal static partial class MapServerEndpoints
 
         foreach (var layer in renderLayers)
         {
-            context.RequestAborted.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (!layer.HasGeometry)
             {
@@ -375,7 +377,7 @@ internal static partial class MapServerEndpoints
             var stylePlan = await GetRasterStylePlanAsync(
                 styleCatalog,
                 layer.Id,
-                context.RequestAborted).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             var featureQuery = CreateRasterFeatureQuery(
                 stylePlan,
                 spatialFilter,
@@ -394,14 +396,14 @@ internal static partial class MapServerEndpoints
                 imageWidth,
                 imageHeight,
                 transformFn,
-                context.RequestAborted).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             if (renderedPointCount >= 0)
             {
                 totalFeatureCount += renderedPointCount;
                 continue;
             }
 
-            var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, context.RequestAborted);
+            var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, cancellationToken);
             if (features.Length == 0)
             {
                 continue;
@@ -426,6 +428,7 @@ internal static partial class MapServerEndpoints
         string serviceId,
         ILogger logger)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         MapServerLog.WmsRequested(logger, serviceId, "GetFeatureInfo");
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.MapServerIdentify, ActivityKind.Internal);
@@ -546,7 +549,7 @@ internal static partial class MapServerEndpoints
                 requestedExtent,
                 requestSrid,
                 service.SpatialReference.Srid,
-                context.RequestAborted);
+                cancellationToken);
             if (!extentTransformResult.IsSuccess)
             {
                 return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
@@ -575,7 +578,7 @@ internal static partial class MapServerEndpoints
                 clickExtent,
                 requestSrid,
                 service.SpatialReference.Srid,
-                context.RequestAborted);
+                cancellationToken);
             if (!clickExtentTransform.IsSuccess)
             {
                 return CreateWmsServiceException(context, "InvalidCRS", clickExtentTransform.Error ?? "Invalid spatial reference.");
@@ -606,7 +609,7 @@ internal static partial class MapServerEndpoints
                 Limit = remaining
             };
 
-            var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+            var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
             if (queryResult.Items.Length == 0)
             {
                 continue;
@@ -1985,6 +1988,7 @@ internal static partial class MapServerEndpoints
         FeatureExtent extent,
         string indent)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var geographicExtent = extent;
         if (extent.SpatialReference != 4326)
         {
@@ -1993,7 +1997,7 @@ internal static partial class MapServerEndpoints
                 new SkiaMapRenderer.RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY),
                 extent.SpatialReference,
                 4326,
-                context.RequestAborted).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
 
             if (!transformResult.IsSuccess)
             {

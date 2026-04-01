@@ -3,8 +3,10 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
@@ -127,6 +129,91 @@ public sealed class TemporaryFileServiceTests : IDisposable
         results.Count(result => result is TemporaryStorageLimitExceededException).Should().Be(1);
     }
 
+    [Fact]
+    public async Task GetTemporaryFileAsync_WithMismatchedPrincipal_ReturnsNull()
+    {
+        using var service = CreateService(new TemporaryFileOptions
+        {
+            StorageDirectory = _storageDirectory,
+            MaxFileSizeBytes = 1024 * 1024,
+            MaxTotalStorageBytes = 1024 * 1024,
+            MaxFileCount = 10,
+            DefaultExpiration = TimeSpan.FromMinutes(5)
+        });
+
+        var owner = CreatePrincipal("owner");
+        var other = CreatePrincipal("other");
+        var url = await service.StoreTemporaryFileAsync(
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            principal: owner);
+
+        var fileId = Path.GetFileName(url);
+        var result = await service.GetTemporaryFileAsync(fileId, principal: other);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTemporaryFileAsync_WithMatchingPrincipal_ReturnsFile()
+    {
+        using var service = CreateService(new TemporaryFileOptions
+        {
+            StorageDirectory = _storageDirectory,
+            MaxFileSizeBytes = 1024 * 1024,
+            MaxTotalStorageBytes = 1024 * 1024,
+            MaxFileCount = 10,
+            DefaultExpiration = TimeSpan.FromMinutes(5)
+        });
+
+        var owner = CreatePrincipal("owner");
+        var url = await service.StoreTemporaryFileAsync(
+            new byte[] { 1, 2, 3 },
+            "image/png",
+            principal: owner);
+
+        var fileId = Path.GetFileName(url);
+        var result = await service.GetTemporaryFileAsync(fileId, principal: owner);
+
+        result.Should().NotBeNull();
+        result!.Value.contentType.Should().Be("image/png");
+        result.Value.data.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task StoreTemporaryFileAsync_WithoutExplicitPrincipal_UsesHttpContextAccessorPrincipal()
+    {
+        var httpContextAccessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = CreatePrincipal("owner")
+            }
+        };
+
+        using var service = CreateService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = _storageDirectory,
+                MaxFileSizeBytes = 1024 * 1024,
+                MaxTotalStorageBytes = 1024 * 1024,
+                MaxFileCount = 10,
+                DefaultExpiration = TimeSpan.FromMinutes(5)
+            },
+            httpContextAccessor);
+
+        var url = await service.StoreTemporaryFileAsync(
+            new byte[] { 1, 2, 3 },
+            "image/png");
+
+        var fileId = Path.GetFileName(url);
+        var ownerResult = await service.GetTemporaryFileAsync(fileId, principal: CreatePrincipal("owner"));
+        var otherResult = await service.GetTemporaryFileAsync(fileId, principal: CreatePrincipal("other"));
+
+        ownerResult.Should().NotBeNull();
+        otherResult.Should().BeNull();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_storageDirectory))
@@ -135,10 +222,21 @@ public sealed class TemporaryFileServiceTests : IDisposable
         }
     }
 
-    private FileSystemTemporaryFileService CreateService(TemporaryFileOptions options)
+    private FileSystemTemporaryFileService CreateService(
+        TemporaryFileOptions options,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         return new FileSystemTemporaryFileService(
             Options.Create(options),
-            NullLogger<FileSystemTemporaryFileService>.Instance);
+            NullLogger<FileSystemTemporaryFileService>.Instance,
+            httpContextAccessor);
+    }
+
+    private static ClaimsPrincipal CreatePrincipal(string subject)
+    {
+        return new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, subject)
+        ], "test"));
     }
 }

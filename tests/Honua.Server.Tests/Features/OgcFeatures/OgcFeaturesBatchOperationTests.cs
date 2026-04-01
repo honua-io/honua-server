@@ -12,6 +12,7 @@ using Honua.Server.Features.OgcFeatures.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.OgcFeatures;
 
@@ -90,6 +91,8 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithPartialFailure_ReturnsMultiStatus()
     {
+        var initialCount = await CountFeaturesAsync();
+
         var batchRequest = new BatchRequest
         {
             Operations =
@@ -122,17 +125,20 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
         batchResponse.Should().NotBeNull();
         batchResponse!.HasErrors.Should().BeTrue();
         batchResponse.ProcessedCount.Should().Be(2);
-        batchResponse.SuccessCount.Should().Be(1);
+        batchResponse.SuccessCount.Should().Be(0);
         batchResponse.Results.Should().HaveCount(2);
 
         var errorResult = batchResponse.Results.Single(result => result.OperationId == "bad-update");
         errorResult.IsSuccess.Should().BeFalse();
         errorResult.StatusCode.Should().Be(404);
 
-        var successResult = batchResponse.Results.Single(result => result.OperationId == "good-create");
-        successResult.IsSuccess.Should().BeTrue();
-        successResult.StatusCode.Should().Be(201);
-        successResult.FeatureId.Should().NotBeNullOrWhiteSpace();
+        var rolledBackResult = batchResponse.Results.Single(result => result.OperationId == "good-create");
+        rolledBackResult.IsSuccess.Should().BeFalse();
+        rolledBackResult.StatusCode.Should().Be(424);
+        rolledBackResult.ErrorMessage.Should().Be("Operation rolled back.");
+
+        var finalCount = await CountFeaturesAsync();
+        finalCount.Should().Be(initialCount);
     }
 
     [IntegrationTest]
@@ -140,6 +146,8 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithFailFast_StopsAfterFirstError()
     {
+        var initialCount = await CountFeaturesAsync();
+
         var batchRequest = new BatchRequest
         {
             FailFast = true,
@@ -178,6 +186,62 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
         errorResult.OperationId.Should().Be("invalid-op");
         errorResult.IsSuccess.Should().BeFalse();
         errorResult.StatusCode.Should().Be(400);
+
+        var finalCount = await CountFeaturesAsync();
+        finalCount.Should().Be(initialCount);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkDelete, Operations.BulkUpdate)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
+    public async Task Batch_WithDeleteThenUpdate_RollsBackEarlierDelete()
+    {
+        var featureId = await _fixture.InsertFeatureAsync(TestLayerId, "Delete Then Update");
+
+        var batchRequest = new BatchRequest
+        {
+            Operations =
+            [
+                new BatchOperation
+                {
+                    Id = "delete-first",
+                    Type = "DELETE",
+                    FeatureId = featureId.ToString(CultureInfo.InvariantCulture)
+                },
+                new BatchOperation
+                {
+                    Id = "update-second",
+                    Type = "UPDATE",
+                    FeatureId = featureId.ToString(CultureInfo.InvariantCulture),
+                    Feature = CreatePointFeature("Should Roll Back", "[-122.2, 37.6]")
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        var response = await _fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/batch",
+            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        var batchResponse = JsonSerializer.Deserialize(responseContent, OgcJsonContext.Default.BatchOperationResponse);
+
+        batchResponse.Should().NotBeNull();
+        batchResponse!.HasErrors.Should().BeTrue();
+
+        var deleteResult = batchResponse.Results.Single(result => result.OperationId == "delete-first");
+        deleteResult.IsSuccess.Should().BeFalse();
+        deleteResult.StatusCode.Should().Be(424);
+        deleteResult.ErrorMessage.Should().Be("Operation rolled back.");
+
+        var updateResult = batchResponse.Results.Single(result => result.OperationId == "update-second");
+        updateResult.IsSuccess.Should().BeFalse();
+        updateResult.StatusCode.Should().Be(404);
+
+        var featureResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{featureId}");
+        featureResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static GeoJsonFeature CreatePointFeature(string name, string coordinatesJson)
@@ -195,6 +259,21 @@ public sealed class OgcFeaturesBatchOperationTests : IAsyncLifetime
                 ["name"] = name
             }
         };
+    }
+
+    private async Task<long> CountFeaturesAsync()
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = @layerId;";
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            ParameterName = "layerId",
+            Value = TestLayerId
+        });
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
 }

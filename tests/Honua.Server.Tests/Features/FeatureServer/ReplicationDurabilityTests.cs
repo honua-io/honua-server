@@ -169,6 +169,63 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_UploadFailure_DoesNotAdvanceGeneration()
+    {
+        var replicaId = await CreateReplicaAsync("UploadFailureGenTest");
+
+        var baselinePayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            f = "json"
+        });
+
+        var baselineResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(baselinePayload, Encoding.UTF8, "application/json"));
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var repo = _fixture.GetService<IReplicaRepository>();
+        var beforeFailure = await repo.GetAsync(replicaId);
+        beforeFailure.Should().NotBeNull();
+        var baselineGeneration = beforeFailure!.Value.LastSyncGeneration;
+
+        var invalidEditsJson = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                attributes = new { name = "srid-mismatch-upload" },
+                geometry = new
+                {
+                    x = -157.85,
+                    y = 21.30,
+                    spatialReference = new { wkid = 3857 }
+                }
+            }
+        });
+
+        var failedUploadPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "upload",
+            edits = invalidEditsJson,
+            f = "json"
+        });
+
+        var failedUploadResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            new StringContent(failedUploadPayload, Encoding.UTF8, "application/json"));
+
+        failedUploadResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var afterFailure = await repo.GetAsync(replicaId);
+        afterFailure.Should().NotBeNull();
+        afterFailure!.Value.LastSyncGeneration.Should().Be(baselineGeneration);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ExtractChanges_GenerationIncrementsMonotonically()

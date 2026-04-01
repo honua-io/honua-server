@@ -395,6 +395,57 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         var updateResults = new List<EditOperationResult>();
         var deleteResults = new List<EditOperationResult>();
 
+        if (!editBatch.Operations.IsDefaultOrEmpty)
+        {
+            foreach (var operation in editBatch.Operations)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var operationSucceeded = operation.Kind switch
+                {
+                    FeatureEditOperationKind.Create => await ApplyOrderedCreateAsync(
+                        layerId,
+                        operation,
+                        createdIds,
+                        createResults,
+                        cancellationToken),
+                    FeatureEditOperationKind.Update => await ApplyOrderedUpdateAsync(
+                        layerId,
+                        operation,
+                        updateResults,
+                        cancellationToken),
+                    FeatureEditOperationKind.Delete => await ApplyOrderedDeleteAsync(
+                        layerId,
+                        operation,
+                        deleteResults,
+                        cancellationToken),
+                    _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
+                };
+
+                if (!operationSucceeded && editBatch.RollbackOnFailure)
+                {
+                    if (snapshot != null)
+                    {
+                        _layerFeatures[layerId] = snapshot;
+                    }
+
+                    return FeatureEditResult.Rollback(
+                        createResults.ToImmutableArray(),
+                        updateResults.ToImmutableArray(),
+                        deleteResults.ToImmutableArray());
+                }
+            }
+
+            return FeatureEditResult.Success(
+                createdCount: createdIds.Count,
+                updatedCount: updateResults.Count(r => r.IsSuccess),
+                deletedCount: deleteResults.Count(r => r.IsSuccess),
+                createdIds: createdIds.ToImmutableArray(),
+                createResults: createResults.ToImmutableArray(),
+                updateResults: updateResults.ToImmutableArray(),
+                deleteResults: deleteResults.ToImmutableArray());
+        }
+
         // Process creates
         var createdCount = 0;
         foreach (var feature in editBatch.Creates)
@@ -478,6 +529,80 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             createResults: createResults.ToImmutableArray(),
             updateResults: updateResults.ToImmutableArray(),
             deleteResults: deleteResults.ToImmutableArray());
+    }
+
+    private async Task<bool> ApplyOrderedCreateAsync(
+        int layerId,
+        FeatureEditOperation operation,
+        List<long> createdIds,
+        List<EditOperationResult> createResults,
+        CancellationToken cancellationToken)
+    {
+        var feature = operation.Feature
+            ?? throw new InvalidOperationException("Ordered create operation is missing the feature payload.");
+
+        try
+        {
+            var created = await CreateAsync(layerId, feature, cancellationToken);
+            createdIds.Add(created.Id);
+            createResults.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            createResults.Add(EditOperationResult.Failure($"Failed to create feature {feature.Id}: {ex.Message}"));
+            return false;
+        }
+    }
+
+    private async Task<bool> ApplyOrderedUpdateAsync(
+        int layerId,
+        FeatureEditOperation operation,
+        List<EditOperationResult> updateResults,
+        CancellationToken cancellationToken)
+    {
+        var feature = operation.Feature
+            ?? throw new InvalidOperationException("Ordered update operation is missing the feature payload.");
+
+        try
+        {
+            var updated = await UpdateAsync(layerId, feature, cancellationToken);
+            updateResults.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            updateResults.Add(EditOperationResult.Failure($"Failed to update feature {feature.Id}: {ex.Message}", objectId: feature.Id));
+            return false;
+        }
+    }
+
+    private async Task<bool> ApplyOrderedDeleteAsync(
+        int layerId,
+        FeatureEditOperation operation,
+        List<EditOperationResult> deleteResults,
+        CancellationToken cancellationToken)
+    {
+        var objectId = operation.ObjectId
+            ?? throw new InvalidOperationException("Ordered delete operation is missing the target object ID.");
+
+        try
+        {
+            var deleted = await DeleteAsync(layerId, objectId, cancellationToken);
+            if (deleted)
+            {
+                deleteResults.Add(EditOperationResult.Success(objectId));
+                return true;
+            }
+
+            deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
+            return false;
+        }
+        catch (Exception ex)
+        {
+            deleteResults.Add(EditOperationResult.Failure($"Failed to delete feature {objectId}: {ex.Message}", objectId: objectId));
+            return false;
+        }
     }
 
     public void Dispose()

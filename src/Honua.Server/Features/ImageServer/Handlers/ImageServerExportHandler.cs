@@ -104,7 +104,8 @@ internal sealed class ImageServerExportHandler
                 result.Data,
                 result.ContentType,
                 TimeSpan.FromHours(1),
-                cancellationToken);
+                principal: context.User,
+                cancellationToken: cancellationToken);
 
             var extent = result.Extent;
             extent ??= await _rasterStore.GetExtentAsync(layerId, primaryRasterInfo.Id, cancellationToken);

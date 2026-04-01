@@ -11,6 +11,12 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 public readonly record struct FeatureEditBatch
 {
     /// <summary>
+    /// Ordered edit operations to execute when request sequencing matters.
+    /// When provided, writers should preserve this order while applying the batch.
+    /// </summary>
+    public ImmutableArray<FeatureEditOperation> Operations { get; init; }
+
+    /// <summary>
     /// Features to create
     /// </summary>
     public ImmutableArray<Feature> Creates { get; init; }
@@ -41,6 +47,7 @@ public readonly record struct FeatureEditBatch
     /// </summary>
     public FeatureEditBatch()
     {
+        Operations = ImmutableArray<FeatureEditOperation>.Empty;
         Creates = ImmutableArray<Feature>.Empty;
         Updates = ImmutableArray<Feature>.Empty;
         Deletes = ImmutableArray<long>.Empty;
@@ -54,15 +61,18 @@ public readonly record struct FeatureEditBatch
     /// <param name="deletes">Feature IDs to delete</param>
     /// <param name="rollbackOnFailure">Whether to rollback all changes on failure</param>
     /// <param name="useGlobalIds">Whether to use global IDs</param>
+    /// <param name="operations">Ordered operations to apply when request sequencing must be preserved</param>
     /// <returns>Edit batch instance</returns>
     public static FeatureEditBatch Create(
         ImmutableArray<Feature> creates = default,
         ImmutableArray<Feature> updates = default,
         ImmutableArray<long> deletes = default,
         bool rollbackOnFailure = false,
-        bool useGlobalIds = false)
+        bool useGlobalIds = false,
+        ImmutableArray<FeatureEditOperation> operations = default)
         => new()
         {
+            Operations = operations.IsDefault ? ImmutableArray<FeatureEditOperation>.Empty : operations,
             Creates = creates.IsDefault ? ImmutableArray<Feature>.Empty : creates,
             Updates = updates.IsDefault ? ImmutableArray<Feature>.Empty : updates,
             Deletes = deletes.IsDefault ? ImmutableArray<long>.Empty : deletes,
@@ -74,14 +84,88 @@ public readonly record struct FeatureEditBatch
     /// Gets the total number of operations in this batch
     /// </summary>
     public int TotalOperations =>
-        (Creates.IsDefault ? 0 : Creates.Length) +
-        (Updates.IsDefault ? 0 : Updates.Length) +
-        (Deletes.IsDefault ? 0 : Deletes.Length);
+        !Operations.IsDefaultOrEmpty
+            ? Operations.Length
+            : (Creates.IsDefault ? 0 : Creates.Length) +
+              (Updates.IsDefault ? 0 : Updates.Length) +
+              (Deletes.IsDefault ? 0 : Deletes.Length);
 
     /// <summary>
     /// Gets whether this batch contains any operations
     /// </summary>
     public bool IsEmpty => TotalOperations == 0;
+}
+
+/// <summary>
+/// Describes the type of a single ordered feature edit operation.
+/// </summary>
+public enum FeatureEditOperationKind
+{
+    /// <summary>
+    /// Create a new feature.
+    /// </summary>
+    Create,
+
+    /// <summary>
+    /// Update an existing feature.
+    /// </summary>
+    Update,
+
+    /// <summary>
+    /// Delete an existing feature.
+    /// </summary>
+    Delete
+}
+
+/// <summary>
+/// Represents a single ordered edit operation within a feature edit batch.
+/// </summary>
+public readonly record struct FeatureEditOperation
+{
+    /// <summary>
+    /// Operation type.
+    /// </summary>
+    public required FeatureEditOperationKind Kind { get; init; }
+
+    /// <summary>
+    /// Feature payload for create or update operations.
+    /// </summary>
+    public Feature? Feature { get; init; }
+
+    /// <summary>
+    /// Object ID for delete operations.
+    /// </summary>
+    public long? ObjectId { get; init; }
+
+    /// <summary>
+    /// Creates an ordered create operation.
+    /// </summary>
+    public static FeatureEditOperation Create(Feature feature)
+        => new()
+        {
+            Kind = FeatureEditOperationKind.Create,
+            Feature = feature
+        };
+
+    /// <summary>
+    /// Creates an ordered update operation.
+    /// </summary>
+    public static FeatureEditOperation Update(Feature feature)
+        => new()
+        {
+            Kind = FeatureEditOperationKind.Update,
+            Feature = feature
+        };
+
+    /// <summary>
+    /// Creates an ordered delete operation.
+    /// </summary>
+    public static FeatureEditOperation Delete(long objectId)
+        => new()
+        {
+            Kind = FeatureEditOperationKind.Delete,
+            ObjectId = objectId
+        };
 }
 
 /// <summary>

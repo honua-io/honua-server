@@ -3,7 +3,8 @@
 
 using System.Text.Json.Serialization;
 using System.Collections.Concurrent;
-
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Services;
@@ -16,12 +17,20 @@ public interface ITemporaryFileService
     /// <summary>
     /// Stores temporary file data and returns a public URL.
     /// </summary>
-    Task<string> StoreTemporaryFileAsync(byte[] data, string contentType, TimeSpan? expiration = null, CancellationToken cancellationToken = default);
+    Task<string> StoreTemporaryFileAsync(
+        byte[] data,
+        string contentType,
+        TimeSpan? expiration = null,
+        ClaimsPrincipal? principal = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves temporary file data by ID.
     /// </summary>
-    Task<(byte[] data, string contentType)?> GetTemporaryFileAsync(string fileId, CancellationToken cancellationToken = default);
+    Task<(byte[] data, string contentType)?> GetTemporaryFileAsync(
+        string fileId,
+        ClaimsPrincipal? principal = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cleans up expired temporary files.
@@ -106,14 +115,17 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     private readonly TemporaryFileOptions _options;
     private readonly ILogger<FileSystemTemporaryFileService> _logger;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly SemaphoreSlim _writeGate;
 
     public FileSystemTemporaryFileService(
         IOptions<TemporaryFileOptions> options,
-        ILogger<FileSystemTemporaryFileService> logger)
+        ILogger<FileSystemTemporaryFileService> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _httpContextAccessor = httpContextAccessor;
         _writeGate = SharedWriteGates.GetOrAdd(
             Path.GetFullPath(_options.StorageDirectory),
             static _ => new SemaphoreSlim(1, 1));
@@ -126,8 +138,11 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         byte[] data,
         string contentType,
         TimeSpan? expiration = null,
+        ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
     {
+        principal ??= _httpContextAccessor?.HttpContext?.User;
+
         if (data.Length > _options.MaxFileSizeBytes)
         {
             throw new InvalidOperationException($"File size {data.Length} exceeds maximum allowed size {_options.MaxFileSizeBytes}");
@@ -161,7 +176,8 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 ContentType = contentType,
                 ExpiresAt = expirationTime,
                 OriginalSize = data.Length,
-                CreatedAt = DateTimeOffset.UtcNow
+                CreatedAt = DateTimeOffset.UtcNow,
+                AuthorizedPrincipalKey = ResolvePrincipalKey(principal)
             };
             var metadata = System.Text.Json.JsonSerializer.Serialize(metadataObj, TemporaryFileMetadataJsonContext.Default.TemporaryFileMetadata);
             await File.WriteAllTextAsync(metadataPath, metadata, cancellationToken).ConfigureAwait(false);
@@ -192,6 +208,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     public async Task<(byte[] data, string contentType)?> GetTemporaryFileAsync(
         string fileId,
+        ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -221,12 +238,25 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
             // Read and check metadata
             var metadataJson = await File.ReadAllTextAsync(metadataPath, cancellationToken);
-            var metadata = System.Text.Json.JsonSerializer.Deserialize(metadataJson, TemporaryFileMetadataJsonContext.Default.TemporaryFileMetadata);
+            var metadata = System.Text.Json.JsonSerializer.Deserialize(
+                metadataJson,
+                TemporaryFileMetadataJsonContext.Default.TemporaryFileMetadata);
 
-            if (metadata?.ExpiresAt < DateTimeOffset.UtcNow)
+            if (metadata is null)
+            {
+                await DeleteFileAndMetadataAsync(actualFileId).ConfigureAwait(false);
+                return null;
+            }
+
+            if (metadata.ExpiresAt < DateTimeOffset.UtcNow)
             {
                 // File has expired, clean it up
-                await DeleteFileAndMetadataAsync(actualFileId);
+                await DeleteFileAndMetadataAsync(actualFileId).ConfigureAwait(false);
+                return null;
+            }
+
+            if (!IsPrincipalAuthorized(metadata, principal))
+            {
                 return null;
             }
 
@@ -258,7 +288,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
             // Read file data
             var data = await File.ReadAllBytesAsync(filePath, cancellationToken);
-            return (data, metadata?.ContentType ?? "application/octet-stream");
+            return (data, metadata.ContentType ?? "application/octet-stream");
         }
         catch (Exception ex)
         {
@@ -414,6 +444,31 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         };
     }
 
+    private static string? ResolvePrincipalKey(ClaimsPrincipal? principal)
+    {
+        if (principal?.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        return principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.Identity.Name;
+    }
+
+    private static bool IsPrincipalAuthorized(TemporaryFileMetadata metadata, ClaimsPrincipal? principal)
+    {
+        if (string.IsNullOrWhiteSpace(metadata.AuthorizedPrincipalKey))
+        {
+            return true;
+        }
+
+        var principalKey = ResolvePrincipalKey(principal);
+        return string.Equals(
+            principalKey,
+            metadata.AuthorizedPrincipalKey,
+            StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         // Shared write gates are process-wide and intentionally live for the process lifetime.
@@ -466,5 +521,6 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         public DateTimeOffset ExpiresAt { get; set; }
         public long OriginalSize { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
+        public string? AuthorizedPrincipalKey { get; set; }
     }
 }

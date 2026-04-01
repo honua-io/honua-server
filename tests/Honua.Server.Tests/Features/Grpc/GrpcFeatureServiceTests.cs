@@ -420,6 +420,67 @@ public sealed class GrpcFeatureServiceTests
 
     [UnitTest]
     [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_AnonymousUserOnProtectedService_ThrowsUnauthenticatedRpcException()
+    {
+        var protectedService = _testService with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy()
+            }
+        };
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("protected", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((protectedService, _testLayer)));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "protected",
+            LayerId = 0
+        };
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext(CreateAnonymousUser()));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
+        ex.Which.Status.Detail.Should().Be(AccessPolicyHelpers.AuthRequiredMessage);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_UserWithoutRequiredRole_ThrowsPermissionDeniedRpcException()
+    {
+        var protectedService = _testService with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy
+                {
+                    AllowedRoles = ["reader"]
+                }
+            }
+        };
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("protected-role", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((protectedService, _testLayer)));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "protected-role",
+            LayerId = 0
+        };
+
+        var act = async () => await _sut.QueryFeatures(request, CreateCallContext(CreateAuthenticatedUser("viewer")));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        ex.Which.Status.Detail.Should().Be(AccessPolicyHelpers.AccessForbiddenMessage);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ExceededTransferLimit_SetsFlag()
     {
         var features = ImmutableArray.Create(Feature.Create(1, null));
@@ -742,6 +803,36 @@ public sealed class GrpcFeatureServiceTests
         var ex = await act.Should().ThrowAsync<RpcException>();
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
         ex.Which.Status.Detail.Should().Contain("QueryFeaturesStream");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/honua.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_AnonymousUserOnProtectedService_ThrowsUnauthenticatedRpcException()
+    {
+        var protectedService = _testService with
+        {
+            Metadata = new CatalogMetadata
+            {
+                AccessPolicy = new AccessPolicy()
+            }
+        };
+
+        _resourceValidator
+            .ValidateServiceLayerAsync("protected-stream", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success((protectedService, _testLayer)));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "protected-stream",
+            LayerId = 0
+        };
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        var act = async () => await _sut.QueryFeaturesStream(request, writer, CreateCallContext(CreateAnonymousUser()));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
+        ex.Which.Status.Detail.Should().Be(AccessPolicyHelpers.AuthRequiredMessage);
     }
 
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)

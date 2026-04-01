@@ -20,7 +20,7 @@ psql -h localhost -U honua -d honua -c "SELECT 1;"
 # Metrics
 curl http://localhost:8080/api/v1/metrics/performance
 curl http://localhost:8080/api/v1/metrics/database
-curl http://localhost:8080/metrics | head -n 20
+curl -H "X-API-Key: your-admin-key" http://localhost:8080/metrics | head -n 20
 ```
 
 ---
@@ -54,7 +54,7 @@ SELECT PostGIS_Version();
 ## Performance and Latency
 
 **Quick checks**:
-- `GET /api/v1/metrics/performance`, `GET /api/v1/metrics/database`, and `GET /metrics`
+- `GET /api/v1/metrics/performance`, `GET /api/v1/metrics/database`, and `GET /metrics` with admin auth
 - Review logs for slow queries or timeouts.
 
 **Common causes**:

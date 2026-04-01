@@ -87,61 +87,59 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     $"Batch request exceeds maximum of {maxBatchOperations} operations.");
             }
 
-            var results = new List<BatchOperationResult>();
+            var preparedBatch = await PrepareBatchOperationsAsync(
+                layerId,
+                layer,
+                batchRequest,
+                inputCrs,
+                cancellationToken).ConfigureAwait(false);
+
+            List<BatchOperationResult> results;
             var hasErrors = false;
 
-            // Process each operation in the batch
-            foreach (var operation in batchRequest.Operations)
+            if (preparedBatch.ShortCircuitResults is { Count: > 0 })
             {
-                try
-                {
-                    var result = await ProcessBatchOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
-                    results.Add(result);
+                results = preparedBatch.ShortCircuitResults;
+                hasErrors = true;
+            }
+            else if (preparedBatch.EditBatch.IsEmpty)
+            {
+                results = [];
+            }
+            else
+            {
+                var editResult = await _featureWriter.ApplyEditsAsync(
+                    layerId,
+                    preparedBatch.EditBatch,
+                    cancellationToken).ConfigureAwait(false);
 
-                    if (result.IsSuccess &&
-                        TryGetBatchEventOperation(operation, result, out var eventOperation, out var objectId))
+                results = MapBatchEditResults(batchRequest.Operations.Count, preparedBatch.PreparedOperations, editResult);
+                hasErrors = results.Any(result => !result.IsSuccess);
+            }
+
+            if (!hasErrors)
+            {
+                var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
+                for (var index = 0; index < results.Count && index < batchRequest.Operations.Count; index++)
+                {
+                    var operation = batchRequest.Operations[index];
+                    var result = results[index];
+                    if (!TryGetBatchEventOperation(operation, result, out var eventOperation, out var objectId))
                     {
-                        var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
-                        await _featureChangeEventPublisher.PublishAsync(
-                            new FeatureChangeEventRequest
-                            {
-                                ServiceId = serviceId,
-                                LayerId = layerId,
-                                ObjectId = objectId,
-                                Operation = eventOperation,
-                                Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                                RequestId = $"{context.TraceIdentifier}:{operation.Id ?? "batch"}"
-                            },
-                            cancellationToken).ConfigureAwait(false);
+                        continue;
                     }
 
-                    if (!result.IsSuccess)
-                    {
-                        hasErrors = true;
-                        if (batchRequest.FailFast)
+                    await _featureChangeEventPublisher.PublishAsync(
+                        new FeatureChangeEventRequest
                         {
-                            break;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    var errorResult = new BatchOperationResult
-                    {
-                        OperationId = operation.Id,
-                        IsSuccess = false,
-                        ErrorMessage = "An error occurred processing the operation.",
-                        StatusCode = 500
-                    };
-                    results.Add(errorResult);
-                    hasErrors = true;
-
-                    Log.BatchOperationFailed(_logger, collectionId, operation.Id ?? "unknown", ex);
-
-                    if (batchRequest.FailFast)
-                    {
-                        break;
-                    }
+                            ServiceId = serviceId,
+                            LayerId = layerId,
+                            ObjectId = objectId,
+                            Operation = eventOperation,
+                            Protocol = HonuaTelemetry.Protocols.OgcFeatures,
+                            RequestId = $"{context.TraceIdentifier}:{operation.Id ?? "batch"}"
+                        },
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -529,10 +527,11 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private async Task<BatchOperationResult> ProcessBatchOperationAsync(
+    private async Task<PreparedBatchValidationResult> PrepareBatchOperationAsync(
         int layerId,
         LayerDefinition layer,
         BatchOperation operation,
+        BatchPreparationState state,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
@@ -541,35 +540,29 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             switch (operation.Type.ToUpperInvariant())
             {
                 case "CREATE":
-                    return await ProcessCreateOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
+                    return await PrepareCreateOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
                 case "UPDATE":
-                    return await ProcessUpdateOperationAsync(layerId, layer, operation, inputCrs, cancellationToken);
+                    return await PrepareUpdateOperationAsync(layerId, layer, operation, state, inputCrs, cancellationToken);
                 case "DELETE":
-                    return await ProcessDeleteOperationAsync(layerId, operation, cancellationToken);
+                    return await PrepareDeleteOperationAsync(layerId, operation, state, cancellationToken);
                 default:
-                    return new BatchOperationResult
-                    {
-                        OperationId = operation.Id,
-                        IsSuccess = false,
-                        ErrorMessage = $"Unsupported operation type: {operation.Type}",
-                        StatusCode = 400
-                    };
+                    return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                        operation.Id,
+                        $"Unsupported operation type: {operation.Type}",
+                        400));
             }
         }
         catch (Exception ex)
         {
             Log.BatchOperationFailed(_logger, layerId.ToString(), operation.Id ?? "unknown", ex);
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = "An error occurred processing the operation.",
-                StatusCode = 500
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                "An error occurred processing the operation.",
+                500));
         }
     }
 
-    private async Task<BatchOperationResult> ProcessCreateOperationAsync(
+    private async Task<PreparedBatchValidationResult> PrepareCreateOperationAsync(
         int layerId,
         LayerDefinition layer,
         BatchOperation operation,
@@ -578,13 +571,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     {
         if (operation.Feature == null)
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = "Feature data is required for create operation.",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                "Feature data is required for create operation.",
+                400));
         }
 
         var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
@@ -597,55 +587,61 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             cancellationToken);
         if (!buildResult.IsValid)
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = buildResult.ErrorMessage ?? "Invalid feature payload.",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                buildResult.ErrorMessage ?? "Invalid feature payload.",
+                400));
         }
 
         var feature = buildResult.Feature
             ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
-        var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
 
-        return new BatchOperationResult
-        {
-            OperationId = operation.Id,
-            IsSuccess = true,
-            FeatureId = created.Id.ToString(),
-            StatusCode = 201
-        };
+        return PreparedBatchValidationResult.Success(new PreparedBatchOperation(
+            OperationKind: BatchOperationKind.Create,
+            Operation: operation,
+            Feature: feature,
+            ObjectId: null));
     }
 
-    private async Task<BatchOperationResult> ProcessUpdateOperationAsync(
+    private async Task<PreparedBatchValidationResult> PrepareUpdateOperationAsync(
         int layerId,
         LayerDefinition layer,
         BatchOperation operation,
+        BatchPreparationState state,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
     {
         if (operation.Feature == null || string.IsNullOrWhiteSpace(operation.FeatureId))
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = "Feature data and feature ID are required for update operation.",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                "Feature data and feature ID are required for update operation.",
+                400));
         }
 
         if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Invalid feature ID: {operation.FeatureId}",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                $"Invalid feature ID: {operation.FeatureId}",
+                400));
+        }
+
+        if (state.DeletedObjectIds.Contains(objectId))
+        {
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                $"Feature '{operation.FeatureId}' not found.",
+                404));
+        }
+
+        var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+        if (!existing.HasValue)
+        {
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                $"Feature '{operation.FeatureId}' not found.",
+                404));
         }
 
         var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
@@ -658,86 +654,287 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             cancellationToken);
         if (!buildResult.IsValid)
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = buildResult.ErrorMessage ?? "Invalid feature payload.",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                buildResult.ErrorMessage ?? "Invalid feature payload.",
+                400));
         }
 
         var feature = buildResult.Feature
             ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
-
-        try
-        {
-            var updated = await _featureWriter.UpdateAsync(layerId, feature, cancellationToken);
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = true,
-                FeatureId = updated.Id.ToString(),
-                StatusCode = 200
-            };
-        }
-        catch (ResourceNotFoundException)
-        {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Feature '{operation.FeatureId}' not found.",
-                StatusCode = 404
-            };
-        }
+        return PreparedBatchValidationResult.Success(new PreparedBatchOperation(
+            OperationKind: BatchOperationKind.Update,
+            Operation: operation,
+            Feature: feature,
+            ObjectId: objectId));
     }
 
-    private async Task<BatchOperationResult> ProcessDeleteOperationAsync(
+    private async Task<PreparedBatchValidationResult> PrepareDeleteOperationAsync(
         int layerId,
         BatchOperation operation,
+        BatchPreparationState state,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(operation.FeatureId))
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = "Feature ID is required for delete operation.",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                "Feature ID is required for delete operation.",
+                400));
         }
 
         if (!long.TryParse(operation.FeatureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Invalid feature ID: {operation.FeatureId}",
-                StatusCode = 400
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                $"Invalid feature ID: {operation.FeatureId}",
+                400));
         }
 
-        var deleted = await _featureWriter.DeleteAsync(layerId, objectId, cancellationToken);
-        if (!deleted)
+        if (state.DeletedObjectIds.Contains(objectId))
         {
-            return new BatchOperationResult
-            {
-                OperationId = operation.Id,
-                IsSuccess = false,
-                ErrorMessage = $"Feature '{operation.FeatureId}' not found.",
-                StatusCode = 404
-            };
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                $"Feature '{operation.FeatureId}' not found.",
+                404));
         }
 
-        return new BatchOperationResult
+        var existing = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+        if (!existing.HasValue)
         {
-            OperationId = operation.Id,
-            IsSuccess = true,
-            StatusCode = 204
+            return PreparedBatchValidationResult.Failure(CreateBatchFailure(
+                operation.Id,
+                $"Feature '{operation.FeatureId}' not found.",
+                404));
+        }
+
+        return PreparedBatchValidationResult.Success(new PreparedBatchOperation(
+            OperationKind: BatchOperationKind.Delete,
+            Operation: operation,
+            Feature: null,
+            ObjectId: objectId));
+    }
+
+    private async Task<PreparedBatchPlan> PrepareBatchOperationsAsync(
+        int layerId,
+        LayerDefinition layer,
+        BatchRequest batchRequest,
+        CrsDefinition inputCrs,
+        CancellationToken cancellationToken)
+    {
+        var preparedOperations = ImmutableArray.CreateBuilder<PreparedBatchOperation>(batchRequest.Operations.Count);
+        var validationResults = new BatchOperationResult?[batchRequest.Operations.Count];
+        var validationState = new BatchPreparationState();
+        var processedCount = batchRequest.Operations.Count;
+        var validationFailed = false;
+
+        for (var index = 0; index < batchRequest.Operations.Count; index++)
+        {
+            var operation = batchRequest.Operations[index];
+            if (validationFailed)
+            {
+                validationResults[index] = CreateRolledBackBatchFailure(operation.Id);
+                continue;
+            }
+
+            var prepared = await PrepareBatchOperationAsync(
+                layerId,
+                layer,
+                operation,
+                validationState,
+                inputCrs,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!prepared.IsValid)
+            {
+                validationFailed = true;
+                validationResults[index] = prepared.ErrorResult!;
+
+                foreach (var priorOperation in preparedOperations)
+                {
+                    validationResults[priorOperation.Index] = CreateRolledBackBatchFailure(priorOperation.Operation.Id);
+                }
+
+                if (batchRequest.FailFast)
+                {
+                    processedCount = index + 1;
+                    break;
+                }
+
+                continue;
+            }
+
+            var preparedOperation = prepared.Operation! with { Index = index };
+            preparedOperations.Add(preparedOperation);
+            ApplyPreparationState(validationState, preparedOperation);
+        }
+
+        if (validationFailed)
+        {
+            var results = validationResults
+                .Take(processedCount)
+                .Select(static result => result ?? throw new InvalidOperationException("Validation result was missing."))
+                .ToList();
+            return new PreparedBatchPlan(default, preparedOperations.ToImmutable(), results);
+        }
+
+        var editBatch = new FeatureEditBatch
+        {
+            RollbackOnFailure = true,
+            Operations = preparedOperations
+                .Select(static operation => operation.OperationKind switch
+                {
+                    BatchOperationKind.Create => FeatureEditOperation.Create(
+                        operation.Feature ?? throw new InvalidOperationException("Prepared create operation was missing a feature.")),
+                    BatchOperationKind.Update => FeatureEditOperation.Update(
+                        operation.Feature ?? throw new InvalidOperationException("Prepared update operation was missing a feature.")),
+                    BatchOperationKind.Delete => FeatureEditOperation.Delete(
+                        operation.ObjectId ?? throw new InvalidOperationException("Prepared delete operation was missing an object ID.")),
+                    _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
+                })
+                .ToImmutableArray(),
+            Creates = preparedOperations
+                .Where(static operation => operation.OperationKind == BatchOperationKind.Create)
+                .Select(static operation => operation.Feature ?? throw new InvalidOperationException("Prepared create operation was missing a feature."))
+                .ToImmutableArray(),
+            Updates = preparedOperations
+                .Where(static operation => operation.OperationKind == BatchOperationKind.Update)
+                .Select(static operation => operation.Feature ?? throw new InvalidOperationException("Prepared update operation was missing a feature."))
+                .ToImmutableArray(),
+            Deletes = preparedOperations
+                .Where(static operation => operation.OperationKind == BatchOperationKind.Delete)
+                .Select(static operation => operation.ObjectId!.Value)
+                .ToImmutableArray()
         };
+
+        return new PreparedBatchPlan(editBatch, preparedOperations.ToImmutable(), null);
+    }
+
+    private static List<BatchOperationResult> MapBatchEditResults(
+        int operationCount,
+        ImmutableArray<PreparedBatchOperation> preparedOperations,
+        FeatureEditResult editResult)
+    {
+        var results = new BatchOperationResult[operationCount];
+        var createIndex = 0;
+        var updateIndex = 0;
+        var deleteIndex = 0;
+
+        foreach (var operation in preparedOperations)
+        {
+            results[operation.Index] = operation.OperationKind switch
+            {
+                BatchOperationKind.Create => MapCreateEditResult(
+                    operation.Operation,
+                    GetEditResult(editResult.CreateResults, createIndex++)),
+                BatchOperationKind.Update => MapUpdateEditResult(
+                    operation.Operation,
+                    operation.ObjectId,
+                    GetEditResult(editResult.UpdateResults, updateIndex++)),
+                BatchOperationKind.Delete => MapDeleteEditResult(
+                    operation.Operation,
+                    operation.ObjectId,
+                    GetEditResult(editResult.DeleteResults, deleteIndex++)),
+                _ => throw new InvalidOperationException($"Unsupported batch operation kind {operation.OperationKind}.")
+            };
+        }
+
+        return results.ToList();
+    }
+
+    private static EditOperationResult GetEditResult(ImmutableArray<EditOperationResult> results, int index)
+        => index < results.Length
+            ? results[index]
+            : EditOperationResult.Failure("Operation result was missing.", errorCode: 500);
+
+    private static BatchOperationResult MapCreateEditResult(BatchOperation operation, EditOperationResult editResult)
+    {
+        if (editResult.IsSuccess && editResult.ObjectId.HasValue)
+        {
+            return new BatchOperationResult
+            {
+                OperationId = operation.Id,
+                IsSuccess = true,
+                FeatureId = editResult.ObjectId.Value.ToString(CultureInfo.InvariantCulture),
+                StatusCode = 201
+            };
+        }
+
+        return CreateBatchFailure(operation.Id, editResult.ErrorMessage ?? "Create operation failed.", DetermineBatchFailureStatus(editResult));
+    }
+
+    private static BatchOperationResult MapUpdateEditResult(
+        BatchOperation operation,
+        long? objectId,
+        EditOperationResult editResult)
+    {
+        if (editResult.IsSuccess)
+        {
+            return new BatchOperationResult
+            {
+                OperationId = operation.Id,
+                IsSuccess = true,
+                FeatureId = (editResult.ObjectId ?? objectId ?? 0).ToString(CultureInfo.InvariantCulture),
+                StatusCode = 200
+            };
+        }
+
+        return CreateBatchFailure(operation.Id, editResult.ErrorMessage ?? "Update operation failed.", DetermineBatchFailureStatus(editResult));
+    }
+
+    private static BatchOperationResult MapDeleteEditResult(
+        BatchOperation operation,
+        long? objectId,
+        EditOperationResult editResult)
+    {
+        if (editResult.IsSuccess)
+        {
+            return new BatchOperationResult
+            {
+                OperationId = operation.Id,
+                IsSuccess = true,
+                FeatureId = (objectId ?? editResult.ObjectId ?? 0).ToString(CultureInfo.InvariantCulture),
+                StatusCode = 204
+            };
+        }
+
+        return CreateBatchFailure(operation.Id, editResult.ErrorMessage ?? "Delete operation failed.", DetermineBatchFailureStatus(editResult));
+    }
+
+    private static int DetermineBatchFailureStatus(EditOperationResult editResult)
+    {
+        if (string.Equals(editResult.ErrorMessage, "Operation rolled back.", StringComparison.Ordinal))
+        {
+            return 424;
+        }
+
+        if (!string.IsNullOrWhiteSpace(editResult.ErrorMessage) &&
+            editResult.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase))
+        {
+            return 404;
+        }
+
+        return editResult.ErrorCode >= 500 ? 500 : 400;
+    }
+
+    private static BatchOperationResult CreateBatchFailure(string? operationId, string message, int statusCode)
+        => new()
+        {
+            OperationId = operationId,
+            IsSuccess = false,
+            ErrorMessage = message,
+            StatusCode = statusCode
+        };
+
+    private static BatchOperationResult CreateRolledBackBatchFailure(string? operationId)
+        => CreateBatchFailure(operationId, "Operation rolled back.", 424);
+
+    private static void ApplyPreparationState(BatchPreparationState state, PreparedBatchOperation operation)
+    {
+        if (operation.OperationKind == BatchOperationKind.Delete && operation.ObjectId.HasValue)
+        {
+            state.DeletedObjectIds.Add(operation.ObjectId.Value);
+        }
     }
 
     private static async Task<(BatchRequest? Request, string? Error)> ReadBatchRequestAsync(
@@ -926,6 +1123,45 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             default:
                 return false;
         }
+    }
+
+    private enum BatchOperationKind
+    {
+        Create,
+        Update,
+        Delete
+    }
+
+    private sealed record PreparedBatchOperation(
+        BatchOperationKind OperationKind,
+        BatchOperation Operation,
+        Feature? Feature,
+        long? ObjectId)
+    {
+        public int Index { get; init; }
+    }
+
+    private sealed record PreparedBatchValidationResult(
+        PreparedBatchOperation? Operation,
+        BatchOperationResult? ErrorResult)
+    {
+        public bool IsValid => Operation != null;
+
+        public static PreparedBatchValidationResult Success(PreparedBatchOperation operation)
+            => new(operation, null);
+
+        public static PreparedBatchValidationResult Failure(BatchOperationResult errorResult)
+            => new(null, errorResult);
+    }
+
+    private sealed record PreparedBatchPlan(
+        FeatureEditBatch EditBatch,
+        ImmutableArray<PreparedBatchOperation> PreparedOperations,
+        List<BatchOperationResult>? ShortCircuitResults);
+
+    private sealed class BatchPreparationState
+    {
+        public HashSet<long> DeletedObjectIds { get; } = [];
     }
 
     private sealed record PatchRequest(

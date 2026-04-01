@@ -17,7 +17,7 @@ Honua exposes native Prometheus metrics and JSON snapshot endpoints:
 
 | Endpoint | Access | What it shows |
 |----------|--------|---------------|
-| `GET /metrics` | Prometheus/network access (restrict at edge) | Native Prometheus text exposition |
+| `GET /metrics` | Admin auth | Native Prometheus text exposition |
 | `GET /api/v1/metrics/health` | Admin auth | Health summary |
 | `GET /api/v1/metrics/performance` | Admin auth | Request latency and throughput |
 | `GET /api/v1/metrics/database` | Admin auth | Connection pool and query stats |
@@ -40,7 +40,7 @@ Admin-only diagnostics:
 Honua uses standard OpenTelemetry APIs.
 
 - Configure OTLP export via `OTEL_*` environment variables to send metrics and traces to your telemetry backend.
-- Prometheus can scrape native text metrics at `GET /metrics`.
+- Prometheus can scrape native text metrics at `GET /metrics` by presenting admin credentials such as an API key.
 - Optional path override: `Observability__Prometheus__Path=/custom-metrics`.
 - Use `/api/v1/admin/observability/telemetry` to confirm tracing status.
 - In multi-node environments, deploy rollback detection should query a Prometheus-compatible metrics backend. OTLP is the export path, not the rollback-decision API.
@@ -59,7 +59,7 @@ The recommended alerting path uses managed cloud services rather than self-hoste
 4. Alert policies use a shared PromQL rules file: `docs/alerting/rules/honua-core.yaml`
 5. The Honua control plane can query that Prometheus-compatible backend for canary settle/rollback decisions.
 
-For self-hosted multi-node environments, Prometheus can also scrape `GET /metrics` directly and act as both the collector and the query backend for deploy rollback gates.
+For self-hosted multi-node environments, Prometheus can also scrape `GET /metrics` directly with admin credentials and act as both the collector and the query backend for deploy rollback gates.
 
 ### Deploy Telemetry Presets
 

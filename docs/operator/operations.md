@@ -71,7 +71,7 @@ max_connections >= (pool_size x app_replicas) + headroom
 
 ### Monitoring
 
-- Prometheus scrape endpoint: `GET /metrics`
+- Prometheus scrape endpoint: `GET /metrics` with admin credentials
 - Honua metrics: `GET /api/v1/metrics/database`
 - Postgres activity:
   ```sql

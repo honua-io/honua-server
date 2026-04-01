@@ -128,7 +128,7 @@ Honua runs as a single container backed by PostgreSQL/PostGIS.
 ## Observability
 
 - **Health**: `/healthz/live`, `/healthz/ready`
-- **Metrics**: Prometheus endpoint at `/metrics`, JSON metrics via admin API
+- **Metrics**: Admin-authenticated Prometheus endpoint at `/metrics`, JSON metrics via admin API
 - **Tracing**: OpenTelemetry with configurable exporters
 - **Logging**: Structured JSON logging via Serilog
 

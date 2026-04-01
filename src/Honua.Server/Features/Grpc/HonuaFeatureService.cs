@@ -82,6 +82,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
+        EnsureReadAccess(context, service, layer);
         var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
@@ -165,6 +166,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var (service, layer) = validation.Resource!;
         EnsureGrpcEnabled(service);
+        EnsureReadAccess(context, service, layer);
         var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
@@ -565,6 +567,29 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw new RpcException(new Status(
                 rbacDecision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
                 rbacDecision.RequiresAuthentication
+                    ? AccessPolicyHelpers.AuthRequiredMessage
+                    : AccessPolicyHelpers.AccessForbiddenMessage));
+        }
+    }
+
+    private static void EnsureReadAccess(
+        ServerCallContext context,
+        ServiceDefinition service,
+        LayerDefinition layer)
+    {
+        var httpContext = context.GetHttpContext();
+
+        var decision = AccessPolicyHelpers.EvaluateAccess(
+            httpContext,
+            layer.Metadata?.AccessPolicy,
+            service.Metadata?.AccessPolicy,
+            AccessScope.Read);
+
+        if (!decision.IsAllowed)
+        {
+            throw new RpcException(new Status(
+                decision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
+                decision.RequiresAuthentication
                     ? AccessPolicyHelpers.AuthRequiredMessage
                     : AccessPolicyHelpers.AccessForbiddenMessage));
         }

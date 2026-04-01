@@ -59,6 +59,16 @@ internal sealed partial class FeatureDataAccess
 
         try
         {
+            if (!editBatch.Operations.IsDefaultOrEmpty)
+            {
+                return await ApplyOrderedEditsAsync(
+                    layerId,
+                    editBatch,
+                    connection,
+                    transaction,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             var (createdIds, createResults) = await ProcessCreatesWithResultsAsync(
                 layerId,
                 editBatch.Creates,
@@ -131,24 +141,14 @@ internal sealed partial class FeatureDataAccess
 
             if (transaction != null)
             {
-                await transaction.RollbackAsync(CancellationToken.None);
-
-                var createResults = System.Linq.Enumerable.Select(editBatch.Creates, _ =>
-                    EditOperationResult.Failure("Transaction failed.")).ToImmutableArray();
-                var updateResults = System.Linq.Enumerable.Select(editBatch.Updates, feature =>
-                    EditOperationResult.Failure("Transaction failed.", objectId: feature.Id)).ToImmutableArray();
-                var deleteResults = System.Linq.Enumerable.Select(editBatch.Deletes, id =>
-                    EditOperationResult.Failure("Transaction failed.", objectId: id)).ToImmutableArray();
+                await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                var (createResults, updateResults, deleteResults) = CreateFailedOperationResults(editBatch, "Transaction failed.");
 
                 return FeatureEditResult.Rollback(createResults, updateResults, deleteResults);
             }
 
-            var failedCreateResults = System.Linq.Enumerable.Select(editBatch.Creates, _ =>
-                EditOperationResult.Failure("Edit batch failed.")).ToImmutableArray();
-            var failedUpdateResults = System.Linq.Enumerable.Select(editBatch.Updates, feature =>
-                EditOperationResult.Failure("Edit batch failed.", objectId: feature.Id)).ToImmutableArray();
-            var failedDeleteResults = System.Linq.Enumerable.Select(editBatch.Deletes, id =>
-                EditOperationResult.Failure("Edit batch failed.", objectId: id)).ToImmutableArray();
+            var (failedCreateResults, failedUpdateResults, failedDeleteResults) =
+                CreateFailedOperationResults(editBatch, "Edit batch failed.");
 
             return FeatureEditResult.Success(
                 0,
@@ -159,6 +159,227 @@ internal sealed partial class FeatureDataAccess
                 failedUpdateResults,
                 failedDeleteResults,
                 wasRolledBack: false);
+        }
+    }
+
+    private async Task<FeatureEditResult> ApplyOrderedEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        var createdIds = ImmutableArray.CreateBuilder<long>();
+        var createResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+        var updateResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+        var deleteResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+
+        foreach (var operation in editBatch.Operations)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var operationSucceeded = await ApplyOrderedEditOperationAsync(
+                layerId,
+                operation,
+                connection,
+                transaction,
+                createdIds,
+                createResults,
+                updateResults,
+                deleteResults,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!operationSucceeded && editBatch.RollbackOnFailure)
+            {
+                if (transaction != null)
+                {
+                    await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
+                }
+
+                return FeatureEditResult.Rollback(
+                    createResults.ToImmutable(),
+                    updateResults.ToImmutable(),
+                    deleteResults.ToImmutable());
+            }
+        }
+
+        if (transaction != null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var immutableCreatedIds = createdIds.ToImmutable();
+        var immutableCreateResults = createResults.ToImmutable();
+        var immutableUpdateResults = updateResults.ToImmutable();
+        var immutableDeleteResults = deleteResults.ToImmutable();
+
+        return FeatureEditResult.Success(
+            immutableCreatedIds.Length,
+            immutableUpdateResults.Count(static result => result.IsSuccess),
+            immutableDeleteResults.Count(static result => result.IsSuccess),
+            immutableCreatedIds,
+            immutableCreateResults,
+            immutableUpdateResults,
+            immutableDeleteResults,
+            wasRolledBack: false);
+    }
+
+    private async Task<bool> ApplyOrderedEditOperationAsync(
+        int layerId,
+        FeatureEditOperation operation,
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        ImmutableArray<long>.Builder createdIds,
+        ImmutableArray<EditOperationResult>.Builder createResults,
+        ImmutableArray<EditOperationResult>.Builder updateResults,
+        ImmutableArray<EditOperationResult>.Builder deleteResults,
+        CancellationToken cancellationToken)
+    {
+        switch (operation.Kind)
+        {
+            case FeatureEditOperationKind.Create:
+                {
+                    var feature = operation.Feature
+                        ?? throw new InvalidOperationException("Ordered create operation is missing the feature payload.");
+
+                    try
+                    {
+                        var created = await CreateWithConnectionAsync(
+                            layerId,
+                            feature,
+                            connection,
+                            transaction,
+                            cancellationToken).ConfigureAwait(false);
+                        createdIds.Add(created.Id);
+                        createResults.Add(EditOperationResult.Success(
+                            created.Id,
+                            feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
+                        return false;
+                    }
+                }
+
+            case FeatureEditOperationKind.Update:
+                {
+                    var feature = operation.Feature
+                        ?? throw new InvalidOperationException("Ordered update operation is missing the feature payload.");
+
+                    try
+                    {
+                        var updated = await UpdateWithConnectionAsync(
+                            layerId,
+                            feature,
+                            connection,
+                            transaction,
+                            cancellationToken).ConfigureAwait(false);
+                        updateResults.Add(EditOperationResult.Success(
+                            updated.Id,
+                            feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        updateResults.Add(EditOperationResult.Failure(
+                            GetSafeEditOperationError(ex, "Update"),
+                            objectId: feature.Id));
+                        return false;
+                    }
+                }
+
+            case FeatureEditOperationKind.Delete:
+                {
+                    var objectId = operation.ObjectId
+                        ?? throw new InvalidOperationException("Ordered delete operation is missing the target object ID.");
+
+                    try
+                    {
+                        var deleted = await DeleteWithConnectionAsync(
+                            layerId,
+                            objectId,
+                            connection,
+                            transaction,
+                            cancellationToken).ConfigureAwait(false);
+                        if (deleted)
+                        {
+                            deleteResults.Add(EditOperationResult.Success(objectId));
+                            return true;
+                        }
+
+                        deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        deleteResults.Add(EditOperationResult.Failure(
+                            GetSafeEditOperationError(ex, "Delete"),
+                            objectId: objectId));
+                        return false;
+                    }
+                }
+
+            default:
+                throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.");
+        }
+    }
+
+    private static (
+        ImmutableArray<EditOperationResult> createResults,
+        ImmutableArray<EditOperationResult> updateResults,
+        ImmutableArray<EditOperationResult> deleteResults) CreateFailedOperationResults(
+        FeatureEditBatch editBatch,
+        string errorMessage)
+    {
+        if (!editBatch.Operations.IsDefaultOrEmpty)
+        {
+            var createResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+            var updateResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+            var deleteResults = ImmutableArray.CreateBuilder<EditOperationResult>();
+
+            foreach (var operation in editBatch.Operations)
+            {
+                switch (operation.Kind)
+                {
+                    case FeatureEditOperationKind.Create:
+                        createResults.Add(EditOperationResult.Failure(errorMessage));
+                        break;
+                    case FeatureEditOperationKind.Update:
+                        updateResults.Add(EditOperationResult.Failure(
+                            errorMessage,
+                            objectId: operation.Feature?.Id));
+                        break;
+                    case FeatureEditOperationKind.Delete:
+                        deleteResults.Add(EditOperationResult.Failure(
+                            errorMessage,
+                            objectId: operation.ObjectId));
+                        break;
+                }
+            }
+
+            return (
+                createResults.ToImmutable(),
+                updateResults.ToImmutable(),
+                deleteResults.ToImmutable());
+        }
+
+        return (
+            System.Linq.Enumerable.Select(editBatch.Creates, _ => EditOperationResult.Failure(errorMessage)).ToImmutableArray(),
+            System.Linq.Enumerable.Select(editBatch.Updates, feature => EditOperationResult.Failure(errorMessage, objectId: feature.Id)).ToImmutableArray(),
+            System.Linq.Enumerable.Select(editBatch.Deletes, id => EditOperationResult.Failure(errorMessage, objectId: id)).ToImmutableArray());
+    }
+
+    private static async Task RollbackIfNeededAsync(NpgsqlTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("has completed", StringComparison.Ordinal))
+        {
+            // The transaction was already completed by the provider. Treat that as a successful rollback.
         }
     }
 

@@ -644,6 +644,39 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_WithOrderedOperations_PreservesRequestOrderWithinRollbackTransaction()
+    {
+        var store = CreateFeatureStore();
+        var existingFeature = await store.GetAsync(GetLayerId("points"), 1, CancellationToken.None);
+        existingFeature.Should().NotBeNull();
+
+        var updatedFeature = Feature.Create(
+            existingFeature!.Value.Id,
+            existingFeature.Value.Geometry,
+            existingFeature.Value.Attributes.SetItem("category", "ordered-update"));
+
+        var result = await store.ApplyEditsAsync(
+            GetLayerId("points"),
+            FeatureEditBatch.Create(
+                rollbackOnFailure: true,
+                operations: ImmutableArray.Create(
+                    FeatureEditOperation.Delete(existingFeature.Value.Id),
+                    FeatureEditOperation.Update(updatedFeature))),
+            CancellationToken.None);
+
+        result.WasRolledBack.Should().BeTrue();
+        result.DeleteResults.Should().ContainSingle();
+        result.UpdateResults.Should().ContainSingle();
+        result.DeleteResults[0].ErrorMessage.Should().Be("Operation rolled back.");
+        result.UpdateResults[0].ErrorMessage.Should().Be("Feature not found.");
+
+        var restoredFeature = await store.GetAsync(GetLayerId("points"), existingFeature.Value.Id, CancellationToken.None);
+        restoredFeature.Should().NotBeNull();
+        restoredFeature!.Value.Attributes["category"].Should().Be(existingFeature.Value.Attributes["category"]);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     public async Task Stream_LargeResultSet_ShouldStreamEfficiently()
     {

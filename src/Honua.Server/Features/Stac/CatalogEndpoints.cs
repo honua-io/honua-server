@@ -75,12 +75,9 @@ internal static class CatalogEndpoints
                 type: MediaTypes.Json,
                 title: "STAC Catalog"));
 
-            // Service description (OpenAPI)
-            links.Add(Link.Create(
-                href: $"{baseUrl}/openapi.json",
-                rel: RelationTypes.ServiceDesc,
-                type: MediaTypes.OpenApi,
-                title: "API definition"));
+            // Do not advertise the OGC API Features OpenAPI document as the STAC
+            // service description. Until STAC has a dedicated API definition, omit
+            // this relation rather than publishing a misleading link.
 
             // Collections
             links.Add(Link.Create(

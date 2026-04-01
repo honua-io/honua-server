@@ -65,6 +65,7 @@ public class TestQualityValidationTests : IAsyncLifetime
     public async Task TestCoverage_CriticalEndpoints_AreFullyCovered()
     {
         using var client = _fixture.CreateClient(_schema);
+        client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-password");
 
         var criticalEndpoints = new[]
         {

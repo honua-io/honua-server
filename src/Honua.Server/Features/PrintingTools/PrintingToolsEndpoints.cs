@@ -350,7 +350,11 @@ internal static class PrintingToolsEndpoints
             try
             {
                 downloadUrl = await temporaryFileService.StoreTemporaryFileAsync(
-                    outputBytes, contentType, PrintingToolsRequestHandlers.ResultTtl, cancellationToken);
+                    outputBytes,
+                    contentType,
+                    PrintingToolsRequestHandlers.ResultTtl,
+                    principal: context.User,
+                    cancellationToken: cancellationToken);
             }
             catch (TemporaryStorageLimitExceededException ex)
             {

@@ -429,9 +429,20 @@ internal static partial class FeatureServerEndpoints
                     serviceId, targetLayerId, editRequest, limitsOptions.Value.Edits, cancellationToken);
 
                 // If the edit handler returned an error, pass it through
-                if (editResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse>)
+                if (editResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
                 {
                     return editResult;
+                }
+
+                if (jsonResult.Value is not { } applyResponse ||
+                    !applyResponse.Success ||
+                    HasFailedEditResult(applyResponse.AddResults) ||
+                    HasFailedEditResult(applyResponse.UpdateResults) ||
+                    HasFailedEditResult(applyResponse.DeleteResults))
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "Uploaded replica edits failed to apply.");
                 }
             }
         }
@@ -455,6 +466,11 @@ internal static partial class FeatureServerEndpoints
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
+    }
+
+    private static bool HasFailedEditResult(EditResult[]? results)
+    {
+        return results is not null && Array.Exists(results, static result => !result.Success);
     }
 
     private static async Task<IResult> HandleUnRegisterReplica(
