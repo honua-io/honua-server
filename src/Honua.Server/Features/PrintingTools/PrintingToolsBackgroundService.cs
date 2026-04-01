@@ -169,7 +169,11 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             try
             {
                 downloadUrl = await temporaryFileService.StoreTemporaryFileAsync(
-                    outputBytes, contentType, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+                    outputBytes,
+                    contentType,
+                    PrintingToolsRequestHandlers.ResultTtl,
+                    principal: job.CallerPrincipal,
+                    cancellationToken: CancellationToken.None);
             }
             catch (TemporaryStorageLimitExceededException)
             {

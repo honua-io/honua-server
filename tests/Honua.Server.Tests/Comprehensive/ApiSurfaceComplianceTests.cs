@@ -56,6 +56,7 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
     public async Task HealthEndpoints_AllVariations_ReturnCorrectStatus()
     {
         using var client = _fixture.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-password");
 
         var endpoints = new[] { "/healthz/live", "/healthz/ready", "/healthz/metrics", "/metrics" };
 

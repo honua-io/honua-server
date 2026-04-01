@@ -87,4 +87,27 @@ public sealed class StacCatalogTests : IAsyncLifetime
         links.Should().Contain("search");
         links.Should().Contain("data");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /stac")]
+    public async Task GetCatalog_DoesNotAdvertiseOgcFeaturesOpenApiAsServiceDescription()
+    {
+        var response = await _fixture.Client.GetAsync("/stac");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        var serviceDescLinks = json.RootElement.GetProperty("links")
+            .EnumerateArray()
+            .Where(link => string.Equals(
+                link.GetProperty("rel").GetString(),
+                "service-desc",
+                StringComparison.Ordinal))
+            .ToArray();
+
+        serviceDescLinks.Should().BeEmpty();
+    }
 }

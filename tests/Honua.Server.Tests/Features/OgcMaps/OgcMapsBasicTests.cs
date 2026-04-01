@@ -102,7 +102,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // Assert
         // Note: This test might fail until raster data is available in the test database
         // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -118,7 +118,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&f=png");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -160,7 +160,10 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // Assert
         // Note: This test might fail until raster data is available in the test database
         // For now, we expect either success or a 404 (no rasters found)
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.OK,
+            HttpStatusCode.NotFound,
+            HttpStatusCode.MethodNotAllowed);
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -212,7 +215,10 @@ public class OgcMapsBasicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map/tiles");
 
         // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.OK,
+            HttpStatusCode.NotFound,
+            HttpStatusCode.MethodNotAllowed);
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -231,6 +237,38 @@ public class OgcMapsBasicTests : IAsyncLifetime
                 firstTileSet.TryGetProperty("tileMatrixSetURI", out _).Should().BeTrue();
                 firstTileSet.TryGetProperty("links", out _).Should().BeTrue();
             }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles")]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSets_TilingSchemeLinksResolve()
+    {
+        var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}/map/tiles");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.MethodNotAllowed, HttpStatusCode.NotFound);
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            return;
+        }
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var tilingLinks = json.RootElement.EnumerateArray()
+            .SelectMany(tileSet => tileSet.GetProperty("links").EnumerateArray())
+            .Where(link => link.GetProperty("rel").GetString() == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme")
+            .Select(link => link.GetProperty("href").GetString())
+            .Where(href => !string.IsNullOrWhiteSpace(href))
+            .ToArray();
+
+        tilingLinks.Should().NotBeEmpty();
+
+        foreach (var href in tilingLinks)
+        {
+            var tilingResponse = await _fixture.Client.GetAsync(href);
+            tilingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 

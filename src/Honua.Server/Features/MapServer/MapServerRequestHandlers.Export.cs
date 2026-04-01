@@ -72,6 +72,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleExport(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -104,7 +105,7 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -182,7 +183,7 @@ internal static partial class MapServerEndpoints
                 extent,
                 bboxSrid.Value,
                 imageSrid.Value,
-                context.RequestAborted);
+                cancellationToken);
             if (!transformResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(
@@ -272,7 +273,7 @@ internal static partial class MapServerEndpoints
 
             await using var renderLease = await context.RequestServices
                 .GetRequiredService<RasterRenderCapacityLimiter>()
-                .TryAcquireAsync(imageWidth, imageHeight, context.RequestAborted)
+                .TryAcquireAsync(imageWidth, imageHeight, cancellationToken)
                 .ConfigureAwait(false);
             if (renderLease is null)
             {
@@ -311,7 +312,7 @@ internal static partial class MapServerEndpoints
                     renderExtent,
                     imageSrid.Value,
                     context,
-                    context.RequestAborted);
+                    cancellationToken);
             }
 
             var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, bboxSrid.Value);
@@ -344,7 +345,7 @@ internal static partial class MapServerEndpoints
 
             foreach (var renderLayer in renderLayers)
             {
-                context.RequestAborted.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
 
                 var layer = renderLayer.Layer;
                 if (!IsLayerVisibleAtScale(layer, scaleDenominator))
@@ -389,7 +390,7 @@ internal static partial class MapServerEndpoints
                 var stylePlan = await GetRasterStylePlanAsync(
                     styleCatalog,
                     layer.Id,
-                    context.RequestAborted).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 var featureQuery = CreateRasterFeatureQuery(
                     stylePlan,
                     spatialFilter,
@@ -409,14 +410,14 @@ internal static partial class MapServerEndpoints
                     imageWidth,
                     imageHeight,
                     transform,
-                    context.RequestAborted).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 if (renderedPointCount >= 0)
                 {
                     totalFeatureCount += renderedPointCount;
                     continue;
                 }
 
-                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, context.RequestAborted);
+                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, cancellationToken);
 
                 if (features.Length == 0)
                 {
@@ -443,14 +444,14 @@ internal static partial class MapServerEndpoints
                 renderExtent,
                 imageSrid.Value,
                 context,
-                context.RequestAborted);
+                cancellationToken);
         }
         catch (ArgumentException ex)
         {
             MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateBadRequest(context, InvalidExportRequestMessage);
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -485,7 +486,8 @@ internal static partial class MapServerEndpoints
                     imageBytes,
                     imageContentType,
                     TimeSpan.FromHours(1),
-                    cancellationToken);
+                    principal: context.User,
+                    cancellationToken: cancellationToken);
             }
             catch (TemporaryStorageLimitExceededException ex)
             {

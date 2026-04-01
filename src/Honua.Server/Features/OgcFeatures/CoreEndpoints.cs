@@ -74,6 +74,7 @@ internal static class CoreEndpoints
     private static IResult HandleGetLandingPage(
         HttpContext context,
         string? f,
+        [FromServices] IConfiguration configuration,
         [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
     {
         OgcFeaturesLog.LandingPageRequested(logger);
@@ -104,12 +105,17 @@ internal static class CoreEndpoints
             type: MediaTypes.OpenApi,
             title: "API definition"));
 
-        // API documentation
-        links.Add(Link.Create(
-            href: $"{baseUrl}/api-docs",
-            rel: RelationTypes.ServiceDoc,
-            type: MediaTypes.Html,
-            title: "API documentation"));
+        var serveApiDocs = configuration.GetValue(
+            "ServeApiDocs",
+            configuration.GetValue("HONUA_SERVE_API_DOCS", false));
+        if (serveApiDocs)
+        {
+            links.Add(Link.Create(
+                href: $"{baseUrl}/docs",
+                rel: RelationTypes.ServiceDoc,
+                type: MediaTypes.Html,
+                title: "API documentation"));
+        }
 
         // Conformance declaration
         links.Add(Link.Create(

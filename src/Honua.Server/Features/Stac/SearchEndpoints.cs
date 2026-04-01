@@ -239,6 +239,7 @@ internal static class SearchEndpoints
         ImmutableArray<long>? parsedObjectIds,
         int effectiveLimit)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var allItems = ImmutableArray.CreateBuilder<StacItem>();
         long totalMatched = 0;
         var remainingSkip = offset;
@@ -270,7 +271,7 @@ internal static class SearchEndpoints
 
             if (remainingSkip > 0)
             {
-                var layerCount = await featureReader.CountAsync(layer.Id, query, context.RequestAborted);
+                var layerCount = await featureReader.CountAsync(layer.Id, query, cancellationToken);
                 totalMatched += layerCount;
 
                 if (remainingSkip >= layerCount)
@@ -283,7 +284,7 @@ internal static class SearchEndpoints
                 query = query with { Offset = remainingSkip, Limit = remaining };
                 remainingSkip = 0;
 
-                var result = await featureReader.QueryAsync(layer.Id, query, context.RequestAborted);
+                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
                 allItems.AddRange(result.Features
                     .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl, selectedProperties)));
             }
@@ -292,7 +293,7 @@ internal static class SearchEndpoints
                 var remaining = effectiveLimit - allItems.Count;
                 query = query with { Limit = remaining };
 
-                var result = await featureReader.QueryAsync(layer.Id, query, context.RequestAborted);
+                var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
                 totalMatched += result.TotalCount;
 
                 allItems.AddRange(result.Features
@@ -300,7 +301,7 @@ internal static class SearchEndpoints
             }
             else
             {
-                totalMatched += await featureReader.CountAsync(layer.Id, query, context.RequestAborted);
+                totalMatched += await featureReader.CountAsync(layer.Id, query, cancellationToken);
             }
         }
 

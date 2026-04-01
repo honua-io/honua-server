@@ -92,20 +92,24 @@ internal static class ItemEndpoints
             if (!string.IsNullOrWhiteSpace(bbox))
             {
                 var spatialFilter = StacFilterHelpers.ParseBbox(bbox);
-                if (spatialFilter is not null)
+                if (spatialFilter is null)
                 {
-                    query = query with { SpatialFilter = spatialFilter };
+                    return StandardErrorHelpers.CreateBadRequest(context, "Invalid bbox parameter.");
                 }
+
+                query = query with { SpatialFilter = spatialFilter };
             }
 
             // Apply datetime filter
             if (!string.IsNullOrWhiteSpace(datetime))
             {
                 var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, layer);
-                if (temporalFilter is not null)
+                if (temporalFilter is null)
                 {
-                    query = query with { TemporalFilter = temporalFilter };
+                    return StandardErrorHelpers.CreateBadRequest(context, "Invalid datetime parameter.");
                 }
+
+                query = query with { TemporalFilter = temporalFilter };
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -230,9 +234,9 @@ internal static class ItemEndpoints
     {
         var query = $"limit={limit}&offset={offset}";
         if (!string.IsNullOrWhiteSpace(bbox))
-            query += $"&bbox={bbox}";
+            query += $"&bbox={Uri.EscapeDataString(bbox)}";
         if (!string.IsNullOrWhiteSpace(datetime))
-            query += $"&datetime={datetime}";
+            query += $"&datetime={Uri.EscapeDataString(datetime)}";
         return query;
     }
 }

@@ -98,6 +98,98 @@ public sealed class StacItemsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_InvalidBbox_Returns400()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?bbox=1,2,3");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_InvalidDatetime_Returns400()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?datetime=not-a-datetime");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_EncodesDatetimeInPaginationLinks()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var datetime = "2020-01-01T00:00:00+00:00/2020-01-02T00:00:00+00:00";
+        var encodedDatetime = Uri.EscapeDataString(datetime);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?limit=1&datetime={encodedDatetime}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+
+        var relevantLinks = links
+            .Where(link =>
+            {
+                var rel = link.GetProperty("rel").GetString();
+                return rel is "self" or "next";
+            })
+            .ToArray();
+
+        relevantLinks.Should().NotBeEmpty();
+        foreach (var link in relevantLinks)
+        {
+            link.GetProperty("href").GetString().Should().Contain($"datetime={encodedDatetime}");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_EncodesBboxInPaginationLinks()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var bbox = "-158.30,21.20,-157.70,21.70";
+        var encodedBbox = Uri.EscapeDataString(bbox);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?limit=1&bbox={encodedBbox}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+
+        var relevantLinks = links
+            .Where(link =>
+            {
+                var rel = link.GetProperty("rel").GetString();
+                return rel is "self" or "next";
+            })
+            .ToArray();
+
+        relevantLinks.Should().NotBeEmpty();
+        foreach (var link in relevantLinks)
+        {
+            link.GetProperty("href").GetString().Should().Contain($"bbox={encodedBbox}");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_ById_ReturnsStacItem()

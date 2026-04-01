@@ -31,6 +31,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleTile(HttpContext context)
     {
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
         {
@@ -62,7 +63,7 @@ internal static partial class MapServerEndpoints
         try
         {
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
+            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -103,7 +104,7 @@ internal static partial class MapServerEndpoints
                 tileBounds.XMin, tileBounds.YMin, tileBounds.XMax, tileBounds.YMax);
             await using var renderLease = await context.RequestServices
                 .GetRequiredService<RasterRenderCapacityLimiter>()
-                .TryAcquireAsync(TileSize, TileSize, context.RequestAborted)
+                .TryAcquireAsync(TileSize, TileSize, cancellationToken)
                 .ConfigureAwait(false);
             if (renderLease is null)
             {
@@ -154,7 +155,7 @@ internal static partial class MapServerEndpoints
 
             foreach (var layer in renderLayers)
             {
-                context.RequestAborted.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (!layer.HasGeometry)
                 {
@@ -164,7 +165,7 @@ internal static partial class MapServerEndpoints
                 var stylePlan = await GetRasterStylePlanAsync(
                     styleCatalog,
                     layer.Id,
-                    context.RequestAborted).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 var featureQuery = CreateRasterFeatureQuery(
                     stylePlan,
                     spatialFilter,
@@ -183,14 +184,14 @@ internal static partial class MapServerEndpoints
                     TileSize,
                     TileSize,
                     transform,
-                    context.RequestAborted).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 if (renderedPointCount >= 0)
                 {
                     totalFeatureCount += renderedPointCount;
                     continue;
                 }
 
-                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, context.RequestAborted);
+                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, cancellationToken);
                 if (features.Length == 0)
                 {
                     continue;
@@ -209,7 +210,7 @@ internal static partial class MapServerEndpoints
 
             return Results.Bytes(imageBytes, "image/png");
         }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }

@@ -56,6 +56,7 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
         links.Should().Contain(l => l.Rel == RelationTypes.ServiceDesc);
         links.Should().Contain(l => l.Rel == RelationTypes.Conformance);
         links.Should().Contain(l => l.Rel == RelationTypes.Data);
+        links.Should().NotContain(l => l.Rel == RelationTypes.ServiceDoc && l.Href.EndsWith("/api-docs", StringComparison.Ordinal));
 
         // Verify link structure
         links.Where(l => !string.IsNullOrEmpty(l.Href)).Should().HaveCount(links.Length);

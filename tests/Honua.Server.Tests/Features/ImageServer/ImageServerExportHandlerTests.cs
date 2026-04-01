@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.ImageServer;
 
@@ -175,7 +176,11 @@ public class ImageServerExportHandlerTests
                 return CreateTestRasterResult();
             });
         _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
             .Returns("/temp/test.png");
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
@@ -201,6 +206,31 @@ public class ImageServerExportHandlerTests
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_ForwardsCallerPrincipalToTemporaryStorage()
+    {
+        SetupSuccessfulExport();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "image-export-user")
+        ], "test"));
+
+        var context = CreateImageServerContext();
+        context.User = principal;
+
+        var request = CreateRequest();
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await _temporaryFileService.Received(1).StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Is<ClaimsPrincipal?>(candidate => ReferenceEquals(candidate, principal)),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -268,7 +298,11 @@ public class ImageServerExportHandlerTests
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterResult());
         _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
             .Returns("/temp/test.png");
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns((RasterExtent?)null);
@@ -322,7 +356,11 @@ public class ImageServerExportHandlerTests
                 }
             });
         _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
             .Returns("/temp/test.png");
 
         var context = CreateImageServerContext();
@@ -368,6 +406,7 @@ public class ImageServerExportHandlerTests
             Arg.Any<byte[]>(),
             Arg.Any<string>(),
             Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
             Arg.Any<CancellationToken>())
             .ThrowsAsync(new TemporaryStorageLimitExceededException("Storage is full", retryAfterSeconds: 42));
 
@@ -406,7 +445,11 @@ public class ImageServerExportHandlerTests
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterResult());
         _temporaryFileService.StoreTemporaryFileAsync(
-            Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
             .Returns("/temp/test.png");
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
