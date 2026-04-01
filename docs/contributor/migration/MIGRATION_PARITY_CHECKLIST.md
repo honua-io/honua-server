@@ -30,10 +30,11 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 | Run link / artifact | |
 | Latest evidence job ID | |
 | Latest evidence report ID | |
+| Latest evidence report hash | |
 | Readiness state | |
 | Evidence artifact endpoint | `/api/v1/admin/migrations/reports/{reportId}` |
 
-Before sign-off, queue or refresh the server-generated evidence report and record both the transient `jobId` and persisted `reportId`.
+Before sign-off, queue or refresh the server-generated evidence report and record the transient `jobId`, persisted `reportId`, and immutable `reportHash`.
 
 | Service Case | Pass | Fail | N/A | Notes |
 |-------------|------|------|-----|-------|

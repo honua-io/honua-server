@@ -431,8 +431,8 @@ internal sealed partial class MigrationEvidenceGenerator(
                 $"{sourceRows.ErrorMessage ?? "unknown source error"} | {targetRows.ErrorMessage ?? "unknown target error"}");
         }
 
-        var sourceCanonical = CanonicalizeFeatureRows(sourceRows.Body!.Value, fieldMappings, sourceGeoJson: false);
-        var targetCanonical = CanonicalizeFeatureRows(targetRows.Body!.Value, fieldMappings, sourceGeoJson: false);
+        var sourceCanonical = CanonicalizeFeatureRows(sourceRows.Body!.Value, fieldMappings, FeatureRowFieldOrigin.Source, geoJson: false);
+        var targetCanonical = CanonicalizeFeatureRows(targetRows.Body!.Value, fieldMappings, FeatureRowFieldOrigin.Target, geoJson: false);
         var matched = sourceCanonical.SequenceEqual(targetCanonical, StringComparer.Ordinal);
 
         return new MigrationComparisonCheck
@@ -905,8 +905,8 @@ internal sealed partial class MigrationEvidenceGenerator(
                 $"{source.ErrorMessage ?? "unknown source error"} | {target.ErrorMessage ?? "unknown target error"}");
         }
 
-        var sourceFeatures = CanonicalizeFeatureRows(source.Body.Value, fieldMappings, sourceGeoJson: true);
-        var targetFeatures = CanonicalizeFeatureRows(target.Body.Value, fieldMappings, sourceGeoJson: true);
+        var sourceFeatures = CanonicalizeFeatureRows(source.Body.Value, fieldMappings, FeatureRowFieldOrigin.Source, geoJson: true);
+        var targetFeatures = CanonicalizeFeatureRows(target.Body.Value, fieldMappings, FeatureRowFieldOrigin.Target, geoJson: true);
         var matched = sourceFeatures.SequenceEqual(targetFeatures, StringComparer.Ordinal);
 
         return new MigrationComparisonCheck
@@ -1630,7 +1630,11 @@ internal sealed partial class MigrationEvidenceGenerator(
     private static RemoteJsonResult CreateRemoteFailure(HttpStatusCode statusCode, string message)
         => RemoteJsonResult.CreateFailure(statusCode, message, null, null);
 
-    private static string[] CanonicalizeFeatureRows(JsonElement payload, FieldMappingSet fieldMappings, bool sourceGeoJson)
+    internal static string[] CanonicalizeFeatureRows(
+        JsonElement payload,
+        FieldMappingSet fieldMappings,
+        FeatureRowFieldOrigin fieldOrigin,
+        bool geoJson)
     {
         if (!TryGetPropertyCaseInsensitive(payload, "features", out var features) || features.ValueKind != JsonValueKind.Array)
         {
@@ -1641,7 +1645,7 @@ internal sealed partial class MigrationEvidenceGenerator(
         foreach (var feature in features.EnumerateArray())
         {
             JsonElement attributes;
-            if (sourceGeoJson)
+            if (geoJson)
             {
                 if (!TryGetPropertyCaseInsensitive(feature, "properties", out attributes))
                 {
@@ -1659,15 +1663,10 @@ internal sealed partial class MigrationEvidenceGenerator(
             var parts = new List<string>(fieldMappings.Entries.Length);
             foreach (var entry in fieldMappings.Entries)
             {
-                var fieldName = sourceGeoJson ? entry.CanonicalField : entry.SourceField;
-                if (!TryGetPropertyCaseInsensitive(attributes, fieldName, out var value))
+                if (!TryGetMappedFieldValue(attributes, entry, fieldOrigin, out var value))
                 {
-                    fieldName = sourceGeoJson ? entry.CanonicalField : entry.TargetField;
-                    if (!TryGetPropertyCaseInsensitive(attributes, fieldName, out value))
-                    {
-                        parts.Add($"{entry.CanonicalField}=<missing>");
-                        continue;
-                    }
+                    parts.Add($"{entry.CanonicalField}=<missing>");
+                    continue;
                 }
 
                 parts.Add($"{entry.CanonicalField}={NormalizeValue(value)}");
@@ -1677,6 +1676,52 @@ internal sealed partial class MigrationEvidenceGenerator(
         }
 
         return rows.ToArray();
+    }
+
+    private static bool TryGetMappedFieldValue(
+        JsonElement attributes,
+        FieldMappingEntry entry,
+        FeatureRowFieldOrigin fieldOrigin,
+        out JsonElement value)
+    {
+        var primaryField = fieldOrigin == FeatureRowFieldOrigin.Source ? entry.SourceField : entry.TargetField;
+        var alternateField = fieldOrigin == FeatureRowFieldOrigin.Source ? entry.TargetField : entry.SourceField;
+
+        return TryGetPropertyCaseInsensitive(attributes, primaryField, out value) ||
+            TryGetDistinctProperty(attributes, entry.CanonicalField, primaryField, out value) ||
+            TryGetDistinctProperty(attributes, alternateField, primaryField, entry.CanonicalField, out value);
+    }
+
+    private static bool TryGetDistinctProperty(
+        JsonElement attributes,
+        string candidate,
+        string skippedProperty,
+        out JsonElement value)
+    {
+        if (string.Equals(candidate, skippedProperty, StringComparison.OrdinalIgnoreCase))
+        {
+            value = default;
+            return false;
+        }
+
+        return TryGetPropertyCaseInsensitive(attributes, candidate, out value);
+    }
+
+    private static bool TryGetDistinctProperty(
+        JsonElement attributes,
+        string candidate,
+        string skippedPrimaryProperty,
+        string skippedSecondaryProperty,
+        out JsonElement value)
+    {
+        if (string.Equals(candidate, skippedPrimaryProperty, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate, skippedSecondaryProperty, StringComparison.OrdinalIgnoreCase))
+        {
+            value = default;
+            return false;
+        }
+
+        return TryGetPropertyCaseInsensitive(attributes, candidate, out value);
     }
 
     private static string BuildSourceLayerMetadataUrl(string serviceUrl, int layerId)
@@ -2531,17 +2576,23 @@ internal sealed partial class MigrationEvidenceGenerator(
         MigrationEvidenceLayerSnapshot Snapshot,
         RemoteJsonResult Result);
 
-    private sealed record FieldMappingSet(
+    internal sealed record FieldMappingSet(
         FieldMappingEntry[] Entries,
         FieldMappingEntry? StringField,
         FieldMappingEntry? NumericField,
         FieldMappingEntry? DateField);
 
-    private sealed record FieldMappingEntry(
+    internal sealed record FieldMappingEntry(
         string SourceField,
         string TargetField,
         string CanonicalField,
         string SourceType);
+
+    internal enum FeatureRowFieldOrigin
+    {
+        Source,
+        Target
+    }
 
     private sealed record DataCheckResult(
         IReadOnlyList<MigrationComparisonCheck> Checks,

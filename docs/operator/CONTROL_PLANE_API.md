@@ -98,13 +98,13 @@ Additional metrics endpoints:
 - `.github/workflows/control-plane-sdk-governance.yml`
 
 - Versioning/deprecation policy:
-- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
 
 - Migration and upgrade guidance:
-- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
 
 - AI/agent integration:
-- [MCP Server](MCP_SERVER.md)
+- [MCP Server](../developer/MCP_SERVER.md)
 
 ---
 
@@ -216,7 +216,7 @@ file=@parcels.geojson
 
 FlatGeobuf (`.fgb`) files can be uploaded directly — no archive wrapping needed. If the `.fgb` file does not embed CRS in its header, provide `sourceSrid` on the import request; the server rejects imports when it cannot detect the source coordinate system.
 
-For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md).
+For Esri File Geodatabases, use a `.gdb.zip` archive that contains the `.gdb` directory and preserves the directory structure inside the archive. See [FileGDB Import Workflow](../gis/FILEGDB_IMPORT_WORKFLOW.md).
 
 For GeoParquet files, upload a `.parquet` or `.geoparquet` file directly. The server reads GeoParquet `geo` metadata for CRS detection and requires WKB geometry encoding. Non-WKB encodings are rejected. Nested column types (Struct, List, Map) are skipped with warnings. Rows with null geometry are skipped during both preview and import, and reported as warnings in the import response. Files with more than 100,000 rows in a single Parquet row group are rejected to maintain bounded memory usage; re-export such files with smaller row groups.
 
@@ -295,7 +295,7 @@ SDKs should call `GET /api/v1/admin/capabilities` once per authenticated session
 - `serverVersion` and `releaseChannel`: log or surface for diagnostics, rollout targeting, and support.
 
 Focused guidance and a concrete JSON example:
-- [SDK Compatibility Metadata](SDK_COMPATIBILITY_METADATA.md)
+- [SDK Compatibility Metadata](../developer/SDK_COMPATIBILITY_METADATA.md)
 
 ### **Operations and Monitoring Endpoints**
 
@@ -343,9 +343,11 @@ Content-Type: application/json
 **Usage notes:**
 
 - `POST /api/v1/admin/migrations/reports` returns `202 Accepted` with `jobId`, `statusUrl`, and `cancelUrl`.
-- Poll `GET /api/v1/admin/migrations/reports/jobs/{jobId}` until `status` reaches `completed`, `failed`, or `cancelled`. Only completed jobs include `reportId` and computed `readiness`.
-- `provider` currently supports only `arcgis-geoservices`. `sourceServiceUrl` and `targetBaseUrl` must be public HTTPS URLs without embedded credentials.
-- Listing supports `limit`, `offset`, `provider`, `cutoverProfile`, and `readiness`. Results are returned newest-first.
+- Poll `GET /api/v1/admin/migrations/reports/jobs/{jobId}` until `status` reaches `completed`, `failed`, or `cancelled`. Progress responses include `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, `warnings`, and `errorMessage` when present. Only completed jobs include `reportId` and computed `readiness`.
+- `provider` currently supports only `arcgis-geoservices`.
+- `sourceServiceUrl` and `targetBaseUrl` share the same external URL validation: they must be public HTTPS URLs without embedded credentials, and loopback, private, and unresolvable hosts are rejected.
+- Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are preserved in the stored artifact. Optional bounded probe controls are also available: `sampleRowCount` (default `25`), `queryPageSize` (default `50`), `latencySampleCount` (default `5`), and `probeTimeoutSeconds` (default `30`, max `60`).
+- Listing supports `limit`, `offset`, `provider`, `cutoverProfile`, and `readiness`. Results are returned newest-first, summary rows include `reportHash`, `warningCount`, and `blockerCount`, and the response echoes the requested pagination values. The backing store currently clamps fetched page size to `1..200` summaries.
 - Generated reports are immutable JSON artifacts. There are no update or delete endpoints in the MVP.
 - Cancelling a terminal job returns `409`. Cancelled jobs do not persist a report artifact.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start endpoint returns `503`.
@@ -505,10 +507,9 @@ GET /healthz/live
 
 ## **Related Documentation**
 
-- [Admin UI](admin-ui.md)
-- [Geospatial API Examples](API_EXAMPLES.md)
-- [FileGDB Import Workflow](FILEGDB_IMPORT_WORKFLOW.md)
-- [Security](../devops/security.md)
-- [Control Plane Versioning Policy](CONTROL_PLANE_VERSIONING_POLICY.md)
-- [Control Plane Migration Guide](CONTROL_PLANE_MIGRATION_GUIDE.md)
-- [Upgrade and Rollback Runbook](../devops/runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes
+- [Geospatial API Examples](../developer/API_EXAMPLES.md)
+- [FileGDB Import Workflow](../gis/FILEGDB_IMPORT_WORKFLOW.md)
+- [Security](security.md)
+- [Control Plane Versioning Policy](../developer/CONTROL_PLANE_VERSIONING_POLICY.md)
+- [Control Plane Migration Guide](../developer/CONTROL_PLANE_MIGRATION_GUIDE.md)
+- [Upgrade and Rollback Runbook](runbooks/UPGRADE_AND_ROLLBACK.md) — deploy backend configuration for Azure Functions, Azure Container Apps, and Kubernetes

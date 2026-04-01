@@ -27,13 +27,15 @@ The request contract is intentionally narrow:
 - `layers` is required and maps source layer IDs to target layer IDs; all layer IDs must be non-negative.
 - `cutoverProfile` is `pilot` or `production`. The production profile escalates production-only warnings and failures into blocking readiness reasons.
 - `rollbackPlanReference` is required. Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are echoed into the stored artifact.
+- Optional bounded probe controls are available when a pilot needs a narrower or more aggressive probe envelope: `sampleRowCount` (default `25`), `queryPageSize` (default `50`), `latencySampleCount` (default `5`), and `probeTimeoutSeconds` (default `30`, max `60`).
 
 The job lifecycle is asynchronous:
 
 - The start call returns `202 Accepted` with a short `jobId` plus relative `statusUrl` and `cancelUrl`.
-- Poll the job endpoint until `status` reaches `completed`, `failed`, or `cancelled`.
+- Poll the job endpoint until `status` reaches `completed`, `failed`, or `cancelled`. Progress payloads expose `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, warnings, and any terminal `errorMessage`.
 - Completed jobs include `reportId`, `readiness`, and any readiness warnings. Cancelled jobs do not create a persisted report artifact.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start call returns `503` instead of falling back to local-only execution.
+- The same progress record is also available through the unified operations endpoints at `/api/v1/admin/operations/{jobId}` and `/api/v1/admin/operations/type/MigrationEvidence`, but the dedicated migration job route remains the primary polling surface.
 
 The report artifact captures:
 
@@ -48,7 +50,7 @@ The persisted artifact contract is stable enough for pilot evidence packs:
 - `sourceBaseline` and `targetSnapshot` capture the metadata and digests used for the run.
 - `comparison` is split into `capability`, `style`, `data`, and `operationalReadiness` arrays so downstream tooling can reason about each parity lane independently.
 - `cutoverReadiness` carries the final `state`, a de-duplicated `blockingReasons` list, warnings, and the full checklist that produced the decision.
-- `GET /api/v1/admin/migrations/reports` returns summary rows ordered by `generatedAt` descending and supports `provider`, `cutoverProfile`, and `readiness` filters for audit views.
+- `GET /api/v1/admin/migrations/reports` returns summary rows ordered by `generatedAt` descending and supports `provider`, `cutoverProfile`, and `readiness` filters for audit views. Each summary includes the immutable `reportHash` plus `warningCount` and `blockerCount` for quick triage.
 
 ## Pilot Lifecycle
 
