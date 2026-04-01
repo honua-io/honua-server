@@ -31,7 +31,6 @@ internal static class CloudCogServiceCollectionExtensions
 
         // Register range readers based on available provider configurations
         var fileStorageSection = configuration.GetSection("FileStorage");
-        var providerName = fileStorageSection.GetValue<string>("Provider") ?? "Local";
 
         // Always register S3 range reader if S3 configuration is present
         if (fileStorageSection.GetSection("AwsS3").Exists())
