@@ -158,7 +158,12 @@ public enum RasterFormat
     /// <summary>
     /// Raw pixel data as byte array.
     /// </summary>
-    Raw = 3
+    Raw = 3,
+
+    /// <summary>
+    /// Cloud-Optimized GeoTIFF with internal tiling and overview pyramids.
+    /// </summary>
+    COG = 4
 }
 
 /// <summary>
@@ -168,13 +173,14 @@ public enum RasterFormat
 public static class RasterFormatExtensions
 {
     /// <summary>
-    /// Gets the GDAL driver name for the format (e.g., "PNG", "JPEG", "GTiff").
+    /// Gets the GDAL driver name for the format (e.g., "PNG", "JPEG", "GTiff", "COG").
     /// </summary>
     public static string ToGdalDriverName(this RasterFormat format) => format switch
     {
         RasterFormat.PNG => "PNG",
         RasterFormat.JPEG => "JPEG",
         RasterFormat.TIFF => "GTiff",
+        RasterFormat.COG => "COG",
         _ => "PNG"
     };
 
@@ -186,6 +192,7 @@ public static class RasterFormatExtensions
         RasterFormat.PNG => "image/png",
         RasterFormat.JPEG => "image/jpeg",
         RasterFormat.TIFF => "image/tiff",
+        RasterFormat.COG => "image/tiff",
         _ => "application/octet-stream"
     };
 }

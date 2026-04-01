@@ -24,5 +24,10 @@ public enum SupportedRasterFormat
     /// <summary>
     /// JPEG with world file (.jpg/.jpeg + .jgw) and optional .prj.
     /// </summary>
-    JpegWorldFile
+    JpegWorldFile,
+
+    /// <summary>
+    /// Cloud-Optimized GeoTIFF (.tif, .tiff) with internal tiling and overview IFDs.
+    /// </summary>
+    CloudOptimizedGeoTiff
 }

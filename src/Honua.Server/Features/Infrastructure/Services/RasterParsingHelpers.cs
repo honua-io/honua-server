@@ -151,6 +151,9 @@ internal static class RasterParsingHelpers
             case "tif":
                 rasterFormat = RasterFormat.TIFF;
                 return true;
+            case "cog":
+                rasterFormat = RasterFormat.COG;
+                return true;
             default:
                 rasterFormat = RasterFormat.PNG;
                 return false;

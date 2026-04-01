@@ -114,7 +114,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     connection, transaction, rasterId, cancellationToken).ConfigureAwait(false);
 
                 // Handle world file + SRID for non-GeoTIFF formats
-                if (request.Format != SupportedRasterFormat.GeoTiff)
+                if (request.Format is not SupportedRasterFormat.GeoTiff and not SupportedRasterFormat.CloudOptimizedGeoTiff)
                 {
                     await ApplyWorldFileGeoReferencingAsync(
                         connection, transaction, rasterId, request, warnings, cancellationToken).ConfigureAwait(false);
@@ -261,6 +261,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     "An explicit SRID can optionally accompany the world file to override CRS detection.");
             }
         }
+
+        // COG is a valid TIFF — same import path as GeoTIFF.
+        // PostGIS ST_FromGDALRaster handles COG files correctly (reads base resolution).
+        // COG internal overviews are not preserved as separate entities in PostGIS;
+        // tile pre-generation at configured zoom levels provides the overview mechanism.
     }
 
     private static void ValidateFileContent(byte[] fileBytes, SupportedRasterFormat format)
@@ -273,6 +278,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         switch (format)
         {
             case SupportedRasterFormat.GeoTiff:
+            case SupportedRasterFormat.CloudOptimizedGeoTiff:
                 if (fileBytes.Length < 4)
                 {
                     throw new InvalidDataException("File is too small to be a valid GeoTIFF.");
@@ -357,7 +363,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // Use ST_FromGDALRaster to load binary raster data directly
         // For GeoTIFF, georeferencing is embedded in the file
         // For PNG/JPEG, we apply georeferencing separately via world file
-        if (request.Srid.HasValue && request.Format == SupportedRasterFormat.GeoTiff)
+        if (request.Srid.HasValue && request.Format is SupportedRasterFormat.GeoTiff or SupportedRasterFormat.CloudOptimizedGeoTiff)
         {
             command.CommandText = $"""
                 INSERT INTO {_rasterDataTable} (layer_id, name, description, raster)

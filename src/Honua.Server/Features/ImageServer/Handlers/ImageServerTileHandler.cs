@@ -16,20 +16,24 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// <summary>
 /// Handler for Image Server tile operations.
 /// Provides pre-tiled image access for efficient web mapping.
+/// Falls back to cloud-hosted COG tile serving when PostGIS does not produce a tile for the requested coordinates (Pro edition).
 /// </summary>
 internal sealed class ImageServerTileHandler
 {
     private readonly ILayerCatalog _layerCatalog;
     private readonly IRasterStore _rasterStore;
+    private readonly ICloudCogTileResolver? _cloudCogTileResolver;
     private readonly ILogger<ImageServerTileHandler> _logger;
 
     public ImageServerTileHandler(
         ILayerCatalog layerCatalog,
         IRasterStore rasterStore,
-        ILogger<ImageServerTileHandler> logger)
+        ILogger<ImageServerTileHandler> logger,
+        ICloudCogTileResolver? cloudCogTileResolver = null)
     {
         _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
+        _cloudCogTileResolver = cloudCogTileResolver;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -74,41 +78,64 @@ internal sealed class ImageServerTileHandler
 
             if (!RasterParsingHelpers.TryParseRasterFormat(format, out var rasterFormat))
             {
-                return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif.");
+                return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
             }
 
             // Resolve the primary raster without scanning the entire layer.
             var primaryRaster = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
-            if (primaryRaster is null)
+
+            ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
+
+            if (primaryRaster is null && _cloudCogTileResolver == null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
-            var primaryRasterInfo = primaryRaster.Value;
 
-            ImageServerLog.ImageTileRequested(_logger, layerId, level, row, col);
-
-            // Get the image tile
-            var tileResult = await _rasterStore.GetImageTileAsync(
-                layerId,
-                primaryRasterInfo.Id,
-                level,
-                row,
-                col,
-                rasterFormat,
-                cancellationToken);
-
-            if (tileResult == null)
+            if (primaryRaster is not null)
             {
-                ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
-                return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
+                // Get the image tile from PostGIS
+                var tileResult = await _rasterStore.GetImageTileAsync(
+                    layerId,
+                    primaryRaster.Value.Id,
+                    level,
+                    row,
+                    col,
+                    rasterFormat,
+                    cancellationToken);
+
+                if (tileResult != null)
+                {
+                    var result = tileResult.Value;
+                    ImageServerLog.ImageTileGenerated(_logger, layerId, result.Data.Length);
+                    scope.SetSuccess(1);
+                    return Results.File(result.Data, result.ContentType);
+                }
             }
 
-            var result = tileResult.Value;
-            ImageServerLog.ImageTileGenerated(_logger, layerId, result.Data.Length);
-            scope.SetSuccess(1);
+            // Fallback: Check cloud COGs (Pro edition required)
+            if (_cloudCogTileResolver != null)
+            {
+                var lookup = await _cloudCogTileResolver.GetTileForLayerAsync(
+                    layerId, level, row, col, rasterFormat, cancellationToken);
 
-            return Results.File(result.Data, result.ContentType);
+                if (lookup.EditionGateHit)
+                {
+                    scope.WithTag("edition.gated", "true");
+                    return Results.StatusCode(StatusCodes.Status402PaymentRequired);
+                }
+
+                if (lookup.Result != null)
+                {
+                    var cloudResult = lookup.Result.Value;
+                    ImageServerLog.ImageTileGenerated(_logger, layerId, cloudResult.Data.Length);
+                    scope.SetSuccess(1);
+                    return Results.File(cloudResult.Data, cloudResult.ContentType);
+                }
+            }
+
+            ImageServerLog.ImageTileNotFound(_logger, layerId, level, row, col);
+            return StandardErrorHelpers.CreateNotFound(context, "Image tile not found.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
