@@ -222,11 +222,11 @@ internal static class FeatureStreamEndpoints
         if (!string.IsNullOrWhiteSpace(filterParam))
         {
             var filterLang = query["filter-lang"].ToString();
-            var language = string.IsNullOrWhiteSpace(filterLang) || filterLang.Equals("cql2-text", StringComparison.OrdinalIgnoreCase)
-                ? FilterLanguage.Cql2Text
-                : filterLang.Equals("cql2-json", StringComparison.OrdinalIgnoreCase)
-                    ? FilterLanguage.Cql2Json
-                    : FilterLanguage.Cql2Text;
+            if (!TryResolveFilterLanguage(filterLang, out var language, out var filterLangError))
+            {
+                FeatureStreamLog.FilterValidationFailed(logger, filterLangError);
+                return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, filterLangError));
+            }
 
             var parseResult = deps.FilterExpressionService.Parse(language, filterParam);
             if (!parseResult.IsSuccess)
@@ -269,6 +269,27 @@ internal static class FeatureStreamEndpoints
             bbox: bbox,
             attributeFilter: attributeFilter);
         return (filter, null);
+    }
+
+    private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)
+    {
+        language = FilterLanguage.Cql2Text;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(filterLang) ||
+            filterLang.Equals("cql2-text", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (filterLang.Equals("cql2-json", StringComparison.OrdinalIgnoreCase))
+        {
+            language = FilterLanguage.Cql2Json;
+            return true;
+        }
+
+        error = $"Unsupported filter language '{filterLang}'.";
+        return false;
     }
 
     private static async Task<(double[] Bbox, string? Error)> TryProjectSubscriptionBboxAsync(

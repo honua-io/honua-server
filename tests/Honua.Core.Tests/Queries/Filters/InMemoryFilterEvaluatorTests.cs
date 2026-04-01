@@ -49,6 +49,28 @@ public sealed class InMemoryFilterEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_StringEquality_IsCaseSensitive()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Equal,
+            new Literal("ALPHA", LiteralType.Text));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"alpha"}""")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_Like_IsCaseSensitive()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("name"),
+            BinaryOperator.Like,
+            new Literal("ALP%", LiteralType.Text));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("""{"name":"alpha"}""")).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void Evaluate_BigIntegerEquality_PreservesPrecision()
     {
         const long objectId = 9_007_199_254_740_993L;

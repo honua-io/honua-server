@@ -117,6 +117,23 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_WithUnsupportedFilterLanguage_ReturnsBadRequest()
+    {
+        var encodedFilter = Uri.EscapeDataString("name = 'alpha'");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/v1/streaming/features?layers=0&filter={encodedFilter}&filter-lang=unsupported");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        body.Should().Contain("Unsupported filter language");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithBboxWithoutSingleLayer_ReturnsBadRequest()
     {
         using var request = new HttpRequestMessage(

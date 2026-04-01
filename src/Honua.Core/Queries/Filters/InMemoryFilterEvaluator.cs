@@ -233,10 +233,10 @@ public static class InMemoryFilterEvaluator
             return lb.CompareTo(rb);
         }
 
-        // String comparison (case-insensitive for filter evaluation).
+        // Match the default SQL/CQL semantics used by the main query path.
         var ls = left.ToString() ?? string.Empty;
         var rs = right.ToString() ?? string.Empty;
-        return string.Compare(ls, rs, StringComparison.OrdinalIgnoreCase);
+        return string.Compare(ls, rs, StringComparison.Ordinal);
     }
 
     private static bool TryGetDouble(object value, out double result)
@@ -463,7 +463,7 @@ public static class InMemoryFilterEvaluator
             var regexPattern = "^" + Regex.Escape(p)
                 .Replace("%", ".*", StringComparison.Ordinal)
                 .Replace("_", ".", StringComparison.Ordinal) + "$";
-            return new Regex(regexPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+            return new Regex(regexPattern, RegexOptions.Compiled, TimeSpan.FromSeconds(1));
         });
 
         return regex.IsMatch(input);
