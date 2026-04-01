@@ -82,6 +82,49 @@ public sealed class GeoServerImportServiceScanTests
     }
 
     [Fact]
+    public async Task ScanSourceAsync_WithSldNamespaceDeclarations_DoesNotTreatSchemaUrisAsExternalDependencies()
+    {
+        using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var service = CreateService(restClient);
+
+        var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            IncludeStyleContent = true,
+            IncludeCompatibilityAnalysis = true
+        });
+
+        artifact.ExternalDependencies
+            .Where(item => item.Kind == "external-graphic")
+            .Select(item => item.Address)
+            .Should()
+            .OnlyContain(address => address == "https://example.com/styles/marker.svg");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithCredentialBearingStoreUrls_RedactsDependencyMetadataAndAddress()
+    {
+        using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var service = CreateService(restClient);
+
+        var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            IncludeCompatibilityAnalysis = true
+        });
+
+        var dataStoreDependency = artifact.ExternalDependencies.Should().ContainSingle(item => item.Id == "datastore:demo:pg").Subject;
+        dataStoreDependency.Address.Should().BeNull();
+        dataStoreDependency.Metadata.Should().ContainKey("url").WhoseValue.Should().Be("[redacted]");
+
+        var coverageStoreDependency = artifact.ExternalDependencies.Should().ContainSingle(item => item.Id == "coverage-store:demo:imagery").Subject;
+        coverageStoreDependency.Address.Should().BeNull();
+        coverageStoreDependency.Metadata.Should().ContainKey("url").WhoseValue.Should().Be("[redacted]");
+    }
+
+    [Fact]
     public async Task ScanSourceAsync_WithoutCrsMetadata_OmitsPlaceholderSpatialReferences()
     {
         using var httpClient = new HttpClient(new ScopedStyleGeoServerHandler());
@@ -127,8 +170,31 @@ public sealed class GeoServerImportServiceScanTests
                 "/geoserver/rest/settings.json" => ("application/json", """{"global":{"title":"Demo GeoServer"}}"""),
                 "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
                 "/geoserver/rest/workspaces/demo.json" => ("application/json", """{"workspace":{"name":"demo"}}"""),
-                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":""}}"""),
-                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":[{"name":"pg"}]}}"""),
+                "/geoserver/rest/workspaces/demo/datastores/pg.json" => ("application/json", """
+                    {
+                      "dataStore": {
+                        "name": "pg",
+                        "type": "PostGIS",
+                        "connectionParameters": {
+                          "entry": [
+                            { "@key": "url", "$": "https://user:secret@example.com/postgis?token=abc#frag" },
+                            { "@key": "dbtype", "$": "postgis" }
+                          ]
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":[{"name":"imagery"}]}}"""),
+                "/geoserver/rest/workspaces/demo/coveragestores/imagery.json" => ("application/json", """
+                    {
+                      "coverageStore": {
+                        "name": "imagery",
+                        "type": "GeoTIFF",
+                        "url": "https://user:secret@example.com/imagery.tif?token=abc#frag"
+                      }
+                    }
+                    """),
                 "/geoserver/rest/workspaces/demo/layers.json" => ("application/json", """{"layers":{"layer":[{"name":"states"}]}}"""),
                 "/geoserver/rest/workspaces/demo/layers/states.json" => ("application/json", """
                     {
@@ -146,7 +212,12 @@ public sealed class GeoServerImportServiceScanTests
                 "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":[{"name":"polygon"}]}}"""),
                 "/geoserver/rest/styles/polygon.json" => ("application/json", """{"style":{"name":"polygon","format":"sld"}}"""),
                 "/geoserver/rest/styles/polygon.sld" => ("application/vnd.ogc.sld+xml", """
-                    <StyledLayerDescriptor>
+                    <StyledLayerDescriptor
+                        xmlns="http://www.opengis.net/sld"
+                        xmlns:ogc="http://www.opengis.net/ogc"
+                        xmlns:xlink="http://www.w3.org/1999/xlink"
+                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd">
                       <NamedLayer>
                         <UserStyle>
                           <FeatureTypeStyle>
@@ -167,7 +238,12 @@ public sealed class GeoServerImportServiceScanTests
                 "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":[{"name":"polygon"}]}}"""),
                 "/geoserver/rest/workspaces/demo/styles/polygon.json" => ("application/json", """{"style":{"name":"polygon","format":"sld"}}"""),
                 "/geoserver/rest/workspaces/demo/styles/polygon.sld" => ("application/vnd.ogc.sld+xml", """
-                    <StyledLayerDescriptor>
+                    <StyledLayerDescriptor
+                        xmlns="http://www.opengis.net/sld"
+                        xmlns:ogc="http://www.opengis.net/ogc"
+                        xmlns:xlink="http://www.w3.org/1999/xlink"
+                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xsi:schemaLocation="http://www.opengis.net/sld StyledLayerDescriptor.xsd">
                       <NamedLayer>
                         <UserStyle>
                           <FeatureTypeStyle>

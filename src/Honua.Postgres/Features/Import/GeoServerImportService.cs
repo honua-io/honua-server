@@ -2,7 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -568,6 +569,11 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     {
         if (metadata.TryGetValue("url", out var url) && !string.IsNullOrWhiteSpace(url))
         {
+            if (string.Equals(url, "[redacted]", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
             return MigrationInventoryHelpers.NormalizeExternalAddress(url) ?? url;
         }
 
@@ -593,14 +599,33 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             return [];
         }
 
-        return StyleUrlRegex()
-            .Matches(sldContent)
-            .Select(static match => match.Groups["url"].Value)
-            .Where(static value => Uri.TryCreate(value, UriKind.Absolute, out _))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static value => value, StringComparer.Ordinal)
-            .ToArray();
+        try
+        {
+            var document = XDocument.Parse(sldContent, LoadOptions.None);
+
+            return document
+                .Descendants()
+                .Where(static element => element.Name.LocalName.Equals("ExternalGraphic", StringComparison.OrdinalIgnoreCase))
+                .SelectMany(GetExternalGraphicUrls)
+                .Where(static value => Uri.TryCreate(value, UriKind.Absolute, out _))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch (XmlException)
+        {
+            return [];
+        }
     }
+
+    private static IEnumerable<string> GetExternalGraphicUrls(XElement externalGraphic)
+        => externalGraphic
+            .DescendantsAndSelf()
+            .SelectMany(static element => element.Attributes()
+                .Where(static attribute =>
+                    !attribute.IsNamespaceDeclaration &&
+                    attribute.Name.LocalName.Equals("href", StringComparison.OrdinalIgnoreCase))
+                .Select(static attribute => attribute.Value));
 
     /// <inheritdoc />
     public async Task<GeoServerImportResult> ImportConfigurationAsync(
@@ -1488,6 +1513,4 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         public static partial void ValidatingImportedResources(ILogger logger);
     }
 
-    [GeneratedRegex(@"(?<url>https?://[^\s""'<>]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex StyleUrlRegex();
 }

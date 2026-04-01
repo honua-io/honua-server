@@ -12,6 +12,8 @@ namespace Honua.Postgres.Features.Import;
 
 internal static partial class MigrationInventoryHelpers
 {
+    private const string RedactedValue = "[redacted]";
+
     private static readonly string[] SensitiveMetadataKeys =
     [
         "password",
@@ -123,9 +125,10 @@ internal static partial class MigrationInventoryHelpers
                 continue;
             }
 
+            var stringValue = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
             sanitized[key] = IsSensitiveKey(key)
-                ? "[redacted]"
-                : Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+                ? RedactedValue
+                : SanitizeMetadataValue(stringValue);
         }
 
         return sanitized.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
@@ -267,6 +270,21 @@ internal static partial class MigrationInventoryHelpers
     private static bool IsSensitiveKey(string key)
         => SensitiveMetadataKeys.Any(value => key.Contains(value, StringComparison.OrdinalIgnoreCase));
 
+    private static string SanitizeMetadataValue(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return value;
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return RedactedValue;
+        }
+
+        return NormalizeExternalAddress(value) ?? value;
+    }
+
     private static string? ExtractWkt(string? sourceValue)
     {
         if (string.IsNullOrWhiteSpace(sourceValue))
@@ -369,7 +387,7 @@ internal static partial class MigrationInventoryHelpers
     [GeneratedRegex(@"(?:EPSG:|AUTHORITY\[""EPSG"",""?)(\d{3,6})(?:""|])?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SridRegex();
 
-    [GeneratedRegex(@"(?:DATUM|GEODDATUM|BASEGEOGCRS|GEOGCS|GEOGCRS)\s*\[\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?:DATUM|GEODDATUM|ENSEMBLE)\s*\[\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DatumRegex();
 
     [GeneratedRegex(@"(?:LENGTHUNIT|UNIT)\s*\[\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
