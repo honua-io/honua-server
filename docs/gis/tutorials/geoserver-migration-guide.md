@@ -1,10 +1,10 @@
 # GeoServer to Honua Migration Guide
 
-Migrate from GeoServer to Honua Server, covering endpoint equivalence, automated import, and key configuration differences.
+Migrate from GeoServer to Honua Server, covering endpoint equivalence, inventory scanning, dry-run import, and key configuration differences.
 
 ## Overview
 
-Honua provides built-in GeoServer migration tooling that discovers your existing GeoServer configuration and imports workspaces, layers, and styles into Honua services. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
+Honua provides GeoServer migration tooling for discovery, compatibility classification, and dry-run import validation. The migration scanner is discovery-only: it returns a deterministic planning artifact before any connection, service, layer, or style changes are applied. GeoServer import remains a separate dry-run workflow, and style conversion still requires manual follow-up. After migration, clients that consumed GeoServer WFS/WMS/WMTS endpoints can connect to Honua's equivalent OGC and GeoServices REST endpoints.
 
 ## Endpoint Equivalence Mapping
 
@@ -39,11 +39,11 @@ Honua provides built-in GeoServer migration tooling that discovers your existing
 | `GET /geoserver/rest/layers` | `GET /ogc/features/collections` | Layer discovery |
 | `GET /geoserver/rest/styles` | `GET /api/v1/admin/metadata/layers/{id}/style` | Layer styles (MapLibre JSON) |
 
-## Automated Migration
+## Discovery And Dry-Run Import
 
-Honua provides admin API endpoints that automate the import of GeoServer configurations.
+Honua provides admin API endpoints for GeoServer discovery and a dry-run import workflow. Use the scanner artifact as the review contract for migration planning; the import endpoint currently validates and previews the work without applying configuration changes.
 
-### Step 1: Scan Your GeoServer
+### Step 1: Scan And Classify Your GeoServer
 
 Assess your GeoServer instance before importing. The unified migration scanner returns a deterministic planning artifact for review and can be used consistently across GeoServer REST and ArcGIS GeoServices REST sources.
 
@@ -59,16 +59,24 @@ curl -X POST http://localhost:8080/api/v1/admin/import/scan \
   }'
 ```
 
+Contract notes:
+- `sourceKind: "geoserver"` is normalized to `sourceKind: "geoserver-rest"` in the response artifact.
+- `includeStyleContent: true` fetches SLD documents for deeper compatibility analysis and external graphic detection, but the artifact does not echo raw SLD bodies.
+- `timeoutSeconds` is optional for GeoServer scans and defaults to `120`.
+- The response body is the artifact itself, not a `success/data` admin envelope.
+- HTTP `200` only means the scanner returned an artifact. Review `scanCompleteness.status` and `overallCompatibility.level` before treating the source as ready for migration planning.
+
 The response includes:
+- Stable artifact fields: `artifactKind = "honua.migration.source-inventory"` and `artifactVersion = "1.0"`
 - Source identity and reported version
 - Authentication posture and scan completeness
 - Workspace and layer inventory
-- Data store types and connection parameters
+- Data store types and sanitized connection metadata
 - Style formats and compatibility assessment
 - CRS, datum, and unit details for migration planning
 - External dependencies and manual follow-up steps
 
-Review the inventory artifact before proceeding. Layers backed by PostGIS data stores have the highest migration fidelity.
+Review the inventory artifact before proceeding. Arrays are deterministically ordered for repeatable diffs, and sensitive datastore values are redacted before serialization. Layers backed by PostGIS data stores have the highest migration fidelity.
 
 ### Step 2: Start a Dry-Run Import
 
@@ -86,6 +94,8 @@ curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
 ```
 
 This returns a job ID for tracking progress.
+
+> **Unified scanner note:** the same `POST /api/v1/admin/import/scan` endpoint also accepts `sourceKind: "geoservices"` or `sourceKind: "arcgis-geoservices-rest"` for ArcGIS GeoServices REST inventory scans. GeoServices discovery currently uses anonymous access only, normalizes `sourceKind` to `arcgis-geoservices-rest`, and can still return a failed artifact with `authPosture.mode = "auth-required"` when the source blocks anonymous discovery.
 
 ### Step 3: Monitor Progress
 

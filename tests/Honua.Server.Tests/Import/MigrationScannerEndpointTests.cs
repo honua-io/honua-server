@@ -122,8 +122,27 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("valid HTTPS");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    public async Task Scan_WithNonPositiveTimeout_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", new
+        {
+            SourceKind = "geoservices",
+            SourceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 0
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("TimeoutSeconds must be greater than 0");
+        _geoServerService.ScanRequestCount.Should().Be(0);
+        _geoservicesService.ScanRequestCount.Should().Be(0);
+    }
+
     private sealed class FakeGeoServerScanService : IGeoServerImportService
     {
+        public int ScanRequestCount { get; private set; }
+
         public Task<GeoServerServiceInfo> DiscoverServiceAsync(
             GeoServerDiscoveryRequest request,
             CancellationToken cancellationToken = default)
@@ -137,6 +156,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
             GeoServerDiscoveryRequest request,
             CancellationToken cancellationToken = default)
         {
+            ScanRequestCount++;
             return Task.FromResult(new MigrationSourceInventoryArtifact
             {
                 SourceKind = "geoserver-rest",
@@ -261,6 +281,8 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
 
     private sealed class FakeGeoservicesScanService : IGeoservicesImportService
     {
+        public int ScanRequestCount { get; private set; }
+
         public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
             GeoservicesDiscoveryRequest request,
             CancellationToken cancellationToken = default)
@@ -274,6 +296,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
             GeoservicesDiscoveryRequest request,
             CancellationToken cancellationToken = default)
         {
+            ScanRequestCount++;
             return Task.FromResult(new MigrationSourceInventoryArtifact
             {
                 SourceKind = "arcgis-geoservices-rest",

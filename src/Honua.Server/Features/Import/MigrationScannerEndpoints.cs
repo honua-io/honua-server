@@ -67,6 +67,12 @@ internal static class MigrationScannerEndpoints
             return;
         }
 
+        if (request.TimeoutSeconds is <= 0)
+        {
+            await AdminResponseWriter.WriteErrorAsync(context, "TimeoutSeconds must be greater than 0.", StatusCodes.Status400BadRequest);
+            return;
+        }
+
         try
         {
             MigrationSourceInventoryArtifact artifact;
@@ -74,59 +80,59 @@ internal static class MigrationScannerEndpoints
             switch (sourceKind)
             {
                 case "geoserver-rest":
-                {
-                    var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
-                    var validation = await GeoServerServiceUrlValidation.ValidateAsync(
-                        request.SourceUrl,
-                        allowUnsafeLocalUrls,
-                        cancellationToken).ConfigureAwait(false);
-                    if (!validation.IsValid)
                     {
-                        await AdminResponseWriter.WriteErrorAsync(
-                            context,
-                            validation.ErrorMessage!,
-                            StatusCodes.Status400BadRequest);
-                        return;
-                    }
-
-                    var importService = context.RequestServices.GetRequiredService<IGeoServerImportService>();
-                    artifact = await importService.ScanSourceAsync(
-                        new GeoServerDiscoveryRequest
+                        var allowUnsafeLocalUrls = GeoServerImportExecutionSettings.ShouldAllowUnsafeLocalUrls(context.RequestServices);
+                        var validation = await GeoServerServiceUrlValidation.ValidateAsync(
+                            request.SourceUrl,
+                            allowUnsafeLocalUrls,
+                            cancellationToken).ConfigureAwait(false);
+                        if (!validation.IsValid)
                         {
-                            GeoServerRestUrl = request.SourceUrl,
-                            Username = request.Username,
-                            Password = request.Password,
-                            TimeoutSeconds = request.TimeoutSeconds ?? 120,
-                            IncludeCompatibilityAnalysis = true,
-                            IncludeStyleContent = request.IncludeStyleContent ?? false
-                        },
-                        cancellationToken).ConfigureAwait(false);
-                    break;
-                }
+                            await AdminResponseWriter.WriteErrorAsync(
+                                context,
+                                validation.ErrorMessage!,
+                                StatusCodes.Status400BadRequest);
+                            return;
+                        }
+
+                        var importService = context.RequestServices.GetRequiredService<IGeoServerImportService>();
+                        artifact = await importService.ScanSourceAsync(
+                            new GeoServerDiscoveryRequest
+                            {
+                                GeoServerRestUrl = request.SourceUrl,
+                                Username = request.Username,
+                                Password = request.Password,
+                                TimeoutSeconds = request.TimeoutSeconds ?? 120,
+                                IncludeCompatibilityAnalysis = true,
+                                IncludeStyleContent = request.IncludeStyleContent ?? false
+                            },
+                            cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
                 default:
-                {
-                    var validation = await GeoservicesServiceUrlValidation.ValidateAsync(
-                        request.SourceUrl,
-                        cancellationToken).ConfigureAwait(false);
-                    if (!validation.IsValid)
                     {
-                        await AdminResponseWriter.WriteErrorAsync(
-                            context,
-                            validation.ErrorMessage!,
-                            StatusCodes.Status400BadRequest);
-                        return;
-                    }
-
-                    var importService = context.RequestServices.GetRequiredService<IGeoservicesImportService>();
-                    artifact = await importService.ScanSourceAsync(
-                        new GeoservicesDiscoveryRequest
+                        var validation = await GeoservicesServiceUrlValidation.ValidateAsync(
+                            request.SourceUrl,
+                            cancellationToken).ConfigureAwait(false);
+                        if (!validation.IsValid)
                         {
-                            ServiceUrl = request.SourceUrl,
-                            TimeoutSeconds = request.TimeoutSeconds ?? 30
-                        },
-                        cancellationToken).ConfigureAwait(false);
-                    break;
-                }
+                            await AdminResponseWriter.WriteErrorAsync(
+                                context,
+                                validation.ErrorMessage!,
+                                StatusCodes.Status400BadRequest);
+                            return;
+                        }
+
+                        var importService = context.RequestServices.GetRequiredService<IGeoservicesImportService>();
+                        artifact = await importService.ScanSourceAsync(
+                            new GeoservicesDiscoveryRequest
+                            {
+                                ServiceUrl = request.SourceUrl,
+                                TimeoutSeconds = request.TimeoutSeconds ?? 30
+                            },
+                            cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
             }
 
             await Results.Json(artifact, ImportJsonContext.Default.MigrationSourceInventoryArtifact)

@@ -65,8 +65,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             var styleResourceIds = BuildStyleResourceMap(serviceInfo);
             var dependencies = BuildExternalDependencies(serviceInfo, request.IncludeStyleContent);
             var resources = await BuildResourcesAsync(serviceInfo, styleResourceIds, dependencies, cancellationToken).ConfigureAwait(false);
-            var containers = BuildContainers(serviceInfo, resources, dependencies, styleResourceIds.Keys);
             var styles = BuildStyles(serviceInfo, styleResourceIds, dependencies);
+            var containers = BuildContainers(serviceInfo, resources, dependencies, styles);
 
             var summary = MigrationInventoryHelpers.BuildSummary(containers, resources, styles, dependencies);
             var overallCompatibility = MigrationInventoryHelpers.Aggregate(
@@ -117,14 +117,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     Build = serviceInfo.GitRevision ?? serviceInfo.BuildTimestamp,
                     ServiceType = "REST"
                 },
-                AuthPosture = new MigrationInventoryAuthPosture
-                {
-                    Mode = string.IsNullOrWhiteSpace(request.Username) && string.IsNullOrWhiteSpace(request.Password)
-                        ? "anonymous"
-                        : "basic",
-                    CredentialsSupplied = !string.IsNullOrWhiteSpace(request.Username) || !string.IsNullOrWhiteSpace(request.Password),
-                    AccessConfirmed = true
-                },
+                AuthPosture = BuildAuthPosture(request.Username, request.Password, accessConfirmed: true, anonymousMode: "anonymous"),
                 ScanCompleteness = completeness,
                 Summary = summary,
                 OverallCompatibility = overallCompatibility,
@@ -148,15 +141,12 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     Product = "GeoServer",
                     ServiceType = "REST"
                 },
-                AuthPosture = new MigrationInventoryAuthPosture
-                {
-                    Mode = string.IsNullOrWhiteSpace(request.Username) && string.IsNullOrWhiteSpace(request.Password)
-                        ? "anonymous-or-auth-required"
-                        : "basic",
-                    CredentialsSupplied = !string.IsNullOrWhiteSpace(request.Username) || !string.IsNullOrWhiteSpace(request.Password),
-                    AccessConfirmed = false,
-                    Notes = MigrationInventoryHelpers.NormalizeStrings([ex.Message])
-                },
+                AuthPosture = BuildAuthPosture(
+                    request.Username,
+                    request.Password,
+                    accessConfirmed: false,
+                    anonymousMode: "anonymous-or-auth-required",
+                    notes: [ex.Message]),
                 ScanCompleteness = MigrationInventoryHelpers.BuildCompleteness(
                     "failed",
                     [ex.Message],
@@ -285,7 +275,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         GeoServerServiceInfo serviceInfo,
         IReadOnlyList<MigrationInventoryResource> resources,
         IReadOnlyList<MigrationExternalDependency> dependencies,
-        IEnumerable<string> styleIds)
+        IReadOnlyList<MigrationInventoryStyle> styles)
     {
         var containers = new List<MigrationInventoryContainer>(serviceInfo.Workspaces.Length + 1);
         var globalContainerNeeded = serviceInfo.Styles.Any(style => string.IsNullOrWhiteSpace(style.WorkspaceName)) ||
@@ -302,7 +292,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 isDefault: false,
                 resources,
                 dependencies,
-                styleIds));
+                styles));
         }
 
         foreach (var workspace in serviceInfo.Workspaces.OrderBy(static workspace => workspace.Name, StringComparer.Ordinal))
@@ -316,7 +306,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 workspace.IsDefault,
                 resources,
                 dependencies,
-                styleIds));
+                styles));
         }
 
         return containers.OrderBy(static container => container.Id, StringComparer.Ordinal).ToArray();
@@ -331,13 +321,11 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         bool isDefault,
         IReadOnlyList<MigrationInventoryResource> resources,
         IReadOnlyList<MigrationExternalDependency> dependencies,
-        IEnumerable<string> styleIds)
+        IReadOnlyList<MigrationInventoryStyle> styles)
     {
-        var containerStyles = styleIds.Where(styleId => GetContainerIdForStyle(styleId) == id)
-            .Select(_ => MigrationInventoryHelpers.Compatible("Style metadata discovered for this container."));
         var assessments = resources.Where(resource => resource.ContainerId == id).Select(resource => resource.Compatibility)
             .Concat(dependencies.Where(dependency => dependency.ContainerId == id).Select(dependency => dependency.Compatibility))
-            .Concat(containerStyles);
+            .Concat(styles.Where(style => style.ContainerId == id).Select(style => style.Compatibility));
 
         return new MigrationInventoryContainer
         {
@@ -486,19 +474,15 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private static Dictionary<string, string[]> BuildStyleResourceMap(GeoServerServiceInfo serviceInfo)
     {
         var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var styleIdsByReference = BuildStyleReferenceLookup(serviceInfo.Styles);
 
         foreach (var layer in serviceInfo.Layers)
         {
-            if (!string.IsNullOrWhiteSpace(layer.DefaultStyle))
-            {
-                AddStyleResourceLink(map, layer.WorkspaceName, layer.DefaultStyle, GetLayerId(layer));
-                AddStyleResourceLink(map, null, layer.DefaultStyle, GetLayerId(layer));
-            }
+            AddStyleResourceLinks(map, styleIdsByReference, layer.WorkspaceName, layer.DefaultStyle, GetLayerId(layer));
 
             foreach (var alternativeStyle in layer.AlternativeStyles)
             {
-                AddStyleResourceLink(map, layer.WorkspaceName, alternativeStyle, GetLayerId(layer));
-                AddStyleResourceLink(map, null, alternativeStyle, GetLayerId(layer));
+                AddStyleResourceLinks(map, styleIdsByReference, layer.WorkspaceName, alternativeStyle, GetLayerId(layer));
             }
         }
 
@@ -508,20 +492,23 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             StringComparer.Ordinal);
     }
 
-    private static void AddStyleResourceLink(
+    private static void AddStyleResourceLinks(
         IDictionary<string, HashSet<string>> map,
-        string? workspaceName,
-        string styleName,
+        IReadOnlyDictionary<StyleReferenceKey, string[]> styleIdsByReference,
+        string layerWorkspaceName,
+        string? styleReference,
         string resourceId)
     {
-        var styleId = GetStyleId(workspaceName, styleName);
-        if (!map.TryGetValue(styleId, out var resourceIds))
+        foreach (var styleId in ResolveStyleIds(styleIdsByReference, layerWorkspaceName, styleReference))
         {
-            resourceIds = new HashSet<string>(StringComparer.Ordinal);
-            map[styleId] = resourceIds;
-        }
+            if (!map.TryGetValue(styleId, out var resourceIds))
+            {
+                resourceIds = new HashSet<string>(StringComparer.Ordinal);
+                map[styleId] = resourceIds;
+            }
 
-        _ = resourceIds.Add(resourceId);
+            _ = resourceIds.Add(resourceId);
+        }
     }
 
     private static string[] BuildLayerCapabilities(GeoServerLayerInfo layer)
@@ -572,14 +559,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private static string GetCoverageStoreId(string workspaceName, string coverageStoreName)
         => $"coverage-store:{workspaceName}:{coverageStoreName}";
-
-    private static string GetContainerIdForStyle(string styleId)
-    {
-        var segments = styleId.Split(':', 3, StringSplitOptions.None);
-        return segments.Length < 3
-            ? GetGlobalContainerId()
-            : GetContainerIdForWorkspace(segments[1].Equals("global", StringComparison.Ordinal) ? null : segments[1]);
-    }
 
     private static string? ResolveDependencyAddress(IReadOnlyDictionary<string, string> metadata)
     {
@@ -777,6 +756,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
     private static FilteredResources FilterRequestedResources(GeoServerServiceInfo serviceInfo, GeoServerImportRequest request)
     {
+        var styleIdsByReference = BuildStyleReferenceLookup(serviceInfo.Styles);
         var workspaces = request.WorkspaceNames == null
             ? serviceInfo.Workspaces
             : serviceInfo.Workspaces.Where(w => request.WorkspaceNames.Contains(w.Name)).ToArray();
@@ -790,7 +770,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             : serviceInfo.Layers.Where(l => IsResourceRequested(l.WorkspaceName, l.Name, request.LayerNames)).ToArray();
 
         var styles = request.ImportStyles
-            ? (request.LayerNames == null ? serviceInfo.Styles : serviceInfo.Styles.Where(s => IsResourceNeededForLayers(s, layers)).ToArray())
+            ? (request.LayerNames == null ? serviceInfo.Styles : serviceInfo.Styles.Where(s => IsResourceNeededForLayers(s, layers, styleIdsByReference)).ToArray())
             : Array.Empty<GeoServerStyleInfo>();
 
         return new FilteredResources
@@ -813,11 +793,122 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             name.Equals($"{workspaceName}:{resourceName}", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsResourceNeededForLayers(GeoServerStyleInfo style, GeoServerLayerInfo[] layers)
+    private static bool IsResourceNeededForLayers(
+        GeoServerStyleInfo style,
+        GeoServerLayerInfo[] layers,
+        IReadOnlyDictionary<StyleReferenceKey, string[]> styleIdsByReference)
     {
-        return layers.Any(l =>
-            l.DefaultStyle?.Equals(style.Name, StringComparison.OrdinalIgnoreCase) == true ||
-            l.AlternativeStyles.Any(altStyle => altStyle.Equals(style.Name, StringComparison.OrdinalIgnoreCase)));
+        var styleId = GetStyleId(style);
+        return layers.Any(layer =>
+            ResolveStyleIds(styleIdsByReference, layer.WorkspaceName, layer.DefaultStyle).Contains(styleId, StringComparer.Ordinal) ||
+            layer.AlternativeStyles.Any(alternativeStyle => ResolveStyleIds(styleIdsByReference, layer.WorkspaceName, alternativeStyle)
+                .Contains(styleId, StringComparer.Ordinal)));
+    }
+
+    private static MigrationInventoryAuthPosture BuildAuthPosture(
+        string? username,
+        string? password,
+        bool accessConfirmed,
+        string anonymousMode,
+        IEnumerable<string>? notes = null)
+    {
+        var usesBasicAuth = UsesBasicAuthentication(username, password);
+        var postureNotes = new List<string>();
+
+        if (!usesBasicAuth && HasAnyCredential(username, password))
+        {
+            postureNotes.Add("GeoServer basic authentication requires both username and password; the scan proceeded without credentials.");
+        }
+
+        if (notes != null)
+        {
+            postureNotes.AddRange(notes);
+        }
+
+        return new MigrationInventoryAuthPosture
+        {
+            Mode = usesBasicAuth ? "basic" : anonymousMode,
+            CredentialsSupplied = usesBasicAuth,
+            AccessConfirmed = accessConfirmed,
+            Notes = MigrationInventoryHelpers.NormalizeStrings(postureNotes)
+        };
+    }
+
+    private static bool UsesBasicAuthentication(string? username, string? password)
+        => !string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(password);
+
+    private static bool HasAnyCredential(string? username, string? password)
+        => !string.IsNullOrWhiteSpace(username) || !string.IsNullOrWhiteSpace(password);
+
+    private static Dictionary<StyleReferenceKey, string[]> BuildStyleReferenceLookup(IEnumerable<GeoServerStyleInfo> styles)
+    {
+        return styles
+            .GroupBy(
+                static style => new StyleReferenceKey(style.WorkspaceName, style.Name),
+                StyleReferenceKey.Comparer)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.Select(GetStyleId).ToArray(),
+                StyleReferenceKey.Comparer);
+    }
+
+    private static string[] ResolveStyleIds(
+        IReadOnlyDictionary<StyleReferenceKey, string[]> styleIdsByReference,
+        string layerWorkspaceName,
+        string? styleReference)
+    {
+        if (string.IsNullOrWhiteSpace(styleReference))
+        {
+            return [];
+        }
+
+        if (TryParseQualifiedStyleReference(styleReference, out var qualifiedReference))
+        {
+            return styleIdsByReference.TryGetValue(qualifiedReference, out var qualifiedStyleIds)
+                ? qualifiedStyleIds
+                : [];
+        }
+
+        var workspaceReference = new StyleReferenceKey(layerWorkspaceName, styleReference);
+        if (styleIdsByReference.TryGetValue(workspaceReference, out var workspaceStyleIds))
+        {
+            return workspaceStyleIds;
+        }
+
+        var globalReference = new StyleReferenceKey(null, styleReference);
+        return styleIdsByReference.TryGetValue(globalReference, out var globalStyleIds)
+            ? globalStyleIds
+            : [];
+    }
+
+    private static bool TryParseQualifiedStyleReference(string styleReference, out StyleReferenceKey qualifiedReference)
+    {
+        var separatorIndex = styleReference.IndexOf(':');
+        if (separatorIndex > 0 && separatorIndex < styleReference.Length - 1)
+        {
+            qualifiedReference = new StyleReferenceKey(styleReference[..separatorIndex], styleReference[(separatorIndex + 1)..]);
+            return true;
+        }
+
+        qualifiedReference = default;
+        return false;
+    }
+
+    private readonly record struct StyleReferenceKey(string? WorkspaceName, string StyleName)
+    {
+        public static IEqualityComparer<StyleReferenceKey> Comparer { get; } = new StyleReferenceKeyComparer();
+
+        private sealed class StyleReferenceKeyComparer : IEqualityComparer<StyleReferenceKey>
+        {
+            public bool Equals(StyleReferenceKey x, StyleReferenceKey y)
+                => string.Equals(x.WorkspaceName, y.WorkspaceName, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(x.StyleName, y.StyleName, StringComparison.OrdinalIgnoreCase);
+
+            public int GetHashCode(StyleReferenceKey obj)
+                => HashCode.Combine(
+                    StringComparer.OrdinalIgnoreCase.GetHashCode(obj.WorkspaceName ?? string.Empty),
+                    StringComparer.OrdinalIgnoreCase.GetHashCode(obj.StyleName));
+        }
     }
 
     private static GeoServerImportResult CreateDryRunResult(GeoServerServiceInfo serviceInfo, FilteredResources resources, GeoServerImportRequest request, TimeSpan duration)

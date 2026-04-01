@@ -244,7 +244,18 @@ For source-system migration planning, use the unified scan endpoint before start
 |----------|--------|---------|
 | `/api/v1/admin/import/scan` | POST | Scan a supported source environment and return a deterministic migration inventory artifact |
 
-Minimal request:
+Request body:
+
+| Field | Required | Notes |
+|----------|--------|---------|
+| `sourceKind` | Yes | Accepted aliases: `geoserver`, `geoserver-rest`, `geoservices`, `arcgis-geoservices-rest`. The response normalizes this to `geoserver-rest` or `arcgis-geoservices-rest`. |
+| `sourceUrl` | Yes | Canonical source URL to scan. GeoServices requires HTTPS and rejects embedded credentials plus private, loopback, or unresolvable addresses. GeoServer uses the same HTTPS rule in normal environments; test-only unsafe local URLs can be enabled separately. |
+| `username` | No | GeoServer basic-auth username. Ignored for GeoServices scans. |
+| `password` | No | GeoServer basic-auth password. Ignored for GeoServices scans. |
+| `timeoutSeconds` | No | Defaults to `120` for GeoServer scans and `30` for GeoServices scans. |
+| `includeStyleContent` | No | GeoServer-only. Fetches SLD documents for deeper classification and external graphic detection. Raw style documents are not returned in the artifact. |
+
+GeoServer example:
 
 ```json
 {
@@ -256,9 +267,48 @@ Minimal request:
 }
 ```
 
-Supported `sourceKind` values:
-- `geoserver` or `geoserver-rest`
-- `geoservices` or `arcgis-geoservices-rest`
+GeoServices example:
+
+```json
+{
+  "sourceKind": "geoservices",
+  "sourceUrl": "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+  "timeoutSeconds": 10
+}
+```
+
+Successful response contract:
+
+| Field | Notes |
+|----------|--------|
+| `artifactKind` | Stable artifact identifier: `honua.migration.source-inventory`. |
+| `artifactVersion` | Current schema version: `1.0`. |
+| `sourceKind` | Canonical source kind: `geoserver-rest` or `arcgis-geoservices-rest`. |
+| `source` | Source identity, product, version, build, and service type metadata. |
+| `authPosture` | Observed authentication mode, whether credentials were supplied, whether access was confirmed, and any auth notes. |
+| `scanCompleteness` | Scan status (`complete`, `partial`, or `failed`) plus warnings and missing artifact categories. |
+| `summary` | Aggregate counts for containers, resources, styles, dependencies, and compatibility tallies. |
+| `overallCompatibility` | Roll-up compatibility level (`compatible`, `partial`, `incompatible`) with warnings and manual follow-up steps. |
+| `containers` | Deterministically ordered workspaces or services. |
+| `resources` | Deterministically ordered layers, tables, or layer groups. |
+| `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
+| `externalDependencies` | Deterministically ordered datastore, coverage-store, attachment, external graphic, or external symbol references. |
+
+The response body is the artifact itself, not a `success/data` admin envelope.
+
+Behavior notes:
+- `200 OK` means Honua produced an inventory artifact. Use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate before import or cutover decisions.
+- GeoServer currently also returns `200 OK` with `scanCompleteness.status = "failed"` for reachability, timeout, and auth-required failures; those details appear in `authPosture.notes`, `scanCompleteness.warnings`, and `overallCompatibility.manualSteps`.
+- Sensitive connection metadata is redacted before serialization. Password-, token-, API-key-, and secret-like values are returned as `[redacted]`.
+- GeoServer `includeStyleContent=true` deepens classification and dependency discovery only. The artifact still returns metadata, compatibility, and external dependency references rather than raw SLD payloads.
+- GeoServices scans currently classify anonymous discovery only. `username` and `password` are accepted by the request model for contract stability but are not used by the GeoServices scanner.
+- Arrays and compatibility note collections are normalized for repeatable output so unchanged sources produce materially stable planning artifacts.
+
+Failure semantics:
+- `400 Bad Request`: invalid JSON body, missing required fields, unsupported `sourceKind`, non-positive `timeoutSeconds`, invalid HTTPS requirements, embedded credentials in the URL, or disallowed private or loopback targets.
+- `200 OK` with `scanCompleteness.status = "failed"`: GeoServer could not complete discovery cleanly, including auth-required, reachability, timeout, or unusable-metadata cases.
+- `502 Bad Gateway`: GeoServices scan failed to connect to the source service.
+- `504 Gateway Timeout`: GeoServices scan exceeded the request timeout.
 
 The artifact includes:
 - source identity and version

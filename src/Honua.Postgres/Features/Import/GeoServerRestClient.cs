@@ -412,7 +412,7 @@ internal sealed partial class GeoServerRestClient
             var alternativeStyles = new List<string>();
             foreach (var style in EnumerateCollectionItems(layerElement, "styles", "style"))
             {
-                var styleName = TryGetName(style);
+                var styleName = GetQualifiedName(style);
                 if (styleName != null)
                 {
                     alternativeStyles.Add(styleName);
@@ -458,7 +458,7 @@ internal sealed partial class GeoServerRestClient
                 WorkspaceName = workspaceName,
                 Title = GetOptionalStringProperty(layerElement, "title"),
                 Abstract = GetOptionalStringProperty(layerElement, "abstract"),
-                DefaultStyle = GetNamedObjectNameProperty(layerElement, "defaultStyle"),
+                DefaultStyle = GetQualifiedNamedObjectProperty(layerElement, "defaultStyle"),
                 AlternativeStyles = alternativeStyles.ToArray(),
                 DataStoreName = dataStoreName,
                 CoverageStoreName = coverageStoreName,
@@ -748,24 +748,38 @@ internal sealed partial class GeoServerRestClient
         }
     }
 
-    private static string? GetNamedObjectNameProperty(JsonElement element, string propertyName)
+    private static string? GetQualifiedNamedObjectProperty(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property))
         {
             return null;
         }
 
-        if (property.ValueKind == JsonValueKind.String)
+        return GetQualifiedName(property);
+    }
+
+    private static string? GetQualifiedName(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
         {
-            return property.GetString();
+            return element.GetString();
         }
 
-        if (property.ValueKind == JsonValueKind.Object)
+        if (element.ValueKind != JsonValueKind.Object)
         {
-            return TryGetName(property);
+            return null;
         }
 
-        return null;
+        var name = TryGetName(element);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return name;
+        }
+
+        var workspaceName = GetOptionalStringProperty(element, "workspace");
+        return string.IsNullOrWhiteSpace(workspaceName)
+            ? name
+            : $"{workspaceName}:{name}";
     }
 
     private static string ResolveDataStoreType(

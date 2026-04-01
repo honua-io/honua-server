@@ -53,6 +53,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 - Publish and configure layers from database tables
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
+- Scan GeoServer REST and ArcGIS GeoServices REST sources into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
