@@ -18,14 +18,11 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, IDisposable
 {
-    private readonly IDistributedJobQueueService _jobQueue;
-    private readonly IDistributedLeaderElection _leaderElection;
+    private readonly RedisJobQueue _jobQueue;
+    private readonly RedisLeaderElection _leaderElection;
     private readonly IUniversalProgressStore _universalProgressStore;
     private readonly IDistributedProgressStore<MigrationEvidenceProgress> _progressStore;
-    private readonly IDistributedProgressStore<MigrationEvidenceJobState> _requestStore;
-    private readonly bool _jobQueueUsesFallback;
-    private readonly bool _leaderElectionUsesFallback;
-    private readonly bool _requestStoreUsesFallback;
+    private readonly RedisProgressStore<MigrationEvidenceJobState> _requestStore;
     private readonly bool _requiresStrictDistributedMode;
 
     public MigrationEvidenceJobManager(
@@ -41,23 +38,17 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
 
         var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
         _requiresStrictDistributedMode = RedisImportJobManager.RequiresStrictDistributedMode(hostEnvironment);
-        var jobQueue = new RedisJobQueue(redis, logger, "migration:evidence:queue", allowFallback: !_requiresStrictDistributedMode);
-        var leaderElection = new RedisLeaderElection(redis, logger, "migration:evidence:leader", instanceId);
-        var requestStore = new RedisProgressStore<MigrationEvidenceJobState>(
+        _jobQueue = new RedisJobQueue(redis, logger, "migration:evidence:queue", allowFallback: !_requiresStrictDistributedMode);
+        _leaderElection = new RedisLeaderElection(redis, logger, "migration:evidence:leader", instanceId);
+        _requestStore = new RedisProgressStore<MigrationEvidenceJobState>(
             distributedCache,
             logger,
             "migration:evidence:request:",
             MigrationEvidenceJobJsonContext.Default.MigrationEvidenceJobState,
             redis);
 
-        _jobQueue = jobQueue;
-        _leaderElection = leaderElection;
         _universalProgressStore = universalProgressStore;
-        _jobQueueUsesFallback = jobQueue.IsUsingFallback;
-        _leaderElectionUsesFallback = leaderElection.IsUsingFallback;
         _progressStore = new DistributedProgressStoreAdapter<MigrationEvidenceProgress>(universalProgressStore);
-        _requestStore = requestStore;
-        _requestStoreUsesFallback = requestStore.IsUsingFallback;
     }
 
     public bool CanAcceptNewJobs => IsClusterDurable || !_requiresStrictDistributedMode;
@@ -67,9 +58,9 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
     internal IDistributedProgressStore<MigrationEvidenceProgress> ProgressStore => _progressStore;
     internal IDistributedProgressStore<MigrationEvidenceJobState> RequestStore => _requestStore;
     internal bool IsClusterDurable =>
-        !_jobQueueUsesFallback &&
-        !_leaderElectionUsesFallback &&
-        !_requestStoreUsesFallback &&
+        !_jobQueue.IsUsingFallback &&
+        !_leaderElection.IsUsingFallback &&
+        !_requestStore.IsUsingFallback &&
         _universalProgressStore is not UniversalProgressStore { IsUsingFallback: true };
 
     public void Dispose()
@@ -88,6 +79,8 @@ internal sealed record MigrationEvidenceJobState
     public bool CancellationRequested { get; init; }
 
     public DateTimeOffset? CancellationRequestedAt { get; init; }
+
+    public DateTimeOffset? ReportPersistedAt { get; init; }
 }
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]

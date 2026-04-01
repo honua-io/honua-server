@@ -19,18 +19,13 @@ internal static class MigrationEvidenceCancellationCoordinator
             return MigrationEvidenceCancellationDecision.Conflict($"Cannot cancel job in {progress.Status} status");
         }
 
-        if (cancellationTokens.Cancel(jobId))
-        {
-            return MigrationEvidenceCancellationDecision.Requested();
-        }
-
-        if (progress.Status != MigrationEvidenceJobStatus.Queued)
+        var jobState = await jobManager.RequestStore.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (jobState == null)
         {
             return MigrationEvidenceCancellationDecision.Conflict("Migration evidence job is no longer cancellable");
         }
 
-        var jobState = await jobManager.RequestStore.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (jobState == null)
+        if (jobState.ReportPersistedAt is not null)
         {
             return MigrationEvidenceCancellationDecision.Conflict("Migration evidence job is no longer cancellable");
         }
@@ -48,6 +43,7 @@ internal static class MigrationEvidenceCancellationCoordinator
                 cancellationToken).ConfigureAwait(false);
         }
 
+        _ = cancellationTokens.Cancel(jobId);
         return MigrationEvidenceCancellationDecision.Requested();
     }
 }

@@ -215,6 +215,17 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
 
             await ThrowIfCancellationRequestedAsync().ConfigureAwait(false);
             await reportStore.StoreAsync(report, jobCancellation.Token).ConfigureAwait(false);
+
+            jobState = (jobState ?? new MigrationEvidenceJobState { Request = request }) with
+            {
+                ReportPersistedAt = DateTimeOffset.UtcNow
+            };
+            await _jobManager.RequestStore.SetProgressAsync(
+                jobId,
+                jobState,
+                TimeSpan.FromHours(24),
+                CancellationToken.None).ConfigureAwait(false);
+
             _cancellationTokens.Remove(jobId);
             await _lifecycleObserver.OnReportPersistedAsync(jobId, report.ReportId, CancellationToken.None).ConfigureAwait(false);
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
