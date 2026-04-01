@@ -111,6 +111,8 @@ internal static class OperationsProgressEndpoints
         string operationId,
         [FromServices] IUniversalProgressStore progressStore,
         [FromServices] IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
+        [FromServices] MigrationEvidenceJobManager migrationEvidenceJobManager,
+        [FromServices] MigrationEvidenceCancellationTokens migrationEvidenceCancellationTokens,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(operationId))
@@ -145,6 +147,34 @@ internal static class OperationsProgressEndpoints
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
                 $"Operation type '{progress.Type}' does not support cancellation");
+        }
+
+        if (progress is MigrationEvidenceProgress migrationEvidenceProgress)
+        {
+            var decision = await MigrationEvidenceCancellationCoordinator
+                .RequestAsync(
+                    operationId,
+                    migrationEvidenceProgress,
+                    migrationEvidenceJobManager,
+                    migrationEvidenceCancellationTokens,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!decision.Success)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status409Conflict,
+                    "Conflict",
+                    decision.Message);
+            }
+
+            var migrationResponse = new CancelOperationResponse
+            {
+                OperationId = operationId,
+                Message = "Operation cancellation requested",
+                Type = progress.Type
+            };
+            return Results.Json(migrationResponse, OperationsProgressJsonContext.Default.CancelOperationResponse);
         }
 
         // Signal in-flight job processors so they can begin aborting work.

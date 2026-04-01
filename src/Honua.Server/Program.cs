@@ -395,6 +395,10 @@ builder.Services.AddSingleton<MigrationEvidenceJobManager>(sp =>
         sp.GetRequiredService<ILogger<MigrationEvidenceJobManager>>(),
         sp.GetRequiredService<IHostEnvironment>(),
         sp.GetService<IConnectionMultiplexer>()));
+builder.Services.AddSingleton<MigrationEvidenceCancellationTokens>();
+builder.Services.AddSingleton<IJobCancellationNotifier>(sp =>
+    sp.GetRequiredService<MigrationEvidenceCancellationTokens>());
+builder.Services.AddSingleton<IMigrationEvidenceLifecycleObserver, NoOpMigrationEvidenceLifecycleObserver>();
 builder.Services.AddHostedService<MigrationEvidenceBackgroundService>();
 builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobManager>(sp =>
     new Honua.Server.Features.Import.GeoServerImportJobManager(

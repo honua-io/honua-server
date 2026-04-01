@@ -278,6 +278,7 @@ internal static partial class MigrationEvidenceEndpoints
         }
 
         var jobManager = context.RequestServices.GetRequiredService<MigrationEvidenceJobManager>();
+        var cancellationTokens = context.RequestServices.GetRequiredService<MigrationEvidenceCancellationTokens>();
         var progress = await jobManager.ProgressStore.GetProgressAsync(jobId, context.RequestAborted).ConfigureAwait(false);
         if (progress == null)
         {
@@ -285,36 +286,16 @@ internal static partial class MigrationEvidenceEndpoints
             return;
         }
 
-        if (!IsActiveStatus(progress.Status))
+        var decision = await MigrationEvidenceCancellationCoordinator
+            .RequestAsync(jobId, progress, jobManager, cancellationTokens, context.RequestAborted)
+            .ConfigureAwait(false);
+        if (!decision.Success)
         {
             await AdminResponseWriter.WriteErrorAsync(
                 context,
-                $"Cannot cancel job in {progress.Status} status",
+                decision.Message,
                 StatusCodes.Status409Conflict);
             return;
-        }
-
-        var jobState = await jobManager.RequestStore.GetProgressAsync(jobId, context.RequestAborted).ConfigureAwait(false);
-        if (jobState == null)
-        {
-            await AdminResponseWriter.WriteErrorAsync(
-                context,
-                "Migration evidence job is no longer cancellable",
-                StatusCodes.Status409Conflict);
-            return;
-        }
-
-        if (!jobState.CancellationRequested)
-        {
-            await jobManager.RequestStore.SetProgressAsync(
-                jobId,
-                jobState with
-                {
-                    CancellationRequested = true,
-                    CancellationRequestedAt = DateTimeOffset.UtcNow
-                },
-                TimeSpan.FromHours(24),
-                context.RequestAborted).ConfigureAwait(false);
         }
 
         Log.JobCancelled(GetLogger(context), jobId);
@@ -557,7 +538,7 @@ internal static partial class MigrationEvidenceEndpoints
         return false;
     }
 
-    private static bool IsActiveStatus(MigrationEvidenceJobStatus status)
+    internal static bool IsActiveStatus(MigrationEvidenceJobStatus status)
         => status is not (MigrationEvidenceJobStatus.Completed or MigrationEvidenceJobStatus.Failed or MigrationEvidenceJobStatus.Cancelled);
 
     private static async Task<bool> EnsureCoordinationStillDurableAsync(

@@ -2001,7 +2001,7 @@
       "post": {
         "tags": ["Migration"],
         "summary": "Start Migration Evidence Report",
-        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact. The 202 response returns a short job ID plus relative status and cancellation URLs under /api/v1/admin/migrations/reports/.",
+        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact. The 202 response returns a short job ID plus relative status and cancellation URLs under /api/v1/admin/migrations/reports/. Job progress is transient operational state; use the completed report artifact for durable audit references.",
         "operationId": "startMigrationEvidenceReport",
         "requestBody": {
           "required": true,
@@ -2033,7 +2033,7 @@
       "get": {
         "tags": ["Migration"],
         "summary": "List Migration Evidence Reports",
-        "description": "List immutable migration evidence artifacts ordered by generation time descending. Summary rows include readiness counts, generatedAt, and echoed provenance fields for audit lookups before fetching the full report payload.",
+        "description": "List immutable migration evidence artifacts ordered by generation time descending. Summary rows include the durable reportId/reportHash pair, readiness counts, generatedAt, and echoed provenance fields for audit lookups before fetching the full report payload. The response echoes requested non-negative pagination values even though the backing store fetches at most 200 summaries per call.",
         "operationId": "listMigrationEvidenceReports",
         "parameters": [
           {
@@ -2062,7 +2062,7 @@
             "name": "provider",
             "in": "query",
             "required": false,
-            "description": "Optional provider filter.",
+            "description": "Optional provider filter. Accepted value: arcgis-geoservices.",
             "schema": {
               "$ref": "#/components/schemas/MigrationEvidenceProvider"
             }
@@ -2071,7 +2071,7 @@
             "name": "cutoverProfile",
             "in": "query",
             "required": false,
-            "description": "Optional cutover profile filter.",
+            "description": "Optional cutover profile filter. Accepted values: pilot, production.",
             "schema": {
               "$ref": "#/components/schemas/MigrationCutoverProfile"
             }
@@ -2080,7 +2080,7 @@
             "name": "readiness",
             "in": "query",
             "required": false,
-            "description": "Optional computed readiness filter.",
+            "description": "Optional computed readiness filter. Accepted values: blocked, pilot_ready, production_ready.",
             "schema": {
               "$ref": "#/components/schemas/MigrationReadinessState"
             }
@@ -2107,7 +2107,7 @@
       "get": {
         "tags": ["Migration"],
         "summary": "Get Migration Evidence Job Status",
-        "description": "Get progress for a queued, active, or completed migration evidence job. The payload echoes request identity fields, timestamps, warnings, and reportId/readiness on successful completion.",
+        "description": "Get progress for a queued, active, or completed migration evidence job. The payload echoes request identity fields, timestamps, warnings, and reportId/readiness on successful completion. Job-progress records are transient and currently retained for roughly 24 hours in distributed progress storage.",
         "operationId": "getMigrationEvidenceJobStatus",
         "parameters": [
           {
@@ -2139,7 +2139,7 @@
       "post": {
         "tags": ["Migration"],
         "summary": "Cancel Migration Evidence Job",
-        "description": "Cancel a queued or currently running migration evidence job.",
+        "description": "Cancel a queued or currently running migration evidence job. Terminal or no-longer-cancellable jobs return 409 Conflict.",
         "operationId": "cancelMigrationEvidenceJob",
         "parameters": [
           {
@@ -4492,7 +4492,7 @@
           },
           "layers": {
             "type": "array",
-            "description": "Source-to-target layer mappings used by the evidence run.",
+            "description": "Source-to-target layer mappings used by the evidence run. At least one mapping is required, and both layer IDs must be non-negative.",
             "minItems": 1,
             "items": {
               "$ref": "#/components/schemas/MigrationEvidenceLayerMapping"
@@ -4570,7 +4570,7 @@
         "properties": {
           "jobId": {
             "type": "string",
-            "description": "Short migration evidence job identifier."
+            "description": "Short migration evidence job identifier used for transient progress polling."
           },
           "message": {
             "type": "string",
@@ -4592,7 +4592,7 @@
         "properties": {
           "jobId": {
             "type": "string",
-            "description": "Migration evidence job identifier."
+            "description": "Migration evidence job identifier for the transient progress record."
           },
           "message": {
             "type": "string",
@@ -4609,15 +4609,15 @@
             "items": {
               "$ref": "#/components/schemas/MigrationEvidenceReportSummary"
             },
-            "description": "Newest-first immutable report summaries, including readiness counts and echoed provenance metadata."
+            "description": "Newest-first durable immutable report summaries, including readiness counts and echoed provenance metadata."
           },
           "limit": {
             "type": "integer",
-            "description": "Requested limit value echoed by the endpoint. A value of 0 returns an empty page."
+            "description": "Requested limit value echoed by the endpoint. A value of 0 returns an empty page; larger requested values are echoed even though the backing store fetches at most 200 summaries."
           },
           "offset": {
             "type": "integer",
-            "description": "Requested offset value echoed by the endpoint."
+            "description": "Requested non-negative offset value echoed by the endpoint."
           }
         }
       },
@@ -4641,7 +4641,7 @@
           "reportId": {
             "type": "string",
             "format": "uuid",
-            "description": "Report identifier."
+            "description": "Durable immutable report identifier."
           },
           "schemaVersion": {
             "type": "string",
@@ -5149,7 +5149,7 @@
         "properties": {
           "jobId": {
             "type": "string",
-            "description": "Job identifier."
+            "description": "Transient job identifier used for progress polling."
           },
           "provider": {
             "$ref": "#/components/schemas/MigrationEvidenceProvider"

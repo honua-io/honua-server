@@ -38,7 +38,7 @@ Verify protocol coverage against the canonical matrices for operations in scope.
 | Blocker count | |
 | Evidence artifact endpoint | `/api/v1/admin/migrations/reports/{reportId}` |
 
-Before sign-off, queue or refresh the server-generated evidence report and record the transient `jobId`, persisted `reportId`, immutable `reportHash`, `generatedAt`, and the final readiness summary counts. Use `GET /api/v1/admin/migrations/reports?provider=arcgis-geoservices&cutoverProfile=<profile>&readiness=<state>` for newest-first audit lookup; the summary row already echoes `requestedBy`, `summary`, and provenance refs, so fetch the full artifact by `reportId` only when you need the detailed section payload.
+Before sign-off, queue or refresh the server-generated evidence report and record the transient `jobId`, persisted `reportId`, immutable `reportHash`, `generatedAt`, and the final readiness summary counts. Treat `jobId` as short-lived operational state and use `reportId` plus `reportHash` for the durable audit trail. Use `GET /api/v1/admin/migrations/reports?provider=arcgis-geoservices&cutoverProfile=<profile>&readiness=<state>` for newest-first audit lookup; the summary row already echoes `requestedBy`, `summary`, and provenance refs, so fetch the full artifact by `reportId` only when you need the detailed section payload.
 
 | Service Case | Pass | Fail | N/A | Notes |
 |-------------|------|------|-----|-------|

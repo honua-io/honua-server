@@ -60,6 +60,8 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 
 For migration evidence workflows, pair the curated admin contract with the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) for endpoint behavior and the [Pilot Evidence Kit](../../contributor/migration/README.md) for evidence-pack usage.
 
+Contract notes for migration evidence: the queue response returns relative `statusUrl` and `cancelUrl` that resolve under `/api/v1/admin/migrations/reports/`, the polling `jobId` is transient operational state rather than the durable audit handle, and the list endpoint accepts non-negative `limit` and `offset` plus `provider=arcgis-geoservices`, `cutoverProfile=pilot|production`, and `readiness=blocked|pilot_ready|production_ready`. A `limit` of `0` returns an empty page, and the backing store fetches at most 200 summaries per call.
+
 {% swagger src="admin-api.json" %}
 {% endswagger %}
 

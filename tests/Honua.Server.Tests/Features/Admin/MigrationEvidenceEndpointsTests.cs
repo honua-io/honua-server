@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Server.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -172,6 +173,38 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
+    [Endpoint("GET /api/v1/admin/migrations/reports/jobs/{jobId}")]
+    public async Task CancelOperation_WithRunningMigrationEvidenceJob_CancelsAndSkipsPersistence()
+    {
+        _generator.Delay = TimeSpan.FromSeconds(5);
+
+        try
+        {
+            var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "operations cancel evidence"));
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+            var jobId = await GetStringPropertyAsync(startResponse, "jobId");
+            var cancelResponse = await _client.PostAsync($"/api/v1/admin/operations/{jobId}/cancel", null);
+            cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await cancelResponse.Content.ReadAsStringAsync()).Should().Contain("cancellation requested");
+
+            using var cancelledJob = await WaitForJobStatusAsync(_client, jobId, "cancelled", TimeSpan.FromSeconds(15));
+            cancelledJob.RootElement.GetProperty("status").GetString().Should().Be("cancelled");
+
+            var listResponse = await _client.GetAsync("/api/v1/admin/migrations/reports");
+            listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var listDocument = await listResponse.Content.ReadFromJsonAsync<JsonDocument>();
+            listDocument.Should().NotBeNull();
+            listDocument!.RootElement.GetProperty("reports").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            _generator.Delay = TimeSpan.Zero;
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/migrations/reports")]
     [Endpoint("POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel")]
     [Endpoint("GET /api/v1/admin/migrations/reports/jobs/{jobId}")]
@@ -203,6 +236,48 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         }
         finally
         {
+            await isolatedFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migrations/reports")]
+    [Endpoint("POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel")]
+    [Endpoint("GET /api/v1/admin/migrations/reports/jobs/{jobId}")]
+    [Endpoint("GET /api/v1/admin/migrations/reports/{reportId}")]
+    public async Task CancelJob_AfterReportPersists_ReturnsConflictAndKeepsCompletedArtifact()
+    {
+        var lifecycleObserver = new BlockingMigrationEvidenceLifecycleObserver();
+        var isolatedFixture = new WebAppFixture()
+            .ReplaceService<IMigrationEvidenceGenerator>(new FakeMigrationEvidenceGenerator(BuildCompletedReportAsync))
+            .ReplaceService<IMigrationEvidenceLifecycleObserver>(lifecycleObserver);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+            var client = isolatedFixture.Client;
+
+            var startResponse = await client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "persisted evidence"));
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+            var jobId = await GetStringPropertyAsync(startResponse, "jobId");
+            await lifecycleObserver.WaitForPersistenceAsync(TimeSpan.FromSeconds(15));
+
+            var cancelResponse = await client.PostAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}/cancel", null);
+            cancelResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await cancelResponse.Content.ReadAsStringAsync()).Should().Contain("no longer cancellable");
+
+            lifecycleObserver.Release();
+
+            using var completedJob = await WaitForJobStatusAsync(client, jobId, "completed", TimeSpan.FromSeconds(15));
+            var reportId = completedJob.RootElement.GetProperty("reportId").GetGuid();
+
+            var reportResponse = await client.GetAsync($"/api/v1/admin/migrations/reports/{reportId}");
+            reportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            lifecycleObserver.Release();
             await isolatedFixture.DisposeAsync();
         }
     }
@@ -612,5 +687,25 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         }
 
         public async Task WaitForStoreAttemptAsync(TimeSpan timeout) => _ = await _storeAttempted.Task.WaitAsync(timeout);
+    }
+
+    private sealed class BlockingMigrationEvidenceLifecycleObserver : IMigrationEvidenceLifecycleObserver
+    {
+        private readonly TaskCompletionSource<bool> _persistenceReached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task OnReportPersistedAsync(string jobId, Guid reportId, CancellationToken cancellationToken)
+        {
+            _persistenceReached.TrySetResult(true);
+            return _release.Task.WaitAsync(cancellationToken);
+        }
+
+        public async Task WaitForPersistenceAsync(TimeSpan timeout)
+            => _ = await _persistenceReached.Task.WaitAsync(timeout);
+
+        public void Release()
+        {
+            _release.TrySetResult(true);
+        }
     }
 }

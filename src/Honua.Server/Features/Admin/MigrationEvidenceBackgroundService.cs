@@ -14,6 +14,8 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly MigrationEvidenceJobManager _jobManager;
+    private readonly MigrationEvidenceCancellationTokens _cancellationTokens;
+    private readonly IMigrationEvidenceLifecycleObserver _lifecycleObserver;
     private readonly ILogger<MigrationEvidenceBackgroundService> _logger;
     private readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _leaderCheckInterval = TimeSpan.FromSeconds(10);
@@ -21,10 +23,14 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
     public MigrationEvidenceBackgroundService(
         IServiceScopeFactory scopeFactory,
         MigrationEvidenceJobManager jobManager,
+        MigrationEvidenceCancellationTokens cancellationTokens,
+        IMigrationEvidenceLifecycleObserver lifecycleObserver,
         ILogger<MigrationEvidenceBackgroundService> logger)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobManager = jobManager ?? throw new ArgumentNullException(nameof(jobManager));
+        _cancellationTokens = cancellationTokens ?? throw new ArgumentNullException(nameof(cancellationTokens));
+        _lifecycleObserver = lifecycleObserver ?? throw new ArgumentNullException(nameof(lifecycleObserver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -86,7 +92,7 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
         MigrationEvidenceRequest? request = null;
         MigrationEvidenceProgress? progress = null;
         MigrationEvidenceJobState? jobState = null;
-        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var jobCancellation = _cancellationTokens.CreateLinkedTokenSource(jobId, stoppingToken);
         CancellationTokenSource? monitorCancellation = null;
         Task? monitorTask = null;
 
@@ -209,6 +215,8 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
 
             await ThrowIfCancellationRequestedAsync().ConfigureAwait(false);
             await reportStore.StoreAsync(report, jobCancellation.Token).ConfigureAwait(false);
+            _cancellationTokens.Remove(jobId);
+            await _lifecycleObserver.OnReportPersistedAsync(jobId, report.ReportId, CancellationToken.None).ConfigureAwait(false);
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
 
             await SetProgressAsync(progress! with
@@ -258,6 +266,7 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
         finally
         {
             stopwatch.Stop();
+            _cancellationTokens.Remove(jobId);
             if (monitorCancellation != null)
             {
                 await monitorCancellation.CancelAsync().ConfigureAwait(false);
