@@ -68,6 +68,30 @@ public sealed class GeoServerRestClientTests
         handler.GetAuthorizations("beta.example").Should().OnlyContain(value => value == CreateBasicAuthorization("beta-user", "beta-pass"));
     }
 
+    [Fact]
+    public async Task DiscoverServiceAsync_WithLayerGroupStylesAndBounds_ParsesLayerGroupMetadata()
+    {
+        using var httpClient = new HttpClient(new LayerGroupMetadataGeoServerHandler());
+        var client = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+
+        var result = await client.DiscoverServiceAsync(
+            "https://example.com/geoserver/rest",
+            username: null,
+            password: null,
+            includeCompatibilityAnalysis: false,
+            includeStyleContent: false,
+            timeoutSeconds: 5,
+            maxRetryAttempts: 0,
+            CancellationToken.None);
+
+        var layerGroup = result.LayerGroups.Should().ContainSingle(group => group.Name == "transport").Subject;
+        layerGroup.Styles.Should().ContainSingle(style => style.Name == "group-style" && style.WorkspaceName == "demo");
+        layerGroup.Bounds.Should().NotBeNull();
+        layerGroup.Bounds!.CRS.Should().Be("EPSG:3857");
+        layerGroup.Bounds.MinX.Should().Be(-10.5);
+        layerGroup.Bounds.MaxY.Should().Be(45.75);
+    }
+
     private static string CreateBasicAuthorization(string username, string password)
         => $"Basic {Convert.ToBase64String(Encoding.ASCII.GetBytes($"{username}:{password}"))}";
 
@@ -159,6 +183,65 @@ public sealed class GeoServerRestClientTests
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             };
+        }
+    }
+
+    private sealed class LayerGroupMetadataGeoServerHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var (contentType, payload) = path switch
+            {
+                "/geoserver/rest/about/version.xml" => ("application/xml", """
+                    <about>
+                      <resource name="GeoServer">
+                        <Version>2.28.0</Version>
+                      </resource>
+                    </about>
+                    """),
+                "/geoserver/rest/settings.json" => ("application/json", """{"global":{}}"""),
+                "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
+                "/geoserver/rest/workspaces/demo.json" => ("application/json", """{"workspace":{"name":"demo"}}"""),
+                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/layers.json" => ("application/json", """{"layers":{"layer":""}}"""),
+                "/geoserver/rest/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":[{"name":"transport"}]}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups/transport.json" => ("application/json", """
+                    {
+                      "layerGroup": {
+                        "name": "transport",
+                        "publishables": {
+                          "published": [
+                            { "@type": "layer", "name": "roads", "workspace": "demo" }
+                          ]
+                        },
+                        "styles": {
+                          "style": [
+                            { "name": "group-style", "workspace": "demo" }
+                          ]
+                        },
+                        "bounds": {
+                          "minx": -10.5,
+                          "miny": 20.25,
+                          "maxx": 11.5,
+                          "maxy": 45.75,
+                          "crs": "EPSG:3857"
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":[{"name":"group-style"}]}}"""),
+                "/geoserver/rest/workspaces/demo/styles/group-style.json" => ("application/json", """{"style":{"name":"group-style","format":"sld"}}"""),
+                _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, contentType)
+            });
         }
     }
 }

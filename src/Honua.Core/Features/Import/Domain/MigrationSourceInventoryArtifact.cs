@@ -116,7 +116,7 @@ public sealed record MigrationInventoryAuthPosture
     public required string Mode { get; init; }
 
     /// <summary>
-    /// Whether credentials were supplied for the scan.
+    /// Whether the scanner had a complete, usable credential set for the scan.
     /// </summary>
     public bool CredentialsSupplied { get; init; }
 
@@ -306,7 +306,7 @@ public sealed record MigrationInventoryResource
     public int? FeatureCount { get; init; }
 
     /// <summary>
-    /// Whether the resource advertises attachments.
+    /// Whether the resource advertises attachments. Omitted when the source does not report attachment state.
     /// </summary>
     public bool? HasAttachments { get; init; }
 
@@ -377,7 +377,7 @@ public sealed record MigrationInventoryStyle
     public string[] ExternalDependencyIds { get; init; } = [];
 
     /// <summary>
-    /// Additional deterministic metadata for planning.
+    /// Additional deterministic metadata for planning. Raw style documents are not echoed in this field.
     /// </summary>
     public Dictionary<string, string> Metadata { get; init; } = [];
 
@@ -403,7 +403,7 @@ public sealed record MigrationExternalDependency
     public required string ContainerId { get; init; }
 
     /// <summary>
-    /// Optional related resource identifier.
+    /// Optional related layer/table identifier or owning style/renderer identifier.
     /// </summary>
     public string? ResourceId { get; init; }
 

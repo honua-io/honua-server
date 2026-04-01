@@ -183,6 +183,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         foreach (var layer in serviceInfo.Layers.OrderBy(static layer => GetLayerId(layer), StringComparer.Ordinal))
         {
+            var layerId = GetLayerId(layer);
             var spatialReferences = (await Task.WhenAll(
                     MigrationInventoryHelpers.BuildSpatialReferenceAsync(_crsRegistry, "declared", layer.SRS, cancellationToken),
                     MigrationInventoryHelpers.BuildSpatialReferenceAsync(_crsRegistry, "native", layer.NativeCRS, cancellationToken),
@@ -193,12 +194,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 .OrderBy(static info => info.Role, StringComparer.Ordinal)
                 .ToArray();
 
-            var styleIds = serviceInfo.Styles
-                .Where(style => styleResourceIds.TryGetValue(GetStyleId(style), out var linkedResources) &&
-                    linkedResources.Contains(GetLayerId(layer), StringComparer.Ordinal))
-                .Select(GetStyleId)
-                .OrderBy(static value => value, StringComparer.Ordinal)
-                .ToArray();
+            var styleIds = GetStyleIdsForResource(serviceInfo.Styles, styleResourceIds, layerId);
 
             var dependencyIds = new[]
                 {
@@ -212,7 +208,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
             resources.Add(new MigrationInventoryResource
             {
-                Id = GetLayerId(layer),
+                Id = layerId,
                 ContainerId = GetWorkspaceId(layer.WorkspaceName),
                 Kind = "layer",
                 Name = layer.Name,
@@ -233,6 +229,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         foreach (var layerGroup in serviceInfo.LayerGroups.OrderBy(static group => GetLayerGroupId(group), StringComparer.Ordinal))
         {
+            var layerGroupId = GetLayerGroupId(layerGroup);
             var boundsSpatialReference = await MigrationInventoryHelpers.BuildSpatialReferenceAsync(
                     _crsRegistry,
                     "bounds",
@@ -255,13 +252,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 GeometryType = null,
                 FeatureCount = null,
                 HasAttachments = null,
-                Capabilities = layerGroup.Layers.Select(entry => entry.Type)
-                    .Where(static value => !string.IsNullOrWhiteSpace(value))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(static value => value, StringComparer.Ordinal)
-                    .ToArray(),
+                Capabilities = [],
                 SpatialReferences = spatialReferences,
-                StyleIds = [],
+                StyleIds = GetStyleIdsForResource(serviceInfo.Styles, styleResourceIds, layerGroupId),
                 ExternalDependencyIds = [],
                 Compatibility = MigrationInventoryHelpers.FromGeoServerCompatibility(
                     layerGroup.Compatibility,
@@ -491,6 +484,19 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             }
         }
 
+        foreach (var layerGroup in serviceInfo.LayerGroups)
+        {
+            foreach (var style in layerGroup.Styles)
+            {
+                AddStyleResourceLinks(
+                    map,
+                    styleIdsByReference,
+                    layerGroup.WorkspaceName,
+                    GetLayerGroupStyleReference(style),
+                    GetLayerGroupId(layerGroup));
+            }
+        }
+
         return map.ToDictionary(
             kvp => kvp.Key,
             kvp => kvp.Value.OrderBy(static value => value, StringComparer.Ordinal).ToArray(),
@@ -515,6 +521,24 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             _ = resourceIds.Add(resourceId);
         }
     }
+
+    private static string[] GetStyleIdsForResource(
+        IEnumerable<GeoServerStyleInfo> styles,
+        IReadOnlyDictionary<string, string[]> styleResourceIds,
+        string resourceId)
+    {
+        return styles
+            .Where(style => styleResourceIds.TryGetValue(GetStyleId(style), out var linkedResources) &&
+                linkedResources.Contains(resourceId, StringComparer.Ordinal))
+            .Select(GetStyleId)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string GetLayerGroupStyleReference(GeoServerLayerGroupEntry style)
+        => string.IsNullOrWhiteSpace(style.WorkspaceName)
+            ? style.Name
+            : $"{style.WorkspaceName}:{style.Name}";
 
     private static string[] BuildLayerCapabilities(GeoServerLayerInfo layer)
     {

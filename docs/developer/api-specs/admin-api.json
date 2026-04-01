@@ -3308,7 +3308,7 @@
           },
           "credentialsSupplied": {
             "type": "boolean",
-            "description": "Whether credentials were supplied in the request."
+            "description": "Whether the scanner had a complete, usable credential set. GeoServer only sets this to true when both username and password were supplied; partial credentials still fall back to anonymous mode and leave this false. Successful GeoServices scans currently remain false."
           },
           "accessConfirmed": {
             "type": "boolean",
@@ -3500,7 +3500,7 @@
           },
           "hasAttachments": {
             "type": "boolean",
-            "description": "Whether the resource advertises attachments."
+            "description": "Whether the resource advertises attachments. Omitted when the source does not report attachment state."
           },
           "capabilities": {
             "type": "array",
@@ -3516,12 +3516,14 @@
           },
           "styleIds": {
             "type": "array",
+            "description": "Stable IDs linking this resource to entries in styles[].",
             "items": {
               "type": "string"
             }
           },
           "externalDependencyIds": {
             "type": "array",
+            "description": "Stable IDs linking this resource to entries in externalDependencies[].",
             "items": {
               "type": "string"
             }
@@ -3559,19 +3561,21 @@
           },
           "resourceIds": {
             "type": "array",
+            "description": "Stable IDs linking this style or renderer to entries in resources[].",
             "items": {
               "type": "string"
             }
           },
           "externalDependencyIds": {
             "type": "array",
+            "description": "Stable IDs linking this style or renderer to entries in externalDependencies[].",
             "items": {
               "type": "string"
             }
           },
           "metadata": {
             "type": "object",
-            "description": "Deterministic planning metadata for the style or renderer.",
+            "description": "Deterministic planning metadata for the style or renderer. Does not include raw GeoServer SLD bodies.",
             "additionalProperties": {
               "type": "string"
             }
@@ -3599,7 +3603,7 @@
           },
           "resourceId": {
             "type": "string",
-            "description": "Optional related resource or style identifier."
+            "description": "Optional related layer/table identifier or owning style/renderer identifier."
           },
           "kind": {
             "type": "string",

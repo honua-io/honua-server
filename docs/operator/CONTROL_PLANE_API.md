@@ -294,6 +294,16 @@ Successful response contract:
 | `styles` | Deterministically ordered GeoServer styles or GeoServices renderers. |
 | `externalDependencies` | Deterministically ordered `datastore`, `coverage-store`, `attachments`, `external-graphic`, or `external-symbol` references with secret-safe addresses for external URLs. |
 
+Artifact item details:
+
+| Section | Key fields | Notes |
+|----------|--------|---------|
+| `containers[*]` | `id`, `kind`, `name`, `title`, `description`, `isDefault`, `compatibility` | `id` stays stable across display-title changes. `kind` is typically `workspace` or `service`. |
+| `resources[*]` | `containerId`, `kind`, `geometryType`, `featureCount`, `hasAttachments`, `capabilities`, `spatialReferences`, `styleIds`, `externalDependencyIds`, `compatibility` | `hasAttachments` is omitted when the source does not report attachment state rather than being coerced to `false`. |
+| `styles[*]` | `kind`, `format`, `resourceIds`, `externalDependencyIds`, `metadata`, `compatibility` | `kind` is `style` for GeoServer and `renderer` for GeoServices. `metadata` carries deterministic planning details, not raw style documents. |
+| `externalDependencies[*]` | `resourceId`, `kind`, `dependencyType`, `address`, `metadata`, `spatialReferences`, `compatibility` | `resourceId` can point at a layer/table or the owning style/renderer. External addresses are sanitized and secret-like metadata values are redacted. |
+| `spatialReferences[*]` | `role`, `sourceValue`, `srid`, `crsUri`, `datum`, `unit`, `axisOrder`, `isGeographic` | Entries are emitted only when the scanner has meaningful CRS data to report. |
+
 The response body is the artifact itself, not a `success/data` admin envelope.
 
 Behavior notes:

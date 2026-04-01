@@ -73,12 +73,12 @@ The response includes:
 - Authentication posture and scan completeness
 - Workspace and layer inventory
 - Synthetic `workspace:global` container entries when GeoServer exposes global styles or layer groups
-- Data store types and sanitized connection metadata
-- Style formats and compatibility assessment
+- Datastore and coverage-store types with sanitized connection metadata and secret-safe addresses
+- Style formats, deterministic `styles[*].metadata`, and compatibility assessment
 - CRS, datum, and unit details for migration planning
-- External dependencies and manual follow-up steps
+- External dependencies with sanitized addresses, stable cross-links (`styleIds`, `resourceIds`, `resourceId`), and manual follow-up steps
 
-Review the inventory artifact before proceeding. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and nullable scalar fields are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
+Review the inventory artifact before proceeding. Start with `summary`, `scanCompleteness`, and `overallCompatibility`, then drill into per-item blockers using the stable IDs shared across `resources`, `styles`, and `externalDependencies`. Arrays are deterministically ordered for repeatable diffs, sensitive datastore values are redacted before serialization, and nullable scalar fields are omitted when the scanner has no value to emit. Layers backed by PostGIS data stores have the highest migration fidelity.
 
 ### Step 2: Start a Dry-Run Import
 
@@ -97,7 +97,7 @@ curl -X POST http://localhost:8080/api/v1/admin/import/geoserver/start \
 
 This returns a job ID for tracking progress.
 
-> **Unified scanner note:** the same `POST /api/v1/admin/import/scan` endpoint also accepts `sourceKind: "geoservices"` or `sourceKind: "arcgis-geoservices-rest"` for ArcGIS GeoServices REST inventory scans. Use an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`, not a layer or table URL. GeoServices discovery currently uses anonymous access only, normalizes `sourceKind` to `arcgis-geoservices-rest`, and can return a failed artifact with `authPosture.mode = "auth-required"` or `"unknown"` when discovery is blocked or the ArcGIS API reports an error. GeoServices transport failures and request timeouts still surface as `502` or `504`.
+> **Unified scanner note:** the same `POST /api/v1/admin/import/scan` endpoint also accepts `sourceKind: "geoservices"` or `sourceKind: "arcgis-geoservices-rest"` for ArcGIS GeoServices REST inventory scans. Use an HTTPS ArcGIS service root ending in `FeatureServer` or `MapServer`, not a layer or table URL. GeoServices discovery currently uses anonymous access only, normalizes `sourceKind` to `arcgis-geoservices-rest`, and emits the same top-level artifact sections, with renderers surfacing in `styles[]` and external symbol URLs surfacing as sanitized `externalDependencies[]` entries. Failed GeoServices artifacts can report `authPosture.mode = "auth-required"` or `"unknown"` when discovery is blocked or the ArcGIS API reports an error; transport failures and request timeouts still surface as `502` or `504`.
 
 ### Step 3: Monitor Progress
 

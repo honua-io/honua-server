@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using System.Globalization;
 using Honua.Core.Features.Import.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -528,15 +529,20 @@ internal sealed partial class GeoServerRestClient
             var layers = new List<GeoServerLayerGroupEntry>();
             foreach (var published in EnumerateCollectionItems(groupElement, "publishables", "published"))
             {
-                var entryName = TryGetName(published);
-                if (entryName != null)
+                var entry = CreateLayerGroupEntry(published, workspaceName, "LAYER");
+                if (entry != null)
                 {
-                    layers.Add(new GeoServerLayerGroupEntry
-                    {
-                        Name = entryName,
-                        Type = GetOptionalStringProperty(published, "@type") ?? "LAYER",
-                        WorkspaceName = workspaceName
-                    });
+                    layers.Add(entry);
+                }
+            }
+
+            var styles = new List<GeoServerLayerGroupEntry>();
+            foreach (var style in EnumerateCollectionItems(groupElement, "styles", "style"))
+            {
+                var entry = CreateLayerGroupEntry(style, workspaceName, "STYLE");
+                if (entry != null)
+                {
+                    styles.Add(entry);
                 }
             }
 
@@ -550,6 +556,8 @@ internal sealed partial class GeoServerRestClient
                 Abstract = GetOptionalStringProperty(groupElement, "abstract"),
                 Mode = GetOptionalStringProperty(groupElement, "mode"),
                 Layers = layers.ToArray(),
+                Styles = styles.ToArray(),
+                Bounds = GetOptionalBoundingBox(groupElement, "bounds"),
                 Enabled = GetOptionalBoolProperty(groupElement, "enabled") ?? true,
                 Compatibility = compatibility
             };
@@ -782,6 +790,30 @@ internal sealed partial class GeoServerRestClient
             : $"{workspaceName}:{name}";
     }
 
+    private static GeoServerLayerGroupEntry? CreateLayerGroupEntry(JsonElement element, string? defaultWorkspaceName, string defaultType)
+    {
+        var qualifiedName = GetQualifiedName(element);
+        if (string.IsNullOrWhiteSpace(qualifiedName))
+        {
+            return null;
+        }
+
+        var separatorIndex = qualifiedName.IndexOf(':');
+        var entryWorkspaceName = separatorIndex > 0 && separatorIndex < qualifiedName.Length - 1
+            ? qualifiedName[..separatorIndex]
+            : string.IsNullOrWhiteSpace(defaultWorkspaceName) ? null : defaultWorkspaceName;
+        var entryName = separatorIndex > 0 && separatorIndex < qualifiedName.Length - 1
+            ? qualifiedName[(separatorIndex + 1)..]
+            : qualifiedName;
+
+        return new GeoServerLayerGroupEntry
+        {
+            Name = entryName,
+            WorkspaceName = entryWorkspaceName,
+            Type = GetOptionalStringProperty(element, "@type") ?? defaultType
+        };
+    }
+
     private static string ResolveDataStoreType(
         JsonElement dataStoreElement,
         Dictionary<string, object> connectionParams)
@@ -873,6 +905,27 @@ internal sealed partial class GeoServerRestClient
             : null;
     }
 
+    private static double? GetOptionalDoubleProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number)
+        {
+            return property.GetDouble();
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            double.TryParse(property.GetString(), NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var value))
+        {
+            return value;
+        }
+
+        return null;
+    }
+
     private static DateTimeOffset? GetOptionalDateTimeProperty(JsonElement element, string propertyName)
     {
         if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
@@ -884,6 +937,36 @@ internal sealed partial class GeoServerRestClient
             }
         }
         return null;
+    }
+
+    private static GeoServerBoundingBox? GetOptionalBoundingBox(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var minX = GetOptionalDoubleProperty(property, "minx");
+        var minY = GetOptionalDoubleProperty(property, "miny");
+        var maxX = GetOptionalDoubleProperty(property, "maxx");
+        var maxY = GetOptionalDoubleProperty(property, "maxy");
+        var crs = GetOptionalStringProperty(property, "crs") ??
+            GetOptionalStringProperty(property, "coordinateReferenceSystem");
+
+        if (!minX.HasValue || !minY.HasValue || !maxX.HasValue || !maxY.HasValue)
+        {
+            return null;
+        }
+
+        return new GeoServerBoundingBox
+        {
+            MinX = minX.Value,
+            MinY = minY.Value,
+            MaxX = maxX.Value,
+            MaxY = maxY.Value,
+            CRS = crs
+        };
     }
 
     // Compatibility assessment methods

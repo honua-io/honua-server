@@ -6,6 +6,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Import;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -53,6 +54,39 @@ public sealed class GeoServerImportServiceScanTests
         artifact.AuthPosture.AccessConfirmed.Should().BeTrue();
         artifact.AuthPosture.Notes.Should().ContainSingle()
             .Which.Should().Contain("requires both username and password");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_WithLayerGroupStylesAndBounds_PopulatesArtifactLinksAndSpatialReferences()
+    {
+        using var httpClient = new HttpClient(new LayerGroupGeoServerHandler());
+        var restClient = new GeoServerRestClient(httpClient, NullLogger<GeoServerRestClient>.Instance);
+        var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
+        crsRegistry.Setup(registry => registry.ResolveBySridAsync(3857, It.IsAny<CancellationToken>()))
+            .Returns(new ValueTask<CrsDefinition?>((CrsDefinition?)null));
+        var service = CreateService(restClient, crsRegistry);
+
+        var artifact = await service.ScanSourceAsync(new GeoServerDiscoveryRequest
+        {
+            GeoServerRestUrl = "https://example.com/geoserver/rest",
+            IncludeCompatibilityAnalysis = true
+        });
+
+        var layerGroup = artifact.Resources.Should().ContainSingle(resource => resource.Id == "layer-group:demo:transport").Subject;
+        layerGroup.StyleIds.Should().Equal("style:demo:group-style");
+        layerGroup.Capabilities.Should().BeEmpty();
+        layerGroup.SpatialReferences.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new MigrationSpatialReferenceInfo
+            {
+                Role = "bounds",
+                SourceValue = "EPSG:3857",
+                Srid = 3857,
+                CrsUri = "http://www.opengis.net/def/crs/EPSG/0/3857",
+                IsGeographic = false
+            }, options => options.Excluding(info => info.Datum).Excluding(info => info.Unit).Excluding(info => info.AxisOrder));
+
+        artifact.Styles.Should().ContainSingle(style => style.Id == "style:demo:group-style")
+            .Which.ResourceIds.Should().Equal("layer-group:demo:transport");
     }
 
     [Fact]
@@ -141,10 +175,10 @@ public sealed class GeoServerImportServiceScanTests
             .Which.SpatialReferences.Should().BeEmpty();
     }
 
-    private static GeoServerImportService CreateService(GeoServerRestClient restClient)
+    private static GeoServerImportService CreateService(GeoServerRestClient restClient, Mock<ICrsRegistry>? crsRegistry = null)
     {
         var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
-        var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
+        crsRegistry ??= new Mock<ICrsRegistry>(MockBehavior.Strict);
 
         return new GeoServerImportService(
             restClient,
@@ -261,6 +295,67 @@ public sealed class GeoServerImportServiceScanTests
                       </NamedLayer>
                     </StyledLayerDescriptor>
                     """),
+                _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, contentType)
+            });
+        }
+    }
+
+    private sealed class LayerGroupGeoServerHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var (contentType, payload) = path switch
+            {
+                "/geoserver/rest/about/version.xml" => ("application/xml", """
+                    <about>
+                      <resource name="GeoServer">
+                        <Version>2.28.0</Version>
+                      </resource>
+                    </about>
+                    """),
+                "/geoserver/rest/settings.json" => ("application/json", """{"global":{"title":"Demo GeoServer"}}"""),
+                "/geoserver/rest/workspaces.json" => ("application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
+                "/geoserver/rest/workspaces/demo.json" => ("application/json", """{"workspace":{"name":"demo"}}"""),
+                "/geoserver/rest/workspaces/demo/datastores.json" => ("application/json", """{"dataStores":{"dataStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/coveragestores.json" => ("application/json", """{"coverageStores":{"coverageStore":""}}"""),
+                "/geoserver/rest/workspaces/demo/layers.json" => ("application/json", """{"layers":{"layer":""}}"""),
+                "/geoserver/rest/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":""}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups.json" => ("application/json", """{"layerGroups":{"layerGroup":[{"name":"transport"}]}}"""),
+                "/geoserver/rest/workspaces/demo/layergroups/transport.json" => ("application/json", """
+                    {
+                      "layerGroup": {
+                        "name": "transport",
+                        "title": "Transport",
+                        "mode": "SINGLE",
+                        "publishables": {
+                          "published": [
+                            { "@type": "layer", "name": "roads", "workspace": "demo" }
+                          ]
+                        },
+                        "styles": {
+                          "style": [
+                            { "name": "group-style", "workspace": "demo" }
+                          ]
+                        },
+                        "bounds": {
+                          "minx": -10.5,
+                          "miny": 20.25,
+                          "maxx": 11.5,
+                          "maxy": 45.75,
+                          "crs": "EPSG:3857"
+                        }
+                      }
+                    }
+                    """),
+                "/geoserver/rest/styles.json" => ("application/json", """{"styles":{"style":""}}"""),
+                "/geoserver/rest/workspaces/demo/styles.json" => ("application/json", """{"styles":{"style":[{"name":"group-style"}]}}"""),
+                "/geoserver/rest/workspaces/demo/styles/group-style.json" => ("application/json", """{"style":{"name":"group-style","format":"sld"}}"""),
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 
