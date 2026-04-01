@@ -2001,7 +2001,7 @@
       "post": {
         "tags": ["Migration"],
         "summary": "Start Migration Evidence Report",
-        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact.",
+        "description": "Queue background generation of an immutable migration parity and cutover-readiness artifact. The 202 response returns a short job ID plus relative status and cancellation URLs under /api/v1/admin/migrations/reports/.",
         "operationId": "startMigrationEvidenceReport",
         "requestBody": {
           "required": true,
@@ -2033,14 +2033,14 @@
       "get": {
         "tags": ["Migration"],
         "summary": "List Migration Evidence Reports",
-        "description": "List immutable migration evidence artifacts ordered by generation time descending.",
+        "description": "List immutable migration evidence artifacts ordered by generation time descending. Summary rows include readiness counts, generatedAt, and echoed provenance fields for audit lookups before fetching the full report payload.",
         "operationId": "listMigrationEvidenceReports",
         "parameters": [
           {
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Requested maximum number of report summaries to return. Defaults to 50. The backing store currently clamps fetched page size to 1-200 summaries.",
+            "description": "Requested maximum number of report summaries to return. Defaults to 50. A value of 0 returns an empty page, and the backing store clamps fetched page size to 0-200 summaries.",
             "schema": {
               "type": "integer",
               "minimum": 0,
@@ -2107,7 +2107,7 @@
       "get": {
         "tags": ["Migration"],
         "summary": "Get Migration Evidence Job Status",
-        "description": "Get progress for a queued, active, or completed migration evidence job.",
+        "description": "Get progress for a queued, active, or completed migration evidence job. The payload echoes request identity fields, timestamps, warnings, and reportId/readiness on successful completion.",
         "operationId": "getMigrationEvidenceJobStatus",
         "parameters": [
           {
@@ -2172,7 +2172,7 @@
       "get": {
         "tags": ["Migration"],
         "summary": "Get Migration Evidence Report",
-        "description": "Fetch a persisted immutable migration evidence artifact by report identifier.",
+        "description": "Fetch a persisted immutable migration evidence artifact by report identifier. The current schemaVersion emitted by the server is migration-evidence/v1.",
         "operationId": "getMigrationEvidenceReport",
         "parameters": [
           {
@@ -4578,11 +4578,11 @@
           },
           "statusUrl": {
             "type": "string",
-            "description": "Relative job-status URL."
+            "description": "Relative job-status URL under /api/v1/admin/migrations/reports/."
           },
           "cancelUrl": {
             "type": "string",
-            "description": "Relative cancellation URL."
+            "description": "Relative cancellation URL under /api/v1/admin/migrations/reports/."
           }
         }
       },
@@ -4608,11 +4608,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MigrationEvidenceReportSummary"
-            }
+            },
+            "description": "Newest-first immutable report summaries, including readiness counts and echoed provenance metadata."
           },
           "limit": {
             "type": "integer",
-            "description": "Requested limit value echoed by the endpoint."
+            "description": "Requested limit value echoed by the endpoint. A value of 0 returns an empty page."
           },
           "offset": {
             "type": "integer",
@@ -4673,23 +4674,23 @@
           },
           "requestedBy": {
             "type": "string",
-            "description": "Optional operator identifier."
+            "description": "Optional operator identifier echoed from the original request for audit correlation."
           },
           "summary": {
             "type": "string",
-            "description": "Optional human-readable summary."
+            "description": "Optional human-readable summary echoed from the original request."
           },
           "inventoryArtifactRef": {
             "type": "string",
-            "description": "Optional inventory artifact reference."
+            "description": "Optional inventory artifact reference echoed from the original request."
           },
           "translationManifestRef": {
             "type": "string",
-            "description": "Optional translation manifest reference."
+            "description": "Optional translation manifest reference echoed from the original request."
           },
           "importJobId": {
             "type": "string",
-            "description": "Optional import job identifier."
+            "description": "Optional import job identifier echoed from the original request."
           },
           "warningCount": {
             "type": "integer",
@@ -4727,7 +4728,7 @@
           },
           "schemaVersion": {
             "type": "string",
-            "description": "Schema version for the JSON artifact."
+            "description": "Schema version for the JSON artifact. The current emitted value is migration-evidence/v1."
           },
           "generatedAt": {
             "type": "string",
@@ -5187,13 +5188,13 @@
           "startedAt": {
             "type": "string",
             "format": "date-time",
-            "description": "When the job started."
+            "description": "When the job started. Present for queued, active, and terminal job states."
           },
           "completedAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "When the job completed."
+            "description": "When the job completed. Present only for terminal job states."
           },
           "duration": {
             "type": "string",
@@ -5210,7 +5211,7 @@
           },
           "currentPhase": {
             "type": "string",
-            "description": "Current processing phase."
+            "description": "Current processing phase such as queued, resolving, persisting, or terminal completion/failure text."
           },
           "reportId": {
             "type": "string",

@@ -187,7 +187,7 @@ internal sealed class PostgresMigrationEvidenceReportStore : IMigrationEvidenceR
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 200));
+        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 0, 200));
         command.Parameters.AddWithValue("@offset", Math.Max(0, offset));
 
         if (provider.HasValue)

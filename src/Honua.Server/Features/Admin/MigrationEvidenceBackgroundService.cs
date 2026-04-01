@@ -85,6 +85,7 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
         var stopwatch = Stopwatch.StartNew();
         MigrationEvidenceRequest? request = null;
         MigrationEvidenceProgress? progress = null;
+        MigrationEvidenceJobState? jobState = null;
         using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         CancellationTokenSource? monitorCancellation = null;
         Task? monitorTask = null;
@@ -101,8 +102,8 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
             {
                 try
                 {
-                    var current = await _jobManager.ProgressStore.GetProgressAsync(id, token).ConfigureAwait(false);
-                    if (current?.Status == MigrationEvidenceJobStatus.Cancelled)
+                    var current = await _jobManager.RequestStore.GetProgressAsync(id, token).ConfigureAwait(false);
+                    if (current?.CancellationRequested == true)
                     {
                         jobCts.Cancel();
                         return;
@@ -128,18 +129,41 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
             }
         }
 
+        async Task ThrowIfCancellationRequestedAsync()
+        {
+            jobCancellation.Token.ThrowIfCancellationRequested();
+
+            var current = await _jobManager.RequestStore.GetProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
+            if (current?.CancellationRequested == true)
+            {
+                jobCancellation.Cancel();
+                throw new OperationCanceledException(jobCancellation.Token);
+            }
+        }
+
         try
         {
             Log.JobStarted(_logger, jobId);
             progress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
-            if (progress?.Status == MigrationEvidenceJobStatus.Cancelled)
+            jobState = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+            if (progress?.Status == MigrationEvidenceJobStatus.Cancelled || jobState?.CancellationRequested == true)
             {
                 await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                if (progress is not null && progress.Status != MigrationEvidenceJobStatus.Cancelled)
+                {
+                    await SetProgressAsync(progress with
+                    {
+                        Status = MigrationEvidenceJobStatus.Cancelled,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        CurrentPhase = "Evidence generation cancelled"
+                    }, CancellationToken.None).ConfigureAwait(false);
+                }
+
                 Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
                 return;
             }
 
-            request = await _jobManager.RequestStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+            request = jobState?.Request;
             if (request == null)
             {
                 Log.JobRequestNotFound(_logger, jobId);
@@ -174,12 +198,7 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
             var reportStore = scope.ServiceProvider.GetRequiredService<IMigrationEvidenceReportStore>();
 
             var report = await generator.GenerateAsync(request, jobCancellation.Token).ConfigureAwait(false);
-            var latestProgress = await _jobManager.ProgressStore.GetProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
-            if (latestProgress?.Status == MigrationEvidenceJobStatus.Cancelled)
-            {
-                jobCancellation.Cancel();
-                throw new OperationCanceledException(jobCancellation.Token);
-            }
+            await ThrowIfCancellationRequestedAsync().ConfigureAwait(false);
 
             await SetProgressAsync(progress! with
             {
@@ -188,8 +207,9 @@ internal sealed partial class MigrationEvidenceBackgroundService : BackgroundSer
                 CurrentPhase = "Persisting immutable report artifact"
             }, CancellationToken.None).ConfigureAwait(false);
 
+            await ThrowIfCancellationRequestedAsync().ConfigureAwait(false);
             await reportStore.StoreAsync(report, jobCancellation.Token).ConfigureAwait(false);
-            await _jobManager.RequestStore.DeleteProgressAsync(jobId, jobCancellation.Token).ConfigureAwait(false);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
 
             await SetProgressAsync(progress! with
             {

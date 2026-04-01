@@ -22,7 +22,7 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
     private readonly IDistributedLeaderElection _leaderElection;
     private readonly IUniversalProgressStore _universalProgressStore;
     private readonly IDistributedProgressStore<MigrationEvidenceProgress> _progressStore;
-    private readonly IDistributedProgressStore<MigrationEvidenceRequest> _requestStore;
+    private readonly IDistributedProgressStore<MigrationEvidenceJobState> _requestStore;
     private readonly bool _jobQueueUsesFallback;
     private readonly bool _leaderElectionUsesFallback;
     private readonly bool _requestStoreUsesFallback;
@@ -43,11 +43,11 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
         _requiresStrictDistributedMode = RedisImportJobManager.RequiresStrictDistributedMode(hostEnvironment);
         var jobQueue = new RedisJobQueue(redis, logger, "migration:evidence:queue", allowFallback: !_requiresStrictDistributedMode);
         var leaderElection = new RedisLeaderElection(redis, logger, "migration:evidence:leader", instanceId);
-        var requestStore = new RedisProgressStore<MigrationEvidenceRequest>(
+        var requestStore = new RedisProgressStore<MigrationEvidenceJobState>(
             distributedCache,
             logger,
             "migration:evidence:request:",
-            MigrationEvidenceJobJsonContext.Default.MigrationEvidenceRequest,
+            MigrationEvidenceJobJsonContext.Default.MigrationEvidenceJobState,
             redis);
 
         _jobQueue = jobQueue;
@@ -65,7 +65,7 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
     internal IDistributedJobQueueService JobQueue => _jobQueue;
     internal IDistributedLeaderElection LeaderElection => _leaderElection;
     internal IDistributedProgressStore<MigrationEvidenceProgress> ProgressStore => _progressStore;
-    internal IDistributedProgressStore<MigrationEvidenceRequest> RequestStore => _requestStore;
+    internal IDistributedProgressStore<MigrationEvidenceJobState> RequestStore => _requestStore;
     internal bool IsClusterDurable =>
         !_jobQueueUsesFallback &&
         !_leaderElectionUsesFallback &&
@@ -81,9 +81,19 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
     }
 }
 
+internal sealed record MigrationEvidenceJobState
+{
+    public required MigrationEvidenceRequest Request { get; init; }
+
+    public bool CancellationRequested { get; init; }
+
+    public DateTimeOffset? CancellationRequestedAt { get; init; }
+}
+
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]
 [JsonSerializable(typeof(MigrationEvidenceProgress))]
 [JsonSerializable(typeof(MigrationEvidenceRequest))]
+[JsonSerializable(typeof(MigrationEvidenceJobState))]
 internal sealed partial class MigrationEvidenceJobJsonContext : JsonSerializerContext
 {
 }

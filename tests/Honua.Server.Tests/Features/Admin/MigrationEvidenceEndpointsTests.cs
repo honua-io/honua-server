@@ -108,7 +108,7 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var jobId = await GetStringPropertyAsync(startResponse, "jobId");
-        var completedJob = await WaitForJobStatusAsync(jobId, "completed", TimeSpan.FromSeconds(15));
+        var completedJob = await WaitForJobStatusAsync(_client, jobId, "completed", TimeSpan.FromSeconds(15));
         var reportId = completedJob.RootElement.GetProperty("reportId").GetGuid();
         completedJob.RootElement.GetProperty("readiness").GetString().Should().Be("pilot_ready");
 
@@ -146,21 +146,84 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
     {
         _generator.Delay = TimeSpan.FromSeconds(5);
 
-        var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "cancelled evidence"));
+        try
+        {
+            var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "cancelled evidence"));
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+            var jobId = await GetStringPropertyAsync(startResponse, "jobId");
+            var cancelResponse = await _client.PostAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}/cancel", null);
+            cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await cancelResponse.Content.ReadAsStringAsync()).Should().Contain("cancellation requested");
+
+            using var cancelledJob = await WaitForJobStatusAsync(_client, jobId, "cancelled", TimeSpan.FromSeconds(15));
+            cancelledJob.RootElement.GetProperty("status").GetString().Should().Be("cancelled");
+
+            var listResponse = await _client.GetAsync("/api/v1/admin/migrations/reports");
+            listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var listDocument = await listResponse.Content.ReadFromJsonAsync<JsonDocument>();
+            listDocument.Should().NotBeNull();
+            listDocument!.RootElement.GetProperty("reports").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            _generator.Delay = TimeSpan.Zero;
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/migrations/reports")]
+    [Endpoint("POST /api/v1/admin/migrations/reports/jobs/{jobId}/cancel")]
+    [Endpoint("GET /api/v1/admin/migrations/reports/jobs/{jobId}")]
+    public async Task CancelJob_AfterGenerationFinishesBeforePersistence_CancelsWithoutStoringArtifact()
+    {
+        var blockingStore = new BlockingMigrationEvidenceReportStore();
+        var isolatedFixture = new WebAppFixture()
+            .ReplaceService<IMigrationEvidenceGenerator>(new FakeMigrationEvidenceGenerator(BuildCompletedReportAsync))
+            .ReplaceService<IMigrationEvidenceReportStore>(blockingStore);
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+            var client = isolatedFixture.Client;
+
+            var startResponse = await client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "late cancel evidence"));
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+            var jobId = await GetStringPropertyAsync(startResponse, "jobId");
+            await blockingStore.WaitForStoreAttemptAsync(TimeSpan.FromSeconds(15));
+
+            var cancelResponse = await client.PostAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}/cancel", null);
+            cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await cancelResponse.Content.ReadAsStringAsync()).Should().Contain("cancellation requested");
+
+            using var cancelledJob = await WaitForJobStatusAsync(client, jobId, "cancelled", TimeSpan.FromSeconds(15));
+            cancelledJob.RootElement.GetProperty("status").GetString().Should().Be("cancelled");
+            blockingStore.StoredReports.Should().BeEmpty();
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/migrations/reports")]
+    public async Task ListReports_WithZeroLimit_ReturnsEmptyPage()
+    {
+        var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/migrations/reports", CreateRequestPayload(summary: "zero limit evidence"));
         startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var jobId = await GetStringPropertyAsync(startResponse, "jobId");
-        var cancelResponse = await _client.PostAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}/cancel", null);
-        cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var completedJob = await WaitForJobStatusAsync(_client, jobId, "completed", TimeSpan.FromSeconds(15));
 
-        using var cancelledJob = await WaitForJobStatusAsync(jobId, "cancelled", TimeSpan.FromSeconds(15));
-        cancelledJob.RootElement.GetProperty("status").GetString().Should().Be("cancelled");
-
-        var listResponse = await _client.GetAsync("/api/v1/admin/migrations/reports");
+        var listResponse = await _client.GetAsync("/api/v1/admin/migrations/reports?limit=0");
         listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
         using var listDocument = await listResponse.Content.ReadFromJsonAsync<JsonDocument>();
         listDocument.Should().NotBeNull();
-        listDocument!.RootElement.GetProperty("reports").GetArrayLength().Should().Be(0);
+        listDocument!.RootElement.GetProperty("limit").GetInt32().Should().Be(0);
+        listDocument.RootElement.GetProperty("reports").GetArrayLength().Should().Be(0);
     }
 
     private static object CreateRequestPayload(string summary) => new
@@ -185,12 +248,16 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
         return document!.RootElement.GetProperty(propertyName).GetString()!;
     }
 
-    private async Task<JsonDocument> WaitForJobStatusAsync(string jobId, string expectedStatus, TimeSpan timeout)
+    private static async Task<JsonDocument> WaitForJobStatusAsync(
+        HttpClient client,
+        string jobId,
+        string expectedStatus,
+        TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var response = await _client.GetAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}");
+            var response = await client.GetAsync($"/api/v1/admin/migrations/reports/jobs/{jobId}");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var payload = await response.Content.ReadFromJsonAsync<JsonDocument>();
@@ -450,5 +517,100 @@ public sealed class MigrationEvidenceEndpointsTests : IAsyncLifetime
 
             return await reportFactory(request, cancellationToken);
         }
+    }
+
+    private sealed class BlockingMigrationEvidenceReportStore : IMigrationEvidenceReportStore
+    {
+        private readonly TaskCompletionSource<bool> _storeAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly object _sync = new();
+        private readonly List<MigrationEvidenceReport> _reports = [];
+
+        public IReadOnlyList<MigrationEvidenceReport> StoredReports
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _reports.ToArray();
+                }
+            }
+        }
+
+        public async Task StoreAsync(MigrationEvidenceReport report, CancellationToken cancellationToken = default)
+        {
+            _storeAttempted.TrySetResult(true);
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+
+            lock (_sync)
+            {
+                _reports.Add(report);
+            }
+        }
+
+        public Task<MigrationEvidenceReport?> GetAsync(Guid reportId, CancellationToken cancellationToken = default)
+        {
+            lock (_sync)
+            {
+                return Task.FromResult(_reports.SingleOrDefault(report => report.ReportId == reportId));
+            }
+        }
+
+        public Task<IReadOnlyList<MigrationEvidenceReportSummary>> ListAsync(
+            int limit = 50,
+            int offset = 0,
+            MigrationEvidenceProvider? provider = null,
+            MigrationCutoverProfile? cutoverProfile = null,
+            MigrationReadinessState? readiness = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_sync)
+            {
+                IEnumerable<MigrationEvidenceReport> query = _reports;
+                if (provider.HasValue)
+                {
+                    query = query.Where(report => report.Request.Provider == provider.Value);
+                }
+
+                if (cutoverProfile.HasValue)
+                {
+                    query = query.Where(report => report.Request.CutoverProfile == cutoverProfile.Value);
+                }
+
+                if (readiness.HasValue)
+                {
+                    query = query.Where(report => report.CutoverReadiness.State == readiness.Value);
+                }
+
+                var summaries = query
+                    .OrderByDescending(report => report.GeneratedAt)
+                    .Skip(Math.Max(offset, 0))
+                    .Take(Math.Clamp(limit, 0, 200))
+                    .Select(report => new MigrationEvidenceReportSummary
+                    {
+                        ReportId = report.ReportId,
+                        SchemaVersion = report.SchemaVersion,
+                        Provider = report.Request.Provider,
+                        CutoverProfile = report.Request.CutoverProfile,
+                        Readiness = report.CutoverReadiness.State,
+                        SourceServiceUrl = report.Request.SourceServiceUrl,
+                        TargetBaseUrl = report.Request.TargetBaseUrl,
+                        TargetServiceName = report.Request.TargetServiceName,
+                        ReportHash = report.ReportHash,
+                        RequestedBy = report.Request.RequestedBy,
+                        Summary = report.Request.Summary,
+                        InventoryArtifactRef = report.Request.InventoryArtifactRef,
+                        TranslationManifestRef = report.Request.TranslationManifestRef,
+                        ImportJobId = report.Request.ImportJobId,
+                        WarningCount = report.CutoverReadiness.Warnings.Length,
+                        BlockerCount = report.CutoverReadiness.BlockingReasons.Length,
+                        GeneratedAt = report.GeneratedAt
+                    })
+                    .ToArray();
+
+                return Task.FromResult<IReadOnlyList<MigrationEvidenceReportSummary>>(summaries);
+            }
+        }
+
+        public async Task WaitForStoreAttemptAsync(TimeSpan timeout) => _ = await _storeAttempted.Task.WaitAsync(timeout);
     }
 }

@@ -342,6 +342,33 @@ Content-Type: application/json
 }
 ```
 
+```http
+GET /api/v1/admin/migrations/reports/jobs/a1b2c3d4e5f6
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "jobId": "a1b2c3d4e5f6",
+  "provider": "arcgis-geoservices",
+  "sourceServiceUrl": "https://source.example.com/arcgis/rest/services/Parcels/FeatureServer",
+  "targetBaseUrl": "https://honua.example.com",
+  "targetServiceName": "parcels",
+  "cutoverProfile": "pilot",
+  "status": "completed",
+  "completedSteps": 4,
+  "totalSteps": 4,
+  "percentComplete": 100,
+  "startedAt": "2026-04-01T18:22:41.5123456+00:00",
+  "completedAt": "2026-04-01T18:22:44.1843210+00:00",
+  "duration": "00:00:02.6719754",
+  "warnings": [],
+  "currentPhase": "Report generated",
+  "reportId": "d6f5d3ec-6a9c-47f1-932d-c9c33a9880aa",
+  "readiness": "pilot_ready"
+}
+```
+
 ### **Migration Evidence Endpoints**
 
 | Endpoint | Method | Purpose |
@@ -355,14 +382,14 @@ Content-Type: application/json
 **Usage notes:**
 
 - `POST /api/v1/admin/migrations/reports` returns `202 Accepted` with `jobId`, `statusUrl`, and `cancelUrl`.
-- Poll `GET /api/v1/admin/migrations/reports/jobs/{jobId}` until `status` reaches `completed`, `failed`, or `cancelled`. Progress responses include `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, `warnings`, and `errorMessage` when present. Only completed jobs include `reportId` and computed `readiness`.
+- Poll `GET /api/v1/admin/migrations/reports/jobs/{jobId}` until `status` reaches `completed`, `failed`, or `cancelled`. Progress responses always echo the request identity fields (`provider`, `sourceServiceUrl`, `targetBaseUrl`, `targetServiceName`, and `cutoverProfile`) plus `startedAt`, `completedAt`, `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, `warnings`, and `errorMessage` when present. Only completed jobs include `reportId` and computed `readiness`.
 - `provider` currently supports only `arcgis-geoservices`.
 - `sourceServiceUrl` and `targetBaseUrl` share the same external URL validation: they must be public HTTPS URLs without embedded credentials, and loopback, private, and unresolvable hosts are rejected.
 - Optional provenance fields (`inventoryArtifactRef`, `translationManifestRef`, `importJobId`, `requestedBy`, and `summary`) are preserved in the stored artifact. Optional bounded probe controls are also available: `sampleRowCount` (`1..100`, default `25`), `queryPageSize` (`1..100`, default `50`), and `probeTimeoutSeconds` (`1..60`, default `30`).
-- Listing supports `limit`, `offset`, `provider`, `cutoverProfile`, and `readiness`. Results are returned newest-first, summary rows include `reportHash`, `warningCount`, and `blockerCount`, and the response echoes the requested pagination values. The backing store currently clamps fetched page size to `1..200` summaries.
-- `GET /api/v1/admin/migrations/reports/{reportId}` returns the full immutable artifact with top-level `reportId`, `schemaVersion`, `generatedAt`, `reportHash`, `request`, `sourceBaseline`, `targetSnapshot`, `comparison`, and `cutoverReadiness` sections.
+- Listing supports `limit`, `offset`, `provider`, `cutoverProfile`, and `readiness`. Results are returned newest-first, summary rows include `reportHash`, `warningCount`, `blockerCount`, `generatedAt`, and the echoed provenance fields (`requestedBy`, `summary`, `inventoryArtifactRef`, `translationManifestRef`, and `importJobId`), and the response echoes the requested pagination values. A `limit` of `0` returns an empty page; otherwise the backing store clamps fetched page size to `0..200` summaries.
+- `GET /api/v1/admin/migrations/reports/{reportId}` returns the full immutable artifact with top-level `reportId`, `schemaVersion`, `generatedAt`, `reportHash`, `request`, `sourceBaseline`, `targetSnapshot`, `comparison`, and `cutoverReadiness` sections. The current schema version is `migration-evidence/v1`.
 - `targetSnapshot.operationalSnapshot` captures the deploy-preflight and database-compatibility probe output used for the run, including `status`, `readyForCoordinatedDeploy`, `migrationPlanAvailable`, `upgradeRequired`, `pendingScripts`, `executedButNotDiscoveredScripts`, `databaseCompatible`, `databaseCompatibilityWarnings`, and `errorMessage` when present.
-- Comparison lanes (`capability`, `style`, `data`, and `operationalReadiness`) are arrays of stable check objects with `checkName`, `status`, `scope`, `summary`, optional `notes`, and structured `observations`.
+- Comparison lanes (`capability`, `style`, `data`, and `operationalReadiness`) are arrays of stable check objects with `checkName`, `status`, `scope`, `summary`, optional `notes`, and structured `observations`. Comparison and checklist statuses use `pass`, `warning`, `fail`, and `not_applicable`; checklist `requirementLevel` is `pilot_required` or `production_required`.
 - Generated reports are immutable JSON artifacts. There are no update or delete endpoints in the MVP.
 - Cancelling a terminal job returns `409`. Cancelled jobs do not persist a report artifact.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start endpoint returns `503`.

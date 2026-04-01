@@ -120,7 +120,14 @@ internal static partial class MigrationEvidenceEndpoints
             }
 
             jobId = Guid.NewGuid().ToString("N")[..12];
-            await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
+            await jobManager.RequestStore.SetProgressAsync(
+                jobId,
+                new MigrationEvidenceJobState
+                {
+                    Request = request
+                },
+                TimeSpan.FromHours(24),
+                cancellationToken).ConfigureAwait(false);
             await jobManager.ProgressStore.SetProgressAsync(
                 jobId,
                 MigrationEvidenceProgress.CreateInitial(jobId, request),
@@ -287,20 +294,35 @@ internal static partial class MigrationEvidenceEndpoints
             return;
         }
 
-        var cancelledProgress = progress with
+        var jobState = await jobManager.RequestStore.GetProgressAsync(jobId, context.RequestAborted).ConfigureAwait(false);
+        if (jobState == null)
         {
-            Status = MigrationEvidenceJobStatus.Cancelled,
-            CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Cancellation requested"
-        };
+            await AdminResponseWriter.WriteErrorAsync(
+                context,
+                "Migration evidence job is no longer cancellable",
+                StatusCodes.Status409Conflict);
+            return;
+        }
 
-        await jobManager.ProgressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromHours(24), context.RequestAborted).ConfigureAwait(false);
+        if (!jobState.CancellationRequested)
+        {
+            await jobManager.RequestStore.SetProgressAsync(
+                jobId,
+                jobState with
+                {
+                    CancellationRequested = true,
+                    CancellationRequestedAt = DateTimeOffset.UtcNow
+                },
+                TimeSpan.FromHours(24),
+                context.RequestAborted).ConfigureAwait(false);
+        }
+
         Log.JobCancelled(GetLogger(context), jobId);
 
         var response = new MigrationEvidenceCancelResponse
         {
             JobId = jobId,
-            Message = "Migration evidence job cancelled successfully"
+            Message = "Migration evidence job cancellation requested"
         };
 
         await Results.Json(response, MigrationEvidenceApiJsonContext.Default.MigrationEvidenceCancelResponse)
@@ -582,7 +604,7 @@ internal static partial class MigrationEvidenceEndpoints
         [LoggerMessage(9142, LogLevel.Warning, "Failed to queue migration evidence job for {SourceServiceUrl}.")]
         public static partial void JobQueueFailed(ILogger logger, string sourceServiceUrl, Exception exception);
 
-        [LoggerMessage(9143, LogLevel.Information, "Migration evidence job {JobId} cancelled by user.")]
+        [LoggerMessage(9143, LogLevel.Information, "Migration evidence job {JobId} cancellation requested by user.")]
         public static partial void JobCancelled(ILogger logger, string jobId);
     }
 }

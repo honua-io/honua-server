@@ -32,7 +32,7 @@ The request contract is intentionally narrow:
 The job lifecycle is asynchronous:
 
 - The start call returns `202 Accepted` with a short `jobId` plus relative `statusUrl` and `cancelUrl`.
-- Poll the job endpoint until `status` reaches `completed`, `failed`, or `cancelled`. Progress payloads expose `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, warnings, and any terminal `errorMessage`.
+- Poll the job endpoint until `status` reaches `completed`, `failed`, or `cancelled`. Progress payloads expose the request identity fields, `startedAt` and `completedAt`, `completedSteps`, `totalSteps`, `percentComplete`, `currentPhase`, `duration`, warnings, and any terminal `errorMessage`.
 - Completed jobs include `reportId`, `readiness`, and any readiness warnings. Cancelled jobs do not create a persisted report artifact, and cancelling a terminal job returns `409 Conflict`.
 - Queueing depends on distributed coordination. When Redis-backed coordination is unavailable, the start call returns `503` instead of falling back to local-only execution.
 - The same progress record is also available through the unified operations endpoints at `/api/v1/admin/operations/{jobId}` and `/api/v1/admin/operations/type/MigrationEvidence`, but the dedicated migration job route remains the primary polling surface.
@@ -47,11 +47,12 @@ The report artifact captures:
 The persisted artifact contract is stable enough for pilot evidence packs:
 
 - `request` preserves operator inputs and provenance references.
+- `schemaVersion` is currently `migration-evidence/v1`; downstream automation should treat it as the artifact contract version.
 - `sourceBaseline` and `targetSnapshot` capture the metadata and digests used for the run, including per-layer field snapshots, extent snapshots, notes, and style digests when available.
 - `targetSnapshot.operationalSnapshot` records the deploy-preflight outcome and database probe details used in the report decision, including pending migrations, executed-but-missing scripts, compatibility warnings, and probe errors.
 - `comparison` is split into `capability`, `style`, `data`, and `operationalReadiness` arrays so downstream tooling can reason about each parity lane independently. Each entry carries `checkName`, `status`, `scope`, `summary`, optional `notes`, and structured `observations`.
-- `cutoverReadiness` carries the final `state`, a de-duplicated `blockingReasons` list, warnings, and the full checklist that produced the decision. Checklist items expose both `requirementLevel` and `status` so pilot and production gates can be audited independently.
-- `GET /api/v1/admin/migrations/reports` returns summary rows ordered by `generatedAt` descending and supports `provider`, `cutoverProfile`, and `readiness` filters for audit views. Each summary includes the immutable `reportHash` plus `warningCount` and `blockerCount` for quick triage, while the response still echoes the requested `limit` and `offset`.
+- `cutoverReadiness` carries the final `state`, a de-duplicated `blockingReasons` list, warnings, and the full checklist that produced the decision. Checklist items expose both `requirementLevel` and `status`; `requirementLevel` is `pilot_required` or `production_required`, and statuses use `pass`, `warning`, `fail`, and `not_applicable`.
+- `GET /api/v1/admin/migrations/reports` returns summary rows ordered by `generatedAt` descending and supports `provider`, `cutoverProfile`, and `readiness` filters for audit views. Each summary includes the immutable `reportHash`, `warningCount`, `blockerCount`, `generatedAt`, and the echoed provenance fields (`requestedBy`, `summary`, `inventoryArtifactRef`, `translationManifestRef`, and `importJobId`) for quick triage, while the response still echoes the requested `limit` and `offset`. A `limit` of `0` returns an empty page.
 
 ## Pilot Lifecycle
 
