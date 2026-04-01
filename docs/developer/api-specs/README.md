@@ -44,7 +44,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 **Authentication**: API Key, OIDC bearer token, or optional HTTP Basic compatibility mode
 
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
-> Use the [Server Management API guide](../user/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
+> Use the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
 >
 > **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
 
@@ -60,15 +60,15 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 {% swagger src="admin-api.json" %}
 {% endswagger %}
 
-## GeoServices REST FeatureServer + MapServer
+## GeoServices REST Services
 
 **Protocol**: Esri-compatible REST API
 **Base URL**: `/rest/services`
 **Compatibility**: Esri-compatible subset (see coverage matrices for exact operation support)
 
-> **Note**: FeatureServer and MapServer endpoints follow Esri's REST specification and provide self-describing metadata.
+> **Note**: FeatureServer, MapServer, and ImageServer endpoints follow Esri REST conventions and provide service-specific self-describing metadata. Geometry Service currently exposes operation endpoints only; Honua does not implement the root GeometryServer metadata resource.
 >
-> For detailed endpoint reference, see the [FeatureServer Coverage Matrix](../user/feature-server-matrix.md) and the [MapServer Coverage Matrix](../user/map-server-matrix.md).
+> For detailed endpoint reference, start with the [GeoServices REST Parity landing page](../../gis/geoservices-rest-parity.md), use the [machine-readable parity JSON](../../gis/data/geoservices-rest-parity.json) when tooling needs the same contract, and then drill into the [FeatureServer](../../gis/feature-server-matrix.md), [MapServer](../../gis/map-server-matrix.md), [ImageServer](../../gis/image-server-matrix.md), and [Geometry Service](../../gis/geometry-service-matrix.md) matrices.
 
 ## Vector Tiles (MVT)
 
@@ -78,7 +78,7 @@ Honua Server provides OpenAPI specifications for OGC APIs and a curated, version
 
 > **Note**: Vector tile endpoints provide TileJSON metadata for client configuration.
 >
-> For usage examples, see the [API Examples Guide](../user/API_EXAMPLES.md#vector-tiles-mvt).
+> For usage examples, see the [API Examples Guide](../API_EXAMPLES.md#vector-tiles-mvt).
 
 ## Testing the APIs
 
@@ -118,12 +118,12 @@ Control-plane SDK governance and contract diff checks:
 
 ## Related Documentation
 
-- [**Geospatial Data APIs**](../user/STANDARDS_APIS.md) - Protocol overview and selection guide
-- [**Server Management API**](../user/CONTROL_PLANE_API.md) - Admin API guide and key workflows
-- [**Control Plane Versioning Policy**](../user/CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
-- [**Control Plane Migration Guide**](../user/CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
-- [**API Examples**](../user/API_EXAMPLES.md) - Code examples for all protocols
-- [**Integration Patterns**](../user/INTEGRATION_PATTERNS.md) - Common integration approaches
+- [**Geospatial Data APIs**](../../gis/STANDARDS_APIS.md) - Protocol overview and selection guide
+- [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
+- [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
+- [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
+- [**API Examples**](../API_EXAMPLES.md) - Code examples for all protocols
+- [**Integration Patterns**](../INTEGRATION_PATTERNS.md) - Common integration approaches
 
 ---
 *Interactive API documentation powered by OpenAPI 3.0 specifications versioned with the Honua Server codebase.*

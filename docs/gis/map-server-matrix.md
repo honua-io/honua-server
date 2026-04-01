@@ -1,33 +1,92 @@
 # MapServer API Matrix (Esri Enterprise vs Honua)
 
+Canonical GeoServices entry point: [GeoServices REST Parity](geoservices-rest-parity.md)
+
 Sources:
 - https://developers.arcgis.com/rest/services-reference/enterprise/map-service/
-- https://developers.arcgis.com/rest/services-reference/enterprise/map-service-layer/
+- https://developers.arcgis.com/rest/services-reference/enterprise/layer-table/
 
-Legend: **Implemented** | **Partial** | **Not implemented**
+## Status vocabulary
 
----
+- Implemented: endpoint exists and the documented operation is supported.
+- Partial: endpoint exists, but Honua only supports a subset of the documented behavior or scope.
+- Not implemented: the Esri operation or resource is not exposed by Honua.
 
 ## Operations
 
 ### Implemented
 
-| Operation | Esri path | Methods | Honua endpoint(s) | Notes |
-| --- | --- | --- | --- | --- |
-| Service metadata | `.../MapServer` | GET | `GET .../MapServer` | Includes `maxRecordCount`, `supportedQueryFormats`, `documentInfo`, `minScale`/`maxScale`. |
-| Layer metadata | `.../MapServer/{layerId}` | GET | `GET .../MapServer/{layerId}` | Includes `drawingInfo`, query capability flags, `parentLayerId`/`subLayerIds`. |
-| Export map | `.../MapServer/export` | GET/POST | `GET/POST .../MapServer/export` | `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`. Default `transparent=false` per spec. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
-| Identify | `.../MapServer/identify` | GET/POST | `GET/POST .../MapServer/identify` | All geometry types, `dynamicLayers`, `time`/`timeRelation`, `layerDefs`. Returns `displayFieldName`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
-| Find | `.../MapServer/find` | GET/POST | `GET/POST .../MapServer/find` | Cross-layer text search: `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`. Unsupported `gdbVersion` is rejected (`400 Bad Request`). |
-| Generate KML | `.../MapServer/generateKml` | GET/POST | `GET/POST .../MapServer/generateKml` | Exports queried layer features as KML (`f=kml`) or KMZ (`f=kmz`). Supports `layers`, `layerDefs`, `dynamicLayers`, `time`, and `layerTimeOptions`. |
-| Legend | `.../MapServer/legend` | GET | `GET .../MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
-| Layer query | `.../MapServer/{layerId}/query` | GET/POST | `GET/POST .../MapServer/{layerId}/query` | Delegates to FeatureServer query handler. See [FeatureServer matrix](feature-server-matrix.md). |
-| Service-level query | `.../MapServer/query` | GET/POST | `GET/POST .../MapServer/query` | Delegates to FeatureServer query handler using `layerId` or `layers`. |
-| Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | `GET .../MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
-| WMTS | `.../MapServer/WMTS` | GET | `GET .../MapServer/WMTS` and `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo` (KVP), plus advertised RESTful `ResourceURL` templates for tile/feature info and optional metadata (`LegendURL`, `Themes`, `TileMatrixSetLimits`). |
-| WMS | `.../MapServer/WMS` | GET | `GET .../MapServer/WMS` and `GET /ogc/services/{serviceId}/wms` | Supports `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
+| Operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Service metadata | `.../MapServer` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer` | Includes `maxRecordCount`, `supportedQueryFormats`, `documentInfo`, `minScale`/`maxScale`. |
+| Layer metadata | `.../MapServer/{layerId}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/{layerId}` | Includes `drawingInfo`, query capability flags, `parentLayerId`/`subLayerIds`. |
+| Export map | `.../MapServer/export` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/export` | Supports `bbox`, `size`, `dpi`, `format`, `transparent`, `layers`, `bboxSR`, `imageSR`, `dynamicLayers`, `time`, `layerTimeOptions`, `layerDefs`, `backgroundColor`, and `f=image|json|pjson`. `gdbVersion` is accepted but ignored. |
+| Identify | `.../MapServer/identify` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/identify` | Supports all geometry types, `mapExtent`, `imageDisplay`, `layers`, `tolerance`, `dynamicLayers`, `time`/`timeRelation`, and `layerDefs`. `gdbVersion` is accepted but ignored. |
+| Find | `.../MapServer/find` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/find` | Supports `searchText`, `layers`, `contains`, `searchFields`, `sr`, `layerDefs`, `dynamicLayers`, `returnGeometry`, and `f=json|pjson`. `gdbVersion` is accepted but ignored. |
+| Generate KML | `.../MapServer/generateKml` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/generateKml` | Supports `f=kml` and `f=kmz` plus `layers`, `layerDefs`, `dynamicLayers`, `time`, and `layerTimeOptions`. |
+| Legend | `.../MapServer/legend` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/legend` | Swatch images for visible layers. Supports `size` and `dynamicLayers`. |
+| Layer query | `.../MapServer/{layerId}/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/{layerId}/query` | Delegates to the FeatureServer query handler. See [FeatureServer Matrix](feature-server-matrix.md). |
+| Service-level query | `.../MapServer/query` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/MapServer/query` | Delegates to the FeatureServer service-query handler using `layerId` or `layers`. |
+| Tile | `.../MapServer/tile/{z}/{y}/{x}` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}` | Returns rendered PNG map tiles. |
+| WMS | `.../MapServer/WMS` | GET | Implemented | `GET /rest/services/{serviceId}/MapServer/WMS`, `GET /ogc/services/{serviceId}/wms` | Supports `GetCapabilities`, `GetMap`, and `GetFeatureInfo` (KVP). |
 
----
+### Partial
+
+| Operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| --- | --- | --- | --- | --- | --- |
+| WMTS | `.../MapServer/WMTS` | GET | Partial | `GET /rest/services/{serviceId}/MapServer/WMTS`, `GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}`, `GET /ogc/services/{serviceId}/wmts` | Supports `GetCapabilities`, `GetTile`, and `GetFeatureInfo`, but scope remains WebMercatorQuad-only. |
+
+### Not implemented
+
+| Esri operation or child resource | Esri path | Methods | Honua status | Notes |
+| --- | --- | --- | --- | --- |
+| Estimate Export Tile Size | `.../MapServer/estimateExportTilesSize` | GET, POST | Not implemented | |
+| Export Tiles | `.../MapServer/exportTiles` | POST | Not implemented | |
+| Generate Renderer | `.../MapServer/generateRenderer` or `.../MapServer/{layerId}/generateRenderer` | GET, POST | Not implemented | |
+| Query Attachments | `.../MapServer/{layerId}/queryAttachments` | GET, POST | Not implemented | |
+| Query Domains | `.../MapServer/queryDomains` | GET | Not implemented | |
+| Query Legends | `.../MapServer/queryLegends` | GET, POST | Not implemented | |
+| Query Related Records | `.../MapServer/{layerId}/queryRelatedRecords` | GET, POST | Not implemented | |
+| Query Analytic | `.../MapServer/{layerId}/queryAnalytic` | GET, POST | Not implemented | |
+| All Layers and Tables | `.../MapServer/allLayersAndTables` | GET | Not implemented | |
+| Dynamic Layer / Table | `.../MapServer/dynamicLayer` | GET | Not implemented | |
+| Feature child resource | `.../MapServer/{layerId}/{featureId}` | GET | Not implemented | |
+| Image child resource | `.../MapServer/image` | GET | Not implemented | |
+| KML Image child resource | `.../MapServer/kml/mapImage.kmz` | GET | Not implemented | |
+| Job child resource | `.../MapServer/jobs/{jobId}` | GET | Not implemented | |
+| Map Service Extension | `.../MapServer/exts/*` | GET | Not implemented | |
+
+## Export parameter coverage
+
+### Implemented
+
+| Parameter | Status | Notes |
+| --- | --- | --- |
+| `bbox` | Implemented | Required. Format: `xmin,ymin,xmax,ymax`. |
+| `size` | Implemented | Width and height pair (`width,height`). Invalid pairs return `400 Bad Request`. |
+| `dpi` | Implemented | Validated integer value. |
+| `format` | Implemented | Supports `png`, `png8`, `png24`, `png32`, `jpg`, `jpeg`, and `gif`. |
+| `transparent` | Implemented | Accepts boolean text or numeric `0`/`1`. |
+| `layers` | Implemented | Layer inclusion/exclusion mask. Empty or non-integer tokens are rejected. |
+| `bboxSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases via shared CRS parser. |
+| `imageSR` | Implemented | Accepts numeric WKID, `EPSG:####`, OGC CRS URI/URN, bracket-safe forms (`[EPSG:####]`), and `CRS84` aliases via shared CRS parser. Unsupported transforms return `400 Bad Request` with a generic spatial-reference error. |
+| `layerDefs` | Implemented | JSON object keyed by layer id. Malformed JSON returns `400 Bad Request` without parser-detail leakage. |
+| `dynamicLayers` | Implemented | JSON array. Malformed JSON returns `400 Bad Request` without parser-detail leakage. |
+| `time` | Implemented | Supports instant or extent syntax used by the shared temporal query pipeline. |
+| `timeRelation` | Implemented | Normalized through the shared time-relation parser. |
+| `layerTimeOptions` | Implemented | JSON object keyed by layer id. Malformed JSON returns `400 Bad Request`. |
+| `backgroundColor` | Implemented | `r,g,b` or `r,g,b,a`. Invalid tuples return `400 Bad Request`. |
+| `f` | Implemented | `image` streams bytes directly; `json` and `pjson` return an Esri-style JSON envelope with `href`, `width`, `height`, `extent`, and `scale`. |
+
+### Ignored or not applied
+
+| Parameter | Status | Notes |
+| --- | --- | --- |
+| `gdbVersion` | Ignored | Accepted to preserve ArcGIS compatibility. No alternate geodatabase version routing occurs. |
+| `maxAllowableOffset` | Ignored | Accepted but not applied. |
+| `geometryPrecision` | Ignored | Accepted but not applied. |
+| `returnZ` | Ignored | Accepted but not applied. |
+| `returnM` | Ignored | Accepted but not applied. |
 
 ## Response Properties
 
@@ -117,8 +176,6 @@ Legend: **Implemented** | **Partial** | **Not implemented**
 | `results[].geometryType` | Implemented | |
 | `results[].geometry` | Implemented | Controlled by `returnGeometry`. |
 
----
-
 ## Notes
 
 - Layer queries delegate to the FeatureServer query contract. See the [FeatureServer Coverage Matrix](feature-server-matrix.md) for parameter details.
@@ -126,7 +183,16 @@ Legend: **Implemented** | **Partial** | **Not implemented**
 - `drawingInfo` is loaded from `ILayerStyleService` and returned as-is (JSON passthrough).
 - The `find` operation uses SQL `LIKE` with `ESCAPE '\'` for `contains=true` and equality for `contains=false`, searching string fields only. Field names are double-quoted in generated SQL.
 - Export defaults `transparent` to `false` per ArcGIS spec (configurable via `MapServer.DefaultTransparent` in service metadata).
-- `gdbVersion` is consistently rejected with `400 Bad Request` across Export, Identify, and Find operations.
+- Export returns bytes by default (`f=image`). When `f=json` or `f=pjson` is requested, Honua stores the rendered image temporarily and returns an Esri-style JSON envelope with `href`, `width`, `height`, `extent`, and `scale`.
+- `gdbVersion` is accepted and ignored across Export, Identify, and Find operations.
 - Identify result limit uses `LimitsOptions.Query.MaxRecordCount` (configurable) instead of a hard-coded value.
 - `maxAllowableOffset`, `geometryPrecision`, `returnZ`, `returnM`, and other advanced params are silently accepted (no validation error) but not yet applied.
 - Service metadata includes a `tileInfo` block even though map tiles are generated dynamically (not from a pre-built fused cache).
+
+## Implementation evidence
+
+- Endpoint mapping: [MapServerEndpoints](../../src/Honua.Server/Features/MapServer/MapServerEndpoints.cs)
+- Export/identify/find implementation: [MapServerRequestHandlers.Export](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Export.cs), [MapServerRequestHandlers.Identify](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Identify.cs), [MapServerRequestHandlers.Find](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Find.cs)
+- Query, tiles, and legends: [MapServerRequestHandlers.Query](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Query.cs), [MapServerRequestHandlers.Tile](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Tile.cs), [MapServerRequestHandlers.Legend](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Legend.cs)
+- Standards aliases: [MapServerRequestHandlers.Wms](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Wms.cs), [MapServerRequestHandlers.Wmts](../../src/Honua.Server/Features/MapServer/MapServerRequestHandlers.Wmts.cs)
+- Integration tests: [MapServerEndpointTests](../../tests/Honua.Server.Tests/Features/MapServer/MapServerEndpointTests.cs), [MapServerTileEndpointTests](../../tests/Honua.Server.Tests/Features/MapServer/MapServerTileEndpointTests.cs), [MapServerWmsTests](../../tests/Honua.Server.Tests/Features/MapServer/MapServerWmsTests.cs), [MapServerWmtsTests](../../tests/Honua.Server.Tests/Features/MapServer/MapServerWmtsTests.cs)

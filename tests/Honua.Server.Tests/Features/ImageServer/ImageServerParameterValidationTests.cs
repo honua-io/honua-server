@@ -145,6 +145,36 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithEpsgPrefixedSpatialReferences_ReturnsSuccessOrNotFound()
+    {
+        var imageSr = Uri.EscapeDataString("EPSG:4326");
+        var bboxSr = Uri.EscapeDataString("urn:ogc:def:crs:EPSG::4326");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
+            $"?f=json&bbox=-180,-90,180,90&imageSr={imageSr}&bboxSr={bboxSr}");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithSafeCurieSpatialReferences_ReturnsSuccessOrNotFound()
+    {
+        var imageSr = Uri.EscapeDataString("[EPSG:4326]");
+        var bboxSr = Uri.EscapeDataString("[OGC:CRS84]");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
+            $"?f=json&bbox=-180,-90,180,90&imageSr={imageSr}&bboxSr={bboxSr}");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_MinimumSize_ReturnsSuccessOrNotFound()
     {
         var response = await _fixture.Client.GetAsync(
@@ -234,6 +264,19 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/identify?geometry=0,0&sr=4326&f=json");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    public async Task Identify_WithOgcCrsUri_ReturnsSuccessOrNotFound()
+    {
+        var sr = Uri.EscapeDataString("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/identify?geometry=0,0&sr={sr}&f=json");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
     }

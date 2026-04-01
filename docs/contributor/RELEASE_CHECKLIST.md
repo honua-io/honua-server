@@ -17,11 +17,12 @@ Use this checklist for every MVP release.
 
 - [ ] Refresh benchmark proof pack if stale (>2 minor releases behind) — see [Benchmark Publication Process](BENCHMARK_PUBLICATION_PROCESS.md)
 - [ ] Verify `performance-baseline.json` matches the current release
-- [ ] Verify `docs/user/BENCHMARK_RESULTS.md` environment disclosure is current
+- [ ] Verify `docs/operator/BENCHMARK_RESULTS.md` environment disclosure is current
 
 ## Compatibility Contract Updates (Required)
 
 - [ ] Update [MVP Compatibility Contract](../gis/MVP_COMPATIBILITY_CONTRACT.md)
+- [ ] Refresh [GeoServices REST Parity](../gis/geoservices-rest-parity.md), the service drill-down matrices, and [data/geoservices-rest-parity.json](../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed in the release
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../gis/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Confirm supported/partial/unsupported protocol notes are current
 - [ ] Confirm newly added or removed public query/output formats are reflected in API examples and coverage matrices
@@ -35,7 +36,7 @@ Use this checklist for every MVP release.
 ### Tested Client Versions (Required)
 
 Update from certification workflow outputs and manual validation logs:
-- [ ] Update [Client Template Version Matrix](../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) with exact client versions, run date, the `#320` smoke-artifact link, and any final evidence file links
+- [ ] Update [Client Template Version Matrix](../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) with exact client versions, run date, and evidence links from `#320`
 
 | Client | Version tested | Protocol(s) | Result | Notes |
 |---|---|---|---|---|

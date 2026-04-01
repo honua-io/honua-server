@@ -189,6 +189,6 @@ curl http://localhost:8080/api/v1/admin/connections
 
 ## Next Steps
 
-- Explore the [API Examples](../API_EXAMPLES.md) for curl-based access patterns
+- Explore the [API Examples](../../developer/API_EXAMPLES.md) for curl-based access patterns
 - Review the [OGC API Features Coverage](../specifications/ogc-api-features-coverage.md) for supported parameters
 - Try the [Interactive API Explorer](http://localhost:8080/docs) to test endpoints directly

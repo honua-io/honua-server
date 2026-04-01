@@ -29,12 +29,14 @@
   - [QGIS Getting Started](gis/tutorials/qgis-getting-started.md)
   - [GeoServer Migration](gis/tutorials/geoserver-migration-guide.md)
 - Protocol Coverage
+  - [GeoServices REST Parity](gis/geoservices-rest-parity.md)
   - [FeatureServer](gis/feature-server-matrix.md)
   - [MapServer / WMS / WMTS](gis/map-server-matrix.md)
+  - [ImageServer](gis/image-server-matrix.md)
   - [OGC API Features](gis/specifications/ogc-api-features-coverage.md)
   - [OGC API Tiles](gis/specifications/ogc-api-tiles-coverage.md)
   - [OData v4](gis/specifications/odata-v4-coverage.md)
-  - [Geometry Service](gis/specifications/geometry-service-coverage.md)
+  - [Geometry Service](gis/geometry-service-matrix.md)
 - Client Templates
   - [Setup Runbook](gis/CLIENT_TEMPLATE_RUNBOOK.md)
   - [Version Matrix](gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)
