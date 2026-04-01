@@ -21,6 +21,14 @@ Template sources live in [`docs/user/client-templates`](client-templates/README.
 
 The repository keeps source templates and run instructions. Generated binary outputs (`.aprx`, `.qgz`, `.pbix`, `.xlsx`) should be attached to release evidence and `#320` workflow artifacts.
 
+The `windows-client-compat-nightly.yml` workflow assembles these sources into a single reusable artifact pack under:
+
+```text
+artifacts/client-compat/<service>-<timestamp>/pack/
+```
+
+That pack includes the template sources, the smoke runbook, the evidence schema, and the certification matrix so manual Windows follow-through can start from one canonical layout.
+
 ## Environment Substitution
 
 Use these placeholders across templates:

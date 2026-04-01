@@ -7,11 +7,23 @@ inputs:
   dotnet-version:
     description: .NET SDK version
     required: true
+  base-seed-path:
+    description: >
+      Path to the SQL seed script to apply before the server starts.
+      Defaults to the shared CI base schema used by existing integration jobs.
+    required: false
+    default: 'tests/seed/base-schema.sql'
   post-seed-yaml:
     description: >
       Path to a version-1 seed YAML file to apply after the base schema
       seed (via apply-yaml-seed.sh). Requires python3 and pyyaml on PATH;
       see setup-honua-mcp which installs both before calling this action.
+    required: false
+    default: ''
+  log-path:
+    description: >
+      Optional path for redirecting Honua Server stdout/stderr. When omitted,
+      the server runs detached without an explicit file sink.
     required: false
     default: ''
 
@@ -33,7 +45,9 @@ runs:
 
     - name: Seed base schema
       shell: bash
-      run: PGPASSWORD=honua psql -v ON_ERROR_STOP=1 -h localhost -U honua -d honua_test -f tests/seed/base-schema.sql
+      run: PGPASSWORD=honua psql -v ON_ERROR_STOP=1 -h localhost -U honua -d honua_test -f "$BASE_SEED_PATH"
+      env:
+        BASE_SEED_PATH: ${{ inputs.base-seed-path }}
 
     - name: Apply additional seed data
       if: ${{ inputs.post-seed-yaml != '' }}
@@ -45,7 +59,12 @@ runs:
     - name: Start Honua Server
       shell: bash
       run: |
-        dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile &
+        if [ -n "$LOG_PATH" ]; then
+          mkdir -p "$(dirname "$LOG_PATH")"
+          dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile > "$LOG_PATH" 2>&1 &
+        else
+          dotnet run --project src/Honua.Server --configuration Release --no-build --no-launch-profile &
+        fi
         curl --retry 15 --retry-delay 2 --retry-connrefused --retry-all-errors -fsS http://localhost:5000/healthz/ready || exit 1
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Database=honua_test;Username=honua;Password=honua"
@@ -54,3 +73,4 @@ runs:
         HONUA_ADMIN_PASSWORD: "ci-admin-password"
         Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"
         Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
+        LOG_PATH: ${{ inputs.log-path }}

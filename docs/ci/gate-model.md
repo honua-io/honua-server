@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-03-27 (ticket #625)
+> Last updated: 2026-03-31 (ticket #320)
 
 ## Tier Definitions
 
@@ -55,6 +55,7 @@ These workflows run on schedule and can be dispatched manually:
 | `cite-gpkg12-conformance.yml` | Sat 3am UTC | OGC GeoPackage 1.2 CITE conformance |
 | `performance-benchmarks.yml` (full) | Daily 6am UTC | Full benchmark suite + cross-platform |
 | `geoservices-parity-nightly.yml` | Scheduled | GeoServices parity check |
+| `windows-client-compat-nightly.yml` | Daily 7:15am UTC | Windows client compatibility smoke certification + reusable evidence pack |
 | `load-soak-nightly.yml` | Scheduled | Load and soak testing |
 | `container-security.yml` | Scheduled | Container security scan |
 | `security-nightly.yml` | Scheduled | Security analysis |

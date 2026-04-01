@@ -10,6 +10,7 @@ This document summarizes the CI pipelines and quality gates that contributors mu
 - `pr-validation.yml`: PR template compliance validation.
 - `performance-benchmarks.yml`: performance benchmarks (`quick` mode on PR, `full` mode on nightly/manual).
 - `load-soak-nightly.yml`: nightly load/soak testing.
+- `windows-client-compat-nightly.yml`: nightly/manual Windows client compatibility smoke certification with reusable evidence and pack artifacts.
 - `codeql.yml`: static analysis (nightly + trunk push; not PR-blocking).
 - `container-security.yml`: container security scanning (nightly).
 - `cite-conformance.yml`, `cite-tiles-conformance.yml`, `cite-wfs20-conformance.yml`, `cite-wms-conformance.yml`, `cite-wmts-conformance.yml`, `cite-kml22-conformance.yml`, `cite-gml32-conformance.yml`, `cite-gpkg12-conformance.yml`, `ogc-maps-conformance.yml`: OGC conformance testing (nightly; not PR-blocking).
