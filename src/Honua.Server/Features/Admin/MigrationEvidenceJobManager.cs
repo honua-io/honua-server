@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Domain;
-using Honua.Server.Features.Import;
+using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
@@ -37,7 +37,7 @@ internal sealed class MigrationEvidenceJobManager : IImportCoordinationHealth, I
         ArgumentNullException.ThrowIfNull(hostEnvironment);
 
         var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
-        _requiresStrictDistributedMode = RedisImportJobManager.RequiresStrictDistributedMode(hostEnvironment);
+        _requiresStrictDistributedMode = DistributedCoordinationMode.RequiresStrictDistributedMode(hostEnvironment);
         _jobQueue = new RedisJobQueue(redis, logger, "migration:evidence:queue", allowFallback: !_requiresStrictDistributedMode);
         _leaderElection = new RedisLeaderElection(redis, logger, "migration:evidence:leader", instanceId);
         _requestStore = new RedisProgressStore<MigrationEvidenceJobState>(

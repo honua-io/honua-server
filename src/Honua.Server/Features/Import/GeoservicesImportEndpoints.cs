@@ -5,6 +5,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Infrastructure.Progress;
 
 namespace Honua.Server.Features.Import;
 

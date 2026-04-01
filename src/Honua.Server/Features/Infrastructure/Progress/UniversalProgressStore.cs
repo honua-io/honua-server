@@ -10,11 +10,10 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Import;
+namespace Honua.Server.Features.Infrastructure.Progress;
 
 /// <summary>
 /// Redis-based universal progress store with fallback to in-memory storage.

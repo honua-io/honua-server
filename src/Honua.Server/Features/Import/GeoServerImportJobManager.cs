@@ -4,6 +4,7 @@
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
@@ -35,7 +36,7 @@ internal sealed class GeoServerImportJobManager : IImportCoordinationHealth, IDi
 
         var instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
 
-        _requiresStrictDistributedMode = RedisImportJobManager.RequiresStrictDistributedMode(hostEnvironment);
+        _requiresStrictDistributedMode = DistributedCoordinationMode.RequiresStrictDistributedMode(hostEnvironment);
         _jobQueue = new RedisJobQueue(redis, logger, "geoserver:import:queue", allowFallback: !_requiresStrictDistributedMode);
         _leaderElection = new RedisLeaderElection(redis, logger, "geoserver:import:leader", instanceId);
         _universalProgressStore = universalProgressStore;

@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using FluentAssertions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Server.Features.Admin;
-using Honua.Server.Features.Import;
+using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;

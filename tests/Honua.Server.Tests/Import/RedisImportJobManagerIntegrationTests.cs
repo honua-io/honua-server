@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Server.Features.Infrastructure.Progress;
 using Honua.Server.Features.Import;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
