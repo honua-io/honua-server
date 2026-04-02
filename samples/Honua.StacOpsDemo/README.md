@@ -26,7 +26,7 @@ The script also injects deterministic, non-production connection-encryption sett
 
 ## Scenarios
 
-- `baseline`: Seeds one healthy collection and one warning collection. Expect a mixed dashboard with healthy query probes plus warning signals for undeclared extension usage and missing STAC `datetime`.
+- `baseline`: Seeds one healthy collection and one warning collection. Expect a mixed dashboard with healthy query probes plus warning signals for undeclared extension usage and declaration drift.
 - `stale-cache`: Starts from the baseline scenario, warms `/stac` and `/stac/collections`, then advances live item timestamps for the healthy collection without invalidating the cached collection listing. Expect the dashboard to surface separate listing/detail validators plus discovery freshness and temporal drift warnings.
 
 ## What Reviewers Should See

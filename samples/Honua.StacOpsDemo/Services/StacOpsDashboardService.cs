@@ -258,7 +258,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             .ToArray();
 
         var numberMatched = searchDocument?.NumberMatched ?? itemsDocument?.NumberMatched;
-        var missingDatetimeCount = sampleItems.Count(static item => string.IsNullOrWhiteSpace(GetDatetime(item)));
+        var missingDatetimeCount = sampleItems.Count(static item => !HasDatetimeProperty(item));
         var level = DetermineCollectionLevel(detail, items, search, driftNotes, sampleItems.Length);
         var verdict = level switch
         {
@@ -948,7 +948,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             notes.Add($"Declared {string.Join(", ", declaredWithoutEvidence.Select(GetExtensionLabel))} without sampled item evidence.");
         }
 
-        var missingDatetime = sampleItems.Count(static item => string.IsNullOrWhiteSpace(GetDatetime(item)));
+        var missingDatetime = sampleItems.Count(static item => !HasDatetimeProperty(item));
         if (missingDatetime > 0)
         {
             notes.Add("Sampled items omitted the required datetime field.");
@@ -1159,14 +1159,25 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         return TryReadString(item.Properties, "datetime");
     }
 
+    private static bool HasDatetimeProperty(StacItemDocument item)
+    {
+        return HasProperty(item.Properties, "datetime");
+    }
+
     private static string? GetObservedTimestamp(StacItemDocument item)
     {
         return GetDatetime(item) ?? TryReadString(item.Properties, "observed_at");
     }
 
+    private static bool HasProperty(JsonElement properties, string propertyName)
+    {
+        return properties.ValueKind == JsonValueKind.Object &&
+            properties.TryGetProperty(propertyName, out _);
+    }
+
     private static string? TryReadString(JsonElement properties, string propertyName)
     {
-        if (properties.ValueKind != JsonValueKind.Object ||
+        if (!HasProperty(properties, propertyName) ||
             !properties.TryGetProperty(propertyName, out var element))
         {
             return null;

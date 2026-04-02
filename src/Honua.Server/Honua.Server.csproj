@@ -36,7 +36,7 @@
       GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
     <ProjectReference
       Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"
-      Condition="'$(HonuaIncludeStacOpsDemo)' != 'false'"
+      Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')"
       GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
   </ItemGroup>
 

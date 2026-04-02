@@ -70,6 +70,38 @@ public sealed class StacOpsDashboardServiceTests
         driftNotes.Should().Contain(note => note.Contains("cached /stac/collections extent", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task LoadAsync_DatetimePropertyPresentButNull_DoesNotFlagMissingDatetime()
+    {
+        var snapshot = await LoadSnapshotAsync(HandleRequestWithNullDatetimeFixture);
+        var collection = GetCollection(snapshot, "alpha");
+
+        collection.GetType().GetProperty("MissingDatetimeCount")!.GetValue(collection).Should().Be(0);
+        collection.GetType().GetProperty("Detail")!.GetValue(collection).Should().BeOfType<string>()
+            .Which.Should().NotContainEquivalentOf("missing datetime");
+
+        var driftNotes = ((System.Collections.IEnumerable)collection.GetType().GetProperty("DriftNotes")!.GetValue(collection)!)
+            .Cast<string>()
+            .ToArray();
+        driftNotes.Should().NotContain(note => note.Contains("required datetime field", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task LoadAsync_DatetimePropertyAbsent_FlagsMissingDatetime()
+    {
+        var snapshot = await LoadSnapshotAsync(HandleRequest);
+        var collection = GetCollection(snapshot, "alpha");
+
+        collection.GetType().GetProperty("MissingDatetimeCount")!.GetValue(collection).Should().Be(2);
+        collection.GetType().GetProperty("Detail")!.GetValue(collection).Should().BeOfType<string>()
+            .Which.Should().Contain("2 sampled item(s) are missing datetime.");
+
+        var driftNotes = ((System.Collections.IEnumerable)collection.GetType().GetProperty("DriftNotes")!.GetValue(collection)!)
+            .Cast<string>()
+            .ToArray();
+        driftNotes.Should().Contain(note => note.Contains("required datetime field", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<object> LoadSnapshotAsync(Func<HttpRequestMessage, HttpResponseMessage> responder)
     {
         using var client = new HttpClient(new StubHttpMessageHandler(responder))
@@ -476,6 +508,22 @@ public sealed class StacOpsDashboardServiceTests
         };
     }
 
+    private static HttpResponseMessage HandleRequestWithNullDatetimeFixture(HttpRequestMessage request)
+    {
+        var pathAndQuery = (request.RequestUri?.PathAndQuery ?? string.Empty)
+            .Replace("%3F", "?", StringComparison.OrdinalIgnoreCase);
+
+        return pathAndQuery switch
+        {
+            "/stac/collections/alpha/items?limit=2" or "/stac/collections/alpha/items%3Flimit=2" => CreateJsonResponse(CreateNullDatetimeItemsResponse()),
+            "/stac/search?limit=50" => CreateJsonResponse(CreateNullDatetimeItemsResponse()),
+            "/stac/search?collections=alpha&limit=3" => CreateJsonResponse(CreateNullDatetimeItemsResponse()),
+            "/stac/search?collections=alpha&limit=2" => CreateJsonResponse(CreateNullDatetimeItemsResponse()),
+            "/stac/search?collections=alpha&limit=3&sortby=-datetime" => CreateJsonResponse(CreateNullDatetimeItemsResponse()),
+            _ => HandleRequest(request)
+        };
+    }
+
     private static string CreateTemporalDriftItemsResponse()
     {
         return
@@ -499,6 +547,38 @@ public sealed class StacOpsDashboardServiceTests
                     "datetime": "2026-03-30T23:45:00-10:00",
                     "quality_score": 70,
                     "platform": "drone-beta"
+                  },
+                  "assets": {}
+                }
+              ],
+              "links": [],
+              "numberMatched": 2,
+              "numberReturned": 2
+            }
+            """;
+    }
+
+    private static string CreateNullDatetimeItemsResponse()
+    {
+        return
+            """
+            {
+              "features": [
+                {
+                  "id": "item-1",
+                  "collection": "alpha",
+                  "properties": {
+                    "datetime": null,
+                    "platform": "drone-beta"
+                  },
+                  "assets": {}
+                },
+                {
+                  "id": "item-2",
+                  "collection": "alpha",
+                  "properties": {
+                    "datetime": null,
+                    "platform": "drone-alpha"
                   },
                   "assets": {}
                 }
