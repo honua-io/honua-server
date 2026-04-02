@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=$HONUA_INCLUDE_STAC_OPS_DEMO" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS
@@ -58,7 +58,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=$HONUA_INCLUDE_STAC_OPS_DEMO" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=false" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
@@ -68,6 +68,14 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:DebugType=None \
       -p:DebugSymbols=false \
       $EXTRA_MSBUILD_ARGS && \
+    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
+      dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
+        --configuration "$CONFIGURATION" \
+        --output /tmp/stac-ops-demo && \
+      mkdir -p /app/wwwroot/samples && \
+      cp -a /tmp/stac-ops-demo/wwwroot/samples/stac-ops /app/wwwroot/samples/; \
+    fi && \
+    rm -rf /tmp/stac-ops-demo && \
     rm -rf /app/BlazorDebugProxy && \
     if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot/admin; fi && \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot/samples/stac-ops; fi && \
