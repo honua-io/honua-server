@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -17,6 +19,13 @@ namespace Honua.Server.Tests.Features.Stac;
 [Protocol(Protocols.Stac)]
 public sealed class StacCollectionsTests : IAsyncLifetime
 {
+    private static readonly string[] ExpectedCollectionKeywords = ["imagery", "ops-demo"];
+    private static readonly string[] ExpectedCollectionExtensions =
+    [
+        "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+        "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
+    ];
+
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -38,6 +47,25 @@ public sealed class StacCollectionsTests : IAsyncLifetime
 
         json.RootElement.GetProperty("collections").EnumerateArray().Should().NotBeEmpty();
         json.RootElement.GetProperty("links").EnumerateArray().Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections")]
+    public async Task GetCollections_ReturnsStrongETagAndSupportsConditionalRequest()
+    {
+        var firstResponse = await _fixture.Client.GetAsync("/stac/collections");
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        firstResponse.Headers.ETag.Should().NotBeNull();
+        firstResponse.Headers.ETag!.IsWeak.Should().BeFalse();
+
+        using var conditionalRequest = new HttpRequestMessage(HttpMethod.Get, "/stac/collections");
+        conditionalRequest.Headers.TryAddWithoutValidation("If-None-Match", firstResponse.Headers.ETag.ToString());
+
+        var secondResponse = await _fixture.Client.SendAsync(conditionalRequest);
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
     }
 
     [IntegrationTest]
@@ -86,6 +114,69 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_ById_ReturnsDeclaredStacMetadata()
+    {
+        await UpdateLayerMetadataAsync(new CatalogMetadata
+        {
+            TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" },
+            Stac = new StacCatalogMetadata
+            {
+                License = "CC-BY-4.0",
+                Keywords = ["imagery", "ops-demo"],
+                Extensions =
+                [
+                    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+                    "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
+                ]
+            }
+        });
+
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+
+        json.RootElement.GetProperty("license").GetString().Should().Be("CC-BY-4.0");
+        json.RootElement.GetProperty("keywords")
+            .EnumerateArray()
+            .Select(static element => element.GetString())
+            .Should()
+            .BeEquivalentTo(ExpectedCollectionKeywords);
+        json.RootElement.GetProperty("stac_extensions")
+            .EnumerateArray()
+            .Select(static element => element.GetString())
+            .Should()
+            .BeEquivalentTo(ExpectedCollectionExtensions);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var firstResponse = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        firstResponse.Headers.ETag.Should().NotBeNull();
+        firstResponse.Headers.ETag!.IsWeak.Should().BeFalse();
+
+        using var conditionalRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/stac/collections/{collectionId}");
+        conditionalRequest.Headers.TryAddWithoutValidation("If-None-Match", firstResponse.Headers.ETag.ToString());
+
+        var secondResponse = await _fixture.Client.SendAsync(conditionalRequest);
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_NotFound_Returns404()
     {
         var response = await _fixture.Client.GetAsync("/stac/collections/99999");
@@ -118,5 +209,11 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         links.Should().Contain(l => l.Rel == "items");
         links.Should().Contain(l => l.Rel == "alternate" &&
                                     l.Href!.Contains("/ogc/features/collections/"));
+    }
+
+    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
+    {
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
     }
 }

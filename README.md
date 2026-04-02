@@ -79,6 +79,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Admin UI, automation scripts |
+| STAC Ops Demo | `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
 | API Explorer (Scalar) | `/docs` | Browser *(dev mode or `HONUA_SERVE_API_DOCS=true`)* |
@@ -119,6 +120,7 @@ HONUA_ADMIN_PASSWORD="change-me"
 **Common options:**
 ```bash
 HONUA_SERVE_ADMIN_UI=true                 # Serve admin UI at /admin
+HONUA_SERVE_STAC_DEMO=true               # Serve the STAC operations demo at /samples/stac-ops/
 HONUA_SERVE_API_DOCS=true                # Interactive API explorer at /docs (default: on in Development)
 HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
 HONUA_OPENTELEMETRY=true                  # Distributed tracing
@@ -180,6 +182,7 @@ Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuai
 | See protocol coverage | [Protocols Overview](docs/gis/STANDARDS_APIS.md) |
 | Use the admin API | [Control Plane API](docs/operator/CONTROL_PLANE_API.md) |
 | Check compatibility | [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md) |
+| Run the STAC ops sample | [STAC Ops Demo](samples/Honua.StacOpsDemo/README.md) |
 | Evaluate performance | [Benchmark Results](docs/operator/BENCHMARK_RESULTS.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 

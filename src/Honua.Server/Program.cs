@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Reflection;
-using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
@@ -75,13 +74,17 @@ var registerInfrastructureInTestEnvironment =
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
+var serveStacOpsDemo = builder.Configuration.GetValue(
+    "ServeStacOpsDemo",
+    builder.Configuration.GetValue(
+        "HONUA_SERVE_STAC_DEMO",
+        builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test")));
 var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
-var adminStaticAssetsManifestPath = Path.Combine(
-    AppContext.BaseDirectory,
-    "Honua.Admin.staticwebassets.endpoints.json");
-if (serveAdminUi && !builder.Environment.IsDevelopment())
+var adminUiPathPrefix = new PathString("/admin");
+var stacOpsDemoPathPrefix = new PathString("/samples/stac-ops");
+if ((serveAdminUi || serveStacOpsDemo) && !builder.Environment.IsDevelopment())
 {
     builder.WebHost.UseStaticWebAssets();
 }
@@ -576,10 +579,6 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
-var adminDotnetJsAlias = serveAdminUi
-    ? ResolveAdminDotnetJsAlias(adminStaticAssetsManifestPath)
-    : null;
-
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
 if (activeDbConnectionTracker != null)
 {
@@ -680,9 +679,9 @@ if (serveAdminUi)
                        !app.Environment.IsDevelopment() &&
                        !app.Environment.IsEnvironment("Test");
 
-    app.Map("/admin", adminApp =>
+    if (blockAdminUi)
     {
-        if (blockAdminUi)
+        app.Map("/admin", adminApp =>
         {
             adminApp.Run(async context =>
             {
@@ -692,38 +691,23 @@ if (serveAdminUi)
                     """{"title":"Unauthorized","status":401,"detail":"Admin UI is disabled because OIDC authentication is not configured. Configure Oidc:Enabled in appsettings or environment variables before accessing the admin UI in production."}""")
                     .ConfigureAwait(false);
             });
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(adminDotnetJsAlias))
-        {
-            adminApp.Use(async (context, next) =>
-            {
-                if (context.Request.Path.Equals("/_framework/dotnet.js", StringComparison.OrdinalIgnoreCase))
-                {
-                    context.Request.Path = new PathString($"/_framework/{adminDotnetJsAlias}");
-                }
-
-                await next().ConfigureAwait(false);
-            });
-        }
-
-        adminApp.UseBlazorFrameworkFiles();
-        adminApp.UseStaticFiles();
-        adminApp.UseRouting();
-        adminApp.UseEndpoints(endpoints =>
-        {
-            if (File.Exists(adminStaticAssetsManifestPath))
-            {
-                endpoints.MapStaticAssets(adminStaticAssetsManifestPath);
-            }
-            else
-            {
-                endpoints.MapStaticAssets();
-            }
-            endpoints.MapFallbackToFile("index.html");
         });
-    });
+    }
+    else
+    {
+        ConfigureHostedBlazorAssets(app, adminUiPathPrefix);
+        app.MapGet("/admin", () => Results.Redirect("/admin/index.html"))
+            .ExcludeFromDescription();
+        MapHostedBlazorFallback(app, adminUiPathPrefix);
+    }
+}
+
+if (serveStacOpsDemo)
+{
+    ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
+    app.MapGet("/samples/stac-ops", () => Results.Redirect("/samples/stac-ops/index.html"))
+        .ExcludeFromDescription();
+    MapHostedBlazorFallback(app, stacOpsDemoPathPrefix);
 }
 
 // Map interactive API explorer (Scalar) at /docs when enabled
@@ -1370,30 +1354,22 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
 }
 
-static string? ResolveAdminDotnetJsAlias(string endpointsManifestPath)
+static void ConfigureHostedBlazorAssets(
+    IApplicationBuilder app,
+    PathString pathPrefix)
 {
-    if (!File.Exists(endpointsManifestPath))
-    {
-        return null;
-    }
+    app.UseBlazorFrameworkFiles(pathPrefix);
+    app.UseStaticFiles();
+}
 
-    using var stream = File.OpenRead(endpointsManifestPath);
-    using var document = JsonDocument.Parse(stream);
-    if (!document.RootElement.TryGetProperty("Endpoints", out var endpoints))
-    {
-        return null;
-    }
+static void MapHostedBlazorFallback(
+    IEndpointRouteBuilder endpoints,
+    PathString pathPrefix)
+{
+    var prefix = pathPrefix.Value?.TrimEnd('/') ??
+        throw new InvalidOperationException("Hosted Blazor path prefix is required.");
+    var fallbackRoute = $"{prefix}/{{*path:nonfile:minlength(1)}}";
+    var fallbackFile = $"{prefix.TrimStart('/')}/index.html";
 
-    foreach (var endpoint in endpoints.EnumerateArray())
-    {
-        if (endpoint.TryGetProperty("Route", out var route) &&
-            string.Equals(route.GetString(), "_framework/dotnet.js", StringComparison.OrdinalIgnoreCase) &&
-            endpoint.TryGetProperty("AssetFile", out var assetFile))
-        {
-            var assetFilePath = assetFile.GetString();
-            return string.IsNullOrWhiteSpace(assetFilePath) ? null : Path.GetFileName(assetFilePath);
-        }
-    }
-
-    return null;
+    endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
 }

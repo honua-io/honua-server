@@ -46,6 +46,26 @@ public sealed class StacCatalogTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
     [Endpoint("GET /stac")]
+    public async Task GetCatalog_ReturnsStrongETagAndSupportsConditionalRequest()
+    {
+        var firstResponse = await _fixture.Client.GetAsync("/stac");
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        firstResponse.Headers.ETag.Should().NotBeNull();
+        firstResponse.Headers.ETag!.IsWeak.Should().BeFalse();
+        firstResponse.Headers.ETag!.Tag.Should().NotBeNullOrWhiteSpace();
+
+        using var conditionalRequest = new HttpRequestMessage(HttpMethod.Get, "/stac");
+        conditionalRequest.Headers.TryAddWithoutValidation("If-None-Match", firstResponse.Headers.ETag.ToString());
+
+        var secondResponse = await _fixture.Client.SendAsync(conditionalRequest);
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.NotModified);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /stac")]
     public async Task GetCatalog_ContainsConformanceClasses()
     {
         var response = await _fixture.Client.GetAsync("/stac");

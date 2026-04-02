@@ -72,6 +72,8 @@ services:
       FileStorage__AwsS3__ForcePathStyle: "${HONUA_S3_FORCE_PATH_STYLE:-true}"
       FileStorage__AwsS3__AccessKeyId: "${HONUA_S3_ACCESS_KEY_ID:-}"
       FileStorage__AwsS3__SecretAccessKey: "${HONUA_S3_SECRET_ACCESS_KEY:-}"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-}"
+      Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-}"
       ASPNETCORE_URLS: "http://+:8080"
     depends_on:
       postgres:

@@ -28,6 +28,32 @@ public sealed record CatalogMetadata
     /// MapServer rendering configuration for this service. When null, defaults are used.
     /// </summary>
     public MapServerConfig? MapServer { get; init; }
+
+    /// <summary>
+    /// Optional STAC-specific metadata used when exposing the resource through the STAC API.
+    /// </summary>
+    public StacCatalogMetadata? Stac { get; init; }
+}
+
+/// <summary>
+/// Optional STAC metadata declared for a service or layer.
+/// </summary>
+public sealed record StacCatalogMetadata
+{
+    /// <summary>
+    /// SPDX license identifier or STAC-recognized value such as <c>proprietary</c>.
+    /// </summary>
+    public string? License { get; init; }
+
+    /// <summary>
+    /// Keywords used to improve STAC collection discovery.
+    /// </summary>
+    public string[]? Keywords { get; init; }
+
+    /// <summary>
+    /// STAC extension URIs explicitly declared by the resource.
+    /// </summary>
+    public string[]? Extensions { get; init; }
 }
 
 /// <summary>

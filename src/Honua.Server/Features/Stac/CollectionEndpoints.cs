@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -32,6 +33,7 @@ internal static class CollectionEndpoints
             .WithDescription("Lists all available STAC collections")
             .WithTags("STAC")
             .CacheOutput("StacCollections")
+            .WithETag()
             .Produces<StacCollectionsResponse>(200, MediaTypes.Json)
             .Produces(404);
 
@@ -42,6 +44,7 @@ internal static class CollectionEndpoints
             .WithDescription("Returns a single STAC collection with extent and links")
             .WithTags("STAC")
             .CacheOutput("StacCollection")
+            .WithETag()
             .Produces<StacCollection>(200, MediaTypes.Json)
             .Produces(404);
 

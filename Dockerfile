@@ -66,7 +66,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:DebugSymbols=false \
       $EXTRA_MSBUILD_ARGS && \
     rm -rf /app/BlazorDebugProxy && \
-    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot; fi && \
+    if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot/admin; fi && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
