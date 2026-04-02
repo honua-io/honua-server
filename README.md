@@ -123,7 +123,7 @@ HONUA_ADMIN_PASSWORD="change-me"
 **Common options:**
 ```bash
 HONUA_SERVE_ADMIN_UI=true                 # Serve admin UI at /admin
-HONUA_SERVE_STAC_DEMO=true               # Serve the STAC operations demo at /samples/stac-ops/ (default: on in Development/Test)
+HONUA_SERVE_STAC_DEMO=true               # Serve the STAC operations demo at /samples/stac-ops/ (default: on in Development/Test; Docker production builds also require --build-arg HONUA_INCLUDE_STAC_OPS_DEMO=true)
 HONUA_SERVE_API_DOCS=true                # Interactive API explorer at /docs (default: on in Development)
 HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
 HONUA_OPENTELEMETRY=true                  # Distributed tracing

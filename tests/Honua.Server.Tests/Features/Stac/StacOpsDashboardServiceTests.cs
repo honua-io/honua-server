@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 using FluentAssertions;
@@ -52,6 +53,21 @@ public sealed class StacOpsDashboardServiceTests
             .Cast<string>()
             .ToArray();
         driftNotes.Should().Contain(note => note.Contains("Live item timestamps reached 2026-03-30T23:45:00-10:00", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LoadAsync_StaleCollectionListing_KeepsListingAndDetailValidatorsSeparate()
+    {
+        var snapshot = await LoadSnapshotAsync(HandleRequestWithTemporalDriftFixture);
+        var collection = GetCollection(snapshot, "alpha");
+
+        collection.GetType().GetProperty("CollectionListETag")!.GetValue(collection).Should().Be("\"collections-stale\"");
+        collection.GetType().GetProperty("DetailETag")!.GetValue(collection).Should().Be("\"collection-alpha-fresh\"");
+
+        var driftNotes = ((System.Collections.IEnumerable)collection.GetType().GetProperty("DriftNotes")!.GetValue(collection)!)
+            .Cast<string>()
+            .ToArray();
+        driftNotes.Should().Contain(note => note.Contains("cached /stac/collections extent", StringComparison.Ordinal));
     }
 
     private static async Task<object> LoadSnapshotAsync(Func<HttpRequestMessage, HttpResponseMessage> responder)
@@ -118,7 +134,8 @@ public sealed class StacOpsDashboardServiceTests
                     { "rel": "child", "href": "https://demo.example/stac/collections/alpha" }
                   ]
                 }
-                """),
+                """,
+                "\"catalog-v1\""),
             "/stac/collections" => CreateJsonResponse(
                 """
                 {
@@ -140,7 +157,8 @@ public sealed class StacOpsDashboardServiceTests
                   ],
                   "links": []
                 }
-                """),
+                """,
+                "\"collections-stale\""),
             "/stac/collections/alpha" => CreateJsonResponse(
                 """
                 {
@@ -157,7 +175,8 @@ public sealed class StacOpsDashboardServiceTests
                     { "rel": "items", "href": "https://demo.example/stac/collections/alpha/items" }
                   ]
                 }
-                """),
+                """,
+                "\"collection-alpha-fresh\""),
             "/stac/collections/alpha/items?limit=2" or "/stac/collections/alpha/items%3Flimit=2" => CreateJsonResponse(
                 """
                 {
@@ -327,7 +346,8 @@ public sealed class StacOpsDashboardServiceTests
                     { "rel": "child", "href": "https://demo.example/stac/collections/alpha" }
                   ]
                 }
-                """),
+                """,
+                "\"catalog-v1\""),
             "/stac/collections" => CreateJsonResponse(
                 """
                 {
@@ -348,7 +368,8 @@ public sealed class StacOpsDashboardServiceTests
                   ],
                   "links": []
                 }
-                """),
+                """,
+                "\"collections-stale\""),
             "/stac/collections/alpha" => CreateJsonResponse(
                 """
                 {
@@ -364,7 +385,8 @@ public sealed class StacOpsDashboardServiceTests
                     { "rel": "items", "href": "https://demo.example/stac/collections/alpha/items" }
                   ]
                 }
-                """),
+                """,
+                "\"collection-alpha-fresh\""),
             "/stac/collections/alpha/items?limit=2" or "/stac/collections/alpha/items%3Flimit=2" => CreateJsonResponse(CreateTemporalDriftItemsResponse()),
             "/stac/search?limit=50" => CreateJsonResponse(CreateTemporalDriftItemsResponse()),
             "/stac/search?collections=alpha&limit=3" => CreateJsonResponse(CreateTemporalDriftItemsResponse()),
@@ -496,12 +518,19 @@ public sealed class StacOpsDashboardServiceTests
         };
     }
 
-    private static HttpResponseMessage CreateJsonResponse(string body)
+    private static HttpResponseMessage CreateJsonResponse(string body, string? etag = null)
     {
-        return new HttpResponseMessage(HttpStatusCode.OK)
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };
+
+        if (!string.IsNullOrWhiteSpace(etag))
+        {
+            response.Headers.ETag = EntityTagHeaderValue.Parse(etag);
+        }
+
+        return response;
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler

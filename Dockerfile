@@ -30,6 +30,8 @@ COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 ARG TARGETARCH
 # Slim by default: set HONUA_INCLUDE_ADMIN_UI=true to keep Admin UI static assets.
 ARG HONUA_INCLUDE_ADMIN_UI=false
+# Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
+ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 
 # Restore dependencies
 RUN --mount=type=cache,target=/root/.nuget/packages \
@@ -39,7 +41,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=$HONUA_INCLUDE_STAC_OPS_DEMO" && \
     dotnet restore src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS
@@ -56,7 +58,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     export PROTOBUF_PROTOC=/usr/bin/protoc && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeAdminUi=$HONUA_INCLUDE_ADMIN_UI -p:HonuaIncludeStacOpsDemo=$HONUA_INCLUDE_STAC_OPS_DEMO" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
@@ -68,6 +70,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       $EXTRA_MSBUILD_ARGS && \
     rm -rf /app/BlazorDebugProxy && \
     if [ "$HONUA_INCLUDE_ADMIN_UI" != "true" ]; then rm -rf /app/wwwroot/admin; fi && \
+    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot/samples/stac-ops; fi && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage

@@ -21,6 +21,7 @@ The script also injects deterministic, non-production connection-encryption sett
 
 - The sample is hosted at `/samples/stac-ops/`. Requests to `/samples/stac-ops` may redirect to `/samples/stac-ops/index.html`; use the trailing-slash URL for manual review.
 - Honua serves the demo by default in `Development` and `Test`. In other environments, enable it with `HONUA_SERVE_STAC_DEMO=true`.
+- Docker production builds trim the sample assets by default. To keep `/samples/stac-ops/` in a custom image, build with `--build-arg HONUA_INCLUDE_STAC_OPS_DEMO=true` and still set `HONUA_SERVE_STAC_DEMO=true` at runtime.
 - The dashboard probes the same origin by default. You can override the source to another base URL, but browser access still depends on that target allowing the required CORS requests.
 
 ## Scenarios
@@ -31,7 +32,7 @@ The script also injects deterministic, non-production connection-encryption sett
 ## What Reviewers Should See
 
 - Status cards for `/healthz/live`, `/healthz/ready`, `/stac`, cache validators, discovery freshness, and overall compatibility.
-- Collection cards that distinguish declared `stac_extensions` from observed namespaced properties such as `eo:*`, `proj:*`, and `view:*`.
+- Collection cards that distinguish cached `/stac/collections` freshness evidence from live collection-detail validators while still separating declared `stac_extensions` from observed namespaced properties such as `eo:*`, `proj:*`, and `view:*`.
 - Query workbench probes for search, paging continuity, sort, fields, and CQL2 filter behavior.
 - A request ledger with HTTP status, duration, ETag, cache headers, and probe notes for every sampled call.
 

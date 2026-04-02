@@ -105,7 +105,7 @@
                         <h2>Discovery and indexability</h2>
                     </div>
                     <p class="panel-caption">
-                        Live collection detail, sampled item coverage, ETags, declared STAC support, and observed extension usage.
+                        Cached listing extents, live collection detail, sampled item coverage, listing/detail ETags, declared STAC support, and observed extension usage.
                     </p>
                 </div>
                 <div class="collection-grid">
@@ -130,7 +130,7 @@
                                     <dd>@(collection.LatestObservedDatetime ?? "missing")</dd>
                                 </div>
                                 <div>
-                                    <dt>Cached extent end</dt>
+                                    <dt>Listing extent end</dt>
                                     <dd>@(collection.AdvertisedLatestDatetime ?? "open")</dd>
                                 </div>
                                 <div>
@@ -146,8 +146,12 @@
                                     <dd>@(collection.License ?? "unspecified")</dd>
                                 </div>
                                 <div>
-                                    <dt>Metadata ETag</dt>
-                                    <dd class="etag-value">@Shorten(collection.ETag)</dd>
+                                    <dt>Listing ETag</dt>
+                                    <dd class="etag-value">@Shorten(collection.CollectionListETag)</dd>
+                                </div>
+                                <div>
+                                    <dt>Detail ETag</dt>
+                                    <dd class="etag-value">@Shorten(collection.DetailETag)</dd>
                                 </div>
                             </dl>
                             <div class="tag-section">

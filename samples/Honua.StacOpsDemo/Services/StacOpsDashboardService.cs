@@ -64,6 +64,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         var collectionInsights = await AnalyzeCollectionsAsync(
             sourceBaseUrl,
             collectionDocuments,
+            collections.Request.ETag,
             ledger,
             cancellationToken).ConfigureAwait(false);
 
@@ -138,6 +139,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
     private async Task<CollectionInsight[]> AnalyzeCollectionsAsync(
         string sourceBaseUrl,
         StacCollectionDocument[] collections,
+        string? collectionListETag,
         ConcurrentQueue<RequestLedgerEntry> ledger,
         CancellationToken cancellationToken)
     {
@@ -147,7 +149,12 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             await concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                return await AnalyzeCollectionAsync(sourceBaseUrl, collection, ledger, cancellationToken).ConfigureAwait(false);
+                return await AnalyzeCollectionAsync(
+                    sourceBaseUrl,
+                    collection,
+                    collectionListETag,
+                    ledger,
+                    cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -164,6 +171,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
     private async Task<CollectionInsight> AnalyzeCollectionAsync(
         string sourceBaseUrl,
         StacCollectionDocument collection,
+        string? collectionListETag,
         ConcurrentQueue<RequestLedgerEntry> ledger,
         CancellationToken cancellationToken)
     {
@@ -287,7 +295,8 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             ObservedExtensionKeys: observedKeys,
             CachedTemporalDriftDetected: cachedTemporalDriftDetected,
             DriftNotes: driftNotes,
-            ETag: detail.Request.ETag,
+            CollectionListETag: collectionListETag,
+            DetailETag: detail.Request.ETag,
             EoMetric: BuildNumericMetric(sampleItems, "eo:cloud_cover", "avg cloud"),
             ProjectionMetric: BuildDistinctMetric(sampleItems, "proj:epsg", "EPSG"),
             ViewMetric: BuildNumericMetric(sampleItems, "view:sun_azimuth", "sun azimuth"),
@@ -642,7 +651,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             .ToArray();
         var cacheValidatorWarning = string.IsNullOrWhiteSpace(catalog.Request.ETag) ||
             string.IsNullOrWhiteSpace(collections.Request.ETag) ||
-            collectionInsights.Any(static collection => string.IsNullOrWhiteSpace(collection.ETag));
+            collectionInsights.Any(static collection => string.IsNullOrWhiteSpace(collection.DetailETag));
 
         return
         [
@@ -665,7 +674,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
                 Summary: cacheValidatorWarning ? "Metadata validators are incomplete" : "Metadata validators are present",
                 Detail: cacheValidatorWarning
                     ? "One or more STAC metadata routes did not expose an ETag header during this run."
-                    : "The sampled /stac and /stac/collections* responses all advertised strong ETags."),
+                    : "The sampled /stac, /stac/collections, and /stac/collections/{id} responses all advertised strong ETags."),
             new StatusCard(
                 Title: "Discovery Freshness",
                 Level: staleMetadataSuspected ? SignalLevel.Warn : SignalLevel.Pass,
@@ -954,7 +963,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         if (cachedTemporalDriftDetected)
         {
             notes.Add(
-                $"Live item timestamps reached {latestObservedDatetime}, but the cached collection temporal extent still ended at {advertisedLatestDatetime}.");
+                $"Live item timestamps reached {latestObservedDatetime}, but the cached /stac/collections extent still ended at {advertisedLatestDatetime}.");
         }
 
         return notes.ToArray();
