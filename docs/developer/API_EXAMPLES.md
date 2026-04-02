@@ -230,11 +230,15 @@ STAC items always include `properties.datetime`. When Honua cannot resolve a tim
 curl "http://localhost:8080/stac/search?collections=0&limit=3&sortby=-observed_at"
 ```
 
+For manual verification, numeric and RFC 3339 timestamp fields provide the strongest sort evidence. String-only fields may still return `200 OK`, but they are weaker proof that descending order was honored.
+
 **Fields extension probe:**
 
 ```bash
 curl "http://localhost:8080/stac/search?collections=0&limit=1&fields=properties,-name"
 ```
+
+Use a removable property such as `name` or `platform` for `fields` probes. Do not try to remove `properties.datetime`; Honua keeps that STAC field in item and search responses and uses `null` when no time value resolves.
 
 **CQL2 text filter probe:**
 

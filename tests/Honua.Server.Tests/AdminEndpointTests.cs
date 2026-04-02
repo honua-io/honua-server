@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Net;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Domain;
@@ -10,6 +11,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests;
 
@@ -192,6 +194,46 @@ public sealed class AdminEndpointTests : IAsyncLifetime
         var html = await response.Content.ReadAsStringAsync();
         html.Should().Contain("<base href=\"/admin/\" />");
         html.Should().Contain("Honua Admin");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /admin/_framework/blazor.webassembly.js")]
+    public async Task GetAdminUiFrameworkAsset_WhenAdminUiEnabled_ReturnsStaticFile()
+    {
+        using var response = await _fixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Contain("javascript");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /admin/index.html")]
+    [Endpoint("GET /admin/_framework/blazor.webassembly.js")]
+    public async Task GetAdminUiAssets_WhenAdminUiDisabled_Return404EvenWhenStacDemoEnabled()
+    {
+        var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("ServeAdminUI", "false");
+                builder.UseSetting("ServeStacOpsDemo", "true");
+            });
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            using var shellResponse = await isolatedFixture.Client.GetAsync("/admin/index.html");
+            using var frameworkResponse = await isolatedFixture.Client.GetAsync("/admin/_framework/blazor.webassembly.js");
+
+            shellResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            frameworkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

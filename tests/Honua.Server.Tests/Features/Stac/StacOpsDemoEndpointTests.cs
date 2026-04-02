@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Stac;
 
@@ -53,6 +54,46 @@ public sealed class StacOpsDemoEndpointTests : IAsyncLifetime
         html.Should().Contain("<base href=\"/samples/stac-ops/\" />");
         html.Should().Contain("<link rel=\"stylesheet\" href=\"Honua.StacOpsDemo.styles.css\" />");
         html.Should().Contain("Honua STAC Ops Demo");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /samples/stac-ops/_framework/blazor.webassembly.js")]
+    public async Task GetStacOpsDemoFrameworkAsset_WhenDemoEnabled_ReturnsStaticFile()
+    {
+        using var response = await _fixture.Client.GetAsync("/samples/stac-ops/_framework/blazor.webassembly.js");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Contain("javascript");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /samples/stac-ops/index.html")]
+    [Endpoint("GET /samples/stac-ops/_framework/blazor.webassembly.js")]
+    public async Task GetStacOpsDemoAssets_WhenDemoDisabled_Return404EvenWhenAdminUiEnabled()
+    {
+        var isolatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("ServeAdminUI", "true");
+                builder.UseSetting("ServeStacOpsDemo", "false");
+            });
+
+        try
+        {
+            await isolatedFixture.InitializeAsync();
+
+            using var shellResponse = await isolatedFixture.Client.GetAsync("/samples/stac-ops/index.html");
+            using var frameworkResponse = await isolatedFixture.Client.GetAsync("/samples/stac-ops/_framework/blazor.webassembly.js");
+
+            shellResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            frameworkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await isolatedFixture.DisposeAsync();
+        }
     }
 
     private async Task<HttpResponseMessage> GetHostedShellAsync(string path)
