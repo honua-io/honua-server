@@ -936,6 +936,7 @@ jobs:
             --self-contained \
             -p:PublishAot=true \
             -p:HonuaSkipAdminClientForAotVerification=true \
+            -p:HonuaIncludeStacOpsDemo=false \
             -p:StripSymbols=true \
             -o ./publish
         working-directory: src/Honua.Server
