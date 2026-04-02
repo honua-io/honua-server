@@ -40,13 +40,14 @@ readonly SAMPLE_URL="${BASE_URL}/samples/stac-ops/"
 readonly READY_URL="${BASE_URL}/healthz/ready"
 readonly BASE_SEED="${ROOT_DIR}/tests/seed/stac-ops-demo-v1.sql"
 readonly DELTA_SEED="${ROOT_DIR}/tests/seed/stac-ops-demo-cache-delta.sql"
+readonly COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
 readonly DB_SERVICE="${HONUA_STAC_DEMO_POSTGRES_SERVICE:-postgres}"
 readonly DB_USER="${HONUA_STAC_DEMO_DB_USER:-honua_user}"
 readonly DB_PASSWORD="${HONUA_STAC_DEMO_DB_PASSWORD:-honua_password}"
 readonly DB_NAME="${HONUA_STAC_DEMO_DB_NAME:-honua_dev}"
 
 compose() {
-  docker compose "$@"
+  docker compose -f "${COMPOSE_FILE}" --project-directory "${ROOT_DIR}" "$@"
 }
 
 wait_for_ready() {
@@ -112,5 +113,5 @@ Expected signals:
 - stale-cache: baseline signals plus discovery freshness and temporal-drift warnings for cached collection metadata versus live item timestamps.
 
 Cleanup:
-COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} HONUA_HTTP_PORT=${HONUA_HTTP_PORT} POSTGRES_PORT=${POSTGRES_PORT} docker compose down --remove-orphans --volumes
+COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME} HONUA_HTTP_PORT=${HONUA_HTTP_PORT} POSTGRES_PORT=${POSTGRES_PORT} docker compose -f "${COMPOSE_FILE}" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes
 EOF
