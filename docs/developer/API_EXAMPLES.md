@@ -223,6 +223,7 @@ curl "http://localhost:8080/stac/collections/0/items?limit=2&bbox=-158.30,21.20,
 ```
 
 STAC items always include `properties.datetime`. When Honua cannot resolve a time field for the item, that property is still present and set to `null`. Pagination links preserve encoded `bbox` and `datetime` filters so callers can replay the exact query.
+When the layer declares STAC item extensions, Honua also emits the declared `stac_extensions` array on item and search hits.
 
 **Search via GET:**
 
@@ -235,7 +236,7 @@ For manual verification, numeric and RFC 3339 timestamp fields provide the stron
 **Fields extension probe:**
 
 ```bash
-curl "http://localhost:8080/stac/search?collections=0&limit=1&fields=properties,-name"
+curl "http://localhost:8080/stac/search?collections=0&limit=1&fields=properties,-platform"
 ```
 
 Use a removable property such as `name` or `platform` for `fields` probes. Do not try to remove `properties.datetime`; Honua keeps that STAC field in item and search responses and uses `null` when no time value resolves.
@@ -243,7 +244,7 @@ Use a removable property such as `name` or `platform` for `fields` probes. Do no
 **CQL2 text filter probe:**
 
 ```bash
-curl "http://localhost:8080/stac/search?collections=0&limit=3&filter=quality_score%20%3E%2080&filter-lang=cql2-text"
+curl "http://localhost:8080/stac/search?collections=0&limit=5&filter=quality_score%20%3E%3D%2070&filter-lang=cql2-text"
 ```
 
 **Search via POST:**

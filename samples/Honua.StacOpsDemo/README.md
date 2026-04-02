@@ -22,6 +22,7 @@ The script also injects deterministic, non-production connection-encryption sett
 - The sample shell is available from both `/samples/stac-ops` and `/samples/stac-ops/`. The bare path may redirect to `/samples/stac-ops/index.html`; the helper script prints the trailing-slash URL.
 - Honua serves the demo by default in `Development` and `Test`. In other environments, enable it with `HONUA_SERVE_STAC_DEMO=true`.
 - Docker production builds trim the sample assets by default. To keep `/samples/stac-ops/` in a custom image, build with `--build-arg HONUA_INCLUDE_STAC_OPS_DEMO=true` and still set `HONUA_SERVE_STAC_DEMO=true` at runtime.
+- The source override also round-trips through `?source=<base-url>` so reviewers can bookmark or share a demo URL that targets another Honua origin.
 - The dashboard probes the same origin by default. You can override the source to another base URL, but browser access still depends on that target allowing the required CORS requests.
 
 ## Scenarios
@@ -42,9 +43,9 @@ The script also injects deterministic, non-production connection-encryption sett
 - `GET /stac`, `GET /stac/collections`, and `GET /stac/collections/{collectionId}` emit strong `ETag` headers and support `If-None-Match`.
 - Freshness checks keep the cached `/stac/collections` validator separate from the live `/stac/collections/{collectionId}` validator so stale listing metadata does not get mistaken for collection-detail drift.
 - Collection detail always includes `license` and defaults it to `proprietary` when the layer does not declare a STAC-specific value. It may also include `keywords` and `stac_extensions`, plus an `alternate` link to `/ogc/features/collections/{collectionId}`.
-- Collection items and item-search results always include `properties.datetime`. If Honua cannot resolve a time field, the property remains present with a `null` value.
+- Collection items and item-search results preserve declared item-level `stac_extensions` when configured and always include `properties.datetime`. If Honua cannot resolve a time field, the property remains present with a `null` value.
 - Pagination links preserve encoded `bbox` and `datetime` filters so freshness and continuity checks replay the exact sampled query.
-- The workbench probes `GET /stac/search` with `sortby`, `fields`, and `filter` plus `filter-lang=cql2-text`. It only treats sort as proven when sampled values are numeric or RFC 3339 timestamps, and it excludes a non-required property instead of trying to remove mandatory `properties.datetime`.
+- The workbench probes `GET /stac/search` with `sortby`, `fields`, and `filter` plus `filter-lang=cql2-text`. It only treats sort as proven when sampled values are numeric or RFC 3339 timestamps, uses a deterministic filter such as `quality_score >= 70` when that seeded field is available, and excludes a non-required property instead of trying to remove mandatory `properties.datetime`.
 
 ## Script Overrides
 
