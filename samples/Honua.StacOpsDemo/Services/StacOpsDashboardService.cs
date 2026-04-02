@@ -475,12 +475,34 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
                 RequestPath: probe.Request.Url);
         }
 
-        var values = probe.Document?.Features?
-            .Select(item => TryReadComparable(item.Properties, sortField))
-            .Where(static value => value.HasValue)
-            .Select(static value => value!.Value)
-            .ToArray() ?? [];
+        var sampledItems = probe.Document?.Features ?? [];
+        if (sampledItems.Length < 2)
+        {
+            return new QueryProbeInsight(
+                Label: "Sort probe",
+                Level: SignalLevel.Warn,
+                Verdict: $"Not enough samples to confirm '{sortField}'",
+                Detail: "The sampled search response did not return enough items to prove descending order from live data.",
+                RequestPath: probe.Request.Url);
+        }
 
+        var comparableValues = sampledItems
+            .Select(item => TryReadComparable(item.Properties, sortField))
+            .ToArray();
+
+        if (comparableValues.Any(static value => !value.HasValue))
+        {
+            return new QueryProbeInsight(
+                Label: "Sort probe",
+                Level: SignalLevel.Warn,
+                Verdict: $"Order not asserted for '{sortField}'",
+                Detail: "The sort request succeeded, but the sampled field values were not uniformly numeric or RFC 3339 timestamps, so the dashboard did not treat their order as proof of sorting behavior.",
+                RequestPath: probe.Request.Url);
+        }
+
+        var values = comparableValues
+            .Select(static value => value!.Value)
+            .ToArray();
         var isDescending = values.Length < 2 || values.SequenceEqual(values.OrderDescending());
         return new QueryProbeInsight(
             Label: "Sort probe",
@@ -1166,7 +1188,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             return datetime.ToUnixTimeMilliseconds();
         }
 
-        return value.GetHashCode(StringComparison.OrdinalIgnoreCase);
+        return null;
     }
 
     private static HashSet<string> ExtractCatalogChildIds(StacCatalogDocument? catalog)
