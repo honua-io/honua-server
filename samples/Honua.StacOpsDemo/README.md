@@ -17,6 +17,12 @@ http://localhost:18080/samples/stac-ops/
 It uses a dedicated Compose project and ports by default so it does not need production credentials or a proprietary backing service.
 The script also injects deterministic, non-production connection-encryption settings so local readiness checks pass without extra secret setup.
 
+## Hosted Behavior
+
+- The sample is hosted at `/samples/stac-ops/`. Requests to `/samples/stac-ops` may redirect to `/samples/stac-ops/index.html`; use the trailing-slash URL for manual review.
+- Honua serves the demo by default in `Development` and `Test`. In other environments, enable it with `HONUA_SERVE_STAC_DEMO=true`.
+- The dashboard probes the same origin by default. You can override the source to another base URL, but browser access still depends on that target allowing the required CORS requests.
+
 ## Scenarios
 
 - `baseline`: Seeds one healthy collection and one warning collection. Expect a mixed dashboard with healthy query probes plus warning signals for undeclared extension usage and missing STAC `datetime`.
@@ -28,6 +34,15 @@ The script also injects deterministic, non-production connection-encryption sett
 - Collection cards that distinguish declared `stac_extensions` from observed namespaced properties such as `eo:*`, `proj:*`, and `view:*`.
 - Query workbench probes for search, paging continuity, sort, fields, and CQL2 filter behavior.
 - A request ledger with HTTP status, duration, ETag, cache headers, and probe notes for every sampled call.
+
+## STAC Contract The Demo Expects
+
+- `GET /stac` advertises STAC core, collections, item-search, the OGC API Features bridge, plus fields, sort, and filter conformance, and links to both `search` and `data`.
+- `GET /stac`, `GET /stac/collections`, and `GET /stac/collections/{collectionId}` emit strong `ETag` headers and support `If-None-Match`.
+- Collection detail always includes `license` and defaults it to `proprietary` when the layer does not declare a STAC-specific value. It may also include `keywords` and `stac_extensions`, plus an `alternate` link to `/ogc/features/collections/{collectionId}`.
+- Collection items and item-search results always include `properties.datetime`. If Honua cannot resolve a time field, the property remains present with a `null` value.
+- Pagination links preserve encoded `bbox` and `datetime` filters so freshness and continuity checks replay the exact sampled query.
+- The workbench probes `GET /stac/search` with `sortby`, `fields`, and `filter` plus `filter-lang=cql2-text`, so those paths should be enabled in the review stack.
 
 ## Script Overrides
 

@@ -8,6 +8,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 |-------------------|-------------|------------------|-----|
 | **ArcGIS Pro/Desktop** | FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` or `/rest/services/{id}/MapServer` | Esri compatibility (data + maps) |
 | **QGIS/OpenLayers** | OGC API Features | `/ogc/features` | Open standards |
+| **STAC browsers/catalog tooling** | STAC API | `/stac` | Catalog discovery, item search, extension-aware metadata |
 | **QGIS/GeoServer clients (legacy OGC)** | WMS 1.3 / WMTS 1.0 | `.../MapServer/WMS` or `.../MapServer/WMTS` | Legacy OGC raster map services |
 | **Server-rendered maps (OGC)** | OGC API Maps | `/ogc/maps` | Standards-based rendered map images |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
@@ -86,6 +87,39 @@ Honua exposes multiple industry-standard geospatial APIs. This page helps you ch
 - QGIS and open-source GIS tooling
 - Vendor-neutral integration
 - Simple feature queries by bbox or filter
+
+---
+
+## **STAC API**
+
+**Best for**: STAC-native catalog discovery, collection review, and item search
+
+**Endpoint structure:**
+```
+/stac
+|-- /
+|-- /collections
+|-- /collections/{id}
+|-- /collections/{id}/items
+|-- /collections/{id}/items/{itemId}
+|-- /search
+```
+
+**Output formats:**
+- Catalog and collections: `json`
+- Items and search: `geojson`
+
+**Contract notes:**
+- Catalog, collection list, and single-collection metadata routes emit strong `ETag` values for conditional GET.
+- Collections always include a `license`; when no STAC-specific license is declared, Honua emits `proprietary`. `keywords` and `stac_extensions` appear when declared in layer metadata.
+- Collection detail includes `items` links plus an `alternate` link to the corresponding OGC API Features collection.
+- Items always include `properties.datetime`; when a layer has no resolvable time field, the property remains present with a `null` value.
+- Search supports GET and POST with `fields`, `sortby`, and CQL2 filtering (`filter` plus `filter-lang`).
+
+**Typical use cases:**
+- STAC browser and catalog interoperability
+- Extension-awareness review for EO, Projection, and View metadata
+- Cross-checking STAC discovery output against OGC API Features item access
 
 ---
 
@@ -226,7 +260,7 @@ Standards-based APIs follow a fundamentally different versioning model than the 
 
 ### Path stability
 
-Standards endpoints (`/rest/services/*/FeatureServer`, `/rest/services/*/MapServer`, `/ogc/*`, `/odata`, WMS/WMTS) use **stable protocol paths dictated by the specification they implement**. They are **not path-versioned by Honua**. The URL structure is defined by the external standard (Esri REST, OGC, OData), not by Honua's internal release cadence.
+Standards endpoints (`/rest/services/*/FeatureServer`, `/rest/services/*/MapServer`, `/ogc/*`, `/stac`, `/odata`, WMS/WMTS) use **stable protocol paths dictated by the specification they implement**. They are **not path-versioned by Honua**. The URL structure is defined by the external standard (Esri REST, OGC, OData, STAC), not by Honua's internal release cadence.
 
 ### Backward compatibility
 

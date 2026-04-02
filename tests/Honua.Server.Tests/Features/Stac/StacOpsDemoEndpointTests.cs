@@ -34,6 +34,7 @@ public sealed class StacOpsDemoEndpointTests : IAsyncLifetime
         var html = await response.Content.ReadAsStringAsync();
 
         html.Should().Contain("<base href=\"/samples/stac-ops/\" />");
+        html.Should().Contain("<link rel=\"stylesheet\" href=\"Honua.StacOpsDemo.styles.css\" />");
         html.Should().Contain("Honua STAC Ops Demo");
     }
 

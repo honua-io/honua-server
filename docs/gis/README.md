@@ -4,7 +4,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Getting Started
 
-- [Protocols Overview](STANDARDS_APIS.md) — All supported protocols (FeatureServer, MapServer, OGC, OData, MVT)
+- [Protocols Overview](STANDARDS_APIS.md) — All supported protocols (FeatureServer, MapServer, STAC, OGC, OData, MVT)
 - [QGIS Tutorial](tutorials/qgis-getting-started.md) — Zero to querying in 5 minutes
 - [GeoServer Migration](tutorials/geoserver-migration-guide.md) — Endpoint mapping and automated import
 
