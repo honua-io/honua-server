@@ -180,6 +180,21 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /admin/")]
+    public async Task GetAdminUi_WithTrailingSlash_ServesHostedShell()
+    {
+        var response = await _fixture.Client.GetAsync("/admin/");
+
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/html");
+
+        var html = await response.Content.ReadAsStringAsync();
+        html.Should().Contain("<base href=\"/admin/\" />");
+        html.Should().Contain("Honua Admin");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /api/v1/admin/openapi.json")]
     public async Task GetAdminOpenApiSpec_ReturnsValidOpenApiSpecification()

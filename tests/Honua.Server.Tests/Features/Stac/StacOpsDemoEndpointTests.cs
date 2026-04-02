@@ -38,6 +38,23 @@ public sealed class StacOpsDemoEndpointTests : IAsyncLifetime
         html.Should().Contain("Honua STAC Ops Demo");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.StacCatalog)]
+    [Endpoint("GET /samples/stac-ops/")]
+    public async Task GetStacOpsDemo_WithTrailingSlash_ServesHostedSampleShell()
+    {
+        using var response = await _fixture.Client.GetAsync("/samples/stac-ops/");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/html");
+
+        var html = await response.Content.ReadAsStringAsync();
+
+        html.Should().Contain("<base href=\"/samples/stac-ops/\" />");
+        html.Should().Contain("<link rel=\"stylesheet\" href=\"Honua.StacOpsDemo.styles.css\" />");
+        html.Should().Contain("Honua STAC Ops Demo");
+    }
+
     private async Task<HttpResponseMessage> GetHostedShellAsync(string path)
     {
         var initialResponse = await _fixture.Client.GetAsync(path);

@@ -1368,7 +1368,7 @@ static void MapHostedBlazorFallback(
 {
     var prefix = pathPrefix.Value?.TrimEnd('/') ??
         throw new InvalidOperationException("Hosted Blazor path prefix is required.");
-    var fallbackRoute = $"{prefix}/{{*path:nonfile:minlength(1)}}";
+    var fallbackRoute = $"{prefix}/{{*path:nonfile}}";
     var fallbackFile = $"{prefix.TrimStart('/')}/index.html";
 
     endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
