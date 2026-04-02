@@ -26,6 +26,11 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
     private static readonly Dictionary<string, ExtensionDescriptor> KnownExtensionsByKey =
         KnownExtensions.ToDictionary(static descriptor => descriptor.Key, StringComparer.OrdinalIgnoreCase);
 
+    private static readonly HashSet<string> NonRemovableFieldProperties = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "datetime"
+    };
+
     public async Task<DashboardSnapshot> LoadAsync(string? sourceInput, CancellationToken cancellationToken)
     {
         var sourceBaseUrl = ResolveSourceBaseUrl(sourceInput);
@@ -520,9 +525,9 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         ConcurrentQueue<RequestLedgerEntry> ledger,
         CancellationToken cancellationToken)
     {
-        var removableField = collection.ObservedProperties.FirstOrDefault(static property =>
+        var removableField = collection.ObservedProperties.FirstOrDefault(property =>
             string.Equals(property, "name", StringComparison.OrdinalIgnoreCase))
-            ?? collection.ObservedProperties.FirstOrDefault();
+            ?? collection.ObservedProperties.FirstOrDefault(property => !NonRemovableFieldProperties.Contains(property));
 
         if (string.IsNullOrWhiteSpace(removableField))
         {
@@ -971,11 +976,31 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
 
     private static string? GetLatestObservedDatetime(IEnumerable<StacItemDocument> items)
     {
-        return items
-            .Select(static item => GetObservedTimestamp(item))
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .OrderByDescending(static value => value, StringComparer.Ordinal)
-            .FirstOrDefault();
+        string? latestRawValue = null;
+        DateTimeOffset latestInstant = default;
+        var foundLatestInstant = false;
+
+        foreach (var value in items.Select(static item => GetObservedTimestamp(item)))
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                !DateTimeOffset.TryParse(
+                    value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var candidateInstant))
+            {
+                continue;
+            }
+
+            if (!foundLatestInstant || candidateInstant > latestInstant)
+            {
+                latestInstant = candidateInstant;
+                latestRawValue = value;
+                foundLatestInstant = true;
+            }
+        }
+
+        return latestRawValue;
     }
 
     private static string? GetAdvertisedLatestDatetime(StacCollectionDocument collection)
