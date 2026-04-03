@@ -80,9 +80,11 @@ internal sealed class StacMappingService
             Id = collectionId,
             Title = layer.Name,
             Description = layer.Description ?? $"STAC collection for {layer.Name}",
-            License = "proprietary",
+            License = ResolveLicense(layer),
             Extent = await extent,
-            Links = links.ToImmutable()
+            Keywords = ResolveKeywords(layer),
+            Links = links.ToImmutable(),
+            StacExtensions = ResolveDeclaredExtensions(layer)
         };
     }
 
@@ -179,8 +181,51 @@ internal sealed class StacMappingService
             Properties = properties,
             Links = links,
             Assets = assets,
-            Collection = collectionId
+            Collection = collectionId,
+            StacExtensions = ResolveDeclaredExtensions(layer)
         };
+    }
+
+    private static string ResolveLicense(LayerDefinition layer)
+    {
+        var declaredLicense = layer.Metadata?.Stac?.License;
+        return string.IsNullOrWhiteSpace(declaredLicense)
+            ? "proprietary"
+            : declaredLicense.Trim();
+    }
+
+    private static ImmutableArray<string>? ResolveKeywords(LayerDefinition layer)
+    {
+        var keywords = layer.Metadata?.Stac?.Keywords;
+        if (keywords is null || keywords.Length == 0)
+        {
+            return null;
+        }
+
+        var normalized = keywords
+            .Where(static keyword => !string.IsNullOrWhiteSpace(keyword))
+            .Select(static keyword => keyword.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+
+        return normalized.Length == 0 ? null : normalized;
+    }
+
+    private static ImmutableArray<string>? ResolveDeclaredExtensions(LayerDefinition layer)
+    {
+        var extensions = layer.Metadata?.Stac?.Extensions;
+        if (extensions is null || extensions.Length == 0)
+        {
+            return null;
+        }
+
+        var normalized = extensions
+            .Where(static extension => !string.IsNullOrWhiteSpace(extension))
+            .Select(static extension => extension.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+
+        return normalized.Length == 0 ? null : normalized;
     }
 
     /// <summary>

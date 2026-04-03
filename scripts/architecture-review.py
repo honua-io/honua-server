@@ -107,6 +107,7 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
     if not issue_body:
         return []
 
+    normalized_issue_body = normalize_markdown_text(issue_body)
     criteria = []
 
     # Look for "Acceptance Criteria" section
@@ -117,7 +118,7 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
     ]
 
     for pattern in ac_patterns:
-        match = re.search(pattern, issue_body, re.DOTALL | re.IGNORECASE)
+        match = re.search(pattern, normalized_issue_body, re.DOTALL | re.IGNORECASE)
         if match:
             ac_text = match.group(1).strip()
             # Extract bullet points or checklist items
@@ -129,8 +130,17 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
                     clean_line = re.sub(r'^[-\*\d\.\[\]x\s]+', '', line).strip()
                     if clean_line:
                         criteria.append(clean_line)
+            break
 
     return criteria
+
+def normalize_markdown_text(markdown_text: str) -> str:
+    """Normalize markdown bodies that may contain escaped newlines instead of literal line breaks."""
+    normalized_text = markdown_text.replace('\r\n', '\n')
+    if '\n' not in normalized_text and '\\n' in normalized_text:
+        normalized_text = normalized_text.replace('\\r\\n', '\n').replace('\\n', '\n')
+
+    return normalized_text
 
 def get_honua_architecture_rules() -> str:
     """Provide a compact summary of Honua architecture rules to keep prompts small."""

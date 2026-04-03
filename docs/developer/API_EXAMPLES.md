@@ -10,6 +10,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 |----------|----------|----------|----------------|
 | **FeatureServer REST** | ArcGIS compatibility | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri SDKs |
 | **MapServer REST** | Map rendering | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri SDKs |
+| **STAC API** | Catalog discovery and item search | `/stac` | STAC browsers, catalog tooling |
 | **OGC API Features** | Standards compliance | `/ogc/features` | QGIS, MapLibre |
 | **OData v4** | Business intelligence | `/odata` | Excel, Power BI |
 | **Vector Tiles** | High-performance maps | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | MapLibre, Leaflet |
@@ -18,6 +19,7 @@ This document provides concise, practical examples for Honua Server's geospatial
 
 - [FeatureServer REST](#geoservices-rest-api)
 - [MapServer REST](#mapserver-rest)
+- [STAC API](#stac-api)
 - [OGC API Features](#ogc-api-features)
 - [OData v4](#odata-v4-api)
 - [Vector Tiles (MVT)](#vector-tiles-mvt)
@@ -119,6 +121,142 @@ curl "http://localhost:8080/rest/services/1/MapServer/generateKml?f=kml" --outpu
 
 ```bash
 curl "http://localhost:8080/rest/services/1/MapServer/generateKml?f=kmz" --output map.kmz
+```
+
+---
+
+## **STAC API**
+
+**Catalog discovery:**
+
+```bash
+curl -i "http://localhost:8080/stac"
+```
+
+**Example JSON response (trimmed):**
+```json
+{
+  "type": "Catalog",
+  "stac_version": "1.0.0",
+  "conformsTo": [
+    "https://api.stacspec.org/v1.0.0/core",
+    "https://api.stacspec.org/v1.0.0/item-search",
+    "https://api.stacspec.org/v1.0.0/ogcapi-features",
+    "https://api.stacspec.org/v1.0.0/collections",
+    "https://api.stacspec.org/v1.0.0/item-search#fields",
+    "https://api.stacspec.org/v1.0.0/item-search#sort",
+    "https://api.stacspec.org/v1.0.0/item-search#filter"
+  ],
+  "links": [
+    { "rel": "self", "href": "http://localhost:8080/stac" },
+    { "rel": "data", "href": "http://localhost:8080/stac/collections" },
+    { "rel": "search", "href": "http://localhost:8080/stac/search" }
+  ]
+}
+```
+
+The catalog, collection list, and single-collection metadata routes emit strong `ETag` values and honor `If-None-Match` with `304 Not Modified`.
+
+```bash
+etag=$(curl -sI "http://localhost:8080/stac" | awk -F': ' '/^ETag:/ {print $2}' | tr -d '\r')
+curl -i -H "If-None-Match: ${etag}" "http://localhost:8080/stac"
+```
+
+**Collection detail with declared STAC metadata:**
+
+```bash
+curl "http://localhost:8080/stac/collections/0"
+```
+
+**Example JSON response (trimmed):**
+```json
+{
+  "type": "Collection",
+  "id": "0",
+  "license": "CC-BY-4.0",
+  "keywords": ["imagery", "ops-demo"],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
+  ],
+  "links": [
+    { "rel": "items", "href": "http://localhost:8080/stac/collections/0/items" },
+    { "rel": "alternate", "href": "http://localhost:8080/ogc/features/collections/0" }
+  ]
+}
+```
+
+`license` is always emitted on collections and defaults to `proprietary` when the layer does not declare a STAC-specific license. `keywords` and `stac_extensions` are emitted when declared in the layer's STAC metadata. Collection detail also includes an `alternate` link to the matching OGC API Features collection.
+
+**Collection items:**
+
+```bash
+curl "http://localhost:8080/stac/collections/0/items?limit=2&bbox=-158.30,21.20,-157.70,21.70"
+```
+
+**Example JSON response (trimmed):**
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "101",
+      "collection": "0",
+      "properties": {
+        "datetime": "2026-03-30T18:00:00.0000000+00:00",
+        "eo:cloud_cover": 17.0,
+        "proj:epsg": 4326
+      },
+      "assets": {
+        "geojson": {
+          "href": "http://localhost:8080/ogc/features/collections/0/items/101"
+        }
+      }
+    }
+  ],
+  "links": [
+    { "rel": "self", "href": "http://localhost:8080/stac/collections/0/items?limit=2&bbox=-158.30%2C21.20%2C-157.70%2C21.70" },
+    { "rel": "next", "href": "http://localhost:8080/stac/collections/0/items?limit=2&offset=2&bbox=-158.30%2C21.20%2C-157.70%2C21.70" }
+  ]
+}
+```
+
+STAC items always include `properties.datetime`. When Honua cannot resolve a time field for the item, that property is still present and set to `null`. Pagination links preserve encoded `bbox` and `datetime` filters so callers can replay the exact query.
+When the layer declares STAC item extensions, Honua also emits the declared `stac_extensions` array on item and search hits.
+
+**Search via GET:**
+
+```bash
+curl "http://localhost:8080/stac/search?collections=0&limit=3&sortby=-observed_at"
+```
+
+For manual verification, numeric and RFC 3339 timestamp fields provide the strongest sort evidence. String-only fields may still return `200 OK`, but they are weaker proof that descending order was honored.
+
+**Fields extension probe:**
+
+```bash
+curl "http://localhost:8080/stac/search?collections=0&limit=1&fields=properties,-platform"
+```
+
+Use a removable property such as `name` or `platform` for `fields` probes. Do not try to remove `properties.datetime`; Honua keeps that STAC field in item and search responses and uses `null` when no time value resolves.
+
+**CQL2 text filter probe:**
+
+```bash
+curl "http://localhost:8080/stac/search?collections=0&limit=5&filter=quality_score%20%3E%3D%2070&filter-lang=cql2-text"
+```
+
+**Search via POST:**
+
+```bash
+curl -X POST "http://localhost:8080/stac/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collections": ["0"],
+    "limit": 3,
+    "sortby": [{ "field": "observed_at", "direction": "desc" }]
+  }'
 ```
 
 ---
@@ -241,7 +379,8 @@ const map = new maplibregl.Map({
 
 ## **Related Documentation**
 
-- [Protocols Overview](STANDARDS_APIS.md)
+- [Protocols Overview](../gis/STANDARDS_APIS.md)
 - [Integration Patterns](INTEGRATION_PATTERNS.md)
-- [Admin API Reference](CONTROL_PLANE_API.md)
+- [Admin API Reference](../operator/CONTROL_PLANE_API.md)
+- [STAC Ops Demo](../../samples/Honua.StacOpsDemo/README.md)
 - [Interactive API Explorer](http://localhost:8080/docs) *(requires running server)* — try endpoints live with Scalar
