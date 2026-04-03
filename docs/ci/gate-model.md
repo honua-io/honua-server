@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-03-31 (ticket #320)
+> Last updated: 2026-04-02 (ticket #415)
 
 ## Tier Definitions
 

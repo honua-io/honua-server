@@ -74,7 +74,7 @@ The full profile covers:
 |---|---|---|
 | FeatureServer | `ci-desktop` | 18 test cases (CERT-CONN through CERT-RNDR); CERT-CONN-02, AUTH-01/02, RNDR-01/02 skipped with reason |
 | OGC API Features | `ci-desktop` | 18 test cases; same skip categories |
-| MapServer | `ci-desktop` | 18 test cases; QFLT/PAGE/GEOM not-applicable for metadata-only protocol |
+| MapServer | `ci-desktop` | 18 test cases; QFLT/PAGE/GEOM/ERRH-02 not-applicable for rendering-only lane |
 | OData | `ci-bi` | 18 test cases; GEOM/SCHM-02/QFLT-02 not-applicable for OData-only lane |
 
 The smoke profile retains the original narrow check set:
@@ -145,7 +145,7 @@ ArcGIS Pro exercises two protocols. Produce one `.cert.json` evidence file for e
 | `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 18 common-core CERT-\* IDs |
 | `mapserver` | `…/MapServer` | 1 (connect), 2 (discovery), 4 (render), 5 (refresh), cross-cutting | CERT-CONN, CERT-AUTH, CERT-DISC, CERT-SCHM, CERT-ERRH, CERT-RNDR |
 
-Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, and CERT-GEOM test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.
+Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.
 
 See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the envelope format and [naming convention](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md#file-naming-convention).
 

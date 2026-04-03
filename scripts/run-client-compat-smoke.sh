@@ -459,7 +459,7 @@ request_json_4xx() {
 }
 
 append_cert_result() {
-  local protocol="$1" cert_id="$2" status="$3" duration_ms="$4" measured_count="$5" measured_delta="$6" notes="$7" evidence_ref="$8"
+  local protocol="$1" cert_id="$2" status="$3" duration_ms="$4" measured_count="$5" measured_delta="$6" notes="${7:-}" evidence_ref="${8:-}"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$cert_id" "$status" "$duration_ms" "$measured_count" "$measured_delta" "$notes" "$evidence_ref" \
     >> "$CERT_DIR/cert-results-${protocol}.tsv"
@@ -635,8 +635,8 @@ run_full_featureserver() {
   local proto="featureserver"
   local fs_base="${BASE_URL}/rest/services/${SERVICE_ID}/FeatureServer"
 
-  # CERT-CONN-01: HTTP connection
-  request_head "fs-conn-check" "$fs_base" "200" || failed=1
+  # CERT-CONN-01: HTTP connection (GET; server routes do not support HEAD)
+  request_json "fs-conn-check" "${fs_base}?f=json" "200" "true" || failed=1
   append_cert_result "$proto" "CERT-CONN-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-CONN-02, AUTH-01, AUTH-02 (skip)
@@ -766,8 +766,8 @@ run_full_ogc_features() {
   local proto="ogc-features"
   local ogc_base="${BASE_URL}/ogc/features"
 
-  # CERT-CONN-01
-  request_head "ogc-conn-check" "$ogc_base" "200" || failed=1
+  # CERT-CONN-01 (GET; server routes do not support HEAD)
+  request_json "ogc-conn-check" "$ogc_base" "200" "true" || failed=1
   append_cert_result "$proto" "CERT-CONN-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # Common skips
@@ -891,8 +891,8 @@ run_full_mapserver() {
   local proto="mapserver"
   local ms_base="${BASE_URL}/rest/services/${SERVICE_ID}/MapServer"
 
-  # CERT-CONN-01
-  request_head "ms-conn-check" "$ms_base" "200" || failed=1
+  # CERT-CONN-01 (GET; server routes do not support HEAD)
+  request_json "ms-conn-check" "${ms_base}?f=json" "200" "true" || failed=1
   append_cert_result "$proto" "CERT-CONN-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # Common skips
@@ -961,8 +961,8 @@ run_full_odata() {
   local failed=0
   local proto="odata"
 
-  # CERT-CONN-01
-  request_head "odata-conn-check" "${BASE_URL}/odata" "200" || failed=1
+  # CERT-CONN-01 (GET; server routes do not support HEAD)
+  request_json "odata-conn-check" "${BASE_URL}/odata" "200" "true" || failed=1
   append_cert_result "$proto" "CERT-CONN-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # Common skips

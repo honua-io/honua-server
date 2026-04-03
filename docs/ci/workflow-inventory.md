@@ -1,7 +1,7 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-03-31 (ticket #320)
+> Last updated: 2026-04-02 (ticket #415)
 
 ## honua-server
 
