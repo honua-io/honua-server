@@ -324,6 +324,12 @@ internal static partial class MapServerEndpoints
                 }
 
                 expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, renderLayers[f]);
+                if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+                {
+                    return CreateWmsServiceException(context, "InvalidParameterValue",
+                        "FILTER expression must be a boolean predicate.");
+                }
+
                 var translation = filterExpressionService.Translate(expression, renderLayers[f]);
                 if (!translation.IsSuccess)
                 {

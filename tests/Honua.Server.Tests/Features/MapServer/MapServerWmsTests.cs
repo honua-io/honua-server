@@ -328,6 +328,22 @@ public sealed class MapServerWmsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_ScalarFilterExpression_ReturnsServiceException()
+    {
+        const string scalarFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:ValueReference>category</fes:ValueReference></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(scalarFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_WithoutFilter_NoRegression()
     {
         var response = await _fixture.Client.GetAsync(
