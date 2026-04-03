@@ -185,6 +185,12 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
             foreach (var link in links)
             {
+                if (link.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                    link.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // External artifact URLs are valid on release branches
+                }
+
                 var resolvedPath = Path.GetFullPath(Path.Combine(matrixDirectory, link));
                 File.Exists(resolvedPath)
                     .Should()
