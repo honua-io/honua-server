@@ -19,7 +19,7 @@ test.afterAll(async () => {
 });
 
 test.describe('FeatureLayer Popup and Field Access', () => {
-  test('[CERT-SCHM-01] Feature attributes accessible via eachFeature', async ({ page }) => {
+  test('[CERT-ATTR-01] Feature attributes accessible via eachFeature', async ({ page }) => {
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 

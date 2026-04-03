@@ -40,7 +40,7 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     // In that case the rendering test in rendering.spec.ts will catch it
   });
 
-  test('[CERT-DISC-02] Identify returns attributes at point', async ({ page }) => {
+  test('[CERT-IDNT-01] Identify returns attributes at point', async ({ page }) => {
     await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
     await waitForMapIdle(page);
 

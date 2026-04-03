@@ -15,9 +15,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /** Minimal static file server for the test page and vendored dependencies. */
-export function createStaticServer(): { server: Server; port: number; close: () => Promise<void> } {
-  let resolvedPort = 0;
-
+export function createStaticServer(): { server: Server; close: () => Promise<void> } {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost`);
     let filePath: string;
@@ -45,7 +43,6 @@ export function createStaticServer(): { server: Server; port: number; close: () 
 
   return {
     server,
-    get port() { return resolvedPort; },
     close: () => new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
     }),
@@ -136,25 +133,6 @@ export async function assertMapNotBlank(page: Page): Promise<boolean> {
 
     return false;
   });
-}
-
-/** Get feature attributes from a clicked point on the map. */
-export async function getFeatureAtPoint(page: Page, lat: number, lng: number): Promise<Record<string, unknown> | null> {
-  return page.evaluate(({ lat, lng }) => {
-    const layer = (window as any).__featureLayer;
-    if (!layer) return null;
-
-    const features: Record<string, unknown>[] = [];
-    layer.eachFeature((f: any) => {
-      features.push({
-        properties: f.feature?.properties ?? {},
-        geometry: f.feature?.geometry ?? null,
-      });
-    });
-
-    // Return the first feature (for simple point-access tests)
-    return features[0] ?? null;
-  }, { lat, lng });
 }
 
 /** Get all features currently loaded in the FeatureLayer. */

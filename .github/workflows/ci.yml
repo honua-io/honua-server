@@ -558,7 +558,6 @@ jobs:
           HONUA_BASE_URL: http://localhost:5000
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
-          HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4
