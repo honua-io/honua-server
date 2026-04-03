@@ -629,24 +629,24 @@ run_full_featureserver() {
     '.geometryType == "esriGeometryPoint"' || failed=1
   append_cert_result "$proto" "CERT-SCHM-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
-  # CERT-QFLT-01: Attribute filter
+  # CERT-QFLT-01: Attribute filter (verify returned features have matching status)
   request_json \
     "featureserver-query-active-subset" \
     "${fs_base}/${LAYER_ID}/query?where=status%20%3D%20%27active%27&resultRecordCount=3&returnGeometry=true&f=json" \
     "200" \
-    '(.features | length) == 3' || failed=1
+    '(.features | length) == 3 and ([.features[].attributes.status] | all(. == "active"))' || failed=1
   local qflt01_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     qflt01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-QFLT-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$qflt01_count" "" ""
 
-  # CERT-QFLT-02: Spatial bbox filter (bbox contains alpha/beta/gamma)
+  # CERT-QFLT-02: Spatial bbox filter (bbox contains exactly alpha/beta/gamma)
   request_json \
     "fs-bbox-query" \
     "${fs_base}/${LAYER_ID}/query?geometry=-122.50%2C37.70%2C-122.45%2C37.74&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&returnGeometry=true&f=json" \
     "200" \
-    '(.features | length) > 0' || failed=1
+    '(.features | length) == 3 and ([.features[].geometry | (.x >= -122.50 and .x <= -122.45 and .y >= 37.70 and .y <= 37.74)] | all)' || failed=1
   local qflt02_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     qflt02_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
@@ -745,11 +745,11 @@ run_full_ogc_features() {
   fi
   append_cert_result "$proto" "CERT-DISC-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$disc01_count" "" ""
 
-  # CERT-DISC-02: Collection detail
+  # CERT-DISC-02: Collection detail (id, itemType, and links required per OGC API Features)
   request_json \
     "ogc-collection-detail" \
     "${ogc_base}/collections/${LAYER_ID}" "200" \
-    '.id != null or .title != null' || failed=1
+    '.id == "0" and .itemType == "feature" and (.links | length) > 0' || failed=1
   append_cert_result "$proto" "CERT-DISC-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-SCHM-01: Properties have keys
@@ -766,22 +766,22 @@ run_full_ogc_features() {
     '.features[0].geometry.type == "Point"' || failed=1
   append_cert_result "$proto" "CERT-SCHM-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
-  # CERT-QFLT-01: Attribute filter via CQL2
+  # CERT-QFLT-01: Attribute filter via CQL2 (verify returned features have matching status)
   request_json \
     "ogc-attribute-filter" \
     "${ogc_base}/collections/${LAYER_ID}/items?filter=status%20%3D%20%27active%27&limit=3" "200" \
-    '(.features | length) > 0 and (.features | length) <= 3' || failed=1
+    '(.features | length) > 0 and (.features | length) <= 3 and ([.features[].properties.status] | all(. == "active"))' || failed=1
   local qflt01_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     qflt01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-QFLT-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$qflt01_count" "" ""
 
-  # CERT-QFLT-02: Spatial bbox filter
+  # CERT-QFLT-02: Spatial bbox filter (bbox contains exactly alpha/beta/gamma)
   request_json \
     "ogc-bbox-query" \
     "${ogc_base}/collections/${LAYER_ID}/items?bbox=-122.50%2C37.70%2C-122.45%2C37.74&limit=10" "200" \
-    '(.features | length) > 0' || failed=1
+    '(.features | length) == 3 and ([.features[].geometry.coordinates | (.[0] >= -122.50 and .[0] <= -122.45 and .[1] >= 37.70 and .[1] <= 37.74)] | all)' || failed=1
   local qflt02_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     qflt02_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
@@ -976,11 +976,11 @@ run_full_odata() {
   # CERT-SCHM-02: not-applicable (OData does not report geometry type)
   record_na_with_lane "odata-schm-02" "$proto" "CERT-SCHM-02" "OData does not report geometry type per BI lane matrix"
 
-  # CERT-QFLT-01: Attribute filter
+  # CERT-QFLT-01: Attribute filter on features (seed has 5 active out of 10)
   request_json \
-    "odata-layer-filter" \
-    "${BASE_URL}/odata/Layers?\$filter=Name%20eq%20%27Test%20Layer%27" "200" \
-    '(.value | length) == 1' || failed=1
+    "odata-attribute-filter" \
+    "${BASE_URL}/odata/Features(${LAYER_ID})?\$filter=status%20eq%20%27active%27" "200" \
+    '(.value | length) == 5' || failed=1
   local qflt01_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     qflt01_count=$(jq -r '.value | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
