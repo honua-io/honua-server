@@ -5,9 +5,12 @@
  *   docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md
  *
  * Accumulates test results and writes .cert.json files in afterAll hooks.
+ * Uses merge-on-write so that sibling test suites targeting the same protocol
+ * (e.g. oapif-discovery + oapif-features both targeting 'ogc-features')
+ * accumulate into one file rather than overwriting each other.
  */
 
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -64,6 +67,60 @@ const CORE_TEST_IDS = [
   'CERT-RNDR-01', 'CERT-RNDR-02',
 ] as const;
 
+/**
+ * Per-protocol applicability derived from CROSS_CLIENT_CERTIFICATION_MATRIX.md.
+ * IDs present are applicable; unrecorded applicable IDs emit 'skip'.
+ * IDs absent from the set emit 'not-applicable'.
+ */
+const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
+  'ogc-features': new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02', 'CERT-SCHM-01', 'CERT-SCHM-02',
+    'CERT-QFLT-01', 'CERT-QFLT-02', 'CERT-PAGE-01', 'CERT-PAGE-02',
+    'CERT-GEOM-01', 'CERT-GEOM-02', 'CERT-ERRH-01', 'CERT-ERRH-02',
+    'CERT-RNDR-01', 'CERT-RNDR-02',
+  ]),
+  mvt: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-ERRH-01', 'CERT-RNDR-01',
+  ]),
+  featureserver: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02', 'CERT-SCHM-01', 'CERT-SCHM-02',
+    'CERT-QFLT-01', 'CERT-QFLT-02', 'CERT-PAGE-01', 'CERT-PAGE-02',
+    'CERT-GEOM-01', 'CERT-GEOM-02', 'CERT-ERRH-01', 'CERT-ERRH-02',
+    'CERT-RNDR-01', 'CERT-RNDR-02',
+  ]),
+  mapserver: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-ERRH-01', 'CERT-RNDR-01', 'CERT-RNDR-02',
+  ]),
+  odata: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02', 'CERT-SCHM-01',
+    'CERT-QFLT-01', 'CERT-PAGE-01', 'CERT-PAGE-02',
+    'CERT-ERRH-01', 'CERT-ERRH-02', 'CERT-RNDR-01', 'CERT-RNDR-02',
+  ]),
+  wms: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-ERRH-01', 'CERT-RNDR-01',
+  ]),
+  wmts: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-ERRH-01', 'CERT-RNDR-01',
+  ]),
+  'admin-api': new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-ERRH-01',
+  ]),
+};
+
+/** Protocols defined in the certification evidence spec. */
+const VALID_PROTOCOLS = new Set([
+  'featureserver', 'mapserver', 'ogc-features', 'odata',
+  'mvt', 'wms', 'wmts', 'admin-api',
+]);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -89,13 +146,23 @@ function makeRunId(): string {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 }
 
+/** Resolve the cert output directory (tests/js/). */
+function certOutputDir(): string {
+  return resolve(__dirname, '..', '..');
+}
+
+/** Deterministic cert filename following <client-lane>-<protocol> convention. */
+function certFilename(protocol: string): string {
+  return `js-${protocol}.cert.json`;
+}
+
 // ---------------------------------------------------------------------------
 // Collector
 // ---------------------------------------------------------------------------
 
 export class EvidenceCollector {
   private readonly results = new Map<string, CertResult>();
-  private readonly extensions: CertResult[] = [];
+  private readonly extensionMap = new Map<string, CertResult>();
   readonly protocol: string;
 
   constructor(protocol: string) {
@@ -135,7 +202,7 @@ export class EvidenceCollector {
       notes?: string;
     } = {},
   ): void {
-    this.extensions.push({
+    this.extensionMap.set(testCaseId, {
       test_case_id: testCaseId,
       status,
       duration_ms: opts.durationMs ?? null,
@@ -146,19 +213,49 @@ export class EvidenceCollector {
     });
   }
 
-  /** Build the full certification envelope. */
+  /**
+   * Build the certification envelope.
+   * Reads any existing cert file for this protocol and merges previously
+   * recorded results so sibling suites (running in separate forks) accumulate
+   * rather than overwrite.
+   */
   build(): CertEnvelope {
     const runId = makeRunId();
+    const applicable = PROTOCOL_APPLICABILITY[this.protocol];
+
+    // Read existing file from a sibling suite that ran in an earlier fork
+    const priorResults = new Map<string, CertResult>();
+    const priorExtensions = new Map<string, CertResult>();
+    try {
+      const filepath = resolve(certOutputDir(), certFilename(this.protocol));
+      const existing: CertEnvelope = JSON.parse(readFileSync(filepath, 'utf-8'));
+      for (const r of existing.results) {
+        if (r.status === 'pass' || r.status === 'fail') {
+          priorResults.set(r.test_case_id, r);
+        }
+      }
+      for (const e of existing.extensions) {
+        priorExtensions.set(e.test_case_id, e);
+      }
+    } catch {
+      // No existing file yet
+    }
+
+    // Current results take precedence over prior
+    const merged = new Map([...priorResults, ...this.results]);
+    const mergedExt = new Map([...priorExtensions, ...this.extensionMap]);
+
     const allResults: CertResult[] = CORE_TEST_IDS.map(id => {
-      const recorded = this.results.get(id);
+      const recorded = merged.get(id);
       if (recorded) return recorded;
+      const isApplicable = applicable?.has(id) ?? false;
       return {
         test_case_id: id,
-        status: 'not-applicable' as CertStatus,
+        status: (isApplicable ? 'skip' : 'not-applicable') as CertStatus,
         duration_ms: null,
         measured_count: null,
         measured_delta: null,
-        notes: '',
+        notes: isApplicable ? 'Not covered by this test suite' : '',
         evidence_ref: '',
       };
     });
@@ -180,22 +277,28 @@ export class EvidenceCollector {
       run_id: runId,
       run_date: new Date().toISOString(),
       server_version: getServerVersion(),
-      client_lane: 'js-openlayers',
+      client_lane: 'js',
       client_version: getOlVersion(),
       protocol: this.protocol,
       environment: process.env.CI ? 'ci' : 'local',
       results: allResults,
       summary: counts,
       cite_results: null,
-      extensions: this.extensions,
+      extensions: [...mergedExt.values()],
     };
   }
 
-  /** Write the evidence file to the tests/js/ directory. */
-  write(): string {
+  /**
+   * Write the evidence file to tests/js/.
+   * Skips writing for protocols not in the certification spec.
+   */
+  write(): string | null {
+    if (!VALID_PROTOCOLS.has(this.protocol)) {
+      return null;
+    }
     const envelope = this.build();
-    const filename = `openlayers-${this.protocol}.cert.json`;
-    const filepath = resolve(__dirname, '..', '..', filename);
+    const filename = certFilename(this.protocol);
+    const filepath = resolve(certOutputDir(), filename);
     writeFileSync(filepath, JSON.stringify(envelope, null, 2) + '\n', 'utf-8');
     return filepath;
   }

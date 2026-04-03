@@ -6,12 +6,13 @@
  *
  * Uses Playwright (Chromium) for real browser rendering.
  * Excluded from Vitest via .spec.ts extension (Vitest includes *.test.ts only).
+ *
+ * Writes CERT-RNDR-01 and JS-EXT-02 to the shared MVT evidence file,
+ * merging with results previously written by Vitest MVT suites.
  */
 
 import { test, expect } from '@playwright/test';
-import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { execSync } from 'node:child_process';
+import { EvidenceCollector } from '../shared/evidence.js';
 
 const BASE_URL = process.env.HONUA_BASE_URL ?? 'http://localhost:5555';
 const TEST_PAGE_URL = `http://localhost:${process.env.OL_TEST_PAGE_PORT ?? '9876'}`;
@@ -45,8 +46,6 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
 
   // Assert features were loaded
   const featureCount = await page.evaluate(() => window.__FEATURE_COUNT);
-  // Features may be 0 if the test data extent doesn't intersect zoom-10 tiles.
-  // The structural assertion below (non-blank canvas) is the primary check.
 
   // Sample canvas pixels to verify non-blank rendering
   const isNonBlank = await page.evaluate(() => {
@@ -70,7 +69,7 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
         data[i + 2] !== b0 ||
         data[i + 3] !== a0
       ) {
-        return true; // At least one pixel differs → non-blank
+        return true; // At least one pixel differs -> non-blank
       }
     }
     return false;
@@ -78,56 +77,23 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
 
   expect(isNonBlank).toBe(true);
 
-  // Write evidence
-  writeEvidence(featureCount);
+  // Record evidence via shared collector (merge-on-write preserves Vitest results)
+  const evidence = new EvidenceCollector('mvt');
+
+  evidence.record('CERT-RNDR-01', 'pass', {
+    measuredCount: featureCount,
+    notes:
+      'OpenLayers rendered OGC VectorTile layer on canvas; non-blank pixel assertion passed',
+    evidenceRef: 'openlayers/rendering/render.spec.ts',
+  });
+
+  evidence.recordExtension('JS-EXT-02', 'pass', {
+    notes:
+      'Browser tile load pipeline: VectorTile source fetched MVT tiles and rendered via ol/Map',
+  });
+
+  evidence.write();
 });
-
-/** Write CERT-RNDR-01 evidence to the standard location. */
-function writeEvidence(featureCount: number): void {
-  let serverVersion = 'unknown';
-  try {
-    serverVersion = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
-  } catch {
-    // ignore
-  }
-
-  const now = new Date();
-  const envelope = {
-    schema_version: '1.0',
-    run_id: now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z'),
-    run_date: now.toISOString(),
-    server_version: serverVersion,
-    client_lane: 'js-openlayers',
-    client_version: 'unknown',
-    protocol: 'mvt',
-    environment: process.env.CI ? 'ci' : 'local',
-    results: [
-      {
-        test_case_id: 'CERT-RNDR-01',
-        status: 'pass',
-        duration_ms: null,
-        measured_count: featureCount,
-        measured_delta: null,
-        notes:
-          'OpenLayers rendered OGC VectorTile layer on canvas; non-blank pixel assertion passed',
-        evidence_ref: 'openlayers/rendering/render.spec.ts',
-      },
-    ],
-    summary: {
-      total: 18,
-      passed: 1,
-      failed: 0,
-      skipped: 0,
-      not_applicable: 17,
-    },
-    cite_results: null,
-    extensions: [],
-  };
-
-  const filename = 'openlayers-rendering.cert.json';
-  const filepath = resolve(__dirname, '..', '..', filename);
-  writeFileSync(filepath, JSON.stringify(envelope, null, 2) + '\n', 'utf-8');
-}
 
 // TypeScript ambient declarations for window globals set by test-page.html
 declare global {
