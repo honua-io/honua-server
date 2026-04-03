@@ -138,7 +138,7 @@ The `windows-client-compat-nightly.yml` workflow introduced in ticket `#320` upl
 artifacts/client-compat/<service>-<timestamp>/
 ```
 
-That artifact is intentionally simpler than the final `.cert.json` certification envelope described above. It captures stable server-response evidence and packages the reusable client templates needed for manual Windows follow-through.
+Since ticket `#415`, that artifact includes automated `.cert.json` envelopes for the `ci-desktop` and `ci-bi` lanes under `certification/`. Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced per-client evidence. The artifact also captures stable server-response evidence and packages the reusable client templates needed for manual Windows follow-through.
 
 | Artifact path | Format | Contract |
 |---|---|---|

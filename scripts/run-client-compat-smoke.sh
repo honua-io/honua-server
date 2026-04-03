@@ -841,18 +841,18 @@ run_full_ogc_features() {
   fi
   append_cert_result "$proto" "CERT-GEOM-02" "$geom02_status" "$LAST_DURATION_MS" "" "" ""
 
-  # CERT-ERRH-01: Invalid collection
+  # CERT-ERRH-01: Invalid collection returns RFC 7807 Problem Details
   request_json_4xx \
     "ogc-error-invalid" \
     "${ogc_base}/collections/nonexistent_99999" \
-    'type == "object" and length > 0' || failed=1
+    '.type != null and .title != null and .status != null and .detail != null' || failed=1
   append_cert_result "$proto" "CERT-ERRH-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
-  # CERT-ERRH-02: Malformed filter
+  # CERT-ERRH-02: Malformed filter returns RFC 7807 Problem Details
   request_json_4xx \
     "ogc-error-malformed" \
     "${ogc_base}/collections/${LAYER_ID}/items?filter=INVALID%21%21%21" \
-    'type == "object" and length > 0' || failed=1
+    '.type != null and .title != null and .status != null and .detail != null' || failed=1
   append_cert_result "$proto" "CERT-ERRH-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-RNDR-01, RNDR-02 (skip)
