@@ -601,7 +601,7 @@ run_full_featureserver() {
   request_json \
     "featureserver-service-metadata" \
     "${fs_base}?f=json" "200" \
-    '(.layers | length) > 0 and (.layers[0].id == 0)' || failed=1
+    "(.layers | length) > 0 and (.layers[0].id == ${LAYER_ID})" || failed=1
   local disc01_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     disc01_count=$(jq -r '.layers | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
@@ -612,7 +612,7 @@ run_full_featureserver() {
   request_json \
     "featureserver-layer-metadata" \
     "${fs_base}/${LAYER_ID}?f=json" "200" \
-    '.id == 0 and (.fields | length) > 0 and .geometryType == "esriGeometryPoint"' || failed=1
+    ".id == ${LAYER_ID} and (.fields | length) > 0 and .geometryType == \"esriGeometryPoint\"" || failed=1
   append_cert_result "$proto" "CERT-DISC-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-SCHM-01: Typed fields array
@@ -749,7 +749,7 @@ run_full_ogc_features() {
   request_json \
     "ogc-collection-detail" \
     "${ogc_base}/collections/${LAYER_ID}" "200" \
-    '.id == "0" and .itemType == "feature" and (.links | length) > 0' || failed=1
+    ".id == \"${LAYER_ID}\" and .itemType == \"feature\" and (.links | length) > 0" || failed=1
   append_cert_result "$proto" "CERT-DISC-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-SCHM-01: Properties have keys
@@ -1012,10 +1012,10 @@ run_full_odata() {
   record_na_with_lane "odata-geom-01" "$proto" "CERT-GEOM-01" "Geometry fidelity not applicable to OData BI lane"
   record_na_with_lane "odata-geom-02" "$proto" "CERT-GEOM-02" "CRS not applicable to OData BI lane"
 
-  # CERT-ERRH-01: Invalid entity set
+  # CERT-ERRH-01: Non-existent layer returns structured OData error
   request_json_4xx \
     "odata-error-invalid" \
-    "${BASE_URL}/odata/NonExistentEntitySet" \
+    "${BASE_URL}/odata/Features(99999)" \
     '.error != null' || failed=1
   append_cert_result "$proto" "CERT-ERRH-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
