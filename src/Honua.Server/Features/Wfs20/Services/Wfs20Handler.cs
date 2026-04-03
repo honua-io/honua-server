@@ -17,6 +17,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Ogc.Common;
@@ -654,7 +655,7 @@ internal sealed class Wfs20Handler
         }
 
         var expression = Fes20Parser.ParseFilter(filter);
-        expression = NormalizeFilterPropertyReferences(expression, layer);
+        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, layer);
 
         var translation = _filterExpressionService.Translate(expression, layer);
         if (!translation.IsSuccess)
@@ -663,48 +664,6 @@ internal sealed class Wfs20Handler
         }
 
         return translation.SqlFilter;
-    }
-
-    private static FilterExpression NormalizeFilterPropertyReferences(FilterExpression expression, LayerDefinition layer)
-    {
-        return expression switch
-        {
-            PropertyReference property => new PropertyReference(
-                ResolveFieldName(layer, property.PropertyName, allowGeometryAlias: true) ??
-                NormalizeIdentifier(property.PropertyName)),
-            BinaryExpression binary => new BinaryExpression(
-                NormalizeFilterPropertyReferences(binary.Left, layer),
-                binary.Operator,
-                NormalizeFilterPropertyReferences(binary.Right, layer)),
-            UnaryExpression unary => new UnaryExpression(
-                unary.Operator,
-                NormalizeFilterPropertyReferences(unary.Operand, layer)),
-            SpatialPredicate spatial => new SpatialPredicate(
-                spatial.Operator,
-                NormalizeFilterPropertyReferences(spatial.Left, layer),
-                NormalizeFilterPropertyReferences(spatial.Right, layer)),
-            SpatialDistancePredicate distance => new SpatialDistancePredicate(
-                distance.Operator,
-                NormalizeFilterPropertyReferences(distance.Left, layer),
-                NormalizeFilterPropertyReferences(distance.Right, layer),
-                NormalizeFilterPropertyReferences(distance.Distance, layer)),
-            TemporalPredicate temporal => new TemporalPredicate(
-                temporal.Operator,
-                NormalizeFilterPropertyReferences(temporal.Left, layer),
-                NormalizeFilterPropertyReferences(temporal.Right, layer)),
-            ArrayPredicate array => new ArrayPredicate(
-                array.Operator,
-                NormalizeFilterPropertyReferences(array.Left, layer),
-                NormalizeFilterPropertyReferences(array.Right, layer)),
-            FunctionCall function => new FunctionCall(
-                function.FunctionName,
-                function.Arguments.Select(argument => NormalizeFilterPropertyReferences(argument, layer)).ToArray()),
-            ArrayLiteral arrayLiteral => new ArrayLiteral(
-                arrayLiteral.Elements.Select(element => NormalizeFilterPropertyReferences(element, layer)).ToArray()),
-            ValueList valueList => new ValueList(
-                valueList.Values.Select(value => NormalizeFilterPropertyReferences(value, layer)).ToArray()),
-            _ => expression
-        };
     }
 
     private static ImmutableArray<string>? ResolveProjectedFields(LayerDefinition layer, string? propertyName)
@@ -718,7 +677,7 @@ internal sealed class Wfs20Handler
         var resolved = ImmutableArray.CreateBuilder<string>();
         foreach (var requestedProperty in requestedProperties)
         {
-            var fieldName = ResolveFieldName(layer, requestedProperty, allowGeometryAlias: true)
+            var fieldName = FilterExpressionHelpers.ResolveFieldName(layer, requestedProperty, allowGeometryAlias: true)
                 ?? throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{layer.Name}'.");
 
             if (layer.GeometryField != null &&
@@ -753,7 +712,7 @@ internal sealed class Wfs20Handler
                 continue;
             }
 
-            var fieldName = ResolveFieldName(layer, tokens[0], allowGeometryAlias: false)
+            var fieldName = FilterExpressionHelpers.ResolveFieldName(layer, tokens[0], allowGeometryAlias: false)
                 ?? throw new ArgumentException($"Unknown sort field '{tokens[0]}' for feature type '{layer.Name}'.");
 
             var fieldDefinition = layer.Fields.FirstOrDefault(field =>
@@ -930,7 +889,7 @@ internal sealed class Wfs20Handler
 
     private static bool MatchesRequestedType(WfsFeatureTypeDescriptor featureType, string requestedType)
     {
-        var normalizedRequested = NormalizeIdentifier(requestedType);
+        var normalizedRequested = FilterExpressionHelpers.NormalizeIdentifier(requestedType);
         return string.Equals(requestedType, featureType.QualifiedName, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(normalizedRequested, featureType.LocalName, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(normalizedRequested, featureType.Layer.Name, StringComparison.OrdinalIgnoreCase) ||
@@ -1794,7 +1753,7 @@ internal sealed class Wfs20Handler
 
     private static ValueReferenceResolution ResolveValueReference(LayerDefinition layer, string valueReference)
     {
-        var resolvedName = ResolveFieldName(layer, valueReference, allowGeometryAlias: true)
+        var resolvedName = FilterExpressionHelpers.ResolveFieldName(layer, valueReference, allowGeometryAlias: true)
             ?? throw new ArgumentException($"Unknown valueReference '{valueReference}' for feature type '{layer.Name}'.");
 
         var isGeometry = layer.GeometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
@@ -1954,29 +1913,6 @@ internal sealed class Wfs20Handler
         return result;
     }
 
-    private static string NormalizeIdentifier(string identifier)
-    {
-        var normalized = identifier.Trim();
-        if (normalized.Length == 0)
-        {
-            return normalized;
-        }
-
-        var slashIndex = normalized.LastIndexOf('/');
-        if (slashIndex >= 0 && slashIndex < normalized.Length - 1)
-        {
-            normalized = normalized[(slashIndex + 1)..];
-        }
-
-        var colonIndex = normalized.LastIndexOf(':');
-        if (colonIndex >= 0 && colonIndex < normalized.Length - 1)
-        {
-            normalized = normalized[(colonIndex + 1)..];
-        }
-
-        return normalized;
-    }
-
     private static string[] ParseQualifiedList(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1985,37 +1921,6 @@ internal sealed class Wfs20Handler
         }
 
         return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
-
-    private static string? ResolveFieldName(LayerDefinition layer, string requestedName, bool allowGeometryAlias)
-    {
-        var normalized = NormalizeIdentifier(requestedName);
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return null;
-        }
-
-        if (layer.PrimaryKeyField is not null &&
-            (normalized.Equals("id", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals("fid", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals(layer.PrimaryKeyField.Name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return layer.PrimaryKeyField.Name;
-        }
-
-        if (allowGeometryAlias &&
-            layer.GeometryField is not null &&
-            (normalized.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals("shape", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals(layer.GeometryField.Name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return layer.GeometryField.Name;
-        }
-
-        return layer.Fields
-            .FirstOrDefault(field => field.Name.Equals(normalized, StringComparison.OrdinalIgnoreCase))
-            ?.Name;
     }
 
     private static string MapGeometryPropertyType(Honua.Core.Features.Catalog.Domain.GeometryType geometryType)

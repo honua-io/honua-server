@@ -11,6 +11,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
@@ -287,6 +289,54 @@ internal static partial class MapServerEndpoints
             return CreateWmsServiceException(context, "StyleNotDefined", styleError);
         }
 
+        // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter (semicolon-delimited FES XML per layer)
+        var filterParam = GetQueryValue(query, "FILTER");
+        SqlFragment?[]? layerFilters = null;
+        if (!string.IsNullOrWhiteSpace(filterParam))
+        {
+            var filterTokens = filterParam.Split(';');
+            if (filterTokens.Length != 1 && filterTokens.Length != renderLayers.Length)
+            {
+                return CreateWmsServiceException(context, "InvalidParameterValue",
+                    $"FILTER must contain exactly 1 or {renderLayers.Length.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of LAYERS.");
+            }
+
+            var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            layerFilters = new SqlFragment?[renderLayers.Length];
+
+            for (var f = 0; f < renderLayers.Length; f++)
+            {
+                var token = filterTokens.Length == 1 ? filterTokens[0] : filterTokens[f];
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    continue;
+                }
+
+                FilterExpression expression;
+                try
+                {
+                    expression = Fes20Parser.ParseFilter(token);
+                }
+                catch (Fes20ParseException ex)
+                {
+                    return CreateWmsServiceException(context, "InvalidParameterValue",
+                        $"Invalid FILTER XML: {ex.Message}");
+                }
+
+                expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, renderLayers[f]);
+                var translation = filterExpressionService.Translate(expression, renderLayers[f]);
+                if (!translation.IsSuccess)
+                {
+                    return CreateWmsServiceException(context, "InvalidParameterValue",
+                        translation.ErrorMessage ?? "Invalid filter expression.");
+                }
+
+                layerFilters[f] = translation.SqlFilter;
+            }
+
+            activity?.SetTag("wms.filter_applied", true);
+        }
+
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
             .GetRequiredService<RasterRenderCapacityLimiter>()
@@ -365,8 +415,9 @@ internal static partial class MapServerEndpoints
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
         var transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
 
-        foreach (var layer in renderLayers)
+        for (var i = 0; i < renderLayers.Length; i++)
         {
+            var layer = renderLayers[i];
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!layer.HasGeometry)
@@ -383,7 +434,8 @@ internal static partial class MapServerEndpoints
                 spatialFilter,
                 service.SpatialReference.Srid,
                 requestSrid,
-                maxFeatures);
+                maxFeatures,
+                layerFilters?[i]);
 
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
