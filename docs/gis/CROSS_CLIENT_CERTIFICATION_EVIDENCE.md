@@ -243,10 +243,14 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
 
 The Esri Leaflet Playwright suite (`tests/js-browser/`) emits `client_lane: "js"` evidence envelopes — the same lane value as the Vitest JS suite. This is intentional: Esri Leaflet is a sub-lane of the JS lane in the [Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md#esri-leaflet-browser-sub-lane), not a separate client tool.
 
+The reporter resolves `client_version` from the installed `esri-leaflet` package in `node_modules` and falls back to the semver range in `tests/js-browser/package.json` only when dependencies have not yet been installed.
+
 Evidence files are written to `tests/js-browser/evidence/` during test runs (not to the curated `docs/gis/certification-evidence/` directory). The Playwright cert reporter produces one envelope per protocol exercised:
 
 - `<run-id>-js-featureserver.cert.json` — FeatureServer common-core results + EL-EXT-\* extensions
 - `<run-id>-js-mapserver.cert.json` — MapServer common-core results (CERT-QFLT/PAGE/GEOM/ERRH-02 recorded as `not-applicable`) + EL-EXT-02/EL-EXT-04 extensions
+
+The reporter seeds the full 18 common-core CERT-\* IDs into each envelope. FeatureServer cases that the browser suite does not currently exercise are recorded as `skip`.
 
 The reporter skips evidence emission when the run is interrupted, timed out, or when no tests passed or failed (setup abort guard).
 
@@ -282,3 +286,4 @@ MapLibre GL JS MVT certification is currently manual (visual browser-based verif
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
 | 1.0.10 | 2026-04-03 | Add Esri Leaflet Playwright reporter to integration mapping; document evidence output path and disambiguation note |
+| 1.0.11 | 2026-04-03 | Clarify Esri Leaflet `client_version` resolution and that unexercised CERT-\* IDs are emitted as `skip` |

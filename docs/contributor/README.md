@@ -30,7 +30,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [TestKit (C#)](testkit.md) — fixtures, builders, assertions, parallel execution
 - [Public Interface Quality Model](public-interface-quality-model.md) — canonical proof ledger, release evidence rules, and ticket reconciliation for public surfaces
 - [Python Integration Tests](testing-python.md) — pytest OGC and FeatureServer tests
-- [JavaScript Integration Tests](testing-javascript.md) — Vitest Esri compatibility tests
+- [JavaScript Integration Tests](testing-javascript.md) — Vitest protocol coverage plus Playwright Esri Leaflet browser compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests
 - [Benchmarks](benchmarks.md) — BenchmarkDotNet performance tests
 - [Production Audit Playbook](PRODUCTION_AUDIT_PLAYBOOK.md) — phased production-readiness audit execution

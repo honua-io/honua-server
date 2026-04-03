@@ -118,6 +118,12 @@ MapServer coverage is tracked separately:
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
 | Geometry simplification | `maxAllowableOffset` | Implemented | Simplifies geometry to the given tolerance. Applies to `json`, `geojson`, `pbf`, and `parquet`; `fgb` and `geobuf` do not apply it. |
 
+### Partial / compatibility-only
+
+| Area | Esri parameters | Honua status | Notes |
+| --- | --- | --- | --- |
+| Result type | `resultType=standard|tile` | Partial | Accepted for GeoServices parity and browser-client compatibility. Values other than `standard` and `tile` are rejected. The current implementation follows the standard query path for both accepted values. |
+
 ### Not implemented (explicitly rejected)
 
 | Area | Esri parameters | Notes |
@@ -126,7 +132,6 @@ MapServer coverage is tracked separately:
 | Centroid | `returnCentroid` | Rejected. |
 | True curves | `returnTrueCurves` | Rejected. |
 | Exceeded limit | `returnExceededLimitFeatures` | Rejected. |
-| Result type | `resultType` (non-standard) | Rejected. |
 | SQL format | `sqlFormat` | Rejected. |
 | GDB version | `gdbVersion` | Rejected. |
 | Quantization | `quantizationParameters` | Rejected. |

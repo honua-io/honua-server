@@ -583,7 +583,8 @@
           },
           {
             "name": "resultType",
-            "status": "rejected"
+            "status": "partial",
+            "notes": "Accepts standard and tile for GeoServices parity and browser-client compatibility; other values are rejected and current behavior matches the standard query path."
           },
           {
             "name": "sqlFormat",
