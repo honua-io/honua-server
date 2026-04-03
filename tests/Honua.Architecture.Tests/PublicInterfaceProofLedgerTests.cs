@@ -164,7 +164,6 @@ public sealed partial class PublicInterfaceProofLedgerTests
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var matrixPath = Path.Combine(repoRoot, "docs", "gis", "CLIENT_TEMPLATE_VERSION_MATRIX.md");
         var matrixDirectory = Path.GetDirectoryName(matrixPath)!;
-        var matrixText = File.ReadAllText(matrixPath);
 
         var evidenceRows = File.ReadAllLines(matrixPath)
             .Where(line => line.StartsWith("| ", StringComparison.Ordinal) && line.Contains(".cert.json", StringComparison.Ordinal))
