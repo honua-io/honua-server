@@ -20,7 +20,7 @@ internal static class FilterExpressionHelpers
         return expression switch
         {
             BinaryExpression => true,
-            UnaryExpression => true,
+            UnaryExpression unary => unary.Operator != UnaryOperator.Not || IsBooleanFilterExpression(unary.Operand),
             SpatialPredicate => true,
             SpatialDistancePredicate => true,
             TemporalPredicate => true,

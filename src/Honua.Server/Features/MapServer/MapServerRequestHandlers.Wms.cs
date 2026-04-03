@@ -294,7 +294,7 @@ internal static partial class MapServerEndpoints
         SqlFragment?[]? layerFilters = null;
         if (!string.IsNullOrWhiteSpace(filterParam))
         {
-            var filterTokens = filterParam.Split(';');
+            var filterTokens = SplitWmsFilterTokens(filterParam);
             if (filterTokens.Length != 1 && filterTokens.Length != renderLayers.Length)
             {
                 return CreateWmsServiceException(context, "InvalidParameterValue",
@@ -1124,6 +1124,60 @@ internal static partial class MapServerEndpoints
     private static string? GetQueryValue(IQueryCollection query, string key)
     {
         return query.TryGetValue(key, out var value) ? value.ToString() : null;
+    }
+
+    /// <summary>
+    /// Splits a WMS FILTER parameter into per-layer tokens using only semicolons
+    /// at XML depth 0 as delimiters. Semicolons inside XML elements (entity
+    /// references, literal text) are preserved.
+    /// </summary>
+    private static string[] SplitWmsFilterTokens(string filterParam)
+    {
+        var tokens = new List<string>();
+        int depth = 0;
+        int start = 0;
+        bool inTag = false;
+        bool isClosingTag = false;
+
+        for (int i = 0; i < filterParam.Length; i++)
+        {
+            char c = filterParam[i];
+
+            switch (c)
+            {
+                case '<' when !inTag:
+                    inTag = true;
+                    isClosingTag = i + 1 < filterParam.Length && filterParam[i + 1] == '/';
+                    break;
+                case '>' when inTag:
+                    if (filterParam[i - 1] == '/' || filterParam[i - 1] == '?')
+                    {
+                        // Self-closing <.../> or processing instruction <?...?>: neutral depth
+                    }
+                    else if (isClosingTag)
+                    {
+                        depth--;
+                    }
+                    else
+                    {
+                        depth++;
+                    }
+
+                    inTag = false;
+                    break;
+                case ';' when depth == 0 && !inTag:
+                    tokens.Add(filterParam[start..i]);
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        if (start <= filterParam.Length)
+        {
+            tokens.Add(filterParam[start..]);
+        }
+
+        return tokens.ToArray();
     }
 
     private static IResult CreateWmsServiceException(
