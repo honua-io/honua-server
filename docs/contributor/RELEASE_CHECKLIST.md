@@ -31,8 +31,11 @@ Use this checklist for every MVP release.
 
 ### Cross-Client Certification (Required)
 
-- [ ] Produce cross-client certification evidence per the [Evidence Specification](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)
-- [ ] Verify all common-core CERT-\* test cases have results for each active client lane
+- [ ] Verify the nightly `windows-client-compat-nightly.yml` workflow passes with zero `fail` results in automated `.cert.json` envelopes (FeatureServer, OGC API Features, MapServer, OData)
+- [ ] Review automated certification evidence artifacts: `certification/{timestamp}-ci-desktop-*.cert.json` and `certification/{timestamp}-ci-bi-odata.cert.json`
+- [ ] Confirm all `skip` and `not-applicable` entries have documented reasons (CERT-CONN-02 TLS, CERT-AUTH-01/02 auth, CERT-RNDR-01/02 visual)
+- [ ] Produce manual client certification evidence per the [Evidence Specification](../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for desktop (ArcGIS Pro, QGIS) and BI (Power BI, Excel) lanes
+- [ ] Verify all common-core CERT-\* test cases have results for each active client lane (automated + manual)
 
 ### Tested Client Versions (Required)
 

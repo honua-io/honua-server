@@ -23,16 +23,16 @@
     { "test_case_id": "CERT-GEOM-01", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Recorded as not-applicable for the rendering-only MapServer lane.", "evidence_ref": "" },
     { "test_case_id": "CERT-GEOM-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Recorded as not-applicable for the rendering-only MapServer lane.", "evidence_ref": "" },
     { "test_case_id": "CERT-ERRH-01", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
-    { "test_case_id": "CERT-ERRH-02", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-ERRH-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Rendering-only lane; malformed query not applicable", "evidence_ref": "" },
     { "test_case_id": "CERT-RNDR-01", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
     { "test_case_id": "CERT-RNDR-02", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
   ],
   "summary": {
     "total": 18,
-    "passed": 12,
+    "passed": 11,
     "failed": 0,
     "skipped": 0,
-    "not_applicable": 6
+    "not_applicable": 7
   },
   "cite_results": null,
   "extensions": []
