@@ -6,7 +6,7 @@ Playwright + Chromium end-to-end suite that proves MapLibre GL JS can load style
 
 1. **Style JSON** — `/api/styles/{layerId}.json` returns a valid MapLibre v8 document.
 2. **TileJSON discovery** — `/tiles/{layerId}/tile.json` returns tile URLs and vector layer metadata.
-3. **Vector tile fetch** — MVT tiles return `200` with `application/vnd.mapbox-vector-tile` content-type.
+3. **Vector tile fetch** — MVT tiles return `200` with `application/vnd.mapbox-vector-tile` or `application/x-protobuf` content-type.
 4. **Canvas render** — MapLibre initializes, reaches idle, and renders non-blank pixels for point, line, and polygon layers.
 5. **Interactive query** — `queryRenderedFeatures` returns seeded features at known coordinates.
 
