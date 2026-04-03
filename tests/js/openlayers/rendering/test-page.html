@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OpenLayers Rendering Test</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    #map { width: 512px; height: 512px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!--
+    OpenLayers UMD bundle served from node_modules via serve-test-page.ts.
+    The UMD bundle exposes the global `ol` object.
+  -->
+  <script src="/ol/dist/ol.js"></script>
+  <script>
+    // Read query parameters
+    const params = new URLSearchParams(window.location.search);
+    const baseUrl = params.get('baseUrl') || 'http://localhost:5555';
+    const collectionId = params.get('collectionId') || '';
+
+    // Expose state for Playwright assertions
+    window.__RENDER_COMPLETE = false;
+    window.__FEATURE_COUNT = 0;
+    window.__ERROR = null;
+
+    try {
+      // Style: visible blue fill with dark stroke
+      const style = new ol.style.Style({
+        fill: new ol.style.Fill({ color: 'rgba(30, 100, 200, 0.6)' }),
+        stroke: new ol.style.Stroke({ color: '#1a1a2e', width: 1.5 }),
+        image: new ol.style.Circle({
+          radius: 5,
+          fill: new ol.style.Fill({ color: 'rgba(30, 100, 200, 0.8)' }),
+          stroke: new ol.style.Stroke({ color: '#1a1a2e', width: 1 }),
+        }),
+      });
+
+      // OGC Vector Tile source pointing at Honua
+      const source = new ol.source.OGCVectorTile({
+        url: baseUrl + '/ogc/tiles/collections/' + collectionId + '/tiles/WebMercatorQuad',
+        format: new ol.format.MVT(),
+        mediaType: 'application/vnd.mapbox-vector-tile',
+      });
+
+      const vectorTileLayer = new ol.layer.VectorTile({
+        source: source,
+        style: style,
+      });
+
+      // Track feature count on tile loads
+      source.on('tileloadend', function (evt) {
+        const tile = evt.tile;
+        if (tile && typeof tile.getFeatures === 'function') {
+          const features = tile.getFeatures();
+          window.__FEATURE_COUNT += features.length;
+        }
+      });
+
+      const map = new ol.Map({
+        target: 'map',
+        layers: [vectorTileLayer],
+        view: new ol.View({
+          center: ol.proj.fromLonLat([-122.4, 37.8]),
+          zoom: 10,
+        }),
+      });
+
+      map.once('rendercomplete', function () {
+        window.__RENDER_COMPLETE = true;
+      });
+    } catch (err) {
+      window.__ERROR = err.message || String(err);
+    }
+  </script>
+</body>
+</html>
