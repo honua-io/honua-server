@@ -180,6 +180,7 @@ write_artifact_readme() {
 
 - \`overall-summary.json\` and \`overall-summary.md\`: aggregate lane verdicts.
 - \`lanes/<lane>/\`: per-lane summaries and request/response transcripts.
+- \`certification/\`: per-protocol \`.cert.json\` envelopes (\`full\` profile only).
 - \`server/\`: captured Honua server logs.
 - \`pack/\`: reusable client compatibility pack for manual Windows follow-through.
 - \`metadata/\`: workflow provenance and the exact seed snapshot used for the run.
@@ -831,6 +832,10 @@ run_full_ogc_features() {
   if [[ "$geom02_status" == "pass" && -f "$LAST_HEADERS_PATH" ]]; then
     if ! grep -qi 'content-crs:.*EPSG/0/4326' "$LAST_HEADERS_PATH"; then
       geom02_status="fail"
+      # Propagate header failure to lane check result so lane/overall summaries stay consistent
+      awk -F'\t' -v OFS='\t' '$1 == "ogc-geom-crs" { $2 = "fail"; $5 = "Content-Crs header missing or does not match EPSG:4326" }1' \
+        "$CURRENT_RESULTS_FILE" > "${CURRENT_RESULTS_FILE}.tmp" && mv "${CURRENT_RESULTS_FILE}.tmp" "$CURRENT_RESULTS_FILE"
+      failed=1
     fi
   fi
   append_cert_result "$proto" "CERT-GEOM-02" "$geom02_status" "$LAST_DURATION_MS" "" "" ""
