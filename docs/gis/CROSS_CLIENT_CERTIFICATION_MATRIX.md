@@ -81,6 +81,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | Lane | Automation | Core Coverage | Extensions |
 |---|---|---|---|
 | **JS** (Vitest + Playwright) | Automated ‡‡ | All CERT-\* | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
+| **JS — MapLibre** (Playwright) | Automated | CERT-CONN-01, CERT-RNDR-01 (browser render) | JS-EXT-01, JS-EXT-02 |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
 | **CLI / SDK** (admin SDK, pytest) | Automated | All CERT-\* except CERT-RNDR | CLI-EXT-01, CLI-EXT-02 |
@@ -156,3 +157,4 @@ All certification results must follow the standardized evidence specification in
 | 1.0.7 | 2026-03-17 | Add stable HTML anchor for JS Lane heading to decouple cross-document links |
 | 1.0.8 | 2026-04-03 | Add WFS protocol abbreviation; update Desktop — QGIS lane to reflect automated PyQGIS coverage |
 | 1.0.9 | 2026-04-05 | Update JS lane to reflect hybrid Vitest + Playwright execution model and expanded protocol scope |
+| 1.1.0 | 2026-04-06 | Add JS — MapLibre (Playwright) lane for automated MapLibre GL JS browser render certification |

@@ -1,0 +1,57 @@
+// MVT tile decode and render pipeline — proves tiles are fetched and canvas
+// is not blank after rendering.
+// CERT mapping: JS-EXT-01 (PBF/MVT decode), JS-EXT-02 (tile load pipeline).
+
+import { test, expect } from '@playwright/test';
+import { createMap } from '../helpers/map-harness.js';
+
+const BASE_URL = process.env.HONUA_BASE_URL ?? 'http://localhost:5000';
+const POINT_LAYER_ID = 2000;
+
+test.describe('Tile Rendering', () => {
+  test('[JS-EXT-01][JS-EXT-02] MVT tiles are fetched and decoded successfully', async ({ page }) => {
+    const tileRequests: { url: string; status: number; contentType: string }[] = [];
+
+    // Intercept tile requests to verify they complete with correct content-type.
+    await page.route('**/tiles/**/*.mvt', async (route) => {
+      const response = await route.fetch();
+      tileRequests.push({
+        url: route.request().url(),
+        status: response.status(),
+        contentType: response.headers()['content-type'] ?? '',
+      });
+      await route.fulfill({ response });
+    });
+
+    const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
+    await createMap(page, {
+      styleUrl,
+      center: [-122.4194, 37.7749],
+      zoom: 14,
+    });
+
+    // Verify at least one tile was requested and returned 200.
+    expect(tileRequests.length).toBeGreaterThan(0);
+    for (const req of tileRequests) {
+      expect(req.status).toBe(200);
+      // MVT tiles should return application/vnd.mapbox-vector-tile or application/x-protobuf.
+      expect(
+        req.contentType.includes('application/vnd.mapbox-vector-tile') ||
+        req.contentType.includes('application/x-protobuf'),
+      ).toBe(true);
+    }
+  });
+
+  test('[JS-EXT-01] canvas is not blank after tile render', async ({ page }) => {
+    const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
+    const map = await createMap(page, {
+      styleUrl,
+      center: [-122.4194, 37.7749],
+      zoom: 14,
+    });
+
+    // The canvas should have non-background pixels (features rendered).
+    const pixelCount = await map.countNonBackgroundPixels();
+    expect(pixelCount).toBeGreaterThan(0);
+  });
+});
