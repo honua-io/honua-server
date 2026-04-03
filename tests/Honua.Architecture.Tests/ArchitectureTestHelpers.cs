@@ -25,4 +25,23 @@ internal static class ArchitectureTestHelpers
             return ex.Types.Where(type => type != null)!;
         }
     }
+
+    /// <summary>
+    /// Resolves the repository root by walking upward until Honua.sln is found.
+    /// </summary>
+    internal static string ResolveRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        if (directory is null)
+        {
+            throw new FileNotFoundException("Unable to locate repository root.");
+        }
+
+        return directory.FullName;
+    }
 }

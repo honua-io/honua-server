@@ -22,6 +22,7 @@ Use this checklist for every MVP release.
 ## Compatibility Contract Updates (Required)
 
 - [ ] Update [MVP Compatibility Contract](../gis/MVP_COMPATIBILITY_CONTRACT.md)
+- [ ] Validate [Public Interface Quality Model](public-interface-quality-model.md) and [public-interface-proof.json](../gis/data/public-interface-proof.json) against the shipped runtime surface
 - [ ] Refresh [GeoServices REST Parity](../gis/geoservices-rest-parity.md), the service drill-down matrices, and [data/geoservices-rest-parity.json](../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed in the release
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../gis/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Confirm supported/partial/unsupported protocol notes are current
@@ -37,6 +38,7 @@ Use this checklist for every MVP release.
 
 Update from certification workflow outputs and manual validation logs:
 - [ ] Update [Client Template Version Matrix](../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) with exact client versions, run date, and evidence links from `#320`
+- [ ] Replace any curated example links in [Client Template Version Matrix](../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) with the current release artifact URL or release asset URL
 
 | Client | Version tested | Protocol(s) | Result | Notes |
 |---|---|---|---|---|
@@ -48,6 +50,11 @@ Update from certification workflow outputs and manual validation logs:
 | MapLibre GL JS ‡ | _update_ | MVT | _update_ | _update_ |
 
 ‡ MapLibre GL JS certification is currently **manual** (visual browser-based verification). Evidence rolls up under the **JS lane** (`client_lane: "js"`) with protocol `"mvt"`. The existing Vitest suite does not yet include MVT tests; automated coverage is tracked as a follow-up. See [Certification Matrix — JS Lane Extensions](../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#js-lane) for JS-EXT-01/JS-EXT-02 scope.
+
+### Tool Interoperability Evidence (Required)
+
+- [ ] Confirm the tool-lane version capture rules in [Public Interface Quality Model](public-interface-quality-model.md) still match the current implementation
+- [ ] Preserve immutable evidence for `Microsoft.OData.Client`, `GDAL/OGR`, and MCP lanes as described in [Public Interface Quality Model](public-interface-quality-model.md)
 
 ### Known Caveats and Workarounds (Required)
 
