@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-04-02 (ticket #415)
+> Last updated: 2026-04-03 (ticket #463)
 
 ## Tier Definitions
 
@@ -29,7 +29,7 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `ci.yml` | Build, test, architecture gate, coverage | None (always runs) |
+| `ci.yml` | Build, test, architecture gate, coverage, Esri Leaflet browser compatibility | None (always runs) |
 | `pr-validation.yml` | PR template compliance | None (always runs) |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `proto-wire-governance.yml` | Protobuf wire stability | `**/*.proto` |

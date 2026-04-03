@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-04-02T00:00:00Z",
+  "updatedUtc": "2026-04-03T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -302,6 +302,20 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final FeatureServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving FeatureServer consumption through leaflet + esri-leaflet + esri-leaflet-renderers",
+          "executionLane": "ci:esri-leaflet-browser-tests",
+          "evidenceLocations": [
+            "tests/js-browser/esri-leaflet/feature-layer-load.spec.ts",
+            "tests/js-browser/shared/cert-reporter.ts",
+            "tests/js-browser/playwright.config.ts"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#463",
+          "versionCaptureRule": "Reporter resolves client_version from the installed esri-leaflet package in node_modules."
         }
       ]
     },
@@ -364,6 +378,20 @@
           "status": "implemented",
           "linkedTicket": null,
           "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final MapServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Esri Leaflet 3.x Playwright browser suite proving MapServer consumption through leaflet + esri-leaflet DynamicMapLayer",
+          "executionLane": "ci:esri-leaflet-browser-tests",
+          "evidenceLocations": [
+            "tests/js-browser/esri-leaflet/dynamic-map-layer.spec.ts",
+            "tests/js-browser/shared/cert-reporter.ts",
+            "tests/js-browser/playwright.config.ts"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#463",
+          "versionCaptureRule": "Reporter resolves client_version from the installed esri-leaflet package in node_modules."
         }
       ]
     },
