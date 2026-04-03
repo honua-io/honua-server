@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Esri Leaflet Compatibility Test</title>
+  <link rel="stylesheet" href="/vendor/leaflet/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="/vendor/leaflet/dist/leaflet.js"></script>
+  <script src="/vendor/esri-leaflet/dist/esri-leaflet.js"></script>
+  <script src="/vendor/esri-leaflet-renderers/dist/esri-leaflet-renderers.js"></script>
+
+  <script>
+    // Globals for Playwright page.evaluate() access
+    window.__map = null;
+    window.__featureLayer = null;
+    window.__dynamicMapLayer = null;
+    window.__layerError = null;
+    window.__loadFired = false;
+
+    /**
+     * Initialize a Leaflet map with an Esri FeatureLayer.
+     * @param {object} config
+     * @param {string} config.baseUrl - Honua server base URL
+     * @param {string} config.serviceId - Service ID
+     * @param {number|string} config.layerId - Layer ID
+     * @param {object} [config.mapOptions] - Leaflet map options override
+     * @param {object} [config.layerOptions] - Extra FeatureLayer options
+     */
+    window.__initFeatureLayer = function (config) {
+      if (window.__map) {
+        window.__map.remove();
+      }
+
+      const mapOpts = Object.assign(
+        { center: [37.7749, -122.4194], zoom: 12, zoomControl: false, attributionControl: false },
+        config.mapOptions || {}
+      );
+      window.__map = L.map('map', mapOpts);
+
+      const url = config.baseUrl + '/rest/services/' + config.serviceId + '/FeatureServer/' + config.layerId;
+      const layerOpts = Object.assign({ url: url }, config.layerOptions || {});
+
+      window.__loadFired = false;
+      window.__layerError = null;
+
+      var layer = L.esri.featureLayer(layerOpts);
+      layer.on('load', function () { window.__loadFired = true; });
+      layer.on('error', function (e) { window.__layerError = e; });
+      layer.addTo(window.__map);
+
+      window.__featureLayer = layer;
+    };
+
+    /**
+     * Initialize a Leaflet map with an Esri DynamicMapLayer.
+     * @param {object} config
+     * @param {string} config.baseUrl - Honua server base URL
+     * @param {string} config.serviceId - Service ID
+     * @param {object} [config.mapOptions] - Leaflet map options override
+     * @param {object} [config.layerOptions] - Extra DynamicMapLayer options
+     */
+    window.__initDynamicMapLayer = function (config) {
+      if (window.__map) {
+        window.__map.remove();
+      }
+
+      const mapOpts = Object.assign(
+        { center: [37.7749, -122.4194], zoom: 12, zoomControl: false, attributionControl: false },
+        config.mapOptions || {}
+      );
+      window.__map = L.map('map', mapOpts);
+
+      const url = config.baseUrl + '/rest/services/' + config.serviceId + '/MapServer';
+      const layerOpts = Object.assign({ url: url }, config.layerOptions || {});
+
+      window.__loadFired = false;
+      window.__layerError = null;
+
+      var layer = L.esri.dynamicMapLayer(layerOpts);
+      layer.on('load', function () { window.__loadFired = true; });
+      layer.on('error', function (e) { window.__layerError = e; });
+      layer.addTo(window.__map);
+
+      window.__dynamicMapLayer = layer;
+    };
+
+    /** @returns {L.Map|null} */
+    window.__getMap = function () { return window.__map; };
+
+    /** @returns {L.esri.FeatureLayer|null} */
+    window.__getFeatureLayer = function () { return window.__featureLayer; };
+
+    /** @returns {L.esri.DynamicMapLayer|null} */
+    window.__getDynamicMapLayer = function () { return window.__dynamicMapLayer; };
+  </script>
+</body>
+</html>

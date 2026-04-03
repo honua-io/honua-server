@@ -508,6 +508,68 @@ jobs:
           HONUA_LAYER_ID: '0'
           HONUA_API_KEY: "ci-admin-password"
 
+  esri-leaflet-browser-tests:
+    name: Esri Leaflet Browser Tests
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Honua Server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: tests/js-browser/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: tests/js-browser
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: tests/js-browser
+
+      - name: Run Esri Leaflet Browser Tests
+        run: npx playwright test
+        working-directory: tests/js-browser
+        env:
+          HONUA_BASE_URL: http://localhost:5000
+          HONUA_SERVICE_ID: test_service
+          HONUA_LAYER_ID: '0'
+          HONUA_API_KEY: "ci-admin-password"
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: esri-leaflet-browser-results
+          path: |
+            tests/js-browser/test-results/
+            tests/js-browser/evidence/
+          retention-days: 7
+
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
@@ -1049,7 +1111,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, mcp-certification, core-package-compatibility, postgres-compat, docker-build, llm-architecture-review, architecture-gate]
+    needs: [pr-readiness, changes, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, mcp-certification, core-package-compatibility, postgres-compat, docker-build, llm-architecture-review, architecture-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results
