@@ -53,7 +53,9 @@ const EXTENSION_IDS = [
 const CERT_ID_REGEX = /\[(CERT-[A-Z]+-\d+|JS-EXT-\d+)]/g;
 
 class CertReporter implements Reporter {
-  private results = new Map<string, { status: CertResult['status']; duration_ms: number; notes: string }>();
+  // Map<certId, Map<testId, result>> — inner map keyed by Playwright test ID
+  // so retries (same test) overwrite while different tests aggregate correctly.
+  private resultsByTest = new Map<string, Map<string, { status: CertResult['status']; duration_ms: number; notes: string }>>();
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const ids = [...test.title.matchAll(CERT_ID_REGEX)].map((m) => m[1]);
@@ -70,11 +72,9 @@ class CertReporter implements Reporter {
       : '';
 
     for (const id of ids) {
-      // If a test passed but we already have a pass, keep it. If the
-      // previous was fail and this is pass, the pass wins (retry).
-      const prev = this.results.get(id);
-      if (prev && prev.status === 'pass' && status !== 'pass') continue;
-      this.results.set(id, { status, duration_ms: result.duration, notes });
+      if (!this.resultsByTest.has(id)) this.resultsByTest.set(id, new Map());
+      // Last attempt per test wins (handles Playwright retries).
+      this.resultsByTest.get(id)!.set(test.id, { status, duration_ms: result.duration, notes });
     }
   }
 
@@ -90,15 +90,24 @@ class CertReporter implements Reporter {
     }
 
     const buildResult = (id: string): CertResult => {
-      const r = this.results.get(id);
+      const byTest = this.resultsByTest.get(id);
+      if (!byTest || byTest.size === 0) {
+        return {
+          test_case_id: id, status: 'skip', duration_ms: null,
+          measured_count: null, measured_delta: null, notes: '', evidence_ref: '',
+        };
+      }
+      const entries = [...byTest.values()];
+      // Aggregate: any fail across different tests → fail; else any pass → pass.
+      const hasFail = entries.some((e) => e.status === 'fail');
+      const hasPass = entries.some((e) => e.status === 'pass');
+      const status: CertResult['status'] = hasFail ? 'fail' : hasPass ? 'pass' : 'skip';
+      const totalDuration = entries.reduce((sum, e) => sum + e.duration_ms, 0);
+      const failNotes = entries.filter((e) => e.status === 'fail').map((e) => e.notes).filter(Boolean).join('; ');
       return {
-        test_case_id: id,
-        status: r?.status ?? 'skip',
-        duration_ms: r?.duration_ms ?? null,
-        measured_count: null,
-        measured_delta: null,
-        notes: r?.notes ?? '',
-        evidence_ref: '',
+        test_case_id: id, status, duration_ms: totalDuration,
+        measured_count: null, measured_delta: null,
+        notes: hasFail ? failNotes : '', evidence_ref: '',
       };
     };
 

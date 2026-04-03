@@ -10,6 +10,7 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ['list'],
+    ['html', { outputFolder: './playwright-report', open: 'never' }],
     ['./helpers/cert-reporter.ts'],
   ],
   globalSetup: './global-setup.ts',
