@@ -369,6 +369,8 @@ request_json_4xx() {
   local url="$2"
   local jq_expr="$3"
   local accept="${4:-application/json}"
+  local expected_status="${5:-}"          # optional: exact HTTP status (e.g. "404")
+  local expected_content_type="${6:-}"    # optional: required Content-Type prefix
 
   local lane_path headers_file body_file transcript_file transcript_rel http_status curl_exit status note
   lane_path="$(lane_dir "$CURRENT_LANE")"
@@ -391,9 +393,15 @@ request_json_4xx() {
   if [[ $curl_exit -ne 0 ]]; then
     status="fail"
     note="curl exited with code ${curl_exit}"
-  elif [[ "${http_status:0:1}" != "4" ]]; then
+  elif [[ -n "$expected_status" && "$http_status" != "$expected_status" ]]; then
+    status="fail"
+    note="expected HTTP ${expected_status}, got ${http_status}"
+  elif [[ -z "$expected_status" && "${http_status:0:1}" != "4" ]]; then
     status="fail"
     note="expected HTTP 4xx, got ${http_status}"
+  elif [[ -n "$expected_content_type" ]] && ! grep -qi "^content-type:.*${expected_content_type}" "$headers_file"; then
+    status="fail"
+    note="expected Content-Type ${expected_content_type}, not found in response headers"
   elif ! jq -e "$jq_expr" "$body_file" >/dev/null 2>&1; then
     status="fail"
     note="response failed jq assertion: ${jq_expr}"
@@ -841,18 +849,24 @@ run_full_ogc_features() {
   fi
   append_cert_result "$proto" "CERT-GEOM-02" "$geom02_status" "$LAST_DURATION_MS" "" "" ""
 
-  # CERT-ERRH-01: Invalid collection returns RFC 7807 Problem Details
+  # CERT-ERRH-01: Invalid collection returns RFC 7807 Problem Details (404, application/problem+json)
   request_json_4xx \
     "ogc-error-invalid" \
     "${ogc_base}/collections/nonexistent_99999" \
-    '.type != null and .title != null and .status != null and .detail != null' || failed=1
+    '.type != null and .title != null and .status != null and .detail != null' \
+    "application/json" \
+    "404" \
+    "application/problem+json" || failed=1
   append_cert_result "$proto" "CERT-ERRH-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
-  # CERT-ERRH-02: Malformed filter returns RFC 7807 Problem Details
+  # CERT-ERRH-02: Malformed filter returns RFC 7807 Problem Details (400, application/problem+json)
   request_json_4xx \
     "ogc-error-malformed" \
     "${ogc_base}/collections/${LAYER_ID}/items?filter=INVALID%21%21%21" \
-    '.type != null and .title != null and .status != null and .detail != null' || failed=1
+    '.type != null and .title != null and .status != null and .detail != null' \
+    "application/json" \
+    "400" \
+    "application/problem+json" || failed=1
   append_cert_result "$proto" "CERT-ERRH-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-RNDR-01, RNDR-02 (skip)
