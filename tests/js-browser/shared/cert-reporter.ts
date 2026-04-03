@@ -58,7 +58,7 @@ function skipResult(certId: string, notes: string): CertResult {
  * does not exercise them.
  */
 export default class CertReporter implements Reporter {
-  private results: Map<string, { certIds: string[]; status: 'pass' | 'fail' | 'skip'; duration: number; protocol: 'featureserver' | 'mapserver'; notes: string }> = new Map();
+  private results: Map<string, { certIds: string[]; status: 'pass' | 'fail' | 'skip'; duration: number; protocol: 'featureserver' | 'mapserver'; notes: string; measuredCount: number | null; measuredDelta: number | null }> = new Map();
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const certIds = extractCertIds(test.title);
@@ -72,6 +72,12 @@ export default class CertReporter implements Reporter {
     const notes = result.status === 'failed'
       ? (result.errors?.map(e => e.message).join('; ') ?? 'Test failed')
       : '';
+
+    // Extract measured_count / measured_delta from test annotations
+    const countAnnotation = test.annotations.find(a => a.type === 'measured_count');
+    const deltaAnnotation = test.annotations.find(a => a.type === 'measured_delta');
+    const measuredCount = countAnnotation?.description != null ? Number(countAnnotation.description) : null;
+    const measuredDelta = deltaAnnotation?.description != null ? Number(deltaAnnotation.description) : null;
 
     for (const certId of certIds) {
       const key = `${protocol}:${certId}`;
@@ -88,6 +94,8 @@ export default class CertReporter implements Reporter {
         duration: result.duration,
         protocol,
         notes,
+        measuredCount,
+        measuredDelta,
       });
     }
   }
@@ -128,8 +136,8 @@ export default class CertReporter implements Reporter {
             test_case_id: certId,
             status: executed.status,
             duration_ms: executed.duration,
-            measured_count: null,
-            measured_delta: null,
+            measured_count: executed.measuredCount,
+            measured_delta: executed.measuredDelta,
             notes: executed.notes,
             evidence_ref: '',
           });
@@ -149,8 +157,8 @@ export default class CertReporter implements Reporter {
             test_case_id: certId,
             status: entry.status,
             duration_ms: entry.duration,
-            measured_count: null,
-            measured_delta: null,
+            measured_count: entry.measuredCount,
+            measured_delta: entry.measuredDelta,
             notes: entry.notes,
             evidence_ref: '',
           });

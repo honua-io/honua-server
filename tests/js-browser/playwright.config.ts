@@ -27,9 +27,9 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  // Snapshot policy: generate missing baselines on first run, compare on subsequent.
-  // Once baselines are committed, tighten CI to 'none' to reject regressions.
-  updateSnapshots: 'missing',
+  // Snapshot policy: CI rejects missing baselines so visual regressions are caught;
+  // locally, generate missing baselines on first run for developer convenience.
+  updateSnapshots: process.env.CI ? 'none' : 'missing',
   expect: {
     toHaveScreenshot: {
       maxDiffPixelRatio: 0.02,

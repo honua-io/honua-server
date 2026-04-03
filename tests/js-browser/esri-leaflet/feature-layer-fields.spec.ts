@@ -59,6 +59,7 @@ test.describe('FeatureLayer Popup and Field Access', () => {
     }
 
     expect(matched).toBe(true);
+    test.info().annotations.push({ type: 'measured_delta', description: String(maxDelta) });
     expect(maxDelta).toBeLessThanOrEqual(threshold);
   });
 

@@ -26,7 +26,9 @@ test.describe('FeatureLayer Query and Filter', () => {
     });
 
     expect(result).toHaveProperty('type', 'FeatureCollection');
-    expect((result as any).featureCount).toBeGreaterThan(0);
+    const count = (result as any).featureCount;
+    test.info().annotations.push({ type: 'measured_count', description: String(count) });
+    expect(count).toBeGreaterThan(0);
     // Every returned feature must match the predicate
     expect((result as any).allMatch).toBe(true);
   });
@@ -59,8 +61,10 @@ test.describe('FeatureLayer Query and Filter', () => {
     });
 
     expect(result).toHaveProperty('type', 'FeatureCollection');
+    const count = (result as any).featureCount;
+    test.info().annotations.push({ type: 'measured_count', description: String(count) });
     // Spatial query should return results (test data is seeded in SF area)
-    expect((result as any).featureCount).toBeGreaterThan(0);
+    expect(count).toBeGreaterThan(0);
   });
 
   test('[CERT-PAGE-01] Query with limit returns expected count', async ({ page, staticUrl, config }) => {
@@ -88,8 +92,10 @@ test.describe('FeatureLayer Query and Filter', () => {
     }, limit);
 
     expect(result).toHaveProperty('type', 'FeatureCollection');
-    expect((result as any).featureCount).toBeLessThanOrEqual(limit);
-    expect((result as any).featureCount).toBeGreaterThan(0);
+    const count = (result as any).featureCount;
+    test.info().annotations.push({ type: 'measured_count', description: String(count) });
+    expect(count).toBeLessThanOrEqual(limit);
+    expect(count).toBeGreaterThan(0);
   });
 
   test('[CERT-PAGE-02] Offset returns different features than first page', async ({ page, staticUrl, config }) => {

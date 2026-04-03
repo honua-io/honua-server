@@ -81,6 +81,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | Lane | Automation | Core Coverage | Extensions |
 |---|---|---|---|
 | **JS** (Vitest) | Automated ‡‡ | All CERT-\* except CERT-RNDR (headless) | JS-EXT-01, JS-EXT-02 |
+| **JS — Esri Leaflet** (Playwright) | Automated | All CERT-\* (visual RNDR via Chromium) | EL-EXT-01 … EL-EXT-04 |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
 | **CLI / SDK** (admin SDK, pytest) | Automated | All CERT-\* except CERT-RNDR | CLI-EXT-01, CLI-EXT-02 |
@@ -102,6 +103,15 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 |---|---|---|---|
 | JS-EXT-01 | Binary format fidelity (PBF/MVT decode) | MVT | pass/fail |
 | JS-EXT-02 | Streaming/MVT tile load pipeline | MVT | pass/fail |
+
+#### Esri Leaflet Browser Sub-Lane
+
+| Extension ID | Description | Protocol(s) | Evidence |
+|---|---|---|---|
+| EL-EXT-01 | FeatureLayer symbology renders with drawingInfo | FS | pass/fail |
+| EL-EXT-02 | DynamicMapLayer export image renders | FS (mapserver) | pass/fail |
+| EL-EXT-03 | Feature attributes accessible via eachFeature | FS | pass/fail |
+| EL-EXT-04 | MapServer identify returns attributes at point | FS (mapserver) | pass/fail |
 
 #### Desktop Lane
 
@@ -147,3 +157,4 @@ All certification results must follow the standardized evidence specification in
 | 1.0.6 | 2026-03-16 | Add Admin API protocol abbreviation for CLI lane extensions |
 | 1.0.7 | 2026-03-17 | Add stable HTML anchor for JS Lane heading to decouple cross-document links |
 | 1.0.8 | 2026-04-03 | Add WFS protocol abbreviation; update Desktop — QGIS lane to reflect automated PyQGIS coverage |
+| 1.0.9 | 2026-04-03 | Register Esri Leaflet browser sub-lane (EL-EXT-01 … EL-EXT-04) |
