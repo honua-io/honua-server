@@ -853,7 +853,7 @@ run_full_ogc_features() {
   request_json_4xx \
     "ogc-error-invalid" \
     "${ogc_base}/collections/nonexistent_99999" \
-    '.type != null and .title != null and .status != null and .detail != null' \
+    '.type == "about:blank" and .title == "Not Found" and .status == 404 and (.detail | length) > 0' \
     "application/json" \
     "404" \
     "application/problem+json" || failed=1
@@ -863,7 +863,7 @@ run_full_ogc_features() {
   request_json_4xx \
     "ogc-error-malformed" \
     "${ogc_base}/collections/${LAYER_ID}/items?filter=INVALID%21%21%21" \
-    '.type != null and .title != null and .status != null and .detail != null' \
+    '.type == "about:blank" and .title == "Bad Request" and .status == 400 and (.detail | length) > 0' \
     "application/json" \
     "400" \
     "application/problem+json" || failed=1
