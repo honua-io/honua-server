@@ -707,17 +707,23 @@ run_full_featureserver() {
     "200" \
     '(.features | length) == 3' || failed=1
   local page01_count=""
+  local page01_first_oid=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     page01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
+    page01_first_oid=$(jq '.features[0].attributes.OBJECTID // empty' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-PAGE-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$page01_count" "" ""
 
   # CERT-PAGE-02: Second page (different features)
+  local fs_page02_jq='(.features | length) == 3'
+  if [[ -n "$page01_first_oid" ]]; then
+    fs_page02_jq="((.features | length) == 3) and (.features[0].attributes.OBJECTID != ${page01_first_oid})"
+  fi
   request_json \
     "fs-page-second" \
     "${fs_base}/${LAYER_ID}/query?where=1%3D1&resultRecordCount=3&resultOffset=3&returnGeometry=true&f=json" \
     "200" \
-    '(.features | length) == 3' || failed=1
+    "$fs_page02_jq" || failed=1
   append_cert_result "$proto" "CERT-PAGE-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-GEOM-01: Coordinate fidelity (alpha at -122.4900, 37.7100)
@@ -835,16 +841,22 @@ run_full_ogc_features() {
     "${ogc_base}/collections/${LAYER_ID}/items?limit=3" "200" \
     '(.features | length) == 3' || failed=1
   local page01_count=""
+  local page01_first_fid=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     page01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
+    page01_first_fid=$(jq '.features[0].id // empty' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-PAGE-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$page01_count" "" ""
 
-  # CERT-PAGE-02: Second page offset
+  # CERT-PAGE-02: Second page offset (different features)
+  local ogc_page02_jq='(.features | length) == 3'
+  if [[ -n "$page01_first_fid" ]]; then
+    ogc_page02_jq="((.features | length) == 3) and (.features[0].id != ${page01_first_fid})"
+  fi
   request_json \
     "ogc-page-second" \
     "${ogc_base}/collections/${LAYER_ID}/items?limit=3&offset=3" "200" \
-    '(.features | length) == 3' || failed=1
+    "$ogc_page02_jq" || failed=1
   append_cert_result "$proto" "CERT-PAGE-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-GEOM-01: Coordinate fidelity (GeoJSON: coordinates[0]=x, coordinates[1]=y)
