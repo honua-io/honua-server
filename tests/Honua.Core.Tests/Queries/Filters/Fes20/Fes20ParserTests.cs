@@ -83,6 +83,66 @@ public sealed class Fes20ParserTests
     }
 
     [UnitTest]
+    public void ParseFilter_EmptyLowerBoundary_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsBetween>
+                <fes:ValueReference>population</fes:ValueReference>
+                <fes:LowerBoundary/>
+                <fes:UpperBoundary>
+                  <fes:Literal>1000</fes:Literal>
+                </fes:UpperBoundary>
+              </fes:PropertyIsBetween>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*LowerBoundary*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_EmptyUpperBoundary_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsBetween>
+                <fes:ValueReference>population</fes:ValueReference>
+                <fes:LowerBoundary>
+                  <fes:Literal>100</fes:Literal>
+                </fes:LowerBoundary>
+                <fes:UpperBoundary/>
+              </fes:PropertyIsBetween>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*UpperBoundary*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_InvalidTypedLiteral_ThrowsParseException()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsEqualTo>
+                <fes:ValueReference>count</fes:ValueReference>
+                <fes:Literal type="xs:integer">not_a_number</fes:Literal>
+              </fes:PropertyIsEqualTo>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*Cannot parse literal*");
+    }
+
+    [UnitTest]
     public void ParseFilter_DateTimeLiteral_PreservesDateTimeOffset()
     {
         const string filterXml = """

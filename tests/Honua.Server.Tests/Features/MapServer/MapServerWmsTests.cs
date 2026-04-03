@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -243,5 +244,143 @@ public sealed class MapServerWmsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
         content.Should().Contain("Layer=");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_WithFilter_ReturnsDistinctImage()
+    {
+        var baseUrl = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TRANSPARENT=true";
+
+        var noFilterResponse = await _fixture.Client.GetAsync(baseUrl);
+        var noFilterBytes = await noFilterResponse.Content.ReadAsByteArrayAsync();
+        noFilterResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(noFilterBytes)}");
+
+        const string equalityFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>test</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var filteredResponse = await _fixture.Client.GetAsync($"{baseUrl}&FILTER={Uri.EscapeDataString(equalityFilter)}");
+        var filteredBytes = await filteredResponse.Content.ReadAsByteArrayAsync();
+        filteredResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(filteredBytes)}");
+        filteredResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+        var noFilterHash = Convert.ToHexString(SHA256.HashData(noFilterBytes));
+        var filteredHash = Convert.ToHexString(SHA256.HashData(filteredBytes));
+        filteredHash.Should().NotBe(noFilterHash, "FILTER should produce a distinct raster image");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_DifferentFilters_ReturnDistinctImages()
+    {
+        var baseUrl = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TRANSPARENT=true";
+
+        const string equalityFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>test</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        const string sampleFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>sample</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+
+        var testResponse = await _fixture.Client.GetAsync($"{baseUrl}&FILTER={Uri.EscapeDataString(equalityFilter)}");
+        var testBytes = await testResponse.Content.ReadAsByteArrayAsync();
+        testResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var sampleResponse = await _fixture.Client.GetAsync($"{baseUrl}&FILTER={Uri.EscapeDataString(sampleFilter)}");
+        var sampleBytes = await sampleResponse.Content.ReadAsByteArrayAsync();
+        sampleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var testHash = Convert.ToHexString(SHA256.HashData(testBytes));
+        var sampleHash = Convert.ToHexString(SHA256.HashData(sampleBytes));
+        sampleHash.Should().NotBe(testHash, "different FILTER values should produce distinct raster images");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_InvalidFilterXml_ReturnsServiceException()
+    {
+        const string invalidFilter = "<not-valid-xml>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(invalidFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_FilterCountMismatch_ReturnsServiceException()
+    {
+        const string filter1 = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>test</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var twoFilters = Uri.EscapeDataString($"{filter1};{filter1}");
+
+        // Request with 1 layer but 2 filters
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={twoFilters}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_ScalarFilterExpression_ReturnsServiceException()
+    {
+        const string scalarFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:ValueReference>category</fes:ValueReference></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(scalarFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_NotValueReference_ReturnsServiceException()
+    {
+        const string notFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:Not><fes:ValueReference>category</fes:ValueReference></fes:Not></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(notFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_FilterWithSemicolonInLiteral_ReturnsImage()
+    {
+        // The literal "A;B" contains a semicolon that must not be treated as a layer delimiter
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>A;B</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(filter)}");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_WithoutFilter_NoRegression()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TRANSPARENT=true");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Length.Should().BeGreaterThan(0);
     }
 }
