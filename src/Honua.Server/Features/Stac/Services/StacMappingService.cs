@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
@@ -105,31 +106,23 @@ internal sealed class StacMappingService
             : new HashSet<string>(selectedProperties, StringComparer.OrdinalIgnoreCase);
 
         var properties = new Dictionary<string, object?>();
-
-        // STAC requires a "datetime" property — use the layer's time field if available,
-        // otherwise null (valid per spec when start_datetime/end_datetime are present or no temporal info exists).
-        var datetimeResolved = false;
-        if (layer.Metadata?.TimeInfo is { StartTimeField: { } startField })
-        {
-            if (feature.Attributes.TryGetValue(startField, out var startVal) && startVal is DateTimeOffset dto)
-            {
-                properties["datetime"] = dto.ToString("o", CultureInfo.InvariantCulture);
-                datetimeResolved = true;
-            }
-        }
-
-        if (!datetimeResolved)
-        {
-            properties["datetime"] = null;
-        }
+        PopulateTemporalProperties(feature, layer, properties);
 
         // Copy feature attributes
         foreach (var kvp in feature.Attributes)
         {
-            if (!string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase))
             {
                 if (selectedPropertiesLookup is not null &&
                     !selectedPropertiesLookup.Contains(kvp.Key))
+                {
+                    continue;
+                }
+
+                if (kvp.Value is null && selectedPropertiesLookup is null)
                 {
                     continue;
                 }
@@ -140,9 +133,19 @@ internal sealed class StacMappingService
 
         // Build geometry as JSON element
         JsonElement? geometry = null;
+        ImmutableArray<double>? bbox = null;
         if (feature.Geometry is { Length: > 0 })
         {
-            geometry = ConvertWkbToGeoJsonElement(feature.Geometry);
+            try
+            {
+                var parsed = WkbReaderCache.Get().Read(feature.Geometry);
+                geometry = ConvertGeometryToGeoJsonElement(parsed);
+                bbox = TryBuildBboxFromGeometry(parsed, layer.SpatialReference.Wkid);
+            }
+            catch
+            {
+                // WKB parsing failure — STAC allows null geometry.
+            }
         }
 
         var links = ImmutableArray.Create(
@@ -178,12 +181,68 @@ internal sealed class StacMappingService
         {
             Id = itemId,
             Geometry = geometry,
+            Bbox = bbox,
             Properties = properties,
             Links = links,
             Assets = assets,
             Collection = collectionId,
             StacExtensions = ResolveDeclaredExtensions(layer)
         };
+    }
+
+    private static void PopulateTemporalProperties(
+        Feature feature,
+        LayerDefinition layer,
+        Dictionary<string, object?> properties)
+    {
+        DateTimeOffset? start = null;
+        DateTimeOffset? end = null;
+
+        try
+        {
+            var temporalFields = TemporalExtentHelpers.ResolveTemporalFieldsOrThrow(layer);
+            start = TryReadTemporalValue(feature.Attributes, temporalFields.StartField.Name);
+            if (temporalFields.EndField is not null)
+            {
+                end = TryReadTemporalValue(feature.Attributes, temporalFields.EndField.Name);
+            }
+        }
+        catch (ArgumentException)
+        {
+            // Layers without temporal metadata still serialize a null datetime, which keeps the
+            // shape stable even when no attribute can be promoted into STAC temporal fields.
+        }
+
+        // When the layer has no temporal metadata but the feature carries STAC interval
+        // fields (start_datetime + end_datetime), reconstruct the interval before falling
+        // back to a single-value probe that would discard the end.
+        if (start is null && end is null)
+        {
+            var intervalStart = TryReadTemporalValue(feature.Attributes, "start_datetime");
+            if (intervalStart is not null)
+            {
+                start = intervalStart;
+                end = TryReadTemporalValue(feature.Attributes, "end_datetime");
+            }
+        }
+
+        start ??= TryReadFallbackTemporalValue(feature.Attributes);
+
+        if (start is not null && (end is null || end == start))
+        {
+            properties["datetime"] = FormatTemporalValue(start.Value);
+            return;
+        }
+
+        if (start is not null || end is not null)
+        {
+            properties["datetime"] = null;
+            properties["start_datetime"] = start is null ? null : FormatTemporalValue(start.Value);
+            properties["end_datetime"] = end is null ? null : FormatTemporalValue(end.Value);
+            return;
+        }
+
+        properties["datetime"] = null;
     }
 
     private static string ResolveLicense(LayerDefinition layer)
@@ -269,17 +328,115 @@ internal sealed class StacMappingService
     }
 
     /// <summary>
-    /// Converts WKB geometry bytes to a GeoJSON JsonElement.
-    /// Returns null if conversion fails — STAC allows null geometry.
+    /// Converts a parsed geometry to a GeoJSON JsonElement.
+    /// Returns null if serialization fails — STAC allows null geometry.
     /// </summary>
-    private static JsonElement? ConvertWkbToGeoJsonElement(byte[] wkb)
+    private static JsonElement? ConvertGeometryToGeoJsonElement(NetTopologySuite.Geometries.Geometry geom)
     {
         try
         {
-            var geom = WkbReaderCache.Get().Read(wkb);
             var json = GetGeoJsonWriter().Write(geom);
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.Clone();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static DateTimeOffset? TryReadTemporalValue(
+        IReadOnlyDictionary<string, object?> attributes,
+        string fieldName)
+    {
+        if (!attributes.TryGetValue(fieldName, out var value))
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            DateTime dateTime => dateTime.Kind switch
+            {
+                DateTimeKind.Utc => new DateTimeOffset(dateTime, TimeSpan.Zero),
+                DateTimeKind.Local => new DateTimeOffset(dateTime.ToUniversalTime(), TimeSpan.Zero),
+                _ => new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc), TimeSpan.Zero)
+            },
+            DateOnly dateOnly => new DateTimeOffset(
+                dateOnly.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                TimeSpan.Zero),
+            string text when DateTimeOffset.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsedDateTimeOffset) => parsedDateTimeOffset,
+            string text when DateOnly.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsedDateOnly) => new DateTimeOffset(
+                    parsedDateOnly.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                    TimeSpan.Zero),
+            JsonElement element when element.ValueKind == JsonValueKind.String => TryReadTemporalValue(
+                new Dictionary<string, object?> { [fieldName] = element.GetString() },
+                fieldName),
+            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var milliseconds) =>
+                DateTimeOffset.FromUnixTimeMilliseconds(milliseconds),
+            long milliseconds => DateTimeOffset.FromUnixTimeMilliseconds(milliseconds),
+            double milliseconds => DateTimeOffset.FromUnixTimeMilliseconds(
+                Convert.ToInt64(milliseconds, CultureInfo.InvariantCulture)),
+            _ => null
+        };
+    }
+
+    private static string FormatTemporalValue(DateTimeOffset value)
+        => value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+
+    private static DateTimeOffset? TryReadFallbackTemporalValue(
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        ReadOnlySpan<string> candidates =
+        [
+            "datetime",
+            "created_at",
+            "updated_at",
+            "start_datetime",
+            "timestamp",
+            "event_date",
+            "date"
+        ];
+
+        foreach (var candidate in candidates)
+        {
+            var value = TryReadTemporalValue(attributes, candidate);
+            if (value is not null)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static ImmutableArray<double>? TryBuildBboxFromGeometry(NetTopologySuite.Geometries.Geometry geom, int srid)
+    {
+        try
+        {
+            var envelope = geom.EnvelopeInternal;
+
+            if (srid == 4326)
+            {
+                return ImmutableArray.Create(envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY);
+            }
+
+            if (OgcExtentTransformer.TryTransformToCrs84(envelope.MinX, envelope.MinY, srid, out var min) &&
+                OgcExtentTransformer.TryTransformToCrs84(envelope.MaxX, envelope.MaxY, srid, out var max))
+            {
+                return ImmutableArray.Create(min.Lon, min.Lat, max.Lon, max.Lat);
+            }
+
+            return null;
         }
         catch
         {

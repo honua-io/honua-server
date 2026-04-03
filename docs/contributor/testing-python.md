@@ -1,6 +1,6 @@
 # Honua Integration Test Suite (Python)
 
-Python-based integration tests for Honua Server, covering OGC API Features, GeoServices REST/FeatureServer, and GDAL/OGR interoperability.
+Python-based integration tests for Honua Server, covering OGC API Features, GeoServices REST/FeatureServer, STAC client compatibility, and GDAL/OGR interoperability.
 
 ## Overview
 
@@ -26,6 +26,7 @@ pytest -n auto
 pytest -m ogc          # OGC API Features only
 pytest -m featureserver # GeoServices REST only
 pytest -m gdal           # GDAL/OGR interop only
+pytest -m stac           # STAC client compatibility only
 
 # Run smoke tests (quick validation)
 pytest -m smoke
@@ -54,6 +55,9 @@ tests/python/
 │   ├── test_related_records.py
 │   ├── test_attachments.py
 │   └── test_tiles.py
+├── stac_client/             # STAC client compatibility tests
+│   ├── conftest.py          # Snapshot-seeded runtime + evidence writer
+│   └── test_client_compat.py
 └── gdal_ogr/                # GDAL/OGR interoperability tests
     ├── conftest.py           # GDAL fixtures, evidence collector
     ├── test_oapif_discovery.py
@@ -72,6 +76,7 @@ tests/python/
 2. **Python 3.11+** - Required for type hints and features
 3. **Built Honua Server** - Run `dotnet build` before tests
 4. **GDAL tools** (optional) - Install `gdal-bin` to run GDAL/OGR interoperability tests. Requires GDAL 3.4+. Tests are skipped automatically when `ogrinfo` is not found.
+5. **PySTAC tooling** - Installed from `requirements.txt` and used by the STAC compatibility lane.
 
 ## Configuration
 
@@ -91,6 +96,9 @@ The test suite automatically:
 | `HONUA_TEST_DB_URL` | Use external PostGIS database (opt-in) | unset |
 | `HONUA_TEST_DB_SEED_PATH` | Auto-apply YAML seed to new schemas | unset |
 | `HONUA_TEST_DB_SEED_PROFILE` | Seed profile name | unset |
+| `HONUA_STAC_COMPAT_BASE_URL` | Reuse an already-hosted STAC endpoint instead of starting a local server | unset |
+| `HONUA_STAC_COMPAT_SEED_PATH` | SQL snapshot applied by the STAC compatibility lane when it starts its own database | `tests/seed/client-compat-v1.sql` |
+| `HONUA_STAC_COMPAT_SEED_SNAPSHOT` | Snapshot name recorded in STAC compatibility evidence | `client-compat-v1.sql` |
 
 ## Test Markers
 
@@ -103,6 +111,7 @@ The test suite automatically:
 | `@pytest.mark.slow` | Long-running tests |
 | `@pytest.mark.smoke` | Quick sanity checks |
 | `@pytest.mark.gdal` | GDAL/OGR interoperability tests (require gdal-bin) |
+| `@pytest.mark.stac` | STAC client compatibility tests using PySTAC and PySTAC-Client |
 
 ## Geometry Coverage
 
@@ -138,6 +147,13 @@ pytest -m smoke --tb=short
 # Run full suite for nightly builds
 pytest -n auto --tb=short
 ```
+
+The STAC lane emits both machine-readable and human-readable evidence files at the end of each run:
+
+- `tests/python/stac-client-compat-results*.json`
+- `tests/python/stac-client-compat-results*.md`
+
+Each report includes the runtime server version, local git commit SHA, and the seed snapshot name used for the run.
 
 ## Using Docker Compose Test Profile
 
@@ -178,6 +194,7 @@ def test_items_returns_geojson(http_client, test_collection_id):
 ### Running with pytest-xdist
 - Each worker uses a separate schema and increments the base port (`HONUA_TEST_PORT`)
 - For a shared PostGIS container, set `HONUA_TEST_DB_URL` so all workers connect to the same DB
+- The STAC compatibility lane writes one JSON/Markdown evidence pair per worker when `pytest-xdist` is enabled.
 
 ### Database connection errors
 - Verify PostGIS container is healthy
