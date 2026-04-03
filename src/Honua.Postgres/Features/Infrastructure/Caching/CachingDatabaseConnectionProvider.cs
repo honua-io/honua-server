@@ -35,12 +35,14 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// The caching layer only optimizes execution, not query construction.
 /// </para>
 /// </remarks>
-internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider
+internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider, IAsyncDisposable
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
+    private readonly QueryConcurrencyGate? _concurrencyGate;
+    private int _acquiredSlots;
 
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -49,12 +51,14 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         NpgsqlDataSource dataSource,
         ILogger<CachingDatabaseConnectionProvider> logger,
         ISchemaContext? schemaContext = null,
-        IActiveDbConnectionTracker? activeDbConnectionTracker = null)
+        IActiveDbConnectionTracker? activeDbConnectionTracker = null,
+        QueryConcurrencyGate? concurrencyGate = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaContext = schemaContext;
         _activeDbConnectionTracker = activeDbConnectionTracker;
+        _concurrencyGate = concurrencyGate;
     }
 
     /// <summary>
@@ -64,14 +68,33 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     /// <returns>A caching-enabled PostgreSQL connection</returns>
     public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
     {
-        // Use the resilience extension method with logging callback
-        var connection = await _dataSource.OpenConnectionWithRetryAsync(
-            onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (_concurrencyGate is not null)
+        {
+            if (!await _concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false))
+            {
+                ConnectionAcquisitionTimedOut(_logger, null);
+                throw new TimeoutException("Connection acquisition timed out — server is under heavy load.");
+            }
 
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
-        DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
-        return connection;
+            Interlocked.Increment(ref _acquiredSlots);
+        }
+
+        try
+        {
+            // Use the resilience extension method with logging callback
+            var connection = await _dataSource.OpenConnectionWithRetryAsync(
+                onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
+            return connection;
+        }
+        catch
+        {
+            ReleaseOneSlot();
+            throw;
+        }
     }
 
     /// <summary>
@@ -170,6 +193,30 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public ValueTask DisposeAsync()
+    {
+        var slots = Interlocked.Exchange(ref _acquiredSlots, 0);
+        if (slots > 0)
+        {
+            _concurrencyGate?.Release(slots);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void ReleaseOneSlot()
+    {
+        if (Interlocked.Decrement(ref _acquiredSlots) >= 0)
+        {
+            _concurrencyGate?.Release();
+        }
+        else
+        {
+            Interlocked.Increment(ref _acquiredSlots);
+        }
+    }
+
     [LoggerMessage(1, LogLevel.Warning, "Database connection retry attempt {Attempt}: {ErrorMessage}")]
     private static partial void DatabaseConnectionRetry(ILogger logger, int attempt, string errorMessage, Exception exception);
 
@@ -178,4 +225,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
     [LoggerMessage(3, LogLevel.Debug, "Started transaction with isolation level {IsolationLevel}")]
     private static partial void DatabaseTransactionStarted(ILogger logger, IsolationLevel isolationLevel);
+
+    [LoggerMessage(4, LogLevel.Warning, "Connection acquisition timed out — server is under heavy load")]
+    private static partial void ConnectionAcquisitionTimedOut(ILogger logger, Exception? exception);
 }

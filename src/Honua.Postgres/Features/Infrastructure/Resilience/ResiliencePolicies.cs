@@ -8,29 +8,25 @@ using Polly;
 namespace Honua.Postgres.Features.Infrastructure.Resilience;
 
 /// <summary>
-/// Resilience policies for database operations with PostgreSQL
+/// Cached resilience policies for database operations with PostgreSQL.
+/// Policies are created once and reused across all requests. The onRetry callback
+/// is threaded via <see cref="Polly.Context"/> at execution time, allowing a single
+/// cached policy to serve callers with different logging needs.
 /// </summary>
 internal static class ResiliencePolicies
 {
     /// <summary>
-    /// Retry + circuit breaker policy for transient connection errors ONLY.
-    /// IMPORTANT: Only retry connection acquisition, not mid-transaction errors.
-    /// Once a transaction starts, failures should propagate (transaction will rollback).
-    /// Retrying after partial execution risks duplicate operations.
+    /// Key used to store the <see cref="Action{Exception, TimeSpan, Int32}"/> retry callback
+    /// in the <see cref="Polly.Context"/> dictionary.
     /// </summary>
-    /// <param name="onRetry">Optional callback for retry events (for logging)</param>
-    /// <returns>Async retry policy for connection acquisition</returns>
-    public static IAsyncPolicy GetConnectionRetryPolicy(Action<Exception, TimeSpan, int>? onRetry = null)
-    {
-        var builder = Policy
-            .Handle<NpgsqlException>(IsConnectionError)
-            .Or<TimeoutException>();
+    internal const string OnRetryCallbackKey = "OnRetryCallback";
 
-        return ResiliencePolicyFactory.CreateStandardPolicy(
-            builder,
-            ResiliencePolicyOptions.Default,
-            onRetry: onRetry);
-    }
+    /// <summary>
+    /// Cached retry + circuit breaker policy for transient connection errors.
+    /// The circuit breaker is shared across all callers, so it correctly accumulates
+    /// failures and trips when the database is genuinely unavailable.
+    /// </summary>
+    public static IAsyncPolicy ConnectionRetryPolicy { get; } = BuildConnectionRetryPolicy();
 
     /// <summary>
     /// Default deadlock resilience options.
@@ -47,32 +43,32 @@ internal static class ResiliencePolicies
     };
 
     /// <summary>
-    /// Retry policy for deadlock errors ONLY.
+    /// Cached retry + circuit breaker policy for deadlock errors.
     /// Safe to retry deadlock errors with fresh transaction, as the entire transaction was rolled back.
     /// Uses exponential backoff: 100ms, 200ms, 400ms for 3 retry attempts.
     /// </summary>
-    /// <param name="onRetry">Optional callback for retry events (for logging)</param>
-    /// <param name="options">Optional override for resilience options; defaults to <see cref="DeadlockDefaults"/>.</param>
-    /// <returns>Async retry policy for deadlock detection</returns>
-    public static IAsyncPolicy GetDeadlockRetryPolicy(
-        Action<Exception, TimeSpan, int>? onRetry = null,
-        ResiliencePolicyOptions? options = null)
-    {
-        var builder = Policy.Handle<NpgsqlException>(IsDeadlockError);
+    public static IAsyncPolicy DeadlockRetryPolicy { get; } = BuildDeadlockRetryPolicy();
 
-        return ResiliencePolicyFactory.CreateStandardPolicy(
-            builder,
-            options ?? DeadlockDefaults,
-            onRetry: onRetry);
+    /// <summary>
+    /// Creates a <see cref="Context"/> that carries the optional retry callback.
+    /// Pass this to <c>policy.ExecuteAsync(func, context)</c>.
+    /// </summary>
+    public static Context CreateRetryContext(Action<Exception, TimeSpan, int>? onRetry = null)
+    {
+        var context = new Context();
+        if (onRetry is not null)
+        {
+            context[OnRetryCallbackKey] = onRetry;
+        }
+
+        return context;
     }
 
     /// <summary>
     /// Determines if a PostgreSQL exception represents a connection-level error
-    /// that is safe to retry without risking duplicate operations
+    /// that is safe to retry without risking duplicate operations.
     /// </summary>
-    /// <param name="ex">The Npgsql exception to evaluate</param>
-    /// <returns>True if the error is a retryable connection error</returns>
-    private static bool IsConnectionError(NpgsqlException ex)
+    internal static bool IsConnectionError(NpgsqlException ex)
     {
         // Only connection-level errors are safe to retry
         return ex.SqlState switch
@@ -85,18 +81,58 @@ internal static class ResiliencePolicies
         };
         // NOTE: serialization_failure (40001) is NOT retried here as it requires
         // application-level retry with fresh transaction.
-        // deadlock_detected (40P01) is handled by GetDeadlockRetryPolicy().
+        // deadlock_detected (40P01) is handled by DeadlockRetryPolicy.
     }
 
     /// <summary>
     /// Determines if a PostgreSQL exception represents a deadlock error
-    /// that is safe to retry with a fresh transaction
+    /// that is safe to retry with a fresh transaction.
     /// </summary>
-    /// <param name="ex">The Npgsql exception to evaluate</param>
-    /// <returns>True if the error is a deadlock that can be retried</returns>
-    private static bool IsDeadlockError(NpgsqlException ex)
+    internal static bool IsDeadlockError(NpgsqlException ex)
     {
         // PostgreSQL deadlock_detected error code
         return ex.SqlState == "40P01";
+    }
+
+    /// <summary>
+    /// Creates a fresh connection retry policy instance. Use only for testing;
+    /// production code should use the cached <see cref="ConnectionRetryPolicy"/>.
+    /// </summary>
+    internal static IAsyncPolicy CreateFreshConnectionRetryPolicy() => BuildConnectionRetryPolicy();
+
+    private static IAsyncPolicy BuildConnectionRetryPolicy()
+    {
+        var builder = Policy
+            .Handle<NpgsqlException>(IsConnectionError)
+            .Or<TimeoutException>();
+
+        return BuildPolicyWithContextCallback(builder, ResiliencePolicyOptions.Default);
+    }
+
+    private static IAsyncPolicy BuildDeadlockRetryPolicy()
+    {
+        var builder = Policy.Handle<NpgsqlException>(IsDeadlockError);
+        return BuildPolicyWithContextCallback(builder, DeadlockDefaults);
+    }
+
+    private static IAsyncPolicy BuildPolicyWithContextCallback(PolicyBuilder builder, ResiliencePolicyOptions options)
+    {
+        var retryPolicy = builder.WaitAndRetryAsync(
+            options.MaxRetryAttempts,
+            attempt => options.GetDelay(attempt),
+            (exception, delay, attempt, context) =>
+            {
+                if (context.TryGetValue(OnRetryCallbackKey, out var obj) &&
+                    obj is Action<Exception, TimeSpan, int> callback)
+                {
+                    callback(exception, delay, attempt);
+                }
+            });
+
+        var circuitPolicy = builder.CircuitBreakerAsync(
+            options.CircuitBreakerFailures,
+            options.CircuitBreakDuration);
+
+        return Policy.WrapAsync(retryPolicy, circuitPolicy);
     }
 }

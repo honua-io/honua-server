@@ -109,7 +109,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IDatabaseConnectio
 
             var dataSource = _dataSourceCache.GetOrCreate(connectionString);
             var connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);

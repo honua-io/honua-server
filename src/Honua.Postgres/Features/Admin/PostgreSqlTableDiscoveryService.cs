@@ -79,7 +79,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
     {
-        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken).ConfigureAwait(false);
+        await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         const string sql = """
             SELECT DISTINCT

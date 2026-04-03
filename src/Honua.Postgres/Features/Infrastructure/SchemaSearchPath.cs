@@ -10,7 +10,11 @@ internal static partial class SchemaSearchPath
 {
     private static readonly Regex _schemaNameRegex = SchemaNamePattern();
 
-    public static async Task ApplyAsync(NpgsqlConnection connection, string? schemaName, CancellationToken cancellationToken = default)
+    public static async Task ApplyAsync(
+        NpgsqlConnection connection,
+        string? schemaName,
+        string? connectionStringDefaultSchema = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(schemaName))
         {
@@ -21,6 +25,14 @@ internal static partial class SchemaSearchPath
         if (!_schemaNameRegex.IsMatch(sanitized))
         {
             throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
+        }
+
+        // Skip the SET round-trip when the connection string already embeds
+        // this schema via the Options parameter (Tier 3 optimization).
+        if (!string.IsNullOrWhiteSpace(connectionStringDefaultSchema) &&
+            string.Equals(sanitized, connectionStringDefaultSchema.Trim(), StringComparison.Ordinal))
+        {
+            return;
         }
 
         await using var command = connection.CreateCommand();

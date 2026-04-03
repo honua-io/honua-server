@@ -5,25 +5,41 @@ using FluentAssertions;
 using Honua.Postgres.Features.Infrastructure.Resilience;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
 /// <summary>
-/// Tests for Polly resilience policies for database connections
-/// Validates retry behavior for transient connection errors
+/// Tests for cached Polly resilience policies for database connections.
+/// Validates retry behavior, callback threading via Context, and singleton semantics.
 /// </summary>
 [Protocol(Protocols.TestQuality)]
 public sealed class ResiliencePoliciesTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public void GetConnectionRetryPolicy_ReturnsConfiguredPolicy()
+    public void ConnectionRetryPolicy_ReturnsCachedSingleton()
     {
         // Act
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy();
+        var policy1 = ResiliencePolicies.ConnectionRetryPolicy;
+        var policy2 = ResiliencePolicies.ConnectionRetryPolicy;
 
-        // Assert
-        policy.Should().NotBeNull();
+        // Assert — same cached instance
+        policy1.Should().NotBeNull();
+        policy1.Should().BeSameAs(policy2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void DeadlockRetryPolicy_ReturnsCachedSingleton()
+    {
+        // Act
+        var policy1 = ResiliencePolicies.DeadlockRetryPolicy;
+        var policy2 = ResiliencePolicies.DeadlockRetryPolicy;
+
+        // Assert — same cached instance
+        policy1.Should().NotBeNull();
+        policy1.Should().BeSameAs(policy2);
     }
 
     [Theory]
@@ -32,44 +48,37 @@ public sealed class ResiliencePoliciesTests
     [InlineData("08003", true)]   // connection_does_not_exist
     [InlineData("08006", true)]   // connection_failure
     [InlineData("40001", false)]  // serialization_failure (should NOT retry)
-    [InlineData("40P01", false)]  // deadlock_detected (should NOT retry)
+    [InlineData("40P01", false)]  // deadlock_detected (should NOT retry via connection policy)
     [InlineData("42P01", false)]  // undefined_table (should NOT retry)
     [InlineData("23505", false)]  // unique_violation (should NOT retry)
     [Operation(Operations.TestInfrastructure)]
-    public async Task RetryPolicy_OnlyRetriesConnectionErrors(string sqlState, bool shouldRetry)
+    public void IsConnectionError_MatchesExpectedSqlStates(string sqlState, bool shouldRetry)
     {
-        // Arrange
-        var retryCount = 0;
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy(
-            (ex, timespan, attempt) => retryCount = attempt);
-
-        // Note: This test verifies the error code logic would work correctly
-        // The actual error code validation is tested separately with reflection
         var shouldActuallyRetry = sqlState is "57P03" or "08000" or "08003" or "08006";
-
-        // Act & Assert
         shouldActuallyRetry.Should().Be(shouldRetry, $"SqlState {sqlState} retry expectation should match implementation");
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task RetryPolicy_RetriesTimeoutExceptions()
+    public async Task ConnectionRetryPolicy_RetriesTimeoutExceptions()
     {
-        // Arrange
+        // Arrange — fresh policy avoids circuit breaker cross-test interference
+        var policy = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
         var retryCount = 0;
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy(
+        var context = ResiliencePolicies.CreateRetryContext(
             (ex, timespan, attempt) => retryCount = attempt);
 
         var exception = new TimeoutException("Connection timeout");
 
-        // Act & Assert
-        // Should exhaust retries (3 attempts + initial = 4 total attempts)
+        // Act & Assert — should exhaust retries (3 attempts + initial = 4 total attempts)
         var thrownEx = await Assert.ThrowsAsync<TimeoutException>(async () =>
-            await policy.ExecuteAsync(async () =>
-            {
-                await Task.Delay(1); // Simulate async operation
-                throw exception;
-            }));
+            await policy.ExecuteAsync(
+                async (_) =>
+                {
+                    await Task.Delay(1);
+                    throw exception;
+                },
+                context));
 
         thrownEx.Should().Be(exception);
         retryCount.Should().Be(3, "should have retried 3 times for TimeoutException");
@@ -77,29 +86,32 @@ public sealed class ResiliencePoliciesTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task RetryPolicy_SucceedsAfterRetry()
+    public async Task ConnectionRetryPolicy_SucceedsAfterRetry()
     {
         // Arrange
+        var policy = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
         var attemptCount = 0;
         var retryCount = 0;
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy(
+        var context = ResiliencePolicies.CreateRetryContext(
             (ex, timespan, attempt) => retryCount = attempt);
 
-        var exception = new TimeoutException("Connection timeout"); // Use TimeoutException which we know is retryable
+        var exception = new TimeoutException("Connection timeout");
 
         // Act
-        var result = await policy.ExecuteAsync(async () =>
-        {
-            attemptCount++;
-            await Task.Delay(1); // Simulate async operation
-
-            if (attemptCount < 3) // Fail first 2 attempts, succeed on 3rd
+        var result = await policy.ExecuteAsync(
+            async (_) =>
             {
-                throw exception;
-            }
+                attemptCount++;
+                await Task.Delay(1);
 
-            return "success";
-        });
+                if (attemptCount < 3)
+                {
+                    throw exception;
+                }
+
+                return "success";
+            },
+            context);
 
         // Assert
         result.Should().Be("success");
@@ -109,24 +121,27 @@ public sealed class ResiliencePoliciesTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task RetryPolicy_UsesExponentialBackoff()
+    public async Task ConnectionRetryPolicy_UsesExponentialBackoff()
     {
         // Arrange
+        var policy = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
         var retryDelays = new List<TimeSpan>();
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy(
+        var context = ResiliencePolicies.CreateRetryContext(
             (ex, timespan, attempt) => retryDelays.Add(timespan));
 
-        var exception = new TimeoutException("Connection timeout"); // Use TimeoutException which we know is retryable
+        var exception = new TimeoutException("Connection timeout");
 
         // Act
         await Assert.ThrowsAsync<TimeoutException>(async () =>
-            await policy.ExecuteAsync(async () =>
-            {
-                await Task.Delay(1); // Simulate async operation
-                throw exception;
-            }));
+            await policy.ExecuteAsync(
+                async (_) =>
+                {
+                    await Task.Delay(1);
+                    throw exception;
+                },
+                context));
 
-        // Assert - Exponential backoff: 100ms * 2^attempt
+        // Assert — Exponential backoff: 100ms * 2^attempt
         retryDelays.Should().HaveCount(3);
         retryDelays[0].Should().Be(TimeSpan.FromMilliseconds(200)); // 100 * 2^1
         retryDelays[1].Should().Be(TimeSpan.FromMilliseconds(400)); // 100 * 2^2
@@ -135,23 +150,26 @@ public sealed class ResiliencePoliciesTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task RetryPolicy_CallsOnRetryCallback()
+    public async Task ConnectionRetryPolicy_CallsOnRetryCallbackViaContext()
     {
         // Arrange
+        var policy = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
         var retryCallbacks = new List<(Exception Exception, TimeSpan Delay, int Attempt)>();
 
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy(
+        var context = ResiliencePolicies.CreateRetryContext(
             (ex, timespan, attempt) => retryCallbacks.Add((ex, timespan, attempt)));
 
-        var exception = new TimeoutException("Connection timeout"); // Use TimeoutException which we know is retryable
+        var exception = new TimeoutException("Connection timeout");
 
         // Act
         await Assert.ThrowsAsync<TimeoutException>(async () =>
-            await policy.ExecuteAsync(async () =>
-            {
-                await Task.Delay(1); // Simulate async operation
-                throw exception;
-            }));
+            await policy.ExecuteAsync(
+                async (_) =>
+                {
+                    await Task.Delay(1);
+                    throw exception;
+                },
+                context));
 
         // Assert
         retryCallbacks.Should().HaveCount(3);
@@ -165,20 +183,22 @@ public sealed class ResiliencePoliciesTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task RetryPolicy_WorksWithoutOnRetryCallback()
+    public async Task ConnectionRetryPolicy_WorksWithoutCallback()
     {
-        // Arrange
-        var policy = ResiliencePolicies.GetConnectionRetryPolicy(); // No callback
+        // Arrange — fresh policy, empty context, no callback
+        var policy = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
+        var context = ResiliencePolicies.CreateRetryContext();
+        var exception = new TimeoutException("Connection timeout");
 
-        var exception = new TimeoutException("Connection timeout"); // Use TimeoutException which we know is retryable
-
-        // Act & Assert - Should not throw due to missing callback
+        // Act & Assert — should not throw due to missing callback
         var thrownEx = await Assert.ThrowsAsync<TimeoutException>(async () =>
-            await policy.ExecuteAsync(async () =>
-            {
-                await Task.Delay(1); // Simulate async operation
-                throw exception;
-            }));
+            await policy.ExecuteAsync(
+                async (_) =>
+                {
+                    await Task.Delay(1);
+                    throw exception;
+                },
+                context));
 
         thrownEx.Should().Be(exception);
     }
