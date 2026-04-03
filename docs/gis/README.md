@@ -34,5 +34,6 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 ## Compatibility
 
 - [Known Limitations](MVP_COMPATIBILITY_CONTRACT.md) — Current protocol limitations
+- [Public Interface Proof Ledger](data/public-interface-proof.json) — Machine-readable inventory of every shipped public surface, proof classes, CI lanes, and evidence locations
 - [Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md) — Cross-client interop test results
 - [Certification Evidence](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — Final `.cert.json` envelope plus the Windows client smoke-artifact contract

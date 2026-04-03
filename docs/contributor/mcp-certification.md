@@ -2,6 +2,8 @@
 
 This document covers the cross-repo testing setup for Honua's MCP surface.
 
+In the public-interface proof ledger, MCP is the only sanctioned cross-repo child surface. `honua-server` owns seed data, CI wiring, and release-proof plumbing; `honua-sdk-js` owns the deterministic certification scripts, artifact generation, and LLM smoke implementation behind child ticket `#484`.
+
 ## Repo ownership split
 
 | Concern | Repo | Path |
@@ -15,7 +17,7 @@ This document covers the cross-repo testing setup for Honua's MCP surface.
 | CI jobs (cert + smoke) | honua-server | `.github/workflows/ci.yml` |
 | Base CI setup action | honua-server | `.github/actions/setup-honua-server/action.yml` |
 | MCP CI setup action | honua-server | `.github/actions/setup-honua-mcp/action.yml` |
-| Docs | honua-server | `docs/user/MCP_SERVER.md`, `docs/contributor/mcp-certification.md` |
+| Docs | honua-server | `docs/developer/MCP_SERVER.md`, `docs/contributor/mcp-certification.md` |
 
 ## Seed data
 
@@ -47,7 +49,7 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 - **Matrix:** `transport: [grpc-web, rest]` — runs full suite in parallel per transport.
 - **Steps:** checkout honua-server → shared setup (`.github/actions/setup-honua-mcp`) → `test:certification` → `test:certification:artifact` (generate report) → artifact upload.
 - **Artifact:** `mcp-certification-{transport}`, 30-day retention.
-- **Ref strategy:** the SDK ref is controlled by the `MCP_SDK_REF` env var at the top of `ci.yml` (currently `trunk`). While set to a branch name, certification runs are useful for development but the artifacts are **not reproducible release evidence** because the same server commit may exercise different SDK test code over time. For release-grade certification, pin `MCP_SDK_REF` to a specific tag or commit SHA. The CI job emits a warning annotation when the ref appears to be a branch name rather than a pinned ref. The `workflow_dispatch` `sdk_ref` input overrides the env var for one-off manual replays.
+- **Ref strategy:** the SDK ref is controlled by the `MCP_SDK_REF` env var at the top of `ci.yml`. When set to a branch name, certification runs are useful for development but the artifacts are **not reproducible release evidence** because the same server commit may exercise different SDK test code over time. For release-grade certification, pin `MCP_SDK_REF` to a specific tag or commit SHA (the current value is a pinned commit). The CI job emits a warning annotation when the ref appears to be a branch name rather than a pinned ref. The `workflow_dispatch` `sdk_ref` input overrides the env var for one-off manual replays.
 - **Script guard:** the `setup-honua-mcp` action inspects the SDK `package.json` for `test:certification`, `test:certification:artifact`, and `test:llm-smoke` **before** any heavy setup. If neither `test:certification` nor `test:llm-smoke` is found (e.g. SDK-side work not yet landed), the action skips the server build, database seed, and `npm ci` entirely; the job emits a warning annotation and completes without failure. Artifact generation and upload are also gated on the action's `cert-available` and `cert-artifact-available` outputs, so no artifacts are produced when certification was skipped or the artifact script is absent. If `test:certification` is present but `test:certification:artifact` is missing (partial SDK landing), the job emits a warning annotation noting that no evidence artifacts were produced — this ensures the release-evidence gap is visible even though the certification tests themselves passed.
 - **Output:** exposes a `cert_ran` output (`true`/`false`) consumed by downstream jobs.
 

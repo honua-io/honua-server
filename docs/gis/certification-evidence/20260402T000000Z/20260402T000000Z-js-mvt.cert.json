@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260402T000000Z",
+  "run_date": "2026-04-02T00:00:00Z",
+  "server_version": "f6d615eeac70a65f469e18ce6741076be115d57d",
+  "client_lane": "js",
+  "client_version": "4.7.1",
+  "protocol": "mvt",
+  "environment": "staging",
+  "results": [
+    { "test_case_id": "CERT-CONN-01", "status": "skip", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Covered by JS/featureserver automated tests.", "evidence_ref": "" },
+    { "test_case_id": "CERT-CONN-02", "status": "skip", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Covered by JS/featureserver automated tests.", "evidence_ref": "" },
+    { "test_case_id": "CERT-AUTH-01", "status": "skip", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Covered by JS/featureserver automated tests.", "evidence_ref": "" },
+    { "test_case_id": "CERT-AUTH-02", "status": "skip", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Covered by JS/featureserver automated tests.", "evidence_ref": "" },
+    { "test_case_id": "CERT-DISC-01", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-DISC-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-SCHM-01", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-SCHM-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-QFLT-01", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-QFLT-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-PAGE-01", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-PAGE-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-GEOM-01", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-GEOM-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-ERRH-01", "status": "skip", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "Covered by JS/featureserver automated tests.", "evidence_ref": "" },
+    { "test_case_id": "CERT-ERRH-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-01", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "CERT-RNDR-02", "status": "not-applicable", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
+  ],
+  "summary": {
+    "total": 18,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 5,
+    "not_applicable": 12
+  },
+  "cite_results": null,
+  "extensions": [
+    { "test_case_id": "JS-EXT-01", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" },
+    { "test_case_id": "JS-EXT-02", "status": "pass", "duration_ms": null, "measured_count": null, "measured_delta": null, "notes": "", "evidence_ref": "" }
+  ]
+}
