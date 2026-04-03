@@ -823,11 +823,12 @@ run_full_ogc_features() {
   fi
   append_cert_result "$proto" "CERT-GEOM-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "$geom01_delta" ""
 
-  # CERT-GEOM-02: Output CRS matches requested CRS (explicit EPSG:4326)
+  # CERT-GEOM-02: Output CRS matches requested CRS (explicit EPSG:4326, north/east axis order)
+  # EPSG:4326 swaps axes to lat/lon: alpha at (-122.49, 37.71) becomes [37.71, -122.49]
   request_json \
     "ogc-geom-crs" \
     "${ogc_base}/collections/${LAYER_ID}/items?filter=name%20%3D%20%27alpha%27&limit=1&crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326" "200" \
-    '.features[0].geometry.coordinates | .[0] >= -180 and .[0] <= 180 and .[1] >= -90 and .[1] <= 90' || failed=1
+    '.features[0].geometry.coordinates | (((.[0]) - 37.71) | fabs) < 0.000001 and (((.[1]) - (-122.49)) | fabs) < 0.000001' || failed=1
   local geom02_status="$LAST_STATUS"
   if [[ "$geom02_status" == "pass" && -f "$LAST_HEADERS_PATH" ]]; then
     if ! grep -qi 'content-crs:.*EPSG/0/4326' "$LAST_HEADERS_PATH"; then
