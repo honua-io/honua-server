@@ -78,7 +78,8 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 | `tests/seed/base-schema.sql` | Shared base schema, tables, indexes, and deterministic `test_service` + layer 0 feature seed data | All CI integration-test jobs (`js-integration-tests`, `mcp-certification`, `mcp-llm-smoke`) |
 | `tests/seed/client-compat-v1.sql` | Versioned client compatibility certification seed snapshot; canonical source for desktop/BI smoke evidence and the Python STAC client compatibility lane | `windows-client-compat-nightly.yml`, `tests/python/stac_client` |
 | `tests/seed/mcp.yaml` | MCP certification data (second service, polygon layer, deterministic features) | CI `mcp-certification` and `mcp-llm-smoke` jobs |
-| `tests/seed/apply-yaml-seed.sh` | Extracts SQL from a YAML seed file with a top-level `sql:` key and applies via `psql` | CI `mcp-certification` and `mcp-llm-smoke` jobs |
+| `tests/seed/browser-compat.yaml` | Browser compatibility service with point/line/polygon layers (IDs 2000–2002) and seeded features in the San Francisco area; anonymous access | CI `maplibre-compat` job (via `setup-honua-server` action) |
+| `tests/seed/apply-yaml-seed.sh` | Extracts SQL from a YAML seed file with a top-level `sql:` key and applies via `psql` | CI `mcp-certification`, `mcp-llm-smoke`, and `maplibre-compat` jobs |
 
 `mcp.yaml` uses `version: 1` with a top-level `sql:` key containing raw SQL statements. In CI, it is applied after `base-schema.sql` via `apply-yaml-seed.sh`. This is distinct from the collections format (used by `seed.yaml`) which also uses `version: 1` but with `collections`/`profiles`/`features` keys and is consumed by `SeedRunner`. Other SQL-array seeds like `server.yaml` and `odata.yaml` follow the same format but are loaded by the C# test harness via `SeedRunner`/`WebAppFixture.UseSeed()`, not by `apply-yaml-seed.sh`. See [MCP Certification](mcp-certification.md) for details.
 

@@ -184,7 +184,7 @@ This section describes how each evidence source will map to the evidence envelop
 | xUnit attributes | CLI | Planned: add `[Trait("CertId", "CERT-CONN-01")]` alongside existing `[Protocol]` attributes |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
-| Manual browser verification | JS (MVT) | Fallback: operator loads MapLibre GL JS against the server, records remaining manual-only results into a `js`/`mvt` evidence file (see [MapLibre MVT workflow](#maplibre-mvt-manual-workflow) below). CERT-RNDR-01 and JS-EXT-02 are now automated via Playwright |
+| Playwright cert reporter | JS — MapLibre (MVT) | Automated: the `maplibre-compat` CI job runs `tests/js-browser/` Playwright specs and produces a `<run-id>-js-mvt.cert.json` envelope via the custom cert reporter (see [MapLibre MVT automated workflow](#maplibre-mvt-automated-workflow) below). Manual verification is no longer required for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02. |
 
 ### Manual Lane Workflow
 
@@ -239,20 +239,32 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
 }
 ```
 
-### MapLibre MVT Manual Workflow
+### MapLibre MVT Automated Workflow
 
-MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT-02 are covered by the Playwright headless browser test (`render.spec.ts`), and MVT tile metadata/discovery tests run via Vitest. This manual workflow remains useful for JS-EXT-01 (PBF decode fidelity) and any visual verification beyond pixel-diff assertions.
+MapLibre GL JS MVT certification is automated via the `maplibre-compat` CI job in `ci.yml`. The job runs a Playwright + Chromium browser suite (`tests/js-browser/`) against a live Honua server and produces a `.cert.json` evidence envelope.
 
-1. Copy the evidence template above.
-2. Set `client_lane` to `"js"` and `protocol` to `"mvt"`.
-3. Set `client_version` to the MapLibre GL JS library version (e.g., `"4.7.1"`).
-4. Open a MapLibre GL JS map pointed at the server's TileJSON/MVT endpoint.
-5. For common-core CERT-\* results:
-   - CERT-RNDR-01 (map renders without client error): record normally (`pass`/`fail`). CERT-RNDR-02 may also apply if the page supports tile refresh.
-   - CERT-CONN-01, CERT-CONN-02, CERT-AUTH-01, CERT-AUTH-02, CERT-ERRH-01: these apply to MVT per the matrix ("All" protocols) but are not exercisable in a browser visual workflow. Record as `skip` with notes: `"Covered by JS/featureserver automated tests"`.
-   - All remaining IDs (DISC, SCHM, QFLT, PAGE, GEOM, ERRH-02, RNDR-02): record as `not-applicable` — these do not list MVT in their protocol column.
-6. For JS lane extensions: record JS-EXT-01 (PBF/MVT decode fidelity) and JS-EXT-02 (tile load pipeline) in the `extensions` array.
-7. Save as `<run-id>-js-mvt.cert.json`.
+**What the suite proves end-to-end:**
+
+1. Style JSON load (`/api/styles/{layerId}.json`) returns a valid MapLibre v8 document.
+2. TileJSON discovery (`/tiles/{layerId}/tile.json`) returns tile URLs and vector layer metadata.
+3. Vector tile fetch — MVT tiles return `200` with `application/vnd.mapbox-vector-tile` or `application/x-protobuf`.
+4. Canvas render — MapLibre initializes, reaches idle, and renders non-blank pixels for point, line, and polygon geometry types.
+5. Interactive feature query — `queryRenderedFeatures` returns seeded features at known coordinates.
+
+**CERT-\* mapping (automated):**
+
+| Test case | Spec file | Evidence |
+|---|---|---|
+| CERT-CONN-01 | `style-loading.spec.ts` | HTTP fetch of style JSON and TileJSON |
+| CERT-RNDR-01 | `style-loading.spec.ts`, `layer-visibility.spec.ts`, `feature-query.spec.ts` | Map idle, non-blank canvas, per-geometry-type visibility, interactive query |
+| JS-EXT-01 | `tile-rendering.spec.ts` | MVT tiles fetched with correct content-type, canvas has rendered pixels |
+| JS-EXT-02 | `tile-rendering.spec.ts` | End-to-end tile load pipeline completes |
+
+**Evidence output:** The custom Playwright reporter (`helpers/cert-reporter.ts`) writes `<run-id>-js-mvt.cert.json` to `tests/js-browser/test-results/`. In CI, this file is uploaded as the `maplibre-compat-results` artifact.
+
+**Remaining CERT-\* IDs:** IDs covered by the JS/featureserver Vitest suite (CERT-CONN-02, CERT-AUTH-01/02, CERT-ERRH-01) are recorded as `skip` with a cross-reference note. All other IDs not applicable to MVT (DISC, SCHM, QFLT, PAGE, GEOM, ERRH-02, RNDR-02) are recorded as `not-applicable`.
+
+**Seed data:** The suite uses `tests/seed/browser-compat.yaml`, which provisions point, line, and polygon layers with known coordinates in the San Francisco area.
 
 ## Evidence Version
 
@@ -268,3 +280,4 @@ MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT
 | 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
 | 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
+| 1.1.0 | 2026-04-06 | Replace MapLibre MVT manual workflow with automated Playwright workflow; document cert reporter output and CERT-\* mapping |

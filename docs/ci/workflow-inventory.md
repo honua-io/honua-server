@@ -1,13 +1,13 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-04-02 (ticket #415)
+> Last updated: 2026-04-03 (ticket #464)
 
 ## honua-server
 
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; uploads STAC client-compat evidence (`stac-client-compat-results*.json/md`) |
+| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; MapLibre GL JS browser compatibility (Playwright + Chromium); uploads STAC client-compat evidence (`stac-client-compat-results*.json/md`) and MapLibre `.cert.json` evidence |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
 | `proto-wire-governance.yml` | Proto Wire Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to `.proto` changes |

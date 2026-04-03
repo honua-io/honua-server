@@ -74,9 +74,9 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
 
   // Create the map and wait for idle.
   await page.evaluate(
-    ({ styleUrl, center, zoom }) => {
+    ({ styleUrl, center, zoom, idleTimeout }) => {
       return new Promise<void>((resolve, reject) => {
-        const timeoutId = setTimeout(() => reject(new Error('Map idle timeout')), 25000);
+        const timeoutId = setTimeout(() => reject(new Error('Map idle timeout')), idleTimeout);
         const map = new (window as any).maplibregl.Map({
           container: 'map',
           style: styleUrl,
@@ -96,7 +96,7 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
         });
       });
     },
-    { styleUrl, center, zoom },
+    { styleUrl, center, zoom, idleTimeout },
   );
 
   // Wait an additional page-level timeout for idle to propagate.
