@@ -4,9 +4,7 @@
 
 import { test, expect } from '@playwright/test';
 import { createMap } from '../helpers/map-harness.js';
-
-const BASE_URL = process.env.HONUA_BASE_URL ?? 'http://localhost:5000';
-const POINT_LAYER_ID = 2000;
+import { BASE_URL, POINT_LAYER_ID, POINT_CENTER } from '../helpers/constants.js';
 
 test.describe('Tile Rendering', () => {
   test('[JS-EXT-01][JS-EXT-02] MVT tiles are fetched and decoded successfully', async ({ page }) => {
@@ -26,7 +24,7 @@ test.describe('Tile Rendering', () => {
     const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
     await createMap(page, {
       styleUrl,
-      center: [-122.4194, 37.7749],
+      center: POINT_CENTER,
       zoom: 14,
     });
 
@@ -46,7 +44,7 @@ test.describe('Tile Rendering', () => {
     const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
     const map = await createMap(page, {
       styleUrl,
-      center: [-122.4194, 37.7749],
+      center: POINT_CENTER,
       zoom: 14,
     });
 

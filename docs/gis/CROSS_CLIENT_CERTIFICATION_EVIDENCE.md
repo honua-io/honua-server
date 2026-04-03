@@ -188,7 +188,7 @@ This section describes how each evidence source will map to the evidence envelop
 
 ### Manual Lane Workflow
 
-For desktop, BI, and JS/MVT lanes where automation is not available:
+For desktop and BI lanes where automation is not available:
 
 1. Copy the evidence template below.
 2. Fill `status` for each test case during the smoke run.

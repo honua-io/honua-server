@@ -34,7 +34,7 @@ npm install
 npx playwright install --with-deps chromium
 ```
 
-If `HONUA_BASE_URL` points to a healthy server, tests use it directly. Otherwise the global setup attempts to start a local server via `tests/python/shared/js_test_server.py`.
+Set `HONUA_BASE_URL` to point at a running server seeded with `tests/seed/browser-compat.yaml` (layers 2000-2002). The suite will fail with a clear error if no healthy server is found.
 
 ```bash
 # Against a running server
@@ -51,8 +51,7 @@ HONUA_BASE_URL=http://localhost:5000 npm run test:debug
 
 | Variable | Default | Description |
 |---|---|---|
-| `HONUA_BASE_URL` | `http://localhost:5000` | Honua server URL |
-| `HONUA_TEST_PORT` | `5555` | Port for auto-started local server |
+| `HONUA_BASE_URL` | `http://localhost:5000` | Honua server URL (must be seeded with `browser-compat.yaml`) |
 | `CI` | — | Set by GitHub Actions; controls reporter environment field |
 
 ## Seed Data
@@ -80,8 +79,9 @@ tests/js-browser/
 ├── package.json
 ├── playwright.config.ts
 ├── tsconfig.json
-├── global-setup.ts          # Health check / optional server bootstrap
+├── global-setup.ts          # Health check (requires pre-started server)
 ├── helpers/
+│   ├── constants.ts         # Shared seed layer IDs, URLs, centers
 │   ├── map-harness.ts       # MapLibre map lifecycle helper
 │   └── cert-reporter.ts     # .cert.json evidence reporter
 └── specs/
