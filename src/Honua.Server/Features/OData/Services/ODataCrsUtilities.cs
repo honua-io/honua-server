@@ -24,11 +24,6 @@ internal static class ODataCrsUtilities
             return AxisOrder.EastNorth;
         }
 
-        if (srid.Value == SpatialReference.WGS84.Wkid)
-        {
-            return AxisOrder.EastNorth;
-        }
-
         var definition = await crsRegistry.ResolveBySridAsync(srid.Value, cancellationToken).ConfigureAwait(false);
         return definition?.AxisOrder ?? AxisOrder.EastNorth;
     }
@@ -71,11 +66,6 @@ internal static class ODataCrsUtilities
         if (requiredSrid.HasValue && requiredSrid.Value > 0 && definition.Value.Srid != requiredSrid.Value)
         {
             return (false, null, $"Geometry CRS SRID {definition.Value.Srid} does not match layer SRID {requiredSrid.Value}.");
-        }
-
-        if (definition.Value.Srid == SpatialReference.WGS84.Wkid)
-        {
-            definition = definition.Value with { AxisOrder = AxisOrder.EastNorth };
         }
 
         return (true, definition, null);

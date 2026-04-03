@@ -606,8 +606,8 @@ internal sealed partial class GitOpsWatchService : BackgroundService
             await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
 
-            var output = outputTask.Result;
-            var error = errorTask.Result;
+            var output = await outputTask.ConfigureAwait(false);
+            var error = await errorTask.ConfigureAwait(false);
 
             return new GitProcessResult
             {
