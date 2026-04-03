@@ -14,7 +14,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "run_id": "<timestamp or CI run ID>",
   "run_date": "<ISO 8601>",
   "server_version": "<honua-server version/commit>",
-  "client_lane": "<js|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel>",
+  "client_lane": "<js|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi>",
   "client_version": "<client tool version>",
   "protocol": "<featureserver|mapserver|ogc-features|odata|mvt|wms|wmts|admin-api>",
   "environment": "<local|ci|staging>",
@@ -49,7 +49,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `run_id` | string | Yes | Unique run identifier — timestamp (`20260316T1430Z`) or CI run ID |
 | `run_date` | string | Yes | ISO 8601 date/time of the run |
 | `server_version` | string | Yes | Honua Server version or commit SHA |
-| `client_lane` | string | Yes | One of: `js`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel` |
+| `client_lane` | string | Yes | One of: `js`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi` |
 | `client_version` | string | Yes | Version of the client tool under test |
 | `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `odata`, `mvt`, `wms`, `wmts`, `admin-api` |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
@@ -153,7 +153,20 @@ That artifact is intentionally simpler than the final `.cert.json` certification
 | `pack/README.md` | Markdown | Human-readable guide to the normalized pack contents |
 | `pack/` | Directory | Canonical manual follow-through pack with templates, runbook, matrix, version ledger, and this evidence specification |
 
-The workflow does not currently emit final per-client `.cert.json` files. If release or customer evidence requires those envelopes, derive them from the uploaded `pack/` and the manual lane execution described in the [Client Templates and Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
+Since ticket #415, the workflow runs the `full` profile and emits per-protocol `.cert.json` envelopes under the `certification/` subdirectory:
+
+```text
+artifacts/client-compat/<service>-<timestamp>/
+  certification/
+    <timestamp>-ci-desktop-featureserver.cert.json
+    <timestamp>-ci-desktop-ogc-features.cert.json
+    <timestamp>-ci-desktop-mapserver.cert.json
+    <timestamp>-ci-bi-odata.cert.json
+```
+
+These automated envelopes use the `ci-desktop` and `ci-bi` client lane values to distinguish curl-based protocol validation from actual client interoperability evidence. The `environment` field is `"ci"`.
+
+Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the [Client Templates and Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
 
 ## Integration Mapping
 
@@ -248,3 +261,4 @@ MapLibre GL JS MVT certification is currently manual (visual browser-based verif
 | 1.0.5 | 2026-03-17 | Add `cli-ogc-features.cert.json` to example directory; add CLI lane coverage note |
 | 1.0.6 | 2026-03-18 | Fix MVT workflow status semantics: use `skip` for "All"-protocol tests not exercised in visual workflow, `not-applicable` only for tests that don't list MVT |
 | 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
+| 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |

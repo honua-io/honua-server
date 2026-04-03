@@ -56,7 +56,7 @@ jobs:
           base-seed-path: ${{ env.CLIENT_COMPAT_SEED_SOURCE }}
           log-path: ${{ steps.context.outputs.artifact_root }}/server/server.log
 
-      - name: Run client compatibility smoke
+      - name: Run client compatibility certification
         id: smoke
         shell: bash
         run: |
@@ -66,10 +66,35 @@ jobs:
             --service-id "${CLIENT_COMPAT_SERVICE_ID}" \
             --layer-id "${CLIENT_COMPAT_LAYER_ID}" \
             --timestamp "${{ steps.context.outputs.timestamp }}" \
-            --seed-source "${CLIENT_COMPAT_SEED_SOURCE}"
+            --seed-source "${CLIENT_COMPAT_SEED_SOURCE}" \
+            --profile full
           exit_code=$?
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
           exit 0
+
+      - name: Check certification envelopes for failures
+        if: always()
+        id: cert-check
+        shell: bash
+        run: |
+          cert_dir="${{ steps.context.outputs.artifact_root }}/certification"
+          if [[ ! -d "$cert_dir" ]]; then
+            echo "No certification directory found — skipping envelope check"
+            exit 0
+          fi
+          fail_count=0
+          for cert_file in "$cert_dir"/*.cert.json; do
+            [[ -f "$cert_file" ]] || continue
+            file_fails=$(jq '.summary.failed' "$cert_file")
+            if [[ "$file_fails" -gt 0 ]]; then
+              echo "::error::$(basename "$cert_file"): ${file_fails} failed CERT-* test(s)"
+              fail_count=$((fail_count + file_fails))
+            fi
+          done
+          echo "total_cert_failures=${fail_count}" >> "$GITHUB_OUTPUT"
+          if [[ $fail_count -gt 0 ]]; then
+            echo "::error::Total certification failures: ${fail_count}"
+          fi
 
       - name: Upload client compatibility evidence
         if: always()
@@ -82,6 +107,6 @@ jobs:
           summary-file: ${{ steps.context.outputs.artifact_root }}/overall-summary.md
 
       - name: Fail on lane regressions
-        if: always() && steps.smoke.outputs.exit_code != '0'
+        if: always() && (steps.smoke.outputs.exit_code != '0' || steps.cert-check.outputs.total_cert_failures != '0')
         shell: bash
         run: exit 1
