@@ -375,6 +375,7 @@ internal static partial class MapServerEndpoints
                 contentType,
                 effectiveTransparent,
                 backgroundColor,
+                layerFilters,
                 out var citeResult))
         {
             return citeResult;
@@ -1169,6 +1170,7 @@ internal static partial class MapServerEndpoints
         string contentType,
         bool transparent,
         SKColor backgroundColor,
+        SqlFragment?[]? layerFilters,
         out IResult result)
     {
         result = default!;
@@ -1184,6 +1186,19 @@ internal static partial class MapServerEndpoints
         if (!hasTerrain && !hasLakes && !hasAutos)
         {
             return false;
+        }
+
+        // When FILTER is applied, bypass synthetic CITE rendering so the
+        // standard feature-query path applies the filter per OGC WMS 1.3.0.
+        if (layerFilters is not null)
+        {
+            for (var i = 0; i < layerFilters.Length; i++)
+            {
+                if (layerFilters[i] is not null)
+                {
+                    return false;
+                }
+            }
         }
 
         if (hasAutos)
