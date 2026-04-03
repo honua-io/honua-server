@@ -78,13 +78,29 @@ jobs:
         shell: bash
         run: |
           cert_dir="${{ steps.context.outputs.artifact_root }}/certification"
+          expected_count=4
           if [[ ! -d "$cert_dir" ]]; then
-            echo "No certification directory found — skipping envelope check"
-            exit 0
+            echo "::error::No certification directory — expected ${expected_count} .cert.json envelopes"
+            echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          actual_count=0
+          for f in "$cert_dir"/*.cert.json; do
+            [[ -f "$f" ]] || continue
+            if ! jq empty "$f" 2>/dev/null; then
+              echo "::error::$(basename "$f") is not valid JSON"
+              echo "total_cert_failures=${expected_count}" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            actual_count=$((actual_count + 1))
+          done
+          if [[ "$actual_count" -ne "$expected_count" ]]; then
+            echo "::error::Expected ${expected_count} .cert.json envelopes, found ${actual_count}"
+            echo "total_cert_failures=$((expected_count - actual_count))" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
           fail_count=0
           for cert_file in "$cert_dir"/*.cert.json; do
-            [[ -f "$cert_file" ]] || continue
             file_fails=$(jq '.summary.failed' "$cert_file")
             if [[ "$file_fails" -gt 0 ]]; then
               echo "::error::$(basename "$cert_file"): ${file_fails} failed CERT-* test(s)"
