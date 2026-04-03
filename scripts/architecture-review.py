@@ -115,6 +115,12 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
         r'## Acceptance Criteria\s*\n(.*?)(?=\n##|\n---|\Z)',
         r'### Acceptance Criteria\s*\n(.*?)(?=\n###|\n##|\n---|\Z)',
         r'Acceptance Criteria:?\s*\n(.*?)(?=\n##|\n---|\Z)',
+        r'## Done When\s*\n(.*?)(?=\n##|\n---|\Z)',
+        r'### Done When\s*\n(.*?)(?=\n###|\n##|\n---|\Z)',
+        r'Done When:?\s*\n(.*?)(?=\n##|\n---|\Z)',
+        r'## Success Criteria\s*\n(.*?)(?=\n##|\n---|\Z)',
+        r'### Success Criteria\s*\n(.*?)(?=\n###|\n##|\n---|\Z)',
+        r'Success Criteria:?\s*\n(.*?)(?=\n##|\n---|\Z)',
     ]
 
     for pattern in ac_patterns:
@@ -128,7 +134,7 @@ def extract_acceptance_criteria(issue_body: str) -> List[str]:
                 if line and (line.startswith('- ') or line.startswith('* ') or re.match(r'^\d+\.', line) or line.startswith('[ ]') or line.startswith('[x]')):
                     # Clean up the line
                     clean_line = re.sub(r'^[-\*\d\.\[\]x\s]+', '', line).strip()
-                    if clean_line:
+                    if clean_line and clean_line not in criteria:
                         criteria.append(clean_line)
             break
 
