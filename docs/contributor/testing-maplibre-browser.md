@@ -23,7 +23,7 @@ The custom reporter (`helpers/cert-reporter.ts`) writes a `<run-id>-js-mvt.cert.
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20.11
 - A running Honua Server with the `browser-compat.yaml` seed data applied
 
 ## Running Locally
