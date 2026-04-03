@@ -561,9 +561,10 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "Microsoft.OData.Client integration suite against the live server",
+          "proofMechanism": "Microsoft.OData.Client integration suite against the live server and captured evidence artifact",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
+            ".github/workflows/ci.yml",
             "tests/Honua.Server.Tests/Features/OData/ODataClientIntegrationTests.cs",
             "tests/Honua.Server.Tests/Honua.Server.Tests.csproj"
           ],

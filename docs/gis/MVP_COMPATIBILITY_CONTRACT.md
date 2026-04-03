@@ -52,6 +52,7 @@ Each release must update compatibility notes and caveats:
 
 This checklist requires:
 - refreshed supported/partial/unsupported status
+- validated [Public Interface Proof Ledger](data/public-interface-proof.json) against the shipped runtime surface (see [Quality Model](../contributor/public-interface-quality-model.md))
 - tested client versions from compatibility certification
 - known caveats and workarounds
 - client template validation via [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)

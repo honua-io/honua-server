@@ -311,6 +311,10 @@ Protocol support is tracked per standard and operation. Use these docs to confir
 **OData v4:**
 - [OData v4 Coverage](specifications/odata-v4-coverage.md)
 
+**Public interface governance:**
+- [Public Interface Proof Ledger (JSON)](data/public-interface-proof.json) — canonical machine-readable inventory of every shipped surface, proof classes, CI lanes, and evidence locations
+- [Public Interface Quality Model](../contributor/public-interface-quality-model.md) — human-readable explanation of proof classes, release evidence rules, and ticket reconciliation
+
 **Client validation artifacts:**
 - [Client Templates + Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md)
 - [Client Template Version Matrix](CLIENT_TEMPLATE_VERSION_MATRIX.md)
