@@ -26,6 +26,7 @@ namespace Honua.Server.Features.Import;
 /// </summary>
 internal static partial class ImportEndpoints
 {
+    private const string InvalidMultipartImportRequestMessage = "Multipart import request is invalid.";
     internal sealed class ImportEndpointsLog
     {
     }
@@ -778,7 +779,7 @@ internal static partial class ImportEndpoints
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
         {
             MultipartParsingHelpers.TryDeleteFile(stagedFile?.LocalFilePath);
-            return MultipartImportParseResult.Failure(ex.Message, StatusCodes.Status400BadRequest);
+            return MultipartImportParseResult.Failure(InvalidMultipartImportRequestMessage, StatusCodes.Status400BadRequest);
         }
     }
 

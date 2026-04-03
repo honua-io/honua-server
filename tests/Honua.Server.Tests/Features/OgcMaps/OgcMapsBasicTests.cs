@@ -227,12 +227,13 @@ public class OgcMapsBasicTests : IAsyncLifetime
             var content = await response.Content.ReadAsStringAsync();
             var json = JsonDocument.Parse(content);
 
-            // Verify tile sets response is an array
-            json.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            json.RootElement.TryGetProperty("tilesets", out var tilesets).Should().BeTrue();
+            tilesets.ValueKind.Should().Be(JsonValueKind.Array);
+            json.RootElement.TryGetProperty("links", out _).Should().BeTrue();
 
-            if (json.RootElement.GetArrayLength() > 0)
+            if (tilesets.GetArrayLength() > 0)
             {
-                var firstTileSet = json.RootElement.EnumerateArray().First();
+                var firstTileSet = tilesets.EnumerateArray().First();
                 firstTileSet.TryGetProperty("crs", out _).Should().BeTrue();
                 firstTileSet.TryGetProperty("tileMatrixSetURI", out _).Should().BeTrue();
                 firstTileSet.TryGetProperty("links", out _).Should().BeTrue();
@@ -256,7 +257,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        var tilingLinks = json.RootElement.EnumerateArray()
+        var tilingLinks = json.RootElement.GetProperty("tilesets").EnumerateArray()
             .SelectMany(tileSet => tileSet.GetProperty("links").EnumerateArray())
             .Where(link => link.GetProperty("rel").GetString() == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme")
             .Select(link => link.GetProperty("href").GetString())
@@ -270,6 +271,32 @@ public class OgcMapsBasicTests : IAsyncLifetime
             var tilingResponse = await _fixture.Client.GetAsync(href);
             tilingResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}")]
+    [Operation(Operations.GetTileMetadata)]
+    public async Task GetMapTileSet_ValidCollectionAndTileMatrixSet_ReturnsTileSetMetadata()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TestLayerId}/map/tiles/WebMercatorQuad");
+
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.OK,
+            HttpStatusCode.NotFound,
+            HttpStatusCode.MethodNotAllowed);
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            return;
+        }
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("tileMatrixSetId").GetString().Should().Be("WebMercatorQuad");
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        links.Should().Contain(link => link.GetProperty("rel").GetString() == "self");
+        links.Should().Contain(link => link.GetProperty("rel").GetString() == "item");
     }
 
     [IntegrationTest]

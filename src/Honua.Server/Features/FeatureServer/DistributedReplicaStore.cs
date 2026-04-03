@@ -43,11 +43,11 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
 
         var effectiveTtl = ttl ?? _defaultTtl;
         var now = DateTimeOffset.UtcNow;
-        _fallback[replica.ReplicaId] = new FallbackReplicaEntry(replica, now.Add(effectiveTtl));
-        CleanupFallback(now, enforceLimit: true);
 
         if (_cache == null)
         {
+            _fallback[replica.ReplicaId] = new FallbackReplicaEntry(replica, now.Add(effectiveTtl));
+            CleanupFallback(now, enforceLimit: true);
             return;
         }
 
@@ -64,6 +64,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         }
         catch (Exception ex)
         {
+            _fallback.TryRemove(replica.ReplicaId, out _);
             Log.WriteReplicaFailed(_logger, replica.ReplicaId, ex);
         }
     }
@@ -86,11 +87,9 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                     {
                         if (envelope!.ExpiresAt <= now)
                         {
-                            _fallback.TryRemove(replicaId, out _);
                             return null;
                         }
 
-                        _fallback[replicaId] = new FallbackReplicaEntry(envelope.Replica, envelope.ExpiresAt);
                         return envelope.Replica;
                     }
 
@@ -100,15 +99,12 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                         return replica;
                     }
                 }
-                else
-                {
-                    _fallback.TryRemove(replicaId, out _);
-                    return null;
-                }
+                return null;
             }
             catch (Exception ex)
             {
                 Log.ReadReplicaFailed(_logger, replicaId, ex);
+                return null;
             }
         }
 
@@ -131,10 +127,9 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         ArgumentException.ThrowIfNullOrWhiteSpace(replicaId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removedFromFallback = _fallback.TryRemove(replicaId, out _);
         if (_cache == null)
         {
-            return removedFromFallback;
+            return _fallback.TryRemove(replicaId, out _);
         }
 
         try
@@ -142,12 +137,12 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
             var key = BuildKey(replicaId);
             var existing = await _cache.GetAsync(key, cancellationToken).ConfigureAwait(false);
             await _cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-            return removedFromFallback || existing != null;
+            return existing != null;
         }
         catch (Exception ex)
         {
             Log.RemoveReplicaFailed(_logger, replicaId, ex);
-            return removedFromFallback;
+            return false;
         }
     }
 

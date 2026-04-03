@@ -29,6 +29,11 @@ public sealed class FeatureStreamOptions
     /// Number of events fetched per batch during cursor-based replay on reconnect.
     /// </summary>
     public int ReplayBatchSize { get; set; } = 200;
+
+    /// <summary>
+    /// Interval between shared-store sweeps used to pick up events published on other nodes.
+    /// </summary>
+    public TimeSpan CrossNodeSyncInterval { get; set; } = TimeSpan.FromSeconds(1);
 }
 
 /// <summary>
@@ -55,6 +60,11 @@ internal sealed class FeatureStreamOptionsValidator : IValidateOptions<FeatureSt
         if (options.ReplayBatchSize <= 0)
         {
             failures.Add("FeatureStreaming:ReplayBatchSize must be a positive integer.");
+        }
+
+        if (options.CrossNodeSyncInterval <= TimeSpan.Zero)
+        {
+            failures.Add("FeatureStreaming:CrossNodeSyncInterval must be a positive duration.");
         }
 
         return failures.Count > 0

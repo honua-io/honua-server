@@ -485,7 +485,7 @@ internal sealed partial class ODataQueryHandler(
             {
                 var nextSkip = ODataUtilityService.CalculateNextSkip(pagination.Offset, pagination.Limit);
                 nextLink = ODataUtilityService.GenerateNextLink(context.Request, nextSkip, pagination.Limit,
-                    filter, select, orderby, count, expand, useSkipToken, compute);
+                    filter, select, orderby, count, expand, useSkipToken, compute, format);
             }
 
             // Generate delta link when there are no more pages and no nextLink.

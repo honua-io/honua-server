@@ -711,6 +711,30 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    public async Task MapServer_Query_Post_HonorsQueryStringParameters()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("where", "1=1"),
+            new KeyValuePair<string, string>("f", "json")
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query?returnGeometry=false",
+            payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features.Should().AllSatisfy(feature => feature.Geometry.Should().BeNull());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/query")]
     public async Task MapServer_ServiceQuery_WithMalformedLayersDelimiter_ReturnsBadRequest()
     {

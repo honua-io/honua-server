@@ -3,13 +3,16 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.ImageServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Geometries;
 
@@ -21,6 +24,7 @@ namespace Honua.Server.Features.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerExportHandler
 {
+    private const string InlineImageFormat = "image";
     private const int MinOutputDimension = 1;
     private const int MaxAllowedOutputDimension = 4096;
     private const int DefaultMaxOutputDimension = 1024;
@@ -91,13 +95,25 @@ internal sealed class ImageServerExportHandler
             }
 
             // Determine output dimensions and propagate to query
-            var (width, height) = CalculateOutputDimensions(request, primaryRasterInfo);
+            var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+            var (width, height) = await CalculateOutputDimensionsAsync(
+                request,
+                primaryRasterInfo,
+                coordinateTransformService,
+                cancellationToken).ConfigureAwait(false);
             var exportQuery = query.Value with { OutputWidth = width, OutputHeight = height };
             var formatName = exportQuery.OutputFormat.ToString();
             ImageServerLog.ExportImageStarted(_logger, layerId, width, height, formatName);
 
             // Export the image
             var result = await _rasterStore.ExportImageAsync(layerId, primaryRasterInfo.Id, exportQuery, cancellationToken);
+
+            if (WantsInlineImageResponse(request.F))
+            {
+                ImageServerLog.ExportImageCompleted(_logger, layerId, result.Data.Length);
+                scope.SetSuccess(1);
+                return Results.File(result.Data, result.ContentType);
+            }
 
             // Store the image temporarily and get the public URL
             var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
@@ -253,34 +269,22 @@ internal sealed class ImageServerExportHandler
         }
     }
 
-    private static (int width, int height) CalculateOutputDimensions(ExportImageRequest request, Core.Features.Raster.Domain.RasterInfo raster)
+    private static async Task<(int width, int height)> CalculateOutputDimensionsAsync(
+        ExportImageRequest request,
+        Core.Features.Raster.Domain.RasterInfo raster,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
     {
-        // Guard against invalid raster metadata
-        if (raster.Width <= 0 || raster.Height <= 0)
-        {
-            return (DefaultMaxOutputDimension, DefaultMaxOutputDimension);
-        }
+        var aspectRatio = await GetOutputAspectRatioAsync(request, raster, coordinateTransformService, cancellationToken).ConfigureAwait(false);
 
-        // If size is specified, use it as width and calculate proportional height
         if (request.Size.HasValue)
         {
-            var width = Math.Clamp(request.Size.Value, MinOutputDimension, MaxAllowedOutputDimension);
-            var aspectRatio = (double)raster.Height / raster.Width;
-            var height = (int)Math.Round(width * aspectRatio, MidpointRounding.AwayFromZero);
-
-            if (height > MaxAllowedOutputDimension)
-            {
-                var adjustedWidth = Math.Max(
-                    MinOutputDimension,
-                    (int)Math.Round(MaxAllowedOutputDimension / aspectRatio, MidpointRounding.AwayFromZero));
-                return (adjustedWidth, MaxAllowedOutputDimension);
-            }
-
-            return (width, Math.Clamp(height, MinOutputDimension, MaxAllowedOutputDimension));
+            return ScaleWidthToAspectRatio(request.Size.Value, aspectRatio, MaxAllowedOutputDimension);
         }
 
-        // Default to original raster dimensions capped at max output size
-        return (Math.Min(raster.Width, DefaultMaxOutputDimension), Math.Min(raster.Height, DefaultMaxOutputDimension));
+        var sourceWidth = raster.Width > 0 ? raster.Width : DefaultMaxOutputDimension;
+        var defaultWidth = Math.Clamp(sourceWidth, MinOutputDimension, DefaultMaxOutputDimension);
+        return ScaleWidthToAspectRatio(defaultWidth, aspectRatio, DefaultMaxOutputDimension);
     }
 
     private static ResamplingAlgorithm ParseInterpolation(string interpolation)
@@ -292,6 +296,121 @@ internal sealed class ImageServerExportHandler
             "RSP_CubicConvolution" => ResamplingAlgorithm.Bicubic,
             _ => ResamplingAlgorithm.Bilinear
         };
+    }
+
+    private static bool WantsInlineImageResponse(string? format)
+        => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<double> GetOutputAspectRatioAsync(
+        ExportImageRequest request,
+        RasterInfo raster,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        if (await TryGetRequestedExtentAspectRatioAsync(request, raster, coordinateTransformService, cancellationToken).ConfigureAwait(false) is { } bboxAspectRatio)
+        {
+            return bboxAspectRatio;
+        }
+
+        if (raster.Width > 0 && raster.Height > 0)
+        {
+            return (double)raster.Height / raster.Width;
+        }
+
+        return 1d;
+    }
+
+    private static async Task<double?> TryGetRequestedExtentAspectRatioAsync(
+        ExportImageRequest request,
+        RasterInfo raster,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Bbox))
+        {
+            return null;
+        }
+
+        if (!RasterParsingHelpers.TryParseBoundingBox(request.Bbox, out var minX, out var minY, out var maxX, out var maxY))
+        {
+            return null;
+        }
+
+        var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.BboxSr);
+        var targetSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr) ?? raster.Srid ?? bboxSrid;
+        if (bboxSrid.HasValue && targetSrid.HasValue && bboxSrid.Value != targetSrid.Value)
+        {
+            if (coordinateTransformService != null)
+            {
+                var transformed = await coordinateTransformService.TransformExtentAsync(
+                    minX,
+                    minY,
+                    maxX,
+                    maxY,
+                    bboxSrid.Value,
+                    targetSrid.Value,
+                    cancellationToken).ConfigureAwait(false);
+                if (transformed.HasValue)
+                {
+                    minX = transformed.Value.MinX;
+                    minY = transformed.Value.MinY;
+                    maxX = transformed.Value.MaxX;
+                    maxY = transformed.Value.MaxY;
+                }
+            }
+            else
+            {
+                try
+                {
+                    var transformedExtent = CoordinateTransformer.TransformExtent(
+                        new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY),
+                        bboxSrid.Value,
+                        targetSrid.Value);
+
+                    minX = transformedExtent.MinX;
+                    minY = transformedExtent.MinY;
+                    maxX = transformedExtent.MaxX;
+                    maxY = transformedExtent.MaxY;
+                }
+                catch (NotSupportedException)
+                {
+                    // Fall back to the raw bbox aspect ratio when reprojection is unavailable.
+                }
+            }
+        }
+
+        var width = Math.Abs(maxX - minX);
+        var height = Math.Abs(maxY - minY);
+        if (width <= double.Epsilon || height <= double.Epsilon)
+        {
+            return null;
+        }
+
+        var ratio = height / width;
+        if (!double.IsFinite(ratio) || ratio <= 0)
+        {
+            return null;
+        }
+
+        return ratio;
+    }
+
+    private static (int width, int height) ScaleWidthToAspectRatio(int requestedWidth, double aspectRatio, int maxDimension)
+    {
+        var width = Math.Clamp(requestedWidth, MinOutputDimension, maxDimension);
+        var height = Math.Max(
+            MinOutputDimension,
+            (int)Math.Round(width * aspectRatio, MidpointRounding.AwayFromZero));
+
+        if (height > maxDimension)
+        {
+            height = maxDimension;
+            width = Math.Max(
+                MinOutputDimension,
+                (int)Math.Round(height / aspectRatio, MidpointRounding.AwayFromZero));
+        }
+
+        return (Math.Clamp(width, MinOutputDimension, maxDimension), Math.Clamp(height, MinOutputDimension, maxDimension));
     }
 
 }

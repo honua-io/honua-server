@@ -14,6 +14,9 @@ namespace Honua.Server.Features.ImageServer;
 /// </summary>
 internal static class ImageServerEndpoints
 {
+    private const string JsonContentType = "application/json";
+    private const string InlineImageFormat = "image";
+
     /// <summary>
     /// Maps Image Server endpoints to the application.
     /// </summary>
@@ -38,7 +41,10 @@ internal static class ImageServerEndpoints
             .WithName("ExportImage")
             .WithSummary("Export rendered raster image")
             .WithDescription("Exports a rendered image from the raster dataset with optional clipping, resampling, and format conversion")
-            .Produces<ExportImageResponse>()
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .Produces(StatusCodes.Status200OK, contentType: "image/jpeg")
+            .Produces(StatusCodes.Status200OK, contentType: "image/tiff")
             .Produces(400)
             .Produces(404);
 
@@ -75,9 +81,9 @@ internal static class ImageServerEndpoints
         ImageServerMetadataHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!IsSupportedResponseFormat(f))
+        if (!IsSupportedJsonResponseFormat(f))
         {
-            return CreateUnsupportedFormatResult(context);
+            return CreateUnsupportedJsonFormatResult(context);
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
@@ -102,9 +108,9 @@ internal static class ImageServerEndpoints
         ImageServerExportHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!IsSupportedResponseFormat(request.F))
+        if (!IsSupportedExportResponseFormat(request.F))
         {
-            return CreateUnsupportedFormatResult(context);
+            return CreateUnsupportedExportFormatResult(context);
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
@@ -129,9 +135,9 @@ internal static class ImageServerEndpoints
         ImageServerIdentifyHandler handler,
         CancellationToken cancellationToken = default)
     {
-        if (!IsSupportedResponseFormat(request.F))
+        if (!IsSupportedJsonResponseFormat(request.F))
         {
-            return CreateUnsupportedFormatResult(context);
+            return CreateUnsupportedJsonFormatResult(context);
         }
 
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
@@ -171,11 +177,18 @@ internal static class ImageServerEndpoints
         return await handler.GetImageTileAsync(context, id, level, row, col, format, cancellationToken);
     }
 
-    private static bool IsSupportedResponseFormat(string? format)
+    private static bool IsSupportedJsonResponseFormat(string? format)
         => string.IsNullOrWhiteSpace(format) ||
            string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
 
-    private static IResult CreateUnsupportedFormatResult(HttpContext context)
+    private static bool IsSupportedExportResponseFormat(string? format)
+        => IsSupportedJsonResponseFormat(format) ||
+           string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
+
+    private static IResult CreateUnsupportedJsonFormatResult(HttpContext context)
         => StandardErrorHelpers.CreateBadRequest(context, "Only JSON format is supported. Use f=json or f=pjson");
+
+    private static IResult CreateUnsupportedExportFormatResult(HttpContext context)
+        => StandardErrorHelpers.CreateBadRequest(context, "Only JSON and image formats are supported. Use f=json, f=pjson, or f=image");
 }

@@ -30,15 +30,40 @@ public sealed class AuthProviderInfo
 }
 
 /// <summary>
+/// Current hosted-admin auth session projected by the server.
+/// </summary>
+public sealed class AdminAuthSessionInfo
+{
+    [JsonPropertyName("isAuthenticated")]
+    public bool IsAuthenticated { get; set; }
+
+    [JsonPropertyName("providerKey")]
+    public string? ProviderKey { get; set; }
+
+    [JsonPropertyName("expiresAt")]
+    public DateTimeOffset? ExpiresAt { get; set; }
+
+    [JsonPropertyName("claims")]
+    public List<AdminAuthClaimInfo> Claims { get; set; } = [];
+}
+
+/// <summary>
+/// Auth claim projected to the hosted admin UI.
+/// </summary>
+public sealed class AdminAuthClaimInfo
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("value")]
+    public string Value { get; set; } = "";
+}
+
+/// <summary>
 /// Request model for server-side authorize URL generation.
 /// </summary>
 public sealed class AdminAuthAuthorizeUrlRequest
 {
-    [JsonPropertyName("state")]
-    public string State { get; set; } = "";
-
-    [JsonPropertyName("codeChallenge")]
-    public string CodeChallenge { get; set; } = "";
 }
 
 /// <summary>
@@ -51,7 +76,7 @@ public sealed class AdminAuthAuthorizeUrlResponse
 }
 
 /// <summary>
-/// Request model for server-side token exchange and refresh.
+/// Request model for server-side token exchange.
 /// </summary>
 public sealed class AdminAuthTokenRequest
 {
@@ -61,11 +86,8 @@ public sealed class AdminAuthTokenRequest
     [JsonPropertyName("code")]
     public string? Code { get; set; }
 
-    [JsonPropertyName("codeVerifier")]
-    public string? CodeVerifier { get; set; }
-
-    [JsonPropertyName("refreshToken")]
-    public string? RefreshToken { get; set; }
+    [JsonPropertyName("state")]
+    public string? State { get; set; }
 }
 
 /// <summary>
@@ -78,7 +100,7 @@ public sealed class AdminAuthLogoutUrlResponse
 }
 
 /// <summary>
-/// Token response from the OIDC token endpoint.
+/// Token response from the backend-assisted OIDC token exchange.
 /// </summary>
 public sealed class TokenResponse
 {
@@ -87,9 +109,6 @@ public sealed class TokenResponse
 
     [JsonPropertyName("id_token")]
     public string? IdToken { get; set; }
-
-    [JsonPropertyName("refresh_token")]
-    public string? RefreshToken { get; set; }
 
     [JsonPropertyName("token_type")]
     public string TokenType { get; set; } = "Bearer";
@@ -108,6 +127,9 @@ public sealed class TokenResponse
 [JsonSerializable(typeof(AdminAuthConfig))]
 [JsonSerializable(typeof(AuthProviderInfo))]
 [JsonSerializable(typeof(List<AuthProviderInfo>))]
+[JsonSerializable(typeof(AdminAuthSessionInfo))]
+[JsonSerializable(typeof(AdminAuthClaimInfo))]
+[JsonSerializable(typeof(List<AdminAuthClaimInfo>))]
 [JsonSerializable(typeof(AdminAuthAuthorizeUrlRequest))]
 [JsonSerializable(typeof(AdminAuthAuthorizeUrlResponse))]
 [JsonSerializable(typeof(AdminAuthTokenRequest))]

@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -298,6 +299,21 @@ public sealed class CachingLayerCatalogTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_DoesNotUsePatternInvalidation()
+    {
+        var cache = Substitute.For<ICacheService>();
+        var catalog = new CachingLayerCatalog(_innerCatalog, cache, Options.Create(_options));
+
+        await catalog.InvalidateLayerAsync(7);
+
+        await cache.DidNotReceive().RemoveByPatternAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await cache.Received().RemoveAsync("scope:default:layer:7", Arg.Any<CancellationToken>());
+        await cache.Received().RemoveAsync("scope:default:layer:exists:7", Arg.Any<CancellationToken>());
+        await cache.Received().RemoveAsync("scope:default:layers:all", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task InvalidateServiceAsync_ClearsServiceCache()
     {
         // Arrange
@@ -383,6 +399,52 @@ public sealed class CachingLayerCatalogTests : IDisposable
         _innerCatalog.GetLayerCallCount.Should().Be(1);
         _innerCatalog.GetServiceCallCount.Should().Be(1);
         _innerCatalog.ListLayersCallCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_DoesNotUsePatternDeletion()
+    {
+        var cache = new RecordingCacheService();
+        var catalog = new CachingLayerCatalog(new MockLayerCatalog(), cache, Options.Create(_options));
+
+        await catalog.GetLayerAsync(1);
+        await catalog.InvalidateLayerAsync(1);
+
+        cache.PatternRemovals.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateAllAsync_DoesNotUsePatternDeletion()
+    {
+        var cache = new RecordingCacheService();
+        var catalog = new CachingLayerCatalog(new MockLayerCatalog(), cache, Options.Create(_options));
+
+        await catalog.GetLayerAsync(1);
+        await catalog.GetServiceAsync("TestService");
+        await catalog.ListLayersAsync();
+        await catalog.InvalidateAllAsync();
+
+        cache.PatternRemovals.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateAllAsync_BumpsGenerationWithoutPatternInvalidation()
+    {
+        var cache = Substitute.For<ICacheService>();
+
+        var catalog = new CachingLayerCatalog(_innerCatalog, cache, Options.Create(_options));
+
+        await catalog.InvalidateAllAsync();
+
+        await cache.DidNotReceive().RemoveByPatternAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await cache.Received().SetAsync(
+            "scope:default:catalog:generation",
+            Arg.Is<string>(generation => !string.IsNullOrWhiteSpace(generation)),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -560,6 +622,68 @@ public sealed class CachingLayerCatalogTests : IDisposable
         private sealed class NullScope : IDisposable
         {
             public void Dispose() { }
+        }
+    }
+
+    private sealed class RecordingCacheService : ICacheService
+    {
+        private readonly Dictionary<string, object> _entries = new(StringComparer.Ordinal);
+
+        public List<string> PatternRemovals { get; } = [];
+
+        public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
+        {
+            return Task.FromResult(_entries.TryGetValue(key, out var value) ? value as T : null);
+        }
+
+        public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
+            => SetAsync(key, value, TimeSpan.FromMinutes(5), cancellationToken);
+
+        public Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken cancellationToken = default) where T : class
+        {
+            _entries[key] = value;
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+        {
+            _entries.Remove(key);
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
+        {
+            PatternRemovals.Add(pattern);
+            return Task.CompletedTask;
+        }
+
+        public async Task<T?> GetOrSetAsync<T>(string key, Func<CancellationToken, Task<T?>> factory, CancellationToken cancellationToken = default) where T : class
+            => await GetOrSetAsync(key, factory, TimeSpan.FromMinutes(5), cancellationToken).ConfigureAwait(false);
+
+        public async Task<T?> GetOrSetAsync<T>(string key, Func<CancellationToken, Task<T?>> factory, TimeSpan ttl, CancellationToken cancellationToken = default) where T : class
+        {
+            if (_entries.TryGetValue(key, out var cached) && cached is T typed)
+            {
+                return typed;
+            }
+
+            var created = await factory(cancellationToken).ConfigureAwait(false);
+            if (created != null)
+            {
+                _entries[key] = created;
+            }
+
+            return created;
+        }
+
+        public Task<CacheEntryMetadata<T>> GetWithMetadataAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
+        {
+            if (_entries.TryGetValue(key, out var cached) && cached is T typed)
+            {
+                return Task.FromResult(new CacheEntryMetadata<T>(typed, TimeSpan.FromMinutes(5)));
+            }
+
+            return Task.FromResult(CacheEntryMetadata<T>.Miss());
         }
     }
 }

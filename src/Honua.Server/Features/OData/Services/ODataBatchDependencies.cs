@@ -29,6 +29,31 @@ internal sealed class ODataBatchDependencies
         ODataValidationService validationService,
         IETagService eTagService,
         IFeatureChangeEventPublisher featureChangeEventPublisher)
+        : this(
+            layerCatalog,
+            featureReader,
+            featureWriter,
+            geometryService,
+            mutationValidator,
+            crsRegistry,
+            editLimits,
+            validationService,
+            eTagService,
+            new FeatureMutationEventService(featureChangeEventPublisher))
+    {
+    }
+
+    public ODataBatchDependencies(
+        ILayerCatalog layerCatalog,
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        IGeometryService geometryService,
+        FeatureMutationValidator mutationValidator,
+        ICrsRegistry crsRegistry,
+        EditLimits editLimits,
+        ODataValidationService validationService,
+        IETagService eTagService,
+        FeatureMutationEventService mutationEventService)
     {
         LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
@@ -39,7 +64,7 @@ internal sealed class ODataBatchDependencies
         EditLimits = editLimits ?? throw new ArgumentNullException(nameof(editLimits));
         ValidationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
         ETagService = eTagService ?? throw new ArgumentNullException(nameof(eTagService));
-        FeatureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
+        MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
     }
 
     public ILayerCatalog LayerCatalog { get; }
@@ -60,5 +85,5 @@ internal sealed class ODataBatchDependencies
 
     public IETagService ETagService { get; }
 
-    public IFeatureChangeEventPublisher FeatureChangeEventPublisher { get; }
+    public FeatureMutationEventService MutationEventService { get; }
 }

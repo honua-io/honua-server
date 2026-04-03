@@ -78,6 +78,7 @@ var serveAdminUi = builder.Configuration.GetValue(
 var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
+var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !isTestEnvironment;
 var adminStaticAssetsManifestPath = Path.Combine(
     AppContext.BaseDirectory,
     "Honua.Admin.staticwebassets.endpoints.json");
@@ -88,6 +89,7 @@ if (serveAdminUi && !builder.Environment.IsDevelopment())
 
 // Load optional security configuration without overriding environment-specific settings.
 AddSecurityConfiguration(builder.Configuration, builder.Environment);
+builder.Services.AddDataProtection();
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
@@ -131,6 +133,7 @@ else
 
 if (!string.IsNullOrWhiteSpace(redisConnectionString))
 {
+    var requireRedisAtStartup = requiresDurableDistributedEvents;
     try
     {
         var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
@@ -143,6 +146,12 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 
         if (!connectedRedis.IsConnected)
         {
+            if (requireRedisAtStartup)
+            {
+                throw new InvalidOperationException(
+                    "Redis durable coordination is required in this environment, but the Redis multiplexer did not establish an active startup connection.");
+            }
+
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             startupLogger.LogWarning(
                 "Redis multiplexer initialized without an active connection. The client will continue retrying in the background.");
@@ -150,6 +159,13 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
     }
     catch (Exception ex)
     {
+        if (requireRedisAtStartup)
+        {
+            throw new InvalidOperationException(
+                "Redis durable coordination is required in this environment, but startup could not establish the Redis multiplexer.",
+                ex);
+        }
+
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         startupLogger.LogWarning(ex, "Failed to connect to Redis at startup. RedisCacheService will operate in fallback mode.");
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
@@ -393,12 +409,20 @@ builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobMan
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoServerImportBackgroundService>();
 
-// Register export background service with bounded channel
-builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<Honua.Server.Features.Export.ExportJob>(
+// Register export background service with durable request persistence and a bounded in-process scheduler.
+builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<string>(
     new System.Threading.Channels.BoundedChannelOptions(4)
     {
         FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
     }));
+builder.Services.AddSingleton<Honua.Server.Features.Export.IExportJobService>(sp =>
+    new Honua.Server.Features.Export.ExportJobService(
+        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
+        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+        sp.GetRequiredService<System.Threading.Channels.Channel<string>>(),
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Export.ExportJobService>>(),
+        sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Export.ExportBackgroundService>();
 
 
@@ -409,10 +433,14 @@ builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.FeatureC
     .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(sp =>
-    new Honua.Server.Features.Infrastructure.Events.InMemoryFeatureChangeEventStore(
+{
+    return new Honua.Server.Features.Infrastructure.Events.InMemoryFeatureChangeEventStore(
         sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>>(),
-        sp.GetService<IDistributedCache>(),
-        sp.GetService<IConnectionMultiplexer>()));
+        sp.GetService<IConnectionMultiplexer>(),
+        allowInMemoryFallback: !requiresDurableDistributedEvents);
+});
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStoreHealth>(sp =>
+    (Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStoreHealth)sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>());
 // Register feature-stream session manager and streaming publisher (#501)
 builder.Services.AddOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>()
     .Bind(builder.Configuration.GetSection(Honua.Server.Features.Streaming.FeatureStreamOptions.SectionName))
@@ -420,11 +448,23 @@ builder.Services.AddOptions<Honua.Server.Features.Streaming.FeatureStreamOptions
 builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>,
     Honua.Server.Features.Streaming.FeatureStreamOptionsValidator>();
 builder.Services.AddSingleton<Honua.Server.Features.Streaming.FeatureStreamSessionManager>();
+builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<Honua.Server.Features.Infrastructure.Events.PendingFeatureChangeSignal>());
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeRetryQueue>(sp =>
+    new Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryQueue(
+        sp.GetService<IDistributedCache>(),
+        sp.GetRequiredService<System.Threading.Channels.Channel<Honua.Server.Features.Infrastructure.Events.PendingFeatureChangeSignal>>(),
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
+        sp.GetRequiredService<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(),
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryQueue>>(),
+        sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventPublisher>(sp =>
     new Honua.Server.Features.Streaming.FeatureStreamPublisher(
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
         sp.GetRequiredService<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamPublisher>>()));
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamPublisher>>(),
+        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeRetryQueue>()));
+builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.FeatureMutationEventService>();
+builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryBackgroundService>();
 builder.Services.AddScoped<Honua.Server.Features.Streaming.FeatureStreamDependencies>();
 builder.Services.AddHostedService<Honua.Server.Features.Streaming.FeatureStreamHeartbeatService>();
 builder.Services.AddHttpClient("feature-change-webhook")
@@ -433,6 +473,7 @@ builder.Services.AddHostedService(sp =>
     new Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
         sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
         sp.GetService<IDistributedCache>(),
+        sp.GetService<IConnectionMultiplexer>(),
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>>()));
@@ -447,6 +488,7 @@ builder.Services.AddHostedService(sp =>
     new Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher(
         sp.GetRequiredService<IServiceScopeFactory>(),
         sp.GetService<IDistributedCache>(),
+        sp.GetService<IConnectionMultiplexer>(),
         sp.GetRequiredService<IHttpClientFactory>(),
         sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher>>()));
@@ -459,7 +501,8 @@ builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOp
         sp.GetRequiredService<IServiceScopeFactory>(),
         sp.GetRequiredService<IOptions<Honua.Core.Features.Tiles.TileOptions>>(),
         sp.GetRequiredService<IOptions<LimitsOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.TileOperations.TileOperationJobService>>()));
+        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.TileOperations.TileOperationJobService>>(),
+        sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileOperationBackgroundService>();
 
 // Register OData services and handlers
@@ -498,6 +541,7 @@ builder.Services.AddApiKeyAuthentication();
 // Add OIDC authentication if enabled
 builder.Services.AddOidcAuthentication(builder.Configuration);
 builder.Services.AddOidcAuthorization(builder.Configuration);
+builder.Services.AddSingleton<AdminAuthSessionStore>();
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure CORS policies

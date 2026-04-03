@@ -305,7 +305,10 @@ internal sealed class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                "Invalid WFS parameter value; see logs for details.");
         }
         catch (Exception ex)
         {
@@ -408,7 +411,10 @@ internal sealed class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return Wfs20ErrorResults.CreateBadRequest(context, "InvalidParameterValue", ex.Message);
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                "Invalid WFS parameter value; see logs for details.");
         }
         catch (Exception ex)
         {

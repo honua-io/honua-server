@@ -3,11 +3,18 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Admin;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -133,6 +140,55 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
         data.GetProperty("providerType").GetString().Should().Be("UnknownProvider");
         data.GetProperty("isReachable").GetBoolean().Should().BeFalse();
         data.GetProperty("errorMessage").GetString().Should().Contain("not configured");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identity)]
+    public async Task TestIdentityProvider_WhenDiscoveryFails_ReturnsSanitizedError()
+    {
+        var method = typeof(IdentityAdminEndpoints).GetMethod(
+            "HandleTestProvider",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        method.Should().NotBeNull();
+
+        using var httpClientFactory = new ThrowingHttpClientFactory(new HttpRequestException("dns failure"));
+        var resultTask = method!.Invoke(
+            null,
+            [
+                "Generic",
+                Options.Create(new OidcAuthenticationOptions
+                {
+                    Enabled = true,
+                    Generic = new GenericOidcProviderOptions
+                    {
+                        Enabled = true,
+                        Authority = "https://auth.example.com",
+                        ClientId = "generic-client-id",
+                        ClientSecret = "generic-secret-value-minimum-length",
+                        DisplayName = "External Provider"
+                    }
+                }),
+                httpClientFactory,
+                NullLogger<IdentityAdminEndpoints.IdentityAdminEndpointsLog>.Instance,
+                CancellationToken.None
+            ]) as Task<IResult>;
+
+        resultTask.Should().NotBeNull();
+        var result = await resultTask!;
+
+        var context = new DefaultHttpContext();
+        context.RequestServices = new ServiceCollection()
+            .AddLogging()
+            .BuildServiceProvider();
+        context.Response.Body = new MemoryStream();
+        await result.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("isReachable").GetBoolean().Should().BeFalse();
+        data.GetProperty("errorMessage").GetString().Should().Be("Identity provider discovery request failed.");
     }
 
     // --- Cache Status ---
@@ -298,5 +354,23 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
         }
 
         hasEnterpriseFeature.Should().BeTrue("the feature catalog should contain Enterprise features");
+    }
+
+    private sealed class ThrowingHttpClientFactory(Exception exception) : IHttpClientFactory, IDisposable
+    {
+        private readonly HttpClient _client = new(new ThrowingHttpMessageHandler(exception));
+
+        public HttpClient CreateClient(string name) => _client;
+
+        public void Dispose()
+        {
+            _client.Dispose();
+        }
+
+        private sealed class ThrowingHttpMessageHandler(Exception exception) : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+                => Task.FromException<HttpResponseMessage>(exception);
+        }
     }
 }

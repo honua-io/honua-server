@@ -16,6 +16,7 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class CacheAdminEndpoints
 {
+    private const string CacheInvalidationFailedMessage = "Cache invalidation failed.";
     internal sealed class CacheAdminEndpointsLog;
 
     public static void MapCacheAdminEndpoints(this IEndpointRouteBuilder endpoints)
@@ -154,7 +155,7 @@ internal static class CacheAdminEndpoints
             {
                 Success = false,
                 Scope = request.Scope,
-                Message = $"Cache invalidation failed for scope '{request.Scope}': {ex.Message}",
+                Message = CacheInvalidationFailedMessage,
                 Timestamp = DateTimeOffset.UtcNow
             };
 

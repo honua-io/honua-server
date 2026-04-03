@@ -33,6 +33,9 @@ internal sealed class ImageServerMetadataHandler
 
     /// <summary>Maximum image width in pixels for export requests.</summary>
     private const int MaxImageWidth = 15000;
+    private const int MaxTileZoom = 23;
+    private const int TileSize = 256;
+    private const int TileDpi = 96;
 
     /// <summary>Maximum number of records returned in catalog queries.</summary>
     private const int MaxRecordCount = 1000;
@@ -128,10 +131,13 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                Capabilities = "Catalog,Image,Metadata,Pixels",
+                Capabilities = "Catalog,Image,Metadata,Pixels,Tilemap",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
-                MaxRecordCount = MaxRecordCount
+                MaxRecordCount = MaxRecordCount,
+                SingleFusedMapCache = true,
+                CacheType = "Map",
+                TileInfo = BuildTileInfo()
             };
 
             ImageServerLog.ServiceInfoGenerated(_logger, layerId, primaryRaster.BandCount, statistics.Length);
@@ -195,6 +201,45 @@ internal sealed class ImageServerMetadataHandler
             "32BF" => "F32",
             "64BF" => "F64",
             _ => "U8" // Default fallback
+        };
+    }
+
+    private static TileInfo BuildTileInfo()
+    {
+        const double webMercatorOrigin = global::Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent;
+        const double pixelSize = 0.00028;
+
+        var lods = new LevelOfDetail[MaxTileZoom + 1];
+        for (var z = 0; z <= MaxTileZoom; z++)
+        {
+            var matrixSize = 1L << z;
+            var resolution = 2.0 * webMercatorOrigin / (TileSize * (double)matrixSize);
+            var scale = resolution / pixelSize;
+            lods[z] = new LevelOfDetail
+            {
+                Level = z,
+                Resolution = resolution,
+                Scale = scale
+            };
+        }
+
+        return new TileInfo
+        {
+            Rows = TileSize,
+            Cols = TileSize,
+            Dpi = TileDpi,
+            Format = "PNG",
+            Origin = new Point
+            {
+                X = -webMercatorOrigin,
+                Y = webMercatorOrigin
+            },
+            SpatialReference = new SpatialReference
+            {
+                Wkid = 3857,
+                LatestWkid = 3857
+            },
+            Lods = lods
         };
     }
 }

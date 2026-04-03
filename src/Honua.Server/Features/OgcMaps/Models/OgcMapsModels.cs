@@ -121,6 +121,9 @@ public sealed class OgcLink
 
     [JsonPropertyName("hreflang")]
     public string? HrefLang { get; init; }
+
+    [JsonPropertyName("templated")]
+    public bool? Templated { get; init; }
 }
 
 /// <summary>
@@ -259,6 +262,18 @@ public sealed class DatasetMap
 
     [JsonPropertyName("collections")]
     public required string[] Collections { get; init; }
+
+    [JsonPropertyName("links")]
+    public required OgcLink[] Links { get; init; }
+}
+
+/// <summary>
+/// Tile set list response for OGC API - Maps tile metadata.
+/// </summary>
+public sealed class TileSetsList
+{
+    [JsonPropertyName("tilesets")]
+    public required TileSet[] Tilesets { get; init; }
 
     [JsonPropertyName("links")]
     public required OgcLink[] Links { get; init; }

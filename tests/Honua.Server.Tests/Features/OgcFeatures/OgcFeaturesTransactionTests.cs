@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Ogc.Common;
 using Honua.Server.Features.OgcFeatures;
 using Honua.Server.Features.OgcFeatures.Models;
@@ -197,6 +198,60 @@ public sealed class OgcFeaturesTransactionTests : IAsyncLifetime, IDisposable
             $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task CreateFeature_WhenEventPublishFails_ReturnsCreated()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
+        await fixture.InitializeAsync();
+
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "Created Despite Publish Failure"
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        var response = await fixture.Client.PostAsync(
+            $"/ogc/features/collections/{TestLayerId}/items",
+            new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task DeleteFeature_WhenEventPublishFails_ReturnsNoContent()
+    {
+        await using var fixture = new WebAppFixture()
+            .ReplaceService<IFeatureChangeEventPublisher>(new ThrowingFeatureChangeEventPublisher());
+        await fixture.InitializeAsync();
+
+        var existingId = await fixture.InsertFeatureAsync(TestLayerId, "Delete Despite Publish Failure");
+
+        var response = await fixture.Client.DeleteAsync(
+            $"/ogc/features/collections/{TestLayerId}/items/{existingId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private sealed class ThrowingFeatureChangeEventPublisher : IFeatureChangeEventPublisher
+    {
+        public Task PublishAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("publish failed");
     }
 
 }

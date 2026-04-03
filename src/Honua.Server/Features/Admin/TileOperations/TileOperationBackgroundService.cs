@@ -10,26 +10,43 @@ internal sealed class TileOperationBackgroundService(
     ITileOperationJobService tileOperationJobService,
     ILogger<TileOperationBackgroundService> logger) : BackgroundService
 {
+    private static readonly TimeSpan WorkerRestartDelay = TimeSpan.FromSeconds(5);
     private readonly ITileOperationJobService _tileOperationJobService = tileOperationJobService ?? throw new ArgumentNullException(nameof(tileOperationJobService));
     private readonly ILogger<TileOperationBackgroundService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var jobId in _tileOperationJobService.ReadQueuedJobIdsAsync(stoppingToken))
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await _tileOperationJobService.ProcessQueuedJobAsync(jobId, stoppingToken).ConfigureAwait(false);
+                await foreach (var jobId in _tileOperationJobService.ReadQueuedJobIdsAsync(stoppingToken))
+                {
+                    try
+                    {
+                        await _tileOperationJobService.ProcessQueuedJobAsync(jobId, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Unexpected exception while processing tile job {JobId}.", jobId);
+                    }
+                }
+
+                return;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                break;
+                return;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Unexpected exception while processing tile job {JobId}.", jobId);
+                _logger.LogWarning(ex, "Tile background worker faulted and will restart.");
+                await Task.Delay(WorkerRestartDelay, stoppingToken).ConfigureAwait(false);
             }
         }
     }
 }
-

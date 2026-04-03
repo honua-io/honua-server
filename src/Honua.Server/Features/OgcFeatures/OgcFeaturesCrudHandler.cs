@@ -31,7 +31,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly OgcFeaturesGeometryServices _geometryServices = dependencies.GeometryServices;
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
-    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = dependencies.FeatureChangeEventPublisher;
+    private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -86,22 +86,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 ?? throw new InvalidOperationException("Feature build result was missing the feature payload.");
 
             var created = await _featureWriter.CreateAsync(layerId, feature, cancellationToken);
-            await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
-            var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
-            var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(created);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = created.Id,
-                    Operation = "create",
-                    Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                    RequestId = context.TraceIdentifier,
-                    GeometryEnvelope = createEnv,
-                    PropertiesJson = createProps
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _mutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
+            await TryPublishFeatureChangeAsync(
+                context,
+                layerId,
+                created.Id,
+                "create",
+                created).ConfigureAwait(false);
             var createLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                 context.Request,
                 collectionId,
@@ -168,19 +159,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return StandardErrorHelpers.CreateNotFound(context, $"Feature '{featureId}' not found.");
             }
 
-            await OgcFeaturesUtilities.InvalidateLayerCacheAsync(context, layerId, cancellationToken);
-            var serviceId = await ResolveServiceIdAsync(context, layerId, cancellationToken);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = "delete",
-                    Protocol = HonuaTelemetry.Protocols.OgcFeatures,
-                    RequestId = context.TraceIdentifier
-                },
-                cancellationToken).ConfigureAwait(false);
+            await _mutationEventService.InvalidateLayerAsync(null, layerId, cancellationToken);
+            await TryPublishFeatureChangeAsync(
+                context,
+                layerId,
+                objectId,
+                "delete",
+                mutationFeature: null).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
             return Results.NoContent();
         }
@@ -204,18 +189,29 @@ internal sealed partial class OgcFeaturesCrudHandler(
         return feature.ToGeoJsonBase().ToOgcGeoJsonFeature(geometry, links);
     }
 
-    private static async Task<string> ResolveServiceIdAsync(
+    private async Task TryPublishFeatureChangeAsync(
         HttpContext context,
         int layerId,
-        CancellationToken cancellationToken)
+        long objectId,
+        string operation,
+        Feature? mutationFeature)
     {
-        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
-            context,
-            layerId,
-            ServiceProtocols.OgcFeatures,
-            cancellationToken);
-
-        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
+        try
+        {
+            await _mutationEventService.PublishAsync(
+                context,
+                layerId,
+                objectId,
+                operation,
+                HonuaTelemetry.Protocols.OgcFeatures,
+                CancellationToken.None,
+                mutationFeature: mutationFeature,
+                serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.FeatureChangePublishFailed(_logger, layerId, objectId, ex);
+        }
     }
 
     private static partial class Log
@@ -225,5 +221,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
         [LoggerMessage(EventId = 5231, Level = LogLevel.Error, Message = "OGC delete feature failed for collection {CollectionId}")]
         public static partial void DeleteFeatureFailed(ILogger logger, string collectionId, Exception exception);
+
+        [LoggerMessage(EventId = 5232, Level = LogLevel.Warning, Message = "Feature-change publish failed after OGC mutation succeeded for layer {LayerId}, object {ObjectId}.")]
+        public static partial void FeatureChangePublishFailed(ILogger logger, int layerId, long objectId, Exception exception);
     }
 }

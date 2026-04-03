@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.HealthCheck;
+using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -126,6 +127,21 @@ public sealed class ReadinessCheckServiceTests
 
     [UnitTest]
     [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithUnavailableFeatureChangeStore_ReturnsNotReady()
+    {
+        var mockDatabaseChecker = new MockHealthyDatabaseChecker();
+        var featureChangeStoreHealth = new MockFeatureChangeEventStoreHealth(canPersistEvents: false);
+        var service = CreateService(mockDatabaseChecker, featureChangeEventStoreHealth: featureChangeStoreHealth);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Be("Not Ready - Feature-change event storage unavailable");
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithDatabaseException_ReturnsNotReadyWithException()
     {
         // Arrange
@@ -208,7 +224,8 @@ public sealed class ReadinessCheckServiceTests
     private static ReadinessCheckService CreateService(
         IDatabaseHealthChecker databaseChecker,
         ICacheHealthChecker? cacheChecker = null,
-        MigrationState? migrationState = null)
+        MigrationState? migrationState = null,
+        IFeatureChangeEventStoreHealth? featureChangeEventStoreHealth = null)
     {
         var state = migrationState ?? new MigrationState();
         if (migrationState is null)
@@ -220,7 +237,8 @@ public sealed class ReadinessCheckServiceTests
             databaseChecker,
             state,
             new MockLogger<ReadinessCheckService>(),
-            cacheChecker);
+            cacheChecker,
+            featureChangeEventStoreHealth);
     }
 }
 
@@ -267,6 +285,11 @@ internal sealed class MockCancellationDatabaseChecker : IDatabaseHealthChecker
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(true);
     }
+}
+
+internal sealed class MockFeatureChangeEventStoreHealth(bool canPersistEvents) : IFeatureChangeEventStoreHealth
+{
+    public bool CanPersistEvents { get; } = canPersistEvents;
 }
 
 /// <summary>

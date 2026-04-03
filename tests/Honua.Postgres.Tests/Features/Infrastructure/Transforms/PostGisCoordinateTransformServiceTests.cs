@@ -135,6 +135,26 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    public async Task TransformExtentAsync_ConusAlbersToWgs84_TracksDensifiedBoundaryExtent()
+    {
+        const double minX = -2_500_000d;
+        const double minY = 1_000_000d;
+        const double maxX = 2_500_000d;
+        const double maxY = 3_500_000d;
+        const int fromSrid = 5070;
+        const int toSrid = 4326;
+
+        var result = await _service!.TransformExtentAsync(minX, minY, maxX, maxY, fromSrid, toSrid);
+        var reference = await GetDensifiedReferenceExtentAsync(minX, minY, maxX, maxY, fromSrid, toSrid);
+
+        result.Should().NotBeNull();
+        result!.Value.MinX.Should().BeApproximately(reference.MinX, 0.05);
+        result.Value.MinY.Should().BeApproximately(reference.MinY, 0.05);
+        result.Value.MaxX.Should().BeApproximately(reference.MaxX, 0.05);
+        result.Value.MaxY.Should().BeApproximately(reference.MaxY, 0.05);
+    }
+
+    [IntegrationTest]
     public async Task TransformExtentAsync_SameSrid_ReturnsIdentity()
     {
         var result = await _service!.TransformExtentAsync(
@@ -183,5 +203,61 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         result.Should().NotBeNull();
         double.IsFinite(result!.Value.X).Should().BeTrue();
         double.IsFinite(result.Value.Y).Should().BeTrue();
+    }
+
+    private async Task<(double MinX, double MinY, double MaxX, double MaxY)> GetDensifiedReferenceExtentAsync(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        int fromSrid,
+        int toSrid)
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            WITH envelope AS (
+                SELECT ST_SetSRID(ST_MakeEnvelope(@minX, @minY, @maxX, @maxY), @fromSrid) AS geom
+            ),
+            densified AS (
+                SELECT ST_Segmentize(
+                    ST_ExteriorRing(geom),
+                    GREATEST(ABS(@maxX - @minX), ABS(@maxY - @minY)) / 32.0
+                ) AS geom
+                FROM envelope
+            )
+            SELECT MIN(ST_X(point_geom)) AS xmin,
+                   MIN(ST_Y(point_geom)) AS ymin,
+                   MAX(ST_X(point_geom)) AS xmax,
+                   MAX(ST_Y(point_geom)) AS ymax
+            FROM (
+                SELECT (ST_DumpPoints(ST_Transform(geom, @toSrid))).geom AS point_geom
+                FROM densified
+            ) transformed
+            """;
+
+        AddParameter(command, "@minX", minX);
+        AddParameter(command, "@minY", minY);
+        AddParameter(command, "@maxX", maxX);
+        AddParameter(command, "@maxY", maxY);
+        AddParameter(command, "@fromSrid", fromSrid);
+        AddParameter(command, "@toSrid", toSrid);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        reader.Read().Should().BeTrue();
+
+        return (
+            reader.GetDouble(0),
+            reader.GetDouble(1),
+            reader.GetDouble(2),
+            reader.GetDouble(3));
+    }
+
+    private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 }

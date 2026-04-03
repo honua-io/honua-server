@@ -24,6 +24,7 @@ COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Server/*.csproj src/Honua.Server/
+COPY docs/developer/api-specs/admin-api.json docs/developer/api-specs/
 
 # Build arguments consumed in restore/publish
 ARG TARGETARCH

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Streaming;
@@ -66,11 +67,15 @@ public static class MetricsEndpoints
     /// <summary>
     /// Gets basic health metrics.
     /// </summary>
-    private static IResult GetHealthMetrics(HttpContext context, [FromServices] MigrationState migrationState)
+    private static async Task<IResult> GetHealthMetrics(
+        HttpContext context,
+        [FromServices] MigrationState migrationState,
+        [FromServices] IReadinessCheckService readinessCheckService)
     {
         try
         {
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
+            var readiness = await readinessCheckService.CheckReadinessAsync(context.RequestAborted).ConfigureAwait(false);
             var migration = new MigrationHealthMetrics
             {
                 Status = GetMigrationStatusLabel(migrationState.Status),
@@ -81,11 +86,11 @@ public static class MetricsEndpoints
 
             var healthMetrics = new HealthMetrics
             {
-                Status = migrationState.IsFailed
-                    ? "unhealthy"
-                    : migrationState.IsReady
-                        ? "healthy"
-                        : "initializing",
+                Status = readiness.IsReady
+                    ? "healthy"
+                    : migrationState.IsRunning || !migrationState.IsReady
+                        ? "initializing"
+                        : "unhealthy",
                 Timestamp = DateTimeOffset.UtcNow,
                 MemoryUsageMB = memoryUsage.AllocatedBytes / (1024.0 * 1024.0),
                 MemoryPressurePercent = memoryUsage.MemoryPressurePercentage,

@@ -18,6 +18,7 @@ internal sealed partial class DeployWorkflowReconciler(
     ILogger<DeployWorkflowReconciler> logger) : IOperationReconciler
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends = backends.ToDictionary(
         backend => (backend.BackendName, backend.TargetKind),
         backend => backend,
@@ -39,9 +40,12 @@ internal sealed partial class DeployWorkflowReconciler(
             return;
         }
 
+        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
+
         try
         {
-            var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
             if (operation == null ||
                 operation.Kind != WorkflowOperationKind.Deploy ||
                 operation.Deploy == null ||
@@ -51,7 +55,7 @@ internal sealed partial class DeployWorkflowReconciler(
                 return;
             }
 
-            var target = await targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
+            var target = await targetRegistry.GetAsync(operation.Deploy.TargetId, reconciliationCancellation.Token).ConfigureAwait(false);
             WorkflowOperationRecord updated;
 
             if (target == null || !_backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
@@ -67,7 +71,7 @@ internal sealed partial class DeployWorkflowReconciler(
             }
             else
             {
-                var observation = await backend.ObserveAsync(operation, cancellationToken).ConfigureAwait(false);
+                var observation = await backend.ObserveAsync(operation, reconciliationCancellation.Token).ConfigureAwait(false);
                 updated = operation with
                 {
                     Status = observation.Status,
@@ -95,15 +99,20 @@ internal sealed partial class DeployWorkflowReconciler(
                         observation.RollbackRecommended,
                         observation.Message,
                         telemetrySignalEvaluator,
-                        cancellationToken)
+                        reconciliationCancellation.Token)
                     .ConfigureAwait(false);
             }
 
             if (!Equals(updated, operation))
             {
-                await workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await workflowStore.SetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
                 Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            Log.WorkflowOperationLeaseLost(logger, operationId);
+            return;
         }
         catch (Exception ex)
         {
@@ -132,6 +141,15 @@ internal sealed partial class DeployWorkflowReconciler(
         }
         finally
         {
+            reconciliationCancellation.Cancel();
+            try
+            {
+                await renewalTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+            {
+            }
+
             await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -140,6 +158,31 @@ internal sealed partial class DeployWorkflowReconciler(
         string operationId,
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    private async Task RenewLeaseUntilCancelledAsync(string operationId, CancellationTokenSource reconciliationCancellation)
+    {
+        while (!reconciliationCancellation.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(LeaseRenewInterval, reconciliationCancellation.Token).ConfigureAwait(false);
+                var renewed = await workflowStore.RenewLeaseAsync(
+                    operationId,
+                    _ownerId,
+                    LeaseDuration,
+                    reconciliationCancellation.Token).ConfigureAwait(false);
+                if (!renewed)
+                {
+                    reconciliationCancellation.Cancel();
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+    }
 
     private static bool IsTerminal(WorkflowOperationStatus status)
         => status is WorkflowOperationStatus.Succeeded
@@ -254,6 +297,9 @@ internal sealed partial class DeployWorkflowReconciler(
 
         [LoggerMessage(9024, LogLevel.Warning, "Deploy workflow reconciliation poll loop failed")]
         public static partial void WorkflowOperationPollLoopFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(9026, LogLevel.Debug, "Deploy workflow reconciliation lease was lost for operation {OperationId}; another node may continue processing.")]
+        public static partial void WorkflowOperationLeaseLost(ILogger logger, string operationId);
     }
 
     internal static partial class BackgroundLog

@@ -484,6 +484,24 @@ public sealed class ODataPaginationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Pagination)]
+    [Endpoint("GET /odata/Features({layerId})?$format=...&$top=3")]
+    public async Task NextLink_WithFormat_PreservesFormatInNextLink()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({TestLayerId})?$format=application/json;odata.metadata=none&$top=3");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+
+        document.RootElement.TryGetProperty("@odata.nextLink", out var nextLinkElement).Should().BeTrue();
+        var nextLink = nextLinkElement.GetString();
+        nextLink.Should().Contain("$format=");
+        nextLink.Should().Contain("odata.metadata");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Pagination)]
     [Endpoint("GET /odata/Features({layerId})?$top=3&$skiptoken=0")]
     public async Task NextLink_WithSkipToken_UsesSkipTokenInNextLink()
     {

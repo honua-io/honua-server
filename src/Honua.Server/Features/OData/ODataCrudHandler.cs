@@ -22,12 +22,12 @@ internal sealed class ODataCrudHandler(
     ODataCrudService crudService,
     ODataValidationService validationService,
     Honua.Server.Features.Infrastructure.Caching.IETagService etagService,
-    IFeatureChangeEventPublisher featureChangeEventPublisher)
+    FeatureMutationEventService mutationEventService)
 {
     private readonly ODataCrudService _crudService = crudService ?? throw new ArgumentNullException(nameof(crudService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly Honua.Server.Features.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
-    private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = featureChangeEventPublisher ?? throw new ArgumentNullException(nameof(featureChangeEventPublisher));
+    private readonly FeatureMutationEventService _mutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
 
     /// <summary>
     /// Handles getting a single feature by ID
@@ -312,24 +312,18 @@ internal sealed class ODataCrudHandler(
                 result = result with { StatusCode = StatusCodes.Status204NoContent, Data = null };
             }
 
-            await InvalidateCacheAsync(context, resolvedLayerId.Value, effectiveToken);
+            await _mutationEventService.InvalidateLayerAsync(null, resolvedLayerId.Value, CancellationToken.None);
             if (TryExtractObjectId(result.Data, out var createdObjectId))
             {
-                var serviceId = await ResolveServiceIdAsync(context, resolvedLayerId.Value, effectiveToken);
-                var (createEnv, createProps) = FeatureChangeEventEnrichment.FromFeature(result.MutationFeature);
-                await _featureChangeEventPublisher.PublishAsync(
-                    new FeatureChangeEventRequest
-                    {
-                        ServiceId = serviceId,
-                        LayerId = resolvedLayerId.Value,
-                        ObjectId = createdObjectId,
-                        Operation = "create",
-                        Protocol = HonuaTelemetry.Protocols.OData,
-                        RequestId = context.TraceIdentifier,
-                        GeometryEnvelope = createEnv,
-                        PropertiesJson = createProps
-                    },
-                    effectiveToken).ConfigureAwait(false);
+                await _mutationEventService.PublishAsync(
+                    context,
+                    resolvedLayerId.Value,
+                    createdObjectId,
+                    "create",
+                    HonuaTelemetry.Protocols.OData,
+                    CancellationToken.None,
+                    mutationFeature: result.MutationFeature,
+                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
             }
             HonuaTelemetry.SetSuccess(activity);
         }
@@ -430,22 +424,16 @@ internal sealed class ODataCrudHandler(
                 result = result with { StatusCode = StatusCodes.Status204NoContent, Data = null };
             }
 
-            await InvalidateCacheAsync(context, layerId, effectiveToken);
-            var serviceId = await ResolveServiceIdAsync(context, layerId, effectiveToken);
-            var (updateEnv, updateProps) = FeatureChangeEventEnrichment.FromFeature(result.MutationFeature);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = "update",
-                    Protocol = HonuaTelemetry.Protocols.OData,
-                    RequestId = context.TraceIdentifier,
-                    GeometryEnvelope = updateEnv,
-                    PropertiesJson = updateProps
-                },
-                effectiveToken).ConfigureAwait(false);
+            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+            await _mutationEventService.PublishAsync(
+                context,
+                layerId,
+                objectId,
+                "update",
+                HonuaTelemetry.Protocols.OData,
+                CancellationToken.None,
+                mutationFeature: result.MutationFeature,
+                serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
         }
 
@@ -490,55 +478,20 @@ internal sealed class ODataCrudHandler(
         var result = await _crudService.DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, effectiveToken);
         if (result.IsSuccess)
         {
-            await InvalidateCacheAsync(context, layerId, effectiveToken);
-            var serviceId = await ResolveServiceIdAsync(context, layerId, effectiveToken);
-            var (deleteEnv, deleteProps) = FeatureChangeEventEnrichment.FromFeature(result.MutationFeature);
-            await _featureChangeEventPublisher.PublishAsync(
-                new FeatureChangeEventRequest
-                {
-                    ServiceId = serviceId,
-                    LayerId = layerId,
-                    ObjectId = objectId,
-                    Operation = "delete",
-                    Protocol = HonuaTelemetry.Protocols.OData,
-                    RequestId = context.TraceIdentifier,
-                    GeometryEnvelope = deleteEnv,
-                    PropertiesJson = deleteProps
-                },
-                effectiveToken).ConfigureAwait(false);
+            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+            await _mutationEventService.PublishAsync(
+                context,
+                layerId,
+                objectId,
+                "delete",
+                HonuaTelemetry.Protocols.OData,
+                CancellationToken.None,
+                mutationFeature: result.MutationFeature,
+                serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
             HonuaTelemetry.SetSuccess(activity);
         }
 
         return ODataUtilityService.CreateResultFromCrudResult(context, result);
-    }
-
-    /// <summary>
-    /// Invalidates cache entries for the modified layer
-    /// </summary>
-    private static async Task InvalidateCacheAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (cacheInvalidator != null)
-        {
-            await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
-        }
-    }
-
-    private static async Task<string> ResolveServiceIdAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
-            context,
-            layerId,
-            ServiceProtocols.OData,
-            cancellationToken);
-
-        return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
     private static bool TryExtractObjectId(object? payload, out long objectId)

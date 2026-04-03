@@ -19,6 +19,8 @@ internal static class IdentityAdminEndpoints
     internal sealed class IdentityAdminEndpointsLog;
 
     private const string IdentityTestHttpClient = "IdentityProviderTest";
+    private const string IdentityProviderDiscoveryFailedMessage = "Identity provider discovery request failed.";
+    private const string IdentityProviderDiscoveryTimedOutMessage = "Identity provider discovery request timed out.";
 
     public static void MapIdentityAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -46,49 +48,18 @@ internal static class IdentityAdminEndpoints
         AdminLog.IdentityProvidersQueried(logger);
 
         var options = oidcOptions.Value;
-        var providers = new List<IdentityProviderStatus>();
-
-        if (options.AzureAd is { } azureAd)
-        {
-            providers.Add(new IdentityProviderStatus
+        var providers = OidcProviderCatalog.GetProviders(options)
+            .Select(static provider => new IdentityProviderStatus
             {
-                Type = "AzureAd",
-                Enabled = azureAd.Enabled,
-                DisplayName = "Azure Active Directory",
-                Authority = azureAd.IsValid ? $"{azureAd.Instance.TrimEnd('/')}/{azureAd.TenantId}/v2.0" : null,
-                CallbackPath = azureAd.CallbackPath,
-                Scopes = azureAd.Scopes,
-                IsConfigurationValid = azureAd.IsValid
-            });
-        }
-
-        if (options.Google is { } google)
-        {
-            providers.Add(new IdentityProviderStatus
-            {
-                Type = "Google",
-                Enabled = google.Enabled,
-                DisplayName = "Google",
-                Authority = "https://accounts.google.com",
-                CallbackPath = google.CallbackPath,
-                Scopes = google.Scopes,
-                IsConfigurationValid = google.IsValid
-            });
-        }
-
-        if (options.Generic is { } generic)
-        {
-            providers.Add(new IdentityProviderStatus
-            {
-                Type = "Generic",
-                Enabled = generic.Enabled,
-                DisplayName = generic.DisplayName,
-                Authority = generic.Authority,
-                CallbackPath = generic.CallbackPath,
-                Scopes = generic.Scopes,
-                IsConfigurationValid = generic.IsValid
-            });
-        }
+                Type = provider.Type,
+                Enabled = provider.Enabled,
+                DisplayName = provider.DisplayName,
+                Authority = provider.Authority,
+                CallbackPath = provider.CallbackPath,
+                Scopes = provider.Scopes,
+                IsConfigurationValid = provider.IsValid
+            })
+            .ToList();
 
         var response = new IdentityProvidersResponse
         {
@@ -110,8 +81,8 @@ internal static class IdentityAdminEndpoints
     {
         AdminLog.IdentityProviderTestStarted(logger, providerType);
 
-        var authority = ResolveAuthority(oidcOptions.Value, providerType);
-        if (authority is null)
+        if (!OidcProviderCatalog.TryResolveProvider(oidcOptions.Value, providerType, out var provider) ||
+            string.IsNullOrWhiteSpace(provider.Authority))
         {
             var notFound = new IdentityProviderTestResult
             {
@@ -127,6 +98,7 @@ internal static class IdentityAdminEndpoints
                 IdentityAdminJsonContext.Default.ApiResponseIdentityProviderTestResult);
         }
 
+        var authority = provider.Authority;
         var discoveryUrl = $"{authority.TrimEnd('/')}/.well-known/openid-configuration";
 
         try
@@ -173,7 +145,11 @@ internal static class IdentityAdminEndpoints
                 ApiResponse<IdentityProviderTestResult>.CreateSuccess(result),
                 IdentityAdminJsonContext.Default.ApiResponseIdentityProviderTestResult);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (TaskCanceledException)
         {
             AdminLog.IdentityProviderTestCompleted(logger, providerType, false);
 
@@ -182,7 +158,23 @@ internal static class IdentityAdminEndpoints
                 ProviderType = providerType,
                 IsReachable = false,
                 DiscoveryUrl = discoveryUrl,
-                ErrorMessage = ex.Message
+                ErrorMessage = IdentityProviderDiscoveryTimedOutMessage
+            };
+
+            return Results.Json(
+                ApiResponse<IdentityProviderTestResult>.CreateSuccess(errorResult),
+                IdentityAdminJsonContext.Default.ApiResponseIdentityProviderTestResult);
+        }
+        catch (HttpRequestException)
+        {
+            AdminLog.IdentityProviderTestCompleted(logger, providerType, false);
+
+            var errorResult = new IdentityProviderTestResult
+            {
+                ProviderType = providerType,
+                IsReachable = false,
+                DiscoveryUrl = discoveryUrl,
+                ErrorMessage = IdentityProviderDiscoveryFailedMessage
             };
 
             return Results.Json(
@@ -191,18 +183,4 @@ internal static class IdentityAdminEndpoints
         }
     }
 
-    private static string? ResolveAuthority(OidcAuthenticationOptions options, string providerType) =>
-        providerType.ToUpperInvariant() switch
-        {
-            "AZUREAD" => options.AzureAd is { Enabled: true, IsValid: true } azureAd
-                ? $"{azureAd.Instance.TrimEnd('/')}/{azureAd.TenantId}/v2.0"
-                : null,
-            "GOOGLE" => options.Google is { Enabled: true, IsValid: true }
-                ? "https://accounts.google.com"
-                : null,
-            "GENERIC" => options.Generic is { Enabled: true, IsValid: true } generic
-                ? generic.Authority
-                : null,
-            _ => null
-        };
 }

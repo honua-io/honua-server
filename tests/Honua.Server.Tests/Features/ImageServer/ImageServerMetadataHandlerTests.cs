@@ -128,6 +128,27 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseAdvertisesCachedTileContract()
+    {
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Capabilities.Should().Contain("Tilemap");
+        jsonResult.Value.SingleFusedMapCache.Should().BeTrue();
+        jsonResult.Value.CacheType.Should().Be("Map");
+        jsonResult.Value.TileInfo.Should().NotBeNull();
+        jsonResult.Value.TileInfo!.Rows.Should().Be(256);
+        jsonResult.Value.TileInfo.Cols.Should().Be(256);
+        jsonResult.Value.TileInfo.Format.Should().Be("PNG");
+        jsonResult.Value.TileInfo.SpatialReference.Wkid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_ResponseContainsExtent()
     {
         SetupSuccessfulMetadata();

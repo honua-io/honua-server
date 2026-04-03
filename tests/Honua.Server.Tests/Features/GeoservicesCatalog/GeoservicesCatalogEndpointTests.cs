@@ -3,10 +3,14 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.GeoservicesCatalog;
 
@@ -96,6 +100,60 @@ public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
             var firstService = services[0];
             firstService.TryGetProperty("name", out _).Should().BeTrue();
             firstService.TryGetProperty("type", out _).Should().BeTrue();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_ImageServerEntriesUseNumericLayerUrls()
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => Task.FromResult(new[]
+            {
+                new RasterInfo
+                {
+                    Id = 1,
+                    LayerId = callInfo.ArgAt<int>(0),
+                    Name = "test-raster",
+                    Width = 256,
+                    Height = 256,
+                    BandCount = 3,
+                    PixelType = "8BUI",
+                    Srid = 4326,
+                    CreatedAt = DateTimeOffset.UtcNow
+                }
+            }));
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services => services.AddSingleton(rasterStore));
+
+        await fixture.InitializeAsync();
+        try
+        {
+            var response = await fixture.Client.GetAsync("/rest/services?f=json");
+
+            response.Be200Ok();
+
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var imageServerUrls = payload.RootElement
+                .GetProperty("services")
+                .EnumerateArray()
+                .Where(service =>
+                    service.TryGetProperty("type", out var type) &&
+                    string.Equals(type.GetString(), "ImageServer", StringComparison.Ordinal))
+                .Select(service => service.GetProperty("url").GetString())
+                .ToArray();
+
+            imageServerUrls.Should().NotBeEmpty();
+            imageServerUrls.Should().OnlyContain(url =>
+                !string.IsNullOrWhiteSpace(url) &&
+                System.Text.RegularExpressions.Regex.IsMatch(url, @".*/rest/services/\d+/ImageServer$"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 }

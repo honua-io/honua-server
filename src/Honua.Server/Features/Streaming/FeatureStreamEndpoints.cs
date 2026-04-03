@@ -393,6 +393,10 @@ internal static class FeatureStreamEndpoints
                 return; // Client disconnected during replay.
             }
         }
+        else
+        {
+            replayCursor = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+        }
 
         // Activate drain with buffer-sized grace for replay sessions so concurrent
         // overflows during the handoff are absorbed instead of disconnecting.
@@ -465,7 +469,10 @@ internal static class FeatureStreamEndpoints
                     sessionManager.ClearDrainGrace(session.SessionId);
                     return cursor;
                 }
-        : null);
+        : null,
+            onPoll: async (cursor, ct) =>
+                await ReplayToWebSocketAsync(webSocket, eventStore, cursor, options.ReplayBatchSize, logger, session.SessionId, ct, subscriptionFilter).ConfigureAwait(false),
+            pollInterval: options.CrossNodeSyncInterval);
 
         // Receive loop keeps the connection alive and detects client close.
         var buffer = new byte[1];
@@ -513,40 +520,68 @@ internal static class FeatureStreamEndpoints
         FeatureStreamSession session,
         long replayCursor,
         CancellationToken cancellationToken,
-        Func<long, CancellationToken, Task<long>>? onFirstRead = null)
+        Func<long, CancellationToken, Task<long>>? onFirstRead = null,
+        Func<long, CancellationToken, Task<long>>? onPoll = null,
+        TimeSpan? pollInterval = null)
     {
         try
         {
-            await foreach (var message in session.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            var effectivePollInterval = pollInterval.GetValueOrDefault(TimeSpan.FromSeconds(1));
+            while (!cancellationToken.IsCancellationRequested)
             {
-                // First dequeue proves the drain is active.  Run the final store
-                // sweep and clear grace while the reader keeps creating headroom.
-                if (onFirstRead is not null)
+                var waitToReadTask = session.Reader.WaitToReadAsync(cancellationToken).AsTask();
+                var waitForPollTask = onPoll == null
+                    ? Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                    : Task.Delay(effectivePollInterval, cancellationToken);
+                var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
+
+                if (completed == waitForPollTask)
                 {
-                    replayCursor = await onFirstRead(replayCursor, cancellationToken).ConfigureAwait(false);
-                    onFirstRead = null;
+                    replayCursor = await onPoll!(replayCursor, cancellationToken).ConfigureAwait(false);
+                    continue;
                 }
 
-                if (webSocket.State != WebSocketState.Open)
+                if (!await waitToReadTask.ConfigureAwait(false))
                 {
                     break;
                 }
 
-                // Skip events already delivered during replay to prevent duplicate delivery.
-                if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
+                while (session.Reader.TryRead(out var message))
                 {
-                    continue;
+                    // First dequeue proves the drain is active.  Run the final store
+                    // sweep and clear grace while the reader keeps creating headroom.
+                    if (onFirstRead is not null)
+                    {
+                        replayCursor = await onFirstRead(replayCursor, cancellationToken).ConfigureAwait(false);
+                        onFirstRead = null;
+                    }
+
+                    if (webSocket.State != WebSocketState.Open)
+                    {
+                        return;
+                    }
+
+                    // Skip events already delivered during replay to prevent duplicate delivery.
+                    if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
+                    {
+                        continue;
+                    }
+
+                    var payload = message.IsHeartbeat
+                        ? JsonSerializer.SerializeToUtf8Bytes(
+                            new FeatureStreamHeartbeat(),
+                            FeatureStreamJsonContext.Default.FeatureStreamHeartbeat)
+                        : JsonSerializer.SerializeToUtf8Bytes(
+                            message.Envelope,
+                            FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
+
+                    await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
+
+                    if (!message.IsHeartbeat)
+                    {
+                        replayCursor = message.Envelope.Cursor;
+                    }
                 }
-
-                var payload = message.IsHeartbeat
-                    ? JsonSerializer.SerializeToUtf8Bytes(
-                        new FeatureStreamHeartbeat(),
-                        FeatureStreamJsonContext.Default.FeatureStreamHeartbeat)
-                    : JsonSerializer.SerializeToUtf8Bytes(
-                        message.Envelope,
-                        FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-
-                await webSocket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -644,6 +679,10 @@ internal static class FeatureStreamEndpoints
                 return; // Response stream disposed during replay.
             }
         }
+        else
+        {
+            replayCursor = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+        }
 
         // Activate drain with buffer-sized grace for replay sessions so concurrent
         // overflows during the handoff are absorbed instead of disconnecting.
@@ -681,63 +720,73 @@ internal static class FeatureStreamEndpoints
             // For fresh sessions, grace was already cleared above.
             bool handoffDone = !hasReplay;
 
-            await foreach (var message in session.Reader.ReadAllAsync(linkedCts.Token).ConfigureAwait(false))
+            while (!linkedCts.Token.IsCancellationRequested)
             {
-                if (!handoffDone)
-                {
-                    // The triggering message was consumed from the channel by
-                    // ReadAllAsync but not yet sent.  Drain for headroom only and
-                    // let the store sweep deliver everything (including the
-                    // triggering message and any grace-drops) in cursor order.
-                    // PublishAsync persists before Broadcast, so every channel
-                    // item is guaranteed to be in the store.
-                    bool progress;
-                    do
-                    {
-                        progress = false;
-                        while (session.Reader.TryRead(out _)) { }
+                var waitToReadTask = session.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
+                var waitForPollTask = Task.Delay(options.CrossNodeSyncInterval, linkedCts.Token);
+                var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
 
-                        long prev = replayCursor;
-                        replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
-                        if (replayCursor > prev)
+                if (completed == waitForPollTask)
+                {
+                    replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (!await waitToReadTask.ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                while (session.Reader.TryRead(out var message))
+                {
+                    if (!handoffDone)
                         {
-                            progress = true;
+                            bool progress;
+                            do
+                            {
+                                progress = false;
+                                while (session.Reader.TryRead(out _)) { }
+
+                                long prev = replayCursor;
+                            replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
+                            if (replayCursor > prev)
+                            {
+                                progress = true;
+                            }
+                        } while (progress || session.Reader.TryPeek(out _));
+
+                        sessionManager.ClearDrainGrace(session.SessionId);
+                        handoffDone = true;
+                        continue;
                         }
-                    } while (progress || session.Reader.TryPeek(out _));
 
-                    sessionManager.ClearDrainGrace(session.SessionId);
-                    handoffDone = true;
+                        if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
+                        {
+                            continue;
+                        }
 
-                    // The triggering message was delivered by the store sweep —
-                    // skip normal processing to avoid duplicates.
-                    continue;
-                }
+                        if (message.IsHeartbeat)
+                        {
+                            await context.Response.WriteAsync(": heartbeat\n\n", linkedCts.Token).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            var json = JsonSerializer.Serialize(
+                                message.Envelope,
+                                FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
 
-                // Skip events already delivered during replay to prevent duplicate delivery.
-                if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
-                {
-                    continue;
-                }
+                            await context.Response.WriteAsync(
+                                string.Concat(
+                                    "id: ", message.Envelope.Cursor.ToString(CultureInfo.InvariantCulture), "\n",
+                                    "event: feature-change\n",
+                                    "data: ", json, "\n\n"),
+                                linkedCts.Token).ConfigureAwait(false);
 
-                if (message.IsHeartbeat)
-                {
-                    await context.Response.WriteAsync(": heartbeat\n\n", linkedCts.Token).ConfigureAwait(false);
-                }
-                else
-                {
-                    var json = JsonSerializer.Serialize(
-                        message.Envelope,
-                        FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
+                            replayCursor = message.Envelope.Cursor;
+                        }
 
-                    await context.Response.WriteAsync(
-                        string.Concat(
-                            "id: ", message.Envelope.Cursor.ToString(CultureInfo.InvariantCulture), "\n",
-                            "event: feature-change\n",
-                            "data: ", json, "\n\n"),
-                        linkedCts.Token).ConfigureAwait(false);
-                }
-
-                await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
+                        await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
+                    }
             }
         }
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)

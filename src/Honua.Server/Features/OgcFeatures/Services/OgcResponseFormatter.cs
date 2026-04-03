@@ -170,10 +170,30 @@ internal static class OgcResponseFormatter
     /// <summary>
     /// Builds GML representation of a feature collection.
     /// </summary>
-    public static string BuildGmlFeatureCollection(IEnumerable<GeoJsonFeature> features)
+    public static string BuildGmlFeatureCollection(
+        IEnumerable<GeoJsonFeature> features,
+        long? numberMatched = null,
+        int? numberReturned = null,
+        DateTimeOffset? timeStamp = null)
     {
         var builder = new StringBuilder();
-        builder.AppendLine($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
+        builder.Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        if (numberMatched.HasValue)
+        {
+            builder.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
+        }
+
+        if (numberReturned.HasValue)
+        {
+            builder.Append($" numberReturned=\"{numberReturned.Value.ToString(CultureInfo.InvariantCulture)}\"");
+        }
+
+        if (timeStamp.HasValue)
+        {
+            builder.Append($" timeStamp=\"{timeStamp.Value.ToString("O", CultureInfo.InvariantCulture)}\"");
+        }
+
+        builder.AppendLine(">");
 
         foreach (var feature in features)
         {
@@ -196,6 +216,9 @@ internal static class OgcResponseFormatter
     public static async Task StreamGmlFeatureCollectionAsync(
         IAsyncEnumerable<GmlFeature> features,
         System.IO.Pipelines.PipeWriter bodyWriter,
+        long? numberMatched,
+        int? numberReturned,
+        DateTimeOffset? timeStamp,
         CancellationToken cancellationToken)
     {
         await using var writer = new StreamWriter(
@@ -204,8 +227,25 @@ internal static class OgcResponseFormatter
             bufferSize: 8192,
             leaveOpen: true);
 
-        await writer.WriteLineAsync(
-            $"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\">");
+        var header = new StringBuilder()
+            .Append($"<wfs:FeatureCollection xmlns:wfs=\"{OgcFeaturesUtilities.WfsNamespace}\" xmlns:gml=\"{OgcFeaturesUtilities.GmlNamespace}\" xmlns:app=\"{OgcFeaturesUtilities.AppNamespace}\"");
+        if (numberMatched.HasValue)
+        {
+            header.Append($" numberMatched=\"{numberMatched.Value.ToString(CultureInfo.InvariantCulture)}\"");
+        }
+
+        if (numberReturned.HasValue)
+        {
+            header.Append($" numberReturned=\"{numberReturned.Value.ToString(CultureInfo.InvariantCulture)}\"");
+        }
+
+        if (timeStamp.HasValue)
+        {
+            header.Append($" timeStamp=\"{timeStamp.Value.ToString("O", CultureInfo.InvariantCulture)}\"");
+        }
+
+        header.Append('>');
+        await writer.WriteLineAsync(header.ToString());
 
         var writtenSinceFlush = 0;
         await foreach (var feature in features.WithCancellation(cancellationToken))

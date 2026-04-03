@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using FluentAssertions.Execution;
 using FluentAssertions;
@@ -12,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -26,6 +29,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 {
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
     private const string TestClientId = "22222222-2222-2222-2222-222222222222";
+    private const string TestSigningKey = "test-key-at-least-32-characters-long-for-testing";
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -150,20 +154,23 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     {
         var response = await _client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/authorize-url",
-            new
-            {
-                state = "state-123",
-                codeChallenge = "challenge-123"
-            });
+            new { });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
-    public async Task CreateAuthorizeUrl_WithMissingPkceValues_ReturnsBadRequest()
+    public async Task CreateAuthorizeUrl_SetsHttpOnlyPendingSessionCookie()
     {
-        var oidcFixture = CreateAzureAdFixture();
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
 
         try
         {
@@ -171,14 +178,19 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             var oidcClient = oidcFixture.CreateClient();
 
             var response = await oidcClient.PostAsJsonAsync(
-                "/api/v1/admin/auth/providers/azuread/authorize-url",
-                new
-                {
-                    state = "",
-                    codeChallenge = ""
-                });
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.TryGetValues("Set-Cookie", out var setCookieValues).Should().BeTrue();
+            setCookieValues.Should().NotBeNull();
+            var loginCookies = setCookieValues!
+                .Where(v => v.Contains("honua_admin_login=", StringComparison.Ordinal))
+                .ToArray();
+
+            loginCookies.Should().ContainSingle();
+            loginCookies.Should().OnlyContain(v => v.Contains("HttpOnly", StringComparison.OrdinalIgnoreCase));
+            loginCookies.Should().OnlyContain(v => v.Contains("SameSite=Strict", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -196,7 +208,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             {
                 grantType = "authorization_code",
                 code = "code-123",
-                codeVerifier = "verifier-123"
+                state = "state-123"
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -218,6 +230,81 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 new
                 {
                     grantType = "unsupported"
+                });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
+    public async Task RequestToken_WithoutPkceCookies_ReturnsBadRequest()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var response = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/token",
+                new
+                {
+                    grantType = "authorization_code",
+                    code = "code-123",
+                    state = "state-123"
+                });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
+    public async Task RequestToken_WithMismatchedPkceState_ReturnsBadRequest()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var authorizeResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+            authorizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var response = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/token",
+                new
+                {
+                    grantType = "authorization_code",
+                    code = "code-123",
+                    state = "wrong-state"
                 });
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -297,18 +384,37 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             await oidcFixture.InitializeAsync();
             var oidcClient = oidcFixture.CreateClient();
 
+            var authorizeResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+            authorizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+            authorizeContent.Should().NotBeNull();
+            var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
+            var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
+
             var response = await oidcClient.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/token",
                 new
                 {
                     grantType = "authorization_code",
                     code = "code-123",
-                    codeVerifier = "verifier-123"
+                    state = authorizeParameters["state"].ToString()
                 });
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             stubFactory.LastTokenFormValues.Should().ContainKey("redirect_uri");
             stubFactory.LastTokenFormValues["redirect_uri"].Should().Be("https://public.example.com/honua/admin/auth/callback");
+            stubFactory.LastTokenFormValues.Should().ContainKey("code_verifier");
+
+            var raw = await response.Content.ReadAsStringAsync();
+            raw.Should().BeEmpty();
+            raw.Should().NotContain("access_token", because: "the hosted admin UI now uses a server-managed session");
+            raw.Should().NotContain("refresh_token", because: "refresh tokens must remain server-side for the hosted admin UI");
+
+            response.Headers.TryGetValues("Set-Cookie", out var setCookieValues).Should().BeTrue();
+            setCookieValues.Should().NotBeNull();
+            setCookieValues.Should().Contain(v => v.Contains("honua_admin_session=", StringComparison.Ordinal));
         }
         finally
         {
@@ -317,6 +423,193 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
+    public async Task RequestToken_RefreshGrant_ReturnsBadRequest()
+    {
+        var oidcFixture = CreateAzureAdFixture();
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var response = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/azuread/token",
+                new
+                {
+                    grantType = "refresh_token"
+                });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/session")]
+    public async Task GetSession_AfterTokenExchange_ReturnsProjectedClaimsWithoutTokens()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var authorizeResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+            var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
+            var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
+
+            var tokenResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/token",
+                new
+                {
+                    grantType = "authorization_code",
+                    code = "code-123",
+                    state = authorizeParameters["state"].ToString()
+                });
+
+            tokenResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
+            sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+            session.Should().NotBeNull();
+            session!.IsAuthenticated.Should().BeTrue();
+            session.ProviderKey.Should().Be("oidc");
+            session.Claims.Should().Contain(c => c.Type == "name" && c.Value == "Test Admin");
+            session.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
+
+            var raw = await sessionResponse.Content.ReadAsStringAsync();
+            raw.Should().NotContain("access_token");
+            raw.Should().NotContain("refresh_token");
+            raw.Should().NotContain("id_token");
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/session")]
+    public async Task GetSession_WithOpaqueAccessTokenAndJwtIdToken_ReturnsProjectedClaims()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"),
+            accessToken: "opaque-access-token",
+            idToken: CreateIdToken("Opaque Token Admin", "admin"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var authorizeResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+            var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
+            var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
+
+            var tokenResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/token",
+                new
+                {
+                    grantType = "authorization_code",
+                    code = "code-123",
+                    state = authorizeParameters["state"].ToString()
+                });
+
+            tokenResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
+            sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+            session.Should().NotBeNull();
+            session!.IsAuthenticated.Should().BeTrue();
+            session.Claims.Should().Contain(c => c.Type == "name" && c.Value == "Opaque Token Admin");
+            session.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
+    public async Task GetLogoutUrl_WithUnknownProvider_DoesNotClearAuthenticatedSession()
+    {
+        using var stubFactory = new StubHttpClientFactory(
+            "https://auth.example.com/.well-known/openid-configuration",
+            new StubOidcEndpoints(
+                "https://auth.example.com/authorize",
+                "https://auth.example.com/token",
+                "https://auth.example.com/logout"));
+
+        var oidcFixture = CreateGenericOidcFixture(stubFactory);
+
+        try
+        {
+            await oidcFixture.InitializeAsync();
+            var oidcClient = oidcFixture.CreateClient();
+
+            var authorizeResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/authorize-url",
+                new { });
+            var authorizeContent = await authorizeResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
+            var authorizeUri = new Uri(authorizeContent!.AuthorizeUrl);
+            var authorizeParameters = QueryHelpers.ParseQuery(authorizeUri.Query);
+
+            var tokenResponse = await oidcClient.PostAsJsonAsync(
+                "/api/v1/admin/auth/providers/oidc/token",
+                new
+                {
+                    grantType = "authorization_code",
+                    code = "code-123",
+                    state = authorizeParameters["state"].ToString()
+                });
+
+            tokenResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+            var logoutResponse = await oidcClient.GetAsync("/api/v1/admin/auth/providers/unknown/logout-url");
+            logoutResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            var sessionResponse = await oidcClient.GetAsync("/api/v1/admin/auth/session");
+            sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+            session.Should().NotBeNull();
+            session!.IsAuthenticated.Should().BeTrue();
+        }
+        finally
+        {
+            await oidcFixture.DisposeAsync();
+        }
+    }
+
     [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
     public async Task GetLogoutUrl_UsesConfiguredPublicBaseUrlForPostLogoutRedirectUri()
     {
@@ -378,7 +671,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "false");
                 builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "false");
                 builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "false");
-                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", "test-key-at-least-32-characters-long-for-testing");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", TestSigningKey);
             });
     }
 
@@ -397,7 +690,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "false");
                 builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "false");
                 builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "false");
-                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", "test-key-at-least-32-characters-long-for-testing");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", TestSigningKey);
             })
             .ConfigureServices(services =>
             {
@@ -415,11 +708,19 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         private readonly HttpClient _client;
         private readonly string _expectedDiscoveryUrl;
         private readonly StubOidcEndpoints _endpoints;
+        private readonly string _accessToken;
+        private readonly string? _idToken;
 
-        public StubHttpClientFactory(string expectedDiscoveryUrl, StubOidcEndpoints endpoints)
+        public StubHttpClientFactory(
+            string expectedDiscoveryUrl,
+            StubOidcEndpoints endpoints,
+            string? accessToken = null,
+            string? idToken = "id-token")
         {
             _expectedDiscoveryUrl = expectedDiscoveryUrl;
             _endpoints = endpoints;
+            _accessToken = accessToken ?? CreateAccessToken();
+            _idToken = idToken;
             _client = new HttpClient(new StubHttpMessageHandler(this))
             {
                 BaseAddress = new Uri("https://stub.local")
@@ -468,10 +769,11 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                         owner.LastTokenFormValues[pair.Key] = pair.Value.ToString();
                     }
 
-                    const string tokenJson = """
+                    var idTokenJson = owner._idToken is null ? "null" : $"\"{owner._idToken}\"";
+                    var tokenJson = $$"""
                         {
-                          "access_token": "access-token",
-                          "id_token": "id-token",
+                          "access_token": "{{owner._accessToken}}",
+                          "id_token": {{idTokenJson}},
                           "refresh_token": "refresh-token",
                           "token_type": "Bearer",
                           "expires_in": 3600,
@@ -491,5 +793,47 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 return new HttpResponseMessage(HttpStatusCode.InternalServerError);
             }
         }
+    }
+
+    private static string CreateAccessToken()
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: "https://auth.example.com",
+            audience: "generic-client-id",
+            claims:
+            [
+                new Claim("sub", "admin-user"),
+                new Claim("name", "Test Admin"),
+                new Claim("roles", "admin"),
+                new Claim(ClaimTypes.Role, "admin")
+            ],
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static string CreateIdToken(string name, params string[] roles)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestSigningKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var claims = new List<Claim>
+        {
+            new("sub", "admin-user"),
+            new("name", name)
+        };
+
+        claims.AddRange(roles.Select(static role => new Claim("roles", role)));
+
+        var token = new JwtSecurityToken(
+            issuer: "https://auth.example.com",
+            audience: "generic-client-id",
+            claims: claims,
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

@@ -15,6 +15,7 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -549,6 +550,63 @@ public class OidcAuthenticationTests : IAsyncLifetime
         // Assert - request should pass authz and fail later (for example with 404/500) in this harness
         Assert.NotEqual(401, (int)response.StatusCode);
         Assert.NotEqual(403, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/resources")]
+    public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "true"
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        firstRequest.Headers.Add("Authorization", $"Bearer {token}");
+        var firstResponse = await client.SendAsync(firstRequest);
+
+        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        secondRequest.Headers.Add("Authorization", $"Bearer {token}");
+        var secondResponse = await client.SendAsync(secondRequest);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, firstResponse.StatusCode);
+        AssertBearerFailureStatusCode(secondResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/metadata/resources")]
+    public async Task AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection()
+    {
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            ["Oidc:TokenValidation:EnableTokenReplayProtection"] = "true"
+        });
+        using var factory = CreateOidcTestFactory(
+            configure: builder =>
+            {
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IDistributedCache>();
+                    services.AddDistributedMemoryCache();
+                });
+            },
+            oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        firstRequest.Headers.Add("Authorization", $"Bearer {token}");
+        var firstResponse = await client.SendAsync(firstRequest);
+
+        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        secondRequest.Headers.Add("Authorization", $"Bearer {token}");
+        var secondResponse = await client.SendAsync(secondRequest);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, firstResponse.StatusCode);
+        AssertBearerFailureStatusCode(secondResponse.StatusCode);
     }
 
     [IntegrationTest]

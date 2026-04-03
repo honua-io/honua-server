@@ -77,7 +77,13 @@ internal static partial class FeatureServerEndpoints
                 [error ?? "Invalid query parameter."]);
         }
 
-        if (!TryParseQueryParameters(values, out var queryParams, out var parseError))
+        var mergedValues = ToCaseInsensitiveDictionary(context.Request.Query);
+        foreach (var pair in values)
+        {
+            mergedValues[pair.Key] = pair.Value;
+        }
+
+        if (!TryParseQueryParameters(mergedValues, out var queryParams, out var parseError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",

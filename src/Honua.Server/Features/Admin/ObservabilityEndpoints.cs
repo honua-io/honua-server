@@ -17,6 +17,8 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class ObservabilityEndpoints
 {
+    private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
+
     public static void MapAdminObservabilityEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/observability")
@@ -115,18 +117,18 @@ internal static class ObservabilityEndpoints
                     UpgradeRequired = plan.UpgradeRequired,
                     PendingScripts = plan.PendingScripts,
                     ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                    PlanError = plan.Successful ? null : plan.ErrorMessage
+                    PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage
                 },
                 MetricsJsonContext.Default.MigrationObservabilityResponse);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             return Results.Json(
                 response with
                 {
                     PlanAvailable = false,
                     UpgradeRequired = false,
-                    PlanError = exception.Message
+                    PlanError = MigrationPlanUnavailableMessage
                 },
                 MetricsJsonContext.Default.MigrationObservabilityResponse);
         }

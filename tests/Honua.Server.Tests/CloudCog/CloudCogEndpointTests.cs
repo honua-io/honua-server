@@ -275,6 +275,7 @@ public class CloudCogEndpointTests : IAsyncLifetime
 
         // Assert — should return 409 Conflict, not 500
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await secondResponse.Content.ReadAsStringAsync()).Should().Contain("already registered");
 
         // Cleanup
         using var doc = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());

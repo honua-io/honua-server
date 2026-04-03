@@ -147,7 +147,7 @@ internal static partial class LicenseEndpoints
         catch (ArgumentException ex)
         {
             LicenseLog.LicenseUploadFailed(logger, ex.Message);
-            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("License data is invalid."));
         }
         catch (Exception ex)
         {

@@ -63,7 +63,7 @@ public class ImageServerErrorHandlingTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Only JSON format is supported");
+        content.Should().Contain("Only JSON and image formats are supported");
     }
 
     [IntegrationTest]

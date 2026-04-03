@@ -364,6 +364,26 @@ public sealed class DeployWorkflowServiceTests
         backend.PromoteCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Reconciler_WithLongRunningObservation_RenewsLeaseUntilObservationCompletes()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new BlockingObserveBackend();
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.Submitted);
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend);
+        var reconcileTask = reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        await backend.ObserveEntered.WaitAsync(TimeSpan.FromSeconds(5));
+        await store.RenewLeaseObserved.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+        store.RenewLeaseCount.Should().BeGreaterThan(0);
+
+        backend.AllowObserve();
+        await reconcileTask;
+    }
+
     private static DeployWorkflowService CreateService(
         TestWorkflowOperationStore store,
         IDeployBackend backend)
@@ -518,13 +538,28 @@ public sealed class DeployWorkflowServiceTests
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 
+        public int RenewLeaseCount => _renewLeaseCount;
+
+        public TaskCompletionSource<bool> RenewLeaseObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public bool AllowCreate { get; set; } = true;
+
+        private int _renewLeaseCount;
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
             => Task.FromResult(_leases.TryAdd(operationId, ownerId));
 
         public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
-            => Task.FromResult(_leases.TryGetValue(operationId, out var currentOwner) && currentOwner == ownerId);
+        {
+            var renewed = _leases.TryGetValue(operationId, out var currentOwner) && currentOwner == ownerId;
+            if (renewed)
+            {
+                Interlocked.Increment(ref _renewLeaseCount);
+                RenewLeaseObserved.TrySetResult(true);
+            }
+
+            return Task.FromResult(renewed);
+        }
 
         public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
         {
@@ -709,6 +744,64 @@ public sealed class DeployWorkflowServiceTests
 
         public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("boom");
+
+        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RollbackRequested,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.CurrentRevision,
+                Message = "Rollback requested"
+            });
+    }
+
+    private sealed class BlockingObserveBackend : IDeployBackend
+    {
+        private readonly TaskCompletionSource<bool> _observeEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _allowObserve = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ObserveEntered => _observeEntered.Task;
+
+        public string BackendName => "honua-gitops-kubernetes";
+
+        public DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
+
+        public void AllowObserve() => _allowObserve.TrySetResult(true);
+
+        public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployBackendCapabilities
+            {
+                SupportsRollback = true,
+                SupportsProgressPolling = true,
+                SupportsRevisionPinning = true
+            });
+
+        public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployPlan
+            {
+                IsReadyToSubmit = true
+            });
+
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                ProviderOperationId = $"blocking-observe:{operation.OperationId}",
+                Message = "Submitted"
+            });
+
+        public async Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            _observeEntered.TrySetResult(true);
+            await _allowObserve.Task.WaitAsync(cancellationToken);
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.Deploy?.DesiredRevision,
+                Message = "Still reconciling"
+            };
+        }
 
         public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
             => Task.FromResult(new DeployObservation

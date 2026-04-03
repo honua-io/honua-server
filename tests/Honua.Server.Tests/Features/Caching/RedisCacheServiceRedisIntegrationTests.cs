@@ -69,6 +69,26 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         result.Should().BeNull();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Cache, Operations.TestInfrastructure)]
+    public async Task RemoveByPatternAsync_WhenRedisConfigured_RemovesMatchingKeysAcrossInstances()
+    {
+        var prefix = $"test:{Guid.NewGuid():N}:";
+
+        using var cacheA = CreateCacheScope(prefix);
+        using var cacheB = CreateCacheScope(prefix);
+
+        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("Layer1", FieldType.String, Length: 10));
+        await cacheA.Cache.SetAsync("layer:2", new FieldDefinition("Layer2", FieldType.String, Length: 10));
+        await cacheA.Cache.SetAsync("service:1", new FieldDefinition("Service1", FieldType.String, Length: 10));
+
+        await cacheB.Cache.RemoveByPatternAsync("layer:*");
+
+        (await cacheA.Cache.GetAsync<FieldDefinition>("layer:1")).Should().BeNull();
+        (await cacheA.Cache.GetAsync<FieldDefinition>("layer:2")).Should().BeNull();
+        (await cacheA.Cache.GetAsync<FieldDefinition>("service:1")).Should().NotBeNull();
+    }
+
     private CacheScope CreateCacheScope(string keyPrefix)
     {
         var services = new ServiceCollection();

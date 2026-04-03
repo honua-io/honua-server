@@ -236,14 +236,14 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     {
         var columns = new List<string>
         {
-            "fid SERIAL PRIMARY KEY"
+            $"{FieldNames.ObjectId} BIGSERIAL PRIMARY KEY"
         };
 
         // Add attribute fields
         foreach (var field in layerInfo.Fields)
         {
             if (field.IsObjectId || IsGeometryField(field))
-                continue; // We use fid instead
+                continue; // We use the canonical objectid primary key instead
 
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
             var nullable = field.Nullable ? "" : " NOT NULL";

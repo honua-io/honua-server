@@ -31,7 +31,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 {
     private const string CacheType = "layer-catalog";
     private const string HealthCheckKey = "__health_check__";
+    private const string CacheKeyIndexKey = "__cache_key_index__";
     private const int MaxKeyLocks = 1000;
+    private static readonly TimeSpan CacheKeyIndexTtl = TimeSpan.FromDays(30);
     private readonly IDistributedCache? _distributedCache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly CacheOptions _options;
@@ -42,6 +44,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly ConcurrentDictionary<string, CacheEntry> _fallbackCache = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _distributedIndexLock = new(1, 1);
     private readonly Timer _cleanupTimer;
     private readonly string _distributedCacheKeyPrefix;
     private volatile bool _isUsingFallback;
@@ -216,6 +219,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                         ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
                         cancellationToken).ConfigureAwait(false);
                     _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
+                    await TrackIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 catch (Exception ex)
@@ -255,6 +259,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     await _redisPolicy.ExecuteAsync(
                         ct => _distributedCache.RemoveAsync(prefixedKey, ct),
                         cancellationToken).ConfigureAwait(false);
+                    await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -286,45 +291,55 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             try
             {
-                const int scanPageSize = 250;
                 var db = _redis.GetDatabase();
-                var database = db.Database;
-                // StackExchangeRedisCache prepends its InstanceName to all keys. Raw
-                // multiplexer operations must include that prefix to match actual Redis keys.
-                var redisScanPattern = $"{_distributedCacheKeyPrefix}{prefixedPattern}";
-                foreach (var endpoint in _redis.GetEndPoints())
+                var indexedKeys = await db.SetMembersAsync(GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey))).ConfigureAwait(false);
+                var matchingKeys = indexedKeys
+                    .Select(static value => value.ToString())
+                    .Where(static key => !string.IsNullOrWhiteSpace(key))
+                    .Where(key => MatchesPattern(key, GetRedisStorageKey(prefixedPattern)))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+
+                if (matchingKeys.Length > 0)
                 {
-                    var server = _redis.GetServer(endpoint);
-                    if (!server.IsConnected)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await db.KeyDeleteAsync(matchingKeys.Select(static key => (RedisKey)key).ToArray()).ConfigureAwait(false);
+                    await db.SetRemoveAsync(
+                        GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey)),
+                        matchingKeys.Select(static key => (RedisValue)key).ToArray()).ConfigureAwait(false);
+                    for (var i = 0; i < matchingKeys.Length; i++)
                     {
-                        continue;
+                        RecordCacheEviction();
                     }
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleRedisFailure(ex);
+            }
+        }
+        else if (!_isUsingFallback && _distributedCache != null)
+        {
+            try
+            {
+                var indexedKeys = await LoadDistributedIndexedKeysAsync(cancellationToken).ConfigureAwait(false);
+                var matchingKeys = indexedKeys
+                    .Where(key => MatchesPattern(key, prefixedPattern))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
 
-                    var deleteBatch = new List<RedisKey>(scanPageSize);
-                    foreach (var key in server.Keys(database, pattern: redisScanPattern, pageSize: scanPageSize))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        deleteBatch.Add(key);
+                foreach (var key in matchingKeys)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+                    RecordCacheEviction();
+                }
 
-                        if (deleteBatch.Count >= scanPageSize)
-                        {
-                            await db.KeyDeleteAsync(deleteBatch.ToArray()).ConfigureAwait(false);
-                            for (var i = 0; i < deleteBatch.Count; i++)
-                            {
-                                RecordCacheEviction();
-                            }
-                            deleteBatch.Clear();
-                        }
-                    }
-
-                    if (deleteBatch.Count > 0)
-                    {
-                        await db.KeyDeleteAsync(deleteBatch.ToArray()).ConfigureAwait(false);
-                        for (var i = 0; i < deleteBatch.Count; i++)
-                        {
-                            RecordCacheEviction();
-                        }
-                    }
+                if (matchingKeys.Length > 0)
+                {
+                    await UpdateDistributedKeyIndexAsync(
+                        keys => keys.RemoveAll(key => matchingKeys.Contains(key, StringComparer.Ordinal)),
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -355,9 +370,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             _writeMetadata.TryRemove(key, out _);
         }
-
-        // Note: Redis pattern deletion relies on server key scans when a connection is available.
-        // For large keyspaces, consider narrowing patterns or using a dedicated index.
 
         return;
     }
@@ -712,6 +724,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             await _redisPolicy.ExecuteAsync(
                 ct => _distributedCache.RemoveAsync(prefixedKey, ct),
                 cancellationToken).ConfigureAwait(false);
+            await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -825,6 +838,120 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         return key.Equals(pattern, StringComparison.Ordinal);
     }
+
+    private async Task TrackIndexedKeyAsync(string prefixedKey, CancellationToken cancellationToken)
+    {
+        if (string.Equals(prefixedKey, GetPrefixedKey(CacheKeyIndexKey), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_redis != null)
+        {
+            try
+            {
+                var db = _redis.GetDatabase();
+                await db.SetAddAsync(
+                    GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey)),
+                    GetRedisStorageKey(prefixedKey)).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to track cache key {CacheKey} in Redis index.", prefixedKey);
+            }
+        }
+
+        if (_distributedCache != null)
+        {
+            await UpdateDistributedKeyIndexAsync(
+                keys => keys.Add(prefixedKey),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RemoveIndexedKeyAsync(string prefixedKey, CancellationToken cancellationToken)
+    {
+        if (_redis != null)
+        {
+            try
+            {
+                var db = _redis.GetDatabase();
+                await db.SetRemoveAsync(
+                    GetRedisStorageKey(GetPrefixedKey(CacheKeyIndexKey)),
+                    GetRedisStorageKey(prefixedKey)).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to remove cache key {CacheKey} from Redis index.", prefixedKey);
+            }
+        }
+
+        if (_distributedCache != null)
+        {
+            await UpdateDistributedKeyIndexAsync(
+                keys => keys.RemoveAll(key => string.Equals(key, prefixedKey, StringComparison.Ordinal)),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> LoadDistributedIndexedKeysAsync(CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null)
+        {
+            return [];
+        }
+
+        var data = await _distributedCache.GetAsync(GetPrefixedKey(CacheKeyIndexKey), cancellationToken).ConfigureAwait(false);
+        if (data == null)
+        {
+            return [];
+        }
+
+        var index = JsonSerializer.Deserialize(data, CacheJsonContext.Default.CachedCacheKeyIndex);
+        return index?.Keys ?? [];
+    }
+
+    private async Task UpdateDistributedKeyIndexAsync(Action<List<string>> update, CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null)
+        {
+            return;
+        }
+
+        await _distributedIndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var existing = await LoadDistributedIndexedKeysAsync(cancellationToken).ConfigureAwait(false);
+            var keys = existing.ToList();
+            update(keys);
+            keys = keys
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (keys.Count == 0)
+            {
+                await _distributedCache.RemoveAsync(GetPrefixedKey(CacheKeyIndexKey), cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var data = JsonSerializer.SerializeToUtf8Bytes(
+                new CachedCacheKeyIndex([.. keys]),
+                CacheJsonContext.Default.CachedCacheKeyIndex);
+            await _distributedCache.SetAsync(
+                GetPrefixedKey(CacheKeyIndexKey),
+                data,
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = CacheKeyIndexTtl },
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _distributedIndexLock.Release();
+        }
+    }
+
+    private string GetRedisStorageKey(string prefixedKey) => $"{_distributedCacheKeyPrefix}{prefixedKey}";
 
     internal static string GetCacheKeyFamily(string key) => CacheKeyUtilities.GetCacheKeyFamily(key);
 
@@ -947,6 +1074,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         _cleanupTimer.Dispose();
         _fallbackCache.Clear();
         _writeMetadata.Clear();
+        _distributedIndexLock.Dispose();
         foreach (var semaphore in _keyLocks.Values)
         {
             semaphore.Dispose();
