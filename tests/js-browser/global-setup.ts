@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
 const pythonScript = resolve(projectRoot, 'tests', 'python', 'shared', 'js_test_server.py');
 const venvPython = resolve(projectRoot, '.venv-tests', 'bin', 'python');

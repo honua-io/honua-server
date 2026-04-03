@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
 
 export default defineConfig({

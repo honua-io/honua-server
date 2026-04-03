@@ -1,6 +1,8 @@
 import { writeFile, mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '..', 'evidence');
 
 export interface CertResult {

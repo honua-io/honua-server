@@ -18,7 +18,7 @@ test.afterAll(async () => {
 });
 
 test.describe('DynamicMapLayer — MapServer Consumption', () => {
-  test('[CERT-CONN-01][CERT-RNDR-01] DynamicMapLayer loads and renders export tiles', async ({ page }) => {
+  test('[CERT-CONN-01] DynamicMapLayer loads and issues export requests', async ({ page }) => {
     // Track actual export requests to the MapServer endpoint
     const exportRequests: string[] = [];
     await page.route('**/MapServer/export**', async (route) => {
