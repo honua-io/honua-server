@@ -9,7 +9,7 @@ async function isHealthy(baseUrl: string): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 2000);
   try {
-    const response = await fetch(`${baseUrl}/healthz/live`, { signal: controller.signal });
+    const response = await fetch(`${baseUrl}/healthz/ready`, { signal: controller.signal });
     return response.ok;
   } catch {
     return false;
