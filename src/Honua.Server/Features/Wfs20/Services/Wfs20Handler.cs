@@ -657,6 +657,11 @@ internal sealed class Wfs20Handler
         var expression = Fes20Parser.ParseFilter(filter);
         expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, layer);
 
+        if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+        {
+            throw new ArgumentException("FILTER expression must be a boolean predicate.");
+        }
+
         var translation = _filterExpressionService.Translate(expression, layer);
         if (!translation.IsSuccess)
         {
