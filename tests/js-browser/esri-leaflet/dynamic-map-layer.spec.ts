@@ -24,7 +24,48 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     expect(loadFired || exportRequests.length > 0).toBe(true);
   });
 
-  test('[CERT-DISC-02][EL-EXT-04] Identify returns attributes at point', async ({ page, staticUrl, config }) => {
+  test('[CERT-DISC-02] DynamicMapLayer metadata discovery via .metadata()', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId } = config;
+    await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
+    await waitForMapIdle(page);
+
+    const result = await page.evaluate(() => {
+      return new Promise((resolve, reject) => {
+        const layer = (window as any).__dynamicMapLayer;
+        if (!layer) {
+          reject(new Error('No dynamic map layer'));
+          return;
+        }
+
+        layer.service.metadata((error: any, response: any) => {
+          if (error) {
+            resolve({
+              ok: false,
+              error: error.message ?? String(error),
+            });
+            return;
+          }
+
+          resolve({
+            ok: true,
+            metadata: {
+              mapName: response?.mapName ?? null,
+              currentVersion: response?.currentVersion ?? null,
+              layersCount: Array.isArray(response?.layers) ? response.layers.length : 0,
+            },
+          });
+        });
+      });
+    });
+
+    const metadataResult = result as any;
+    expect(metadataResult.ok, metadataResult.error ?? 'MapServer metadata request failed').toBe(true);
+    expect(metadataResult.metadata.mapName).toBeTruthy();
+    expect(metadataResult.metadata.currentVersion).toBeGreaterThan(0);
+    expect(metadataResult.metadata.layersCount).toBeGreaterThan(0);
+  });
+
+  test('[EL-EXT-04] Identify returns attributes at point', async ({ page, staticUrl, config }) => {
     const { baseUrl, serviceId } = config;
     await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
     await waitForMapIdle(page);
@@ -78,10 +119,10 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
       };
     });
 
-    // Trigger refresh
+    // RasterLayer exposes redraw() instead of refresh().
     await page.evaluate(() => {
       const layer = (window as any).__dynamicMapLayer;
-      if (layer) layer.refresh();
+      if (layer) layer.redraw();
     });
 
     await waitForMapIdle(page);

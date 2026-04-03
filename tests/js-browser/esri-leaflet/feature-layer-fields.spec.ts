@@ -74,11 +74,12 @@ test.describe('FeatureLayer Popup and Field Access', () => {
         const layer = (window as any).__featureLayer;
         if (!layer) { reject(new Error('No feature layer')); return; }
 
-        layer.query()
+        const query = layer.query()
           .where('1=1')
-          .limit(1)
-          .params({ outSR: 4326 })
-          .run((error: any, featureCollection: any) => {
+          .limit(1);
+
+        query.params.outSR = 4326;
+        query.run((error: any, featureCollection: any) => {
             if (error) { reject(error); return; }
 
             const feature = featureCollection?.features?.[0];

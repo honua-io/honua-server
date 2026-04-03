@@ -46,7 +46,7 @@
       window.__map = L.map('map', mapOpts);
 
       const url = config.baseUrl + '/rest/services/' + config.serviceId + '/FeatureServer/' + config.layerId;
-      const layerOpts = Object.assign({ url: url }, config.layerOptions || {});
+      const layerOpts = Object.assign({ url: url, requestParams: { f: 'json' } }, config.layerOptions || {});
 
       window.__loadFired = false;
       window.__layerError = null;

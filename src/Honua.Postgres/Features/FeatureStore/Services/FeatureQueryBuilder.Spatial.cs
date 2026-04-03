@@ -71,7 +71,7 @@ internal sealed partial class FeatureQueryBuilder
             case SpatialRelationship.Contains:
                 // PERFORMANCE OPTIMIZATION: Use spatial index hint for containment queries
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({geometryOperand}, {filterGeometry})";
+                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({filterGeometry}, {geometryOperand})";
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:

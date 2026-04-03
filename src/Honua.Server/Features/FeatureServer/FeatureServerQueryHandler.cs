@@ -1172,7 +1172,8 @@ internal sealed class FeatureServerQueryHandler(
         }
 
         if (!string.IsNullOrWhiteSpace(queryParams.ResultType) &&
-            !string.Equals(queryParams.ResultType, "standard", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(queryParams.ResultType, "standard", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(queryParams.ResultType, "tile", StringComparison.OrdinalIgnoreCase))
         {
             unsupported.Add("resultType");
         }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = resolve(__dirname, '..', 'fixtures');
 const NODE_MODULES = resolve(__dirname, '..', 'node_modules');
+const API_PROXY_PREFIXES = ['/rest/', '/temp/'];
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -21,6 +22,33 @@ export function createStaticServer(): { server: Server; close: () => Promise<voi
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost`);
     let filePath: string;
+
+    if (API_PROXY_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
+      const upstreamBaseUrl = process.env.HONUA_BASE_URL;
+      if (!upstreamBaseUrl) {
+        res.writeHead(502);
+        res.end('HONUA_BASE_URL is not configured');
+        return;
+      }
+
+      try {
+        const upstreamUrl = new URL(`${url.pathname}${url.search}`, upstreamBaseUrl);
+        const upstreamResponse = await fetch(upstreamUrl, { method: req.method });
+        const contentType = upstreamResponse.headers.get('content-type');
+        if (contentType) {
+          res.setHeader('Content-Type', contentType);
+        }
+
+        const body = Buffer.from(await upstreamResponse.arrayBuffer());
+        res.writeHead(upstreamResponse.status);
+        res.end(body);
+      } catch {
+        res.writeHead(502);
+        res.end('Upstream proxy request failed');
+      }
+
+      return;
+    }
 
     if (url.pathname.startsWith('/vendor/')) {
       // Serve from node_modules: /vendor/leaflet/dist/leaflet.js → node_modules/leaflet/dist/leaflet.js
@@ -80,7 +108,10 @@ export async function initFeatureLayer(page: Page, staticUrl: string, config: Ma
   await page.goto(staticUrl);
   await page.evaluate((cfg) => {
     (window as any).__initFeatureLayer(cfg);
-  }, config);
+  }, {
+    ...config,
+    baseUrl: staticUrl,
+  });
 }
 
 /** Navigate to the test page and initialize a DynamicMapLayer. */
@@ -88,7 +119,10 @@ export async function initDynamicMapLayer(page: Page, staticUrl: string, config:
   await page.goto(staticUrl);
   await page.evaluate((cfg) => {
     (window as any).__initDynamicMapLayer(cfg);
-  }, config);
+  }, {
+    ...config,
+    baseUrl: staticUrl,
+  });
 }
 
 /** Wait for the FeatureLayer 'load' event to fire. */
