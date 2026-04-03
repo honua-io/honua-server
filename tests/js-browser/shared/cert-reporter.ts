@@ -92,7 +92,20 @@ export default class CertReporter implements Reporter {
     }
   }
 
-  async onEnd(_result: FullResult): Promise<void> {
+  async onEnd(result: FullResult): Promise<void> {
+    // Do not emit evidence if the run was interrupted or timed out — the results are incomplete
+    if (result.status === 'interrupted' || result.status === 'timedout') {
+      console.warn(`\n⚠️  Skipping evidence emission: run ${result.status}`);
+      return;
+    }
+
+    // Do not emit evidence if no test actually executed (all skips means setup likely failed)
+    const hasExecutedTest = [...this.results.values()].some(r => r.status === 'pass' || r.status === 'fail');
+    if (!hasExecutedTest) {
+      console.warn('\n⚠️  Skipping evidence emission: no tests passed or failed (possible setup abort)');
+      return;
+    }
+
     // Determine which protocols were exercised
     const protocols = new Set<'featureserver' | 'mapserver'>();
     for (const entry of this.results.values()) {

@@ -24,7 +24,7 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     expect(loadFired || exportRequests.length > 0).toBe(true);
   });
 
-  test('[EL-EXT-04] Identify returns attributes at point', async ({ page, staticUrl, config }) => {
+  test('[CERT-DISC-02][EL-EXT-04] Identify returns attributes at point', async ({ page, staticUrl, config }) => {
     const { baseUrl, serviceId } = config;
     await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
     await waitForMapIdle(page);

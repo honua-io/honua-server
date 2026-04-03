@@ -2,7 +2,7 @@ import { test, expect } from '../shared/test-fixtures.js';
 import { initFeatureLayer, waitForLayerLoad, getAllFeatures } from '../shared/map-harness.js';
 
 test.describe('FeatureLayer Popup and Field Access', () => {
-  test('[EL-EXT-03] Feature attributes accessible via eachFeature', async ({ page, staticUrl, config }) => {
+  test('[CERT-SCHM-01][EL-EXT-03] Feature attributes accessible via eachFeature', async ({ page, staticUrl, config }) => {
     const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
