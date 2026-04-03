@@ -122,7 +122,7 @@ internal sealed class StacMappingService
                     continue;
                 }
 
-                if (kvp.Value is null)
+                if (kvp.Value is null && selectedPropertiesLookup is null)
                 {
                     continue;
                 }
@@ -136,8 +136,16 @@ internal sealed class StacMappingService
         ImmutableArray<double>? bbox = null;
         if (feature.Geometry is { Length: > 0 })
         {
-            geometry = ConvertWkbToGeoJsonElement(feature.Geometry);
-            bbox = TryBuildBbox(feature.Geometry, layer.SpatialReference.Wkid);
+            try
+            {
+                var parsed = WkbReaderCache.Get().Read(feature.Geometry);
+                geometry = ConvertGeometryToGeoJsonElement(parsed);
+                bbox = TryBuildBboxFromGeometry(parsed, layer.SpatialReference.Wkid);
+            }
+            catch
+            {
+                // WKB parsing failure — STAC allows null geometry.
+            }
         }
 
         var links = ImmutableArray.Create(
@@ -307,14 +315,13 @@ internal sealed class StacMappingService
     }
 
     /// <summary>
-    /// Converts WKB geometry bytes to a GeoJSON JsonElement.
-    /// Returns null if conversion fails — STAC allows null geometry.
+    /// Converts a parsed geometry to a GeoJSON JsonElement.
+    /// Returns null if serialization fails — STAC allows null geometry.
     /// </summary>
-    private static JsonElement? ConvertWkbToGeoJsonElement(byte[] wkb)
+    private static JsonElement? ConvertGeometryToGeoJsonElement(NetTopologySuite.Geometries.Geometry geom)
     {
         try
         {
-            var geom = WkbReaderCache.Get().Read(wkb);
             var json = GetGeoJsonWriter().Write(geom);
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.Clone();
@@ -399,12 +406,11 @@ internal sealed class StacMappingService
         return null;
     }
 
-    private static ImmutableArray<double>? TryBuildBbox(byte[] wkb, int srid)
+    private static ImmutableArray<double>? TryBuildBboxFromGeometry(NetTopologySuite.Geometries.Geometry geom, int srid)
     {
         try
         {
-            var geometry = WkbReaderCache.Get().Read(wkb);
-            var envelope = geometry.EnvelopeInternal;
+            var envelope = geom.EnvelopeInternal;
 
             if (srid == 4326)
             {

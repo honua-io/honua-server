@@ -557,7 +557,14 @@ internal static class SearchEndpoints
                 return false;
             }
 
-            if (!availableFields.ContainsKey(sort.Field))
+            if (!TryNormalizePropertyName(sort.Field, out var normalizedField))
+            {
+                error = $"Invalid sort field '{sort.Field}'.";
+                orderBy = default;
+                return false;
+            }
+
+            if (!availableFields.ContainsKey(normalizedField))
             {
                 error = $"Unknown sort field '{sort.Field}'.";
                 orderBy = default;
@@ -566,9 +573,9 @@ internal static class SearchEndpoints
 
             orderByBuilder.Add(
                 string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase)
-                    ? OrderByClause.Desc(sort.Field)
+                    ? OrderByClause.Desc(normalizedField)
                     : string.Equals(sort.Direction, "asc", StringComparison.OrdinalIgnoreCase)
-                        ? OrderByClause.Asc(sort.Field)
+                        ? OrderByClause.Asc(normalizedField)
                         : throw new ArgumentException($"Invalid sort direction '{sort.Direction}'."));
         }
 
@@ -688,6 +695,26 @@ internal static class SearchEndpoints
         if (!string.IsNullOrWhiteSpace(endTimeField) && !queryFields.Contains(endTimeField, StringComparer.OrdinalIgnoreCase))
         {
             queryFields = queryFields.Add(endTimeField!);
+        }
+
+        // When no explicit time fields are configured, the mapper falls back to well-known
+        // temporal attribute names (created_at, updated_at, etc.). Ensure those candidates
+        // are projected so datetime population still works under fields selection.
+        if (string.IsNullOrWhiteSpace(timeField))
+        {
+            ReadOnlySpan<string> fallbackCandidates =
+            [
+                "datetime", "created_at", "updated_at", "start_datetime",
+                "timestamp", "event_date", "date"
+            ];
+            foreach (var candidate in fallbackCandidates)
+            {
+                if (availableFields.ContainsKey(candidate) &&
+                    !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                {
+                    queryFields = queryFields.Add(candidate);
+                }
+            }
         }
 
         outFields = queryFields;
