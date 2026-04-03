@@ -8,9 +8,9 @@ function extractCertIds(title: string): string[] {
   return matches.map(m => m.slice(1, -1));
 }
 
-/** Determine protocol from suite/file path. */
-function getProtocol(filePath: string): 'featureserver' | 'mapserver' {
-  if (filePath.includes('dynamic-map-layer')) return 'mapserver';
+/** Determine protocol from suite/file path and test title. */
+function getProtocol(filePath: string, testTitle: string): 'featureserver' | 'mapserver' {
+  if (filePath.includes('dynamic-map-layer') || testTitle.includes('DynamicMapLayer')) return 'mapserver';
   return 'featureserver';
 }
 
@@ -26,7 +26,7 @@ export default class CertReporter implements Reporter {
     if (certIds.length === 0) return;
 
     const filePath = test.location.file;
-    const protocol = getProtocol(filePath);
+    const protocol = getProtocol(filePath, test.title);
     const status = result.status === 'passed' ? 'pass'
       : result.status === 'skipped' ? 'skip'
       : 'fail';
@@ -35,11 +35,15 @@ export default class CertReporter implements Reporter {
       : '';
 
     for (const certId of certIds) {
-      const existing = this.results.get(certId);
-      // If we already have a result for this CERT ID, keep the worst status
-      if (existing && existing.status === 'fail') continue;
+      const key = `${protocol}:${certId}`;
+      const existing = this.results.get(key);
+      // Keep the worst status: fail > pass > skip
+      if (existing) {
+        if (existing.status === 'fail') continue;
+        if (existing.status === 'pass' && status !== 'fail') continue;
+      }
 
-      this.results.set(certId, {
+      this.results.set(key, {
         certIds: [certId],
         status,
         duration: result.duration,
@@ -52,7 +56,8 @@ export default class CertReporter implements Reporter {
   async onEnd(_result: FullResult): Promise<void> {
     const byProtocol = new Map<string, { results: CertResult[]; extensions: CertResult[] }>();
 
-    for (const [certId, entry] of this.results) {
+    for (const [compositeKey, entry] of this.results) {
+      const certId = compositeKey.slice(compositeKey.indexOf(':') + 1);
       const proto = entry.protocol;
       if (!byProtocol.has(proto)) {
         byProtocol.set(proto, { results: [], extensions: [] });

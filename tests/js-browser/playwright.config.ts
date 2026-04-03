@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { resolve } from 'node:path';
 
-const baseURL = process.env.HONUA_BASE_URL ?? 'http://localhost:5555';
+const baseURL = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
 
 export default defineConfig({
   testDir: './esri-leaflet',

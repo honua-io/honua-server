@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { startStaticServer, initDynamicMapLayer, waitForLayerLoad, waitForMapIdle, assertMapNotBlank } from '../shared/map-harness.js';
 
-const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5555';
+const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
 const serviceId = process.env.HONUA_SERVICE_ID ?? 'test_service_gw0';
 
 let staticUrl: string;
