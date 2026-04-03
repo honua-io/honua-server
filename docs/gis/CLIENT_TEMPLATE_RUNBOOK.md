@@ -64,9 +64,20 @@ The uploaded contract is:
 | `pack/README.md` | Human-readable guide to the normalized pack layout and source provenance |
 | `pack/` | Reusable templates plus the runbook, matrix, evidence spec, and version ledger for manual follow-through |
 
-The workflow currently produces smoke evidence for stable server responses; it does not emit final per-client `.cert.json` certification envelopes by itself. Use the uploaded `pack/` plus the manual steps below when you need customer-facing desktop or BI certification evidence files.
+Since ticket #415, the workflow defaults to the `full` profile and emits per-protocol `.cert.json` certification envelopes under a `certification/` subdirectory covering 18 CERT-\* test cases across 4 protocol lanes. Use `--profile smoke` for the original 11-check MVP subset.
 
-The automated lane coverage is intentionally narrow and deterministic. The check IDs below are the exact transcript filenames and `lane-summary.json` entries emitted by the smoke script:
+Automated `.cert.json` envelopes use the `ci-desktop` and `ci-bi` client lane values. Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the steps below.
+
+The full profile covers:
+
+| Protocol lane | Client lane | CERT-\* scope |
+|---|---|---|
+| FeatureServer | `ci-desktop` | 18 test cases (CERT-CONN through CERT-RNDR); CERT-CONN-02, AUTH-01/02, RNDR-01/02 skipped with reason |
+| OGC API Features | `ci-desktop` | 18 test cases; same skip categories |
+| MapServer | `ci-desktop` | 18 test cases; QFLT/PAGE/GEOM not-applicable for metadata-only protocol |
+| OData | `ci-bi` | 18 test cases; GEOM/SCHM-02/QFLT-02 not-applicable for OData-only lane |
+
+The smoke profile retains the original narrow check set:
 
 | Lane | Automated checks |
 |---|---|
