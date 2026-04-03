@@ -137,7 +137,7 @@ internal sealed class StacMappingService
         if (feature.Geometry is { Length: > 0 })
         {
             geometry = ConvertWkbToGeoJsonElement(feature.Geometry);
-            bbox = TryBuildBbox(feature.Geometry);
+            bbox = TryBuildBbox(feature.Geometry, layer.SpatialReference.Wkid);
         }
 
         var links = ImmutableArray.Create(
@@ -399,13 +399,25 @@ internal sealed class StacMappingService
         return null;
     }
 
-    private static ImmutableArray<double>? TryBuildBbox(byte[] wkb)
+    private static ImmutableArray<double>? TryBuildBbox(byte[] wkb, int srid)
     {
         try
         {
             var geometry = WkbReaderCache.Get().Read(wkb);
             var envelope = geometry.EnvelopeInternal;
-            return ImmutableArray.Create(envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY);
+
+            if (srid == 4326)
+            {
+                return ImmutableArray.Create(envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY);
+            }
+
+            if (OgcExtentTransformer.TryTransformToCrs84(envelope.MinX, envelope.MinY, srid, out var min) &&
+                OgcExtentTransformer.TryTransformToCrs84(envelope.MaxX, envelope.MaxY, srid, out var max))
+            {
+                return ImmutableArray.Create(min.Lon, min.Lat, max.Lon, max.Lat);
+            }
+
+            return null;
         }
         catch
         {

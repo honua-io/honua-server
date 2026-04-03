@@ -684,6 +684,12 @@ internal static class SearchEndpoints
             queryFields = queryFields.Add(timeField!);
         }
 
+        var endTimeField = layer.Metadata?.TimeInfo?.EndTimeField;
+        if (!string.IsNullOrWhiteSpace(endTimeField) && !queryFields.Contains(endTimeField, StringComparer.OrdinalIgnoreCase))
+        {
+            queryFields = queryFields.Add(endTimeField!);
+        }
+
         outFields = queryFields;
         selectedProperties = selected.Length == 0
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
