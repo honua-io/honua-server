@@ -10,7 +10,7 @@
  * accumulate into one file rather than overwriting each other.
  */
 
-import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -143,8 +143,28 @@ function getOlVersion(): string {
   }
 }
 
-function makeRunId(): string {
+function formatRunId(): string {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
+/**
+ * Return a run ID that is stable across all Vitest forks in one test run.
+ * Priority: CERT_RUN_ID env → GITHUB_RUN_ID env → file sentinel in output dir.
+ */
+function getStableRunId(): string {
+  if (process.env.CERT_RUN_ID) return process.env.CERT_RUN_ID;
+  if (process.env.GITHUB_RUN_ID) return process.env.GITHUB_RUN_ID;
+
+  const sentinel = resolve(certOutputDir(), '.cert-run-id');
+  try {
+    if (existsSync(sentinel)) return readFileSync(sentinel, 'utf-8').trim();
+  } catch { /* fall through */ }
+
+  const id = formatRunId();
+  try {
+    writeFileSync(sentinel, id + '\n', 'utf-8');
+  } catch { /* best effort */ }
+  return id;
 }
 
 /** Resolve the cert output directory (tests/js/). */
@@ -226,7 +246,7 @@ export class EvidenceCollector {
    * rather than overwrite.
    */
   build(): CertEnvelope {
-    const runId = makeRunId();
+    const runId = getStableRunId();
     const applicable = PROTOCOL_APPLICABILITY[this.protocol];
 
     // Read existing file from a sibling suite that ran in an earlier fork
