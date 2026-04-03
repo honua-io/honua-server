@@ -1,9 +1,22 @@
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = resolve(__dirname, '..', 'evidence');
+
+/** Read the installed esri-leaflet version from package.json. */
+async function getEsriLeafletVersion(): Promise<string> {
+  try {
+    const pkgPath = resolve(__dirname, '..', 'node_modules', 'esri-leaflet', 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+    return pkg.version;
+  } catch {
+    // Fallback to the spec range from our own package.json
+    const ourPkg = JSON.parse(await readFile(resolve(__dirname, '..', 'package.json'), 'utf8'));
+    return ourPkg.dependencies?.['esri-leaflet'] ?? 'unknown';
+  }
+}
 
 export interface CertResult {
   test_case_id: string;
@@ -37,7 +50,7 @@ export interface CertEnvelope {
 }
 
 /** Build a certification evidence envelope from test results. */
-export function buildEnvelope(
+export async function buildEnvelope(
   protocol: string,
   results: CertResult[],
   extensions: CertResult[],
@@ -47,8 +60,9 @@ export function buildEnvelope(
     clientVersion?: string;
     environment?: string;
   },
-): CertEnvelope {
+): Promise<CertEnvelope> {
   const runId = options?.runId ?? process.env.GITHUB_RUN_ID ?? new Date().toISOString().replace(/[^0-9T]/g, '').slice(0, 16) + 'Z';
+  const clientVersion = options?.clientVersion ?? await getEsriLeafletVersion();
   const allResults = results;
 
   const summary = {
@@ -65,7 +79,7 @@ export function buildEnvelope(
     run_date: new Date().toISOString(),
     server_version: options?.serverVersion ?? process.env.GITHUB_SHA ?? 'local',
     client_lane: 'js-esri-leaflet',
-    client_version: options?.clientVersion ?? '3.0.14',
+    client_version: clientVersion,
     protocol,
     environment: options?.environment ?? (process.env.CI ? 'ci' : 'local'),
     results: allResults,

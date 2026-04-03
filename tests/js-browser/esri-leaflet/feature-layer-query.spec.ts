@@ -1,49 +1,38 @@
-import { test, expect } from '@playwright/test';
-import { startStaticServer, initFeatureLayer, waitForLayerLoad } from '../shared/map-harness.js';
-
-const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
-const serviceId = process.env.HONUA_SERVICE_ID ?? 'test_service_gw0';
-const layerId = process.env.HONUA_LAYER_ID ?? '1000';
-
-let staticUrl: string;
-let closeServer: () => Promise<void>;
-
-test.beforeAll(async () => {
-  const server = await startStaticServer();
-  staticUrl = server.url;
-  closeServer = server.close;
-});
-
-test.afterAll(async () => {
-  await closeServer();
-});
+import { test, expect } from '../shared/test-fixtures.js';
+import { initFeatureLayer, waitForLayerLoad } from '../shared/map-harness.js';
 
 test.describe('FeatureLayer Query and Filter', () => {
-  test('[CERT-QFLT-01] Attribute equality filter via where option', async ({ page }) => {
+  test('[CERT-QFLT-01] Attribute equality filter via where option', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
-    // Query with a WHERE filter using the esri-leaflet query API
-    const result = await page.evaluate(({ baseUrl, serviceId, layerId }) => {
+    // Query with a real equality predicate against seeded data
+    const result = await page.evaluate(() => {
       return new Promise((resolve, reject) => {
         const layer = (window as any).__featureLayer;
         if (!layer) { reject(new Error('No feature layer')); return; }
 
-        layer.query().where('1=1').run((error: any, featureCollection: any) => {
+        layer.query().where("name='alpha'").run((error: any, featureCollection: any) => {
           if (error) { reject(error); return; }
+          const features = featureCollection?.features ?? [];
           resolve({
             type: featureCollection?.type,
-            featureCount: featureCollection?.features?.length ?? 0,
+            featureCount: features.length,
+            allMatch: features.every((f: any) => f.properties?.name === 'alpha'),
           });
         });
       });
-    }, { baseUrl, serviceId, layerId });
+    });
 
     expect(result).toHaveProperty('type', 'FeatureCollection');
     expect((result as any).featureCount).toBeGreaterThan(0);
+    // Every returned feature must match the predicate
+    expect((result as any).allMatch).toBe(true);
   });
 
-  test('[CERT-QFLT-02] Spatial bbox filter via .within(bounds)', async ({ page }) => {
+  test('[CERT-QFLT-02] Spatial bbox filter via .within(bounds)', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -70,11 +59,12 @@ test.describe('FeatureLayer Query and Filter', () => {
     });
 
     expect(result).toHaveProperty('type', 'FeatureCollection');
-    // Spatial query should return results (test data is in SF area)
-    expect((result as any).featureCount).toBeGreaterThanOrEqual(0);
+    // Spatial query should return results (test data is seeded in SF area)
+    expect((result as any).featureCount).toBeGreaterThan(0);
   });
 
-  test('[CERT-PAGE-01] Query with limit returns expected count', async ({ page }) => {
+  test('[CERT-PAGE-01] Query with limit returns expected count', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -102,7 +92,8 @@ test.describe('FeatureLayer Query and Filter', () => {
     expect((result as any).featureCount).toBeGreaterThan(0);
   });
 
-  test('[CERT-PAGE-02] Offset returns different features than first page', async ({ page }) => {
+  test('[CERT-PAGE-02] Offset returns different features than first page', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -148,7 +139,8 @@ test.describe('FeatureLayer Query and Filter', () => {
     }
   });
 
-  test('[CERT-ERRH-02] Malformed filter yields error', async ({ page }) => {
+  test('[CERT-ERRH-02] Malformed filter yields error', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -174,8 +166,8 @@ test.describe('FeatureLayer Query and Filter', () => {
       });
     });
 
-    // The server must signal rejection — via error callback, error in response, or zero features
+    // The server must signal rejection — via error callback or error in response body
     const r = result as any;
-    expect(r.error === true || r.hasError === true || r.featureCount === 0).toBe(true);
+    expect(r.error === true || r.hasError === true).toBe(true);
   });
 });

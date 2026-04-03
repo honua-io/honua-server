@@ -27,6 +27,9 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
+  // Snapshot policy: generate missing baselines locally, compare-only in CI.
+  // After first CI run, commit baselines and switch CI to 'none'.
+  updateSnapshots: process.env.CI ? 'none' : 'missing',
   expect: {
     toHaveScreenshot: {
       maxDiffPixelRatio: 0.02,

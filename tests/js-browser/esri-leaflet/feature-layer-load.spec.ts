@@ -1,25 +1,9 @@
-import { test, expect } from '@playwright/test';
-import { startStaticServer, initFeatureLayer, waitForLayerLoad } from '../shared/map-harness.js';
-
-const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
-const serviceId = process.env.HONUA_SERVICE_ID ?? 'test_service_gw0';
-const layerId = process.env.HONUA_LAYER_ID ?? '1000';
-
-let staticUrl: string;
-let closeServer: () => Promise<void>;
-
-test.beforeAll(async () => {
-  const server = await startStaticServer();
-  staticUrl = server.url;
-  closeServer = server.close;
-});
-
-test.afterAll(async () => {
-  await closeServer();
-});
+import { test, expect } from '../shared/test-fixtures.js';
+import { initFeatureLayer, waitForLayerLoad } from '../shared/map-harness.js';
 
 test.describe('FeatureLayer Load and Connection', () => {
-  test('[CERT-CONN-01] FeatureLayer connects and fires load event', async ({ page }) => {
+  test('[CERT-CONN-01] FeatureLayer connects and fires load event', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -27,7 +11,8 @@ test.describe('FeatureLayer Load and Connection', () => {
     expect(loadFired).toBe(true);
   });
 
-  test('[CERT-DISC-01][CERT-DISC-02] Metadata discovery via .metadata()', async ({ page }) => {
+  test('[CERT-DISC-01][CERT-DISC-02] Metadata discovery via .metadata()', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -51,7 +36,8 @@ test.describe('FeatureLayer Load and Connection', () => {
     expect(metadata).toHaveProperty('geometryType');
   });
 
-  test('[CERT-SCHM-01] Field schema has name, type, and alias', async ({ page }) => {
+  test('[CERT-SCHM-01] Field schema has name, type, and alias', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -78,7 +64,8 @@ test.describe('FeatureLayer Load and Connection', () => {
     }
   });
 
-  test('[CERT-SCHM-02] Geometry type matches expected Esri type', async ({ page }) => {
+  test('[CERT-SCHM-02] Geometry type matches expected Esri type', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -103,9 +90,9 @@ test.describe('FeatureLayer Load and Connection', () => {
     expect(validEsriTypes).toContain(geometryType);
   });
 
-  test('[CERT-ERRH-01] Error on invalid service URL', async ({ page }) => {
+  test('[CERT-ERRH-01] Error on invalid service URL', async ({ page, staticUrl, config }) => {
     await initFeatureLayer(page, staticUrl, {
-      baseUrl,
+      baseUrl: config.baseUrl,
       serviceId: 'nonexistent_service_xyz',
       layerId: '9999',
     });

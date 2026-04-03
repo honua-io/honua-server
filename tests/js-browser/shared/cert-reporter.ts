@@ -82,7 +82,7 @@ export default class CertReporter implements Reporter {
     }
 
     for (const [protocol, { results, extensions }] of byProtocol) {
-      const envelope = buildEnvelope(protocol, results, extensions);
+      const envelope = await buildEnvelope(protocol, results, extensions);
       const path = await writeEvidence(protocol, envelope);
       console.log(`\n📋 Certification evidence written: ${path}`);
     }

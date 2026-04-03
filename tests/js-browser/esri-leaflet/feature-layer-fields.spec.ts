@@ -1,25 +1,9 @@
-import { test, expect } from '@playwright/test';
-import { startStaticServer, initFeatureLayer, waitForLayerLoad, getAllFeatures } from '../shared/map-harness.js';
-
-const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
-const serviceId = process.env.HONUA_SERVICE_ID ?? 'test_service_gw0';
-const layerId = process.env.HONUA_LAYER_ID ?? '1000';
-
-let staticUrl: string;
-let closeServer: () => Promise<void>;
-
-test.beforeAll(async () => {
-  const server = await startStaticServer();
-  staticUrl = server.url;
-  closeServer = server.close;
-});
-
-test.afterAll(async () => {
-  await closeServer();
-});
+import { test, expect } from '../shared/test-fixtures.js';
+import { initFeatureLayer, waitForLayerLoad, getAllFeatures } from '../shared/map-harness.js';
 
 test.describe('FeatureLayer Popup and Field Access', () => {
-  test('[CERT-ATTR-01] Feature attributes accessible via eachFeature', async ({ page }) => {
+  test('[CERT-ATTR-01] Feature attributes accessible via eachFeature', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -36,7 +20,8 @@ test.describe('FeatureLayer Popup and Field Access', () => {
     expect(Object.keys(firstFeature.properties).length).toBeGreaterThan(0);
   });
 
-  test('[CERT-GEOM-01] Coordinate fidelity — coordinates within geographic range', async ({ page }) => {
+  test('[CERT-GEOM-01] Coordinate fidelity — coordinates within geographic range', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
@@ -58,7 +43,8 @@ test.describe('FeatureLayer Popup and Field Access', () => {
     }
   });
 
-  test('[CERT-GEOM-02] Output spatial reference matches WGS84 request', async ({ page }) => {
+  test('[CERT-GEOM-02] Output spatial reference matches WGS84 request', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 

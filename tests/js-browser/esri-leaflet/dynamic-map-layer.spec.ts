@@ -1,24 +1,9 @@
-import { test, expect } from '@playwright/test';
-import { startStaticServer, initDynamicMapLayer, waitForMapIdle } from '../shared/map-harness.js';
-
-const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
-const serviceId = process.env.HONUA_SERVICE_ID ?? 'test_service_gw0';
-
-let staticUrl: string;
-let closeServer: () => Promise<void>;
-
-test.beforeAll(async () => {
-  const server = await startStaticServer();
-  staticUrl = server.url;
-  closeServer = server.close;
-});
-
-test.afterAll(async () => {
-  await closeServer();
-});
+import { test, expect } from '../shared/test-fixtures.js';
+import { initDynamicMapLayer, waitForMapIdle } from '../shared/map-harness.js';
 
 test.describe('DynamicMapLayer — MapServer Consumption', () => {
-  test('[CERT-CONN-01] DynamicMapLayer loads and issues export requests', async ({ page }) => {
+  test('[CERT-CONN-01] DynamicMapLayer loads and issues export requests', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId } = config;
     // Track actual export requests to the MapServer endpoint
     const exportRequests: string[] = [];
     await page.route('**/MapServer/export**', async (route) => {
@@ -39,7 +24,8 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     expect(loadFired || exportRequests.length > 0).toBe(true);
   });
 
-  test('[CERT-IDNT-01] Identify returns attributes at point', async ({ page }) => {
+  test('[CERT-IDNT-01] Identify returns attributes at point', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId } = config;
     await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
     await waitForMapIdle(page);
 
@@ -78,7 +64,8 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
     expect(r).toHaveProperty('type', 'FeatureCollection');
   });
 
-  test('[CERT-RNDR-02] Data refresh preserves map state', async ({ page }) => {
+  test('[CERT-RNDR-02] Data refresh preserves map state', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId } = config;
     await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
     await waitForMapIdle(page);
 

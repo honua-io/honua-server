@@ -1,25 +1,9 @@
-import { test, expect } from '@playwright/test';
-import { startStaticServer, initFeatureLayer, initDynamicMapLayer, waitForLayerLoad, waitForMapIdle, assertMapNotBlank } from '../shared/map-harness.js';
-
-const baseUrl = process.env.HONUA_BASE_URL ?? 'http://localhost:5556';
-const serviceId = process.env.HONUA_SERVICE_ID ?? 'test_service_gw0';
-const layerId = process.env.HONUA_LAYER_ID ?? '1000';
-
-let staticUrl: string;
-let closeServer: () => Promise<void>;
-
-test.beforeAll(async () => {
-  const server = await startStaticServer();
-  staticUrl = server.url;
-  closeServer = server.close;
-});
-
-test.afterAll(async () => {
-  await closeServer();
-});
+import { test, expect } from '../shared/test-fixtures.js';
+import { initFeatureLayer, initDynamicMapLayer, waitForLayerLoad, waitForMapIdle, assertMapNotBlank } from '../shared/map-harness.js';
 
 test.describe('Visual Rendering Assertions', () => {
-  test('[CERT-RNDR-01][EL-EXT-01] FeatureLayer symbology renders with drawingInfo', async ({ page }) => {
+  test('[CERT-RNDR-01][EL-EXT-01] FeatureLayer symbology renders with drawingInfo', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
     await waitForMapIdle(page);
@@ -36,7 +20,8 @@ test.describe('Visual Rendering Assertions', () => {
     });
   });
 
-  test('[CERT-RNDR-01][EL-EXT-02] DynamicMapLayer export image renders', async ({ page }) => {
+  test('[CERT-RNDR-01][EL-EXT-02] DynamicMapLayer export image renders', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId } = config;
     await initDynamicMapLayer(page, staticUrl, { baseUrl, serviceId, layerId: 0 });
     await waitForMapIdle(page);
 
@@ -54,7 +39,8 @@ test.describe('Visual Rendering Assertions', () => {
     });
   });
 
-  test('Non-blank canvas guard — FeatureLayer renders visible content', async ({ page }) => {
+  test('Non-blank canvas guard — FeatureLayer renders visible content', async ({ page, staticUrl, config }) => {
+    const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
     await waitForMapIdle(page);
