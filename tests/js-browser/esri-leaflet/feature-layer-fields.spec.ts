@@ -62,7 +62,7 @@ test.describe('FeatureLayer Popup and Field Access', () => {
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
 
-    // Query with explicit outSR=4326 (WGS84)
+    // Query with explicit outSR=4326 (WGS84) to verify the server honors SR requests
     const result = await page.evaluate(() => {
       return new Promise((resolve, reject) => {
         const layer = (window as any).__featureLayer;
@@ -71,6 +71,7 @@ test.describe('FeatureLayer Popup and Field Access', () => {
         layer.query()
           .where('1=1')
           .limit(1)
+          .params({ outSR: 4326 })
           .run((error: any, featureCollection: any) => {
             if (error) { reject(error); return; }
 

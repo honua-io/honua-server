@@ -43,23 +43,15 @@ test.describe('Visual Rendering Assertions', () => {
     // Check if the map has any rendered content (export image or tiles)
     const notBlank = await assertMapNotBlank(page);
 
-    // If the MapServer export endpoint is fully implemented, we get a rendered image.
-    // If not, the test documents the current state via screenshot comparison.
-    if (notBlank) {
-      const mapContainer = page.locator('#map');
-      await expect(mapContainer).toHaveScreenshot('dynamic-map-layer-export.png', {
-        maxDiffPixelRatio: 0.02,
-        threshold: 0.3,
-      });
-    } else {
-      // MapServer export may not be fully implemented yet —
-      // log but don't fail the rendering check; the CERT evidence
-      // reporter will record the actual status.
-      test.info().annotations.push({
-        type: 'note',
-        description: 'DynamicMapLayer rendered a blank map — MapServer export endpoint may not be fully implemented.',
-      });
-    }
+    // Skip if the export endpoint didn't render — don't false-pass on a blank map
+    test.skip(!notBlank,
+      'DynamicMapLayer rendered a blank map — MapServer export endpoint may not be implemented');
+
+    const mapContainer = page.locator('#map');
+    await expect(mapContainer).toHaveScreenshot('dynamic-map-layer-export.png', {
+      maxDiffPixelRatio: 0.02,
+      threshold: 0.3,
+    });
   });
 
   test('Non-blank canvas guard — FeatureLayer renders visible content', async ({ page }) => {

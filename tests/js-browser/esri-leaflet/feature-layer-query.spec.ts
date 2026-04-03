@@ -174,7 +174,8 @@ test.describe('FeatureLayer Query and Filter', () => {
       });
     });
 
-    // The server should reject malformed SQL — either via error callback or empty/error response
-    expect(result).toBeTruthy();
+    // The server must signal rejection — via error callback, error in response, or zero features
+    const r = result as any;
+    expect(r.error === true || r.hasError === true || r.featureCount === 0).toBe(true);
   });
 });
