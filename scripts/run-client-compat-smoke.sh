@@ -100,6 +100,7 @@ GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 CERT_DIR="$ARTIFACT_ROOT/certification"
 LAST_DURATION_MS="0"
 LAST_BODY_PATH=""
+LAST_HEADERS_PATH=""
 LAST_STATUS=""
 
 mkdir -p "$PACK_DIR" "$METADATA_DIR" "$SERVER_DIR" "$LANES_DIR"
@@ -308,7 +309,8 @@ request_json() {
 
   rm -f "$LAST_BODY_PATH" 2>/dev/null || true
   LAST_BODY_PATH="$body_file"
-  rm -f "$headers_file"
+  rm -f "$LAST_HEADERS_PATH" 2>/dev/null || true
+  LAST_HEADERS_PATH="$headers_file"
   LAST_STATUS="$status"
 
   [[ "$status" == "pass" ]]
@@ -361,57 +363,6 @@ request_text() {
   [[ "$status" == "pass" ]]
 }
 
-request_head() {
-  local check_id="$1"
-  local url="$2"
-  local expected_status="$3"
-
-  local lane_path headers_file transcript_file transcript_rel http_status curl_exit status note
-  lane_path="$(lane_dir "$CURRENT_LANE")"
-  headers_file="$(mktemp)"
-  transcript_file="$lane_path/transcripts/${check_id}.txt"
-  transcript_rel="${transcript_file#$ARTIFACT_ROOT/}"
-  http_status="0"
-  curl_exit=0
-  status="pass"
-  note=""
-  LAST_DURATION_MS="0"
-
-  local curl_output time_total
-  curl_output="$(curl -sS -I -D "$headers_file" -w '%{http_code}\t%{time_total}' -o /dev/null "$url")" || curl_exit=$?
-  http_status="${curl_output%%$'\t'*}"
-  time_total="${curl_output#*$'\t'}"
-  LAST_DURATION_MS="$(awk "BEGIN {printf \"%.0f\", ${time_total:-0} * 1000}")"
-
-  if [[ $curl_exit -ne 0 ]]; then
-    status="fail"
-    note="curl exited with code ${curl_exit}"
-  elif [[ "$http_status" != "$expected_status" ]]; then
-    status="fail"
-    note="expected HTTP ${expected_status}, got ${http_status}"
-  fi
-
-  {
-    echo "# Request"
-    echo "HEAD ${url}"
-    echo
-    echo "# Response"
-    echo "HTTP ${http_status}"
-    if [[ -n "$note" ]]; then
-      echo "Note: ${note}"
-    fi
-    echo
-    echo "## Headers"
-    cat "$headers_file"
-  } > "$transcript_file"
-
-  append_result "$check_id" "$status" "$http_status" "$transcript_rel" "$note"
-  rm -f "$headers_file"
-  LAST_STATUS="$status"
-
-  [[ "$status" == "pass" ]]
-}
-
 request_json_4xx() {
   local check_id="$1"
   local url="$2"
@@ -452,7 +403,8 @@ request_json_4xx() {
 
   rm -f "$LAST_BODY_PATH" 2>/dev/null || true
   LAST_BODY_PATH="$body_file"
-  rm -f "$headers_file"
+  rm -f "$LAST_HEADERS_PATH" 2>/dev/null || true
+  LAST_HEADERS_PATH="$headers_file"
   LAST_STATUS="$status"
 
   [[ "$status" == "pass" ]]
@@ -707,17 +659,17 @@ run_full_featureserver() {
     "200" \
     '(.features | length) == 3' || failed=1
   local page01_count=""
-  local page01_first_oid=""
+  local page01_oids=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     page01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
-    page01_first_oid=$(jq '.features[0].attributes.OBJECTID // empty' "$LAST_BODY_PATH" 2>/dev/null || echo "")
+    page01_oids=$(jq -c '[.features[].attributes.OBJECTID]' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-PAGE-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$page01_count" "" ""
 
-  # CERT-PAGE-02: Second page (different features)
+  # CERT-PAGE-02: Second page (non-overlapping features)
   local fs_page02_jq='(.features | length) == 3'
-  if [[ -n "$page01_first_oid" ]]; then
-    fs_page02_jq="((.features | length) == 3) and (.features[0].attributes.OBJECTID != ${page01_first_oid})"
+  if [[ -n "$page01_oids" && "$page01_oids" != "null" ]]; then
+    fs_page02_jq="((.features | length) == 3) and (([.features[].attributes.OBJECTID] - ${page01_oids}) | length) == (.features | length)"
   fi
   request_json \
     "fs-page-second" \
@@ -841,17 +793,17 @@ run_full_ogc_features() {
     "${ogc_base}/collections/${LAYER_ID}/items?limit=3" "200" \
     '(.features | length) == 3' || failed=1
   local page01_count=""
-  local page01_first_fid=""
+  local page01_fids=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     page01_count=$(jq -r '.features | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")
-    page01_first_fid=$(jq '.features[0].id // empty' "$LAST_BODY_PATH" 2>/dev/null || echo "")
+    page01_fids=$(jq -c '[.features[].id]' "$LAST_BODY_PATH" 2>/dev/null || echo "")
   fi
   append_cert_result "$proto" "CERT-PAGE-01" "$LAST_STATUS" "$LAST_DURATION_MS" "$page01_count" "" ""
 
-  # CERT-PAGE-02: Second page offset (different features)
+  # CERT-PAGE-02: Second page offset (non-overlapping features)
   local ogc_page02_jq='(.features | length) == 3'
-  if [[ -n "$page01_first_fid" ]]; then
-    ogc_page02_jq="((.features | length) == 3) and (.features[0].id != ${page01_first_fid})"
+  if [[ -n "$page01_fids" && "$page01_fids" != "null" ]]; then
+    ogc_page02_jq="((.features | length) == 3) and (([.features[].id] - ${page01_fids}) | length) == (.features | length)"
   fi
   request_json \
     "ogc-page-second" \
@@ -870,12 +822,18 @@ run_full_ogc_features() {
   fi
   append_cert_result "$proto" "CERT-GEOM-01" "$LAST_STATUS" "$LAST_DURATION_MS" "" "$geom01_delta" ""
 
-  # CERT-GEOM-02: CRS (OGC default is CRS84 — validate coordinates in valid range)
+  # CERT-GEOM-02: Output CRS matches requested CRS (explicit EPSG:4326)
   request_json \
     "ogc-geom-crs" \
-    "${ogc_base}/collections/${LAYER_ID}/items?filter=name%20%3D%20%27alpha%27&limit=1" "200" \
+    "${ogc_base}/collections/${LAYER_ID}/items?filter=name%20%3D%20%27alpha%27&limit=1&crs=http%3A%2F%2Fwww.opengis.net%2Fdef%2Fcrs%2FEPSG%2F0%2F4326" "200" \
     '.features[0].geometry.coordinates | .[0] >= -180 and .[0] <= 180 and .[1] >= -90 and .[1] <= 90' || failed=1
-  append_cert_result "$proto" "CERT-GEOM-02" "$LAST_STATUS" "$LAST_DURATION_MS" "" "" ""
+  local geom02_status="$LAST_STATUS"
+  if [[ "$geom02_status" == "pass" && -f "$LAST_HEADERS_PATH" ]]; then
+    if ! grep -qi 'content-crs:.*EPSG/0/4326' "$LAST_HEADERS_PATH"; then
+      geom02_status="fail"
+    fi
+  fi
+  append_cert_result "$proto" "CERT-GEOM-02" "$geom02_status" "$LAST_DURATION_MS" "" "" ""
 
   # CERT-ERRH-01: Invalid collection
   request_json_4xx \

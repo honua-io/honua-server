@@ -145,8 +145,9 @@ That artifact is intentionally simpler than the final `.cert.json` certification
 | `README.md` | Markdown | Human-readable overview of the artifact root, lane folders, metadata, and reusable pack |
 | `overall-summary.json` / `overall-summary.md` | JSON / Markdown | Root summary with `generated_at`, `artifact_root`, `service_id`, `layer_id`, `seed_source`, `server_version`, overall `status`, and `lanes[] { lane, title, status, summary, summary_path }`, plus a human-readable lane table |
 | `lanes/<lane>/checks.tsv` | TSV | Raw smoke-check rows with `check_id`, `status`, `http_status`, transcript path, and optional note |
-| `lanes/<lane>/lane-summary.json` / `lane-summary.md` | JSON / Markdown | Lane summary with `lane`, `title`, lane `status`, `summary { total, passed, failed }`, and `checks[] { id, status, http_status, transcript, note }`, plus a human-readable check table |
+| `lanes/<lane>/lane-summary.json` / `lane-summary.md` | JSON / Markdown | Lane summary with `lane`, `title`, lane `status`, `summary { total, passed, failed, skipped, not_applicable }`, and `checks[] { id, status, http_status, transcript, note }`, plus a human-readable check table |
 | `lanes/<lane>/transcripts/<check-id>.txt` | Text | Exact request/response transcript for a single smoke check |
+| `certification/<timestamp>-<client_lane>-<protocol>.cert.json` | JSON | Per-protocol `.cert.json` envelope (full profile only); see [envelope schema](#evidence-envelope-schema) above |
 | `metadata/workflow-context.json` | JSON | Workflow provenance including timestamp, base URL, service id, layer id, seed source, server version, and GitHub run metadata when available |
 | `metadata/<seed-file>.sql` | SQL | Exact versioned seed snapshot used by the run |
 | `server/server.log` | Text | Honua server stdout/stderr captured during the workflow run |

@@ -58,6 +58,7 @@ The uploaded contract is:
 | `lanes/<lane>/checks.tsv` | Raw smoke-check rows used to build the lane summaries |
 | `lanes/<lane>/lane-summary.json` / `lane-summary.md` | Per-lane check results with HTTP status, transcript path, and optional failure note |
 | `lanes/<lane>/transcripts/<check-id>.txt` | Full request/response transcript captured by the smoke script |
+| `certification/<timestamp>-<client_lane>-<protocol>.cert.json` | Per-protocol `.cert.json` envelope (full profile only); see [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) |
 | `metadata/workflow-context.json` | Base URL, service/layer ids, seed source, timestamp, workflow metadata |
 | `metadata/<seed-file>.sql` | Exact versioned SQL snapshot applied for the run |
 | `server/server.log` | Honua server stdout/stderr captured during the run |
