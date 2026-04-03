@@ -113,12 +113,22 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
     'CERT-ERRH-01',
   ]),
+  // Pending formal addition to CROSS_CLIENT_CERTIFICATION_MATRIX.md
+  wfs20: new Set([
+    'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
+    'CERT-DISC-01', 'CERT-DISC-02', 'CERT-SCHM-01',
+    'CERT-QFLT-01', 'CERT-GEOM-01',
+    'CERT-ERRH-01', 'CERT-ERRH-02',
+  ]),
 };
 
-/** Protocols defined in the certification evidence spec. */
+/**
+ * Protocols defined in the certification evidence spec.
+ * wfs20 is pending formal addition to CROSS_CLIENT_CERTIFICATION_MATRIX.md.
+ */
 const VALID_PROTOCOLS = new Set([
   'featureserver', 'mapserver', 'ogc-features', 'odata',
-  'mvt', 'wms', 'wmts', 'admin-api',
+  'mvt', 'wms', 'wmts', 'admin-api', 'wfs20',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -189,10 +199,20 @@ function specFilename(runId: string, protocol: string): string {
 export class EvidenceCollector {
   private readonly results = new Map<string, CertResult>();
   private readonly extensionMap = new Map<string, CertResult>();
+  private readonly attempted = new Set<string>();
   readonly protocol: string;
 
   constructor(protocol: string) {
     this.protocol = protocol;
+  }
+
+  /**
+   * Mark a core CERT ID as attempted. Call at the start of a test so that
+   * if an assertion throws before record() is reached, build() emits 'fail'
+   * instead of 'skip'.
+   */
+  attempt(testCaseId: string): void {
+    this.attempted.add(testCaseId);
   }
 
   /** Record a core CERT-* result. */
@@ -276,13 +296,21 @@ export class EvidenceCollector {
       const recorded = merged.get(id);
       // Defense-in-depth: coerce non-applicable recorded IDs to not-applicable
       if (recorded && isApplicable) return recorded;
+      // Attempted but not recorded means the test threw before record() — emit fail
+      const wasAttempted = this.attempted.has(id);
+      const status: CertStatus = isApplicable
+        ? (wasAttempted ? 'fail' : 'skip')
+        : 'not-applicable';
+      const notes = wasAttempted
+        ? 'Test attempted but assertion failed before evidence was recorded'
+        : isApplicable ? 'Not covered by this test suite' : '';
       return {
         test_case_id: id,
-        status: (isApplicable ? 'skip' : 'not-applicable') as CertStatus,
+        status,
         duration_ms: null,
         measured_count: null,
         measured_delta: null,
-        notes: isApplicable ? 'Not covered by this test suite' : '',
+        notes,
         evidence_ref: '',
       };
     });

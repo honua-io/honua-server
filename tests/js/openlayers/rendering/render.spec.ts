@@ -29,6 +29,9 @@ async function getCollectionId(): Promise<string> {
 test('OGC vector tile layer renders non-blank output on ol/Map', async ({
   page,
 }) => {
+  const evidence = new EvidenceCollector('mvt');
+  evidence.attempt('CERT-RNDR-01');
+
   const collectionId = await getCollectionId();
 
   // Navigate to test page with Honua endpoint params
@@ -78,8 +81,6 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
   expect(isNonBlank).toBe(true);
 
   // Record evidence via shared collector (merge-on-write preserves Vitest results)
-  const evidence = new EvidenceCollector('mvt');
-
   evidence.record('CERT-RNDR-01', 'pass', {
     measuredCount: featureCount,
     notes:

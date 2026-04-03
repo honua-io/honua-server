@@ -22,6 +22,7 @@ afterAll(() => {
 
 describe('OGC API Features Discovery', () => {
   it('landing page loads', async () => {
+    evidence.attempt('CERT-CONN-01');
     const start = Date.now();
     const resp = await fetch(ogcFeaturesUrl);
     const duration = Date.now() - start;
@@ -38,6 +39,7 @@ describe('OGC API Features Discovery', () => {
   });
 
   it('conformance classes listed', async () => {
+    evidence.attempt('CERT-DISC-01');
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/conformance`);
     const duration = Date.now() - start;
@@ -56,6 +58,7 @@ describe('OGC API Features Discovery', () => {
   });
 
   it('collections list returned', async () => {
+    evidence.attempt('CERT-DISC-01');
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/collections`);
     const duration = Date.now() - start;
@@ -79,6 +82,7 @@ describe('OGC API Features Discovery', () => {
   });
 
   it('single collection metadata', async () => {
+    evidence.attempt('CERT-DISC-02');
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}`);
     const duration = Date.now() - start;
@@ -95,6 +99,7 @@ describe('OGC API Features Discovery', () => {
   });
 
   it('queryables schema retrieved', async () => {
+    evidence.attempt('CERT-SCHM-01');
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/queryables`);
     const duration = Date.now() - start;

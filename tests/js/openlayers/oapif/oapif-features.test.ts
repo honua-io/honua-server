@@ -67,6 +67,7 @@ describe('OGC API Features Items', () => {
   });
 
   it('pagination with limit', async () => {
+    evidence.attempt('CERT-PAGE-01');
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2`);
     const duration = Date.now() - start;
@@ -84,6 +85,7 @@ describe('OGC API Features Items', () => {
   });
 
   it('pagination with offset', async () => {
+    evidence.attempt('CERT-PAGE-02');
     // First get items without offset
     const resp1 = await fetch(`${ogcFeaturesUrl}/collections/${collectionId}/items?limit=2`);
     expect(resp1.ok).toBe(true);

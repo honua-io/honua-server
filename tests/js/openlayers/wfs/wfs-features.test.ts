@@ -37,6 +37,7 @@ afterAll(() => {
 
 describe('WFS 2.0 GetFeature', () => {
   it('GetFeature returns parseable response', async () => {
+    evidence.attempt('CERT-QFLT-01');
     const start = Date.now();
     const resp = await fetch(
       `${wfsUrl}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${encodeURIComponent(typeName)}&count=5`,
@@ -54,6 +55,7 @@ describe('WFS 2.0 GetFeature', () => {
   });
 
   it('ol/format/WFS reads features from GetFeature response', async () => {
+    evidence.attempt('CERT-GEOM-01');
     const resp = await fetch(
       `${wfsUrl}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${encodeURIComponent(typeName)}&count=5`,
     );
@@ -75,6 +77,7 @@ describe('WFS 2.0 GetFeature', () => {
   });
 
   it('parsed features have accessible properties', async () => {
+    evidence.attempt('CERT-SCHM-01');
     const resp = await fetch(
       `${wfsUrl}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${encodeURIComponent(typeName)}&count=5`,
     );
@@ -100,6 +103,7 @@ describe('WFS 2.0 GetFeature', () => {
   });
 
   it('parsed features have geometry', async () => {
+    evidence.attempt('CERT-GEOM-01');
     const resp = await fetch(
       `${wfsUrl}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${encodeURIComponent(typeName)}&count=5`,
     );

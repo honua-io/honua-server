@@ -21,6 +21,7 @@ afterAll(() => {
 
 describe('OGC API Tiles Metadata', () => {
   it('tiles landing page loads', async () => {
+    evidence.attempt('CERT-CONN-01');
     const start = Date.now();
     const resp = await fetch(ogcTilesUrl);
     const duration = Date.now() - start;

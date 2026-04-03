@@ -28,6 +28,7 @@ describe('WFS 2.0 Discovery', () => {
   });
 
   it('GetCapabilities XML is parseable', () => {
+    evidence.attempt('CERT-DISC-01');
     const start = Date.now();
 
     expect(capabilitiesXml).toBeTruthy();
@@ -51,6 +52,7 @@ describe('WFS 2.0 Discovery', () => {
   });
 
   it('FeatureType listed in capabilities', () => {
+    evidence.attempt('CERT-DISC-02');
     const start = Date.now();
     const parser = new DOMParser();
     const doc = parser.parseFromString(capabilitiesXml, 'text/xml');
