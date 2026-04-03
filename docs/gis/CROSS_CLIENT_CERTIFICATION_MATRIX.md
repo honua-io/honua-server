@@ -45,7 +45,7 @@ These test cases form the shared certification baseline. Every client lane must 
 | CERT-RNDR-01 | RNDR | Map/table renders without client error | FS, OGC, OData, MVT ‡ | pass/fail |
 | CERT-RNDR-02 | RNDR | Data refresh preserves state | FS, OGC, OData | pass/fail |
 
-‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS). The manual smoke runbook does not yet include an MVT lane; MVT render certification is tracked via the JS lane extensions (JS-EXT-01, JS-EXT-02) until a dedicated visual lane is added.
+‡ **MVT rendering:** requires a visual web client (e.g., MapLibre GL JS). Automated browser evidence now comes from the JS — MapLibre (Playwright) lane for CERT-CONN-01, CERT-RNDR-01, JS-EXT-01, and JS-EXT-02. The manual smoke runbook still has no separate MVT lane for the remaining client-level gaps.
 
 § **MapServer rendering lane:** The "FS" abbreviation covers both `featureserver` and `mapserver` evidence files. When MapServer is exercised as a rendering-only connection (e.g., ArcGIS Pro smoke test), the query-focused categories — CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 — are recorded as `not-applicable` in the `mapserver` evidence file. If the client also exercises MapServer's layer query endpoint (`/{layer-id}/query`), record those results normally. See the [runbook per-protocol evidence section](CLIENT_TEMPLATE_RUNBOOK.md#per-protocol-evidence-files) for the exact split.
 

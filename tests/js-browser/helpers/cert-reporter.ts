@@ -78,7 +78,12 @@ class CertReporter implements Reporter {
     }
   }
 
-  async onEnd(_result: FullResult): Promise<void> {
+  async onEnd(result: FullResult): Promise<void> {
+    const hasObservedResults = [...this.resultsByTest.values()].some((byTest) => byTest.size > 0);
+    if (result.status !== 'passed' && !hasObservedResults) {
+      return;
+    }
+
     const runDate = new Date();
     const runId = runDate.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 
