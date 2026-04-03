@@ -213,6 +213,19 @@ internal sealed class StacMappingService
             // shape stable even when no attribute can be promoted into STAC temporal fields.
         }
 
+        // When the layer has no temporal metadata but the feature carries STAC interval
+        // fields (start_datetime + end_datetime), reconstruct the interval before falling
+        // back to a single-value probe that would discard the end.
+        if (start is null && end is null)
+        {
+            var intervalStart = TryReadTemporalValue(feature.Attributes, "start_datetime");
+            if (intervalStart is not null)
+            {
+                start = intervalStart;
+                end = TryReadTemporalValue(feature.Attributes, "end_datetime");
+            }
+        }
+
         start ??= TryReadFallbackTemporalValue(feature.Attributes);
 
         if (start is not null && (end is null || end == start))

@@ -378,8 +378,10 @@ def _write_evidence_report(
 
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")
     suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
-    json_path = PYTHON_TESTS_ROOT / f"stac-client-compat-results{suffix}.json"
-    markdown_path = PYTHON_TESTS_ROOT / f"stac-client-compat-results{suffix}.md"
+    results_dir = TESTS_ROOT / "TestResults"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    json_path = results_dir / f"stac-client-compat-results{suffix}.json"
+    markdown_path = results_dir / f"stac-client-compat-results{suffix}.md"
     evidence_collector.write_reports(json_path, markdown_path)
 
 

@@ -705,7 +705,7 @@ internal static class SearchEndpoints
             ReadOnlySpan<string> fallbackCandidates =
             [
                 "datetime", "created_at", "updated_at", "start_datetime",
-                "timestamp", "event_date", "date"
+                "end_datetime", "timestamp", "event_date", "date"
             ];
             foreach (var candidate in fallbackCandidates)
             {
