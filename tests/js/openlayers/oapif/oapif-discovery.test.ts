@@ -122,9 +122,9 @@ describe('OGC API Features Discovery', () => {
     // itemType or geometry field indicates spatial nature
     expect(body).toHaveProperty('itemType');
 
-    evidence.record('CERT-SCHM-02', 'pass', {
+    evidence.recordExtension('JS-EXT-OL-ITEMTYPE-01', 'pass', {
       durationMs: duration,
-      notes: `itemType: ${body.itemType}`,
+      notes: `itemType: ${body.itemType} (not a geometry type signal per OGC spec)`,
     });
   });
 });

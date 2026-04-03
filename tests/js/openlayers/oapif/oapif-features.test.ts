@@ -33,10 +33,10 @@ describe('OGC API Features Items', () => {
     expect(Array.isArray(body.features)).toBe(true);
     expect(body.features.length).toBeGreaterThan(0);
 
-    evidence.record('CERT-QFLT-01', 'pass', {
+    evidence.recordExtension('JS-EXT-OL-ITEMS-01', 'pass', {
       durationMs: duration,
       measuredCount: body.features.length,
-      notes: `${body.features.length} features returned`,
+      notes: `${body.features.length} features returned (unfiltered listing)`,
     });
   });
 
@@ -59,7 +59,7 @@ describe('OGC API Features Items', () => {
     const firstProps = features[0].getProperties();
     expect(Object.keys(firstProps).length).toBeGreaterThan(0);
 
-    evidence.record('CERT-GEOM-01', 'pass', {
+    evidence.recordExtension('JS-EXT-OL-GEOJSON-01', 'pass', {
       durationMs: duration,
       measuredCount: features.length,
       notes: `ol/format/GeoJSON parsed ${features.length} features, ${withGeom.length} with geometry`,
@@ -139,7 +139,7 @@ describe('OGC API Features Items', () => {
     const features = format.readFeatures(text);
     expect(features.length).toBe(1);
 
-    evidence.record('CERT-GEOM-01', 'pass', {
+    evidence.recordExtension('JS-EXT-OL-GEOJSON-02', 'pass', {
       durationMs: duration,
       notes: `Single item '${featureId}' fetched and parsed by ol/format/GeoJSON`,
     });

@@ -10,7 +10,7 @@
  * accumulate into one file rather than overwriting each other.
  */
 
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -135,7 +135,8 @@ function getServerVersion(): string {
 
 function getOlVersion(): string {
   try {
-    const pkg = require('ol/package.json');
+    const olPkgPath = resolve(__dirname, '..', '..', 'node_modules', 'ol', 'package.json');
+    const pkg = JSON.parse(readFileSync(olPkgPath, 'utf-8'));
     return pkg.version ?? 'unknown';
   } catch {
     return 'unknown';
@@ -151,9 +152,14 @@ function certOutputDir(): string {
   return resolve(__dirname, '..', '..');
 }
 
-/** Deterministic cert filename following <client-lane>-<protocol> convention. */
-function certFilename(protocol: string): string {
+/** Deterministic merge filename (stable across forks for merge-on-write). */
+function mergeFilename(protocol: string): string {
   return `js-${protocol}.cert.json`;
+}
+
+/** Spec-compliant filename: <run-id>-<client-lane>-<protocol>.cert.json */
+function specFilename(runId: string, protocol: string): string {
+  return `${runId}-js-${protocol}.cert.json`;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +233,7 @@ export class EvidenceCollector {
     const priorResults = new Map<string, CertResult>();
     const priorExtensions = new Map<string, CertResult>();
     try {
-      const filepath = resolve(certOutputDir(), certFilename(this.protocol));
+      const filepath = resolve(certOutputDir(), mergeFilename(this.protocol));
       const existing: CertEnvelope = JSON.parse(readFileSync(filepath, 'utf-8'));
       for (const r of existing.results) {
         if (r.status === 'pass' || r.status === 'fail') {
@@ -246,9 +252,10 @@ export class EvidenceCollector {
     const mergedExt = new Map([...priorExtensions, ...this.extensionMap]);
 
     const allResults: CertResult[] = CORE_TEST_IDS.map(id => {
-      const recorded = merged.get(id);
-      if (recorded) return recorded;
       const isApplicable = applicable?.has(id) ?? false;
+      const recorded = merged.get(id);
+      // Defense-in-depth: coerce non-applicable recorded IDs to not-applicable
+      if (recorded && isApplicable) return recorded;
       return {
         test_case_id: id,
         status: (isApplicable ? 'skip' : 'not-applicable') as CertStatus,
@@ -290,6 +297,10 @@ export class EvidenceCollector {
 
   /**
    * Write the evidence file to tests/js/.
+   * Produces two outputs:
+   *   1. Merge file (`js-<protocol>.cert.json`) for cross-fork accumulation.
+   *   2. Spec-compliant file (`<run-id>-js-<protocol>.cert.json`) matching
+   *      the naming convention in CROSS_CLIENT_CERTIFICATION_EVIDENCE.md.
    * Skips writing for protocols not in the certification spec.
    */
   write(): string | null {
@@ -297,9 +308,19 @@ export class EvidenceCollector {
       return null;
     }
     const envelope = this.build();
-    const filename = certFilename(this.protocol);
-    const filepath = resolve(certOutputDir(), filename);
-    writeFileSync(filepath, JSON.stringify(envelope, null, 2) + '\n', 'utf-8');
-    return filepath;
+    const outDir = certOutputDir();
+    const content = JSON.stringify(envelope, null, 2) + '\n';
+
+    // 1. Merge-on-write file (stable name for accumulation across Vitest forks)
+    const mergePath = resolve(outDir, mergeFilename(this.protocol));
+    writeFileSync(mergePath, content, 'utf-8');
+
+    // 2. Spec-compliant file (run-id prefixed)
+    const specDir = resolve(outDir, 'certification-evidence');
+    mkdirSync(specDir, { recursive: true });
+    const specPath = resolve(specDir, specFilename(envelope.run_id, this.protocol));
+    writeFileSync(specPath, content, 'utf-8');
+
+    return specPath;
   }
 }

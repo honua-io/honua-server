@@ -526,7 +526,9 @@ jobs:
         if: always()
         with:
           name: openlayers-compat-results
-          path: tests/js/js-*.cert.json
+          path: |
+            tests/js/js-*.cert.json
+            tests/js/certification-evidence/*.cert.json
           retention-days: 7
 
   mcp-certification:

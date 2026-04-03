@@ -51,7 +51,7 @@ describe('OGC API Tiles Metadata', () => {
     const first = body.tileMatrixSets[0];
     expect(first).toHaveProperty('id');
 
-    evidence.record('CERT-DISC-01', 'pass', {
+    evidence.recordExtension('JS-EXT-TILES-DISC-01', 'pass', {
       durationMs: duration,
       measuredCount: body.tileMatrixSets.length,
       notes: `${body.tileMatrixSets.length} tile matrix sets available`,
@@ -71,7 +71,7 @@ describe('OGC API Tiles Metadata', () => {
     expect(Array.isArray(body.tilesets)).toBe(true);
     expect(body.tilesets.length).toBeGreaterThan(0);
 
-    evidence.record('CERT-DISC-02', 'pass', {
+    evidence.recordExtension('JS-EXT-TILES-DISC-02', 'pass', {
       durationMs: duration,
       measuredCount: body.tilesets.length,
       notes: `${body.tilesets.length} tilesets for collection '${collectionId}'`,
@@ -105,7 +105,7 @@ describe('OGC API Tiles Metadata', () => {
     // Tileset metadata should reference the tile matrix set
     expect(body).toHaveProperty('links');
 
-    evidence.record('CERT-SCHM-01', 'pass', {
+    evidence.recordExtension('JS-EXT-TILES-SCHM-01', 'pass', {
       durationMs: duration,
       notes: `Tileset metadata for TMS '${tmsId}' retrieved`,
     });

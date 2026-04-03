@@ -288,6 +288,10 @@ tmp/
 src/Honua.Server/tmp/
 src/Honua.Server/attachments/
 
+# Certification evidence test output
+tests/js/js-*.cert.json
+tests/js/certification-evidence/
+
 # Local audit artifacts
 .audit/runs/
 .claude/worktrees/
