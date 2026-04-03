@@ -11,7 +11,7 @@ test.describe('FeatureLayer Load and Connection', () => {
     expect(loadFired).toBe(true);
   });
 
-  test('[CERT-DISC-01][CERT-DISC-02] Metadata discovery via .metadata()', async ({ page, staticUrl, config }) => {
+  test('[CERT-DISC-02] Metadata discovery via .metadata()', async ({ page, staticUrl, config }) => {
     const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
@@ -29,9 +29,8 @@ test.describe('FeatureLayer Load and Connection', () => {
     });
 
     expect(metadata).toBeTruthy();
-    // CERT-DISC-01: Service info returned
+    // CERT-DISC-02: Single service/collection metadata retrieved
     expect(metadata).toHaveProperty('type');
-    // CERT-DISC-02: Layer metadata available
     expect(metadata).toHaveProperty('fields');
     expect(metadata).toHaveProperty('geometryType');
   });

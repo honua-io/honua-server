@@ -2,7 +2,7 @@ import { test, expect } from '../shared/test-fixtures.js';
 import { initFeatureLayer, waitForLayerLoad, getAllFeatures } from '../shared/map-harness.js';
 
 test.describe('FeatureLayer Popup and Field Access', () => {
-  test('[CERT-ATTR-01] Feature attributes accessible via eachFeature', async ({ page, staticUrl, config }) => {
+  test('[EL-EXT-03] Feature attributes accessible via eachFeature', async ({ page, staticUrl, config }) => {
     const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
@@ -20,7 +20,7 @@ test.describe('FeatureLayer Popup and Field Access', () => {
     expect(Object.keys(firstFeature.properties).length).toBeGreaterThan(0);
   });
 
-  test('[CERT-GEOM-01] Coordinate fidelity — coordinates within geographic range', async ({ page, staticUrl, config }) => {
+  test('[CERT-GEOM-01] Coordinate fidelity — reference point within tolerance', async ({ page, staticUrl, config }) => {
     const { baseUrl, serviceId, layerId } = config;
     await initFeatureLayer(page, staticUrl, { baseUrl, serviceId, layerId });
     await waitForLayerLoad(page);
@@ -28,19 +28,38 @@ test.describe('FeatureLayer Popup and Field Access', () => {
     const features = await getAllFeatures(page);
     expect(features.length).toBeGreaterThan(0);
 
-    // Verify coordinates are in valid geographic ranges
+    // Known reference point from seed data (San Francisco): [-122.4194, 37.7749]
+    // All seeded geometries start with this coordinate.
+    const refLng = -122.4194;
+    const refLat = 37.7749;
+    // CERT-GEOM-01 threshold for geographic CRS: ≤ 1×10⁻⁶ degrees (≈ 0.11 m)
+    const threshold = 1e-6;
+
+    let maxDelta = 0;
+    let matched = false;
+
     for (const feature of features) {
       const geom = feature.geometry as any;
       if (!geom || !geom.coordinates) continue;
 
       const coords = flattenCoordinates(geom.coordinates);
-      for (const [lng, lat] of coords) {
-        expect(lng).toBeGreaterThanOrEqual(-180);
-        expect(lng).toBeLessThanOrEqual(180);
-        expect(lat).toBeGreaterThanOrEqual(-90);
-        expect(lat).toBeLessThanOrEqual(90);
+      if (coords.length === 0) continue;
+
+      // The first coordinate of every seeded geometry is the reference point
+      const [lng, lat] = coords[0];
+      const deltaLng = Math.abs(lng - refLng);
+      const deltaLat = Math.abs(lat - refLat);
+      const delta = Math.max(deltaLng, deltaLat);
+
+      if (deltaLng < 0.01 && deltaLat < 0.01) {
+        // Close enough to be the reference point — check fidelity
+        matched = true;
+        maxDelta = Math.max(maxDelta, delta);
       }
     }
+
+    expect(matched).toBe(true);
+    expect(maxDelta).toBeLessThanOrEqual(threshold);
   });
 
   test('[CERT-GEOM-02] Output spatial reference matches WGS84 request', async ({ page, staticUrl, config }) => {

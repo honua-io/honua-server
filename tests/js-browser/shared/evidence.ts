@@ -78,7 +78,7 @@ export async function buildEnvelope(
     run_id: runId,
     run_date: new Date().toISOString(),
     server_version: options?.serverVersion ?? process.env.GITHUB_SHA ?? 'local',
-    client_lane: 'js-esri-leaflet',
+    client_lane: 'js',
     client_version: clientVersion,
     protocol,
     environment: options?.environment ?? (process.env.CI ? 'ci' : 'local'),
@@ -92,7 +92,7 @@ export async function buildEnvelope(
 /** Write a .cert.json envelope to the evidence directory. */
 export async function writeEvidence(protocol: string, envelope: CertEnvelope): Promise<string> {
   await mkdir(EVIDENCE_DIR, { recursive: true });
-  const filename = `${envelope.run_id}-js-esri-leaflet-${protocol}.cert.json`;
+  const filename = `${envelope.run_id}-js-${protocol}.cert.json`;
   const filepath = resolve(EVIDENCE_DIR, filename);
   await writeFile(filepath, JSON.stringify(envelope, null, 2) + '\n');
   return filepath;
