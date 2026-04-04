@@ -13,7 +13,7 @@
     "test:geometry": "vitest run feature-server/geometry-types",
     "test:edits": "vitest run feature-server/apply-edits",
     "test:metadata": "vitest run feature-server/metadata",
-    "test:openlayers": "vitest run --include 'openlayers/**/*.test.ts'",
+    "test:openlayers": "vitest run --dir openlayers",
     "test:openlayers:render": "npx playwright test --config openlayers/rendering/playwright.config.ts",
     "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit"

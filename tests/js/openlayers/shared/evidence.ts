@@ -124,11 +124,13 @@ const PROTOCOL_APPLICABILITY: Record<string, ReadonlySet<string>> = {
 
 /**
  * Protocols defined in the certification evidence spec.
- * wfs20 is pending formal addition to CROSS_CLIENT_CERTIFICATION_MATRIX.md.
+ * wfs20 is NOT yet in the spec — excluded until formally added to
+ * CROSS_CLIENT_CERTIFICATION_MATRIX.md. WFS tests still run but
+ * write() returns null for non-spec protocols.
  */
 const VALID_PROTOCOLS = new Set([
   'featureserver', 'mapserver', 'ogc-features', 'odata',
-  'mvt', 'wms', 'wmts', 'admin-api', 'wfs20',
+  'mvt', 'wms', 'wmts', 'admin-api',
 ]);
 
 // ---------------------------------------------------------------------------

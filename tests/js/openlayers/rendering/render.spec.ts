@@ -32,68 +32,70 @@ test('OGC vector tile layer renders non-blank output on ol/Map', async ({
   const evidence = new EvidenceCollector('mvt');
   evidence.attempt('CERT-RNDR-01');
 
-  const collectionId = await getCollectionId();
+  try {
+    const collectionId = await getCollectionId();
 
-  // Navigate to test page with Honua endpoint params
-  const url = `${TEST_PAGE_URL}/test-page.html?baseUrl=${encodeURIComponent(BASE_URL)}&collectionId=${encodeURIComponent(collectionId)}`;
-  await page.goto(url);
+    // Navigate to test page with Honua endpoint params
+    const url = `${TEST_PAGE_URL}/test-page.html?baseUrl=${encodeURIComponent(BASE_URL)}&collectionId=${encodeURIComponent(collectionId)}`;
+    await page.goto(url);
 
-  // Wait for OpenLayers render complete (up to 30s for tile loading)
-  await page.waitForFunction(() => window.__RENDER_COMPLETE === true, null, {
-    timeout: 30_000,
-  });
+    // Wait for OpenLayers render complete (up to 30s for tile loading)
+    await page.waitForFunction(() => window.__RENDER_COMPLETE === true, null, {
+      timeout: 30_000,
+    });
 
-  // Check for errors
-  const error = await page.evaluate(() => window.__ERROR);
-  expect(error).toBeNull();
+    // Check for errors
+    const error = await page.evaluate(() => window.__ERROR);
+    expect(error).toBeNull();
 
-  // Assert features were loaded
-  const featureCount = await page.evaluate(() => window.__FEATURE_COUNT);
+    // Assert features were loaded
+    const featureCount = await page.evaluate(() => window.__FEATURE_COUNT);
 
-  // Sample canvas pixels to verify non-blank rendering
-  const isNonBlank = await page.evaluate(() => {
-    const canvas = document.querySelector('#map canvas') as HTMLCanvasElement;
-    if (!canvas) return false;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return false;
+    // Sample canvas pixels to verify non-blank rendering
+    const isNonBlank = await page.evaluate(() => {
+      const canvas = document.querySelector('#map canvas') as HTMLCanvasElement;
+      if (!canvas) return false;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return false;
 
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
 
-    // Check if all pixels are the same (blank canvas)
-    const r0 = data[0],
-      g0 = data[1],
-      b0 = data[2],
-      a0 = data[3];
-    for (let i = 4; i < data.length; i += 4) {
-      if (
-        data[i] !== r0 ||
-        data[i + 1] !== g0 ||
-        data[i + 2] !== b0 ||
-        data[i + 3] !== a0
-      ) {
-        return true; // At least one pixel differs -> non-blank
+      // Check if all pixels are the same (blank canvas)
+      const r0 = data[0],
+        g0 = data[1],
+        b0 = data[2],
+        a0 = data[3];
+      for (let i = 4; i < data.length; i += 4) {
+        if (
+          data[i] !== r0 ||
+          data[i + 1] !== g0 ||
+          data[i + 2] !== b0 ||
+          data[i + 3] !== a0
+        ) {
+          return true; // At least one pixel differs -> non-blank
+        }
       }
-    }
-    return false;
-  });
+      return false;
+    });
 
-  expect(isNonBlank).toBe(true);
+    expect(isNonBlank).toBe(true);
 
-  // Record evidence via shared collector (merge-on-write preserves Vitest results)
-  evidence.record('CERT-RNDR-01', 'pass', {
-    measuredCount: featureCount,
-    notes:
-      'OpenLayers rendered OGC VectorTile layer on canvas; non-blank pixel assertion passed',
-    evidenceRef: 'openlayers/rendering/render.spec.ts',
-  });
+    // Record evidence via shared collector (merge-on-write preserves Vitest results)
+    evidence.record('CERT-RNDR-01', 'pass', {
+      measuredCount: featureCount,
+      notes:
+        'OpenLayers rendered OGC VectorTile layer on canvas; non-blank pixel assertion passed',
+      evidenceRef: 'openlayers/rendering/render.spec.ts',
+    });
 
-  evidence.recordExtension('JS-EXT-02', 'pass', {
-    notes:
-      'Browser tile load pipeline: VectorTile source fetched MVT tiles and rendered via ol/Map',
-  });
-
-  evidence.write();
+    evidence.recordExtension('JS-EXT-02', 'pass', {
+      notes:
+        'Browser tile load pipeline: VectorTile source fetched MVT tiles and rendered via ol/Map',
+    });
+  } finally {
+    evidence.write();
+  }
 });
 
 // TypeScript ambient declarations for window globals set by test-page.html
