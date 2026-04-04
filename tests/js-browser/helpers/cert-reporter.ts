@@ -63,11 +63,10 @@ class CertReporter implements Reporter {
 
     const status: CertResult['status'] =
       result.status === 'passed' ? 'pass'
-      : result.status === 'failed' ? 'fail'
       : result.status === 'skipped' ? 'skip'
-      : 'skip';
+      : 'fail';
 
-    const notes = result.status === 'failed'
+    const notes = result.status !== 'passed' && result.status !== 'skipped'
       ? result.errors.map((e) => e.message ?? '').join('; ').slice(0, 500)
       : '';
 
