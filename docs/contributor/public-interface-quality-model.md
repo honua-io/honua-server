@@ -60,7 +60,8 @@ Ticket `#469` is now the governing reconciliation ticket, not a request to rebui
 | `#462` | Admin, geocoding, and geometry-service depth work is already represented by the contract matrix. Remaining work is audit-only if new gaps appear. | [`ContractCoverageMatrixTests.cs`](../../tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs) |
 | `#467` | The OData client suite already exists. Remaining work is keeping release evidence links current. | [`ODataClientIntegrationTests.cs`](../../tests/Honua.Server.Tests/Features/OData/ODataClientIntegrationTests.cs) |
 | `#468` | The GDAL/OGR interoperability suite already exists. Remaining work is keeping release evidence links current. | [`tests/python/gdal_ogr/`](../../tests/python/gdal_ogr/) |
-| `#463`, `#464`, `#465`, `#466`, `#478` | These remain the main server-owned gaps for broader browser, desktop, and visual proof. | [`public-interface-proof.json`](../gis/data/public-interface-proof.json) planned `real-client-certification` rows |
+| `#464` | MapLibre GL JS browser compatibility is now automated via the `maplibre-compat` CI job (Playwright + Chromium). The proof ledger entry is updated to `ci:maplibre-compat`. | [`public-interface-proof.json`](../gis/data/public-interface-proof.json), [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) |
+| `#463`, `#465`, `#466`, `#478` | These remain the main server-owned gaps for broader browser, desktop, and visual proof. | [`public-interface-proof.json`](../gis/data/public-interface-proof.json) planned `real-client-certification` rows |
 | `#484` | This is the only sanctioned cross-repo child in the current proof model. The SDK repo owns deterministic MCP scripts and artifact generation. | [`mcp-certification.md`](mcp-certification.md) |
 
 ## Cross-Repo Boundary
