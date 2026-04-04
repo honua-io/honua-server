@@ -5,6 +5,7 @@ export default defineConfig({
   testMatch: '*.spec.ts',
   timeout: 60_000,
   retries: 1,
+  globalSetup: './global-setup.ts',
   use: {
     headless: true,
     viewport: { width: 512, height: 512 },
