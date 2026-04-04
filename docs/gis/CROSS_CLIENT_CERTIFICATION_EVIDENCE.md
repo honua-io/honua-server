@@ -51,7 +51,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `server_version` | string | Yes | Honua Server version or commit SHA |
 | `client_lane` | string | Yes | One of: `js`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi` |
 | `client_version` | string | Yes | Version of the client tool under test |
-| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `odata`, `mvt`, `wms`, `wmts`, `admin-api` |
+| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api` |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
 | `results` | array | Yes | Array of common-core CERT-\* test case result objects |
 | `results[].test_case_id` | string | Yes | CERT-\* ID from the matrix |
@@ -117,6 +117,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 ├── 20260316T1430Z-desktop-arcgis-featureserver.cert.json
 ├── 20260316T1430Z-desktop-arcgis-mapserver.cert.json
 ├── 20260316T1430Z-desktop-qgis-ogc-features.cert.json
+├── 20260316T1430Z-desktop-qgis-wfs.cert.json
 ├── 20260316T1430Z-cli-featureserver.cert.json
 ├── 20260316T1430Z-cli-ogc-features.cert.json
 ├── 20260316T1430Z-cli-admin-api.cert.json
@@ -127,6 +128,8 @@ docs/gis/certification-evidence/20260316T1430Z/
 The JS lane currently covers FeatureServer only (via Vitest). Additional JS evidence files (e.g., `*-js-ogc-features.cert.json`) will appear once Vitest OGC suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, and Admin API evidence files. FeatureServer and OGC API Features files will be produced once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
+
+The automated PyQGIS nightly lane (`pyqgis-client-compat-nightly.yml`) produces `*-desktop-qgis-ogc-features.cert.json` and `*-desktop-qgis-wfs.cert.json` envelopes under `tests/TestResults/`. These are uploaded as CI artifacts and use the `desktop-qgis` client lane value.
 
 When extension-protocol testing is active, additional per-protocol files are produced (e.g., `*-js-mvt.cert.json`, `*-desktop-qgis-wms.cert.json`, `*-desktop-qgis-wmts.cert.json`). See the [Certification Matrix — Lane-Specific Extensions](CROSS_CLIENT_CERTIFICATION_MATRIX.md#lane-specific-extensions) for the full list.
 
@@ -263,3 +266,4 @@ MapLibre GL JS MVT certification is currently manual (visual browser-based verif
 | 1.0.6 | 2026-03-18 | Fix MVT workflow status semantics: use `skip` for "All"-protocol tests not exercised in visual workflow, `not-applicable` only for tests that don't list MVT |
 | 1.0.7 | 2026-03-31 | Document the `windows-client-compat-nightly.yml` smoke-evidence artifact contract and clarify that it is upstream of final `.cert.json` envelopes |
 | 1.0.8 | 2026-04-02 | Add `ci-desktop` and `ci-bi` client lane values for automated CI certification evidence; document `certification/` output layout |
+| 1.0.9 | 2026-04-03 | Add `wfs` to allowed protocol values; add `desktop-qgis-wfs.cert.json` to examples; document PyQGIS nightly evidence output |
