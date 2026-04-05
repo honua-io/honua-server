@@ -497,13 +497,15 @@ def _write_cert_evidence(
     yield
     results_dir = TESTS_ROOT / "TestResults"
     run_id = _utc_now_compact()
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    suffix = "" if not worker_id or worker_id == "master" else f"-{worker_id}"
 
     if oapif_evidence.has_records:
-        path = results_dir / f"{run_id}-desktop-qgis-ogc-features.cert.json"
+        path = results_dir / f"{run_id}-desktop-qgis-ogc-features{suffix}.cert.json"
         oapif_evidence.write_envelope(path)
 
     if wfs_evidence.has_records:
-        path = results_dir / f"{run_id}-desktop-qgis-wfs.cert.json"
+        path = results_dir / f"{run_id}-desktop-qgis-wfs{suffix}.cert.json"
         wfs_evidence.write_envelope(path)
 
 

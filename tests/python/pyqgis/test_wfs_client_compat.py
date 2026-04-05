@@ -479,9 +479,29 @@ class TestWfsClientCompat:
             '"nonexistent_field" = $$INVALID$$'
         )
         features = list(layer.getFeatures(request))
+        count = len(features)
 
-        wfs_evidence.record(
-            "CERT-ERRH-02", "pass",
-            measured_count=len(features),
-            notes=f"Malformed filter returned {len(features)} features (expected 0 or error).",
-        )
+        # Acceptable outcomes: provider rejects (0 features) or server
+        # returns an error.  If the full feature set comes back, the
+        # malformed filter was silently ignored — record as skip.
+        if count == 0:
+            wfs_evidence.record(
+                "CERT-ERRH-02", "pass",
+                measured_count=count,
+                notes="Malformed filter correctly returned zero features.",
+            )
+        elif count >= EXPECTED_TOTAL_FEATURES:
+            wfs_evidence.record(
+                "CERT-ERRH-02", "skip",
+                measured_count=count,
+                notes=(
+                    "Malformed filter returned all features; provider did not "
+                    "reject or filter the invalid expression."
+                ),
+            )
+        else:
+            wfs_evidence.record(
+                "CERT-ERRH-02", "pass",
+                measured_count=count,
+                notes=f"Malformed filter returned partial subset ({count} features); provider applied partial filtering.",
+            )

@@ -182,6 +182,8 @@ QT_QPA_PLATFORM=offscreen pytest tests/python/pyqgis -m pyqgis --tb=short
 | `HONUA_PYQGIS_SERVICE_ID` | Service ID in the compatibility seed | `test_service` |
 | `HONUA_PYQGIS_COLLECTION_ID` | Collection ID in the seed | `0` |
 | `HONUA_PYQGIS_SEED_PATH` | SQL snapshot for the local runtime | `tests/seed/client-compat-v1.sql` |
+| `HONUA_PYQGIS_PORT` | Base server port (worker index added for xdist) | `5575` |
+| `HONUA_PYQGIS_TIMEOUT` | Server startup timeout (seconds) | `120` |
 | `QGIS_PREFIX_PATH` | QGIS installation prefix | auto-detected |
 
 ### Evidence Output
@@ -237,6 +239,7 @@ def test_items_returns_geojson(http_client, test_collection_id):
 - Each worker uses a separate schema and increments the base port (`HONUA_TEST_PORT`)
 - For a shared PostGIS container, set `HONUA_TEST_DB_URL` so all workers connect to the same DB
 - The STAC compatibility lane writes one JSON/Markdown evidence pair per worker when `pytest-xdist` is enabled.
+- The PyQGIS lane uses worker-scoped ports (`HONUA_PYQGIS_PORT` + worker index) to avoid port collisions under xdist.
 
 ### Database connection errors
 - Verify PostGIS container is healthy

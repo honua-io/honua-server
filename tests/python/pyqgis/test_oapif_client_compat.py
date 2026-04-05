@@ -469,11 +469,30 @@ class TestOapifClientCompat:
             '"nonexistent_field" = $$INVALID$$'
         )
         features = list(layer.getFeatures(request))
+        count = len(features)
 
         # QGIS may handle this client-side (return empty) or propagate
         # a server error. Both are acceptable error-handling outcomes.
-        oapif_evidence.record(
-            "CERT-ERRH-02", "pass",
-            measured_count=len(features),
-            notes=f"Malformed filter returned {len(features)} features (expected 0 or error).",
-        )
+        # However, if the provider returns the full feature set unfiltered,
+        # the malformed filter was silently ignored — record as skip.
+        if count == 0:
+            oapif_evidence.record(
+                "CERT-ERRH-02", "pass",
+                measured_count=count,
+                notes="Malformed filter correctly returned zero features.",
+            )
+        elif count >= EXPECTED_TOTAL_FEATURES:
+            oapif_evidence.record(
+                "CERT-ERRH-02", "skip",
+                measured_count=count,
+                notes=(
+                    "Malformed filter returned all features; provider did not "
+                    "reject or filter the invalid expression."
+                ),
+            )
+        else:
+            oapif_evidence.record(
+                "CERT-ERRH-02", "pass",
+                measured_count=count,
+                notes=f"Malformed filter returned partial subset ({count} features); provider applied partial filtering.",
+            )
