@@ -35,7 +35,7 @@ namespace Honua.Postgres.Features.Infrastructure.Caching;
 /// The caching layer only optimizes execution, not query construction.
 /// </para>
 /// </remarks>
-internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider, IAsyncDisposable
+internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDatabaseConnectionProvider, IDisposable, IAsyncDisposable
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<CachingDatabaseConnectionProvider> _logger;
@@ -194,14 +194,19 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     }
 
     /// <inheritdoc/>
-    public ValueTask DisposeAsync()
+    public void Dispose()
     {
         var slots = Interlocked.Exchange(ref _acquiredSlots, 0);
         if (slots > 0)
         {
             _concurrencyGate?.Release(slots);
         }
+    }
 
+    /// <inheritdoc/>
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
         return ValueTask.CompletedTask;
     }
 
