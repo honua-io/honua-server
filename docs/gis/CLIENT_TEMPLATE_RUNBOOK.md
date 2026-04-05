@@ -58,15 +58,27 @@ The uploaded contract is:
 | `lanes/<lane>/checks.tsv` | Raw smoke-check rows used to build the lane summaries |
 | `lanes/<lane>/lane-summary.json` / `lane-summary.md` | Per-lane check results with HTTP status, transcript path, and optional failure note |
 | `lanes/<lane>/transcripts/<check-id>.txt` | Full request/response transcript captured by the smoke script |
+| `certification/<timestamp>-<client_lane>-<protocol>.cert.json` | Per-protocol `.cert.json` envelope (full profile only); see [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) |
 | `metadata/workflow-context.json` | Base URL, service/layer ids, seed source, timestamp, workflow metadata |
 | `metadata/<seed-file>.sql` | Exact versioned SQL snapshot applied for the run |
 | `server/server.log` | Honua server stdout/stderr captured during the run |
 | `pack/README.md` | Human-readable guide to the normalized pack layout and source provenance |
 | `pack/` | Reusable templates plus the runbook, matrix, evidence spec, and version ledger for manual follow-through |
 
-The workflow currently produces smoke evidence for stable server responses; it does not emit final per-client `.cert.json` certification envelopes by itself. Use the uploaded `pack/` plus the manual steps below when you need customer-facing desktop or BI certification evidence files.
+Since ticket #415, the workflow defaults to the `full` profile and emits per-protocol `.cert.json` certification envelopes under a `certification/` subdirectory covering 18 CERT-\* test cases across 4 protocol lanes. Use `--profile smoke` for the original 11-check MVP subset.
 
-The automated lane coverage is intentionally narrow and deterministic. The check IDs below are the exact transcript filenames and `lane-summary.json` entries emitted by the smoke script:
+Automated `.cert.json` envelopes use the `ci-desktop` and `ci-bi` client lane values. Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the steps below.
+
+The full profile covers:
+
+| Protocol lane | Client lane | CERT-\* scope |
+|---|---|---|
+| FeatureServer | `ci-desktop` | 18 test cases (CERT-CONN through CERT-RNDR); CERT-CONN-02, AUTH-01/02, RNDR-01/02 skipped with reason |
+| OGC API Features | `ci-desktop` | 18 test cases; same skip categories |
+| MapServer | `ci-desktop` | 18 test cases; QFLT/PAGE/GEOM/ERRH-02 not-applicable for rendering-only lane |
+| OData | `ci-bi` | 18 test cases; GEOM/SCHM-02/QFLT-02 not-applicable for OData-only lane |
+
+The smoke profile retains the original narrow check set:
 
 | Lane | Automated checks |
 |---|---|
@@ -134,7 +146,7 @@ ArcGIS Pro exercises two protocols. Produce one `.cert.json` evidence file for e
 | `featureserver` | `…/FeatureServer` | All (1–5 + cross-cutting) | All 18 common-core CERT-\* IDs |
 | `mapserver` | `…/MapServer` | 1 (connect), 2 (discovery), 4 (render), 5 (refresh), cross-cutting | CERT-CONN, CERT-AUTH, CERT-DISC, CERT-SCHM, CERT-ERRH, CERT-RNDR |
 
-Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, and CERT-GEOM test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.
+Step 3 (Filter/query) targets the FeatureServer connection. CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 test cases should be recorded as `not-applicable` in the `mapserver` evidence file unless the client also exercises MapServer's layer query endpoint.
 
 See the [Evidence Specification](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) for the envelope format and [naming convention](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md#file-naming-convention).
 

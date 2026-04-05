@@ -11,6 +11,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
@@ -287,6 +289,60 @@ internal static partial class MapServerEndpoints
             return CreateWmsServiceException(context, "StyleNotDefined", styleError);
         }
 
+        // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter (semicolon-delimited FES XML per layer)
+        var filterParam = GetQueryValue(query, "FILTER");
+        SqlFragment?[]? layerFilters = null;
+        if (!string.IsNullOrWhiteSpace(filterParam))
+        {
+            var filterTokens = SplitWmsFilterTokens(filterParam);
+            if (filterTokens.Length != 1 && filterTokens.Length != renderLayers.Length)
+            {
+                return CreateWmsServiceException(context, "InvalidParameterValue",
+                    $"FILTER must contain exactly 1 or {renderLayers.Length.ToString(CultureInfo.InvariantCulture)} filter(s), separated by semicolons, matching the number of LAYERS.");
+            }
+
+            var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+            layerFilters = new SqlFragment?[renderLayers.Length];
+
+            for (var f = 0; f < renderLayers.Length; f++)
+            {
+                var token = filterTokens.Length == 1 ? filterTokens[0] : filterTokens[f];
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    continue;
+                }
+
+                FilterExpression expression;
+                try
+                {
+                    expression = Fes20Parser.ParseFilter(token);
+                }
+                catch (Fes20ParseException ex)
+                {
+                    return CreateWmsServiceException(context, "InvalidParameterValue",
+                        $"Invalid FILTER XML: {ex.Message}");
+                }
+
+                expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, renderLayers[f]);
+                if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
+                {
+                    return CreateWmsServiceException(context, "InvalidParameterValue",
+                        "FILTER expression must be a boolean predicate.");
+                }
+
+                var translation = filterExpressionService.Translate(expression, renderLayers[f]);
+                if (!translation.IsSuccess)
+                {
+                    return CreateWmsServiceException(context, "InvalidParameterValue",
+                        translation.ErrorMessage ?? "Invalid filter expression.");
+                }
+
+                layerFilters[f] = translation.SqlFilter;
+            }
+
+            activity?.SetTag("wms.filter_applied", true);
+        }
+
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
             .GetRequiredService<RasterRenderCapacityLimiter>()
@@ -325,6 +381,7 @@ internal static partial class MapServerEndpoints
                 contentType,
                 effectiveTransparent,
                 backgroundColor,
+                layerFilters,
                 out var citeResult))
         {
             return citeResult;
@@ -365,8 +422,9 @@ internal static partial class MapServerEndpoints
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
         var transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
 
-        foreach (var layer in renderLayers)
+        for (var i = 0; i < renderLayers.Length; i++)
         {
+            var layer = renderLayers[i];
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!layer.HasGeometry)
@@ -383,7 +441,8 @@ internal static partial class MapServerEndpoints
                 spatialFilter,
                 service.SpatialReference.Srid,
                 requestSrid,
-                maxFeatures);
+                maxFeatures,
+                layerFilters?[i]);
 
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
@@ -1067,6 +1126,60 @@ internal static partial class MapServerEndpoints
         return query.TryGetValue(key, out var value) ? value.ToString() : null;
     }
 
+    /// <summary>
+    /// Splits a WMS FILTER parameter into per-layer tokens using only semicolons
+    /// at XML depth 0 as delimiters. Semicolons inside XML elements (entity
+    /// references, literal text) are preserved.
+    /// </summary>
+    private static string[] SplitWmsFilterTokens(string filterParam)
+    {
+        var tokens = new List<string>();
+        int depth = 0;
+        int start = 0;
+        bool inTag = false;
+        bool isClosingTag = false;
+
+        for (int i = 0; i < filterParam.Length; i++)
+        {
+            char c = filterParam[i];
+
+            switch (c)
+            {
+                case '<' when !inTag:
+                    inTag = true;
+                    isClosingTag = i + 1 < filterParam.Length && filterParam[i + 1] == '/';
+                    break;
+                case '>' when inTag:
+                    if (filterParam[i - 1] == '/' || filterParam[i - 1] == '?')
+                    {
+                        // Self-closing <.../> or processing instruction <?...?>: neutral depth
+                    }
+                    else if (isClosingTag)
+                    {
+                        depth--;
+                    }
+                    else
+                    {
+                        depth++;
+                    }
+
+                    inTag = false;
+                    break;
+                case ';' when depth == 0 && !inTag:
+                    tokens.Add(filterParam[start..i]);
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        if (start <= filterParam.Length)
+        {
+            tokens.Add(filterParam[start..]);
+        }
+
+        return tokens.ToArray();
+    }
+
     private static IResult CreateWmsServiceException(
         HttpContext? context,
         string code,
@@ -1117,6 +1230,7 @@ internal static partial class MapServerEndpoints
         string contentType,
         bool transparent,
         SKColor backgroundColor,
+        SqlFragment?[]? layerFilters,
         out IResult result)
     {
         result = default!;
@@ -1132,6 +1246,19 @@ internal static partial class MapServerEndpoints
         if (!hasTerrain && !hasLakes && !hasAutos)
         {
             return false;
+        }
+
+        // When FILTER is applied, bypass synthetic CITE rendering so the
+        // standard feature-query path applies the filter per OGC WMS 1.3.0.
+        if (layerFilters is not null)
+        {
+            for (var i = 0; i < layerFilters.Length; i++)
+            {
+                if (layerFilters[i] is not null)
+                {
+                    return false;
+                }
+            }
         }
 
         if (hasAutos)

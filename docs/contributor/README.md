@@ -28,6 +28,7 @@ This section is for people **building or extending** Honua (core contributors, a
 ## Testing
 
 - [TestKit (C#)](testkit.md) — fixtures, builders, assertions, parallel execution
+- [Public Interface Quality Model](public-interface-quality-model.md) — canonical proof ledger, release evidence rules, and ticket reconciliation for public surfaces
 - [Python Integration Tests](testing-python.md) — pytest OGC and FeatureServer tests
 - [JavaScript Integration Tests](testing-javascript.md) — Vitest Esri compatibility tests
 - [Shared Seed Data](test-seed-data.md) — YAML seed format for cross-language tests

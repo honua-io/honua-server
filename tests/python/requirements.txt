@@ -10,6 +10,8 @@ pytest-timeout>=2.3.0
 # HTTP client
 httpx>=0.27.0
 requests>=2.31.0
+pystac>=1.10.0
+pystac-client>=0.8.0
 
 # Database and containers
 testcontainers[postgres]>=4.0.0

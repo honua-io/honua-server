@@ -435,6 +435,9 @@ public static class EndpointRegistry
         new("GET", "/stac/collections/{collectionId}/items/{itemId}"),
         new("GET", "/stac/search"),
         new("POST", "/stac/search"),
+
+        // Hosted samples
+        new("GET", "/samples/stac-ops"),
     ];
 }
 

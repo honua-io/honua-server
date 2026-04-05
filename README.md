@@ -8,11 +8,11 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service), OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service), STAC API, OGC API (Features, Maps, Tiles), OData v4, and vector tiles — backed by PostGIS.
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service), OGC API Features/Maps/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service), STAC API, OGC API Features/Maps/Tiles, OData v4, and MVT. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -71,6 +71,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri map clients |
 | GeoServices REST ImageServer | `/rest/services/{id}/ImageServer` | ArcGIS raster/image workflows |
 | GeoServices REST Geometry Service | `/rest/services/geometry` | Esri-compatible geometry operations |
+| STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |
 | OGC API Features | `/ogc/features` | QGIS, MapLibre, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients, custom web apps |
 | OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre |
@@ -79,6 +80,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | TileJSON | `/tiles/{layerId}/tile.json` | MapLibre |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Admin UI, automation scripts |
+| STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
 | API Explorer (Scalar) | `/docs` | Browser *(dev mode or `HONUA_SERVE_API_DOCS=true`)* |
@@ -91,6 +93,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
+
+**Catalog discovery** — STAC catalog, collections, items, and item-search with extension-aware metadata, collection license defaults, cross-protocol links to OGC API Features, and conditional GET support on catalog metadata routes.
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 
@@ -119,6 +123,7 @@ HONUA_ADMIN_PASSWORD="change-me"
 **Common options:**
 ```bash
 HONUA_SERVE_ADMIN_UI=true                 # Serve admin UI at /admin
+HONUA_SERVE_STAC_DEMO=true               # Serve the STAC operations demo at /samples/stac-ops/ (default: on in Development/Test; Docker production builds also require --build-arg HONUA_INCLUDE_STAC_OPS_DEMO=true)
 HONUA_SERVE_API_DOCS=true                # Interactive API explorer at /docs (default: on in Development)
 HONUA_OBSERVABILITY=true                  # Metrics and health endpoints
 HONUA_OPENTELEMETRY=true                  # Distributed tracing
@@ -180,6 +185,7 @@ Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuai
 | See protocol coverage | [Protocols Overview](docs/gis/STANDARDS_APIS.md) |
 | Use the admin API | [Control Plane API](docs/operator/CONTROL_PLANE_API.md) |
 | Check compatibility | [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md) |
+| Run the STAC ops sample | [STAC Ops Demo](samples/Honua.StacOpsDemo/README.md) |
 | Evaluate performance | [Benchmark Results](docs/operator/BENCHMARK_RESULTS.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 

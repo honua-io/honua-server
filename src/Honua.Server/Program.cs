@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Reflection;
-using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
@@ -42,11 +41,13 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Streaming;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Npgsql;
 using Scalar.AspNetCore;
 using Serilog;
@@ -75,6 +76,11 @@ var registerInfrastructureInTestEnvironment =
 var serveAdminUi = builder.Configuration.GetValue(
     "ServeAdminUI",
     builder.Configuration.GetValue("HONUA_SERVE_ADMIN_UI", true));
+var serveStacOpsDemo = builder.Configuration.GetValue(
+    "ServeStacOpsDemo",
+    builder.Configuration.GetValue(
+        "HONUA_SERVE_STAC_DEMO",
+        builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test")));
 var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
@@ -82,7 +88,9 @@ var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !
 var adminStaticAssetsManifestPath = Path.Combine(
     AppContext.BaseDirectory,
     "Honua.Admin.staticwebassets.endpoints.json");
-if (serveAdminUi && !builder.Environment.IsDevelopment())
+var adminUiPathPrefix = new PathString("/admin");
+var stacOpsDemoPathPrefix = new PathString("/samples/stac-ops");
+if ((serveAdminUi || serveStacOpsDemo) && !builder.Environment.IsDevelopment())
 {
     builder.WebHost.UseStaticWebAssets();
 }
@@ -620,9 +628,16 @@ builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
-var adminDotnetJsAlias = serveAdminUi
-    ? ResolveAdminDotnetJsAlias(adminStaticAssetsManifestPath)
-    : null;
+var oidcEnabledForAdminUi = app.Configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
+var blockAdminUi = serveAdminUi &&
+                   !oidcEnabledForAdminUi &&
+                   !app.Environment.IsDevelopment() &&
+                   !app.Environment.IsEnvironment("Test");
+
+FilterHostedBlazorStaticAssetEndpoints(
+    app,
+    allowAdminUiAssets: serveAdminUi && !blockAdminUi,
+    allowStacOpsDemoAssets: serveStacOpsDemo);
 
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
 if (activeDbConnectionTracker != null)
@@ -719,14 +734,9 @@ if (serveAdminUi)
     // F-01: Block admin UI in non-Development environments when OIDC is not configured.
     // Without OIDC the Blazor WASM client uses AnonymousAuthenticationStateProvider,
     // which renders the full admin dashboard to any visitor.
-    var oidcEnabled = app.Configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
-    var blockAdminUi = !oidcEnabled &&
-                       !app.Environment.IsDevelopment() &&
-                       !app.Environment.IsEnvironment("Test");
-
-    app.Map("/admin", adminApp =>
+    if (blockAdminUi)
     {
-        if (blockAdminUi)
+        app.Map("/admin", adminApp =>
         {
             adminApp.Run(async context =>
             {
@@ -736,38 +746,31 @@ if (serveAdminUi)
                     """{"title":"Unauthorized","status":401,"detail":"Admin UI is disabled because OIDC authentication is not configured. Configure Oidc:Enabled in appsettings or environment variables before accessing the admin UI in production."}""")
                     .ConfigureAwait(false);
             });
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(adminDotnetJsAlias))
-        {
-            adminApp.Use(async (context, next) =>
-            {
-                if (context.Request.Path.Equals("/_framework/dotnet.js", StringComparison.OrdinalIgnoreCase))
-                {
-                    context.Request.Path = new PathString($"/_framework/{adminDotnetJsAlias}");
-                }
-
-                await next().ConfigureAwait(false);
-            });
-        }
-
-        adminApp.UseBlazorFrameworkFiles();
-        adminApp.UseStaticFiles();
-        adminApp.UseRouting();
-        adminApp.UseEndpoints(endpoints =>
-        {
-            if (File.Exists(adminStaticAssetsManifestPath))
-            {
-                endpoints.MapStaticAssets(adminStaticAssetsManifestPath);
-            }
-            else
-            {
-                endpoints.MapStaticAssets();
-            }
-            endpoints.MapFallbackToFile("index.html");
         });
-    });
+    }
+    else
+    {
+        ConfigureHostedBlazorAssets(app, adminUiPathPrefix);
+        app.MapGet("/admin", () => Results.Redirect("/admin/index.html"))
+            .ExcludeFromDescription();
+        MapHostedBlazorFallback(app, adminUiPathPrefix);
+    }
+}
+else
+{
+    MapDisabledHostedBlazorPrefix(app, adminUiPathPrefix);
+}
+
+if (serveStacOpsDemo)
+{
+    ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
+    app.MapGet("/samples/stac-ops", () => Results.Redirect("/samples/stac-ops/index.html"))
+        .ExcludeFromDescription();
+    MapHostedBlazorFallback(app, stacOpsDemoPathPrefix);
+}
+else
+{
+    MapDisabledHostedBlazorPrefix(app, stacOpsDemoPathPrefix);
 }
 
 // Map interactive API explorer (Scalar) at /docs when enabled
@@ -1414,30 +1417,153 @@ static void RegisterConfigurationValidators(IServiceCollection services)
     services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
 }
 
-static string? ResolveAdminDotnetJsAlias(string endpointsManifestPath)
+static void ConfigureHostedBlazorAssets(
+    IApplicationBuilder app,
+    PathString pathPrefix)
 {
-    if (!File.Exists(endpointsManifestPath))
+    var prefix = pathPrefix.Value?.Trim('/') ??
+        throw new InvalidOperationException("Hosted Blazor path prefix is required.");
+    var webRootFileProvider = app.ApplicationServices
+        .GetRequiredService<IWebHostEnvironment>()
+        .WebRootFileProvider;
+
+    // Keep hosted shells isolated to their configured prefix so enabling one
+    // does not expose another shell's static web assets.
+    app.UseStaticFiles(new StaticFileOptions
     {
-        return null;
+        RequestPath = pathPrefix,
+        FileProvider = new PathPrefixFileProvider(webRootFileProvider, prefix)
+    });
+}
+
+static void MapHostedBlazorFallback(
+    IEndpointRouteBuilder endpoints,
+    PathString pathPrefix)
+{
+    var prefix = pathPrefix.Value?.TrimEnd('/') ??
+        throw new InvalidOperationException("Hosted Blazor path prefix is required.");
+    var fallbackRoute = $"{prefix}/{{*path:nonfile}}";
+    var fallbackFile = $"{prefix.TrimStart('/')}/index.html";
+
+    endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
+}
+
+static void FilterHostedBlazorStaticAssetEndpoints(
+    WebApplication app,
+    bool allowAdminUiAssets,
+    bool allowStacOpsDemoAssets)
+{
+    var blockedPrefixes = new List<string>(2);
+    if (!allowAdminUiAssets)
+    {
+        blockedPrefixes.Add("admin/");
     }
 
-    using var stream = File.OpenRead(endpointsManifestPath);
-    using var document = JsonDocument.Parse(stream);
-    if (!document.RootElement.TryGetProperty("Endpoints", out var endpoints))
+    if (!allowStacOpsDemoAssets)
     {
-        return null;
+        blockedPrefixes.Add("samples/stac-ops/");
     }
 
-    foreach (var endpoint in endpoints.EnumerateArray())
+    if (blockedPrefixes.Count == 0)
     {
-        if (endpoint.TryGetProperty("Route", out var route) &&
-            string.Equals(route.GetString(), "_framework/dotnet.js", StringComparison.OrdinalIgnoreCase) &&
-            endpoint.TryGetProperty("AssetFile", out var assetFile))
+        return;
+    }
+
+    var routeBuilder = (IEndpointRouteBuilder)app;
+    var dataSources = routeBuilder.DataSources.ToArray();
+
+    routeBuilder.DataSources.Clear();
+    foreach (var dataSource in dataSources)
+    {
+        routeBuilder.DataSources.Add(new HostedBlazorStaticAssetFilterDataSource(
+            dataSource,
+            blockedPrefixes));
+    }
+}
+
+static void MapDisabledHostedBlazorPrefix(
+    IApplicationBuilder app,
+    PathString pathPrefix)
+{
+    app.Map(pathPrefix, disabledApp =>
+    {
+        disabledApp.Run(context =>
         {
-            var assetFilePath = assetFile.GetString();
-            return string.IsNullOrWhiteSpace(assetFilePath) ? null : Path.GetFileName(assetFilePath);
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return Task.CompletedTask;
+        });
+    });
+}
+
+sealed class PathPrefixFileProvider(
+    IFileProvider innerProvider,
+    string pathPrefix) : IFileProvider
+{
+    private readonly IFileProvider _innerProvider = innerProvider;
+    private readonly string _pathPrefix = pathPrefix;
+
+    public IDirectoryContents GetDirectoryContents(string subpath)
+        => _innerProvider.GetDirectoryContents(ApplyPrefix(subpath));
+
+    public IFileInfo GetFileInfo(string subpath)
+        => _innerProvider.GetFileInfo(ApplyPrefix(subpath));
+
+    public IChangeToken Watch(string filter)
+        => _innerProvider.Watch(ApplyPrefix(filter));
+
+    private string ApplyPrefix(string subpath)
+    {
+        var trimmedSubpath = subpath.TrimStart('/');
+        return string.IsNullOrEmpty(trimmedSubpath)
+            ? _pathPrefix
+            : $"{_pathPrefix}/{trimmedSubpath}";
+    }
+}
+
+sealed class HostedBlazorStaticAssetFilterDataSource(
+    EndpointDataSource innerDataSource,
+    IReadOnlyCollection<string> blockedPrefixes) : EndpointDataSource
+{
+    private readonly EndpointDataSource _innerDataSource = innerDataSource;
+    private readonly IReadOnlyCollection<string> _blockedPrefixes = blockedPrefixes;
+
+    public override IReadOnlyList<Endpoint> Endpoints => FilterEndpoints();
+
+    public override IChangeToken GetChangeToken() => _innerDataSource.GetChangeToken();
+
+    private IReadOnlyList<Endpoint> FilterEndpoints()
+    {
+        if (_blockedPrefixes.Count == 0)
+        {
+            return _innerDataSource.Endpoints;
         }
+
+        return _innerDataSource.Endpoints
+            .Where(ShouldKeepEndpoint)
+            .ToArray();
     }
 
-    return null;
+    private bool ShouldKeepEndpoint(Endpoint endpoint)
+    {
+        if (endpoint is not RouteEndpoint routeEndpoint)
+        {
+            return true;
+        }
+
+        var route = routeEndpoint.RoutePattern.RawText;
+        if (string.IsNullOrEmpty(route))
+        {
+            return true;
+        }
+
+        foreach (var blockedPrefix in _blockedPrefixes)
+        {
+            if (route.StartsWith(blockedPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

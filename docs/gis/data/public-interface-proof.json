@@ -1,0 +1,1130 @@
+{
+  "schemaVersion": "1.0.0",
+  "updatedUtc": "2026-04-02T00:00:00Z",
+  "surfaces": [
+    {
+      "surfaceId": "platform-http",
+      "displayName": "Platform HTTP primitives",
+      "surfaceKind": "http-route-family",
+      "protocol": "HTTP",
+      "canonicalIdentifier": "/healthz/* + /metrics + /docs + /csp-violation-report",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/healthz/"
+      ],
+      "endpointExactMatches": [
+        "/metrics",
+        "/docs",
+        "/csp-violation-report"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "control-plane-admin",
+      "displayName": "Control-plane admin API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/admin/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Singleton-heavy admin endpoints keep happy-path plus negative-path coverage",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "OpenAPI drift gate plus generated SDK governance",
+          "executionLane": "ci:openapi-contract-governance+control-plane-sdk-governance",
+          "evidenceLocations": [
+            ".github/workflows/openapi-contract-governance.yml",
+            ".github/workflows/control-plane-sdk-governance.yml",
+            "docs/developer/api-specs/admin-api.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "feature-event-streaming",
+      "displayName": "Feature event streaming API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Streaming",
+      "canonicalIdentifier": "/api/v1/streaming/features",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/streaming/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/Admin/FeatureChangeEventsEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "versioned-metrics",
+      "displayName": "Versioned metrics endpoints",
+      "surfaceKind": "http-route-family",
+      "protocol": "Metrics",
+      "canonicalIdentifier": "/api/v1/metrics/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/metrics/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus metrics endpoint tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/Infrastructure/Monitoring/MetricsEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "geoservices-catalog",
+      "displayName": "GeoServices REST catalog",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST",
+      "canonicalIdentifier": "/rest/services + /rest/info",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/rest/info"
+      ],
+      "endpointExactMatches": [
+        "/rest/services"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
+          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "evidenceLocations": [
+            ".github/workflows/geoservices-parity-nightly.yml",
+            ".github/workflows/parity-scorecard-governance.yml",
+            "docs/gis/geoservices-rest-parity.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "geocode-server",
+      "displayName": "GeoServices REST GeocodeServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST GeocodeServer",
+      "canonicalIdentifier": "/rest/services/{locatorName}/GeocodeServer",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/GeocodeServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Geocoding endpoint matrix retains happy-path and negative-path depth",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "feature-server",
+      "displayName": "GeoServices REST FeatureServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST FeatureServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/FeatureServer",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/FeatureServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
+          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "evidenceLocations": [
+            ".github/workflows/geoservices-parity-nightly.yml",
+            ".github/workflows/parity-scorecard-governance.yml",
+            "docs/gis/geoservices-rest-parity.md",
+            "docs/gis/feature-server-matrix.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
+          "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
+          "evidenceLocations": [
+            ".github/workflows/windows-client-compat-nightly.yml",
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-arcgis-featureserver.cert.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final FeatureServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "map-server",
+      "displayName": "GeoServices REST MapServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST MapServer",
+      "canonicalIdentifier": "/rest/services/{serviceId}/MapServer",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/MapServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
+          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "evidenceLocations": [
+            ".github/workflows/geoservices-parity-nightly.yml",
+            ".github/workflows/parity-scorecard-governance.yml",
+            "docs/gis/geoservices-rest-parity.md",
+            "docs/gis/map-server-matrix.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Windows smoke artifact plus ArcGIS Pro manual certification evidence",
+          "executionLane": "nightly:windows-client-compat+release:manual-follow-through",
+          "evidenceLocations": [
+            ".github/workflows/windows-client-compat-nightly.yml",
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-arcgis-mapserver.cert.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the exact ArcGIS Pro version, run date, smoke artifact root, and final MapServer .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "wms-1.3",
+      "displayName": "WMS 1.3",
+      "surfaceKind": "nested-standard",
+      "protocol": "WMS 1.3",
+      "canonicalIdentifier": "/rest/services/{serviceId}/MapServer/WMS + /ogc/services/{serviceId}/wms",
+      "parentSurfaceId": "map-server",
+      "endpointPrefixes": [
+        "/ogc/services/{serviceId}/wms"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/MapServer/WMS"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Dedicated CITE workflow for WMS 1.3",
+          "executionLane": "nightly:cite-wms-conformance",
+          "evidenceLocations": [
+            ".github/workflows/cite-wms-conformance.yml",
+            "docs/gis/map-server-matrix.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/contributor/public-interface-quality-model.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#478",
+          "versionCaptureRule": "When the desktop visual lane lands, record the exact client version plus immutable WMS evidence link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
+        }
+      ]
+    },
+    {
+      "surfaceId": "wmts-1.0",
+      "displayName": "WMTS 1.0",
+      "surfaceKind": "nested-standard",
+      "protocol": "WMTS 1.0",
+      "canonicalIdentifier": "/rest/services/{serviceId}/MapServer/WMTS + /ogc/services/{serviceId}/wmts",
+      "parentSurfaceId": "map-server",
+      "endpointPrefixes": [
+        "/ogc/services/{serviceId}/wmts"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/MapServer/WMTS"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Dedicated CITE workflow for WMTS 1.0",
+          "executionLane": "nightly:cite-wmts-conformance",
+          "evidenceLocations": [
+            ".github/workflows/cite-wmts-conformance.yml",
+            "docs/gis/map-server-matrix.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Desktop visual lane for WMS/WMTS render verification",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/contributor/public-interface-quality-model.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#478",
+          "versionCaptureRule": "When the desktop visual lane lands, record the exact client version plus immutable WMTS evidence link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md or its successor release ledger."
+        }
+      ]
+    },
+    {
+      "surfaceId": "image-server",
+      "displayName": "GeoServices REST ImageServer",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST ImageServer",
+      "canonicalIdentifier": "/rest/services/{id}/ImageServer",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/ImageServer"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
+          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "evidenceLocations": [
+            ".github/workflows/geoservices-parity-nightly.yml",
+            ".github/workflows/parity-scorecard-governance.yml",
+            "docs/gis/geoservices-rest-parity.md",
+            "docs/gis/image-server-matrix.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "odata-v4",
+      "displayName": "OData v4",
+      "surfaceKind": "http-route-family",
+      "protocol": "OData v4",
+      "canonicalIdentifier": "/odata",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/odata"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Microsoft.OData.Client integration suite against the live server and captured evidence artifact",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "tests/Honua.Server.Tests/Features/OData/ODataClientIntegrationTests.cs",
+            "tests/Honua.Server.Tests/Honua.Server.Tests.csproj"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Pin the Microsoft.OData.Client package version in tests/Honua.Server.Tests/Honua.Server.Tests.csproj and report that exact version in the release evidence notes for the OData lane."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Power BI Desktop and Excel manual certification evidence",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-bi-powerbi-odata.cert.json",
+            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-bi-excel-odata.cert.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the exact Power BI Desktop and Excel versions, run date, and immutable OData .cert.json links in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-features",
+      "displayName": "OGC API Features",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Features",
+      "canonicalIdentifier": "/ogc/features",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/features"
+      ],
+      "endpointExactMatches": [
+        "/openapi.json"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
+          "executionLane": "ci:architecture",
+          "evidenceLocations": [
+            "tests/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "src/Honua.Server/openapi.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Dedicated CITE workflow for OGC API Features",
+          "executionLane": "nightly:cite-conformance",
+          "evidenceLocations": [
+            ".github/workflows/cite-conformance.yml",
+            "docs/gis/specifications/ogc-api-features-coverage.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "GDAL/OGR OAPIF interoperability suite and captured evidence artifact",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "tests/python/gdal_ogr/conftest.py",
+            "tests/python/gdal_ogr/test_oapif_discovery.py",
+            "tests/python/gdal_ogr/test_oapif_query.py",
+            "tests/python/gdal_ogr/test_oapif_read.py",
+            "tests/python/gdal_ogr/test_oapif_export.py"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Capture the exact ogrinfo --version string in tests/python/gdal_ogr/conftest.py and preserve the generated tests/python/gdal-ogr-results*.json artifact from ci.yml."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "QGIS manual certification evidence",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-desktop-qgis-ogc-features.cert.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the exact QGIS version, run date, and immutable OGC API Features .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-tiles",
+      "displayName": "OGC API Tiles",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Tiles",
+      "canonicalIdentifier": "/ogc/tiles",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/tiles"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "OpenAPI spec stays aligned with the registered surface",
+          "executionLane": "ci:architecture",
+          "evidenceLocations": [
+            "tests/Honua.Architecture.Tests/OpenApiDriftTests.cs",
+            "src/Honua.Server/ogc-tiles-openapi.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Dedicated CITE workflow for OGC API Tiles",
+          "executionLane": "nightly:cite-tiles-conformance",
+          "evidenceLocations": [
+            ".github/workflows/cite-tiles-conformance.yml",
+            "docs/gis/specifications/ogc-api-tiles-coverage.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "geometry-service",
+      "displayName": "GeoServices REST Geometry Service",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST Geometry Service",
+      "canonicalIdentifier": "/rest/services/geometry",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/rest/services/geometry"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Geometry service matrix retains happy-path and negative-path depth",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
+            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
+            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceBufferTests.cs",
+            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceProjectTests.cs",
+            "tests/Honua.Server.Tests/Features/GeometryService/GeometryServiceSimplifyTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
+          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "evidenceLocations": [
+            ".github/workflows/geoservices-parity-nightly.yml",
+            ".github/workflows/parity-scorecard-governance.yml",
+            "docs/gis/geoservices-rest-parity.md",
+            "docs/gis/geometry-service-matrix.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "ogc-api-maps-and-static-rendering",
+      "displayName": "OGC API Maps and static rendering",
+      "surfaceKind": "http-route-family",
+      "protocol": "OGC API Maps",
+      "canonicalIdentifier": "/ogc/maps + /static/{serviceId}/...",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/ogc/maps",
+        "/static/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Dedicated OGC Maps conformance workflow",
+          "executionLane": "nightly:ogc-maps-conformance",
+          "evidenceLocations": [
+            ".github/workflows/ogc-maps-conformance.yml",
+            "tests/Honua.Server.Tests/Features/OgcMaps/OgcMapsConformanceTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Browser visual/render proof for map rendering clients",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+            "docs/contributor/public-interface-quality-model.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#478",
+          "versionCaptureRule": "When browser visual certification lands, record the exact client version plus immutable evidence link in the release ledger for the rendered-map lane."
+        }
+      ]
+    },
+    {
+      "surfaceId": "printing-tools",
+      "displayName": "GeoServices REST PrintingTools",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices REST GPServer",
+      "canonicalIdentifier": "/rest/services/Utilities/PrintingTools/GPServer/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/rest/services/Utilities/PrintingTools/GPServer/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "wfs-2.0",
+      "displayName": "WFS 2.0",
+      "surfaceKind": "operation-surface",
+      "protocol": "WFS 2.0",
+      "canonicalIdentifier": "/wfs + REQUEST dispatcher operations",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/wfs"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "WFS-2.0::GetCapabilities",
+        "WFS-2.0::DescribeFeatureType",
+        "WFS-2.0::GetFeature",
+        "WFS-2.0::GetPropertyValue"
+      ],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage for the WFS dispatcher route",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and dispatcher drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "Dedicated CITE workflow for WFS 2.0",
+          "executionLane": "nightly:cite-wfs20-conformance",
+          "evidenceLocations": [
+            ".github/workflows/cite-wfs20-conformance.yml",
+            "tests/Honua.Server.Tests/Features/Wfs20/Wfs20EndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "GDAL/OGR WFS interoperability suite and captured evidence artifact",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "tests/python/gdal_ogr/conftest.py",
+            "tests/python/gdal_ogr/test_wfs_discovery.py",
+            "tests/python/gdal_ogr/test_wfs_query.py",
+            "tests/python/gdal_ogr/test_wfs_read.py",
+            "tests/python/gdal_ogr/test_wfs_export.py"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Capture the exact ogrinfo --version string in tests/python/gdal_ogr/conftest.py and preserve the generated tests/python/gdal-ogr-results*.json artifact from ci.yml."
+        }
+      ]
+    },
+    {
+      "surfaceId": "vector-tiles-mvt",
+      "displayName": "Vector tiles and MapLibre style endpoints",
+      "surfaceKind": "http-route-family",
+      "protocol": "MVT + TileJSON",
+      "canonicalIdentifier": "/tiles/{layerId}/... + /api/styles/{layerId}.json",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/tiles/",
+        "/api/styles/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "MapLibre GL JS manual certification evidence",
+          "executionLane": "release:manual-follow-through",
+          "evidenceLocations": [
+            "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+            "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+            "docs/gis/certification-evidence/20260402T000000Z/20260402T000000Z-js-mvt.cert.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the exact MapLibre GL JS version, run date, and immutable MVT .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "grpc-feature-service",
+      "displayName": "gRPC FeatureService",
+      "surfaceKind": "operation-surface",
+      "protocol": "gRPC",
+      "canonicalIdentifier": "geospatial.v1.FeatureService/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "Grpc::geospatial.v1.FeatureService/QueryFeatures",
+        "Grpc::geospatial.v1.FeatureService/QueryFeaturesStream",
+        "Grpc::geospatial.v1.FeatureService/ApplyEdits"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "OperationRegistry coverage and deployed-method drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/Honua.Architecture.Tests/OperationCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Proto wire compatibility gate against the published schema",
+          "executionLane": "ci:proto-wire-governance",
+          "evidenceLocations": [
+            ".github/workflows/proto-wire-governance.yml",
+            "src/Honua.Core/Transport/Proto/geospatial/v1/feature_service.proto"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "stac-api",
+      "displayName": "STAC API and hosted sample",
+      "surfaceKind": "http-route-family",
+      "protocol": "STAC API",
+      "canonicalIdentifier": "/stac + /samples/stac-ops",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/stac",
+        "/samples/stac-ops"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "mcp",
+      "displayName": "Model Context Protocol server package",
+      "surfaceKind": "cross-repo-interface",
+      "protocol": "MCP",
+      "canonicalIdentifier": "honua-sdk-js/mcp (@honua/mcp-server)",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "tool-interoperability",
+          "proofMechanism": "Deterministic MCP certification scripts and artifact generation",
+          "executionLane": "ci:mcp-certification",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "docs/contributor/mcp-certification.md",
+            "docs/developer/MCP_SERVER.md"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#484",
+          "versionCaptureRule": "Pin MCP_SDK_REF to an immutable tag or commit SHA and capture the checked-out honua-sdk-js/mcp package version plus mcp-certification-{transport} artifact names."
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "Agent-facing LLM smoke lane layered on top of MCP certification",
+          "executionLane": "ci:mcp-llm-smoke",
+          "evidenceLocations": [
+            ".github/workflows/ci.yml",
+            "docs/contributor/mcp-certification.md"
+          ],
+          "ownerRepo": "honua-sdk-js",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#484",
+          "versionCaptureRule": "Pin MCP_SDK_REF to an immutable tag or commit SHA and capture the checked-out honua-sdk-js/mcp package version plus mcp-llm-smoke-transcripts artifact names."
+        }
+      ]
+    }
+  ]
+}

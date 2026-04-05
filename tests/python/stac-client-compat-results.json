@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "lane": "stac-client-compat",
+  "generated_at": "2026-04-03T05:48:39.992186+00:00",
+  "status": "pass",
+  "base_url": "http://localhost:5565",
+  "stac_url": "http://localhost:5565/stac",
+  "mode": "local",
+  "service_id": "test_service",
+  "collection_id": "0",
+  "seed_snapshot": "client-compat-v1.sql",
+  "seed_snapshot_path": "/home/makani/worktrees/honua-server/687/tests/seed/client-compat-v1.sql",
+  "server_version": "1.0.0",
+  "server_commit": "6093b5ff6fac9e5aa2285abe08ac01e44de18d2c",
+  "client_versions": {
+    "pystac": "1.14.3",
+    "pystac_client": "0.9.0"
+  },
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  },
+  "checks": [
+    {
+      "test": "test_pystac_validates_catalog_document",
+      "summary": "PySTAC validated the raw /stac catalog document",
+      "status": "pass",
+      "detail": "catalog_id=honua-stac-catalog"
+    },
+    {
+      "test": "test_pystac_validates_collection_and_item_documents",
+      "summary": "PySTAC validated raw collection and item payloads",
+      "status": "pass",
+      "detail": "collection_id=0 item_id=1"
+    },
+    {
+      "test": "test_pystac_client_discovers_seeded_collection",
+      "summary": "PySTAC-Client discovered the seeded collection through /stac",
+      "status": "pass",
+      "detail": "collection_count=1 collection_id=0"
+    },
+    {
+      "test": "test_pystac_client_search_paginates_filtered_results",
+      "summary": "PySTAC-Client paged a bbox-filtered STAC search without dropping matches",
+      "status": "pass",
+      "detail": "returned=4 names=alpha,beta,delta,gamma"
+    }
+  ]
+}

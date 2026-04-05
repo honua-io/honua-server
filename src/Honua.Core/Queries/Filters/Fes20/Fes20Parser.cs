@@ -265,8 +265,12 @@ public static class Fes20Parser
         }
 
         var property = ParseExpression(valueRef);
-        var lower = ParseExpression(lowerBoundary.Elements().First());
-        var upper = ParseExpression(upperBoundary.Elements().First());
+        var lowerChild = lowerBoundary.Elements().FirstOrDefault()
+            ?? throw new Fes20ParseException("LowerBoundary element must contain a child element");
+        var upperChild = upperBoundary.Elements().FirstOrDefault()
+            ?? throw new Fes20ParseException("UpperBoundary element must contain a child element");
+        var lower = ParseExpression(lowerChild);
+        var upper = ParseExpression(upperChild);
 
         // Convert to: property >= lower AND property <= upper
         var greaterEqual = new BinaryExpression(property, BinaryOperator.GreaterThanOrEqual, lower);
@@ -516,17 +520,28 @@ public static class Fes20Parser
 
         if (typeHint != null)
         {
-            return typeHint.ToLowerInvariant() switch
+            try
             {
-                "string" or "xs:string" => new Literal(value, LiteralType.Text),
-                "int" or "integer" or "xs:int" or "xs:integer" => new Literal(int.Parse(value, CultureInfo.InvariantCulture), LiteralType.Number),
-                "double" or "xs:double" or "decimal" or "xs:decimal" => new Literal(double.Parse(value, CultureInfo.InvariantCulture), LiteralType.Number),
-                "boolean" or "xs:boolean" => new Literal(bool.Parse(value), LiteralType.Boolean),
-                "date" or "xs:date" or "datetime" or "xs:datetime" => new Literal(
-                    DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-                    LiteralType.DateTime),
-                _ => new Literal(value, LiteralType.Text)
-            };
+                return typeHint.ToLowerInvariant() switch
+                {
+                    "string" or "xs:string" => new Literal(value, LiteralType.Text),
+                    "int" or "integer" or "xs:int" or "xs:integer" => new Literal(int.Parse(value, CultureInfo.InvariantCulture), LiteralType.Number),
+                    "double" or "xs:double" or "decimal" or "xs:decimal" => new Literal(double.Parse(value, CultureInfo.InvariantCulture), LiteralType.Number),
+                    "boolean" or "xs:boolean" => new Literal(bool.Parse(value), LiteralType.Boolean),
+                    "date" or "xs:date" or "datetime" or "xs:datetime" => new Literal(
+                        DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                        LiteralType.DateTime),
+                    _ => new Literal(value, LiteralType.Text)
+                };
+            }
+            catch (FormatException ex)
+            {
+                throw new Fes20ParseException($"Cannot parse literal value '{value}' as {typeHint}: {ex.Message}", ex);
+            }
+            catch (OverflowException ex)
+            {
+                throw new Fes20ParseException($"Literal value '{value}' overflows type {typeHint}: {ex.Message}", ex);
+            }
         }
 
         // Try to infer type from value

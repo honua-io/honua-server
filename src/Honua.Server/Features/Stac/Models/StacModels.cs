@@ -156,6 +156,7 @@ public sealed record StacItem
     /// Bounding box [minx, miny, maxx, maxy].
     /// </summary>
     [JsonPropertyName("bbox")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImmutableArray<double>? Bbox { get; init; }
 
     /// <summary>

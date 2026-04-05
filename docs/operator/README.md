@@ -7,6 +7,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Infrastructure & Deployment](infrastructure.md) — Docker Compose, Kubernetes, cloud deployment
 - [Docker Compose Reference](docker-compose.md) — Local and evaluation setup
 - [Deployment Scenarios](DEPLOYMENT_SCENARIOS.md) — Patterns by team size
+- [STAC Ops Demo](../../samples/Honua.StacOpsDemo/README.md) — One-click local sample for STAC health, extension drift, and cache-awareness review
 
 ## Configuration
 

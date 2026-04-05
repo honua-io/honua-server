@@ -1,13 +1,13 @@
 # CI Workflow Inventory
 
 > Canonical inventory of all GitHub Actions workflows across the Honua project.
-> Last updated: 2026-03-31 (ticket #320)
+> Last updated: 2026-04-02 (ticket #415)
 
 ## honua-server
 
 | Workflow file | Name | Tier | Triggers | Merge-blocking | Notes |
 |---|---|---|---|---|---|
-| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate |
+| `ci.yml` | CI | PR | `pull_request`, `push` (trunk) | Yes | Core build, test, architecture gate; uploads STAC client-compat evidence (`stac-client-compat-results*.json/md`) |
 | `pr-validation.yml` | PR Validation | PR | `pull_request` | Yes | Template compliance check |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to API surface |
 | `proto-wire-governance.yml` | Proto Wire Governance | PR | `pull_request`, `push`, `workflow_dispatch` | Yes | Path-scoped to `.proto` changes |
@@ -25,7 +25,7 @@
 | `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 6am UTC |
 | `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | nightly | `schedule`, `workflow_dispatch` | No | Weekly Saturday 3am UTC |
 | `geoservices-parity-nightly.yml` | GeoServices Parity Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled parity check |
-| `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; emits `overall-summary.json`, per-lane summaries/transcripts, and `pack/` under canonical `artifacts/client-compat/<service>-<timestamp>/` evidence |
+| `windows-client-compat-nightly.yml` | Windows Client Compatibility Certification | nightly | `schedule`, `workflow_dispatch` | No | Daily 7:15am UTC; full CERT-\* matrix (18 test cases × 4 protocol lanes: FeatureServer, OGC Features, MapServer, OData) with per-protocol `.cert.json` envelopes under `certification/`, plus `overall-summary.json`, per-lane transcripts, and `pack/`; supports `--profile smoke` (11-check MVP) and `--profile full` (default) |
 | `load-soak-nightly.yml` | Load/Soak Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled load/soak tests |
 | `container-security.yml` | Container Security | nightly | `schedule`, `workflow_dispatch` | No | Scheduled container scan |
 | `security-nightly.yml` | Security Nightly | nightly | `schedule`, `workflow_dispatch` | No | Scheduled security analysis |

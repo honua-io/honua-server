@@ -6,6 +6,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <StaticWebAssetBasePath>admin</StaticWebAssetBasePath>
   </PropertyGroup>
 
   <ItemGroup>

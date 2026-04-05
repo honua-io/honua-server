@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -17,6 +19,12 @@ namespace Honua.Server.Tests.Features.Stac;
 [Protocol(Protocols.Stac)]
 public sealed class StacItemsTests : IAsyncLifetime
 {
+    private static readonly string[] ExpectedItemExtensions =
+    [
+        "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+        "https://stac-extensions.github.io/view/v1.0.0/schema.json"
+    ];
+
     private readonly WebAppFixture _fixture = new();
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
@@ -64,6 +72,41 @@ public sealed class StacItemsTests : IAsyncLifetime
             // STAC requires "datetime" in properties (may be null)
             item.GetProperty("properties").TryGetProperty("datetime", out _).Should().BeTrue();
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task GetItems_IncludeDeclaredStacExtensionsWhenConfigured()
+    {
+        await UpdateLayerMetadataAsync(new CatalogMetadata
+        {
+            TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" },
+            Stac = new StacCatalogMetadata
+            {
+                Extensions =
+                [
+                    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
+                    "https://stac-extensions.github.io/view/v1.0.0/schema.json"
+                ]
+            }
+        });
+
+        var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{collectionId}/items?limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(content);
+        var item = json.RootElement.GetProperty("features").EnumerateArray().First();
+
+        item.GetProperty("stac_extensions")
+            .EnumerateArray()
+            .Select(static element => element.GetString())
+            .Should()
+            .BeEquivalentTo(ExpectedItemExtensions);
     }
 
     [IntegrationTest]
@@ -225,5 +268,11 @@ public sealed class StacItemsTests : IAsyncLifetime
             $"/stac/collections/{collectionId}/items/999999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
+    {
+        var updater = _fixture.GetService<ILayerMetadataUpdater>();
+        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
     }
 }

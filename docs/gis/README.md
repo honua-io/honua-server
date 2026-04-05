@@ -4,7 +4,7 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 
 ## Getting Started
 
-- [Protocols Overview](STANDARDS_APIS.md) — All supported protocols (FeatureServer, MapServer, OGC, OData, MVT)
+- [Protocols Overview](STANDARDS_APIS.md) — All supported protocols (FeatureServer, MapServer, STAC, OGC, OData, MVT)
 - [QGIS Tutorial](tutorials/qgis-getting-started.md) — Zero to querying in 5 minutes
 - [GeoServer Migration](tutorials/geoserver-migration-guide.md) — Endpoint mapping and automated import
 
@@ -34,5 +34,6 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 ## Compatibility
 
 - [Known Limitations](MVP_COMPATIBILITY_CONTRACT.md) — Current protocol limitations
+- [Public Interface Proof Ledger](data/public-interface-proof.json) — Machine-readable inventory of every shipped public surface, proof classes, CI lanes, and evidence locations
 - [Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md) — Cross-client interop test results
 - [Certification Evidence](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — Final `.cert.json` envelope plus the Windows client smoke-artifact contract

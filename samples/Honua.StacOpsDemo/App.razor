@@ -1,0 +1,493 @@
+@implements IDisposable
+@inject Honua.StacOpsDemo.Services.StacOpsDashboardService DashboardService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Honua STAC Ops Demo</PageTitle>
+
+<div class="ops-shell">
+    <div class="ops-backdrop"></div>
+    <header class="hero-panel">
+        <div class="hero-copy">
+            <p class="eyebrow">Operator Sample</p>
+            <h1>Honua STAC Ops Demo</h1>
+            <p class="hero-summary">
+                Live same-origin STAC situational awareness for discovery health, extension declarations, paging behavior,
+                and drift signals.
+            </p>
+            <div class="hero-chips">
+                <span class="chip chip-neutral">Catalog discovery</span>
+                <span class="chip chip-neutral">Extension awareness</span>
+                <span class="chip chip-neutral">Query probes</span>
+                <span class="chip chip-neutral">Request ledger</span>
+            </div>
+        </div>
+        <div class="hero-controls">
+            <div class="control-card">
+                <label class="control-label" for="source-input">STAC source override</label>
+                <div class="source-form">
+                    <input id="source-input"
+                           @bind="_sourceInput"
+                           @bind:event="oninput"
+                           placeholder="Same origin by default or https://example.test" />
+                    <button type="button" class="action-button" @onclick="ApplySourceOverrideAsync">Apply</button>
+                </div>
+                <div class="control-meta">
+                    <span>Current source: <strong>@(_snapshot?.SourceBaseUrl ?? "loading")</strong></span>
+                    <button type="button" class="link-button" @onclick="UseSameOriginAsync">Use same origin</button>
+                </div>
+            </div>
+            <div class="control-card scenario-card">
+                <p class="control-label">Review scenarios</p>
+                <ul class="scenario-list">
+                    <li><strong>Healthy</strong>: declared EO/Projection/View support, paging continuity, live metadata validators.</li>
+                    <li><strong>Warning</strong>: undeclared extension usage and sampled items missing required datetime.</li>
+                    <li><strong>Stale metadata</strong>: warm `/stac` metadata cache, apply delta seed, then compare cached collection extents to live item timestamps.</li>
+                </ul>
+                <button type="button" class="action-button action-button-secondary" @onclick="ReloadAsync">
+                    Refresh live probes
+                </button>
+            </div>
+        </div>
+    </header>
+
+    @if (_isLoading)
+    {
+        <section class="state-panel">
+            <h2>Loading live STAC probes</h2>
+            <p>The sample is resolving health, catalog, collection, item, and query-workbench signals.</p>
+        </section>
+    }
+    else if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <section class="state-panel state-panel-error">
+            <h2>Probe run failed</h2>
+            <p>@_errorMessage</p>
+            <button type="button" class="action-button" @onclick="ReloadAsync">Retry</button>
+        </section>
+    }
+    else if (_snapshot is { } snapshot)
+    {
+        <section class="status-ribbon">
+            @foreach (var card in snapshot.StatusCards)
+            {
+                <article class="@($"status-card status-card-{GetLevelCss(card.Level)}")">
+                    <p class="status-label">@card.Title</p>
+                    <p class="status-summary">@card.Summary</p>
+                    <p class="status-detail">@card.Detail</p>
+                </article>
+            }
+        </section>
+
+        <section class="meta-strip">
+            <div>
+                <span class="meta-label">Generated</span>
+                <strong>@snapshot.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture)</strong>
+            </div>
+            <div>
+                <span class="meta-label">Source base</span>
+                <strong>@snapshot.SourceBaseUrl</strong>
+            </div>
+            <div>
+                <span class="meta-label">Conformance</span>
+                <strong>@(snapshot.ConformanceClasses.Length == 0 ? "none advertised" : $"{snapshot.ConformanceClasses.Length} class(es)")</strong>
+            </div>
+            <div>
+                <span class="meta-label">Freshness</span>
+                <strong>@(snapshot.StaleMetadataSuspected ? "warning surfaced" : "aligned")</strong>
+            </div>
+        </section>
+
+        <div class="ops-grid">
+            <section class="panel panel-span-2">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">Collections</p>
+                        <h2>Discovery and indexability</h2>
+                    </div>
+                    <p class="panel-caption">
+                        Cached listing extents, live collection detail, sampled item coverage, listing/detail ETags, declared STAC support, and observed extension usage.
+                    </p>
+                </div>
+                <div class="collection-grid">
+                    @foreach (var collection in snapshot.Collections)
+                    {
+                        <article class="@($"collection-card collection-card-{GetLevelCss(collection.Level)}")">
+                            <div class="collection-heading">
+                                <div>
+                                    <p class="collection-id">@collection.Id</p>
+                                    <h3>@collection.Title</h3>
+                                </div>
+                                <span class="@($"signal-pill signal-pill-{GetLevelCss(collection.Level)}")">@collection.Verdict</span>
+                            </div>
+                            <p class="collection-detail">@collection.Detail</p>
+                            <dl class="metric-grid">
+                                <div>
+                                    <dt>Matched</dt>
+                                    <dd>@(collection.NumberMatched?.ToString(CultureInfo.InvariantCulture) ?? collection.SampleCount.ToString(CultureInfo.InvariantCulture))</dd>
+                                </div>
+                                <div>
+                                    <dt>Latest sample</dt>
+                                    <dd>@(collection.LatestObservedDatetime ?? "missing")</dd>
+                                </div>
+                                <div>
+                                    <dt>Listing extent end</dt>
+                                    <dd>@(collection.AdvertisedLatestDatetime ?? "open")</dd>
+                                </div>
+                                <div>
+                                    <dt>Items link</dt>
+                                    <dd>@(collection.HasItemsLink ? "present" : "missing")</dd>
+                                </div>
+                                <div>
+                                    <dt>Paging</dt>
+                                    <dd>@(collection.SupportsPaging ? "observed" : "single page")</dd>
+                                </div>
+                                <div>
+                                    <dt>License</dt>
+                                    <dd>@(collection.License ?? "unspecified")</dd>
+                                </div>
+                                <div>
+                                    <dt>Listing ETag</dt>
+                                    <dd class="etag-value">@Shorten(collection.CollectionListETag)</dd>
+                                </div>
+                                <div>
+                                    <dt>Detail ETag</dt>
+                                    <dd class="etag-value">@Shorten(collection.DetailETag)</dd>
+                                </div>
+                            </dl>
+                            <div class="tag-section">
+                                <p class="tag-heading">Declared extensions</p>
+                                <div class="tag-row">
+                                    @if (collection.DeclaredExtensions.Length == 0)
+                                    {
+                                        <span class="tag tag-muted">none declared</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var extension in collection.DeclaredExtensions)
+                                        {
+                                            <span class="tag tag-declared">@extension</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                            <div class="tag-section">
+                                <p class="tag-heading">Observed prefixes</p>
+                                <div class="tag-row">
+                                    @if (collection.ObservedPrefixes.Length == 0)
+                                    {
+                                        <span class="tag tag-muted">no namespaced fields sampled</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var prefix in collection.ObservedPrefixes)
+                                        {
+                                            <span class="tag tag-observed">@prefix</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                            <div class="tag-section">
+                                <p class="tag-heading">Keywords</p>
+                                <div class="tag-row">
+                                    @if (collection.Keywords.Length == 0)
+                                    {
+                                        <span class="tag tag-muted">none</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var keyword in collection.Keywords)
+                                        {
+                                            <span class="tag tag-neutral">@keyword</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                            <div class="sample-metrics">
+                                <span>@(collection.EoMetric ?? "No EO metric sampled")</span>
+                                <span>@(collection.ProjectionMetric ?? "No projection metric sampled")</span>
+                                <span>@(collection.ViewMetric ?? "No view metric sampled")</span>
+                            </div>
+                            <div class="sample-items">
+                                <p class="tag-heading">Sample items</p>
+                                @if (collection.SampleItems.Length == 0)
+                                {
+                                    <p class="empty-copy">No item sample returned for this collection.</p>
+                                }
+                                else
+                                {
+                                    <ul>
+                                        @foreach (var item in collection.SampleItems)
+                                        {
+                                            <li>
+                                                <strong>@item.Summary</strong>
+                                                <span>@(item.Datetime ?? "datetime missing")</span>
+                                                <span>@(item.ObservedPrefixes.Length == 0 ? "no extension prefixes" : string.Join(", ", item.ObservedPrefixes))</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                            @if (collection.DriftNotes.Length > 0)
+                            {
+                                <div class="drift-box">
+                                    <p class="tag-heading">Drift findings</p>
+                                    <ul>
+                                        @foreach (var note in collection.DriftNotes)
+                                        {
+                                            <li>@note</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+                        </article>
+                    }
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">Extensions</p>
+                        <h2>Declaration versus observation</h2>
+                    </div>
+                    <p class="panel-caption">Declared `stac_extensions` remain authoritative; namespaced fields are only heuristic evidence.</p>
+                </div>
+                <div class="stack-table">
+                    @foreach (var extension in snapshot.Extensions)
+                    {
+                        <article class="@($"stack-row stack-row-{GetLevelCss(extension.Level)}")">
+                            <div class="stack-row-header">
+                                <strong>@extension.Label</strong>
+                                <span class="@($"signal-pill signal-pill-{GetLevelCss(extension.Level)}")">@extension.Verdict</span>
+                            </div>
+                            <p>@extension.DeclaredSummary</p>
+                            <p>@extension.ObservedSummary</p>
+                            <p>@extension.Detail</p>
+                            <p class="metric-note">@extension.MetricSummary</p>
+                        </article>
+                    }
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">Workbench</p>
+                        <h2>Search and paging probes</h2>
+                    </div>
+                    <p class="panel-caption">Live query probes against the STAC API surface with pass, warn, and fail states.</p>
+                </div>
+                <div class="stack-table">
+                    @foreach (var probe in snapshot.QueryProbes)
+                    {
+                        <article class="@($"stack-row stack-row-{GetLevelCss(probe.Level)}")">
+                            <div class="stack-row-header">
+                                <strong>@probe.Label</strong>
+                                <span class="@($"signal-pill signal-pill-{GetLevelCss(probe.Level)}")">@probe.Verdict</span>
+                            </div>
+                            <p>@probe.Detail</p>
+                            <code>@probe.RequestPath</code>
+                        </article>
+                    }
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">Notes</p>
+                        <h2>Operational reading guide</h2>
+                    </div>
+                    <p class="panel-caption">Interpretation notes emitted by the live analysis engine for this run.</p>
+                </div>
+                <ul class="notes-list">
+                    @foreach (var note in snapshot.Notes)
+                    {
+                        <li>@note</li>
+                    }
+                </ul>
+            </section>
+
+            <section class="panel panel-span-2">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">Ledger</p>
+                        <h2>Request and cache evidence</h2>
+                    </div>
+                    <p class="panel-caption">Every probe request with status, duration, validators, and diagnostic note.</p>
+                </div>
+                <div class="ledger-table-wrapper">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Request</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th>ETag</th>
+                                <th>Cache</th>
+                                <th>Age</th>
+                                <th>Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in snapshot.RequestLedger)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="request-cell">
+                                            <strong>@entry.Method</strong>
+                                            <span>@entry.Url</span>
+                                        </div>
+                                    </td>
+                                    <td>@entry.StatusCode</td>
+                                    <td>@($"{entry.DurationMs.ToString(CultureInfo.InvariantCulture)} ms")</td>
+                                    <td class="etag-value">@Shorten(entry.ETag)</td>
+                                    <td>@(entry.CacheControl ?? "none")</td>
+                                    <td>@(entry.Age ?? "-")</td>
+                                    <td>@(entry.Note ?? "-")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private DashboardSnapshot? _snapshot;
+    private string? _errorMessage;
+    private string _sourceInput = string.Empty;
+    private readonly Honua.StacOpsDemo.Services.DashboardLoadCoordinator _loadCoordinator = new();
+    private bool _isLoading = true;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        _sourceInput = ReadSourceOverrideFromLocation() ?? string.Empty;
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        using var load = _loadCoordinator.BeginLoad();
+        _isLoading = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var snapshot = await DashboardService.LoadAsync(_sourceInput, load.Token);
+            if (!load.IsActive || _disposed)
+            {
+                return;
+            }
+
+            _snapshot = snapshot;
+        }
+        catch (OperationCanceledException) when (load.Token.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            if (!load.IsActive || _disposed)
+            {
+                return;
+            }
+
+            _snapshot = null;
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            if (load.IsActive)
+            {
+                _isLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private Task ApplySourceOverrideAsync()
+    {
+        var destination = string.IsNullOrWhiteSpace(_sourceInput)
+            ? "/samples/stac-ops/"
+            : $"/samples/stac-ops/?source={Uri.EscapeDataString(_sourceInput.Trim())}";
+
+        NavigationManager.NavigateTo(destination);
+        return Task.CompletedTask;
+    }
+
+    private Task UseSameOriginAsync()
+    {
+        _sourceInput = string.Empty;
+        NavigationManager.NavigateTo("/samples/stac-ops/");
+        return Task.CompletedTask;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _sourceInput = ReadSourceOverrideFromLocation() ?? string.Empty;
+        _ = InvokeAsync(ReloadAsync);
+    }
+
+    private string? ReadSourceOverrideFromLocation()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = uri.Query;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var segments = pair.Split('=', 2);
+            var key = Uri.UnescapeDataString(segments[0]);
+            if (!string.Equals(key, "source", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return segments.Length == 2 ? Uri.UnescapeDataString(segments[1]) : string.Empty;
+        }
+
+        return null;
+    }
+
+    private static string GetLevelCss(SignalLevel level) => level switch
+    {
+        SignalLevel.Pass => "pass",
+        SignalLevel.Warn => "warn",
+        SignalLevel.Fail => "fail",
+        _ => "info"
+    };
+
+    private static string Shorten(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "none";
+        }
+
+        return value.Length <= 22
+            ? value
+            : $"{value[..10]}...{value[^8..]}";
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        NavigationManager.LocationChanged -= OnLocationChanged;
+        _loadCoordinator.Dispose();
+    }
+}

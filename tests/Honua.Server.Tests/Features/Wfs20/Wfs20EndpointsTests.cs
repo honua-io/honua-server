@@ -245,6 +245,38 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_NotValueReferenceFilter_ReturnsExceptionReport()
+    {
+        const string notFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:Not><fes:ValueReference>category</fes:ValueReference></fes:Not></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(notFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("boolean predicate");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_GetPropertyValue_NotValueReferenceFilter_ReturnsExceptionReport()
+    {
+        const string notFilter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:Not><fes:ValueReference>category</fes:ValueReference></fes:Not></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(notFilter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+        content.Should().Contain("boolean predicate");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(Protocols.Wfs20, "GetFeature")]
     public async Task Wfs_GetFeature_InvalidResultType_ReturnsExceptionReport()
     {
         var response = await _fixture.Client.GetAsync(

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Ogc.Common;
@@ -30,6 +31,7 @@ internal static class CatalogEndpoints
             .WithDescription("Returns the root STAC catalog with links to child collections and search")
             .WithTags("STAC")
             .CacheOutput("StacCatalog")
+            .WithETag()
             .Produces<StacCatalog>(200, MediaTypes.Json)
             .Produces(404);
 

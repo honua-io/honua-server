@@ -59,4 +59,5 @@
 - [Architecture](contributor/ARCHITECTURE.md)
 - [ADRs](contributor/adr/README.md)
 - [TestKit](contributor/testkit.md)
+- [Public Interface Quality Model](contributor/public-interface-quality-model.md)
 - [Release Checklist](contributor/RELEASE_CHECKLIST.md)
