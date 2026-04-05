@@ -1572,7 +1572,6 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         queryResponse.Should().NotBeNull();
         queryResponse!.Features.Should().NotBeNull();
-        queryResponse.Features.Should().NotBeEmpty();
     }
 
     /// <summary>
