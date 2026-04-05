@@ -28,7 +28,7 @@ Common environment variables (defaults differ per suite):
 | `HONUA_SERVICE_ID` | `test_service_gw0` | `test_service_gw0` | Test service name |
 | `HONUA_LAYER_ID` | `1000` | `1000` | Test layer ID |
 | `HONUA_TEST_PORT` | `5555` | `5556` | Port for bootstrapped server |
-| `HONUA_TEST_TIMEOUT` | `30000` | `30000` | Request timeout (ms) |
+| `HONUA_TEST_TIMEOUT` | `30000` | N/A | Request timeout (ms); Playwright uses its own config-level timeouts |
 
 The Playwright suite serves its own static test page and proxies `/rest/` and `/temp/` requests to `HONUA_BASE_URL`. It does not inject browser auth headers, so the configured service/layer must be anonymously accessible or exposed through the local test bootstrap.
 
