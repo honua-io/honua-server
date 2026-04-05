@@ -92,10 +92,11 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-ci-evidence
         with:
-          name: pyqgis-client-compat-evidence
+          kind: evidence
           path: |
             tests/TestResults/*-desktop-qgis-*.cert.json
             tests/TestResults/server.log
+          tier: nightly
 
       - name: Validate certification envelopes
         if: always()

@@ -46,6 +46,16 @@ DEFAULT_PORT = 5575
 DEFAULT_TIMEOUT_SECONDS = 120
 
 
+def _get_worker_id() -> str:
+    return os.getenv("PYTEST_XDIST_WORKER", "gw0")
+
+
+def _get_worker_index(worker_id: str) -> int:
+    if worker_id.startswith("gw") and worker_id[2:].isdigit():
+        return int(worker_id[2:])
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Seed-derived expectations
 # ---------------------------------------------------------------------------
@@ -339,7 +349,8 @@ def pyqgis_runtime() -> Generator[PyQgisCompatibilityRuntime, None, None]:
     fixture.start()
     fixture.apply_sql_file(seed_path)
 
-    port = int(os.getenv("HONUA_PYQGIS_PORT", str(DEFAULT_PORT)))
+    worker_id = _get_worker_id()
+    port = int(os.getenv("HONUA_PYQGIS_PORT", str(DEFAULT_PORT))) + _get_worker_index(worker_id)
     server = HonuaServer(
         connection_string=fixture.get_npgsql_connection_string(),
         port=port,
