@@ -10,7 +10,7 @@
  * accumulate into one file rather than overwriting each other.
  */
 
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -179,6 +179,19 @@ function getStableRunId(): string {
   return id;
 }
 
+const runIdSentinel = resolve(certOutputDir(), '.cert-run-id');
+if (!process.env.CERT_RUN_ID && !process.env.GITHUB_RUN_ID) {
+  process.on('exit', () => {
+    try {
+      if (existsSync(runIdSentinel)) {
+        unlinkSync(runIdSentinel);
+      }
+    } catch {
+      // Best-effort cleanup only.
+    }
+  });
+}
+
 /** Resolve the cert output directory (tests/js/). */
 function certOutputDir(): string {
   return resolve(__dirname, '..', '..');
@@ -217,7 +230,12 @@ export class EvidenceCollector {
     this.attempted.add(testCaseId);
   }
 
-  /** Record a core CERT-* result. */
+  /**
+   * Record a core CERT-* result.
+   * Fail-wins: once a 'fail' is recorded for an ID, later non-fail calls
+   * for the same ID are ignored so that duplicate CERT-ID mappings cannot
+   * mask a failure.
+   */
   record(
     testCaseId: string,
     status: CertStatus,
@@ -229,6 +247,8 @@ export class EvidenceCollector {
       evidenceRef?: string;
     } = {},
   ): void {
+    const existing = this.results.get(testCaseId);
+    if (existing?.status === 'fail' && status !== 'fail') return;
     this.results.set(testCaseId, {
       test_case_id: testCaseId,
       status,
@@ -289,15 +309,22 @@ export class EvidenceCollector {
       // No existing file yet
     }
 
-    // Current results take precedence over prior
-    const merged = new Map([...priorResults, ...this.results]);
+    const merged = new Map(priorResults);
+    for (const [id, result] of this.results) {
+      const prior = merged.get(id);
+      if (!prior || prior.status !== 'fail' || result.status === 'fail') {
+        merged.set(id, result);
+      }
+    }
     const mergedExt = new Map([...priorExtensions, ...this.extensionMap]);
 
     const allResults: CertResult[] = CORE_TEST_IDS.map(id => {
       const isApplicable = applicable?.has(id) ?? false;
       const recorded = merged.get(id);
-      // Defense-in-depth: coerce non-applicable recorded IDs to not-applicable
-      if (recorded && isApplicable) return recorded;
+      // If current run attempted this ID but didn't record it, a test threw
+      // before record() was reached — treat as fail even if a prior pass exists.
+      const attemptedNotRecorded = this.attempted.has(id) && !this.results.has(id);
+      if (recorded && isApplicable && !attemptedNotRecorded) return recorded;
       // Attempted but not recorded means the test threw before record() — emit fail
       const wasAttempted = this.attempted.has(id);
       const status: CertStatus = isApplicable

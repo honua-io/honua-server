@@ -17,7 +17,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx tsx openlayers/rendering/serve-test-page.ts',
+    command: 'node node_modules/tsx/dist/cli.mjs openlayers/rendering/serve-test-page.ts',
     port: 9876,
     cwd: '../../',
     reuseExistingServer: true,
