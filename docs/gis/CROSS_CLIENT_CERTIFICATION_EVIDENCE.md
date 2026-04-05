@@ -124,7 +124,7 @@ docs/gis/certification-evidence/20260316T1430Z/
 └── 20260316T1430Z-bi-excel-odata.cert.json
 ```
 
-The JS lane currently covers FeatureServer only (via Vitest). Additional JS evidence files (e.g., `*-js-ogc-features.cert.json`) will appear once Vitest OGC suites are added.
+The JS lane covers FeatureServer, OGC API Features, WFS, and OGC Tiles protocols via Vitest, plus CERT-RNDR rendering via Playwright (MVT only). Additional protocols (OData, MapServer) will produce evidence files once automated suites are added.
 
 The CLI lane lists FeatureServer, OGC API Features, and Admin API evidence files. FeatureServer and OGC API Features files will be produced once `@pytest.mark.cert` markers and xUnit `[Trait("CertId", …)]` attributes are added; the Admin API file covers CLI-EXT-01/CLI-EXT-02 extensions.
 
@@ -176,11 +176,12 @@ This section describes how each evidence source will map to the evidence envelop
 | Source | Lane | How It Feeds the Envelope |
 |---|---|---|
 | Vitest JSON reporter | JS | Automated: map `describe`/`it` blocks to CERT-\* IDs via test name convention |
+| Playwright browser test | JS (MVT) | Automated: headless Chromium renders OGC Tiles via OpenLayers, records CERT-RNDR-01 and JS-EXT-02 |
 | pytest markers | CLI | Planned: add `@pytest.mark.cert("CERT-CONN-01")` markers and map to result entries |
 | xUnit attributes | CLI | Planned: add `[Trait("CertId", "CERT-CONN-01")]` alongside existing `[Protocol]` attributes |
 | CITE testng-results XML | OGC conformance | Reference: link via `cite_results` field; CITE tests are protocol-scoped, not client-scoped |
 | Manual runbook | Desktop, BI | Manual: operator fills a JSON template or markdown checklist, converted to `.cert.json` |
-| Manual browser verification | JS (MVT) | Manual: operator loads MapLibre GL JS against the server, records CERT-RNDR-01 and JS-EXT-01/JS-EXT-02 results into a `js`/`mvt` evidence file (see [MapLibre MVT workflow](#maplibre-mvt-manual-workflow) below) |
+| Manual browser verification | JS (MVT) | Fallback: operator loads MapLibre GL JS against the server, records remaining manual-only results into a `js`/`mvt` evidence file (see [MapLibre MVT workflow](#maplibre-mvt-manual-workflow) below). CERT-RNDR-01 and JS-EXT-02 are now automated via Playwright |
 
 ### Manual Lane Workflow
 
@@ -237,7 +238,7 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
 
 ### MapLibre MVT Manual Workflow
 
-MapLibre GL JS MVT certification is currently manual (visual browser-based verification). The JS lane's automated Vitest suite does not yet include MVT tests; this workflow fills the gap until automated coverage is added.
+MapLibre GL JS MVT certification is partially automated. CERT-RNDR-01 and JS-EXT-02 are covered by the Playwright headless browser test (`render.spec.ts`), and MVT tile metadata/discovery tests run via Vitest. This manual workflow remains useful for JS-EXT-01 (PBF decode fidelity) and any visual verification beyond pixel-diff assertions.
 
 1. Copy the evidence template above.
 2. Set `client_lane` to `"js"` and `protocol` to `"mvt"`.
