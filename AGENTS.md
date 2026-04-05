@@ -134,10 +134,10 @@ using Honua.Server;          // BLOCKING - Core cannot depend on Server
 using Honua.Core.Features.Abstractions;  // OK - Infrastructure can use Core abstractions
 ```
 
-Dependency flow rule: `Honua.Core` <- `Honua.Postgres` <- `Honua.Server`
+Dependency flow rule: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` <- `Honua.Server`
 - Core defines abstractions and domain models
-- Postgres implements Core interfaces
-- Server uses both Core and Postgres
+- Postgres and DuckDB implement Core interfaces
+- Server uses Core plus the active provider (selected via `DataSource:Provider`)
 
 **2. API pattern violations**
 ```csharp
@@ -304,11 +304,13 @@ src/
 ├── Honua.Server/          # Main host (Minimal APIs)
 ├── Honua.Core/            # Domain models, abstractions
 ├── Honua.Postgres/        # PostgreSQL implementation
+├── Honua.DuckDB/          # DuckDB read-only provider
 └── Honua.Admin/           # Blazor WASM admin UI
 
 tests/
 ├── Honua.TestKit/         # Shared test infrastructure
 ├── Honua.Core.Tests/      # Unit tests
 ├── Honua.Server.Tests/    # Integration tests
+├── Honua.DuckDB.Tests/    # DuckDB provider tests
 └── Honua.Architecture.Tests/  # Architecture enforcement
 ```
