@@ -18,7 +18,6 @@ internal sealed class DuckDBConnectionProvider : IDatabaseConnectionProvider
     private readonly string _connectionString;
     private readonly ILogger<DuckDBConnectionProvider> _logger;
     private readonly DuckDBSpatialBootstrap _spatialBootstrap;
-    private int _spatialInitialized;
 
     public DuckDBConnectionProvider(
         string connectionString,
@@ -35,13 +34,7 @@ internal sealed class DuckDBConnectionProvider : IDatabaseConnectionProvider
     {
         var connection = new DuckDBConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        if (Interlocked.CompareExchange(ref _spatialInitialized, 1, 0) == 0)
-        {
-            await _spatialBootstrap.EnsureSpatialExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("DuckDB spatial extension loaded");
-        }
-
+        await _spatialBootstrap.EnsureSpatialExtensionAsync(connection, cancellationToken).ConfigureAwait(false);
         return connection;
     }
 

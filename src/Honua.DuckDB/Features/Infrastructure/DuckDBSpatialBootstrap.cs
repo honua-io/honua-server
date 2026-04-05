@@ -14,6 +14,7 @@ internal sealed class DuckDBSpatialBootstrap
 {
     private readonly string? _extensionPath;
     private readonly ILogger<DuckDBSpatialBootstrap> _logger;
+    private int _initialized;
 
     public DuckDBSpatialBootstrap(string? extensionPath, ILogger<DuckDBSpatialBootstrap> logger)
     {
@@ -23,9 +24,16 @@ internal sealed class DuckDBSpatialBootstrap
 
     /// <summary>
     /// Ensures the spatial extension is installed and loaded on the given connection.
+    /// Runs once per application lifetime (singleton). DuckDB shares extension state
+    /// across connections to the same database.
     /// </summary>
     public async Task EnsureSpatialExtensionAsync(DbConnection connection, CancellationToken cancellationToken)
     {
+        if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0)
+        {
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(_extensionPath))
         {
             _logger.LogInformation("Loading DuckDB spatial extension from offline path: {Path}", _extensionPath);
@@ -34,6 +42,7 @@ internal sealed class DuckDBSpatialBootstrap
 
         await ExecuteNonQueryAsync(connection, "INSTALL spatial", cancellationToken).ConfigureAwait(false);
         await ExecuteNonQueryAsync(connection, "LOAD spatial", cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("DuckDB spatial extension loaded");
     }
 
     private static async Task ExecuteNonQueryAsync(DbConnection connection, string sql, CancellationToken cancellationToken)
