@@ -978,6 +978,10 @@ static void RegisterInfrastructureServices(IServiceCollection services, IConfigu
     {
         Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
     }
+    else if (provider.Equals("duckdb", StringComparison.OrdinalIgnoreCase))
+    {
+        Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
+    }
     else
     {
         throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");

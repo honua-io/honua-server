@@ -1,0 +1,168 @@
+# DuckDB Provider
+
+Honua supports DuckDB as a read-only embedded feature provider. This is designed for analytical and
+reference workloads where data is prepared offline (e.g. GeoParquet, CSV, or Shapefile imports into
+DuckDB) and served as a static dataset.
+
+## When to Use DuckDB
+
+- **Reference layers** — static datasets (parcels, boundaries, zoning) that change infrequently
+- **Analytical exports** — pre-computed analytics materialized into DuckDB tables
+- **Edge / air-gapped deployments** — single-file database, no external database dependency
+- **Prototyping** — quick setup without PostgreSQL infrastructure
+
+DuckDB is **not suitable** for write-heavy or real-time workloads. For editable feature layers, use
+the PostgreSQL provider.
+
+## Configuration
+
+Set `DataSource:Provider` to `"duckdb"` and add a `DuckDB` section to your `appsettings.json`:
+
+```json
+{
+  "DataSource": {
+    "Provider": "duckdb"
+  },
+  "DuckDB": {
+    "DatabasePath": "/data/layers.duckdb",
+    "ReadOnly": true,
+    "SpatialExtensionPath": null,
+    "Layers": [
+      {
+        "Id": 0,
+        "Name": "Parcels",
+        "Description": "County parcel boundaries",
+        "Table": "parcels",
+        "GeometryColumn": "geom",
+        "ObjectIdColumn": "id",
+        "Srid": 4326,
+        "GeometryType": "Polygon"
+      }
+    ],
+    "Services": [
+      {
+        "Name": "ParcelService",
+        "Description": "Parcel data service",
+        "LayerIds": [0],
+        "Capabilities": ["Query", "Extract"],
+        "EnabledProtocols": ["FeatureServer", "OgcFeatures", "Grpc"]
+      }
+    ]
+  }
+}
+```
+
+### Configuration Reference
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `DatabasePath` | `:memory:` | Path to `.duckdb` file. Use absolute paths in production. |
+| `ReadOnly` | `true` | Open database in read-only mode. Recommended for production. |
+| `SpatialExtensionPath` | `null` | Offline path for the spatial extension. When null, DuckDB downloads it automatically on first use. |
+
+#### Layer Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Id` | — | Unique integer layer ID. Must match service `LayerIds` references. |
+| `Name` | — | Display name shown in service metadata. |
+| `Table` | — | DuckDB table name containing the spatial data. |
+| `GeometryColumn` | `geom` | Column containing geometry values (GEOMETRY type). |
+| `ObjectIdColumn` | `id` | Primary key column (BIGINT). |
+| `Srid` | `4326` | Spatial Reference System ID of the geometry data. |
+| `GeometryType` | `Point` | Geometry type: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`. |
+
+#### Service Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Name` | — | URL-safe service name. |
+| `LayerIds` | — | Array of layer IDs included in this service. |
+| `Capabilities` | `["Query", "Extract"]` | Only `Query` and `Extract` are supported. Write capabilities are rejected at startup. |
+| `EnabledProtocols` | all | Protocols to expose: `FeatureServer`, `OgcFeatures`, `Grpc`, `Wfs20`. |
+
+## Preparing Data
+
+DuckDB tables must have the spatial extension loaded and use the `GEOMETRY` column type.
+
+### From GeoParquet
+
+```sql
+INSTALL spatial;
+LOAD spatial;
+
+CREATE TABLE parcels AS
+SELECT * FROM read_parquet('/data/parcels.parquet');
+```
+
+### From Shapefile
+
+```sql
+INSTALL spatial;
+LOAD spatial;
+
+CREATE TABLE parcels AS
+SELECT * FROM ST_Read('/data/parcels.shp');
+```
+
+### From CSV with coordinates
+
+```sql
+INSTALL spatial;
+LOAD spatial;
+
+CREATE TABLE stations AS
+SELECT id, ST_Point(longitude, latitude) AS geom, name, type
+FROM read_csv('/data/stations.csv');
+```
+
+Ensure the `ObjectIdColumn` is a `BIGINT PRIMARY KEY` and the geometry column uses
+the `GEOMETRY` type.
+
+## Limitations
+
+| Capability | Status |
+|-----------|--------|
+| Feature queries (select, count, object IDs) | Supported |
+| Spatial filters (intersects, within, contains, etc.) | Supported |
+| Statistics and aggregation (sum, avg, count, group by) | Supported |
+| GeoJSON export | Supported |
+| Feature streaming | Supported |
+| Extent computation | Supported |
+| **Feature editing (create, update, delete)** | **Not supported** — returns `NotSupportedException` |
+| **MVT vector tiles** | **Not supported** |
+| **H3 hexagonal aggregation** | **Not supported** |
+| **FlatGeobuf / Geobuf export** | **Not supported** — returns null (server can fall back to JSON) |
+| **Relationship queries** | **Not supported** |
+
+## Workload Profile
+
+DuckDB is an embedded analytical database optimized for read-heavy OLAP workloads:
+
+- **Concurrency**: DuckDB uses a single-writer model. Read queries execute concurrently. The
+  provider opens a fresh connection per query to avoid connection-state conflicts.
+- **Memory**: DuckDB uses memory-mapped I/O. Memory usage scales with data size and query
+  complexity, not connection count.
+- **Startup**: The spatial extension is loaded once on the first query. Subsequent connections
+  reuse the installed extension. Air-gapped deployments should set `SpatialExtensionPath` to
+  avoid network calls.
+- **File locking**: DuckDB holds a file lock on the `.duckdb` file. Only one process can open
+  the file at a time (even in read-only mode, a shared lock is acquired). Do not run multiple
+  Honua instances against the same DuckDB file.
+
+## Troubleshooting
+
+### "DllNotFoundException: duckdb"
+
+The `DuckDB.NET.Data.Full` package bundles the native DuckDB library for common platforms.
+If running on an unsupported OS/architecture, you may need to provide the native library manually.
+
+### "Spatial extension not found"
+
+On first startup, DuckDB downloads the spatial extension from the DuckDB extension repository.
+In air-gapped environments, download the extension file separately and set `SpatialExtensionPath`.
+
+### Write operations return errors
+
+This is expected. The DuckDB provider is read-only by design. Feature editing, MVT tiles,
+and H3 aggregation are not supported. Use the PostgreSQL provider for write workloads.

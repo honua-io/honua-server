@@ -29,6 +29,7 @@
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
     <ProjectReference Include="..\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.DuckDB\Honua.DuckDB.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference
       Include="..\Honua.Admin\Honua.Admin.csproj"
