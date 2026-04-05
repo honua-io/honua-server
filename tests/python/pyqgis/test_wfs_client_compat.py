@@ -500,8 +500,8 @@ class TestWfsClientCompat:
                 ),
             )
         else:
-            wfs_evidence.record(
-                "CERT-ERRH-02", "pass",
-                measured_count=count,
-                notes=f"Malformed filter returned partial subset ({count} features); provider applied partial filtering.",
+            pytest.fail(
+                f"Malformed filter returned unexpected partial subset "
+                f"({count} features); expected 0 (rejected) or "
+                f">= {EXPECTED_TOTAL_FEATURES} (ignored)."
             )
