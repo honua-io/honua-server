@@ -51,12 +51,19 @@ export interface MapHandle {
 export async function createMap(page: Page, options: MapOptions): Promise<MapHandle> {
   const { styleUrl, center = [-122.42, 37.77], zoom = 14, idleTimeout = 25_000 } = options;
 
+  // Derive the server origin from the style URL so that relative tile URLs
+  // (e.g. /tiles/2000/{z}/{x}/{y}.mvt) in the style JSON resolve correctly.
+  // Without a <base> tag the page origin is about:blank and MapLibre's
+  // Request constructor fails on server-relative paths.
+  const origin = new URL(styleUrl).origin;
+
   // Navigate to a minimal HTML page with a map container.
   await page.setContent(`
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
+      <base href="${origin}/">
       <style>
         * { margin: 0; padding: 0; }
         #map { width: 512px; height: 512px; }
