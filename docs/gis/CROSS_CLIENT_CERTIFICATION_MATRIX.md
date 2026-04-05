@@ -79,7 +79,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 
 | Lane | Automation | Core Coverage | Extensions |
 |---|---|---|---|
-| **JS** (Vitest) | Automated ‡‡ | All CERT-\* except CERT-RNDR (headless) | JS-EXT-01, JS-EXT-02 |
+| **JS** (Vitest) | Automated ‡‡ | All CERT-\* except CERT-RNDR (headless) | JS-EXT-01, JS-EXT-02, JS-EXT-OL-\*, JS-EXT-TILES-\* |
 | **Desktop — ArcGIS Pro** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **Desktop — QGIS** | Manual per runbook | All CERT-\* (visual RNDR) | DSK-EXT-01, DSK-EXT-02 |
 | **CLI / SDK** (admin SDK, pytest) | Automated | All CERT-\* except CERT-RNDR | CLI-EXT-01, CLI-EXT-02 |
@@ -101,6 +101,14 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 |---|---|---|---|
 | JS-EXT-01 | Binary format fidelity (PBF/MVT decode) | MVT | pass/fail |
 | JS-EXT-02 | Streaming/MVT tile load pipeline | MVT | pass/fail |
+| JS-EXT-OL-COLL-01 | Collections list discovery | OGC Features | pass/fail+count |
+| JS-EXT-OL-ITEMTYPE-01 | itemType field presence in collection metadata | OGC Features | pass/fail |
+| JS-EXT-OL-ITEMS-01 | Feature items list and count | OGC Features | pass/fail+count |
+| JS-EXT-OL-GEOJSON-01 | ol/format/GeoJSON feature parsing | OGC Features | pass/fail |
+| JS-EXT-OL-GEOJSON-02 | ol/format/GeoJSON single-item parsing | OGC Features | pass/fail |
+| JS-EXT-TILES-DISC-01 | OGC Tiles landing page | MVT | pass/fail |
+| JS-EXT-TILES-DISC-02 | Collection tilesets listing | MVT | pass/fail |
+| JS-EXT-TILES-SCHM-01 | Tileset metadata introspection | MVT | pass/fail |
 
 #### Desktop Lane
 

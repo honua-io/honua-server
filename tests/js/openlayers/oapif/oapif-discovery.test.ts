@@ -58,7 +58,6 @@ describe('OGC API Features Discovery', () => {
   });
 
   it('collections list returned', async () => {
-    evidence.attempt('CERT-DISC-01');
     const start = Date.now();
     const resp = await fetch(`${ogcFeaturesUrl}/collections`);
     const duration = Date.now() - start;
@@ -74,7 +73,7 @@ describe('OGC API Features Discovery', () => {
     expect(first).toHaveProperty('id');
     expect(first).toHaveProperty('links');
 
-    evidence.record('CERT-DISC-01', 'pass', {
+    evidence.recordExtension('JS-EXT-OL-COLL-01', 'pass', {
       durationMs: duration,
       measuredCount: body.collections.length,
       notes: `${body.collections.length} collections discovered`,
