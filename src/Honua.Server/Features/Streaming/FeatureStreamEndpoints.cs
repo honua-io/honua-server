@@ -782,14 +782,14 @@ internal static class FeatureStreamEndpoints
                 while (session.Reader.TryRead(out var message))
                 {
                     if (!handoffDone)
+                    {
+                        bool progress;
+                        do
                         {
-                            bool progress;
-                            do
-                            {
-                                progress = false;
-                                while (session.Reader.TryRead(out _)) { }
+                            progress = false;
+                            while (session.Reader.TryRead(out _)) { }
 
-                                long prev = replayCursor;
+                            long prev = replayCursor;
                             replayCursor = await ReplayToSseAsync(context.Response, eventStore, replayCursor, options.ReplayBatchSize, logger, session.SessionId, linkedCts.Token, subscriptionFilter).ConfigureAwait(false);
                             if (replayCursor > prev)
                             {
@@ -800,35 +800,35 @@ internal static class FeatureStreamEndpoints
                         sessionManager.ClearDrainGrace(session.SessionId);
                         handoffDone = true;
                         continue;
-                        }
-
-                        if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
-                        {
-                            continue;
-                        }
-
-                        if (message.IsHeartbeat)
-                        {
-                            await context.Response.WriteAsync(": heartbeat\n\n", linkedCts.Token).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            var json = JsonSerializer.Serialize(
-                                message.Envelope,
-                                FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
-
-                            await context.Response.WriteAsync(
-                                string.Concat(
-                                    "id: ", message.Envelope.Cursor.ToString(CultureInfo.InvariantCulture), "\n",
-                                    "event: feature-change\n",
-                                    "data: ", json, "\n\n"),
-                                linkedCts.Token).ConfigureAwait(false);
-
-                            replayCursor = message.Envelope.Cursor;
-                        }
-
-                        await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
                     }
+
+                    if (!message.IsHeartbeat && replayCursor > 0 && message.Envelope.Cursor <= replayCursor)
+                    {
+                        continue;
+                    }
+
+                    if (message.IsHeartbeat)
+                    {
+                        await context.Response.WriteAsync(": heartbeat\n\n", linkedCts.Token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var json = JsonSerializer.Serialize(
+                            message.Envelope,
+                            FeatureStreamJsonContext.Default.FeatureStreamEnvelope);
+
+                        await context.Response.WriteAsync(
+                            string.Concat(
+                                "id: ", message.Envelope.Cursor.ToString(CultureInfo.InvariantCulture), "\n",
+                                "event: feature-change\n",
+                                "data: ", json, "\n\n"),
+                            linkedCts.Token).ConfigureAwait(false);
+
+                        replayCursor = message.Envelope.Cursor;
+                    }
+
+                    await context.Response.Body.FlushAsync(linkedCts.Token).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
